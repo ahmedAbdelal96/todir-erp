@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Todir.BuildingBlocks.Fixture</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../direct-modules/Todir.Modules.FixtureB/Todir.Modules.FixtureB.csproj" />
+  </ItemGroup>
+</Project>

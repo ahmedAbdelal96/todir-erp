@@ -7,7 +7,9 @@ public sealed class ProjectGraphValidatorTests
     [Fact]
     public void ProductionProjectGraphHasNoArchitectureViolations()
     {
-        var violations = ProjectGraphValidator.FindViolations(ProjectGraphValidator.Load(RepositoryRoot, includeFixtures: false));
+        var projects = ProjectGraphValidator.Load(RepositoryRoot, includeFixtures: false);
+        var violations = ProjectGraphValidator.FindViolations(projects)
+            .Concat(IntraProjectLayerValidator.FindDomainInfrastructureViolations(projects));
 
         Assert.Empty(violations);
     }
@@ -34,6 +36,23 @@ public sealed class ProjectGraphValidatorTests
         var violations = ProjectGraphValidator.FindViolations(ProjectGraphValidator.Load(RepositoryRoot, includeFixtures: true));
 
         Assert.Contains(violations, violation => violation.Contains("Todir.Modules.Fixture.Domain", StringComparison.Ordinal) && violation.Contains("Todir.Modules.Fixture.Infrastructure", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DetectsCanonicalSingleProjectDomainToInfrastructureDependency()
+    {
+        var projects = ProjectGraphValidator.Load(RepositoryRoot, includeFixtures: true);
+        var violations = IntraProjectLayerValidator.FindDomainInfrastructureViolations(projects);
+
+        Assert.Contains(violations, violation => violation.Contains("Todir.Modules.LayerFixture.Domain", StringComparison.Ordinal) && violation.Contains("Todir.Modules.LayerFixture.Infrastructure", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DetectsNoncanonicalSplitModuleLayerProjectShape()
+    {
+        var violations = ProjectGraphValidator.FindViolations(ProjectGraphValidator.Load(RepositoryRoot, includeFixtures: true));
+
+        Assert.Contains(violations, violation => violation.Contains("Todir.Modules.Fixture.Domain", StringComparison.Ordinal) && violation.Contains("canonical single implementation assembly shape", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -66,6 +85,14 @@ public sealed class ProjectGraphValidatorTests
         var violations = ValidateDirectReference(ProjectKind.Domain, "Todir.Modules.Sales.Domain", ProjectKind.BuildingBlocks, "Todir.BuildingBlocks");
 
         Assert.Contains(violations, violation => violation.Contains("Todir.Modules.Sales.Domain", StringComparison.Ordinal) && violation.Contains("Todir.BuildingBlocks", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DetectsBuildingBlocksToUpperImplementationReference()
+    {
+        var violations = ProjectGraphValidator.FindViolations(ProjectGraphValidator.Load(RepositoryRoot, includeFixtures: true));
+
+        Assert.Contains(violations, violation => violation.Contains("Todir.BuildingBlocks.Fixture", StringComparison.Ordinal) && violation.Contains("Todir.Modules.FixtureB", StringComparison.Ordinal));
     }
 
     [Fact]

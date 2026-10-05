@@ -1,4 +1,4 @@
-name: P00 validation
+name: TODIR validation
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   validate:
-    name: Bootstrap validation
+    name: Repository validation
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository

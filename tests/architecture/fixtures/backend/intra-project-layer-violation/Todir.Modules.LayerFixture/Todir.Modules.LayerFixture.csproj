@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Todir.Modules.LayerFixture</AssemblyName>
+  </PropertyGroup>
+</Project>

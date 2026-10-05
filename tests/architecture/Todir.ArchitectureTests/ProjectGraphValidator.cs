@@ -69,6 +69,7 @@ internal static class ProjectGraphValidator
         }
 
         AddCycleViolations(projects, byPath, violations);
+        AddProjectShapeViolations(projects, violations);
         return violations;
     }
 
@@ -126,6 +127,11 @@ internal static class ProjectGraphValidator
         if (source.Kind == ProjectKind.Contracts && target.Kind != ProjectKind.SharedKernel)
         {
             violations.Add($"Contracts project '{source.Name}' may only reference Todir.SharedKernel but references '{target.Name}'.");
+        }
+
+        if (source.Kind == ProjectKind.BuildingBlocks && target.Kind != ProjectKind.SharedKernel)
+        {
+            violations.Add($"BuildingBlocks project '{source.Name}' may only reference Todir.SharedKernel but references upper-layer project '{target.Name}'.");
         }
 
         if (source.Kind == ProjectKind.PlatformImplementation &&
@@ -208,6 +214,20 @@ internal static class ProjectGraphValidator
         }
     }
 
+    private static void AddProjectShapeViolations(IReadOnlyList<ProjectNode> projects, List<string> violations)
+    {
+        foreach (var project in projects)
+        {
+            if ((project.Name.StartsWith("Todir.Modules.", StringComparison.Ordinal) || project.Name.StartsWith("Todir.Foundation.", StringComparison.Ordinal)) &&
+                (project.Name.EndsWith(".Domain", StringComparison.Ordinal) ||
+                 project.Name.EndsWith(".Application", StringComparison.Ordinal) ||
+                 project.Name.EndsWith(".Infrastructure", StringComparison.Ordinal)))
+            {
+                violations.Add($"Module project '{project.Name}' violates the canonical single implementation assembly shape; Domain, Application, and Infrastructure are folders/namespaces inside the module implementation project.");
+            }
+        }
+    }
+
     private static bool IsExcluded(string path, bool includeFixtures)
     {
         var normalized = Normalize(path);
@@ -226,7 +246,7 @@ internal static class ProjectGraphValidator
         var isArchitectureFixture = path.Contains("/tests/architecture/fixtures/", StringComparison.OrdinalIgnoreCase);
         if (!isArchitectureFixture && path.Contains("/tests/", StringComparison.OrdinalIgnoreCase)) return ProjectKind.Test;
         if (string.Equals(projectName, "Todir.SharedKernel", StringComparison.Ordinal)) return ProjectKind.SharedKernel;
-        if (string.Equals(projectName, "Todir.BuildingBlocks", StringComparison.Ordinal)) return ProjectKind.BuildingBlocks;
+        if (string.Equals(projectName, "Todir.BuildingBlocks", StringComparison.Ordinal) || projectName.StartsWith("Todir.BuildingBlocks.", StringComparison.Ordinal)) return ProjectKind.BuildingBlocks;
         if (projectName.EndsWith(".Contracts", StringComparison.Ordinal) || projectName.StartsWith("Todir.Contracts.", StringComparison.Ordinal)) return ProjectKind.Contracts;
         if (projectName.EndsWith(".Domain", StringComparison.Ordinal)) return ProjectKind.Domain;
         if (projectName.EndsWith(".Infrastructure", StringComparison.Ordinal)) return ProjectKind.Infrastructure;
