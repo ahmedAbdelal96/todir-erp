@@ -1,0 +1,52 @@
+name: P00 validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Bootstrap validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.102
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.13.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Verify pinned pnpm
+        run: pnpm --version
+
+      - name: Restore .NET solution
+        run: dotnet restore Todir.sln
+
+      - name: Build .NET solution
+        run: dotnet build Todir.sln --no-restore
+
+      - name: Restore frontend tooling
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check TypeScript baseline
+        run: pnpm typecheck
+
+      - name: Validate Docker Compose skeleton
+        run: docker compose config
+
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@v2

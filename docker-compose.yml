@@ -1,0 +1,3 @@
+# P00 skeleton: local services are introduced only in their approved future phase.
+name: todir
+services: {}

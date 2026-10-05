@@ -1,0 +1,44 @@
+# Build and package output
+[Bb]in/
+[Oo]bj/
+dist/
+build/
+node_modules/
+.pnpm-store/
+.vite/
+
+# IDE and editor state
+.vs/
+.idea/
+*.user
+*.suo
+*.userossc
+*.sln.docstates
+.vscode/*
+!.vscode/extensions.json
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Test, coverage, logs, and generated local workspace output
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
+*.log
+
+# Docker and local runtime state
+*.pid
+
+# OS and temporary files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.tmp
+*.temp
+*.swp
+*~

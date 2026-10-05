@@ -1,0 +1,14 @@
+{
+  "name": "todir-erp",
+  "private": true,
+  "packageManager": "pnpm@10.18.0",
+  "engines": {
+    "node": "24.13.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

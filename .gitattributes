@@ -1,0 +1,16 @@
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+
+# Approved planning packs use Markdown hard-break spacing; preserve it without
+# treating it as a repository whitespace error during diff checks.
+docs/**/*.md whitespace=-trailing-space
