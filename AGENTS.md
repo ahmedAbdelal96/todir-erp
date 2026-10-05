@@ -12,6 +12,10 @@ Every future change is evaluated through product and UX correctness; backend and
 
 Before modifying anything: inspect the repository; read this file and every nearer `AGENTS.md`; locate and read the applicable approved architecture, Platform Kernel, ADR, and module-plan documents; inspect relevant implementation and tests; identify ownership, dependencies, boundaries and scope; then plan. Implement only the approved scope, verify it, self-review it, fix clear in-scope defects, re-verify, and report honestly. Never claim completion before verification.
 
+## Development branch execution
+
+`dev` is the active development branch. Work directly on `dev`, create a focused commit for each completed coherent milestone, and push normally to `origin/dev`. Do not create a branch per phase or require a pull request for routine solo development. `main` is frozen and must not receive development work, merges, or pushes unless the owner explicitly authorizes promotion. When the next approved phase is fully specified and no stop condition applies, continue autonomously after committing and pushing the previous phase. Never rewrite published history or force-push.
+
 ## Instruction hierarchy
 
 Root `AGENTS.md` defines universal TODIR rules and always remains active. A scoped `AGENTS.md` adds stricter or area-specific execution rules; it must not weaken or contradict root governance. The nearest applicable `AGENTS.md` provides the most specific execution rules. Architecture and module documentation remains authoritative for design and domain decisions; `AGENTS.md` governs execution behavior, not product/domain truth. If AGENTS files or governing documents conflict, stop the affected decision and report the conflict rather than silently choosing.
