@@ -6,6 +6,7 @@
     "node": "24.13.0"
   },
   "scripts": {
+    "architecture:frontend": "node scripts/architecture/check-frontend-module-boundaries.mjs && node scripts/architecture/verify-frontend-module-fixtures.mjs",
     "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "devDependencies": {

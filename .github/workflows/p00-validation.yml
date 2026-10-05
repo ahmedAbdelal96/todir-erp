@@ -39,11 +39,17 @@ jobs:
       - name: Build .NET solution
         run: dotnet build Todir.sln --no-restore
 
+      - name: Run .NET architecture tests
+        run: dotnet test tests/architecture/Todir.ArchitectureTests/Todir.ArchitectureTests.csproj --no-build
+
       - name: Restore frontend tooling
         run: pnpm install --frozen-lockfile
 
       - name: Type-check TypeScript baseline
         run: pnpm typecheck
+
+      - name: Validate frontend module boundaries
+        run: pnpm architecture:frontend
 
       - name: Validate Docker Compose skeleton
         run: docker compose config

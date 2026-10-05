@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Todir.BuildingBlocks</AssemblyName>
+    <RootNamespace>Todir.BuildingBlocks</RootNamespace>
+  </PropertyGroup>
+</Project>
