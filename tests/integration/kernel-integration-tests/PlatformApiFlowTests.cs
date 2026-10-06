@@ -143,7 +143,10 @@ public sealed class PlatformApiFlowTests
             {
                 var persisted = await new NpgsqlEntitlementSnapshotStore(verificationDataSource).LoadLatestAsync(tenant);
                 Assert.NotNull(persisted);
-                Assert.True(new HmacEntitlementVerifier(new Dictionary<string, byte[]> { ["current"] = Encoding.UTF8.GetBytes(entitlementKey) }).Verify(persisted!));
+                Assert.Equal(issued, persisted!.IssuedAt);
+                Assert.Equal(validUntil, persisted.ValidUntil);
+                Assert.Equal(signature, persisted.Signature);
+                Assert.True(new HmacEntitlementVerifier(new Dictionary<string, byte[]> { ["current"] = Encoding.UTF8.GetBytes(entitlementKey) }).Verify(persisted));
             }
 
             var created = await PostAsync(client, "/api/v1/sample/items", new { name = "after-entitlement" });
