@@ -58,6 +58,7 @@ jobs:
         run: dotnet test Todir.sln --no-build
         env:
           TODIR_P03_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
+          TODIR_P04_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
 
       - name: Restore frontend tooling
         run: pnpm install --frozen-lockfile
