@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Todir.Database.Security.Tests;
 
+[Collection("database-security")]
 public sealed class RoleBoundaryTests
 {
     [Fact]

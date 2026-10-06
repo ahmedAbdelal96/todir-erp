@@ -13,5 +13,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <None Include="../../../ops/database/bootstrap/runtime-roles-and-schemas.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../../ops/database/bootstrap/tenant-boundary.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
