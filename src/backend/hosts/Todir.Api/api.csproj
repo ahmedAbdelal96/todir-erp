@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <AssemblyName>Todir.Api</AssemblyName>
+    <RootNamespace>Todir.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../shared/Todir.BuildingBlocks/Todir.BuildingBlocks.csproj" />
+  </ItemGroup>
+</Project>
