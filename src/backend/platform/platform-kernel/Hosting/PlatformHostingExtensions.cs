@@ -120,7 +120,7 @@ public static class PlatformHostingExtensions
         {
             var tokens = antiforgery.GetAndStoreTokens(context);
             return Results.Ok(new { token = tokens.RequestToken });
-        }).RequireRateLimiting("auth");
+        });
         group.MapPost("/auth/login", async (LoginRequest request, HttpContext context, IIdentityStore store, ISessionService sessions, MfaCredentialManager mfa, TimeProvider clock, CancellationToken cancellationToken) =>
         {
             var identity = await store.AuthenticateAsync(request.Email, request.Password, cancellationToken);

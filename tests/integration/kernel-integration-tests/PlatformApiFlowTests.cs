@@ -116,7 +116,7 @@ public sealed class PlatformApiFlowTests
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        var issued = DateTimeOffset.UtcNow;
+        var issued = TruncateToPostgresPrecision(DateTimeOffset.UtcNow);
         var validUntil = issued.AddMinutes(10);
         const string entitlementKey = "sample-api-entitlement-key";
         var hash = IdentityConventions.HashPassword(password);
@@ -174,6 +174,9 @@ public sealed class PlatformApiFlowTests
         var canonical = JsonSerializer.Serialize(new { tenant = tenant.Value, snapshot = 1, issued, valid = validUntil, modules = SampleModuleIds, features = EmptyFeatures, limits = new Dictionary<string, long>() });
         return Convert.ToBase64String(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(canonical)));
     }
+
+    private static DateTimeOffset TruncateToPostgresPrecision(DateTimeOffset value) =>
+        new(value.Ticks - value.Ticks % TimeSpan.TicksPerMicrosecond, value.Offset);
 
     private sealed record CsrfResponse(string Token);
     private sealed record SessionResponse(bool Authenticated, Guid TenantId);
