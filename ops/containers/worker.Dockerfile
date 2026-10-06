@@ -1,6 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0.102 AS build
 WORKDIR /src
 COPY ["src/backend/hosts/background-worker/background-worker.csproj", "src/backend/hosts/background-worker/"]
+COPY ["src/backend/modules/Sample/sample.csproj", "src/backend/modules/Sample/"]
 COPY ["src/backend/platform/platform-kernel/platform-kernel.csproj", "src/backend/platform/platform-kernel/"]
 COPY ["src/backend/shared/Todir.BuildingBlocks/Todir.BuildingBlocks.csproj", "src/backend/shared/Todir.BuildingBlocks/"]
 COPY ["src/backend/shared/Todir.Contracts/Todir.Contracts.csproj", "src/backend/shared/Todir.Contracts/"]
