@@ -1,6 +1,6 @@
 FROM node:24.13.0-alpine AS build
 WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY src/frontend/apps/todir-web/package.json src/frontend/apps/todir-web/
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY src/frontend/apps/todir-web src/frontend/apps/todir-web
