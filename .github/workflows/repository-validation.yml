@@ -290,6 +290,7 @@ jobs:
           done
 
       - name: Run staging load and broker recovery drills
+        id: staging_drills
         env:
           STAGING_API_URL: https://127.0.0.1:18081
           STAGING_RABBIT_CONTAINER: kernel-${{ github.sha }}-rabbitmq
@@ -302,6 +303,20 @@ jobs:
           STAGING_REPLAY_TOKEN: ${{ env.STAGING_REPLAY_TOKEN }}
           NODE_EXTRA_CA_CERTS: ${{ env.STAGING_WEB_TLS_DIRECTORY }}/server.crt
         run: node scripts/verification/staging-drills.mjs
+
+      - name: Collect staging drill diagnostics
+        if: failure() && steps.create_staging.outcome == 'success' && steps.staging_health.outcome == 'success'
+        run: |
+          docker ps --all --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+          for container in \
+            "kernel-${{ github.sha }}-api" \
+            "kernel-${{ github.sha }}-worker" \
+            "kernel-${{ github.sha }}-worker-secondary" \
+            "kernel-${{ github.sha }}-postgres" \
+            "kernel-${{ github.sha }}-rabbitmq"; do
+            echo "===== $container ====="
+            docker logs --tail 200 "$container" 2>&1 || true
+          done
 
       - name: Run staging backup and restore verification
         env:

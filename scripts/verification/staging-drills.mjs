@@ -110,8 +110,11 @@ if (postgresContainer) {
   if (authenticatedPermissions.some(result => result.status !== 403)) throw new Error("backend permission evaluation did not reject the unassigned permission");
   const noisyTenantRequests = await Promise.all(Array.from({ length: 100 }, () => fetch(`${api}/api/v1/authorization/check?permission=kernel.read`, { headers: { Cookie: primaryTenantSessionCookie } })));
   const quietTenantRequests = await Promise.all(Array.from({ length: 20 }, () => fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } })));
-  const statusCounts = responses => Object.groupBy(responses, response => response.status.toString());
-  if (noisyTenantRequests.some(result => result.status !== 403)) throw new Error(`noisy tenant permission workload was not isolated: ${JSON.stringify(statusCounts(noisyTenantRequests))}`);
+  const statusCounts = responses => Object.fromEntries(Object.entries(Object.groupBy(responses, response => response.status.toString())).map(([status, group]) => [status, group.length]));
+  if (noisyTenantRequests.some(result => result.status !== 403)) {
+    const unexpected = await Promise.all(noisyTenantRequests.filter(result => result.status !== 403).map(async result => ({ status: result.status, body: (await result.text()).slice(0, 300), correlationId: result.headers.get("x-correlation-id") })));
+    throw new Error(`noisy tenant permission workload was not isolated: counts=${JSON.stringify(statusCounts(noisyTenantRequests))};unexpected=${JSON.stringify(unexpected)}`);
+  }
   if (quietTenantRequests.some(result => result.status !== 200)) throw new Error(`quiet tenant session workload was degraded during noisy tenant load: ${JSON.stringify(statusCounts(quietTenantRequests))}`);
   console.log(`authentication-load=${authenticatedPermissions.length};tenant-switch=isolated;permission-evaluation=forbidden;noisy-tenant=${noisyTenantRequests.length};quiet-tenant=${quietTenantRequests.length}`);
 }
