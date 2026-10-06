@@ -21,7 +21,7 @@ public sealed class SampleModuleIntegrationTests
         var password = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantId.Value}', 'sample-{tenantId.Value:N}', 'Sample', 'Active', now(), 1); reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantId.Value}', 'sample-{tenantId.Value:N}', 'Sample', 'Active', now(), 1); reset app.tenant_id; reset role;");
         var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString;
         await using var dataSource = NpgsqlDataSource.Create(appConnectionString);
         var service = new SampleItemService(new NpgsqlTransactionCoordinator(dataSource));

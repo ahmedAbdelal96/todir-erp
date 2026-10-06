@@ -92,9 +92,16 @@ public sealed class NpgsqlNotificationStore(NpgsqlDataSource dataSource) : INoti
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, notification.TenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("update platform_notifications.notification set status = $1, sent_at = case when $1 = 'Sent' then now() else sent_at end where tenant_id = $2 and id = $3; insert into platform_notifications.notification_delivery (id, tenant_id, notification_id, channel, status, attempt_at, error_code) values ($4, $2, $3, $5, $1, now(), $6)", connection, transaction);
-        command.Parameters.AddWithValue(status); command.Parameters.AddWithValue(notification.TenantId.Value); command.Parameters.AddWithValue(notification.Id); command.Parameters.AddWithValue(Guid.CreateVersion7()); command.Parameters.AddWithValue(notification.Channel.ToString()); command.Parameters.AddWithValue((object?)errorCode ?? DBNull.Value);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using (var update = new NpgsqlCommand("update platform_notifications.notification set status = $1, sent_at = case when $1 = 'Sent' then now() else sent_at end where tenant_id = $2 and id = $3", connection, transaction))
+        {
+            update.Parameters.AddWithValue(status); update.Parameters.AddWithValue(notification.TenantId.Value); update.Parameters.AddWithValue(notification.Id);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using (var delivery = new NpgsqlCommand("insert into platform_notifications.notification_delivery (id, tenant_id, notification_id, channel, status, attempt_at, error_code) values ($1, $2, $3, $4, $5, now(), $6)", connection, transaction))
+        {
+            delivery.Parameters.AddWithValue(Guid.CreateVersion7()); delivery.Parameters.AddWithValue(notification.TenantId.Value); delivery.Parameters.AddWithValue(notification.Id); delivery.Parameters.AddWithValue(notification.Channel.ToString()); delivery.Parameters.AddWithValue(status); delivery.Parameters.AddWithValue((object?)errorCode ?? DBNull.Value);
+            await delivery.ExecuteNonQueryAsync(cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
     }
 
