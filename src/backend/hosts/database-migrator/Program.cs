@@ -46,9 +46,9 @@ if (connection is null)
 }
 
 await using var ownedConnection = connection;
-await using (var runtimeCommand = new NpgsqlCommand(await File.ReadAllTextAsync(scripts[0]), connection))
+await using (var runtimeCommand = new NpgsqlCommand(await File.ReadAllTextAsync(foundationalScripts[0]), connection))
 {
-    Console.WriteLine($"Applying {Path.GetFileName(scripts[0])}");
+    Console.WriteLine($"Applying {Path.GetFileName(foundationalScripts[0])}");
     await runtimeCommand.ExecuteNonQueryAsync();
 }
 
