@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.102 AS build
 WORKDIR /src
 COPY ["src/backend/hosts/database-migrator/database-migrator.csproj", "src/backend/hosts/database-migrator/"]
 COPY ["Directory.Packages.props", "Directory.Build.props", "global.json", "./"]
