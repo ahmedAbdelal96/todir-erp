@@ -39,8 +39,8 @@ jobs:
       - name: Build .NET solution
         run: dotnet build Todir.sln --no-restore
 
-      - name: Run .NET architecture tests
-        run: dotnet test tests/architecture/Todir.ArchitectureTests/Todir.ArchitectureTests.csproj --no-build
+      - name: Run .NET tests
+        run: dotnet test Todir.sln --no-build
 
       - name: Restore frontend tooling
         run: pnpm install --frozen-lockfile

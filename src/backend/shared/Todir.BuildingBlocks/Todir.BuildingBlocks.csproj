@@ -3,4 +3,8 @@
     <AssemblyName>Todir.BuildingBlocks</AssemblyName>
     <RootNamespace>Todir.BuildingBlocks</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../Todir.SharedKernel/Todir.SharedKernel.csproj" />
+  </ItemGroup>
 </Project>

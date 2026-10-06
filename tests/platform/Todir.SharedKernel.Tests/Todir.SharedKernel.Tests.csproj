@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Todir.SharedKernel.Tests</AssemblyName>
+    <RootNamespace>Todir.SharedKernel.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <ProjectReference Include="../../../src/backend/shared/Todir.BuildingBlocks/Todir.BuildingBlocks.csproj" />
+    <ProjectReference Include="../../../src/backend/shared/Todir.SharedKernel/Todir.SharedKernel.csproj" />
+  </ItemGroup>
+</Project>

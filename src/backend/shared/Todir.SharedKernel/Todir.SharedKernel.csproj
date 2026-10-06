@@ -3,4 +3,7 @@
     <AssemblyName>Todir.SharedKernel</AssemblyName>
     <RootNamespace>Todir.SharedKernel</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NodaTime" />
+  </ItemGroup>
 </Project>
