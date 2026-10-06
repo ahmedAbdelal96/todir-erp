@@ -141,7 +141,7 @@ public sealed class ModuleAndPlatformServiceTests
         var verifier = new HmacEntitlementVerifier(new Dictionary<string, byte[]> { ["current"] = key });
         var issued = DateTimeOffset.UtcNow;
         var snapshot = new EntitlementSnapshot(tenant, 1, issued, issued.AddMinutes(10), "current", new HashSet<string>(["sample"]), new HashSet<string>(), new Dictionary<string, long>(), "");
-        var canonical = JsonSerializer.Serialize(new { tenant = tenant.Value, snapshot = snapshot.SnapshotVersion, issued = snapshot.IssuedAt, valid = snapshot.ValidUntil, modules = snapshot.Modules.OrderBy(value => value, StringComparer.Ordinal), features = snapshot.Features.OrderBy(value => value, StringComparer.Ordinal), limits = snapshot.Limits.OrderBy(pair => pair.Key, StringComparer.Ordinal) });
+        var canonical = JsonSerializer.Serialize(new { tenant = tenant.Value, snapshot = snapshot.SnapshotVersion, issued = snapshot.IssuedAt, valid = snapshot.ValidUntil, modules = snapshot.Modules.OrderBy(value => value, StringComparer.Ordinal), features = snapshot.Features.OrderBy(value => value, StringComparer.Ordinal), limits = snapshot.Limits.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal) });
         snapshot = snapshot with { Signature = Convert.ToBase64String(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(canonical))) };
         var guard = new EntitlementGuard(verifier);
         guard.SetSnapshot(snapshot);
@@ -171,7 +171,7 @@ public sealed class ModuleAndPlatformServiceTests
         var verifier = new HmacEntitlementVerifier(new Dictionary<string, byte[]> { ["current"] = key });
         var issued = DateTimeOffset.UtcNow;
         var snapshot = new EntitlementSnapshot(tenant, 1, issued, issued.AddMinutes(10), "current", new HashSet<string>(["sample"]), new HashSet<string>(), new Dictionary<string, long>(), "");
-        var canonical = JsonSerializer.Serialize(new { tenant = tenant.Value, snapshot = snapshot.SnapshotVersion, issued = snapshot.IssuedAt, valid = snapshot.ValidUntil, modules = snapshot.Modules.OrderBy(value => value, StringComparer.Ordinal), features = snapshot.Features.OrderBy(value => value, StringComparer.Ordinal), limits = snapshot.Limits.OrderBy(pair => pair.Key, StringComparer.Ordinal) });
+        var canonical = JsonSerializer.Serialize(new { tenant = tenant.Value, snapshot = snapshot.SnapshotVersion, issued = snapshot.IssuedAt, valid = snapshot.ValidUntil, modules = snapshot.Modules.OrderBy(value => value, StringComparer.Ordinal), features = snapshot.Features.OrderBy(value => value, StringComparer.Ordinal), limits = snapshot.Limits.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal) });
         var guard = new EntitlementGuard(verifier);
         guard.SetSnapshot(snapshot with { Signature = Convert.ToBase64String(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(canonical))) });
         var file = new FileRecord(Guid.NewGuid(), tenant, "kernel", "load", Guid.NewGuid(), "ignored", "load.bin", "application/pdf", 4, "hash", FileStatus.Ready, "internal", Guid.NewGuid(), issued);
