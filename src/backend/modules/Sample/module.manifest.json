@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../../docs/platform/module-manifest-schema.json",
+  "id": "sample",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L1",
+  "type": "foundation",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": { "hard": ["platform-kernel"], "optionalCapabilities": [] },
+  "owns": { "schema": "sample", "entities": ["sample_item", "sample_projection"] },
+  "permissions": ["sample.item.create", "sample.item.read"],
+  "capabilities": { "provides": ["sample-provider"], "consumes": [] },
+  "messaging": { "publishes": ["SampleEntityCreatedV1"], "consumes": ["SampleEntityCreatedV1"] },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "wind_down" }
+}

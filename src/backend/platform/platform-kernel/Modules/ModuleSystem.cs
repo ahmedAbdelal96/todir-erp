@@ -24,6 +24,13 @@ public interface IModuleRegistry
     IReadOnlyList<string> GetDependents(string moduleId);
 }
 
+public interface IModuleManifestProvider
+{
+    ModuleManifest Manifest { get; }
+}
+
+public sealed record StaticModuleManifestProvider(ModuleManifest Manifest) : IModuleManifestProvider;
+
 public sealed class ModuleRegistry : IModuleRegistry
 {
     private readonly Dictionary<string, ModuleManifest> modules;

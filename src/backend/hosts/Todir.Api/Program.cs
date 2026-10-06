@@ -1,5 +1,6 @@
 using Todir.BuildingBlocks.Observability;
 using Todir.Platform.Hosting;
+using Todir.Modules.Sample;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -103,6 +104,7 @@ app.MapGet("/health/ready", async (IServiceProvider services, CancellationToken 
 });
 if (builder.Configuration.GetValue<bool>("TODIR_METRICS_ENABLED")) app.MapPrometheusScrapingEndpoint("/internal/metrics");
 app.MapTodirPlatform();
+app.MapSampleModule();
 app.Run();
 
 public partial class Program;

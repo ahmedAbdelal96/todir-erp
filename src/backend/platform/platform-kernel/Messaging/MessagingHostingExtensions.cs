@@ -9,13 +9,14 @@ namespace Todir.Platform.Messaging;
 
 public static class MessagingHostingExtensions
 {
-    public static IServiceCollection AddTodirRabbitMq(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddTodirRabbitMq(this IServiceCollection services, IConfiguration configuration, Action<IBusRegistrationConfigurator>? configureConsumers = null)
     {
         var host = configuration["TODIR_RABBITMQ_HOST"];
         if (string.IsNullOrWhiteSpace(host)) return services;
         services.AddConsumeObserver<MessageFailureObserver>();
         services.AddMassTransit(options =>
         {
+            configureConsumers?.Invoke(options);
             if (bool.TryParse(configuration["TODIR_RABBITMQ_CONSUMER"], out var consumerEnabled) && consumerEnabled)
                 options.AddConsumer<OutboxPublishedMessageConsumer, OutboxPublishedMessageConsumerDefinition>();
             options.AddRabbitMqConfigureEndpointsCallback((_, _, endpoint) =>

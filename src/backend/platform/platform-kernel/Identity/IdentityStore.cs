@@ -18,6 +18,7 @@ public interface IIdentityStore
 public sealed record MembershipInvitation(MembershipId MembershipId, string Token, DateTimeOffset ExpiresAt);
 public interface IIdentityMembershipAdminStore
 {
+    Task<IReadOnlyList<Membership>> ListAsync(TenantId tenantId, int offset = 0, int limit = 100, CancellationToken cancellationToken = default);
     Task<MembershipInvitation> InviteAsync(TenantId tenantId, IdentityId identityId, string displayName, DateTimeOffset expiresAt, CancellationToken cancellationToken = default);
     Task<bool> AcceptAsync(TenantId tenantId, string token, CancellationToken cancellationToken = default);
     Task<bool> SuspendAsync(TenantId tenantId, MembershipId membershipId, CancellationToken cancellationToken = default);
@@ -117,6 +118,24 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
 
 public sealed class NpgsqlIdentityMembershipAdminStore(NpgsqlDataSource dataSource) : IIdentityMembershipAdminStore
 {
+    public async Task<IReadOnlyList<Membership>> ListAsync(TenantId tenantId, int offset = 0, int limit = 100, CancellationToken cancellationToken = default)
+    {
+        if (offset < 0 || limit is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(limit), "membership.pagination_invalid");
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
+        await using var command = new NpgsqlCommand("select id, tenant_id, identity_id, display_name, status, default_legal_entity_id, default_branch_id, locale, timezone, created_at, version from platform_iam.membership where tenant_id = $1 order by created_at, id limit $2 offset $3", connection, transaction);
+        command.Parameters.AddWithValue(tenantId.Value);
+        command.Parameters.AddWithValue(limit);
+        command.Parameters.AddWithValue(offset);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var memberships = new List<Membership>();
+        while (await reader.ReadAsync(cancellationToken)) memberships.Add(ReadMembership(reader));
+        await reader.DisposeAsync();
+        await transaction.CommitAsync(cancellationToken);
+        return memberships;
+    }
+
     public async Task<MembershipInvitation> InviteAsync(TenantId tenantId, IdentityId identityId, string displayName, DateTimeOffset expiresAt, CancellationToken cancellationToken = default)
     {
         if (expiresAt <= DateTimeOffset.UtcNow) throw new ArgumentOutOfRangeException(nameof(expiresAt), "identity.invitation_expiry_required");
@@ -178,4 +197,6 @@ public sealed class NpgsqlIdentityMembershipAdminStore(NpgsqlDataSource dataSour
         command.Parameters.AddWithValue(tenantId.Value.ToString("D"));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    private static Membership ReadMembership(NpgsqlDataReader reader) => new(new MembershipId(reader.GetGuid(0)), new TenantId(reader.GetGuid(1)), new IdentityId(reader.GetGuid(2)), reader.GetString(3), Enum.Parse<MembershipStatus>(reader.GetString(4), true), reader.IsDBNull(5) ? null : new LegalEntityId(reader.GetGuid(5)), reader.IsDBNull(6) ? null : new BranchId(reader.GetGuid(6)), reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9), reader.GetInt64(10));
 }

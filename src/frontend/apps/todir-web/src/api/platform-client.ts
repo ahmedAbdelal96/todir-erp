@@ -9,7 +9,12 @@ export const platformApiPaths = [
   "/api/v1/context/tenant",
   "/api/v1/messaging/replay",
   "/api/v1/modules",
-  "/api/v1/session"
+  "/api/v1/sample/items",
+  "/api/v1/session",
+  "/api/v1/tenants/{tenantId}/memberships",
+  "/api/v1/tenants/{tenantId}/memberships/invitations",
+  "/api/v1/tenants/{tenantId}/memberships/invitations/accept",
+  "/api/v1/tenants/{tenantId}/memberships/{membershipId}/suspend"
 ] as const;
 
 export type PlatformApiPath = (typeof platformApiPaths)[number];

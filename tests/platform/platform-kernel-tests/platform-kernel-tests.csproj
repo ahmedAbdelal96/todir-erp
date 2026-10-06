@@ -8,5 +8,6 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../../src/backend/platform/platform-kernel/platform-kernel.csproj" />
+    <ProjectReference Include="../../../src/backend/modules/Sample/sample.csproj" />
   </ItemGroup>
 </Project>

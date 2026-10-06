@@ -11,6 +11,7 @@ WORKDIR /app
 COPY --from=build /app/publish .
 COPY ops/database/bootstrap /app/ops/database/bootstrap
 COPY src/backend/platform/module.manifest.json /app/src/backend/platform/module.manifest.json
+COPY src/backend/modules/Sample/module.manifest.json /app/src/backend/modules/Sample/module.manifest.json
 ENV TODIR_REPOSITORY_ROOT=/app
 USER $APP_UID
 ENTRYPOINT ["dotnet", "Todir.DbMigrator.dll"]

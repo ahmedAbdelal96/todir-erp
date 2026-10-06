@@ -7,5 +7,6 @@
     <PackageReference Include="MassTransit.RabbitMQ" />
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="../../platform/platform-kernel/platform-kernel.csproj" />
+    <ProjectReference Include="../../modules/Sample/sample.csproj" />
   </ItemGroup>
 </Project>

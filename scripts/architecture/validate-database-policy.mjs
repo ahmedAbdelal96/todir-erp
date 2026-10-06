@@ -6,6 +6,7 @@ const files = [
   "ops/database/bootstrap/organization-schema.sql",
   "ops/database/bootstrap/identity-membership-schema.sql",
   "ops/database/bootstrap/platform-kernel-schema.sql",
+  "ops/database/bootstrap/sample-schema.sql",
 ];
 const errors = [];
 for (const relative of files) {
