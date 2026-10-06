@@ -244,6 +244,7 @@ jobs:
           echo "STAGING_WEB_TLS_DIRECTORY=$web_tls_directory" >> "$GITHUB_ENV"
 
       - name: Create staging from OpenTofu
+        id: create_staging
         working-directory: ops/terraform
         run: >-
           tofu apply -auto-approve
@@ -329,7 +330,7 @@ jobs:
           docker exec "$STAGING_POSTGRES_CONTAINER" rm --force /tmp/platform-backup.dump
 
       - name: Destroy isolated staging
-        if: always()
+        if: always() && steps.create_staging.outcome != ''
         working-directory: ops/terraform
         run: >-
           tofu destroy -auto-approve

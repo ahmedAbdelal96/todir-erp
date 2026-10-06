@@ -63,10 +63,10 @@ resource "docker_container" "rabbitmq" {
 }
 
 resource "docker_container" "minio" {
-  name  = "${local.project}-minio"
-  image = "minio/minio:RELEASE.2024-06-13T22-53-53Z"
+  name    = "${local.project}-minio"
+  image   = "minio/minio:RELEASE.2024-06-13T22-53-53Z"
   command = ["server", "/data", "--console-address", ":9001"]
-  env = [
+  env     = [
     "MINIO_ROOT_USER=todir",
     "MINIO_ROOT_PASSWORD=${var.rabbit_password}",
   ]
@@ -79,7 +79,7 @@ resource "docker_container" "minio_init" {
   name       = "${local.project}-minio-init"
   image      = "minio/mc:RELEASE.2024-06-13T22-53-53Z"
   entrypoint = ["sh", "-c"]
-  command = [
+  command    = [
     "until mc alias set local http://${docker_container.minio.name}:9000 todir ${var.rabbit_password}; do sleep 1; done; mc mb --ignore-existing local/private-files; mc anonymous set none local/private-files",
   ]
   networks_advanced {
