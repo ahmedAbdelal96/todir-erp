@@ -214,6 +214,9 @@ CREATE TABLE IF NOT EXISTS platform_numbering.sequence_definition
     version bigint NOT NULL DEFAULT 1,
     UNIQUE (tenant_id, sequence_key, legal_entity_id, branch_id, scope_key, period_key)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS ux_sequence_definition_scope
+    ON platform_numbering.sequence_definition (tenant_id, sequence_key, legal_entity_id, branch_id, scope_key, period_key)
+    NULLS NOT DISTINCT;
 
 CREATE TABLE IF NOT EXISTS platform_settings.setting_definition
 (

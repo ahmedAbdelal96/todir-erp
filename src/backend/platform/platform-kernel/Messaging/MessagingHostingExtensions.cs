@@ -13,7 +13,8 @@ public static class MessagingHostingExtensions
         if (string.IsNullOrWhiteSpace(host)) return services;
         services.AddMassTransit(options =>
         {
-            options.AddConsumer<OutboxPublishedMessageConsumer>();
+            if (bool.TryParse(configuration["TODIR_RABBITMQ_CONSUMER"], out var consumerEnabled) && consumerEnabled)
+                options.AddConsumer<OutboxPublishedMessageConsumer>();
             options.UsingRabbitMq((context, bus) =>
             {
                 var hostAddress = new UriBuilder("rabbitmq", host)

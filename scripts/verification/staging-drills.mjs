@@ -58,6 +58,21 @@ if (rabbitContainer && postgresContainer) {
   }
   if (recovered !== "Published") throw new Error(`outbox did not recover after broker restart: ${recovered}`);
   console.log("broker-recovery=published");
+  const workerContainer = process.env.STAGING_WORKER_CONTAINER;
+  if (workerContainer) {
+    await exec("docker", ["restart", workerContainer]);
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const running = (await exec("docker", ["inspect", "-f", "{{.State.Running}}", workerContainer])).stdout.trim();
+    if (running !== "true") throw new Error("worker did not recover after controlled restart");
+    let inboxCount = 0;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      inboxCount = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.inbox_message where message_id = '${messageId}'`])).stdout.trim());
+      if (inboxCount === 1) break;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    if (inboxCount !== 1) throw new Error(`consumer did not record one idempotent inbox row after worker restart: ${inboxCount}`);
+    console.log(`worker-restart=running;inbox-rows=${inboxCount}`);
+  }
   await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-v", "ON_ERROR_STOP=1", "-c", `delete from platform_messaging.outbox_message where id = '${messageId}'; delete from platform_tenancy.tenant where id = '${tenantId}';`]);
 } else {
   console.log("broker-recovery=not-run-no-staging-container-identifiers");

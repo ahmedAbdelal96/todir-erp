@@ -118,6 +118,7 @@ resource "docker_container" "worker" {
     "TODIR_RABBITMQ_PASSWORD=${var.rabbit_password}",
     "TODIR_RABBITMQ_TLS=true",
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
+    "TODIR_RABBITMQ_CONSUMER=true",
   ]
   networks_advanced {
     name = docker_network.private.name
