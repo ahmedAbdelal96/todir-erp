@@ -14,7 +14,16 @@ public sealed class HmacEntitlementVerifier(IReadOnlyDictionary<string, byte[]> 
     public bool Verify(EntitlementSnapshot snapshot)
     {
         if (!keys.TryGetValue(snapshot.KeyId, out var key) || snapshot.ValidUntil <= DateTimeOffset.UtcNow) return false;
-        var canonical = JsonSerializer.Serialize(new { tenant = snapshot.TenantId.Value, snapshot = snapshot.SnapshotVersion, issued = snapshot.IssuedAt, valid = snapshot.ValidUntil, modules = snapshot.Modules.OrderBy(value => value, StringComparer.Ordinal), features = snapshot.Features.OrderBy(value => value, StringComparer.Ordinal), limits = snapshot.Limits.OrderBy(pair => pair.Key, StringComparer.Ordinal) });
+        var canonical = JsonSerializer.Serialize(new
+        {
+            tenant = snapshot.TenantId.Value,
+            snapshot = snapshot.SnapshotVersion,
+            issued = snapshot.IssuedAt,
+            valid = snapshot.ValidUntil,
+            modules = snapshot.Modules.OrderBy(value => value, StringComparer.Ordinal),
+            features = snapshot.Features.OrderBy(value => value, StringComparer.Ordinal),
+            limits = snapshot.Limits.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+        });
         try { return CryptographicOperations.FixedTimeEquals(Convert.FromBase64String(snapshot.Signature), HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(canonical))); } catch (FormatException) { return false; }
     }
 }
