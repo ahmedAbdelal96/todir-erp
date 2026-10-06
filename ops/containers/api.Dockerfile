@@ -18,4 +18,4 @@ EXPOSE 8080
 COPY --from=build /app/publish .
 RUN mkdir -p /app/keys && chown -R $APP_UID:$APP_UID /app
 USER $APP_UID
-ENTRYPOINT ["dotnet", "api.dll"]
+ENTRYPOINT ["dotnet", "Todir.Api.dll"]
