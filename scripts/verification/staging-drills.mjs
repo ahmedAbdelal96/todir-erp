@@ -30,7 +30,7 @@ const responseCookies = response => typeof response.headers.getSetCookie === "fu
 const rawResponseCookies = response => typeof response.headers.getSetCookie === "function"
   ? response.headers.getSetCookie()
   : (response.headers.get("set-cookie") ?? "").split(/,(?=[^;]+=)/).filter(Boolean);
-const mergeCookies = (...cookieLists) => [...new Map(cookieLists.flat().map(cookie => [cookie.split("=", 1)[0], cookie])).values()].join("; ");
+const mergeCookies = (...cookieLists) => [...new Map(cookieLists.flatMap(cookieList => Array.isArray(cookieList) ? cookieList : cookieList.split(/;\s*(?=[^;=]+=)/).filter(Boolean)).map(cookie => [cookie.split("=", 1)[0], cookie])).values()].join("; ");
 
 if (minioInitContainer) {
   let status = "";
@@ -103,7 +103,7 @@ if (postgresContainer) {
     body: JSON.stringify({ tenantId: secondaryTenantId })
   });
   if (switchResponse.status !== 204) throw new Error(`tenant context switch failed: ${switchResponse.status};detail=${(await switchResponse.text()).slice(0, 200)}`);
-  sessionCookie = mergeCookies(responseCookies(switchResponse), switchCookie);
+  sessionCookie = mergeCookies(switchCookie, responseCookies(switchResponse));
   const switched = await fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } });
   if (switched.status !== 200 || (await switched.json()).tenantId !== secondaryTenantId) throw new Error("tenant context did not switch to the second tenant");
   const authenticatedPermissions = await Promise.all(Array.from({ length: 20 }, () => fetch(`${api}/api/v1/authorization/check?permission=kernel.read`, { headers: { Cookie: sessionCookie } })));
