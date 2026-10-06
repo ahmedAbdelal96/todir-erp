@@ -139,7 +139,7 @@ jobs:
         uses: opentofu/setup-opentofu@v1
 
       - name: Validate OpenTofu formatting
-        run: tofu fmt -check -recursive ops/terraform
+        run: tofu fmt -check -diff -recursive ops/terraform
 
       - name: Build immutable application images
         run: |
@@ -330,7 +330,7 @@ jobs:
           docker exec "$STAGING_POSTGRES_CONTAINER" rm --force /tmp/platform-backup.dump
 
       - name: Destroy isolated staging
-        if: always() && steps.create_staging.outcome != ''
+        if: always() && (steps.create_staging.outcome == 'success' || steps.create_staging.outcome == 'failure')
         working-directory: ops/terraform
         run: >-
           tofu destroy -auto-approve
