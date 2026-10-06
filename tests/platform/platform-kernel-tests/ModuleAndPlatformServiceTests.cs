@@ -211,6 +211,23 @@ public sealed class ModuleAndPlatformServiceTests
     }
 
     [Fact]
+    public async Task ImportSchedulerRemainsIdempotentUnderConcurrentChunkLoad()
+    {
+        var tenant = TenantId.New();
+        var scheduler = new InMemoryImportJobScheduler();
+        var batch = new ImportBatch(Guid.CreateVersion7(), tenant, "directory", "party-import", ImportStatus.Execute, Guid.CreateVersion7(), JsonSerializer.SerializeToElement(new { mapping = "stable" }), 0, Guid.CreateVersion7(), DateTimeOffset.UtcNow);
+
+        var duplicateCalls = await Task.WhenAll(Enumerable.Range(0, 100).Select(_ => scheduler.ScheduleChunkAsync(batch, 0, 100)));
+        Assert.Single(duplicateCalls.Distinct());
+
+        var uniqueCalls = await Task.WhenAll(Enumerable.Range(1, 100).Select(chunk => scheduler.ScheduleChunkAsync(batch, chunk * 100, 100)));
+        Assert.Equal(100, uniqueCalls.Select(job => job.StartRow).Distinct().Count());
+        var dequeued = 0;
+        while (scheduler.TryDequeue(out _)) dequeued++;
+        Assert.Equal(101, dequeued);
+    }
+
+    [Fact]
     public void LifecycleBlocksUnentitledActivationAndDependentDeactivation()
     {
         var registry = new ModuleRegistry([Manifest("base", []), Manifest("feature", ["base"])]);

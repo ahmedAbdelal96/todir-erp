@@ -66,7 +66,7 @@ const checks = [
   ["staging replay route requires an ephemeral token", read("src/backend/platform/platform-kernel/Hosting/PlatformHostingExtensions.cs").includes("TODIR_STAGING_VERIFICATION") && read("src/backend/platform/platform-kernel/Hosting/PlatformHostingExtensions.cs").includes("!string.IsNullOrWhiteSpace(app.Configuration[\"TODIR_STAGING_REPLAY_TOKEN\"])") && read("ops/terraform/main.tf").includes("TODIR_STAGING_VERIFICATION=${var.staging_replay_token")],
   ["metrics and alerts are wired", read("src/backend/shared/Todir.BuildingBlocks/Observability/observability-extensions.cs").includes("AddPrometheusExporter") && read("ops/monitoring/alerts.yml").includes("todir_outbox_oldest_pending_age_seconds")],
   ["threat model is reviewed", read("docs/security/platform-threat-model.md").includes("Cross-tenant leakage") && read("docs/security/platform-threat-model.md").includes("Support abuse")],
-  ["verification record exists", /focused platform tests \(29\)/.test(read("docs/platform/kernel-verification.md"))]
+  ["verification record exists", /focused platform tests \(30\)/.test(read("docs/platform/kernel-verification.md"))]
 ];
 
 for (const file of requiredRunbooks) checks.push([`runbook exists: ${file}`, fs.existsSync(path.join(root, "docs", "runbooks", file))]);
