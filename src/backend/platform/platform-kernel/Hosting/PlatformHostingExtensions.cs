@@ -87,7 +87,14 @@ public static class PlatformHostingExtensions
         services.AddSingleton<ISequenceAllocator>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlSequenceAllocator(dataSource) : new InMemorySequenceAllocator());
         services.AddSingleton<IMessageRetryPolicy, ExponentialMessageRetryPolicy>();
         services.AddSingleton<IMessageErrorStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlMessageErrorStore(dataSource) : new InMemoryMessageErrorStore());
-        if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IMessageReplayService, NpgsqlMessageReplayService>();
+        services.AddSingleton<IMessageReplayService>(provider =>
+        {
+            var dataSource = provider.GetService<NpgsqlDataSource>();
+            var publisher = provider.GetService<IPublishEndpoint>();
+            return dataSource is not null && publisher is not null
+                ? new NpgsqlMessageReplayService(dataSource, publisher, provider.GetRequiredService<IAuditWriter>())
+                : new UnavailableMessageReplayService();
+        });
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IInboxStore, NpgsqlInboxStore>();
         services.AddSingleton<ISettingsResolver, SettingsResolver>();
         services.AddSingleton<ICustomFieldRegistry, CustomFieldRegistry>();
@@ -270,6 +277,7 @@ public static class PlatformHostingExtensions
             }
             catch (KeyNotFoundException) { return Problem(StatusCodes.Status404NotFound, "message.replay_not_found", "Message replay target was not found"); }
             catch (InvalidOperationException exception) when (exception.Message == "message.replay_not_authorized") { return Problem(StatusCodes.Status409Conflict, exception.Message, "Message replay requires an unresolved error record"); }
+            catch (InvalidOperationException exception) when (exception.Message == "message.replay_unavailable") { return Problem(StatusCodes.Status503ServiceUnavailable, exception.Message, "Message replay is unavailable while messaging is not configured"); }
         }).RequireAuthorization();
         if (app.Configuration.GetValue<bool>("TODIR_STAGING_VERIFICATION") && !string.IsNullOrWhiteSpace(app.Configuration["TODIR_STAGING_REPLAY_TOKEN"]))
         {
@@ -286,6 +294,7 @@ public static class PlatformHostingExtensions
                 }
                 catch (KeyNotFoundException) { return Problem(StatusCodes.Status404NotFound, "message.replay_not_found", "Message replay target was not found"); }
                 catch (InvalidOperationException exception) when (exception.Message == "message.replay_not_authorized") { return Problem(StatusCodes.Status409Conflict, exception.Message, "Message replay requires an unresolved error record"); }
+                catch (InvalidOperationException exception) when (exception.Message == "message.replay_unavailable") { return Problem(StatusCodes.Status503ServiceUnavailable, exception.Message, "Message replay is unavailable while messaging is not configured"); }
             }).RequireRateLimiting("auth");
         }
         return app;

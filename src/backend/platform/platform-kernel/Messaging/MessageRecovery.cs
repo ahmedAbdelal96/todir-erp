@@ -34,6 +34,12 @@ public interface IMessageReplayService
     Task ReplayAsync(Guid messageId, TenantId tenantId, string consumerEndpoint, Guid operatorId, string reason, CancellationToken cancellationToken = default);
 }
 
+public sealed class UnavailableMessageReplayService : IMessageReplayService
+{
+    public Task ReplayAsync(Guid messageId, TenantId tenantId, string consumerEndpoint, Guid operatorId, string reason, CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("message.replay_unavailable");
+}
+
 public sealed class NpgsqlMessageReplayService(
     NpgsqlDataSource dataSource,
     IPublishEndpoint publisher,
