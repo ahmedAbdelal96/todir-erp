@@ -14,6 +14,7 @@ public sealed class TransactionIntegrationTests
         var adminConnectionString = Require("TODIR_P04_ADMIN_CONNECTION");
         var tenantId = TenantId.New();
         var entityId = Guid.CreateVersion7();
+        var roleId = Guid.CreateVersion7();
         var messageId = Guid.CreateVersion7();
         var password = await SetRuntimePasswordAsync(adminConnectionString);
         var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString;
@@ -31,16 +32,21 @@ public sealed class TransactionIntegrationTests
                 entity.Parameters.AddWithValue(entityId); entity.Parameters.AddWithValue(tenantId.Value);
                 context.Enlist(entity);
                 await entity.ExecuteNonQueryAsync(cancellationToken);
+                await using var role = new NpgsqlCommand("insert into platform_authz.role (id, tenant_id, code, name, is_system_template, is_active, version) values ($1, $2, 'TX_ROLE', 'Transaction Role', false, true, 1)", context.Connection);
+                role.Parameters.AddWithValue(roleId); role.Parameters.AddWithValue(tenantId.Value);
+                context.Enlist(role);
+                await role.ExecuteNonQueryAsync(cancellationToken);
                 context.AddOutbox(new OutboxMessage(messageId, "TransactionCommittedV1", "{}", tenantId, DateTimeOffset.UtcNow, Guid.CreateVersion7(), Guid.CreateVersion7(), "kernel"));
                 return true;
             });
 
             Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform_org.legal_entity where id = '{entityId}'"));
+            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform_authz.role where id = '{roleId}'"));
             Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform_messaging.outbox_message where id = '{messageId}'"));
         }
         finally
         {
-            await ExecuteAsync(admin, $"SET ROLE erp_owner; SET app.tenant_id = '{tenantId.Value}'; DELETE FROM platform_messaging.outbox_message WHERE id = '{messageId}'; DELETE FROM platform_org.legal_entity WHERE id = '{entityId}'; DELETE FROM platform_tenancy.tenant WHERE id = '{tenantId.Value}'; RESET app.tenant_id; RESET ROLE;");
+            await ExecuteAsync(admin, $"SET ROLE erp_owner; SET app.tenant_id = '{tenantId.Value}'; DELETE FROM platform_messaging.outbox_message WHERE id = '{messageId}'; DELETE FROM platform_authz.role WHERE id = '{roleId}'; DELETE FROM platform_org.legal_entity WHERE id = '{entityId}'; DELETE FROM platform_tenancy.tenant WHERE id = '{tenantId.Value}'; RESET app.tenant_id; RESET ROLE;");
         }
     }
 
@@ -50,6 +56,7 @@ public sealed class TransactionIntegrationTests
         var adminConnectionString = Require("TODIR_P04_ADMIN_CONNECTION");
         var tenantId = TenantId.New();
         var entityId = Guid.CreateVersion7();
+        var roleId = Guid.CreateVersion7();
         var messageId = Guid.CreateVersion7();
         var password = await SetRuntimePasswordAsync(adminConnectionString);
         var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString;
@@ -67,11 +74,16 @@ public sealed class TransactionIntegrationTests
                 entity.Parameters.AddWithValue(entityId); entity.Parameters.AddWithValue(tenantId.Value);
                 context.Enlist(entity);
                 await entity.ExecuteNonQueryAsync(cancellationToken);
+                await using var role = new NpgsqlCommand("insert into platform_authz.role (id, tenant_id, code, name, is_system_template, is_active, version) values ($1, $2, 'RB_ROLE', 'Rollback Role', false, true, 1)", context.Connection);
+                role.Parameters.AddWithValue(roleId); role.Parameters.AddWithValue(tenantId.Value);
+                context.Enlist(role);
+                await role.ExecuteNonQueryAsync(cancellationToken);
                 context.AddOutbox(new OutboxMessage(messageId, "TransactionRolledBackV1", "{}", tenantId, DateTimeOffset.UtcNow, Guid.CreateVersion7(), Guid.CreateVersion7(), "kernel"));
                 return await Task.FromException<bool>(new InvalidOperationException("controlled.rollback"));
             }));
 
             Assert.Equal(0L, await ScalarAsync(admin, $"select count(*) from platform_org.legal_entity where id = '{entityId}'"));
+            Assert.Equal(0L, await ScalarAsync(admin, $"select count(*) from platform_authz.role where id = '{roleId}'"));
             Assert.Equal(0L, await ScalarAsync(admin, $"select count(*) from platform_messaging.outbox_message where id = '{messageId}'"));
         }
         finally
