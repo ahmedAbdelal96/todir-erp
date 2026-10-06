@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -17,7 +18,7 @@ public sealed class RequestTraceTests
         var connectionString = Environment.GetEnvironmentVariable("TODIR_P03_POSTGRES_CONNECTION")
             ?? throw new InvalidOperationException("Set TODIR_P03_POSTGRES_CONNECTION to run the PostgreSQL-backed P03 exit gate.");
 
-        var completedActivities = new List<Activity>();
+        var completedActivities = new ConcurrentBag<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = _ => true,
