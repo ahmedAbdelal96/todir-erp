@@ -49,7 +49,7 @@ public sealed class RoleBoundaryTests
         }
         finally
         {
-            await ExecuteAsync(admin, $"DROP TABLE IF EXISTS platform_tenancy.{tableName};");
+            await ExecuteAsync(admin, $"SET ROLE erp_owner; DROP TABLE IF EXISTS platform_tenancy.{tableName}; RESET ROLE;");
         }
     }
 

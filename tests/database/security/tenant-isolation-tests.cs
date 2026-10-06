@@ -41,7 +41,7 @@ public sealed class TenantIsolationTests
         }
         finally
         {
-            await ExecuteAsync(admin, $"DELETE FROM platform_tenancy.tenant WHERE id IN ('{tenantA}', '{tenantB}');");
+            await ExecuteAsync(admin, $"SET ROLE erp_owner; DELETE FROM platform_tenancy.tenant WHERE id IN ('{tenantA}', '{tenantB}'); RESET ROLE;");
         }
     }
 
