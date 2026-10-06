@@ -149,7 +149,7 @@ jobs:
           docker build --tag "kernel-web:${GITHUB_SHA}" --file ops/containers/web.Dockerfile .
 
       - name: Scan application images
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "kernel-api:${{ github.sha }}"
           format: table
@@ -158,7 +158,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Scan worker image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "kernel-worker:${{ github.sha }}"
           format: table
@@ -167,7 +167,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Scan migrator image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "kernel-migrator:${{ github.sha }}"
           format: table
@@ -176,7 +176,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Scan web image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "kernel-web:${{ github.sha }}"
           format: table
