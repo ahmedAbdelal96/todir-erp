@@ -6,7 +6,8 @@ RUN corepack enable && pnpm install --frozen-lockfile
 COPY src/frontend/apps/todir-web src/frontend/apps/todir-web
 RUN cd src/frontend/apps/todir-web && pnpm build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine3.22
+RUN apk upgrade --no-cache
 COPY ops/containers/web.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/src/frontend/apps/todir-web/dist /usr/share/nginx/html
 EXPOSE 8080
