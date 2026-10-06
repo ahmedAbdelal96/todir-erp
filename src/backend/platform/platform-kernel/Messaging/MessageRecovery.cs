@@ -15,12 +15,11 @@ public sealed class MessageFailureObserver(IMessageErrorStore errorStore) : ICon
     {
         if (context.Message is not OutboxPublishedMessage message || context.MessageId is not { } messageId) return Task.CompletedTask;
 
-        var endpoint = context.ReceiveContext.InputAddress?.AbsolutePath ?? "unknown";
         return errorStore.RecordAsync(
             new MessageError(
                 messageId,
                 message.TenantId,
-                endpoint,
+                OutboxPublishedMessageConsumer.EndpointName,
                 1,
                 "message.consume_failed",
                 exception.GetType().Name,
@@ -32,7 +31,7 @@ public sealed class MessageFailureObserver(IMessageErrorStore errorStore) : ICon
 
 public interface IMessageReplayService
 {
-    Task ReplayAsync(Guid messageId, TenantId tenantId, Guid operatorId, string reason, CancellationToken cancellationToken = default);
+    Task ReplayAsync(Guid messageId, TenantId tenantId, string consumerEndpoint, Guid operatorId, string reason, CancellationToken cancellationToken = default);
 }
 
 public sealed class NpgsqlMessageReplayService(
@@ -40,9 +39,10 @@ public sealed class NpgsqlMessageReplayService(
     IPublishEndpoint publisher,
     IAuditWriter auditWriter) : IMessageReplayService
 {
-    public async Task ReplayAsync(Guid messageId, TenantId tenantId, Guid operatorId, string reason, CancellationToken cancellationToken = default)
+    public async Task ReplayAsync(Guid messageId, TenantId tenantId, string consumerEndpoint, Guid operatorId, string reason, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("message.replay_reason_required", nameof(reason));
+        if (string.IsNullOrWhiteSpace(consumerEndpoint)) throw new ArgumentException("message.replay_endpoint_required", nameof(consumerEndpoint));
 
         OutboxPublishedMessage message;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
@@ -67,9 +67,10 @@ public sealed class NpgsqlMessageReplayService(
                 reader.GetInt32(9));
             await reader.DisposeAsync();
 
-            await using var unresolved = new NpgsqlCommand("select exists (select 1 from platform_messaging.message_error where message_id = $1 and tenant_id = $2 and resolved = false)", connection, transaction);
+            await using var unresolved = new NpgsqlCommand("select exists (select 1 from platform_messaging.message_error where message_id = $1 and tenant_id = $2 and consumer_endpoint = $3 and resolved = false)", connection, transaction);
             unresolved.Parameters.AddWithValue(messageId);
             unresolved.Parameters.AddWithValue(tenantId.Value);
+            unresolved.Parameters.AddWithValue(consumerEndpoint);
             if (!((bool?)await unresolved.ExecuteScalarAsync(cancellationToken) ?? false)) throw new InvalidOperationException("message.replay_not_authorized");
             await transaction.CommitAsync(cancellationToken);
         }
@@ -87,10 +88,11 @@ public sealed class NpgsqlMessageReplayService(
         await using var auditConnection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var auditTransaction = await auditConnection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(auditConnection, auditTransaction, tenantId, cancellationToken);
-        await using (var resolve = new NpgsqlCommand("update platform_messaging.message_error set resolved = true where message_id = $1 and tenant_id = $2 and resolved = false", auditConnection, auditTransaction))
+        await using (var resolve = new NpgsqlCommand("update platform_messaging.message_error set resolved = true where message_id = $1 and tenant_id = $2 and consumer_endpoint = $3 and resolved = false", auditConnection, auditTransaction))
         {
             resolve.Parameters.AddWithValue(messageId);
             resolve.Parameters.AddWithValue(tenantId.Value);
+            resolve.Parameters.AddWithValue(consumerEndpoint);
             await resolve.ExecuteNonQueryAsync(cancellationToken);
         }
         var audit = new AuditEntry(
@@ -112,7 +114,7 @@ public sealed class NpgsqlMessageReplayService(
             message.CorrelationId,
             null,
             DateTimeOffset.UtcNow,
-            null);
+            System.Text.Json.JsonSerializer.Serialize(new { consumerEndpoint }));
         if (auditWriter is NpgsqlAuditWriter) await NpgsqlAuditWriter.WriteAsync(auditConnection, auditTransaction, audit, cancellationToken);
         else await auditWriter.WriteAsync(audit, cancellationToken);
         await auditTransaction.CommitAsync(cancellationToken);

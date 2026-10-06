@@ -178,7 +178,7 @@ public static class PlatformHostingExtensions
             if (subject is null || !authorizer.Authorize(subject, "platform.messaging.replay", PermissionScope.ForTenant(new(tenantId)))) return Results.Forbid();
             try
             {
-                await replay.ReplayAsync(messageId, new(tenantId), operatorId, request.Reason, cancellationToken);
+                await replay.ReplayAsync(messageId, new(tenantId), request.ConsumerEndpoint, operatorId, request.Reason, cancellationToken);
                 return Results.NoContent();
             }
             catch (KeyNotFoundException) { return Problem(StatusCodes.Status404NotFound, "message.replay_not_found", "Message replay target was not found"); }
@@ -194,7 +194,7 @@ public static class PlatformHostingExtensions
                 if (!Guid.TryParse(request.TenantId, out var tenantId) || !Guid.TryParse(request.OperatorId, out var operatorId)) return Problem(StatusCodes.Status400BadRequest, "message.replay_context_invalid", "Replay context is invalid");
                 try
                 {
-                    await replay.ReplayAsync(messageId, new(tenantId), operatorId, request.Reason, cancellationToken);
+                    await replay.ReplayAsync(messageId, new(tenantId), OutboxPublishedMessageConsumer.EndpointName, operatorId, request.Reason, cancellationToken);
                     return Results.NoContent();
                 }
                 catch (KeyNotFoundException) { return Problem(StatusCodes.Status404NotFound, "message.replay_not_found", "Message replay target was not found"); }
@@ -206,7 +206,7 @@ public static class PlatformHostingExtensions
 
     private sealed record TenantSelection(string TenantId);
     private sealed record LoginRequest(string Email, string Password, string? TenantId, string? MfaCode);
-    private sealed record MessageReplayRequest(string MessageId, string TenantId, string Reason);
+    private sealed record MessageReplayRequest(string MessageId, string TenantId, string ConsumerEndpoint, string Reason);
     private sealed record StagingReplayRequest(string TenantId, string OperatorId, string Reason);
 
     private static IResult Problem(int statusCode, string code, string title) => Results.Problem(statusCode: statusCode, title: title, extensions: new Dictionary<string, object?> { ["code"] = code });

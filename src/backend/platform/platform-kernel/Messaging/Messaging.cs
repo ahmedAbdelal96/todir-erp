@@ -15,19 +15,19 @@ public sealed record OutboxPublishedMessage(Guid MessageId, string MessageType, 
 
 public sealed class OutboxPublishedMessageConsumer(IInboxStore inboxStore) : IConsumer<OutboxPublishedMessage>
 {
-    private const string Endpoint = "platform-outbox-probe";
+    public const string EndpointName = "platform-outbox-probe";
 
     public async Task Consume(ConsumeContext<OutboxPublishedMessage> context)
     {
         var started = Stopwatch.GetTimestamp();
-        if (!await inboxStore.TryBeginAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken))
+        if (!await inboxStore.TryBeginAsync(EndpointName, context.Message.MessageId, context.Message.TenantId, context.CancellationToken))
         {
-            TodirMetrics.InboxDuplicate.Add(1, new KeyValuePair<string, object?>("endpoint", Endpoint));
+            TodirMetrics.InboxDuplicate.Add(1, new KeyValuePair<string, object?>("endpoint", EndpointName));
             return;
         }
-        await inboxStore.MarkProcessedAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken);
-        TodirMetrics.InboxProcessed.Add(1, new KeyValuePair<string, object?>("endpoint", Endpoint));
-        TodirMetrics.MessageProcessingDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("endpoint", Endpoint));
+        await inboxStore.MarkProcessedAsync(EndpointName, context.Message.MessageId, context.Message.TenantId, context.CancellationToken);
+        TodirMetrics.InboxProcessed.Add(1, new KeyValuePair<string, object?>("endpoint", EndpointName));
+        TodirMetrics.MessageProcessingDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("endpoint", EndpointName));
         FailureInjection.Apply(context.Message.MessageType);
     }
 
@@ -77,7 +77,7 @@ public sealed class OutboxPublishedMessageConsumerDefinition : ConsumerDefinitio
 {
     public OutboxPublishedMessageConsumerDefinition()
     {
-        EndpointName = "platform-outbox-probe";
+        EndpointName = OutboxPublishedMessageConsumer.EndpointName;
         ConcurrentMessageLimit = 8;
     }
 
