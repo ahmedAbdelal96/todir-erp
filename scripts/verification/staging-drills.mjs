@@ -98,11 +98,27 @@ if (limited === 0) throw new Error("authentication rate limiting did not activat
 console.log(`auth-rate-limit-429=${limited}`);
 
 if (rabbitContainer && postgresContainer) {
+  let queueType = "";
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      const queues = (await exec("docker", ["exec", rabbitContainer, "rabbitmqctl", "-p", "/erp-staging", "list_queues", "name", "type"])).stdout.trim().split("\n").map(line => line.trim());
+      const queue = queues.find(line => line.startsWith("platform-outbox-probe\t") || line.startsWith("platform-outbox-probe "));
+      if (queue) {
+        queueType = queue.split(/\s+/).at(-1) ?? "";
+        break;
+      }
+    } catch (error) {
+      if (attempt === 29) throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  if (queueType !== "quorum") throw new Error(`critical consumer endpoint is not a quorum queue: ${queueType || "missing"}`);
+  console.log("critical-queue=platform-outbox-probe;type=quorum");
   const tenantId = drillTenantId;
   const messageIds = Array.from({ length: 20 }, () => randomUUID());
   const messageValues = messageIds.map(messageId => `('${messageId}', 'StagingDrillV1', '{}'::jsonb, '${tenantId}', now(), '${randomUUID()}', '${randomUUID()}', 'kernel', 'Pending')`).join(", ");
   const sql = `insert into platform_messaging.outbox_message (id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, status) values ${messageValues};`;
-  await exec("docker", ["pause", rabbitContainer]);
+  await exec("docker", ["stop", "--time", "1", rabbitContainer]);
   try {
     await dockerSql(sql);
     await new Promise(resolve => setTimeout(resolve, 8000));
@@ -110,7 +126,7 @@ if (rabbitContainer && postgresContainer) {
     if (during !== messageIds.length) throw new Error(`outbox did not remain durable during broker outage: ${during}/${messageIds.length}`);
     console.log(`broker-outage-outbox-pending=${during}`);
   } finally {
-    await exec("docker", ["unpause", rabbitContainer]);
+    await exec("docker", ["start", rabbitContainer]);
   }
   let recovered = 0;
   for (let attempt = 0; attempt < 30; attempt++) {

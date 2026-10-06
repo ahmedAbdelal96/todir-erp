@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
 
 namespace Todir.BuildingBlocks.Observability;
 
@@ -18,7 +20,11 @@ public static class TodirObservabilityExtensions
                 .AddSource("Todir.Handler")
                 .AddSource("Todir.Database")
                 .AddSource("Npgsql")
-                .AddAspNetCoreInstrumentation());
+                .AddAspNetCoreInstrumentation())
+            .WithMetrics(metrics => metrics
+                .AddMeter(TodirMetrics.Meter.Name)
+                .AddAspNetCoreInstrumentation()
+                .AddPrometheusExporter());
         return services;
     }
 
@@ -39,6 +45,30 @@ public static class TodirObservabilityExtensions
             if (context.Request.IsHttps) context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
             await next(context);
         });
+}
+
+public static class TodirMetrics
+{
+    public static readonly Meter Meter = new("Todir.Platform", "1.0.0");
+    public static readonly Counter<long> HttpRequests = Meter.CreateCounter<long>("todir.http.requests", "{request}");
+    public static readonly Histogram<double> HttpRequestDuration = Meter.CreateHistogram<double>("todir.http.request.duration", "s");
+    public static readonly Counter<long> OutboxPublished = Meter.CreateCounter<long>("todir.outbox.published", "{message}");
+    public static readonly Counter<long> OutboxFailed = Meter.CreateCounter<long>("todir.outbox.failed", "{message}");
+    public static readonly Counter<long> InboxProcessed = Meter.CreateCounter<long>("todir.inbox.processed", "{message}");
+    public static readonly Counter<long> InboxDuplicate = Meter.CreateCounter<long>("todir.inbox.duplicate", "{message}");
+    public static readonly Counter<long> ImportChunksScheduled = Meter.CreateCounter<long>("todir.import.chunks.scheduled", "{chunk}");
+    public static readonly Histogram<double> ModuleActivationDuration = Meter.CreateHistogram<double>("todir.module.activation.duration", "s");
+    public static readonly Histogram<double> MessageProcessingDuration = Meter.CreateHistogram<double>("todir.message.processing.duration", "s");
+    private static long outboxPending;
+    private static double outboxOldestAgeSeconds;
+    public static readonly ObservableGauge<long> OutboxPending = Meter.CreateObservableGauge("todir.outbox.pending", () => Volatile.Read(ref outboxPending), "{message}");
+    public static readonly ObservableGauge<double> OutboxOldestAge = Meter.CreateObservableGauge("todir.outbox.oldest.pending.age", () => Volatile.Read(ref outboxOldestAgeSeconds), "s");
+
+    public static void SetOutboxBacklog(long pending, double oldestAgeSeconds)
+    {
+        Interlocked.Exchange(ref outboxPending, pending);
+        Volatile.Write(ref outboxOldestAgeSeconds, Math.Max(0, oldestAgeSeconds));
+    }
 }
 
 public sealed record TodirObservabilityOptions(string Service, string Environment);
@@ -63,7 +93,20 @@ internal sealed class CorrelationMiddleware(RequestDelegate next, ILogger<Correl
             ["span_id"] = Activity.Current?.SpanId.ToString(),
             ["correlation_id"] = correlationId
         });
-        await next(context);
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await next(context);
+        }
+        finally
+        {
+            var duration = Stopwatch.GetElapsedTime(started).TotalSeconds;
+            var endpoint = context.GetEndpoint()?.DisplayName ?? "unmatched";
+            var statusClass = $"{context.Response.StatusCode / 100}xx";
+            var tags = new TagList { { "method", context.Request.Method }, { "endpoint", endpoint }, { "status_class", statusClass } };
+            TodirMetrics.HttpRequests.Add(1, tags);
+            TodirMetrics.HttpRequestDuration.Record(duration, tags);
+        }
     }
 
     private static string ReadOrCreateCorrelationId(string? value) =>

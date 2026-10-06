@@ -2,6 +2,7 @@ using Npgsql;
 using MassTransit;
 using Todir.Platform.Messaging;
 using Todir.SharedKernel.Identifiers;
+using Todir.BuildingBlocks.Observability;
 
 namespace Todir.Worker;
 
@@ -31,6 +32,11 @@ public sealed class OutboxDispatchWorker(
         if (dataSource is null || publisher is null) return;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var backlog = new NpgsqlCommand("select pending_count, oldest_age_seconds from platform_messaging.observe_pending_outbox()", connection, transaction);
+        await using (var backlogReader = await backlog.ExecuteReaderAsync(cancellationToken))
+        {
+            if (await backlogReader.ReadAsync(cancellationToken)) TodirMetrics.SetOutboxBacklog(backlogReader.GetInt64(0), backlogReader.GetDouble(1));
+        }
         await using var command = new NpgsqlCommand("select id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, trace_parent, attempts from platform_messaging.claim_pending_outbox(100)", connection, transaction);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var messages = new List<OutboxPublishedMessage>();
@@ -56,6 +62,7 @@ public sealed class OutboxDispatchWorker(
                 await using var mark = new NpgsqlCommand("update platform_messaging.outbox_message set status = 'Published', published_at = now(), last_error = null where id = $1 and status = 'Pending'", connection, transaction);
                 mark.Parameters.AddWithValue(message.MessageId);
                 await mark.ExecuteNonQueryAsync(cancellationToken);
+                TodirMetrics.OutboxPublished.Add(1, new KeyValuePair<string, object?>("source_module", message.SourceModule));
             }
             catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
@@ -69,6 +76,7 @@ public sealed class OutboxDispatchWorker(
                 failure.Parameters.AddWithValue((object?)decision.NextAttemptAt ?? DBNull.Value);
                 failure.Parameters.AddWithValue(exception.Message[..Math.Min(exception.Message.Length, 2000)]);
                 await failure.ExecuteNonQueryAsync(cancellationToken);
+                TodirMetrics.OutboxFailed.Add(1, new KeyValuePair<string, object?>("source_module", message.SourceModule));
             }
         }
         await transaction.CommitAsync(cancellationToken);

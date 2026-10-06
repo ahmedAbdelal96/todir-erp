@@ -6,6 +6,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
     <ProjectReference Include="../Todir.SharedKernel/Todir.SharedKernel.csproj" />
   </ItemGroup>

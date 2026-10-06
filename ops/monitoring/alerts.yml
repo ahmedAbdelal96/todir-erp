@@ -2,7 +2,7 @@ groups:
   - name: kernel-platform
     rules:
       - alert: OutboxBacklogAgeHigh
-        expr: platform_outbox_oldest_pending_age_seconds > 300
+        expr: todir_outbox_oldest_pending_age_seconds > 300
         for: 5m
         labels:
           severity: critical
@@ -16,7 +16,7 @@ groups:
         annotations:
           summary: Background worker is unavailable.
       - alert: ApiErrorRateHigh
-        expr: rate(http_server_request_duration_count{status_code=~"5.."}[5m]) / rate(http_server_request_duration_count[5m]) > 0.05
+        expr: sum(rate(todir_http_requests_total{status_class="5xx"}[5m])) / sum(rate(todir_http_requests_total[5m])) > 0.05
         for: 5m
         labels:
           severity: warning

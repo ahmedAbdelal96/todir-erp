@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Diagnostics;
+using Todir.BuildingBlocks.Observability;
 
 namespace Todir.Platform.Modules;
 
@@ -71,11 +73,19 @@ public sealed class ModuleLifecycleService(IModuleRegistry registry)
 {
     public ModuleInstance Activate(ModuleInstance instance, bool entitled)
     {
-        if (!entitled) throw new InvalidOperationException("module.not_entitled");
-        if (instance.Status is ModuleInstanceStatus.Active or ModuleInstanceStatus.Provisioning or ModuleInstanceStatus.AwaitingGoLive) return instance;
-        var dependencies = registry.GetHardDependencies(instance.ModuleId);
-        if (dependencies.Count > 0 && instance.Status == ModuleInstanceStatus.Requested) return instance with { Status = ModuleInstanceStatus.Validating, Version = instance.Version + 1 };
-        return instance with { Status = registry.Find(instance.ModuleId).Lifecycle.SupportsGoLive ? ModuleInstanceStatus.AwaitingGoLive : ModuleInstanceStatus.Active, Version = instance.Version + 1 };
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            if (!entitled) throw new InvalidOperationException("module.not_entitled");
+            if (instance.Status is ModuleInstanceStatus.Active or ModuleInstanceStatus.Provisioning or ModuleInstanceStatus.AwaitingGoLive) return instance;
+            var dependencies = registry.GetHardDependencies(instance.ModuleId);
+            if (dependencies.Count > 0 && instance.Status == ModuleInstanceStatus.Requested) return instance with { Status = ModuleInstanceStatus.Validating, Version = instance.Version + 1 };
+            return instance with { Status = registry.Find(instance.ModuleId).Lifecycle.SupportsGoLive ? ModuleInstanceStatus.AwaitingGoLive : ModuleInstanceStatus.Active, Version = instance.Version + 1 };
+        }
+        finally
+        {
+            TodirMetrics.ModuleActivationDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("module", instance.ModuleId));
+        }
     }
     public static ModuleInstance Deactivate(ModuleInstance instance, bool hasDependents) => hasDependents ? throw new InvalidOperationException("module.has_dependents") : instance with { Status = ModuleInstanceStatus.WindDown, Version = instance.Version + 1 };
 }

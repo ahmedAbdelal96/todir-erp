@@ -66,20 +66,20 @@ if (!string.IsNullOrWhiteSpace(runtimePassword))
 await using (var setOwner = new NpgsqlCommand("set role erp_owner", connection))
     await setOwner.ExecuteNonQueryAsync();
 
-await using (var history = new NpgsqlCommand("create table if not exists platform_migration.applied_script (script_name text primary key, checksum text not null, applied_at timestamptz not null)", connection))
+await using (var history = new NpgsqlCommand("create table if not exists platform_migration.applied_script (module_id text not null, script_name text not null, checksum text not null, applied_at timestamptz not null, primary key (module_id, script_name)); alter table platform_migration.applied_script add column if not exists module_id text; update platform_migration.applied_script set module_id = case when script_name like '%runtime-roles-and-schemas.sql' then 'runtime' when script_name like '%tenant-boundary.sql' then 'tenancy' when script_name like '%organization-schema.sql' then 'org' when script_name like '%identity-membership-schema.sql' then 'iam' when script_name like '%scheduling-schema.sql' then 'scheduling' when script_name like '%platform-kernel-schema.sql' then 'platform-kernel' else coalesce(nullif(module_id, ''), 'legacy') end where module_id is null or module_id = 'legacy'; alter table platform_migration.applied_script alter column module_id set not null", connection))
     await history.ExecuteNonQueryAsync();
 
 var runtimeName = Path.GetRelativePath(repositoryRoot, foundationalScripts[0]).Replace('\\', '/');
 var runtimeChecksum = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(foundationalScripts[0]))).ToLowerInvariant();
-await using (var runtimeLookup = new NpgsqlCommand("select checksum from platform_migration.applied_script where script_name = $1", connection))
+await using (var runtimeLookup = new NpgsqlCommand("select checksum from platform_migration.applied_script where module_id = $1 and script_name = $2", connection))
 {
-    runtimeLookup.Parameters.AddWithValue(runtimeName);
+    runtimeLookup.Parameters.AddWithValue("runtime"); runtimeLookup.Parameters.AddWithValue(runtimeName);
     var appliedChecksum = (string?)await runtimeLookup.ExecuteScalarAsync();
     if (appliedChecksum is not null && !string.Equals(appliedChecksum, runtimeChecksum, StringComparison.Ordinal)) throw new InvalidOperationException($"Migration checksum changed for {runtimeName}; create a forward-fix migration instead.");
     if (appliedChecksum is null)
     {
-        await using var runtimeRecord = new NpgsqlCommand("insert into platform_migration.applied_script (script_name, checksum, applied_at) values ($1, $2, now())", connection);
-        runtimeRecord.Parameters.AddWithValue(runtimeName); runtimeRecord.Parameters.AddWithValue(runtimeChecksum);
+        await using var runtimeRecord = new NpgsqlCommand("insert into platform_migration.applied_script (module_id, script_name, checksum, applied_at) values ($1, $2, $3, now())", connection);
+        runtimeRecord.Parameters.AddWithValue("runtime"); runtimeRecord.Parameters.AddWithValue(runtimeName); runtimeRecord.Parameters.AddWithValue(runtimeChecksum);
         await runtimeRecord.ExecuteNonQueryAsync();
     }
 }
@@ -87,10 +87,11 @@ await using (var runtimeLookup = new NpgsqlCommand("select checksum from platfor
 foreach (var script in scripts)
 {
     var scriptName = Path.GetRelativePath(repositoryRoot, script).Replace('\\', '/');
+    var moduleId = ModuleIdForScript(scriptName);
     var checksum = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(script))).ToLowerInvariant();
-    await using (var existing = new NpgsqlCommand("select checksum from platform_migration.applied_script where script_name = $1", connection))
+    await using (var existing = new NpgsqlCommand("select checksum from platform_migration.applied_script where module_id = $1 and script_name = $2", connection))
     {
-        existing.Parameters.AddWithValue(scriptName);
+        existing.Parameters.AddWithValue(moduleId); existing.Parameters.AddWithValue(scriptName);
         var appliedChecksum = (string?)await existing.ExecuteScalarAsync();
         if (appliedChecksum is not null)
         {
@@ -103,8 +104,8 @@ foreach (var script in scripts)
     Console.WriteLine($"Applying {scriptName}");
     await using var command = new NpgsqlCommand(await File.ReadAllTextAsync(script), connection);
     await command.ExecuteNonQueryAsync();
-    await using var record = new NpgsqlCommand("insert into platform_migration.applied_script (script_name, checksum, applied_at) values ($1, $2, now())", connection);
-    record.Parameters.AddWithValue(scriptName); record.Parameters.AddWithValue(checksum);
+    await using var record = new NpgsqlCommand("insert into platform_migration.applied_script (module_id, script_name, checksum, applied_at) values ($1, $2, $3, now())", connection);
+    record.Parameters.AddWithValue(moduleId); record.Parameters.AddWithValue(scriptName); record.Parameters.AddWithValue(checksum);
     await record.ExecuteNonQueryAsync();
 }
 
@@ -113,11 +114,24 @@ await using (var resetOwner = new NpgsqlCommand("reset role", connection))
 
 await using (var dispatcherOwnership = new NpgsqlCommand("alter function platform_messaging.claim_pending_outbox(integer) owner to erp_dispatcher", connection))
     await dispatcherOwnership.ExecuteNonQueryAsync();
+await using (var dispatcherBacklogOwnership = new NpgsqlCommand("alter function platform_messaging.observe_pending_outbox() owner to erp_dispatcher", connection))
+    await dispatcherBacklogOwnership.ExecuteNonQueryAsync();
 await using (var supportExpiryOwnership = new NpgsqlCommand("alter function platform_iam.expire_support_access_grants() owner to erp_dispatcher", connection))
     await supportExpiryOwnership.ExecuteNonQueryAsync();
 
 Console.WriteLine($"Applied or verified {scripts.Length} ordered platform scripts from {manifests.Count} module manifests.");
 return 0;
+
+static string ModuleIdForScript(string scriptName) => Path.GetFileName(scriptName) switch
+{
+    "tenant-boundary.sql" => "tenancy",
+    "organization-schema.sql" => "org",
+    "identity-membership-schema.sql" => "iam",
+    "scheduling-schema.sql" => "scheduling",
+    "platform-kernel-schema.sql" => "platform-kernel",
+    var file when file.EndsWith("-schema.sql", StringComparison.Ordinal) => file[..^"-schema.sql".Length],
+    _ => throw new InvalidOperationException($"No module migration identity is declared for {scriptName}.")
+};
 
 static IReadOnlyDictionary<string, ModuleManifest> DiscoverManifests(string repositoryRoot)
 {

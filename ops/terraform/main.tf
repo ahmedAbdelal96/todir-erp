@@ -123,10 +123,6 @@ resource "docker_container" "api" {
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_CORS_ORIGINS=https://127.0.0.1:${var.web_port}",
   ]
-  ports {
-    internal = 8080
-    external = var.api_port
-  }
   volumes {
     volume_name    = docker_volume.data_protection.name
     container_path = "/app/keys"

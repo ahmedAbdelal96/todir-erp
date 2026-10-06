@@ -3,6 +3,7 @@ using System.Text.Json;
 using Npgsql;
 using Todir.Platform.Transactions;
 using Todir.SharedKernel.Identifiers;
+using Todir.BuildingBlocks.Observability;
 
 namespace Todir.Platform.Services;
 
@@ -22,7 +23,11 @@ public sealed class InMemoryImportJobScheduler : IImportJobScheduler
     {
         Validate(batch, startRow, rowCount, cancellationToken);
         var job = new ImportChunkJob(batch.Id, batch.TenantId, batch.ImporterId, startRow, rowCount, DateTimeOffset.UtcNow);
-        if (scheduled.TryAdd((batch.TenantId, batch.Id, startRow), job)) jobs.Enqueue(job);
+        if (scheduled.TryAdd((batch.TenantId, batch.Id, startRow), job))
+        {
+            jobs.Enqueue(job);
+            TodirMetrics.ImportChunksScheduled.Add(1, new KeyValuePair<string, object?>("module", batch.ModuleId));
+        }
         else job = scheduled[(batch.TenantId, batch.Id, startRow)];
         return Task.FromResult(job);
     }
@@ -73,7 +78,11 @@ public sealed class NpgsqlImportJobScheduler(ITransactionCoordinator transaction
                 if (persistedRowCount != rowCount) throw new InvalidOperationException("import.chunk_schedule_conflict");
             }
             job = job with { ScheduledAt = persistedAt.Value };
-            if (isNew) context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "platform.import.chunk.requested", JsonSerializer.Serialize(new { job.BatchId, job.ImporterId, job.StartRow, job.RowCount }), batch.TenantId, job.ScheduledAt, Guid.CreateVersion7(), batch.Id, "platform-import"));
+            if (isNew)
+            {
+                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "platform.import.chunk.requested", JsonSerializer.Serialize(new { job.BatchId, job.ImporterId, job.StartRow, job.RowCount }), batch.TenantId, job.ScheduledAt, Guid.CreateVersion7(), batch.Id, "platform-import"));
+                TodirMetrics.ImportChunksScheduled.Add(1, new KeyValuePair<string, object?>("module", batch.ModuleId));
+            }
             return job;
         }, cancellationToken);
     }

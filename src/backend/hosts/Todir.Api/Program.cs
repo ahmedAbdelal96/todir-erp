@@ -101,6 +101,7 @@ app.MapGet("/health/ready", async (IServiceProvider services, CancellationToken 
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 });
+if (builder.Configuration.GetValue<bool>("TODIR_METRICS_ENABLED")) app.MapPrometheusScrapingEndpoint("/internal/metrics");
 app.MapTodirPlatform();
 app.Run();
 

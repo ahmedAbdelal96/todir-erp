@@ -15,6 +15,7 @@
     "api:drift": "node scripts/api/generate-platform-client.mjs --check",
     "api:breaking": "node scripts/api/check-breaking-contract.mjs",
     "frontend:smoke": "node scripts/verification/frontend-shell-smoke.mjs",
+    "release:gates": "node scripts/verification/release-gates.mjs",
     "typecheck": "tsc --noEmit --project tsconfig.json && pnpm --dir src/frontend/apps/todir-web typecheck"
   },
   "devDependencies": {

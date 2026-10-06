@@ -1,5 +1,7 @@
 using MassTransit;
 using Todir.SharedKernel.Identifiers;
+using Todir.BuildingBlocks.Observability;
+using System.Diagnostics;
 
 namespace Todir.Platform.Messaging;
 
@@ -17,8 +19,15 @@ public sealed class OutboxPublishedMessageConsumer(IInboxStore inboxStore) : ICo
 
     public async Task Consume(ConsumeContext<OutboxPublishedMessage> context)
     {
-        if (!await inboxStore.TryBeginAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken)) return;
+        var started = Stopwatch.GetTimestamp();
+        if (!await inboxStore.TryBeginAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken))
+        {
+            TodirMetrics.InboxDuplicate.Add(1, new KeyValuePair<string, object?>("endpoint", Endpoint));
+            return;
+        }
         await inboxStore.MarkProcessedAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken);
+        TodirMetrics.InboxProcessed.Add(1, new KeyValuePair<string, object?>("endpoint", Endpoint));
+        TodirMetrics.MessageProcessingDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("endpoint", Endpoint));
         FailureInjection.CrashAfterInboxCommitIfConfigured();
     }
 

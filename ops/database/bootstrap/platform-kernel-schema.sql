@@ -148,6 +148,22 @@ AS $$
         message.source_module, message.trace_parent, message.attempts;
 $$;
 GRANT EXECUTE ON FUNCTION platform_messaging.claim_pending_outbox(integer) TO erp_app;
+CREATE OR REPLACE FUNCTION platform_messaging.observe_pending_outbox()
+RETURNS TABLE
+(
+    pending_count bigint,
+    oldest_age_seconds double precision
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = platform_messaging, pg_catalog
+AS $$
+    SELECT count(*)::bigint,
+        coalesce(extract(epoch from now() - min(occurred_at)), 0)::double precision
+    FROM platform_messaging.outbox_message
+    WHERE status = 'Pending';
+$$;
+GRANT EXECUTE ON FUNCTION platform_messaging.observe_pending_outbox() TO erp_app;
 CREATE TABLE IF NOT EXISTS platform_messaging.inbox_message
 (
     consumer_endpoint text NOT NULL,

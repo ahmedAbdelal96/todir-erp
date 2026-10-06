@@ -63,6 +63,7 @@ public sealed class RoleBoundaryTests
         await admin.OpenAsync();
 
         Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform_messaging.claim_pending_outbox(integer)', 'EXECUTE')"))!);
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform_messaging.observe_pending_outbox()', 'EXECUTE')"))!);
         Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform_iam.expire_support_access_grants()', 'EXECUTE')"))!);
         Assert.True((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_messaging.outbox_message', 'SELECT')"))!);
         Assert.True((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_messaging.outbox_message', 'UPDATE')"))!);
