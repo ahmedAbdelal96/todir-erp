@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Api", "src\backend\ho
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Observability.Tests", "tests\observability\Todir.Observability.Tests\observability-tests.csproj", "{CF2464B1-B0E4-4C2D-B741-9219404BD446}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "database-security-tests", "tests\database\security\database-security-tests.csproj", "{D3B8D7BF-6421-4779-9A67-3E5D2F4C8A11}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -107,6 +109,10 @@ Global
 		{CF2464B1-B0E4-4C2D-B741-9219404BD446}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CF2464B1-B0E4-4C2D-B741-9219404BD446}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CF2464B1-B0E4-4C2D-B741-9219404BD446}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D3B8D7BF-6421-4779-9A67-3E5D2F4C8A11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D3B8D7BF-6421-4779-9A67-3E5D2F4C8A11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D3B8D7BF-6421-4779-9A67-3E5D2F4C8A11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D3B8D7BF-6421-4779-9A67-3E5D2F4C8A11}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -123,5 +129,6 @@ Global
 		{CA22ADBA-FB9F-45E7-B8D1-A228A3F82C50} = {9EDDCDF2-69E7-47FD-A4B3-AB79C757DEEF}
 		{C0BFCDBB-F726-4616-B482-415F6B905795} = {FE360695-3F2B-1049-3887-35FBB5135923}
 		{CF2464B1-B0E4-4C2D-B741-9219404BD446} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{D3B8D7BF-6421-4779-9A67-3E5D2F4C8A11} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
