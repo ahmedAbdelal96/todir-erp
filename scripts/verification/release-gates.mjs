@@ -56,6 +56,7 @@ const checks = [
   ["runtime role cannot bypass RLS", read("ops/database/bootstrap/runtime-roles-and-schemas.sql").includes("NOBYPASSRLS")],
   ["tenant tables force RLS", read("ops/database/bootstrap/platform-kernel-schema.sql").includes("FORCE ROW LEVEL SECURITY")],
   ["capability fallback is registered and tested", read("src/backend/platform/platform-kernel/Hosting/PlatformHostingExtensions.cs").includes("ICapabilityResolver") && read("tests/platform/platform-kernel-tests/ModuleAndPlatformServiceTests.cs").includes("CapabilityResolverUsesAnAvailableFallbackProvider")],
+  ["module lifecycle supports resume, go-live, fallback impact, and reactivation", ["ActivateAsync", "CompleteGoLiveAsync", "CreateImpactReport", "DeactivateAsync"].every(marker => read("src/backend/platform/platform-kernel/Modules/ModuleSystem.cs").includes(marker)) && ["LifecycleProvisioningResumesAndActivationIsIdempotent", "StatefulLifecycleRequiresGoLiveAndSupportsOptionalFallback", "LifecycleReactivationPreservesInstanceIdentityAndConfiguration"].every(marker => read("tests/platform/platform-kernel-tests/ModuleAndPlatformServiceTests.cs").includes(marker))],
   ["migration history is module-scoped", read("src/backend/hosts/database-migrator/Program.cs").includes("module_id") && read("src/backend/hosts/database-migrator/Program.cs").includes("ModuleIdForScript") && read("src/backend/hosts/database-migrator/Program.cs").includes("add primary key (module_id, script_name)")],
   ["inbox has lease and attempts", read("ops/database/bootstrap/platform-kernel-schema.sql").includes("lease_until") && read("ops/database/bootstrap/platform-kernel-schema.sql").includes("attempts")],
   ["messaging faults are recorded and replay is audited", read("src/backend/platform/platform-kernel/Messaging/MessageRecovery.cs").includes("MessageFailureObserver") && read("src/backend/platform/platform-kernel/Messaging/MessageRecovery.cs").includes("IMessageReplayService") && read("src/backend/platform/platform-kernel/Messaging/MessageRecovery.cs").includes("message_replayed")],
@@ -66,7 +67,7 @@ const checks = [
   ["staging replay route requires an ephemeral token", read("src/backend/platform/platform-kernel/Hosting/PlatformHostingExtensions.cs").includes("TODIR_STAGING_VERIFICATION") && read("src/backend/platform/platform-kernel/Hosting/PlatformHostingExtensions.cs").includes("!string.IsNullOrWhiteSpace(app.Configuration[\"TODIR_STAGING_REPLAY_TOKEN\"])") && read("ops/terraform/main.tf").includes("TODIR_STAGING_VERIFICATION=${var.staging_replay_token")],
   ["metrics and alerts are wired", read("src/backend/shared/Todir.BuildingBlocks/Observability/observability-extensions.cs").includes("AddPrometheusExporter") && read("ops/monitoring/alerts.yml").includes("todir_outbox_oldest_pending_age_seconds")],
   ["threat model is reviewed", read("docs/security/platform-threat-model.md").includes("Cross-tenant leakage") && read("docs/security/platform-threat-model.md").includes("Support abuse")],
-  ["verification record exists", /focused platform tests \(30\)/.test(read("docs/platform/kernel-verification.md"))]
+  ["verification record exists", /focused platform tests \(34\)/.test(read("docs/platform/kernel-verification.md"))]
 ];
 
 for (const file of requiredRunbooks) checks.push([`runbook exists: ${file}`, fs.existsSync(path.join(root, "docs", "runbooks", file))]);

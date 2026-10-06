@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using Todir.BuildingBlocks.Observability;
 
 namespace Todir.Platform.Modules;
@@ -64,13 +65,27 @@ public sealed record ModuleImpactReport(IReadOnlyList<string> HardDependents, IR
 
 public interface IModuleLifecycleContributor
 {
+    string ModuleId { get; }
     Task ValidateActivationAsync(ModuleInstance instance, CancellationToken cancellationToken = default);
     Task ProvisionAsync(ModuleInstance instance, CancellationToken cancellationToken = default);
-    Task ValidateDeactivationAsync(ModuleInstance instance, CancellationToken cancellationToken = default);
+    Task PrepareGoLiveAsync(ModuleInstance instance, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    Task ValidateDeactivationAsync(ModuleInstance instance, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    Task WindDownAsync(ModuleInstance instance, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
-public sealed class ModuleLifecycleService(IModuleRegistry registry)
+public sealed class ModuleLifecycleService
 {
+    private readonly IModuleRegistry registry;
+    private readonly IReadOnlyDictionary<string, IModuleLifecycleContributor> contributors;
+    private readonly ConcurrentDictionary<string, LifecycleExecution> executions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> locks = new(StringComparer.Ordinal);
+
+    public ModuleLifecycleService(IModuleRegistry registry, IEnumerable<IModuleLifecycleContributor>? contributors = null)
+    {
+        this.registry = registry;
+        this.contributors = (contributors ?? []).ToDictionary(contributor => contributor.ModuleId, StringComparer.Ordinal);
+    }
+
     public ModuleInstance Activate(ModuleInstance instance, bool entitled)
     {
         var started = Stopwatch.GetTimestamp();
@@ -87,5 +102,112 @@ public sealed class ModuleLifecycleService(IModuleRegistry registry)
             TodirMetrics.ModuleActivationDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("module", instance.ModuleId));
         }
     }
+
+    public async Task<ModuleInstance> ActivateAsync(ModuleInstance instance, bool entitled, string operationKey, IReadOnlyCollection<ModuleInstance>? dependencyInstances = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationKey);
+        if (!entitled) throw new InvalidOperationException("module.not_entitled");
+        var manifest = registry.Find(instance.ModuleId);
+        var missing = manifest.Dependencies.Hard.Where(dependency => dependencyInstances?.Any(candidate => candidate.ModuleId == dependency && candidate.Status == ModuleInstanceStatus.Active) != true).ToArray();
+        if (missing.Length > 0) throw new InvalidOperationException($"module.dependency_not_active:{missing[0]}");
+
+        var executionKey = ExecutionKey(instance, operationKey);
+        var gate = locks.GetOrAdd(executionKey, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var execution = executions.GetOrAdd(executionKey, _ => new LifecycleExecution(instance));
+            if (execution.Completed) return execution.Instance;
+            var contributor = contributors.GetValueOrDefault(instance.ModuleId);
+            if (!execution.Validated)
+            {
+                execution.Instance = execution.Instance with { Status = ModuleInstanceStatus.Validating, Version = execution.Instance.Version + 1 };
+                if (contributor is not null) await contributor.ValidateActivationAsync(execution.Instance, cancellationToken);
+                execution.Validated = true;
+            }
+            if (!execution.Provisioned)
+            {
+                execution.Instance = execution.Instance with { Status = ModuleInstanceStatus.Provisioning, Version = execution.Instance.Version + 1 };
+                if (contributor is not null) await contributor.ProvisionAsync(execution.Instance, cancellationToken);
+                execution.Provisioned = true;
+            }
+            if (manifest.Lifecycle.SupportsGoLive)
+            {
+                execution.Instance = execution.Instance with { Status = ModuleInstanceStatus.AwaitingGoLive, Version = execution.Instance.Version + 1 };
+                return execution.Instance;
+            }
+            execution.Instance = execution.Instance with { Status = ModuleInstanceStatus.Active, Version = execution.Instance.Version + 1 };
+            execution.Completed = true;
+            return execution.Instance;
+        }
+        finally { gate.Release(); }
+    }
+
+    public async Task<ModuleInstance> CompleteGoLiveAsync(ModuleInstance instance, string operationKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationKey);
+        var executionKey = ExecutionKey(instance, operationKey);
+        if (!executions.TryGetValue(executionKey, out var execution)) throw new InvalidOperationException("module.go_live_not_pending");
+        var gate = locks.GetOrAdd(executionKey, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (execution.Completed) return execution.Instance;
+            if (execution.Instance.Status != ModuleInstanceStatus.AwaitingGoLive) throw new InvalidOperationException("module.go_live_not_pending");
+            if (contributors.GetValueOrDefault(instance.ModuleId) is { } contributor) await contributor.PrepareGoLiveAsync(execution.Instance, cancellationToken);
+            execution.Instance = execution.Instance with { Status = ModuleInstanceStatus.Active, Version = execution.Instance.Version + 1 };
+            execution.Completed = true;
+            return execution.Instance;
+        }
+        finally { gate.Release(); }
+    }
+
+    public ModuleImpactReport CreateImpactReport(ModuleInstance instance, IReadOnlyCollection<ModuleInstance> knownInstances, IReadOnlyList<string>? optionalCapabilitiesLost = null, IReadOnlyList<string>? openOperations = null)
+    {
+        var hardDependents = registry.GetDependents(instance.ModuleId)
+            .Where(moduleId => knownInstances.Any(candidate => candidate.ModuleId == moduleId && candidate.Status is not ModuleInstanceStatus.Disabled and not ModuleInstanceStatus.Failed))
+            .ToArray();
+        var open = openOperations ?? [];
+        return new ModuleImpactReport(hardDependents, optionalCapabilitiesLost ?? [], open, registry.Find(instance.ModuleId).Lifecycle.SupportsGoLive);
+    }
+
+    public async Task<ModuleInstance> DeactivateAsync(ModuleInstance instance, ModuleImpactReport impact, string operationKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationKey);
+        if (impact.HardDependents.Count > 0) throw new InvalidOperationException("module.has_dependents");
+        var executionKey = ExecutionKey(instance, $"deactivate:{operationKey}");
+        var gate = locks.GetOrAdd(executionKey, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var execution = executions.GetOrAdd(executionKey, _ => new LifecycleExecution(instance));
+            if (execution.Completed) return execution.Instance;
+            if (contributors.GetValueOrDefault(instance.ModuleId) is { } contributor)
+            {
+                await contributor.ValidateDeactivationAsync(execution.Instance, cancellationToken);
+                if (impact.OpenOperations.Count > 0) await contributor.WindDownAsync(execution.Instance, cancellationToken);
+            }
+            var target = impact.OpenOperations.Count > 0
+                ? ModuleInstanceStatus.WindDown
+                : registry.Find(instance.ModuleId).Lifecycle.DeactivationPolicy.Equals("never_disable", StringComparison.OrdinalIgnoreCase)
+                    ? ModuleInstanceStatus.ReadOnly
+                    : ModuleInstanceStatus.Disabled;
+            execution.Instance = execution.Instance with { Status = target, Version = execution.Instance.Version + 1 };
+            execution.Completed = true;
+            return execution.Instance;
+        }
+        finally { gate.Release(); }
+    }
+
     public static ModuleInstance Deactivate(ModuleInstance instance, bool hasDependents) => hasDependents ? throw new InvalidOperationException("module.has_dependents") : instance with { Status = ModuleInstanceStatus.WindDown, Version = instance.Version + 1 };
+
+    private static string ExecutionKey(ModuleInstance instance, string operationKey) => $"{instance.TenantId}:{instance.Id}:{operationKey}";
+
+    private sealed class LifecycleExecution(ModuleInstance instance)
+    {
+        public ModuleInstance Instance { get; set; } = instance;
+        public bool Validated { get; set; }
+        public bool Provisioned { get; set; }
+        public bool Completed { get; set; }
+    }
 }

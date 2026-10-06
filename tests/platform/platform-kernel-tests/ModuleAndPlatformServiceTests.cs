@@ -239,7 +239,80 @@ public sealed class ModuleAndPlatformServiceTests
         Assert.Throws<InvalidOperationException>(() => ModuleLifecycleService.Deactivate(validating, true));
     }
 
-    private static ModuleManifest Manifest(string id, IReadOnlyList<string> hard) => new(id, "1.0.0", 1, "L0", "kernel", false, "tenant", new(hard, []), new(id, []), [], new([], []), new([], []), new(false, "never_disable"));
+    [Fact]
+    public async Task LifecycleProvisioningResumesAndActivationIsIdempotent()
+    {
+        var registry = new ModuleRegistry([Manifest("base", []), Manifest("feature", ["base"])]);
+        var contributor = new RecordingLifecycleContributor("feature") { FailProvisionOnce = true };
+        var lifecycle = new ModuleLifecycleService(registry, [contributor]);
+        var tenant = TenantId.New().Value.ToString("D");
+        var baseInstance = new ModuleInstance("base-instance", tenant, "base", "tenant", null, ModuleInstanceStatus.Active, 3);
+        var feature = new ModuleInstance("feature-instance", tenant, "feature", "tenant", "configuration-1", ModuleInstanceStatus.Requested, 1);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => lifecycle.ActivateAsync(feature, true, "activate-1", [baseInstance]));
+        var activated = await lifecycle.ActivateAsync(feature, true, "activate-1", [baseInstance]);
+        var retry = await lifecycle.ActivateAsync(feature, true, "activate-1", [baseInstance]);
+
+        Assert.Equal(ModuleInstanceStatus.Active, activated.Status);
+        Assert.Equal(activated, retry);
+        Assert.Equal(1, contributor.ValidationCalls);
+        Assert.Equal(2, contributor.ProvisionCalls);
+        Assert.Equal("configuration-1", retry.ScopeId);
+    }
+
+    [Fact]
+    public async Task StatefulLifecycleRequiresGoLiveAndSupportsOptionalFallback()
+    {
+        var registry = new ModuleRegistry([Manifest("stateful", [], true, "wind_down")]);
+        var contributor = new RecordingLifecycleContributor("stateful");
+        var lifecycle = new ModuleLifecycleService(registry, [contributor]);
+        var instance = new ModuleInstance("stateful-instance", TenantId.New().Value.ToString("D"), "stateful", "tenant", null, ModuleInstanceStatus.Requested, 1);
+
+        var awaiting = await lifecycle.ActivateAsync(instance, true, "activate-1", []);
+        var active = await lifecycle.CompleteGoLiveAsync(instance, "activate-1");
+        var impact = lifecycle.CreateImpactReport(active, [], ["optional.approvals"], ["open-operation"]);
+        var windDown = await lifecycle.DeactivateAsync(active, impact, "deactivate-1");
+
+        Assert.Equal(ModuleInstanceStatus.AwaitingGoLive, awaiting.Status);
+        Assert.Equal(ModuleInstanceStatus.Active, active.Status);
+        Assert.True(impact.RequiresGoLive);
+        Assert.Single(impact.OptionalCapabilitiesLost);
+        Assert.Equal(ModuleInstanceStatus.WindDown, windDown.Status);
+        Assert.Equal(1, contributor.GoLiveCalls);
+        Assert.Equal(1, contributor.WindDownCalls);
+    }
+
+    [Fact]
+    public async Task LifecycleBlocksMissingDependenciesAndHardDependents()
+    {
+        var registry = new ModuleRegistry([Manifest("base", []), Manifest("feature", ["base"]), Manifest("dependent", ["base"])]);
+        var lifecycle = new ModuleLifecycleService(registry);
+        var tenant = TenantId.New().Value.ToString("D");
+        var baseInstance = new ModuleInstance("base-instance", tenant, "base", "tenant", null, ModuleInstanceStatus.Active, 1);
+        var feature = new ModuleInstance("feature-instance", tenant, "feature", "tenant", null, ModuleInstanceStatus.Requested, 1);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => lifecycle.ActivateAsync(feature, true, "activate-1", []));
+        var dependent = new ModuleInstance("dependent-instance", tenant, "dependent", "tenant", null, ModuleInstanceStatus.Active, 1);
+        var impact = lifecycle.CreateImpactReport(baseInstance, [dependent]);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => lifecycle.DeactivateAsync(baseInstance, impact, "deactivate-1"));
+    }
+
+    [Fact]
+    public async Task LifecycleReactivationPreservesInstanceIdentityAndConfiguration()
+    {
+        var registry = new ModuleRegistry([Manifest("base", [])]);
+        var lifecycle = new ModuleLifecycleService(registry);
+        var instance = new ModuleInstance("base-instance", TenantId.New().Value.ToString("D"), "base", "tenant", "retained-configuration", ModuleInstanceStatus.Disabled, 8);
+
+        var reactivated = await lifecycle.ActivateAsync(instance, true, "reactivate-1", []);
+
+        Assert.Equal(ModuleInstanceStatus.Active, reactivated.Status);
+        Assert.Equal(instance.Id, reactivated.Id);
+        Assert.Equal(instance.ScopeId, reactivated.ScopeId);
+        Assert.True(reactivated.Version > instance.Version);
+    }
+
+    private static ModuleManifest Manifest(string id, IReadOnlyList<string> hard, bool supportsGoLive = false, string deactivationPolicy = "never_disable") => new(id, "1.0.0", 1, "L0", "kernel", false, "tenant", new(hard, []), new(id, []), [], new([], []), new([], []), new(supportsGoLive, deactivationPolicy));
 
     private sealed class TestTimeProvider(DateTimeOffset current) : TimeProvider
     {
@@ -262,5 +335,44 @@ public sealed class ModuleAndPlatformServiceTests
     {
         public string Capability => "verification.fallback";
         public bool IsAvailable(CapabilityContext context) => available;
+    }
+
+    private sealed class RecordingLifecycleContributor(string moduleId) : IModuleLifecycleContributor
+    {
+        public string ModuleId => moduleId;
+        public bool FailProvisionOnce { get; set; }
+        public int ValidationCalls { get; private set; }
+        public int ProvisionCalls { get; private set; }
+        public int GoLiveCalls { get; private set; }
+        public int WindDownCalls { get; private set; }
+
+        public Task ValidateActivationAsync(ModuleInstance instance, CancellationToken cancellationToken = default)
+        {
+            ValidationCalls++;
+            return Task.CompletedTask;
+        }
+
+        public Task ProvisionAsync(ModuleInstance instance, CancellationToken cancellationToken = default)
+        {
+            ProvisionCalls++;
+            if (FailProvisionOnce)
+            {
+                FailProvisionOnce = false;
+                throw new InvalidOperationException("controlled.provisioning_failure");
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task PrepareGoLiveAsync(ModuleInstance instance, CancellationToken cancellationToken = default)
+        {
+            GoLiveCalls++;
+            return Task.CompletedTask;
+        }
+
+        public Task WindDownAsync(ModuleInstance instance, CancellationToken cancellationToken = default)
+        {
+            WindDownCalls++;
+            return Task.CompletedTask;
+        }
     }
 }
