@@ -93,13 +93,17 @@ if (postgresContainer) {
   const session = await fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } });
   if (session.status !== 200) throw new Error(`authenticated session failed: ${session.status}`);
   const primaryTenantSessionCookie = sessionCookie;
+  const switchCsrfResponse = await fetch(`${api}/api/v1/auth/csrf`, { headers: { Cookie: sessionCookie } });
+  if (switchCsrfResponse.status !== 200) throw new Error(`tenant switch csrf bootstrap failed: ${switchCsrfResponse.status}`);
+  const switchCsrf = (await switchCsrfResponse.json()).token;
+  const switchCookie = mergeCookies(sessionCookie, responseCookies(switchCsrfResponse));
   const switchResponse = await fetch(`${api}/api/v1/context/tenant`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-csrf-token": csrf, Cookie: sessionCookie },
+    headers: { "content-type": "application/json", "x-csrf-token": switchCsrf, Cookie: switchCookie },
     body: JSON.stringify({ tenantId: secondaryTenantId })
   });
-  if (switchResponse.status !== 204) throw new Error(`tenant context switch failed: ${switchResponse.status}`);
-  sessionCookie = mergeCookies(responseCookies(switchResponse), sessionCookie);
+  if (switchResponse.status !== 204) throw new Error(`tenant context switch failed: ${switchResponse.status};detail=${(await switchResponse.text()).slice(0, 200)}`);
+  sessionCookie = mergeCookies(responseCookies(switchResponse), switchCookie);
   const switched = await fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } });
   if (switched.status !== 200 || (await switched.json()).tenantId !== secondaryTenantId) throw new Error("tenant context did not switch to the second tenant");
   const authenticatedPermissions = await Promise.all(Array.from({ length: 20 }, () => fetch(`${api}/api/v1/authorization/check?permission=kernel.read`, { headers: { Cookie: sessionCookie } })));
