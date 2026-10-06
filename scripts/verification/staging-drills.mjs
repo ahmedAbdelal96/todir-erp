@@ -115,7 +115,15 @@ if (postgresContainer) {
   console.log(`authentication-load=${authenticatedPermissions.length};tenant-switch=isolated;permission-evaluation=forbidden;noisy-tenant=${noisyTenantRequests.length};quiet-tenant=${quietTenantRequests.length}`);
 }
 
-const authBurst = await Promise.all(Array.from({ length: 20 }, () => request("/api/v1/auth/csrf")));
+const authCsrfResponse = await fetch(`${api}/api/v1/auth/csrf`);
+if (authCsrfResponse.status !== 200) throw new Error(`authentication rate-limit csrf bootstrap failed: ${authCsrfResponse.status}`);
+const authCsrf = (await authCsrfResponse.json()).token;
+const authCookie = mergeCookies(responseCookies(authCsrfResponse));
+const authBurst = await Promise.all(Array.from({ length: 20 }, () => fetch(`${api}/api/v1/auth/login`, {
+  method: "POST",
+  headers: { "content-type": "application/json", "x-csrf-token": authCsrf, Cookie: authCookie },
+  body: JSON.stringify({ email: "invalid@example.com", password: "Invalid-Only-For-CI", tenantId: drillTenantId })
+})));
 const limited = authBurst.filter(result => result.status === 429).length;
 if (limited === 0) throw new Error("authentication rate limiting did not activate");
 console.log(`auth-rate-limit-429=${limited}`);
