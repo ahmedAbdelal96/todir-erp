@@ -4,6 +4,7 @@ using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Mvc;
 using System.Security.Cryptography.X509Certificates;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -74,7 +75,8 @@ app.Use(async (context, next) =>
         catch (Microsoft.AspNetCore.Antiforgery.AntiforgeryValidationException)
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new { code = "security.csrf_invalid" });
+            context.Response.ContentType = "application/problem+json";
+            await context.Response.WriteAsJsonAsync(new ProblemDetails { Type = "about:blank", Title = "CSRF validation failed", Status = StatusCodes.Status400BadRequest, Extensions = { ["code"] = "security.csrf_invalid" } });
             return;
         }
     }

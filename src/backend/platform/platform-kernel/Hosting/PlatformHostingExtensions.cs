@@ -18,6 +18,7 @@ using System.Text;
 using Todir.Platform.Security;
 using Todir.Platform.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Todir.Platform.Hosting;
 
@@ -84,6 +85,9 @@ public static class PlatformHostingExtensions
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IInboxStore, NpgsqlInboxStore>();
         services.AddSingleton<ISettingsResolver, SettingsResolver>();
         services.AddSingleton<ICustomFieldRegistry, CustomFieldRegistry>();
+        services.AddSingleton<IImportJobScheduler>(provider => provider.GetService<NpgsqlDataSource>() is not null
+            ? new NpgsqlImportJobScheduler(provider.GetRequiredService<ITransactionCoordinator>())
+            : new InMemoryImportJobScheduler());
         services.AddSingleton<INotificationStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlNotificationStore(dataSource) : new InMemoryNotificationStore());
         services.AddSingleton<NotificationDispatcher>();
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<ITransactionCoordinator, NpgsqlTransactionCoordinator>();
@@ -108,11 +112,11 @@ public static class PlatformHostingExtensions
         {
             var identity = await store.AuthenticateAsync(request.Email, request.Password, cancellationToken);
             if (identity is null) return Results.Unauthorized();
-            if (!Guid.TryParse(request.TenantId, out var selectedTenant) || selectedTenant == Guid.Empty) return Results.BadRequest(new { code = "tenant.required" });
+            if (!Guid.TryParse(request.TenantId, out var selectedTenant) || selectedTenant == Guid.Empty) return Problem(StatusCodes.Status400BadRequest, "tenant.required", "Tenant selection is required");
             var selected = await store.FindActiveMembershipAsync(identity.Id, new(selectedTenant), cancellationToken);
             if (selected is null) return Results.Unauthorized();
             var mfaEnabled = await mfa.IsEnabledAsync(identity.Id, cancellationToken);
-            if (mfaEnabled && !await mfa.VerifyAsync(identity.Id, request.MfaCode, clock.GetUtcNow(), cancellationToken)) return Results.Unauthorized();
+            if (mfaEnabled && !await mfa.VerifyAsync(identity.Id, request.MfaCode, clock.GetUtcNow(), cancellationToken)) return Problem(StatusCodes.Status401Unauthorized, "auth.mfa_required", "Valid multi-factor authentication is required");
             var session = await sessions.CreateAsync(identity, selected, cancellationToken);
             if (session is null) return Results.Unauthorized();
             var claims = new[] { new Claim(ClaimTypes.NameIdentifier, identity.Id.Value.ToString("D")), new Claim("membership_id", selected.Id.Value.ToString("D")), new Claim("tenant_id", selected.TenantId.Value.ToString("D")), new Claim("security_stamp", identity.SecurityStamp.ToString("D")), new Claim("mfa_verified", mfaEnabled.ToString().ToLowerInvariant()) };
@@ -149,7 +153,7 @@ public static class PlatformHostingExtensions
         }).RequireAuthorization();
         group.MapPost("/context/tenant", async (TenantSelection request, HttpContext context, IIdentityStore store, CancellationToken cancellationToken) =>
         {
-            if (!Guid.TryParse(request.TenantId, out var tenantId) || tenantId == Guid.Empty) return Results.BadRequest(new { code = "tenant.invalid" });
+            if (!Guid.TryParse(request.TenantId, out var tenantId) || tenantId == Guid.Empty) return Problem(StatusCodes.Status400BadRequest, "tenant.invalid", "Tenant identifier is invalid");
             if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
             var membership = await store.FindActiveMembershipAsync(new(identityId), new(tenantId), cancellationToken);
             if (membership is null) return Results.Forbid();
@@ -166,4 +170,6 @@ public static class PlatformHostingExtensions
 
     private sealed record TenantSelection(string TenantId);
     private sealed record LoginRequest(string Email, string Password, string? TenantId, string? MfaCode);
+
+    private static IResult Problem(int statusCode, string code, string title) => Results.Problem(statusCode: statusCode, title: title, extensions: new Dictionary<string, object?> { ["code"] = code });
 }

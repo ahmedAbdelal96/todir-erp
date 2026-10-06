@@ -5,6 +5,7 @@ using Todir.Platform.Entitlements;
 using Todir.Platform.Modules;
 using Todir.Platform.Messaging;
 using Todir.Platform.Services;
+using Todir.Platform.Security;
 using Todir.SharedKernel.Identifiers;
 using Xunit;
 
@@ -117,6 +118,54 @@ public sealed class ModuleAndPlatformServiceTests
         Assert.True(guard.IsEntitled(tenant, "sample"));
         Assert.False(guard.IsEntitled(tenant, "missing"));
         Assert.Throws<InvalidOperationException>(() => guard.SetSnapshot(snapshot with { Signature = "invalid" }));
+    }
+
+    [Fact]
+    public void CapabilityChecksRemainTenantBoundUnderLoad()
+    {
+        var tenant = TenantId.New();
+        var otherTenant = TenantId.New();
+        var key = Encoding.UTF8.GetBytes("load-entitlement-key");
+        var verifier = new HmacEntitlementVerifier(new Dictionary<string, byte[]> { ["current"] = key });
+        var issued = DateTimeOffset.UtcNow;
+        var snapshot = new EntitlementSnapshot(tenant, 1, issued, issued.AddMinutes(10), "current", new HashSet<string>(["sample"]), new HashSet<string>(), new Dictionary<string, long>(), "");
+        var canonical = JsonSerializer.Serialize(new { tenant = tenant.Value, snapshot = snapshot.SnapshotVersion, issued = snapshot.IssuedAt, valid = snapshot.ValidUntil, modules = snapshot.Modules.OrderBy(value => value, StringComparer.Ordinal), features = snapshot.Features.OrderBy(value => value, StringComparer.Ordinal), limits = snapshot.Limits.OrderBy(pair => pair.Key, StringComparer.Ordinal) });
+        var guard = new EntitlementGuard(verifier);
+        guard.SetSnapshot(snapshot with { Signature = Convert.ToBase64String(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(canonical))) });
+        var file = new FileRecord(Guid.NewGuid(), tenant, "kernel", "load", Guid.NewGuid(), "ignored", "load.bin", "application/pdf", 4, "hash", FileStatus.Ready, "internal", Guid.NewGuid(), issued);
+        var signer = new HmacFileAccessSigner("load-file-secret");
+        var expiresAt = issued.AddMinutes(5);
+        var signature = signer.CreateDownloadUrl(file, tenant, expiresAt).Split("signature=", StringSplitOptions.None)[1];
+        var checkpoints = new InMemoryImportCheckpointStore();
+
+        for (var chunk = 0; chunk < 1_000; chunk++)
+        {
+            Assert.True(guard.IsEntitled(tenant, "sample"));
+            Assert.False(guard.IsEntitled(otherTenant, "sample"));
+            Assert.True(signer.VerifyDownload(file, tenant, expiresAt, signature, issued));
+            Assert.False(signer.VerifyDownload(file, otherTenant, expiresAt, signature, issued));
+            var checkpoint = new ImportCheckpoint(Guid.CreateVersion7(), chunk, chunk * 100, 100, $"digest-{chunk}", issued);
+            Assert.True(checkpoints.TrySave(checkpoint));
+            Assert.False(checkpoints.TrySave(checkpoint));
+        }
+    }
+
+    [Fact]
+    public async Task ImportSchedulerQueuesExecutableChunksExactlyOnceInMemory()
+    {
+        var tenant = TenantId.New();
+        var scheduler = new InMemoryImportJobScheduler();
+        var batch = new ImportBatch(Guid.CreateVersion7(), tenant, "directory", "party-import", ImportStatus.Execute, Guid.CreateVersion7(), JsonSerializer.SerializeToElement(new { mapping = "stable" }), 0, Guid.CreateVersion7(), DateTimeOffset.UtcNow);
+
+        var job = await scheduler.ScheduleChunkAsync(batch, 100, 50);
+        var duplicate = await scheduler.ScheduleChunkAsync(batch, 100, 50);
+
+        Assert.Equal(batch.Id, job.BatchId);
+        Assert.Equal(job, duplicate);
+        Assert.True(scheduler.TryDequeue(out var queued));
+        Assert.Equal(job, queued);
+        Assert.False(scheduler.TryDequeue(out _));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => scheduler.ScheduleChunkAsync(batch with { Status = ImportStatus.Validate }, 0, 10));
     }
 
     [Fact]

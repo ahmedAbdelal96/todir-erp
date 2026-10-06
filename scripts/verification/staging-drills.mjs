@@ -59,6 +59,7 @@ if (postgresContainer) {
   let sessionCookie = mergeCookies(responseCookies(loginResponse), responseCookies(csrfResponse));
   const session = await fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } });
   if (session.status !== 200) throw new Error(`authenticated session failed: ${session.status}`);
+  const primaryTenantSessionCookie = sessionCookie;
   const switchResponse = await fetch(`${api}/api/v1/context/tenant`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-csrf-token": csrf, Cookie: sessionCookie },
@@ -70,7 +71,11 @@ if (postgresContainer) {
   if (switched.status !== 200 || (await switched.json()).tenantId !== secondaryTenantId) throw new Error("tenant context did not switch to the second tenant");
   const authenticatedPermissions = await Promise.all(Array.from({ length: 20 }, () => fetch(`${api}/api/v1/authorization/check?permission=kernel.read`, { headers: { Cookie: sessionCookie } })));
   if (authenticatedPermissions.some(result => result.status !== 403)) throw new Error("backend permission evaluation did not reject the unassigned permission");
-  console.log(`authentication-load=${authenticatedPermissions.length};tenant-switch=isolated;permission-evaluation=forbidden`);
+  const noisyTenantRequests = await Promise.all(Array.from({ length: 100 }, () => fetch(`${api}/api/v1/authorization/check?permission=kernel.read`, { headers: { Cookie: primaryTenantSessionCookie } })));
+  const quietTenantRequests = await Promise.all(Array.from({ length: 20 }, () => fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } })));
+  if (noisyTenantRequests.some(result => result.status !== 403)) throw new Error("noisy tenant permission workload was not isolated");
+  if (quietTenantRequests.some(result => result.status !== 200)) throw new Error("quiet tenant session workload was degraded during noisy tenant load");
+  console.log(`authentication-load=${authenticatedPermissions.length};tenant-switch=isolated;permission-evaluation=forbidden;noisy-tenant=${noisyTenantRequests.length};quiet-tenant=${quietTenantRequests.length}`);
 }
 
 const authBurst = await Promise.all(Array.from({ length: 20 }, () => request("/api/v1/auth/csrf")));

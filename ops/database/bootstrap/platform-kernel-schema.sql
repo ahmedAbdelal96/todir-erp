@@ -301,6 +301,16 @@ CREATE TABLE IF NOT EXISTS platform_import.import_error
     severity text NOT NULL,
     FOREIGN KEY (tenant_id, batch_id) REFERENCES platform_import.import_batch (tenant_id, id)
 );
+CREATE TABLE IF NOT EXISTS platform_import.import_chunk_job
+(
+    tenant_id uuid NOT NULL REFERENCES platform_tenancy.tenant (id),
+    batch_id uuid NOT NULL,
+    start_row integer NOT NULL CHECK (start_row >= 0),
+    row_count integer NOT NULL CHECK (row_count > 0),
+    scheduled_at timestamptz NOT NULL,
+    PRIMARY KEY (tenant_id, batch_id, start_row),
+    FOREIGN KEY (tenant_id, batch_id) REFERENCES platform_import.import_batch (tenant_id, id)
+);
 CREATE TABLE IF NOT EXISTS platform_notifications.notification
 (
     id uuid PRIMARY KEY,
@@ -389,7 +399,7 @@ DO $$ DECLARE item record; BEGIN
     ('platform_entitlements','entitlement_snapshot'), ('platform_messaging','outbox_message'), ('platform_messaging','inbox_message'), ('platform_messaging','message_error'),
     ('platform_audit','audit_entry'), ('platform_numbering','sequence_definition'), ('platform_settings','setting_value'),
     ('platform_files','file_record'), ('platform_custom_fields','custom_field_definition'), ('platform_import','import_batch'),
-    ('platform_import','import_error'), ('platform_notifications','notification'), ('platform_notifications','notification_delivery'),
+    ('platform_import','import_error'), ('platform_import','import_chunk_job'), ('platform_notifications','notification'), ('platform_notifications','notification_delivery'),
     ('platform_scheduling','job_schedule'), ('platform_iam','support_access_grant')
   ) AS t(schemaname, tablename) LOOP
     EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', item.schemaname, item.tablename);
