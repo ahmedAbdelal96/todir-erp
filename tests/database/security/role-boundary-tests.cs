@@ -53,6 +53,40 @@ public sealed class RoleBoundaryTests
         }
     }
 
+    [Fact]
+    public async Task DispatcherIsLimitedToApprovedSecurityDefinerOperations()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION to run the dispatcher security gate.");
+
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform_messaging.claim_pending_outbox(integer)', 'EXECUTE')"))!);
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform_iam.expire_support_access_grants()', 'EXECUTE')"))!);
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_messaging.outbox_message', 'SELECT')"))!);
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_messaging.outbox_message', 'UPDATE')"))!);
+        Assert.False((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_messaging.outbox_message', 'INSERT')"))!);
+        Assert.False((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_iam.support_access_grant', 'DELETE')"))!);
+    }
+
+    [Fact]
+    public async Task RuntimeRoleCannotModifyAuditEntries()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION to run the audit security gate.");
+        var password = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        await ExecuteAsync(admin, $"ALTER ROLE erp_app PASSWORD '{password}'");
+        await using var app = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString);
+        await app.OpenAsync();
+
+        await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(app, "UPDATE platform_audit.audit_entry SET action = action WHERE false"));
+        await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(app, "DELETE FROM platform_audit.audit_entry WHERE false"));
+    }
+
     private static async Task ExecuteAsync(NpgsqlConnection connection, string commandText, params (string Name, object Value)[] parameters)
     {
         await using var command = new NpgsqlCommand(commandText, connection);

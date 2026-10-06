@@ -154,9 +154,14 @@ CREATE TABLE IF NOT EXISTS platform_messaging.inbox_message
     message_id uuid NOT NULL,
     tenant_id uuid NOT NULL REFERENCES platform_tenancy.tenant (id),
     received_at timestamptz NOT NULL,
+    lease_until timestamptz,
+    attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     processed_at timestamptz,
     PRIMARY KEY (consumer_endpoint, message_id)
 );
+ALTER TABLE platform_messaging.inbox_message ADD COLUMN IF NOT EXISTS lease_until timestamptz;
+ALTER TABLE platform_messaging.inbox_message ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS ix_inbox_active ON platform_messaging.inbox_message (tenant_id, lease_until) WHERE processed_at IS NULL;
 CREATE TABLE IF NOT EXISTS platform_messaging.message_error
 (
     id uuid PRIMARY KEY,
@@ -391,6 +396,12 @@ AS $$
     RETURNING id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at;
 $$;
 GRANT EXECUTE ON FUNCTION platform_iam.expire_support_access_grants() TO erp_app;
+
+-- The dispatcher owns only the fixed-parameter SECURITY DEFINER operations.
+-- It is not a login role and receives no general application table access.
+GRANT USAGE ON SCHEMA platform_messaging, platform_iam TO erp_dispatcher;
+GRANT SELECT, UPDATE ON platform_messaging.outbox_message TO erp_dispatcher;
+GRANT SELECT, UPDATE ON platform_iam.support_access_grant TO erp_dispatcher;
 
 DO $$ DECLARE item record; BEGIN
   FOR item IN SELECT schemaname, tablename FROM (VALUES

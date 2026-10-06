@@ -48,6 +48,11 @@ variable "rabbit_tls_directory" {
   description = "Runner-local directory containing ca.crt, server.crt, and server.key for the isolated RabbitMQ container."
 }
 
+variable "web_tls_directory" {
+  type        = string
+  description = "Runner-local directory containing the short-lived staging web certificate and private key."
+}
+
 variable "api_port" {
   type    = number
   default = 18080
@@ -61,6 +66,12 @@ variable "web_port" {
 variable "environment_name" {
   type    = string
   default = "staging"
+}
+
+variable "failure_injection" {
+  type        = string
+  default     = ""
+  description = "Explicit staging-only failure injection; empty in normal deployments."
 }
 
 variable "image_tag" {

@@ -18,6 +18,12 @@ resource "docker_container" "postgres" {
     "POSTGRES_PASSWORD=${var.database_password}",
     "POSTGRES_DB=${var.database_name}",
   ]
+  healthcheck {
+    test     = ["CMD-SHELL", "pg_isready -U postgres -d ${var.database_name}"]
+    interval = "5s"
+    timeout  = "5s"
+    retries  = 12
+  }
   networks_advanced {
     name = docker_network.private.name
   }
@@ -26,11 +32,20 @@ resource "docker_container" "postgres" {
 resource "docker_container" "rabbitmq" {
   name  = "${local.project}-rabbitmq"
   image = "rabbitmq:4-management"
+  # The image entrypoint drops to the rabbitmq account after fixing ownership
+  # of the mounted TLS material; the container never runs the broker as root.
+  user = "0"
   env = [
     "RABBITMQ_DEFAULT_USER=todir",
     "RABBITMQ_DEFAULT_PASS=${var.rabbit_password}",
     "RABBITMQ_DEFAULT_VHOST=/erp-staging",
   ]
+  healthcheck {
+    test     = ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+    interval = "5s"
+    timeout  = "5s"
+    retries  = 12
+  }
   volumes {
     host_path      = var.rabbit_tls_directory
     container_path = "/etc/rabbitmq/tls"
@@ -58,6 +73,20 @@ resource "docker_container" "minio" {
   networks_advanced {
     name = docker_network.private.name
   }
+}
+
+resource "docker_container" "minio_init" {
+  name       = "${local.project}-minio-init"
+  image      = "minio/mc:RELEASE.2024-06-13T22-53-53Z"
+  entrypoint = ["sh", "-c"]
+  command = [
+    "until mc alias set local http://${docker_container.minio.name}:9000 todir ${var.rabbit_password}; do sleep 1; done; mc mb --ignore-existing local/private-files; mc anonymous set none local/private-files",
+  ]
+  networks_advanced {
+    name = docker_network.private.name
+  }
+  depends_on = [docker_container.minio]
+  must_run   = false
 }
 
 resource "docker_container" "migrator" {
@@ -92,7 +121,7 @@ resource "docker_container" "api" {
     "TODIR_RABBITMQ_TLS=true",
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
-    "TODIR_CORS_ORIGINS=http://127.0.0.1:${var.web_port}",
+    "TODIR_CORS_ORIGINS=https://127.0.0.1:${var.web_port}",
   ]
   ports {
     internal = 8080
@@ -129,6 +158,8 @@ resource "docker_container" "worker" {
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_RABBITMQ_CONSUMER=true",
+    "TODIR_FAILURE_INJECTION=${var.failure_injection}",
+    "TODIR_FAILURE_INJECTION_MARKER=/tmp/crash-after-inbox-commit",
   ]
   volumes {
     host_path      = abspath("${var.rabbit_tls_directory}/ca.crt")
@@ -145,8 +176,18 @@ resource "docker_container" "web" {
   name  = "${local.project}-web"
   image = var.web_image
   ports {
-    internal = 8080
+    internal = 8443
     external = var.web_port
+  }
+  volumes {
+    host_path      = abspath("${path.root}/../containers/staging-web.conf")
+    container_path = "/etc/nginx/conf.d/default.conf"
+    read_only      = true
+  }
+  volumes {
+    host_path      = abspath(var.web_tls_directory)
+    container_path = "/etc/nginx/tls"
+    read_only      = true
   }
   networks_advanced {
     name = docker_network.private.name

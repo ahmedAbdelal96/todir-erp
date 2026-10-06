@@ -44,8 +44,18 @@ public interface ISequenceAllocator { Task<string> AllocateAsync(SequenceDefinit
 public sealed class InMemorySequenceAllocator : ISequenceAllocator
 {
     private readonly object gate = new();
-    private readonly Dictionary<string, long> values = [];
-    public Task<string> AllocateAsync(SequenceDefinition definition, CancellationToken cancellationToken = default) { lock (gate) { var value = values.TryGetValue(definition.Key, out var current) ? current : definition.NextValue; values[definition.Key] = value + 1; return Task.FromResult($"{definition.Prefix}{value.ToString(CultureInfo.InvariantCulture).PadLeft(definition.Padding, '0')}"); } }
+    private readonly Dictionary<(TenantId TenantId, string Key, Guid? LegalEntityId, Guid? BranchId, string? ScopeKey, string? PeriodKey), long> values = [];
+    public Task<string> AllocateAsync(SequenceDefinition definition, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var key = (definition.TenantId, definition.Key, definition.LegalEntityId, definition.BranchId, definition.ScopeKey, definition.PeriodKey);
+        lock (gate)
+        {
+            var value = values.TryGetValue(key, out var current) ? current : definition.NextValue;
+            values[key] = value + 1;
+            return Task.FromResult($"{definition.Prefix}{value.ToString(CultureInfo.InvariantCulture).PadLeft(definition.Padding, '0')}");
+        }
+    }
 }
 public sealed class NpgsqlSequenceAllocator(NpgsqlDataSource dataSource) : ISequenceAllocator
 {

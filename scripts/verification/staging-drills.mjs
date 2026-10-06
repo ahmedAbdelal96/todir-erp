@@ -7,6 +7,8 @@ const api = process.env.STAGING_API_URL ?? "http://127.0.0.1:18080";
 const rabbitContainer = process.env.STAGING_RABBIT_CONTAINER;
 const postgresContainer = process.env.STAGING_POSTGRES_CONTAINER;
 const workerContainer = process.env.STAGING_WORKER_CONTAINER;
+const minioInitContainer = process.env.STAGING_MINIO_INIT_CONTAINER;
+const expectWorkerCrash = process.env.STAGING_EXPECT_WORKER_CRASH === "true";
 const databaseName = process.env.STAGING_DATABASE_NAME ?? "todir_staging";
 const dockerSql = sql => exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-v", "ON_ERROR_STOP=1", "-c", sql]);
 const request = async path => {
@@ -24,6 +26,18 @@ const responseCookies = response => typeof response.headers.getSetCookie === "fu
   ? response.headers.getSetCookie().map(cookie => cookie.split(";", 1)[0])
   : (response.headers.get("set-cookie") ?? "").split(/,(?=[^;]+=)/).filter(Boolean).map(cookie => cookie.split(";", 1)[0]);
 const mergeCookies = (...cookieLists) => [...new Map(cookieLists.flat().map(cookie => [cookie.split("=", 1)[0], cookie])).values()].join("; ");
+
+if (minioInitContainer) {
+  let status = "";
+  for (let attempt = 0; attempt < 30; attempt++) {
+    status = (await exec("docker", ["inspect", "-f", "{{.State.Status}}", minioInitContainer])).stdout.trim();
+    if (status === "exited") break;
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  const exitCode = (await exec("docker", ["inspect", "-f", "{{.State.ExitCode}}", minioInitContainer])).stdout.trim();
+  if (status !== "exited" || exitCode !== "0") throw new Error(`private object-storage bucket initialization failed: status=${status};exit=${exitCode}`);
+  console.log("object-storage-bucket=private-files;anonymous-access=disabled");
+}
 
 const live = await Promise.all(Array.from({ length: 100 }, () => request("/health/live")));
 if (live.some(result => result.status !== 200)) throw new Error("live health load did not remain available");
@@ -107,7 +121,18 @@ if (rabbitContainer && postgresContainer) {
   if (recovered !== messageIds.length) throw new Error(`outbox did not recover after broker restart: ${recovered}/${messageIds.length}`);
   console.log(`broker-recovery=published;outbox-throughput=${recovered}`);
   if (workerContainer) {
-    await exec("docker", ["restart", workerContainer]);
+    if (expectWorkerCrash) {
+      let workerState = "";
+      for (let attempt = 0; attempt < 30; attempt++) {
+        workerState = (await exec("docker", ["inspect", "-f", "{{.State.Status}}", workerContainer])).stdout.trim();
+        if (workerState === "exited") break;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      if (workerState !== "exited") throw new Error(`worker did not stop after controlled post-commit failure injection: ${workerState}`);
+      await exec("docker", ["start", workerContainer]);
+    } else {
+      await exec("docker", ["restart", workerContainer]);
+    }
     await new Promise(resolve => setTimeout(resolve, 5000));
     const running = (await exec("docker", ["inspect", "-f", "{{.State.Running}}", workerContainer])).stdout.trim();
     if (running !== "true") throw new Error("worker did not recover after controlled restart");

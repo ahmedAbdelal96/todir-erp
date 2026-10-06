@@ -112,8 +112,16 @@ jobs:
       - name: Validate API contract
         run: pnpm api:contract
 
+      - name: Regenerate API client and verify clean tree
+        run: |
+          pnpm api:generate
+          git diff --exit-code -- src/frontend/apps/todir-web/src/api/platform-client.ts
+
       - name: Validate generated API client
         run: pnpm api:drift
+
+      - name: Audit .NET dependencies
+        run: dotnet list Todir.sln package --vulnerable --include-transitive
 
       - name: Check API breaking changes
         run: pnpm api:breaking
@@ -204,7 +212,16 @@ jobs:
             -out "$rabbit_tls_directory/ca.crt" >/dev/null 2>&1
           cp "$rabbit_tls_directory/ca.crt" "$rabbit_tls_directory/server.crt"
           chmod 644 "$rabbit_tls_directory/ca.crt" "$rabbit_tls_directory/server.crt"
-          chmod 644 "$rabbit_tls_directory/server.key"
+          chmod 600 "$rabbit_tls_directory/server.key"
+          web_tls_directory="$RUNNER_TEMP/web-tls"
+          mkdir -p "$web_tls_directory"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+            -keyout "$web_tls_directory/server.key" \
+            -out "$web_tls_directory/server.crt" >/dev/null 2>&1
+          chmod 644 "$web_tls_directory/server.crt"
+          chmod 600 "$web_tls_directory/server.key"
           echo "::add-mask::$database_password"
           echo "::add-mask::$rabbit_password"
           echo "::add-mask::$certificate_password"
@@ -214,6 +231,7 @@ jobs:
           echo "STAGING_CERTIFICATE_PASSWORD=$certificate_password" >> "$GITHUB_ENV"
           echo "STAGING_CERTIFICATE_BASE64=$certificate_base64" >> "$GITHUB_ENV"
           echo "STAGING_RABBIT_TLS_DIRECTORY=$rabbit_tls_directory" >> "$GITHUB_ENV"
+          echo "STAGING_WEB_TLS_DIRECTORY=$web_tls_directory" >> "$GITHUB_ENV"
 
       - name: Create staging from OpenTofu
         working-directory: ops/terraform
@@ -229,27 +247,35 @@ jobs:
           -var="data_protection_certificate_base64=${{ env.STAGING_CERTIFICATE_BASE64 }}"
           -var="data_protection_certificate_password=${{ env.STAGING_CERTIFICATE_PASSWORD }}"
           -var="rabbit_tls_directory=${{ env.STAGING_RABBIT_TLS_DIRECTORY }}"
+          -var="web_tls_directory=${{ env.STAGING_WEB_TLS_DIRECTORY }}"
+          -var="failure_injection=crash-after-inbox-commit"
 
       - name: Run staging health smoke test
         run: |
           curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18080/health
           curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18080/health/ready
-          curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18081/
-          web_api_status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18081/api/v1/session)"
+          curl --fail --insecure --retry 30 --retry-delay 2 --retry-connrefused https://127.0.0.1:18081/
+          web_api_status="$(curl --silent --insecure --output /dev/null --write-out '%{http_code}' https://127.0.0.1:18081/api/v1/session)"
           test "$web_api_status" = "401"
 
       - name: Run staging load and broker recovery drills
         env:
-          STAGING_API_URL: http://127.0.0.1:18080
+          STAGING_API_URL: https://127.0.0.1:18081
           STAGING_RABBIT_CONTAINER: kernel-${{ github.sha }}-rabbitmq
           STAGING_POSTGRES_CONTAINER: kernel-${{ github.sha }}-postgres
           STAGING_WORKER_CONTAINER: kernel-${{ github.sha }}-worker
+          STAGING_MINIO_INIT_CONTAINER: kernel-${{ github.sha }}-minio-init
           STAGING_DATABASE_NAME: todir_staging
+          STAGING_EXPECT_WORKER_CRASH: true
+          NODE_EXTRA_CA_CERTS: ${{ env.STAGING_WEB_TLS_DIRECTORY }}/server.crt
         run: node scripts/verification/staging-drills.mjs
 
       - name: Run staging backup and restore verification
         env:
           STAGING_POSTGRES_CONTAINER: kernel-${{ github.sha }}-postgres
+          STAGING_NETWORK: kernel-${{ github.sha }}-private
+          STAGING_MIGRATOR_IMAGE: kernel-migrator:${{ github.sha }}
+          STAGING_DATABASE_PASSWORD: ${{ env.STAGING_DATABASE_PASSWORD }}
         shell: bash
         run: |
           backup_file="$RUNNER_TEMP/platform-backup.dump"
@@ -259,7 +285,16 @@ jobs:
           docker exec "$STAGING_POSTGRES_CONTAINER" dropdb --if-exists --username=postgres "$restore_database"
           docker exec "$STAGING_POSTGRES_CONTAINER" createdb --username=postgres "$restore_database"
           docker exec "$STAGING_POSTGRES_CONTAINER" pg_restore --username=postgres --exit-on-error --dbname="$restore_database" /tmp/platform-backup.dump
+          docker run --rm --network "$STAGING_NETWORK" \
+            -e "TODIR_MIGRATOR_CONNECTION=Host=$STAGING_POSTGRES_CONTAINER;Database=$restore_database;Username=postgres;Password=$STAGING_DATABASE_PASSWORD" \
+            -e "TODIR_RUNTIME_PASSWORD=$STAGING_DATABASE_PASSWORD" \
+            -e "TODIR_REPOSITORY_ROOT=/app" \
+            "$STAGING_MIGRATOR_IMAGE"
           docker exec "$STAGING_POSTGRES_CONTAINER" psql --username=postgres --dbname="$restore_database" --command="select count(*) from platform_tenancy.tenant"
+          rls_result="$(docker exec "$STAGING_POSTGRES_CONTAINER" psql --username=postgres --dbname="$restore_database" --tuples-only --no-align --command="select case when count(*) = 22 and bool_and(c.relrowsecurity and c.relforcerowsecurity) then 0 else 1 end from pg_class c join pg_namespace n on n.oid = c.relnamespace join (values ('platform_iam','membership_invitation'), ('platform_authz','role'), ('platform_authz','role_permission'), ('platform_authz','membership_role_assignment'), ('platform_modules','module_instance'), ('platform_modules','module_operation'), ('platform_entitlements','entitlement_snapshot'), ('platform_messaging','outbox_message'), ('platform_messaging','inbox_message'), ('platform_messaging','message_error'), ('platform_audit','audit_entry'), ('platform_numbering','sequence_definition'), ('platform_settings','setting_value'), ('platform_files','file_record'), ('platform_custom_fields','custom_field_definition'), ('platform_import','import_batch'), ('platform_import','import_error'), ('platform_import','import_chunk_job'), ('platform_notifications','notification'), ('platform_notifications','notification_delivery'), ('platform_scheduling','job_schedule'), ('platform_iam','support_access_grant')) as expected(schema_name, table_name) on expected.schema_name = n.nspname and expected.table_name = c.relname where c.relkind = 'r'")"
+          test "$rls_result" = "0"
+          runtime_role_result="$(docker exec "$STAGING_POSTGRES_CONTAINER" psql --username=postgres --dbname="$restore_database" --tuples-only --no-align --command="select case when not rolsuper and not rolbypassrls then 0 else 1 end from pg_roles where rolname = 'erp_app'")"
+          test "$runtime_role_result" = "0"
           docker exec "$STAGING_POSTGRES_CONTAINER" dropdb --username=postgres "$restore_database"
           docker exec "$STAGING_POSTGRES_CONTAINER" rm --force /tmp/platform-backup.dump
 
@@ -278,6 +313,8 @@ jobs:
           -var="data_protection_certificate_base64=${{ env.STAGING_CERTIFICATE_BASE64 }}"
           -var="data_protection_certificate_password=${{ env.STAGING_CERTIFICATE_PASSWORD }}"
           -var="rabbit_tls_directory=${{ env.STAGING_RABBIT_TLS_DIRECTORY }}"
+          -var="web_tls_directory=${{ env.STAGING_WEB_TLS_DIRECTORY }}"
+          -var="failure_injection=crash-after-inbox-commit"
 
       - name: Validate Docker Compose skeleton
         run: docker compose config

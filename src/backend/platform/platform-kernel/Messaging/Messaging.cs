@@ -19,6 +19,29 @@ public sealed class OutboxPublishedMessageConsumer(IInboxStore inboxStore) : ICo
     {
         if (!await inboxStore.TryBeginAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken)) return;
         await inboxStore.MarkProcessedAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken);
+        FailureInjection.CrashAfterInboxCommitIfConfigured();
+    }
+
+    private static class FailureInjection
+    {
+        public static void CrashAfterInboxCommitIfConfigured()
+        {
+            if (!string.Equals(Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION"), "crash-after-inbox-commit", StringComparison.OrdinalIgnoreCase)) return;
+            var markerPath = Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION_MARKER");
+            if (string.IsNullOrWhiteSpace(markerPath)) return;
+            var directory = Path.GetDirectoryName(markerPath);
+            if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+            try
+            {
+                using var marker = new FileStream(markerPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.WriteThrough);
+                marker.Flush(flushToDisk: true);
+            }
+            catch (IOException)
+            {
+                return;
+            }
+            Environment.FailFast("Controlled failure injection after Inbox commit and before broker acknowledgement.");
+        }
     }
 }
 
@@ -64,14 +87,14 @@ public sealed record MessageError(Guid MessageId, TenantId TenantId, string Cons
 public interface IMessageErrorStore
 {
     Task RecordAsync(MessageError messageError, CancellationToken cancellationToken = default);
-    Task MarkResolvedAsync(Guid messageId, string consumerEndpoint, CancellationToken cancellationToken = default);
+    Task MarkResolvedAsync(Guid messageId, string consumerEndpoint, TenantId tenantId, CancellationToken cancellationToken = default);
 }
 public sealed class InMemoryMessageErrorStore : IMessageErrorStore
 {
     private readonly List<MessageError> errors = [];
     private readonly object gate = new();
     public Task RecordAsync(MessageError messageError, CancellationToken cancellationToken = default) { lock (gate) errors.Add(messageError); return Task.CompletedTask; }
-    public Task MarkResolvedAsync(Guid messageId, string consumerEndpoint, CancellationToken cancellationToken = default)
+    public Task MarkResolvedAsync(Guid messageId, string consumerEndpoint, TenantId tenantId, CancellationToken cancellationToken = default)
     {
         lock (gate)
         {

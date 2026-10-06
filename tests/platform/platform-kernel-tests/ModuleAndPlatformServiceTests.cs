@@ -104,6 +104,23 @@ public sealed class ModuleAndPlatformServiceTests
     }
 
     [Fact]
+    public async Task InboxRejectsConcurrentDuplicatesAndAllowsOnlyOneCompletedEffect()
+    {
+        var clock = new TestTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryInboxStore(clock, TimeSpan.FromMinutes(5));
+        var tenant = TenantId.New();
+        var messageId = Guid.CreateVersion7();
+
+        Assert.True(await store.TryBeginAsync("platform-outbox-probe", messageId, tenant));
+        Assert.False(await store.TryBeginAsync("platform-outbox-probe", messageId, tenant));
+        clock.Advance(TimeSpan.FromMinutes(6));
+        Assert.True(await store.TryBeginAsync("platform-outbox-probe", messageId, tenant));
+        await store.MarkProcessedAsync("platform-outbox-probe", messageId, tenant);
+        Assert.False(await store.TryBeginAsync("platform-outbox-probe", messageId, tenant));
+        Assert.False(await store.TryBeginAsync("platform-outbox-probe", messageId, TenantId.New()));
+    }
+
+    [Fact]
     public void EntitlementSnapshotsRequireSignatureAndInvalidateCapabilityAvailability()
     {
         var tenant = TenantId.New();
@@ -181,6 +198,12 @@ public sealed class ModuleAndPlatformServiceTests
     }
 
     private static ModuleManifest Manifest(string id, IReadOnlyList<string> hard) => new(id, "1.0.0", 1, "L0", "kernel", false, "tenant", new(hard, []), new(id, []), [], new([], []), new([], []), new(false, "never_disable"));
+
+    private sealed class TestTimeProvider(DateTimeOffset current) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => current;
+        public void Advance(TimeSpan amount) => current = current.Add(amount);
+    }
 
     private sealed class RecordingNotificationSender(NotificationChannel channel) : INotificationSender
     {

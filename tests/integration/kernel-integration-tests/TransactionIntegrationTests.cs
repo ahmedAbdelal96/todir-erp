@@ -80,6 +80,20 @@ public sealed class TransactionIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task DatabaseCommandTimeoutCancelsLongRunningQuery()
+    {
+        var adminConnectionString = Require("TODIR_P04_ADMIN_CONNECTION");
+        var connectionString = new NpgsqlConnectionStringBuilder(adminConnectionString)
+        {
+            CommandTimeout = 1
+        }.ConnectionString;
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        await using var command = dataSource.CreateCommand("select pg_sleep(3)");
+
+        await Assert.ThrowsAsync<NpgsqlException>(() => command.ExecuteScalarAsync());
+    }
+
     private static string Require(string name) => Environment.GetEnvironmentVariable(name) ?? throw new InvalidOperationException($"Set {name} to run the transaction integration gate.");
 
     private static async Task<string> SetRuntimePasswordAsync(string adminConnectionString)
