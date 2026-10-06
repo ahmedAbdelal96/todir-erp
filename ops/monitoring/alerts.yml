@@ -1,0 +1,24 @@
+groups:
+  - name: kernel-platform
+    rules:
+      - alert: OutboxBacklogAgeHigh
+        expr: platform_outbox_oldest_pending_age_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Transactional outbox backlog is older than five minutes.
+      - alert: WorkerUnavailable
+        expr: up{service="background-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Background worker is unavailable.
+      - alert: ApiErrorRateHigh
+        expr: rate(http_server_request_duration_count{status_code=~"5.."}[5m]) / rate(http_server_request_duration_count[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: API server error rate exceeded five percent.

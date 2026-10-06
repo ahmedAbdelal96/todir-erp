@@ -4,6 +4,7 @@
     <RootNamespace>Todir.Api</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Npgsql" />
     <ProjectReference Include="../../shared/Todir.BuildingBlocks/Todir.BuildingBlocks.csproj" />
     <ProjectReference Include="../../platform/platform-kernel/platform-kernel.csproj" />
   </ItemGroup>

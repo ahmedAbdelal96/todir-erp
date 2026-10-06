@@ -1,17 +1,40 @@
 using Todir.BuildingBlocks.Observability;
 using Todir.Platform.Hosting;
+using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddTodirObservability(builder.Environment.ApplicationName, builder.Environment.EnvironmentName);
 builder.Services.AddTodirPlatform(builder.Configuration);
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
-builder.Services.AddRateLimiter(options => options.AddFixedWindowLimiter("api", limiter =>
+var configuredOrigins = (builder.Configuration["TODIR_CORS_ORIGINS"] ?? string.Empty)
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+builder.Services.AddCors(options => options.AddPolicy("web", policy =>
 {
-    limiter.PermitLimit = 120;
-    limiter.Window = TimeSpan.FromMinutes(1);
-    limiter.QueueLimit = 0;
+    if (configuredOrigins.Length == 0) policy.SetIsOriginAllowed(_ => false);
+    else policy.WithOrigins(configuredOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
 }));
+var keyDirectory = builder.Configuration["TODIR_DATA_PROTECTION_KEYS"];
+if (string.IsNullOrWhiteSpace(keyDirectory) && builder.Environment.IsProduction())
+    throw new InvalidOperationException("TODIR_DATA_PROTECTION_KEYS is required outside development.");
+if (!string.IsNullOrWhiteSpace(keyDirectory))
+{
+    Directory.CreateDirectory(keyDirectory);
+    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keyDirectory));
+}
+var requestBodyLimit = long.TryParse(builder.Configuration["TODIR_REQUEST_BODY_LIMIT_BYTES"], out var configuredLimit) ? configuredLimit : 2_000_000;
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = requestBodyLimit);
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("api", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst("membership_id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+});
 
 var app = builder.Build();
 
@@ -20,6 +43,7 @@ app.UseTodirCorrelation();
 app.UseTodirExceptionHandling();
 app.UseTodirSecurityHeaders();
 app.UseHttpsRedirection();
+app.UseCors("web");
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
@@ -42,6 +66,23 @@ app.Use(async (context, next) =>
 });
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
+app.MapGet("/health/ready", async (IServiceProvider services, CancellationToken cancellationToken) =>
+{
+    var dataSource = services.GetService<NpgsqlDataSource>();
+    if (dataSource is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    try
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("select 1", connection);
+        await command.ExecuteScalarAsync(cancellationToken);
+        return Results.Ok(new { status = "ready" });
+    }
+    catch (NpgsqlException)
+    {
+        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+    }
+});
 app.MapTodirPlatform();
 app.Run();
 

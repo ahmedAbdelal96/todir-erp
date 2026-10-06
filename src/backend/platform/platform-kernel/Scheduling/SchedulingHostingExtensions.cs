@@ -18,7 +18,11 @@ public static class SchedulingHostingExtensions
                 options.UsePersistentStore(store =>
                 {
                     store.UseProperties = true;
-                    store.UsePostgres(postgres => postgres.ConnectionString = connectionString);
+                    store.UsePostgres(postgres =>
+                    {
+                        postgres.ConnectionString = connectionString;
+                        postgres.TablePrefix = "platform_scheduling.qrtz_";
+                    });
                 });
             }
         });

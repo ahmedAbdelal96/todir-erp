@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using Todir.SharedKernel.Identifiers;
 using Todir.Platform.Entitlements;
@@ -15,6 +16,7 @@ using Todir.Platform.Transactions;
 using Todir.Platform.Messaging;
 using System.Text;
 using Todir.Platform.Security;
+using Todir.Platform.Authorization;
 
 namespace Todir.Platform.Hosting;
 
@@ -58,6 +60,10 @@ public static class PlatformHostingExtensions
         var entitlementKey = configuration["TODIR_ENTITLEMENT_HMAC_KEY"];
         services.AddSingleton<IEntitlementVerifier>(_ => new HmacEntitlementVerifier(string.IsNullOrWhiteSpace(entitlementKey) ? new Dictionary<string, byte[]>() : new Dictionary<string, byte[]> { ["current"] = Encoding.UTF8.GetBytes(entitlementKey) }));
         services.AddSingleton<IEntitlementGuard, EntitlementGuard>();
+        services.AddSingleton<IPermissionAuthorizer, PermissionAuthorizer>();
+        services.AddSingleton<IAuthorizationSubjectStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlAuthorizationSubjectStore(dataSource) : new NullAuthorizationSubjectStore());
+        var fileSigningSecret = configuration["TODIR_FILE_SIGNING_SECRET"];
+        if (!string.IsNullOrWhiteSpace(fileSigningSecret)) services.AddSingleton<IFileAccessSigner>(_ => new HmacFileAccessSigner(fileSigningSecret));
         services.AddSingleton<IAuditWriter>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlAuditWriter(dataSource) : new InMemoryAuditWriter());
         services.AddSingleton<ISequenceAllocator>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlSequenceAllocator(dataSource) : new InMemorySequenceAllocator());
         services.AddSingleton<IMessageRetryPolicy, ExponentialMessageRetryPolicy>();
@@ -82,7 +88,7 @@ public static class PlatformHostingExtensions
         {
             var tokens = antiforgery.GetAndStoreTokens(context);
             return Results.Ok(new { token = tokens.RequestToken });
-        });
+        }).RequireRateLimiting("auth");
         group.MapPost("/auth/login", async (LoginRequest request, HttpContext context, IIdentityStore store, ISessionService sessions, CancellationToken cancellationToken) =>
         {
             var identity = await store.AuthenticateAsync(request.Email, request.Password, cancellationToken);
@@ -99,6 +105,18 @@ public static class PlatformHostingExtensions
         group.MapPost("/auth/logout", async (HttpContext context) => { await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme); return Results.NoContent(); }).RequireAuthorization();
         group.MapGet("/modules", (IModuleRegistry registry) => Results.Ok(registry.GetAll()));
         group.MapGet("/session", (HttpContext context) => context.User.Identity?.IsAuthenticated == true ? Results.Ok(new { authenticated = true, tenantId = context.User.FindFirstValue("tenant_id") }) : Results.Unauthorized()).RequireAuthorization();
+        group.MapGet("/authorization/check", async (string permission, HttpContext context, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(context.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
+            var subject = await subjectStore.LoadAsync(new(tenantId), membershipId, cancellationToken);
+            if (subject is null) return Results.Forbid();
+            var scope = Guid.TryParse(context.User.FindFirstValue("branch_id"), out var branchId) && Guid.TryParse(context.User.FindFirstValue("legal_entity_id"), out var entityId)
+                ? PermissionScope.ForBranch(new(tenantId), new(entityId), new(branchId))
+                : Guid.TryParse(context.User.FindFirstValue("legal_entity_id"), out entityId)
+                    ? PermissionScope.ForLegalEntity(new(tenantId), new(entityId))
+                    : PermissionScope.ForTenant(new(tenantId));
+            return authorizer.Authorize(subject, permission, scope) ? Results.Ok(new { authorized = true }) : Results.Forbid();
+        }).RequireAuthorization();
         group.MapPost("/context/tenant", async (TenantSelection request, HttpContext context, IIdentityStore store, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(request.TenantId, out var tenantId) || tenantId == Guid.Empty) return Results.BadRequest(new { code = "tenant.invalid" });

@@ -1,5 +1,7 @@
 using Todir.Platform.Identity;
 using Todir.Platform.Security;
+using Todir.Platform.Services;
+using Todir.SharedKernel.Identifiers;
 using Xunit;
 
 namespace Todir.Platform.Tests;
@@ -49,6 +51,38 @@ public sealed class SecurityServiceTests
         Assert.True(service.CanAccess(grant.Id, tenant, actor));
         clock.Advance(TimeSpan.FromMinutes(11));
         Assert.False(service.CanAccess(grant.Id, tenant, actor));
+    }
+
+    [Fact]
+    public void SignedFileAccessIsTenantBoundAndExpires()
+    {
+        var tenant = TenantId.New();
+        var otherTenant = TenantId.New();
+        var file = new FileRecord(Guid.NewGuid(), tenant, "sales", "invoice", Guid.NewGuid(), "tenant/object", "invoice.pdf", "application/pdf", 12, "hash", FileStatus.Ready, "internal", Guid.NewGuid(), DateTimeOffset.UtcNow);
+        var signer = new HmacFileAccessSigner("file-secret");
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var url = signer.CreateDownloadUrl(file, tenant, expiresAt);
+        var signature = url[(url.IndexOf("signature=", StringComparison.Ordinal) + "signature=".Length)..];
+
+        Assert.True(signer.VerifyDownload(file, tenant, expiresAt, signature, DateTimeOffset.UtcNow));
+        Assert.False(signer.VerifyDownload(file, otherTenant, expiresAt, signature, DateTimeOffset.UtcNow));
+        Assert.False(signer.VerifyDownload(file, tenant, expiresAt, "not-hex", DateTimeOffset.UtcNow));
+        Assert.False(signer.VerifyDownload(file, tenant, expiresAt, signature, expiresAt));
+    }
+
+    [Fact]
+    public void WebhookSignatureRejectsReplayAndMalformedInput()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var verifier = new HmacWebhookVerifier("webhook-secret");
+        var body = "{\"event\":\"paid\"}"u8.ToArray();
+        var timestamp = now.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var payload = System.Text.Encoding.UTF8.GetBytes(timestamp + "." + System.Text.Encoding.UTF8.GetString(body));
+        var signature = Convert.ToHexString(System.Security.Cryptography.HMACSHA256.HashData(System.Text.Encoding.UTF8.GetBytes("webhook-secret"), payload));
+
+        Assert.True(verifier.Verify(body, timestamp, signature, now));
+        Assert.False(verifier.Verify(body, timestamp, "malformed", now));
+        Assert.False(verifier.Verify(body, (now - TimeSpan.FromHours(1)).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture), signature, now));
     }
 
     private sealed class FakeTimeProvider(DateTimeOffset initialTime) : TimeProvider

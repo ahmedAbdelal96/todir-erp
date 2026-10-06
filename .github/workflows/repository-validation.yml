@@ -69,6 +69,9 @@ jobs:
       - name: Build .NET solution
         run: dotnet build Todir.sln --no-restore
 
+      - name: Verify .NET formatting
+        run: dotnet format Todir.sln --verify-no-changes --no-restore
+
       - name: Apply controlled database bootstrap
         run: dotnet run --project src/backend/hosts/database-migrator/database-migrator.csproj --no-build
         env:
@@ -103,6 +106,103 @@ jobs:
 
       - name: Validate API contract
         run: pnpm api:contract
+
+      - name: Audit production frontend dependencies
+        run: pnpm audit --prod
+
+      - name: Validate OpenTofu formatting
+        uses: opentofu/setup-opentofu@v1
+      - run: tofu fmt -check -recursive ops/terraform
+
+      - name: Build immutable application images
+        run: |
+          docker build --tag "kernel-api:${GITHUB_SHA}" --file ops/containers/api.Dockerfile .
+          docker build --tag "kernel-worker:${GITHUB_SHA}" --file ops/containers/worker.Dockerfile .
+          docker build --tag "kernel-migrator:${GITHUB_SHA}" --file ops/containers/database-migrator.Dockerfile .
+          docker build --tag "kernel-web:${GITHUB_SHA}" --file ops/containers/web.Dockerfile .
+
+      - name: Scan application images
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "kernel-api:${{ github.sha }}"
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Scan worker image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "kernel-worker:${{ github.sha }}"
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Scan migrator image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "kernel-migrator:${{ github.sha }}"
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Scan web image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "kernel-web:${{ github.sha }}"
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Validate staging infrastructure
+        working-directory: ops/terraform
+        run: |
+          tofu init -backend=false
+          tofu validate
+
+      - name: Prepare isolated staging secrets
+        shell: bash
+        run: |
+          database_password="$(openssl rand -hex 24)"
+          rabbit_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$database_password"
+          echo "::add-mask::$rabbit_password"
+          echo "STAGING_DATABASE_PASSWORD=$database_password" >> "$GITHUB_ENV"
+          echo "STAGING_RABBIT_PASSWORD=$rabbit_password" >> "$GITHUB_ENV"
+
+      - name: Create staging from OpenTofu
+        working-directory: ops/terraform
+        run: >-
+          tofu apply -auto-approve
+          -var="image_tag=${{ github.sha }}"
+          -var="api_image=kernel-api:${{ github.sha }}"
+          -var="worker_image=kernel-worker:${{ github.sha }}"
+          -var="migrator_image=kernel-migrator:${{ github.sha }}"
+          -var="web_image=kernel-web:${{ github.sha }}"
+          -var="database_password=${{ env.STAGING_DATABASE_PASSWORD }}"
+          -var="rabbit_password=${{ env.STAGING_RABBIT_PASSWORD }}"
+
+      - name: Run staging health smoke test
+        run: |
+          curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18080/health
+          curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18080/health/ready
+          curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18081/
+
+      - name: Destroy isolated staging
+        if: always()
+        working-directory: ops/terraform
+        run: >-
+          tofu destroy -auto-approve
+          -var="image_tag=${{ github.sha }}"
+          -var="api_image=kernel-api:${{ github.sha }}"
+          -var="worker_image=kernel-worker:${{ github.sha }}"
+          -var="migrator_image=kernel-migrator:${{ github.sha }}"
+          -var="web_image=kernel-web:${{ github.sha }}"
+          -var="database_password=${{ env.STAGING_DATABASE_PASSWORD }}"
+          -var="rabbit_password=${{ env.STAGING_RABBIT_PASSWORD }}"
 
       - name: Validate Docker Compose skeleton
         run: docker compose config
