@@ -64,7 +64,9 @@ resource "docker_container" "rabbitmq" {
 
 resource "docker_container" "minio" {
   name    = "${local.project}-minio"
-  image   = "minio/minio:RELEASE.2024-06-13T22-53-53Z"
+  # The upstream community image is no longer pullable from Docker Hub or Quay.
+  # This public mirror preserves the exact release and is pinned by digest.
+  image   = "jumpserver/minio:RELEASE.2024-06-13T22-53-53Z@sha256:fea940414bd63fc721a8f5a1103d00b58312ecb9cdb89557b1164f32f23777f8"
   command = ["server", "/data", "--console-address", ":9001"]
   env = [
     "MINIO_ROOT_USER=todir",
@@ -77,7 +79,7 @@ resource "docker_container" "minio" {
 
 resource "docker_container" "minio_init" {
   name       = "${local.project}-minio-init"
-  image      = "minio/mc:RELEASE.2024-06-13T22-53-53Z"
+  image      = "jumpserver/minio:RELEASE.2024-06-13T22-53-53Z@sha256:fea940414bd63fc721a8f5a1103d00b58312ecb9cdb89557b1164f32f23777f8"
   entrypoint = ["sh", "-c"]
   command = [
     "until mc alias set local http://${docker_container.minio.name}:9000 todir ${var.rabbit_password}; do sleep 1; done; mc mb --ignore-existing local/private-files; mc anonymous set none local/private-files",
