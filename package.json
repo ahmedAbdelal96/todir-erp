@@ -10,6 +10,10 @@
     "architecture:modules": "node scripts/architecture/validate-module-manifests.mjs",
     "database:policy": "node scripts/architecture/validate-database-policy.mjs",
     "api:contract": "node scripts/architecture/validate-openapi.mjs",
+    "api:generate": "node scripts/api/generate-platform-client.mjs",
+    "api:drift": "node scripts/api/generate-platform-client.mjs --check",
+    "api:breaking": "node scripts/api/check-breaking-contract.mjs",
+    "frontend:smoke": "node scripts/verification/frontend-shell-smoke.mjs",
     "typecheck": "tsc --noEmit --project tsconfig.json && pnpm --dir src/frontend/apps/todir-web typecheck"
   },
   "devDependencies": {

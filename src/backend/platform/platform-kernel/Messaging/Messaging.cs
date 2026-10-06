@@ -1,3 +1,4 @@
+using MassTransit;
 using Todir.SharedKernel.Identifiers;
 
 namespace Todir.Platform.Messaging;
@@ -9,6 +10,17 @@ public interface IMessagePublisher { Task PublishAsync<T>(MessageEnvelope<T> mes
 public interface IMessageConsumer { Task ConsumeAsync(MessageEnvelope<JsonElementPayload> message, CancellationToken cancellationToken = default); }
 public readonly record struct JsonElementPayload(string Json);
 public sealed record OutboxPublishedMessage(Guid MessageId, string MessageType, string Payload, TenantId TenantId, DateTimeOffset OccurredAt, Guid CorrelationId, Guid CausationId, string SourceModule, string? TraceParent, int Attempts = 0);
+
+public sealed class OutboxPublishedMessageConsumer(IInboxStore inboxStore) : IConsumer<OutboxPublishedMessage>
+{
+    private const string Endpoint = "platform-outbox-probe";
+
+    public async Task Consume(ConsumeContext<OutboxPublishedMessage> context)
+    {
+        if (!await inboxStore.TryBeginAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken)) return;
+        await inboxStore.MarkProcessedAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken);
+    }
+}
 public sealed record MessageRetryDecision(bool Retry, DateTimeOffset? NextAttemptAt, string? ErrorCode);
 public interface IMessageRetryPolicy
 {

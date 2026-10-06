@@ -33,6 +33,21 @@ variable "rabbit_password" {
   sensitive = true
 }
 
+variable "data_protection_certificate_base64" {
+  type      = string
+  sensitive = true
+}
+
+variable "data_protection_certificate_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "rabbit_tls_directory" {
+  type        = string
+  description = "Runner-local directory containing ca.crt, server.crt, and server.key for the isolated RabbitMQ container."
+}
+
 variable "api_port" {
   type    = number
   default = 18080

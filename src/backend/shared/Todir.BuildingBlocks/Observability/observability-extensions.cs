@@ -17,7 +17,8 @@ public static class TodirObservabilityExtensions
                 .AddSource("Todir.Request")
                 .AddSource("Todir.Handler")
                 .AddSource("Todir.Database")
-                .AddSource("Npgsql"));
+                .AddSource("Npgsql")
+                .AddAspNetCoreInstrumentation());
         return services;
     }
 

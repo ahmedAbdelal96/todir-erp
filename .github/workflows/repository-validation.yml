@@ -45,6 +45,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
@@ -107,6 +109,15 @@ jobs:
       - name: Validate API contract
         run: pnpm api:contract
 
+      - name: Validate generated API client
+        run: pnpm api:drift
+
+      - name: Check API breaking changes
+        run: pnpm api:breaking
+
+      - name: Validate frontend shell
+        run: pnpm frontend:smoke
+
       - name: Audit production frontend dependencies
         run: pnpm audit --prod
 
@@ -168,10 +179,35 @@ jobs:
         run: |
           database_password="$(openssl rand -hex 24)"
           rabbit_password="$(openssl rand -hex 24)"
+          certificate_password="$(openssl rand -hex 24)"
+          certificate_file="$RUNNER_TEMP/data-protection.pfx"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj "/CN=kernel-data-protection" \
+            -keyout "$RUNNER_TEMP/data-protection.key" \
+            -out "$RUNNER_TEMP/data-protection.crt" >/dev/null 2>&1
+          openssl pkcs12 -export -out "$certificate_file" \
+            -inkey "$RUNNER_TEMP/data-protection.key" \
+            -in "$RUNNER_TEMP/data-protection.crt" \
+            -passout "pass:$certificate_password" >/dev/null 2>&1
+          certificate_base64="$(base64 -w 0 "$certificate_file")"
+          rabbit_tls_directory="$RUNNER_TEMP/rabbit-tls"
+          mkdir -p "$rabbit_tls_directory"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj "/CN=rabbitmq" \
+            -addext "subjectAltName=DNS:rabbitmq" \
+            -keyout "$rabbit_tls_directory/server.key" \
+            -out "$rabbit_tls_directory/ca.crt" >/dev/null 2>&1
+          cp "$rabbit_tls_directory/ca.crt" "$rabbit_tls_directory/server.crt"
+          chmod 644 "$rabbit_tls_directory/server.key"
           echo "::add-mask::$database_password"
           echo "::add-mask::$rabbit_password"
+          echo "::add-mask::$certificate_password"
+          echo "::add-mask::$certificate_base64"
           echo "STAGING_DATABASE_PASSWORD=$database_password" >> "$GITHUB_ENV"
           echo "STAGING_RABBIT_PASSWORD=$rabbit_password" >> "$GITHUB_ENV"
+          echo "STAGING_CERTIFICATE_PASSWORD=$certificate_password" >> "$GITHUB_ENV"
+          echo "STAGING_CERTIFICATE_BASE64=$certificate_base64" >> "$GITHUB_ENV"
+          echo "STAGING_RABBIT_TLS_DIRECTORY=$rabbit_tls_directory" >> "$GITHUB_ENV"
 
       - name: Create staging from OpenTofu
         working-directory: ops/terraform
@@ -184,12 +220,23 @@ jobs:
           -var="web_image=kernel-web:${{ github.sha }}"
           -var="database_password=${{ env.STAGING_DATABASE_PASSWORD }}"
           -var="rabbit_password=${{ env.STAGING_RABBIT_PASSWORD }}"
+          -var="data_protection_certificate_base64=${{ env.STAGING_CERTIFICATE_BASE64 }}"
+          -var="data_protection_certificate_password=${{ env.STAGING_CERTIFICATE_PASSWORD }}"
+          -var="rabbit_tls_directory=${{ env.STAGING_RABBIT_TLS_DIRECTORY }}"
 
       - name: Run staging health smoke test
         run: |
           curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18080/health
           curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18080/health/ready
           curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18081/
+
+      - name: Run staging load and broker recovery drills
+        env:
+          STAGING_API_URL: http://127.0.0.1:18080
+          STAGING_RABBIT_CONTAINER: kernel-${{ github.sha }}-rabbitmq
+          STAGING_POSTGRES_CONTAINER: kernel-${{ github.sha }}-postgres
+          STAGING_DATABASE_NAME: todir_staging
+        run: node scripts/verification/staging-drills.mjs
 
       - name: Destroy isolated staging
         if: always()
@@ -203,6 +250,9 @@ jobs:
           -var="web_image=kernel-web:${{ github.sha }}"
           -var="database_password=${{ env.STAGING_DATABASE_PASSWORD }}"
           -var="rabbit_password=${{ env.STAGING_RABBIT_PASSWORD }}"
+          -var="data_protection_certificate_base64=${{ env.STAGING_CERTIFICATE_BASE64 }}"
+          -var="data_protection_certificate_password=${{ env.STAGING_CERTIFICATE_PASSWORD }}"
+          -var="rabbit_tls_directory=${{ env.STAGING_RABBIT_TLS_DIRECTORY }}"
 
       - name: Validate Docker Compose skeleton
         run: docker compose config

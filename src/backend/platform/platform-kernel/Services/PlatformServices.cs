@@ -20,9 +20,17 @@ public sealed class NpgsqlAuditWriter(NpgsqlDataSource dataSource) : IAuditWrite
     public async Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default)
     {
         const string sql = "insert into platform_audit.audit_entry (id, tenant_id, legal_entity_id, branch_id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, before_json, after_json, reason, source, correlation_id, trace_id, occurred_at, metadata_json) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19::jsonb)";
-        await using var command = dataSource.CreateCommand(sql);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var context = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction))
+        {
+            context.Parameters.AddWithValue(entry.TenantId.Value.ToString("D"));
+            await context.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue(entry.Id); command.Parameters.AddWithValue(entry.TenantId.Value); command.Parameters.AddWithValue((object?)entry.LegalEntityId ?? DBNull.Value); command.Parameters.AddWithValue((object?)entry.BranchId ?? DBNull.Value); command.Parameters.AddWithValue(entry.ActorType); command.Parameters.AddWithValue((object?)entry.ActorId ?? DBNull.Value); command.Parameters.AddWithValue((object?)entry.MembershipId ?? DBNull.Value); command.Parameters.AddWithValue(entry.Module); command.Parameters.AddWithValue(entry.Action); command.Parameters.AddWithValue(entry.EntityType); command.Parameters.AddWithValue(entry.EntityId); command.Parameters.AddWithValue((object?)entry.BeforeJson ?? DBNull.Value); command.Parameters.AddWithValue((object?)entry.AfterJson ?? DBNull.Value); command.Parameters.AddWithValue((object?)entry.Reason ?? DBNull.Value); command.Parameters.AddWithValue(entry.Source); command.Parameters.AddWithValue(entry.CorrelationId); command.Parameters.AddWithValue((object?)entry.TraceId ?? DBNull.Value); command.Parameters.AddWithValue(entry.OccurredAt); command.Parameters.AddWithValue((object?)entry.MetadataJson ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 }
 
@@ -40,6 +48,11 @@ public sealed class NpgsqlSequenceAllocator(NpgsqlDataSource dataSource) : ISequ
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var context = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction))
+        {
+            context.Parameters.AddWithValue(definition.TenantId.Value.ToString("D"));
+            await context.ExecuteNonQueryAsync(cancellationToken);
+        }
         await using var command = new NpgsqlCommand("update platform_numbering.sequence_definition set next_value = next_value + 1, version = version + 1 where tenant_id = $1 and sequence_key = $2 and legal_entity_id is not distinct from $3 and branch_id is not distinct from $4 and scope_key is not distinct from $5 and period_key is not distinct from $6 returning prefix_template, next_value - 1, padding", connection, transaction);
         command.Parameters.AddWithValue(definition.TenantId.Value);
         command.Parameters.AddWithValue(definition.Key);
@@ -83,11 +96,17 @@ public static class FileObjectKeys
 }
 
 public sealed record CustomFieldDefinition(Guid Id, TenantId TenantId, string TargetEntityType, string StableKey, string LabelAr, string LabelEn, string FieldType, bool RequiredUi, JsonElement? DefaultValue, JsonElement? Validation, string? Visibility, bool IsActive, long Version);
-public interface ICustomFieldRegistry { void Register(CustomFieldDefinition definition); CustomFieldDefinition Find(TenantId tenantId, string targetEntityType, string stableKey); }
+public interface ICustomFieldRegistry { void Register(CustomFieldDefinition definition); void Rename(TenantId tenantId, string targetEntityType, string stableKey, string labelAr, string labelEn); CustomFieldDefinition Find(TenantId tenantId, string targetEntityType, string stableKey); }
 public sealed class CustomFieldRegistry : ICustomFieldRegistry
 {
     private readonly Dictionary<(TenantId, string, string), CustomFieldDefinition> values = [];
     public void Register(CustomFieldDefinition definition) { var key = (definition.TenantId, definition.TargetEntityType, definition.StableKey); if (values.ContainsKey(key)) throw new InvalidOperationException("custom_field.duplicate_key"); values[key] = definition; }
+    public void Rename(TenantId tenantId, string targetEntityType, string stableKey, string labelAr, string labelEn)
+    {
+        var key = (tenantId, targetEntityType, stableKey);
+        if (!values.TryGetValue(key, out var definition)) throw new KeyNotFoundException("custom_field.not_found");
+        values[key] = definition with { LabelAr = labelAr, LabelEn = labelEn, Version = definition.Version + 1 };
+    }
     public CustomFieldDefinition Find(TenantId tenantId, string targetEntityType, string stableKey) => values.TryGetValue((tenantId, targetEntityType, stableKey), out var value) ? value : throw new KeyNotFoundException("custom_field.not_found");
 }
 

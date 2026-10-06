@@ -85,6 +85,17 @@ public sealed class SecurityServiceTests
         Assert.False(verifier.Verify(body, (now - TimeSpan.FromHours(1)).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture), signature, now));
     }
 
+    [Fact]
+    public void ImportCheckpointIsIdempotentAndResumable()
+    {
+        var store = new InMemoryImportCheckpointStore();
+        var batchId = Guid.CreateVersion7();
+        var checkpoint = new ImportCheckpoint(batchId, 4, 400, 100, "digest", DateTimeOffset.UtcNow);
+        Assert.True(store.TrySave(checkpoint));
+        Assert.False(store.TrySave(checkpoint));
+        Assert.Equal(checkpoint, store.Find(batchId, 4));
+    }
+
     private sealed class FakeTimeProvider(DateTimeOffset initialTime) : TimeProvider
     {
         private DateTimeOffset current = initialTime;

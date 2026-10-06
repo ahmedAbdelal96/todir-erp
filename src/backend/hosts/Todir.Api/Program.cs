@@ -4,6 +4,7 @@ using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
+using System.Security.Cryptography.X509Certificates;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddTodirObservability(builder.Environment.ApplicationName, builder.Environment.EnvironmentName);
@@ -17,12 +18,26 @@ builder.Services.AddCors(options => options.AddPolicy("web", policy =>
     else policy.WithOrigins(configuredOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
 }));
 var keyDirectory = builder.Configuration["TODIR_DATA_PROTECTION_KEYS"];
-if (string.IsNullOrWhiteSpace(keyDirectory) && builder.Environment.IsProduction())
-    throw new InvalidOperationException("TODIR_DATA_PROTECTION_KEYS is required outside development.");
+var certificateText = builder.Configuration["TODIR_DATA_PROTECTION_CERTIFICATE_BASE64"];
+var certificatePassword = builder.Configuration["TODIR_DATA_PROTECTION_CERTIFICATE_PASSWORD"];
+if (!builder.Environment.IsDevelopment() && (string.IsNullOrWhiteSpace(keyDirectory) || string.IsNullOrWhiteSpace(certificateText) || string.IsNullOrWhiteSpace(certificatePassword)))
+    throw new InvalidOperationException("Persistent encrypted Data Protection keys are required outside development.");
 if (!string.IsNullOrWhiteSpace(keyDirectory))
 {
     Directory.CreateDirectory(keyDirectory);
-    builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keyDirectory));
+    var dataProtection = builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keyDirectory));
+    if (!string.IsNullOrWhiteSpace(certificateText) && !string.IsNullOrWhiteSpace(certificatePassword))
+    {
+        try
+        {
+            var certificate = X509CertificateLoader.LoadPkcs12(Convert.FromBase64String(certificateText), certificatePassword, X509KeyStorageFlags.EphemeralKeySet);
+            dataProtection.ProtectKeysWithCertificate(certificate);
+        }
+        catch (FormatException exception)
+        {
+            throw new InvalidOperationException("TODIR_DATA_PROTECTION_CERTIFICATE_BASE64 is invalid.", exception);
+        }
+    }
 }
 var requestBodyLimit = long.TryParse(builder.Configuration["TODIR_REQUEST_BODY_LIMIT_BYTES"], out var configuredLimit) ? configuredLimit : 2_000_000;
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = requestBodyLimit);
@@ -37,6 +52,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+if (!app.Environment.IsDevelopment()) app.UseHsts();
 
 // Keep the approved order explicit: correlation, exception handling, security headers, endpoint.
 app.UseTodirCorrelation();

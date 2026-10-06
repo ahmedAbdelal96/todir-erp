@@ -11,24 +11,33 @@ public static class MessagingHostingExtensions
     {
         var host = configuration["TODIR_RABBITMQ_HOST"];
         if (string.IsNullOrWhiteSpace(host)) return services;
-        services.AddMassTransit(options => options.UsingRabbitMq((context, bus) =>
+        services.AddMassTransit(options =>
         {
-            bus.Host(host, configuration["TODIR_RABBITMQ_VHOST"] ?? "/erp-dev", hostSettings =>
+            options.AddConsumer<OutboxPublishedMessageConsumer>();
+            options.UsingRabbitMq((context, bus) =>
             {
-                hostSettings.Username(configuration["TODIR_RABBITMQ_USER"] ?? configuration["TODIR_RABBITMQ_USERNAME"] ?? "todir");
-                hostSettings.Password(configuration["TODIR_RABBITMQ_PASSWORD"] ?? throw new InvalidOperationException("RabbitMQ password must be supplied by the secret manager."));
-                hostSettings.PublisherConfirmation = true;
-                if (bool.TryParse(configuration["TODIR_RABBITMQ_TLS"], out var tlsEnabled) && tlsEnabled)
+                var hostAddress = new UriBuilder("rabbitmq", host)
                 {
-                    hostSettings.UseSsl(ssl =>
+                    Path = configuration["TODIR_RABBITMQ_VHOST"] ?? "/erp-dev"
+                };
+                if (ushort.TryParse(configuration["TODIR_RABBITMQ_PORT"], out var port)) hostAddress.Port = port;
+                bus.Host(hostAddress.Uri, hostSettings =>
+                {
+                    hostSettings.Username(configuration["TODIR_RABBITMQ_USER"] ?? configuration["TODIR_RABBITMQ_USERNAME"] ?? "todir");
+                    hostSettings.Password(configuration["TODIR_RABBITMQ_PASSWORD"] ?? throw new InvalidOperationException("RabbitMQ password must be supplied by the secret manager."));
+                    hostSettings.PublisherConfirmation = true;
+                    if (bool.TryParse(configuration["TODIR_RABBITMQ_TLS"], out var tlsEnabled) && tlsEnabled)
                     {
-                        ssl.Protocol = SslProtocols.Tls12;
-                        ssl.ServerName = configuration["TODIR_RABBITMQ_TLS_SERVER_NAME"] ?? host;
-                    });
-                }
+                        hostSettings.UseSsl(ssl =>
+                        {
+                            ssl.Protocol = SslProtocols.Tls12;
+                            ssl.ServerName = configuration["TODIR_RABBITMQ_TLS_SERVER_NAME"] ?? host;
+                        });
+                    }
+                });
+                bus.ConfigureEndpoints(context);
             });
-            bus.ConfigureEndpoints(context);
-        }));
+        });
         return services;
     }
 }
