@@ -15,5 +15,6 @@
     <None Include="../../../ops/database/bootstrap/runtime-roles-and-schemas.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../../ops/database/bootstrap/tenant-boundary.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../../ops/database/bootstrap/organization-schema.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../../ops/database/bootstrap/identity-membership-schema.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
