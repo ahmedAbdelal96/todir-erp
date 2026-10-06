@@ -216,9 +216,9 @@ jobs:
             -keyout "$rabbit_tls_directory/server.key" \
             -out "$rabbit_tls_directory/ca.crt" >/dev/null 2>&1
           cp "$rabbit_tls_directory/ca.crt" "$rabbit_tls_directory/server.crt"
-          sudo chown 999:999 "$rabbit_tls_directory/ca.crt" "$rabbit_tls_directory/server.crt" "$rabbit_tls_directory/server.key"
           chmod 444 "$rabbit_tls_directory/ca.crt" "$rabbit_tls_directory/server.crt"
           chmod 400 "$rabbit_tls_directory/server.key"
+          sudo chown 999:999 "$rabbit_tls_directory/ca.crt" "$rabbit_tls_directory/server.crt" "$rabbit_tls_directory/server.key"
           web_tls_directory="$RUNNER_TEMP/web-tls"
           mkdir -p "$web_tls_directory"
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
