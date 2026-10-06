@@ -26,6 +26,9 @@ const summarize = values => ({
 const responseCookies = response => typeof response.headers.getSetCookie === "function"
   ? response.headers.getSetCookie().map(cookie => cookie.split(";", 1)[0])
   : (response.headers.get("set-cookie") ?? "").split(/,(?=[^;]+=)/).filter(Boolean).map(cookie => cookie.split(";", 1)[0]);
+const rawResponseCookies = response => typeof response.headers.getSetCookie === "function"
+  ? response.headers.getSetCookie()
+  : (response.headers.get("set-cookie") ?? "").split(/,(?=[^;]+=)/).filter(Boolean);
 const mergeCookies = (...cookieLists) => [...new Map(cookieLists.flat().map(cookie => [cookie.split("=", 1)[0], cookie])).values()].join("; ");
 
 if (minioInitContainer) {
@@ -43,6 +46,9 @@ if (minioInitContainer) {
 const live = await Promise.all(Array.from({ length: 100 }, () => request("/health/live")));
 if (live.some(result => result.status !== 200)) throw new Error("live health load did not remain available");
 console.log(`health-load=${JSON.stringify(summarize(live.map(result => result.elapsedMs)))}`);
+const shellResponse = await fetch(`${api}/`);
+if (shellResponse.status !== 200 || !shellResponse.headers.get("strict-transport-security") || !shellResponse.headers.get("content-security-policy")) throw new Error("external TLS security headers were not enforced by the staging edge");
+console.log("external-tls-security-headers=passed");
 
 const modules = await Promise.all(Array.from({ length: 100 }, () => request("/api/v1/modules")));
 if (modules.some(result => result.status !== 200)) throw new Error("module registry load did not remain available");
@@ -71,6 +77,9 @@ if (postgresContainer) {
     body: JSON.stringify({ email: drillEmail, password: drillPassword, tenantId: drillTenantId })
   });
   if (loginResponse.status !== 200) throw new Error(`authenticated login failed: ${loginResponse.status}`);
+  const sessionSetCookie = rawResponseCookies(loginResponse).find(cookie => cookie.toLowerCase().startsWith("todir_session="));
+  if (!sessionSetCookie || !/secure/i.test(sessionSetCookie) || !/httponly/i.test(sessionSetCookie) || !/samesite=strict/i.test(sessionSetCookie)) throw new Error("session cookie security attributes were not enforced");
+  console.log("session-cookie-security=passed");
   let sessionCookie = mergeCookies(responseCookies(loginResponse), responseCookies(csrfResponse));
   const session = await fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } });
   if (session.status !== 200) throw new Error(`authenticated session failed: ${session.status}`);
