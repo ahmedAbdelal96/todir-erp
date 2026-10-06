@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
@@ -12,6 +15,9 @@ namespace KernelIntegrationTests;
 [Collection("database-integration")]
 public sealed class PlatformApiFlowTests
 {
+    private static readonly string[] SampleModuleIds = ["sample"];
+    private static readonly string[] EmptyFeatures = [];
+
     [Fact]
     public async Task PlatformMembershipFlowRunsThroughTheHttpPipeline()
     {
@@ -80,6 +86,53 @@ public sealed class PlatformApiFlowTests
         }
     }
 
+    [Fact]
+    public async Task SampleEndpointRequiresEntitlementThenLoadsTheTenantSnapshot()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the Sample endpoint integration gate.");
+        var appPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+        var tenant = TenantId.New();
+        var identity = IdentityId.New();
+        var membership = MembershipId.New();
+        var roleId = Guid.CreateVersion7();
+        var email = $"sample-api-{identity.Value:N}@example.com";
+        var password = "SampleApiFlow-Only-For-CI";
+        var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = appPassword }.ConnectionString;
+
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        var issued = DateTimeOffset.UtcNow;
+        var validUntil = issued.AddMinutes(10);
+        const string entitlementKey = "sample-api-entitlement-key";
+        var hash = IdentityConventions.HashPassword(password);
+        await ExecuteAsync(admin, $"alter role erp_app password '{appPassword}'; set role erp_owner; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenant.Value}', 'sample-api-{tenant.Value:N}', 'Sample API', 'Active', now(), 1); insert into platform_iam.identity (id, normalized_email, email_verified, password_hash, status, created_at, security_stamp, version) values ('{identity.Value}', '{email.ToUpperInvariant()}', true, '{hash}', 'Active', now(), '{Guid.CreateVersion7()}', 1); insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{membership.Value}', '{tenant.Value}', '{identity.Value}', 'Sample API administrator', 'Active', now(), 1); insert into platform_authz.role (id, tenant_id, code, name, is_system_template, is_active, version) values ('{roleId}', '{tenant.Value}', 'sample-admin', 'Sample administrator', false, true, 1); insert into platform_authz.role_permission (tenant_id, role_id, permission_code) values ('{tenant.Value}', '{roleId}', 'sample.item.create'); insert into platform_authz.membership_role_assignment (tenant_id, membership_id, role_id, scope_type) values ('{tenant.Value}', '{membership.Value}', '{roleId}', 'Tenant'); reset role;");
+
+        try
+        {
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+                .UseEnvironment("Development")
+                .UseSetting("TODIR_DATABASE_CONNECTION", appConnectionString)
+                .UseSetting("TODIR_RABBITMQ_HOST", string.Empty)
+                .UseSetting("TODIR_ENTITLEMENT_HMAC_KEY", entitlementKey));
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+            await LoginAsync(client, email, password, tenant.Value);
+
+            var denied = await PostAsync(client, "/api/v1/sample/items", new { name = "before-entitlement" });
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+
+            var signature = CreateEntitlementSignature(tenant, issued, validUntil, entitlementKey);
+            await ExecuteAsync(admin, $"set role erp_owner; insert into platform_entitlements.entitlement_snapshot (tenant_id, snapshot_version, issued_at, valid_until, key_id, modules, features, limits, scopes, signature) values ('{tenant.Value}', 1, '{issued:O}', '{validUntil:O}', 'current', '[\"sample\"]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '{{}}'::jsonb, '{signature}'); reset role;");
+
+            var created = await PostAsync(client, "/api/v1/sample/items", new { name = "after-entitlement" });
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        }
+        finally
+        {
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; delete from sample.sample_projection where tenant_id = '{tenant.Value}'; delete from sample.sample_item where tenant_id = '{tenant.Value}'; delete from platform_messaging.outbox_message where tenant_id = '{tenant.Value}'; delete from platform_audit.audit_entry where tenant_id = '{tenant.Value}'; delete from platform_entitlements.entitlement_snapshot where tenant_id = '{tenant.Value}'; delete from platform_authz.membership_role_assignment where tenant_id = '{tenant.Value}'; delete from platform_authz.role_permission where tenant_id = '{tenant.Value}'; delete from platform_authz.role where tenant_id = '{tenant.Value}'; delete from platform_iam.membership where tenant_id = '{tenant.Value}'; delete from platform_iam.identity where id = '{identity.Value}'; delete from platform_tenancy.tenant where id = '{tenant.Value}'; reset app.tenant_id; reset role;");
+        }
+    }
+
     private static async Task LoginAsync(HttpClient client, string email, string password, Guid tenantId)
     {
         var response = await PostAsync(client, "/api/v1/auth/login", new { email, password, tenantId });
@@ -100,6 +153,12 @@ public sealed class PlatformApiFlowTests
     {
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static string CreateEntitlementSignature(TenantId tenant, DateTimeOffset issued, DateTimeOffset validUntil, string key)
+    {
+        var canonical = JsonSerializer.Serialize(new { tenant = tenant.Value, snapshot = 1, issued, valid = validUntil, modules = SampleModuleIds, features = EmptyFeatures, limits = new Dictionary<string, long>() });
+        return Convert.ToBase64String(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(canonical)));
     }
 
     private sealed record CsrfResponse(string Token);

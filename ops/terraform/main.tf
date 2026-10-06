@@ -112,6 +112,7 @@ resource "docker_container" "api" {
     "TODIR_DATA_PROTECTION_CERTIFICATE_BASE64=${var.data_protection_certificate_base64}",
     "TODIR_DATA_PROTECTION_CERTIFICATE_PASSWORD=${var.data_protection_certificate_password}",
     "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
+    "TODIR_ENTITLEMENT_HMAC_KEY=${var.entitlement_hmac_key}",
     "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
     "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
     "TODIR_RABBITMQ_PORT=5671",
@@ -159,6 +160,33 @@ resource "docker_container" "worker" {
     "TODIR_FAILURE_INJECTION=${var.failure_injection}",
     "TODIR_FAILURE_INJECTION_MARKER=/tmp/crash-after-inbox-commit",
     "TODIR_FAILURE_INJECTION_POISON_MARKER=/tmp/poison-message",
+  ]
+  volumes {
+    host_path      = abspath("${var.rabbit_tls_directory}/ca.crt")
+    container_path = "/etc/rabbitmq/tls/ca.crt"
+    read_only      = true
+  }
+  networks_advanced {
+    name = docker_network.private.name
+  }
+  depends_on = [docker_container.migrator, docker_container.rabbitmq]
+}
+
+resource "docker_container" "worker_secondary" {
+  name  = "${local.project}-worker-secondary"
+  image = var.worker_image
+  env = [
+    "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
+    "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
+    "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
+    "TODIR_RABBITMQ_PORT=5671",
+    "TODIR_RABBITMQ_VHOST=/erp-staging",
+    "TODIR_RABBITMQ_USER=todir",
+    "TODIR_RABBITMQ_PASSWORD=${var.rabbit_password}",
+    "TODIR_RABBITMQ_TLS=true",
+    "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
+    "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
+    "TODIR_RABBITMQ_CONSUMER=true",
   ]
   volumes {
     host_path      = abspath("${var.rabbit_tls_directory}/ca.crt")

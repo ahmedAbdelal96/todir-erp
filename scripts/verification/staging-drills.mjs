@@ -7,6 +7,7 @@ const api = process.env.STAGING_API_URL ?? "http://127.0.0.1:18080";
 const rabbitContainer = process.env.STAGING_RABBIT_CONTAINER;
 const postgresContainer = process.env.STAGING_POSTGRES_CONTAINER;
 const workerContainer = process.env.STAGING_WORKER_CONTAINER;
+const workerSecondaryContainer = process.env.STAGING_WORKER_SECONDARY_CONTAINER;
 const minioInitContainer = process.env.STAGING_MINIO_INIT_CONTAINER;
 const expectWorkerCrash = process.env.STAGING_EXPECT_WORKER_CRASH === "true";
 const replayToken = process.env.STAGING_REPLAY_TOKEN;
@@ -53,6 +54,12 @@ console.log("external-tls-security-headers=passed");
 const modules = await Promise.all(Array.from({ length: 100 }, () => request("/api/v1/modules")));
 if (modules.some(result => result.status !== 200)) throw new Error("module registry load did not remain available");
 console.log(`module-registry-load=${JSON.stringify(summarize(modules.map(result => result.elapsedMs)))}`);
+
+if (workerSecondaryContainer) {
+  const secondaryState = (await exec("docker", ["inspect", "-f", "{{.State.Running}}", workerSecondaryContainer])).stdout.trim();
+  if (secondaryState !== "true") throw new Error(`secondary worker was not running for clustered scheduler verification: ${secondaryState}`);
+  console.log("clustered-workers=2;secondary=running");
+}
 
 const permissionChecks = await Promise.all(Array.from({ length: 20 }, () => request("/api/v1/authorization/check?permission=kernel.read")));
 if (permissionChecks.some(result => result.status !== 401)) throw new Error("unauthenticated permission checks were not rejected");
@@ -126,18 +133,22 @@ if (rabbitContainer && postgresContainer) {
   console.log("critical-queue=platform-outbox-probe;type=quorum");
   const tenantId = drillTenantId;
   const messageIds = Array.from({ length: 20 }, () => randomUUID());
+  const sampleMessageId = randomUUID();
+  const sampleItemId = randomUUID();
   const poisonMessageId = randomUUID();
   const messageValues = [
     ...messageIds.map(messageId => `('${messageId}', 'StagingDrillV1', '{}'::jsonb, '${tenantId}', now(), '${randomUUID()}', '${randomUUID()}', 'kernel', 'Pending')`),
+    `('${sampleMessageId}', 'SampleEntityCreatedV1', '{"itemId":"${sampleItemId}","Name":"staging-sample"}'::jsonb, '${tenantId}', now(), '${randomUUID()}', '${sampleItemId}', 'sample', 'Pending')`,
     `('${poisonMessageId}', 'StagingPoisonV1', '{}'::jsonb, '${tenantId}', now(), '${randomUUID()}', '${randomUUID()}', 'kernel', 'Pending')`
   ].join(", ");
+  const normalMessageIds = [...messageIds, sampleMessageId];
   const sql = `insert into platform_messaging.outbox_message (id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, status) values ${messageValues};`;
   await exec("docker", ["stop", "--time", "1", rabbitContainer]);
   try {
     await dockerSql(sql);
     await new Promise(resolve => setTimeout(resolve, 8000));
     const during = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.outbox_message where tenant_id = '${tenantId}' and status in ('Pending', 'Failed')`])).stdout.trim());
-    if (during !== messageIds.length + 1) throw new Error(`outbox did not remain durable during broker outage: ${during}/${messageIds.length + 1}`);
+    if (during !== normalMessageIds.length + 1) throw new Error(`outbox did not remain durable during broker outage: ${during}/${normalMessageIds.length + 1}`);
     console.log(`broker-outage-outbox-pending=${during}`);
   } finally {
     await exec("docker", ["start", rabbitContainer]);
@@ -145,10 +156,10 @@ if (rabbitContainer && postgresContainer) {
   let recovered = 0;
   for (let attempt = 0; attempt < 30; attempt++) {
     recovered = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.outbox_message where tenant_id = '${tenantId}' and status = 'Published'`])).stdout.trim());
-    if (recovered === messageIds.length + 1) break;
+    if (recovered === normalMessageIds.length + 1) break;
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
-  if (recovered !== messageIds.length + 1) throw new Error(`outbox did not recover after broker restart: ${recovered}/${messageIds.length + 1}`);
+  if (recovered !== normalMessageIds.length + 1) throw new Error(`outbox did not recover after broker restart: ${recovered}/${normalMessageIds.length + 1}`);
   console.log(`broker-recovery=published;outbox-throughput=${recovered}`);
   if (workerContainer) {
     if (expectWorkerCrash) {
@@ -167,14 +178,17 @@ if (rabbitContainer && postgresContainer) {
     const running = (await exec("docker", ["inspect", "-f", "{{.State.Running}}", workerContainer])).stdout.trim();
     if (running !== "true") throw new Error("worker did not recover after controlled restart");
     let inboxCount = 0;
+    let sampleInbox = 0;
     for (let attempt = 0; attempt < 15; attempt++) {
-      inboxCount = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.inbox_message where tenant_id = '${tenantId}' and message_id in (${messageIds.map(id => `'${id}'`).join(",")})`])).stdout.trim());
-      if (inboxCount === messageIds.length) break;
+      inboxCount = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.inbox_message where tenant_id = '${tenantId}' and consumer_endpoint = 'platform-outbox-probe' and message_id in (${normalMessageIds.map(id => `'${id}'`).join(",")})`])).stdout.trim());
+      sampleInbox = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.inbox_message where tenant_id = '${tenantId}' and consumer_endpoint = 'sample-projection' and message_id = '${sampleMessageId}' and processed_at is not null`])).stdout.trim());
+      if (inboxCount === normalMessageIds.length && sampleInbox === 1) break;
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    const duplicateInbox = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select coalesce(max(message_count), 0) from (select message_id, count(*) as message_count from platform_messaging.inbox_message where tenant_id = '${tenantId}' and message_id in (${messageIds.map(id => `'${id}'`).join(",")}) group by message_id) counts`])).stdout.trim());
-    if (inboxCount !== messageIds.length || duplicateInbox > 1) throw new Error(`consumer did not preserve one idempotent inbox row per message after worker restart: ${inboxCount}/${messageIds.length};max=${duplicateInbox}`);
-    console.log(`worker-restart=running;inbox-rows=${inboxCount}`);
+    const duplicateInbox = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select coalesce(max(message_count), 0) from (select message_id, count(*) as message_count from platform_messaging.inbox_message where tenant_id = '${tenantId}' and consumer_endpoint = 'platform-outbox-probe' and message_id in (${normalMessageIds.map(id => `'${id}'`).join(",")}) group by message_id) counts`])).stdout.trim());
+    const sampleProjection = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from sample.sample_projection where tenant_id = '${tenantId}' and item_id = '${sampleItemId}'`])).stdout.trim());
+    if (inboxCount !== normalMessageIds.length || sampleInbox !== 1 || duplicateInbox > 1 || sampleProjection !== 1) throw new Error(`consumer did not preserve idempotency or sample projection after worker restart: inbox=${inboxCount}/${normalMessageIds.length};sample-inbox=${sampleInbox};max=${duplicateInbox};sample-projection=${sampleProjection}`);
+    console.log(`worker-restart=running;inbox-rows=${inboxCount};sample-inbox=${sampleInbox};sample-projection=${sampleProjection}`);
 
     let poisonErrors = 0;
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -206,7 +220,7 @@ if (rabbitContainer && postgresContainer) {
     if (poisonInbox !== 1 || resolvedErrors !== 1 || replayAudits !== 1) throw new Error(`message replay was not durable and audited: inbox=${poisonInbox};resolved=${resolvedErrors};audits=${replayAudits}`);
     console.log(`poison-error=recorded;replay=audited;inbox-rows=${poisonInbox}`);
   }
-  await dockerSql(`delete from platform_messaging.message_error where tenant_id = '${tenantId}'; delete from platform_audit.audit_entry where tenant_id = '${tenantId}' and entity_id = '${poisonMessageId}'; delete from platform_messaging.inbox_message where tenant_id = '${tenantId}'; delete from platform_messaging.outbox_message where tenant_id = '${tenantId}'; delete from platform_iam.membership where tenant_id in ('${tenantId}', '${secondaryTenantId}'); delete from platform_iam.identity where id = '${drillIdentityId}'; delete from platform_tenancy.tenant where id in ('${tenantId}', '${secondaryTenantId}');`);
+  await dockerSql(`delete from sample.sample_projection where tenant_id = '${tenantId}'; delete from platform_messaging.message_error where tenant_id = '${tenantId}'; delete from platform_audit.audit_entry where tenant_id = '${tenantId}' and entity_id = '${poisonMessageId}'; delete from platform_messaging.inbox_message where tenant_id = '${tenantId}'; delete from platform_messaging.outbox_message where tenant_id = '${tenantId}'; delete from platform_iam.membership where tenant_id in ('${tenantId}', '${secondaryTenantId}'); delete from platform_iam.identity where id = '${drillIdentityId}'; delete from platform_tenancy.tenant where id in ('${tenantId}', '${secondaryTenantId}');`);
 } else {
   console.log("broker-recovery=not-run-no-staging-container-identifiers");
 }

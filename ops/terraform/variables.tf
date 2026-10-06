@@ -49,6 +49,12 @@ variable "rabbit_password" {
   sensitive = true
 }
 
+variable "entitlement_hmac_key" {
+  type        = string
+  sensitive   = true
+  description = "Ephemeral HMAC key used to verify staging entitlement snapshots."
+}
+
 variable "data_protection_certificate_base64" {
   type      = string
   sensitive = true

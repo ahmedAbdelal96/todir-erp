@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MassTransit;
 using Npgsql;
 using Todir.Platform.Authorization;
@@ -84,7 +85,7 @@ public sealed class SampleProjectionConsumer(IInboxStore inboxStore, NpgsqlDataS
         await inboxStore.MarkProcessedAsync(EndpointName, context.Message.MessageId, context.Message.TenantId, context.CancellationToken);
     }
 
-    private sealed record SampleEventPayload(Guid ItemId, string Name);
+    private sealed record SampleEventPayload([property: JsonPropertyName("itemId")] Guid ItemId, string Name);
 }
 
 public sealed class SampleProjectionConsumerDefinition : ConsumerDefinition<SampleProjectionConsumer>
