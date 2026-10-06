@@ -5,6 +5,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MassTransit.RabbitMQ" />
-    <ProjectReference Include="../../platform/Todir.Platform/Todir.Platform.csproj" />
+    <ProjectReference Include="../../platform/platform-kernel/platform-kernel.csproj" />
   </ItemGroup>
 </Project>

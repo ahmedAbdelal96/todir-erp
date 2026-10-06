@@ -69,7 +69,7 @@ jobs:
         run: dotnet build Todir.sln --no-restore
 
       - name: Apply controlled database bootstrap
-        run: dotnet run --project src/backend/hosts/Todir.DbMigrator/Todir.DbMigrator.csproj --no-build
+        run: dotnet run --project src/backend/hosts/database-migrator/database-migrator.csproj --no-build
         env:
           TODIR_MIGRATOR_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
           TODIR_REPOSITORY_ROOT: ${{ github.workspace }}

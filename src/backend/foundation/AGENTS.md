@@ -1,5 +1,9 @@
 # Foundation modules
 
+## Absolute filename and folder-name prohibition
+
+Never create or introduce a new foundation source file, project file, or folder whose basename contains `todir` in any casing. This is absolute and has no technical exception for new filesystem paths.
+
 Foundation modules use the same engineering quality bar and canonical workflow as business modules. They begin only when the approved Platform Kernel gates allow it. Before implementation, read root `AGENTS.md`, backend `AGENTS.md`, this file, `../modules/AGENTS.md`, the current module pack, Platform Kernel pack, Master Blueprint, engineering baseline, relevant ADRs, and dependency public contracts.
 
 Directory, Catalog, FinBase, Tax, Pricing, and future foundation modules are owned business domains with strict contracts; they must not become shared-helper dumping grounds. Establish their purpose, owned data, single writer, tenant/legal-entity scope, invariants, dependencies, capabilities, permissions, transactions, events, integration boundaries and expected access patterns before coding.

@@ -32,6 +32,10 @@ Every new normal or durable file and folder must describe its responsibility, no
 
 Create files only in their governed directory. Do not create phase reports, duplicate documentation, random SQL/scripts, logs, generated output or temporary files in source directories; use the approved `artifacts/` paths for ignored local output. Update a canonical document instead of creating `new`, `final`, `updated`, `copy` or `v2` variants.
 
+### Absolute filename and folder-name prohibition
+
+Never create, rename, or introduce a new file or folder whose basename contains `todir` in any casing, including `TODIR`, `Todir`, `todir-`, or `Todir.`. This is an absolute prohibition with no project, platform, assembly, namespace, legacy, phase, or technical exception for new filesystem paths. New paths must describe their responsibility; existing canonical paths are not mass-renamed by routine work. Existing `Todir.*` namespaces and assembly/project identities may remain only when already established and must not be used as new file or folder basenames.
+
 ## Instruction hierarchy
 
 Root `AGENTS.md` defines universal TODIR rules and always remains active. A scoped `AGENTS.md` adds stricter or area-specific execution rules; it must not weaken or contradict root governance. The nearest applicable `AGENTS.md` provides the most specific execution rules. Architecture and module documentation remains authoritative for design and domain decisions; `AGENTS.md` governs execution behavior, not product/domain truth. If AGENTS files or governing documents conflict, stop the affected decision and report the conflict rather than silently choosing.

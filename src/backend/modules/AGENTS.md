@@ -1,5 +1,9 @@
 # Business module execution manual
 
+## Absolute filename and folder-name prohibition
+
+Never create or introduce a new business-module source file, project file, or folder whose basename contains `todir` in any casing. This is absolute. Use responsibility-based names in the filesystem; product namespaces or existing assembly identifiers do not authorize new `todir` paths.
+
 A business module is not complete at CRUD. It must follow its approved plan, preserve the common TODIR architecture, and meet every applicable exit gate. A module may not silently redefine financial or domain semantics, nor adopt a different architectural style because an agent prefers it.
 
 ## A. Governing documents to read

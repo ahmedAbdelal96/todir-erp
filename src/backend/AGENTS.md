@@ -1,5 +1,9 @@
 # Backend engineering
 
+## Absolute filename and folder-name prohibition
+
+Never create or introduce a new backend source file, project file, or folder whose basename contains `todir` in any casing. This is absolute; use responsibility-based filesystem names while preserving already-established namespaces and assembly identifiers where required by the solution.
+
 Apply root governance and read the approved Platform Kernel and applicable module pack before backend work. Build business correctness first using C# and ASP.NET Core only when bootstrap authorizes it. Preserve module boundaries and domain/application/infrastructure separation; dependencies point inward.
 
 Cross-module interaction is allowed only through approved public module contracts, capabilities, events, or ports as defined by TODIR architecture. Direct access to another module's implementation, DbContext, entities, repositories, or database tables is forbidden.

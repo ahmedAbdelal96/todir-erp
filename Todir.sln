@@ -25,15 +25,15 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "platform", "platform", "{9E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.SharedKernel.Tests", "tests\platform\Todir.SharedKernel.Tests\Todir.SharedKernel.Tests.csproj", "{CA22ADBA-FB9F-45E7-B8D1-A228A3F82C50}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Platform.Tests", "tests\platform\Todir.Platform.Tests\Todir.Platform.Tests.csproj", "{F88A9AFB-1F79-4214-A5E3-7F9E16D7B9E8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Platform.Tests", "tests\platform\platform-kernel-tests\platform-kernel-tests.csproj", "{F88A9AFB-1F79-4214-A5E3-7F9E16D7B9E8}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Api", "src\backend\hosts\Todir.Api\api.csproj", "{C0BFCDBB-F726-4616-B482-415F6B905795}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.DbMigrator", "src\backend\hosts\Todir.DbMigrator\Todir.DbMigrator.csproj", "{F4E99F5B-67FA-4A0C-929D-3EB5A7D6D955}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.DbMigrator", "src\backend\hosts\database-migrator\database-migrator.csproj", "{F4E99F5B-67FA-4A0C-929D-3EB5A7D6D955}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Worker", "src\backend\hosts\Todir.Worker\Todir.Worker.csproj", "{B5A78D4E-3F72-4840-8C5A-0A7E8E74F1F7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Worker", "src\backend\hosts\background-worker\background-worker.csproj", "{B5A78D4E-3F72-4840-8C5A-0A7E8E74F1F7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Platform", "src\backend\platform\Todir.Platform\Todir.Platform.csproj", "{D8E9B3F9-6617-4F45-9A1A-1CC1BB5A2D4F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Platform", "src\backend\platform\platform-kernel\platform-kernel.csproj", "{D8E9B3F9-6617-4F45-9A1A-1CC1BB5A2D4F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Todir.Observability.Tests", "tests\observability\Todir.Observability.Tests\observability-tests.csproj", "{CF2464B1-B0E4-4C2D-B741-9219404BD446}"
 EndProject

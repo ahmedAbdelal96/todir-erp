@@ -4,7 +4,7 @@ TODIR is a production-grade, multi-tenant ERP SaaS for Arabic-market-first opera
 
 ## Current stage
 
-The Platform Kernel baseline is implemented in `src/backend/platform/Todir.Platform`, with API/Worker/Migrator hosts, tenant-safe SQL bootstrap, module manifests, authorization, authentication/session foundations, transactions, messaging/outbox/inbox contracts, platform services, and the RTL frontend shell.
+The Platform Kernel baseline is implemented in `src/backend/platform/platform-kernel`, with API/Worker/Migrator hosts, tenant-safe SQL bootstrap, module manifests, authorization, authentication/session foundations, transactions, messaging/outbox/inbox contracts, platform services, and the RTL frontend shell.
 
 Environment-dependent PostgreSQL, RabbitMQ HA, restore, chaos/load, and staging gates require the approved external environment.
 

@@ -5,3 +5,7 @@ Canonical placement is: architecture in `architecture/`; ADRs in `adr/`; Platfor
 Do not place random Markdown at repository root or bury canonical architecture inside source folders. Update the existing canonical document rather than creating `*-new`, `*-final`, or version-chaos copies. Preserve established numbered plan ordering. Significant architecture changes require an ADR; code and docs must evolve together when behavior or contracts change.
 
 New durable documentation filenames must be short purpose-based kebab-case names such as `solution-boundaries.md` or `tenant-isolation.md`. Do not add brand names, phase numbers, dates, versions or history prefixes. Existing numbered architecture/module packs are legacy canonical sources and must not be mass-renamed as part of ordinary implementation.
+
+## Absolute filename and folder-name prohibition
+
+Never create or introduce a new documentation file or folder whose basename contains `todir` in any casing. This is absolute and has no technical or legacy exception for new paths.

@@ -5,6 +5,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../shared/Todir.BuildingBlocks/Todir.BuildingBlocks.csproj" />
-    <ProjectReference Include="../../platform/Todir.Platform/Todir.Platform.csproj" />
+    <ProjectReference Include="../../platform/platform-kernel/platform-kernel.csproj" />
   </ItemGroup>
 </Project>
