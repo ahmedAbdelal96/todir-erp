@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using Todir.Platform.Identity;
 using Todir.SharedKernel.Identifiers;
 
 namespace Todir.Platform.Security;
@@ -39,6 +40,8 @@ public enum SupportAccessStatus { Requested, Approved, Active, Expired, Revoked 
 public sealed class SupportAccessService(TimeProvider timeProvider)
 {
     private readonly ConcurrentDictionary<Guid, SupportAccessGrant> grants = new();
+
+    public bool IsMfaProofValid(MfaStepUpProof? proof, Guid actorId) => proof is not null && proof.IdentityId.Value == actorId && proof.IsValid(timeProvider);
 
     public SupportAccessGrant Request(TenantId tenantId, Guid supportActorId, string reason, DateTimeOffset expiresAt)
     {

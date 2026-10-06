@@ -22,17 +22,24 @@ public sealed class SecurityServiceTests
     {
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var tenant = TenantId.New();
-        var actor = Guid.NewGuid();
+        var actorIdentity = IdentityId.New();
+        var approverIdentity = IdentityId.New();
+        var actor = actorIdentity.Value;
+        var mfa = new MfaCredentialManager(new MfaService(), new InMemoryMfaCredentialStore(), DataProtectionProvider.Create("support-workflow-tests"));
+        var actorEnrollment = await mfa.EnrollAsync(actorIdentity);
+        var approverEnrollment = await mfa.EnrollAsync(approverIdentity);
+        var actorProof = (await mfa.VerifyStepUpAsync(actorIdentity, actorEnrollment.RecoveryCodes[0], now))!;
+        var approverProof = (await mfa.VerifyStepUpAsync(approverIdentity, approverEnrollment.RecoveryCodes[0], now))!;
         var service = new SupportAccessService(new FakeTimeProvider(now));
         var workflow = new InMemorySupportAccessWorkflow(service);
-        var grant = await workflow.RequestAsync(tenant, actor, "incident response", now.AddMinutes(10), true);
+        var grant = await workflow.RequestAsync(tenant, actor, "incident response", now.AddMinutes(10), actorProof);
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(() => workflow.ApproveAsync(TenantId.New(), grant.Id, Guid.NewGuid(), true));
-        Assert.NotNull(await workflow.ApproveAsync(tenant, grant.Id, Guid.NewGuid(), true));
-        Assert.True(await workflow.CanAccessAsync(tenant, grant.Id, actor, true));
-        Assert.True(await workflow.RevokeAsync(tenant, grant.Id, true));
-        Assert.False(await workflow.CanAccessAsync(tenant, grant.Id, actor, true));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => workflow.RequestAsync(tenant, actor, "incident response", now.AddMinutes(10), false));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => workflow.ApproveAsync(TenantId.New(), grant.Id, approverIdentity.Value, approverProof));
+        Assert.NotNull(await workflow.ApproveAsync(tenant, grant.Id, approverIdentity.Value, approverProof));
+        Assert.True(await workflow.CanAccessAsync(tenant, grant.Id, actor, actorProof));
+        Assert.True(await workflow.RevokeAsync(tenant, grant.Id, actor, actorProof));
+        Assert.False(await workflow.CanAccessAsync(tenant, grant.Id, actor, actorProof));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => workflow.RequestAsync(tenant, actor, "incident response", now.AddMinutes(10), null!));
     }
 
     [Fact]

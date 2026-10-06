@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Npgsql;
+using Todir.Platform.Identity;
 using Todir.Platform.Messaging;
 using Todir.Platform.Services;
 using Todir.SharedKernel.Identifiers;
@@ -8,40 +9,40 @@ namespace Todir.Platform.Security;
 
 public interface ISupportAccessWorkflow
 {
-    Task<SupportAccessGrant> RequestAsync(TenantId tenantId, Guid supportActorId, string reason, DateTimeOffset expiresAt, bool mfaVerified, CancellationToken cancellationToken = default);
-    Task<SupportAccessGrant?> ApproveAsync(TenantId tenantId, Guid grantId, Guid approvedBy, bool mfaVerified, CancellationToken cancellationToken = default);
-    Task<bool> CanAccessAsync(TenantId tenantId, Guid grantId, Guid supportActorId, bool mfaVerified, CancellationToken cancellationToken = default);
-    Task<bool> RevokeAsync(TenantId tenantId, Guid grantId, bool mfaVerified, CancellationToken cancellationToken = default);
+    Task<SupportAccessGrant> RequestAsync(TenantId tenantId, Guid supportActorId, string reason, DateTimeOffset expiresAt, MfaStepUpProof proof, CancellationToken cancellationToken = default);
+    Task<SupportAccessGrant?> ApproveAsync(TenantId tenantId, Guid grantId, Guid approvedBy, MfaStepUpProof proof, CancellationToken cancellationToken = default);
+    Task<bool> CanAccessAsync(TenantId tenantId, Guid grantId, Guid supportActorId, MfaStepUpProof proof, CancellationToken cancellationToken = default);
+    Task<bool> RevokeAsync(TenantId tenantId, Guid grantId, Guid actorId, MfaStepUpProof proof, CancellationToken cancellationToken = default);
     Task<int> ExpireDueAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class InMemorySupportAccessWorkflow(SupportAccessService service) : ISupportAccessWorkflow
 {
-    public Task<SupportAccessGrant> RequestAsync(TenantId tenantId, Guid supportActorId, string reason, DateTimeOffset expiresAt, bool mfaVerified, CancellationToken cancellationToken = default)
+    public Task<SupportAccessGrant> RequestAsync(TenantId tenantId, Guid supportActorId, string reason, DateTimeOffset expiresAt, MfaStepUpProof proof, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!mfaVerified) throw new UnauthorizedAccessException("support.mfa_required");
+        if (!service.IsMfaProofValid(proof, supportActorId)) throw new UnauthorizedAccessException("support.mfa_required");
         return Task.FromResult(service.Request(tenantId, supportActorId, reason, expiresAt));
     }
 
-    public Task<SupportAccessGrant?> ApproveAsync(TenantId tenantId, Guid grantId, Guid approvedBy, bool mfaVerified, CancellationToken cancellationToken = default)
+    public Task<SupportAccessGrant?> ApproveAsync(TenantId tenantId, Guid grantId, Guid approvedBy, MfaStepUpProof proof, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!mfaVerified) throw new UnauthorizedAccessException("support.mfa_required");
+        if (!service.IsMfaProofValid(proof, approvedBy)) throw new UnauthorizedAccessException("support.mfa_required");
         return Task.FromResult<SupportAccessGrant?>(service.Approve(tenantId, grantId, approvedBy));
     }
 
-    public Task<bool> CanAccessAsync(TenantId tenantId, Guid grantId, Guid supportActorId, bool mfaVerified, CancellationToken cancellationToken = default)
+    public Task<bool> CanAccessAsync(TenantId tenantId, Guid grantId, Guid supportActorId, MfaStepUpProof proof, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!mfaVerified) return Task.FromResult(false);
+        if (!service.IsMfaProofValid(proof, supportActorId)) return Task.FromResult(false);
         return Task.FromResult(service.CanAccess(grantId, tenantId, supportActorId));
     }
 
-    public Task<bool> RevokeAsync(TenantId tenantId, Guid grantId, bool mfaVerified, CancellationToken cancellationToken = default)
+    public Task<bool> RevokeAsync(TenantId tenantId, Guid grantId, Guid actorId, MfaStepUpProof proof, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!mfaVerified) throw new UnauthorizedAccessException("support.mfa_required");
+        if (!service.IsMfaProofValid(proof, actorId)) throw new UnauthorizedAccessException("support.mfa_required");
         return Task.FromResult(service.Revoke(tenantId, grantId));
     }
 
@@ -54,9 +55,9 @@ public sealed class InMemorySupportAccessWorkflow(SupportAccessService service) 
 
 public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAuditWriter auditWriter, TimeProvider timeProvider) : ISupportAccessWorkflow
 {
-    public async Task<SupportAccessGrant> RequestAsync(TenantId tenantId, Guid supportActorId, string reason, DateTimeOffset expiresAt, bool mfaVerified, CancellationToken cancellationToken = default)
+    public async Task<SupportAccessGrant> RequestAsync(TenantId tenantId, Guid supportActorId, string reason, DateTimeOffset expiresAt, MfaStepUpProof proof, CancellationToken cancellationToken = default)
     {
-        if (!mfaVerified) throw new UnauthorizedAccessException("support.mfa_required");
+        if (!IsMfaProofValid(proof, supportActorId)) throw new UnauthorizedAccessException("support.mfa_required");
         if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("support.reason_required", nameof(reason));
         if (expiresAt <= timeProvider.GetUtcNow()) throw new InvalidOperationException("support.expiry_required");
         var grant = new SupportAccessGrant(Guid.CreateVersion7(), tenantId, supportActorId, reason.Trim(), null, expiresAt, SupportAccessStatus.Requested, timeProvider.GetUtcNow());
@@ -71,9 +72,9 @@ public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAu
         return grant;
     }
 
-    public async Task<SupportAccessGrant?> ApproveAsync(TenantId tenantId, Guid grantId, Guid approvedBy, bool mfaVerified, CancellationToken cancellationToken = default)
+    public async Task<SupportAccessGrant?> ApproveAsync(TenantId tenantId, Guid grantId, Guid approvedBy, MfaStepUpProof proof, CancellationToken cancellationToken = default)
     {
-        if (!mfaVerified) throw new UnauthorizedAccessException("support.mfa_required");
+        if (!IsMfaProofValid(proof, approvedBy)) throw new UnauthorizedAccessException("support.mfa_required");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
@@ -87,9 +88,9 @@ public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAu
         return grant;
     }
 
-    public async Task<bool> CanAccessAsync(TenantId tenantId, Guid grantId, Guid supportActorId, bool mfaVerified, CancellationToken cancellationToken = default)
+    public async Task<bool> CanAccessAsync(TenantId tenantId, Guid grantId, Guid supportActorId, MfaStepUpProof proof, CancellationToken cancellationToken = default)
     {
-        if (!mfaVerified) return false;
+        if (!IsMfaProofValid(proof, supportActorId)) return false;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
@@ -108,9 +109,9 @@ public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAu
         return grant is not null;
     }
 
-    public async Task<bool> RevokeAsync(TenantId tenantId, Guid grantId, bool mfaVerified, CancellationToken cancellationToken = default)
+    public async Task<bool> RevokeAsync(TenantId tenantId, Guid grantId, Guid actorId, MfaStepUpProof proof, CancellationToken cancellationToken = default)
     {
-        if (!mfaVerified) throw new UnauthorizedAccessException("support.mfa_required");
+        if (!IsMfaProofValid(proof, actorId)) throw new UnauthorizedAccessException("support.mfa_required");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
@@ -147,6 +148,8 @@ public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAu
 
     private AuditEntry CreateAuditEntry(SupportAccessGrant grant, Guid actorId, string action)
         => new(Guid.CreateVersion7(), grant.TenantId, null, null, ActorType.Support.ToString(), actorId, null, "platform", action, "support_access_grant", grant.Id, null, null, grant.Reason, "platform-support", Guid.CreateVersion7(), null, timeProvider.GetUtcNow(), JsonSerializer.Serialize(new { grant.Status, grant.ExpiresAt }));
+
+    private bool IsMfaProofValid(MfaStepUpProof? proof, Guid actorId) => proof is not null && proof.IdentityId.Value == actorId && proof.IsValid(timeProvider);
 
     private static SupportAccessGrant Read(NpgsqlDataReader reader) => new(reader.GetGuid(0), new TenantId(reader.GetGuid(1)), reader.GetGuid(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetGuid(4), reader.GetFieldValue<DateTimeOffset>(5), Enum.Parse<SupportAccessStatus>(reader.GetString(6), true), reader.GetFieldValue<DateTimeOffset>(7));
 

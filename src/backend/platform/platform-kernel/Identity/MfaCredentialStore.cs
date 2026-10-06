@@ -7,6 +7,19 @@ namespace Todir.Platform.Identity;
 
 public sealed record StoredMfaCredential(string ProtectedSecret, IReadOnlyList<string> RecoveryCodeDigests);
 
+public sealed class MfaStepUpProof
+{
+    internal MfaStepUpProof(IdentityId identityId, DateTimeOffset expiresAt)
+    {
+        IdentityId = identityId;
+        ExpiresAt = expiresAt;
+    }
+
+    public IdentityId IdentityId { get; }
+    public DateTimeOffset ExpiresAt { get; }
+    internal bool IsValid(TimeProvider timeProvider) => timeProvider.GetUtcNow() < ExpiresAt;
+}
+
 public interface IMfaCredentialStore
 {
     Task<StoredMfaCredential?> FindAsync(IdentityId identityId, CancellationToken cancellationToken = default);
@@ -112,6 +125,18 @@ public sealed class MfaCredentialManager(IMfaService service, IMfaCredentialStor
     public async Task<bool> IsEnabledAsync(IdentityId identityId, CancellationToken cancellationToken = default) => await store.FindAsync(identityId, cancellationToken) is not null;
 
     public async Task<bool> VerifyAsync(IdentityId identityId, string? code, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        return await VerifyCodeAsync(identityId, code, now, cancellationToken);
+    }
+
+    public async Task<MfaStepUpProof?> VerifyStepUpAsync(IdentityId identityId, string? code, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        return await VerifyCodeAsync(identityId, code, now, cancellationToken)
+            ? new MfaStepUpProof(identityId, now.AddMinutes(5))
+            : null;
+    }
+
+    private async Task<bool> VerifyCodeAsync(IdentityId identityId, string? code, DateTimeOffset now, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(code)) return false;
         var credential = await store.FindAsync(identityId, cancellationToken);

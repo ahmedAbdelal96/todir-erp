@@ -1,4 +1,6 @@
 using Npgsql;
+using Microsoft.AspNetCore.DataProtection;
+using Todir.Platform.Identity;
 using Todir.Platform.Security;
 using Todir.Platform.Services;
 using Todir.SharedKernel.Identifiers;
@@ -28,13 +30,18 @@ public sealed class SupportAccessIntegrationTests
         {
             await using var dataSource = NpgsqlDataSource.Create(appConnectionString);
             var workflow = new NpgsqlSupportAccessWorkflow(dataSource, new NpgsqlAuditWriter(dataSource), TimeProvider.System);
-            var grant = await workflow.RequestAsync(tenantId, supportActorId, "controlled incident response", DateTimeOffset.UtcNow.AddMinutes(10), true);
+            var mfa = new MfaCredentialManager(new MfaService(), new InMemoryMfaCredentialStore(), DataProtectionProvider.Create("support-access-integration-tests"));
+            var supportEnrollment = await mfa.EnrollAsync(new IdentityId(supportActorId));
+            var approverEnrollment = await mfa.EnrollAsync(new IdentityId(approverId));
+            var supportProof = (await mfa.VerifyStepUpAsync(new IdentityId(supportActorId), supportEnrollment.RecoveryCodes[0], DateTimeOffset.UtcNow))!;
+            var approverProof = (await mfa.VerifyStepUpAsync(new IdentityId(approverId), approverEnrollment.RecoveryCodes[0], DateTimeOffset.UtcNow))!;
+            var grant = await workflow.RequestAsync(tenantId, supportActorId, "controlled incident response", DateTimeOffset.UtcNow.AddMinutes(10), supportProof);
             Assert.Equal(SupportAccessStatus.Requested, grant.Status);
-            Assert.NotNull(await workflow.ApproveAsync(tenantId, grant.Id, approverId, true));
-            Assert.False(await workflow.CanAccessAsync(TenantId.New(), grant.Id, supportActorId, true));
-            Assert.True(await workflow.CanAccessAsync(tenantId, grant.Id, supportActorId, true));
-            Assert.True(await workflow.RevokeAsync(tenantId, grant.Id, true));
-            Assert.False(await workflow.CanAccessAsync(tenantId, grant.Id, supportActorId, true));
+            Assert.NotNull(await workflow.ApproveAsync(tenantId, grant.Id, approverId, approverProof));
+            Assert.False(await workflow.CanAccessAsync(TenantId.New(), grant.Id, supportActorId, supportProof));
+            Assert.True(await workflow.CanAccessAsync(tenantId, grant.Id, supportActorId, supportProof));
+            Assert.True(await workflow.RevokeAsync(tenantId, grant.Id, supportActorId, supportProof));
+            Assert.False(await workflow.CanAccessAsync(tenantId, grant.Id, supportActorId, supportProof));
 
             Assert.Equal(4L, await ScalarAsync(admin, $"select count(*) from platform_audit.audit_entry where tenant_id = '{tenantId.Value}' and entity_id = '{grant.Id}'"));
             Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform_iam.support_access_grant where tenant_id = '{tenantId.Value}' and id = '{grant.Id}' and status = 'Revoked'"));
