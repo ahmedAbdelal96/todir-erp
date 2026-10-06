@@ -104,6 +104,19 @@ public sealed class ModuleAndPlatformServiceTests
     }
 
     [Fact]
+    public async Task MessageErrorsCanBeRecordedAndResolvedWithoutExposingPayloads()
+    {
+        var store = new InMemoryMessageErrorStore();
+        var tenant = TenantId.New();
+        var messageId = Guid.CreateVersion7();
+        await store.RecordAsync(new MessageError(messageId, tenant, "platform-outbox-probe", 1, "message.consume_failed", "InvalidOperationException", DateTimeOffset.UtcNow, false));
+
+        Assert.False(store.Snapshot().Single().Resolved);
+        await store.MarkResolvedAsync(messageId, "platform-outbox-probe", tenant);
+        Assert.True(store.Snapshot().Single().Resolved);
+    }
+
+    [Fact]
     public async Task InboxRejectsConcurrentDuplicatesAndAllowsOnlyOneCompletedEffect()
     {
         var clock = new TestTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));

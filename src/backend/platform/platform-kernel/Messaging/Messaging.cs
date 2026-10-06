@@ -28,28 +28,47 @@ public sealed class OutboxPublishedMessageConsumer(IInboxStore inboxStore) : ICo
         await inboxStore.MarkProcessedAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken);
         TodirMetrics.InboxProcessed.Add(1, new KeyValuePair<string, object?>("endpoint", Endpoint));
         TodirMetrics.MessageProcessingDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("endpoint", Endpoint));
-        FailureInjection.CrashAfterInboxCommitIfConfigured();
+        FailureInjection.Apply(context.Message.MessageType);
     }
 
     private static class FailureInjection
     {
-        public static void CrashAfterInboxCommitIfConfigured()
+        public static void Apply(string messageType)
         {
-            if (!string.Equals(Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION"), "crash-after-inbox-commit", StringComparison.OrdinalIgnoreCase)) return;
+            var configured = Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION") ?? string.Empty;
+            if (configured.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains("poison-message", StringComparer.OrdinalIgnoreCase)
+                && string.Equals(messageType, "StagingPoisonV1", StringComparison.Ordinal)
+                && ShouldPoison(Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION_POISON_MARKER")))
+                throw new InvalidOperationException("controlled.poison_message");
+
+            if (!configured.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains("crash-after-inbox-commit", StringComparer.OrdinalIgnoreCase)) return;
             var markerPath = Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION_MARKER");
-            if (string.IsNullOrWhiteSpace(markerPath)) return;
+            if (!CreateMarker(markerPath)) return;
+            Environment.FailFast("Controlled failure injection after Inbox commit and before broker acknowledgement.");
+        }
+
+        private static bool CreateMarker(string? markerPath)
+        {
+            if (string.IsNullOrWhiteSpace(markerPath)) return false;
             var directory = Path.GetDirectoryName(markerPath);
             if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
             try
             {
                 using var marker = new FileStream(markerPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.WriteThrough);
                 marker.Flush(flushToDisk: true);
+                return true;
             }
             catch (IOException)
             {
-                return;
+                return false;
             }
-            Environment.FailFast("Controlled failure injection after Inbox commit and before broker acknowledgement.");
+        }
+
+        private static bool ShouldPoison(string? markerPath)
+        {
+            if (string.IsNullOrWhiteSpace(markerPath) || File.Exists($"{markerPath}.allow")) return false;
+            CreateMarker(markerPath);
+            return true;
         }
     }
 }
@@ -64,7 +83,7 @@ public sealed class OutboxPublishedMessageConsumerDefinition : ConsumerDefinitio
 
     protected override void ConfigureConsumer(IReceiveEndpointConfigurator endpointConfigurator, IConsumerConfigurator<OutboxPublishedMessageConsumer> consumerConfigurator, IRegistrationContext context)
     {
-        endpointConfigurator.UseMessageRetry(retry => retry.Exponential(8, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(2)));
+        endpointConfigurator.UseMessageRetry(retry => retry.Exponential(3, TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(100)));
     }
 }
 public sealed record MessageRetryDecision(bool Retry, DateTimeOffset? NextAttemptAt, string? ErrorCode);

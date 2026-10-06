@@ -19,6 +19,7 @@ using Todir.Platform.Security;
 using Todir.Platform.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Cryptography;
 
 namespace Todir.Platform.Hosting;
 
@@ -82,6 +83,7 @@ public static class PlatformHostingExtensions
         services.AddSingleton<ISequenceAllocator>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlSequenceAllocator(dataSource) : new InMemorySequenceAllocator());
         services.AddSingleton<IMessageRetryPolicy, ExponentialMessageRetryPolicy>();
         services.AddSingleton<IMessageErrorStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlMessageErrorStore(dataSource) : new InMemoryMessageErrorStore());
+        if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IMessageReplayService, NpgsqlMessageReplayService>();
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IInboxStore, NpgsqlInboxStore>();
         services.AddSingleton<ISettingsResolver, SettingsResolver>();
         services.AddSingleton<ICustomFieldRegistry, CustomFieldRegistry>();
@@ -165,11 +167,29 @@ public static class PlatformHostingExtensions
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
             return Results.NoContent();
         }).RequireAuthorization();
+        if (app.Configuration.GetValue<bool>("TODIR_STAGING_VERIFICATION"))
+        {
+            group.MapPost("/internal/messages/{messageId:guid}/replay", async (Guid messageId, ReplayRequest request, HttpContext context, IMessageReplayService replay, IConfiguration configuration, CancellationToken cancellationToken) =>
+            {
+                var expected = configuration["TODIR_STAGING_REPLAY_TOKEN"];
+                var supplied = context.Request.Headers["X-Staging-Replay-Token"].ToString();
+                if (string.IsNullOrWhiteSpace(expected) || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(supplied))) return Results.Unauthorized();
+                if (!Guid.TryParse(request.TenantId, out var tenantId) || !Guid.TryParse(request.OperatorId, out var operatorId)) return Problem(StatusCodes.Status400BadRequest, "message.replay_context_invalid", "Replay context is invalid");
+                try
+                {
+                    await replay.ReplayAsync(messageId, new(tenantId), operatorId, request.Reason, cancellationToken);
+                    return Results.NoContent();
+                }
+                catch (KeyNotFoundException) { return Problem(StatusCodes.Status404NotFound, "message.replay_not_found", "Message replay target was not found"); }
+                catch (InvalidOperationException exception) when (exception.Message == "message.replay_not_authorized") { return Problem(StatusCodes.Status409Conflict, exception.Message, "Message replay requires an unresolved error record"); }
+            }).RequireRateLimiting("auth");
+        }
         return app;
     }
 
     private sealed record TenantSelection(string TenantId);
     private sealed record LoginRequest(string Email, string Password, string? TenantId, string? MfaCode);
+    private sealed record ReplayRequest(string TenantId, string OperatorId, string Reason);
 
     private static IResult Problem(int statusCode, string code, string title) => Results.Problem(statusCode: statusCode, title: title, extensions: new Dictionary<string, object?> { ["code"] = code });
 }

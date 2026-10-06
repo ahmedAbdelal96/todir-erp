@@ -122,6 +122,8 @@ resource "docker_container" "api" {
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_CORS_ORIGINS=https://127.0.0.1:${var.web_port}",
+    "TODIR_STAGING_VERIFICATION=true",
+    "TODIR_STAGING_REPLAY_TOKEN=${var.staging_replay_token}",
   ]
   volumes {
     volume_name    = docker_volume.data_protection.name
@@ -156,6 +158,7 @@ resource "docker_container" "worker" {
     "TODIR_RABBITMQ_CONSUMER=true",
     "TODIR_FAILURE_INJECTION=${var.failure_injection}",
     "TODIR_FAILURE_INJECTION_MARKER=/tmp/crash-after-inbox-commit",
+    "TODIR_FAILURE_INJECTION_POISON_MARKER=/tmp/poison-message",
   ]
   volumes {
     host_path      = abspath("${var.rabbit_tls_directory}/ca.crt")

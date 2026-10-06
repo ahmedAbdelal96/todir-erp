@@ -85,6 +85,13 @@ variable "failure_injection" {
   description = "Explicit staging-only failure injection; empty in normal deployments."
 }
 
+variable "staging_replay_token" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "Ephemeral token for the staging-only message replay verification route."
+}
+
 variable "image_tag" {
   type = string
   validation {

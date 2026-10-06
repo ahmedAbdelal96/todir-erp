@@ -13,6 +13,7 @@ public static class MessagingHostingExtensions
     {
         var host = configuration["TODIR_RABBITMQ_HOST"];
         if (string.IsNullOrWhiteSpace(host)) return services;
+        services.AddConsumeObserver<MessageFailureObserver>();
         services.AddMassTransit(options =>
         {
             if (bool.TryParse(configuration["TODIR_RABBITMQ_CONSUMER"], out var consumerEnabled) && consumerEnabled)
