@@ -63,7 +63,7 @@ resource "docker_container" "rabbitmq" {
 }
 
 resource "docker_container" "minio" {
-  name    = "${local.project}-minio"
+  name = "${local.project}-minio"
   # The upstream community image is no longer pullable from Docker Hub or Quay.
   # This public mirror preserves the exact release and is pinned by digest.
   image   = "jumpserver/minio:RELEASE.2024-06-13T22-53-53Z@sha256:fea940414bd63fc721a8f5a1103d00b58312ecb9cdb89557b1164f32f23777f8"
