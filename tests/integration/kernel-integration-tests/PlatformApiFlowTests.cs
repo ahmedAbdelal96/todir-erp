@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
+using Todir.Platform.Entitlements;
 using Todir.Platform.Identity;
 using Todir.SharedKernel.Identifiers;
 using Xunit;
@@ -137,6 +138,13 @@ public sealed class PlatformApiFlowTests
 
             var signature = CreateEntitlementSignature(tenant, issued, validUntil, entitlementKey);
             await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; insert into platform_entitlements.entitlement_snapshot (tenant_id, snapshot_version, issued_at, valid_until, key_id, modules, features, limits, scopes, signature) values ('{tenant.Value}', 1, '{issued:O}', '{validUntil:O}', 'current', '[\"sample\"]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '{{}}'::jsonb, '{signature}'); reset app.tenant_id; reset role;");
+
+            await using (var verificationDataSource = NpgsqlDataSource.Create(appConnectionString))
+            {
+                var persisted = await new NpgsqlEntitlementSnapshotStore(verificationDataSource).LoadLatestAsync(tenant);
+                Assert.NotNull(persisted);
+                Assert.True(new HmacEntitlementVerifier(new Dictionary<string, byte[]> { ["current"] = Encoding.UTF8.GetBytes(entitlementKey) }).Verify(persisted!));
+            }
 
             var created = await PostAsync(client, "/api/v1/sample/items", new { name = "after-entitlement" });
             var createdBody = await created.Content.ReadAsStringAsync();
