@@ -1,7 +1,9 @@
 using MassTransit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Net.Security;
 using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Todir.Platform.Messaging;
 
@@ -14,7 +16,12 @@ public static class MessagingHostingExtensions
         services.AddMassTransit(options =>
         {
             if (bool.TryParse(configuration["TODIR_RABBITMQ_CONSUMER"], out var consumerEnabled) && consumerEnabled)
-                options.AddConsumer<OutboxPublishedMessageConsumer>();
+                options.AddConsumer<OutboxPublishedMessageConsumer, OutboxPublishedMessageConsumerDefinition>();
+            options.AddRabbitMqConfigureEndpointsCallback((_, _, endpoint) =>
+            {
+                endpoint.SetQuorumQueue();
+                endpoint.PrefetchCount = 16;
+            });
             options.UsingRabbitMq((context, bus) =>
             {
                 var hostAddress = new UriBuilder("rabbitmq", host)
@@ -33,6 +40,8 @@ public static class MessagingHostingExtensions
                         {
                             ssl.Protocol = SslProtocols.Tls12;
                             ssl.ServerName = configuration["TODIR_RABBITMQ_TLS_SERVER_NAME"] ?? host;
+                            var certificatePath = configuration["TODIR_RABBITMQ_CA_CERTIFICATE_PATH"];
+                            if (!string.IsNullOrWhiteSpace(certificatePath)) ssl.CertificateValidationCallback = CreateCertificateValidationCallback(certificatePath);
                         });
                     }
                 });
@@ -40,5 +49,21 @@ public static class MessagingHostingExtensions
             });
         });
         return services;
+    }
+
+    private static RemoteCertificateValidationCallback CreateCertificateValidationCallback(string certificatePath)
+    {
+        var trustedCertificate = X509CertificateLoader.LoadCertificate(File.ReadAllBytes(certificatePath));
+        return (_, certificate, _, policyErrors) =>
+        {
+            if (certificate is null || policyErrors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch)) return false;
+            using var serverCertificate = X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
+            if (serverCertificate.RawData.AsSpan().SequenceEqual(trustedCertificate.RawData)) return true;
+            using var chain = new X509Chain();
+            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.CustomTrustStore.Add(trustedCertificate);
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            return chain.Build(serverCertificate);
+        };
     }
 }

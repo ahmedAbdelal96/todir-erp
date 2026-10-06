@@ -4,12 +4,13 @@ using System.Globalization;
 
 namespace Todir.Platform.Identity;
 
-public sealed record MfaEnrollment(string SecretBase32, IReadOnlyList<string> RecoveryCodeDigests);
+public sealed record MfaEnrollment(string SecretBase32, IReadOnlyList<string> RecoveryCodes, IReadOnlyList<string> RecoveryCodeDigests);
 public interface IMfaService
 {
     MfaEnrollment CreateEnrollment(int recoveryCodeCount = 10);
     bool VerifyTotp(string secretBase32, string code, DateTimeOffset now);
     bool VerifyRecoveryCode(string code, IReadOnlyCollection<string> recoveryCodeDigests);
+    string DigestRecoveryCode(string code);
 }
 
 public sealed class MfaService : IMfaService
@@ -19,7 +20,7 @@ public sealed class MfaService : IMfaService
         if (recoveryCodeCount is < 1 or > 20) throw new ArgumentOutOfRangeException(nameof(recoveryCodeCount));
         var secret = RandomNumberGenerator.GetBytes(20);
         var codes = Enumerable.Range(0, recoveryCodeCount).Select(_ => Convert.ToHexString(RandomNumberGenerator.GetBytes(16))).ToArray();
-        return new MfaEnrollment(Base32Encode(secret), codes.Select(Hash).ToArray());
+        return new MfaEnrollment(Base32Encode(secret), codes, codes.Select(Hash).ToArray());
     }
 
     public bool VerifyTotp(string secretBase32, string code, DateTimeOffset now)
@@ -46,6 +47,8 @@ public sealed class MfaService : IMfaService
 
         return false;
     }
+
+    public string DigestRecoveryCode(string code) => Hash(code);
 
     // RFC 6238 TOTP interoperability requires HMAC-SHA1 for the initial MFA contract.
 #pragma warning disable CA5350

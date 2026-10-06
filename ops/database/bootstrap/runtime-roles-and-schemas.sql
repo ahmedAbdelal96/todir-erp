@@ -63,12 +63,13 @@ CREATE SCHEMA IF NOT EXISTS platform_custom_fields AUTHORIZATION erp_owner;
 CREATE SCHEMA IF NOT EXISTS platform_import AUTHORIZATION erp_owner;
 CREATE SCHEMA IF NOT EXISTS platform_notifications AUTHORIZATION erp_owner;
 CREATE SCHEMA IF NOT EXISTS platform_scheduling AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform_migration AUTHORIZATION erp_owner;
 
 -- PUBLIC must not discover or create objects in owned schemas.
 REVOKE ALL ON SCHEMA platform_tenancy, platform_org, platform_iam, platform_authz,
     platform_modules, platform_entitlements, platform_messaging, platform_audit,
     platform_numbering, platform_settings, platform_files, platform_custom_fields,
-    platform_import, platform_notifications, platform_scheduling FROM PUBLIC;
+    platform_import, platform_notifications, platform_scheduling, platform_migration FROM PUBLIC;
 
 GRANT USAGE ON SCHEMA platform_tenancy, platform_org, platform_iam, platform_authz,
     platform_modules, platform_entitlements, platform_messaging, platform_audit,

@@ -18,4 +18,12 @@ button, select { font: inherit; }
 h1 { font-size: clamp(2rem, 4vw, 3.5rem); margin: 0 0 2rem; }
 .empty-state { align-items: center; background: white; border: 1px dashed #bcccdc; border-radius: .75rem; color: #627d98; display: flex; justify-content: center; min-height: 220px; }
 .error { background: #fff5f5; border: 1px solid #f9c2c2; border-radius: .5rem; color: #9b2c2c; padding: 1rem; }
+.operation-progress { background: #eaf2f8; color: #243b53; padding: .65rem 5vw; text-align: center; }
+.auth-page, .status-page { align-items: center; display: flex; justify-content: center; min-height: 100vh; padding: 1rem; }
+.auth-card { background: white; border: 1px solid #d9e2ec; border-radius: .75rem; box-shadow: 0 12px 32px rgb(16 42 67 / 12%); display: grid; gap: .65rem; max-width: 440px; padding: 2rem; width: 100%; }
+.auth-card h1 { font-size: 2rem; margin: 0 0 1rem; }
+.auth-card input, .auth-card button { border: 1px solid #bcccdc; border-radius: .5rem; min-height: 42px; padding: .5rem .75rem; }
+.auth-card button { background: #102a43; color: white; cursor: pointer; }
+.auth-card button:disabled { cursor: wait; opacity: .65; }
+.status-page > p { color: #627d98; }
 @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } .sidebar { border-block-end: 1px solid #e5e7eb; border-inline-end: 0; padding: .75rem 1rem; } .sidebar nav { display: flex; overflow-x: auto; } .topbar { align-items: flex-start; flex-direction: column; gap: .75rem; padding: 1rem; } .context-controls { width: 100%; } }

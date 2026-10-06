@@ -1,7 +1,10 @@
 using Todir.Platform.Identity;
 using Todir.Platform.Security;
+using Todir.Platform.Scheduling;
 using Todir.Platform.Services;
 using Todir.SharedKernel.Identifiers;
+using Microsoft.AspNetCore.DataProtection;
+using Quartz;
 using Xunit;
 
 namespace Todir.Platform.Tests;
@@ -9,12 +12,48 @@ namespace Todir.Platform.Tests;
 public sealed class SecurityServiceTests
 {
     [Fact]
+    public void MaintenanceJobDeclaresNonConcurrentExecution()
+    {
+        Assert.NotNull(typeof(PlatformMaintenanceJob).GetCustomAttributes(typeof(DisallowConcurrentExecutionAttribute), inherit: true).SingleOrDefault());
+    }
+
+    [Fact]
+    public async Task SupportWorkflowRequiresTenantBoundApprovalAndRevocation()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var tenant = TenantId.New();
+        var actor = Guid.NewGuid();
+        var service = new SupportAccessService(new FakeTimeProvider(now));
+        var workflow = new InMemorySupportAccessWorkflow(service);
+        var grant = await workflow.RequestAsync(tenant, actor, "incident response", now.AddMinutes(10), true);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => workflow.ApproveAsync(TenantId.New(), grant.Id, Guid.NewGuid(), true));
+        Assert.NotNull(await workflow.ApproveAsync(tenant, grant.Id, Guid.NewGuid(), true));
+        Assert.True(await workflow.CanAccessAsync(tenant, grant.Id, actor, true));
+        Assert.True(await workflow.RevokeAsync(tenant, grant.Id, true));
+        Assert.False(await workflow.CanAccessAsync(tenant, grant.Id, actor, true));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => workflow.RequestAsync(tenant, actor, "incident response", now.AddMinutes(10), false));
+    }
+
+    [Fact]
     public void MfaEnrollmentStoresOnlyRecoveryCodeDigests()
     {
         var enrollment = new MfaService().CreateEnrollment(3);
         Assert.Equal(3, enrollment.RecoveryCodeDigests.Count);
         Assert.All(enrollment.RecoveryCodeDigests, digest => Assert.Equal(64, digest.Length));
         Assert.False(new MfaService().VerifyTotp(enrollment.SecretBase32, "000000", DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
+    public async Task MfaCredentialManagerRequiresAndConsumesRecoveryCode()
+    {
+        var identityId = IdentityId.New();
+        var manager = new MfaCredentialManager(new MfaService(), new InMemoryMfaCredentialStore(), DataProtectionProvider.Create("platform-kernel-tests"));
+        var enrollment = await manager.EnrollAsync(identityId);
+
+        Assert.True(await manager.IsEnabledAsync(identityId));
+        Assert.True(await manager.VerifyAsync(identityId, enrollment.RecoveryCodes[0], DateTimeOffset.UtcNow));
+        Assert.False(await manager.VerifyAsync(identityId, enrollment.RecoveryCodes[0], DateTimeOffset.UtcNow));
     }
 
     [Fact]
@@ -51,6 +90,20 @@ public sealed class SecurityServiceTests
         Assert.True(service.CanAccess(grant.Id, tenant, actor));
         clock.Advance(TimeSpan.FromMinutes(11));
         Assert.False(service.CanAccess(grant.Id, tenant, actor));
+    }
+
+    [Fact]
+    public void MaintenanceExpiresApprovedSupportGrants()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var clock = new FakeTimeProvider(now);
+        var service = new SupportAccessService(clock);
+        var grant = service.Request(TenantId.New(), Guid.NewGuid(), "incident response", now.AddMinutes(1));
+        service.Approve(grant.Id, Guid.NewGuid());
+        clock.Advance(TimeSpan.FromMinutes(2));
+
+        Assert.Equal(1, service.ExpireDueGrants());
+        Assert.Equal(0, service.ExpireDueGrants());
     }
 
     [Fact]

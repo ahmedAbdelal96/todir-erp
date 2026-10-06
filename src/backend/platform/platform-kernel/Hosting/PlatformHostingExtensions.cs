@@ -17,6 +17,7 @@ using Todir.Platform.Messaging;
 using System.Text;
 using Todir.Platform.Security;
 using Todir.Platform.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace Todir.Platform.Hosting;
 
@@ -26,8 +27,14 @@ public static class PlatformHostingExtensions
     {
         var connectionString = configuration.GetConnectionString("Todir") ?? configuration["TODIR_DATABASE_CONNECTION"];
         services.AddTodirRabbitMq(configuration);
-        if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton(NpgsqlDataSource.Create(connectionString));
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+            dataSourceBuilder.ConnectionStringBuilder.CommandTimeout = int.TryParse(configuration["TODIR_DB_COMMAND_TIMEOUT_SECONDS"], out var commandTimeout) && commandTimeout > 0 ? commandTimeout : 15;
+            services.AddSingleton(dataSourceBuilder.Build());
+        }
         services.AddSingleton<IIdentityStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlIdentityStore(dataSource) : new NullIdentityStore());
+        if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IIdentityMembershipAdminStore, NpgsqlIdentityMembershipAdminStore>();
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options =>
         {
             options.Cookie.Name = "todir_session";
@@ -54,8 +61,14 @@ public static class PlatformHostingExtensions
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ISessionService, SessionService>();
         services.AddSingleton<IMfaService, MfaService>();
+        services.AddDataProtection();
+        services.AddSingleton<IMfaCredentialStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlMfaCredentialStore(dataSource) : new InMemoryMfaCredentialStore());
+        services.AddSingleton<MfaCredentialManager>();
         services.AddSingleton<FileUploadPolicy>();
         services.AddSingleton<SupportAccessService>();
+        services.AddSingleton<ISupportAccessWorkflow>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlSupportAccessWorkflow(dataSource, provider.GetRequiredService<IAuditWriter>(), provider.GetRequiredService<TimeProvider>())
+            : new InMemorySupportAccessWorkflow(provider.GetRequiredService<SupportAccessService>()));
         services.AddSingleton<IImportCheckpointStore, InMemoryImportCheckpointStore>();
         var entitlementKey = configuration["TODIR_ENTITLEMENT_HMAC_KEY"];
         services.AddSingleton<IEntitlementVerifier>(_ => new HmacEntitlementVerifier(string.IsNullOrWhiteSpace(entitlementKey) ? new Dictionary<string, byte[]>() : new Dictionary<string, byte[]> { ["current"] = Encoding.UTF8.GetBytes(entitlementKey) }));
@@ -71,6 +84,8 @@ public static class PlatformHostingExtensions
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IInboxStore, NpgsqlInboxStore>();
         services.AddSingleton<ISettingsResolver, SettingsResolver>();
         services.AddSingleton<ICustomFieldRegistry, CustomFieldRegistry>();
+        services.AddSingleton<INotificationStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlNotificationStore(dataSource) : new InMemoryNotificationStore());
+        services.AddSingleton<NotificationDispatcher>();
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<ITransactionCoordinator, NpgsqlTransactionCoordinator>();
         services.AddSingleton<IModuleRegistry>(_ => new ModuleRegistry([
             new ModuleManifest("tenancy", "1.0.0", 1, "L0", "kernel", false, "tenant", new([], []), new("platform_tenancy", ["tenant"]), [], new([], []), new([], []), new(false, "never_disable")),
@@ -89,20 +104,35 @@ public static class PlatformHostingExtensions
             var tokens = antiforgery.GetAndStoreTokens(context);
             return Results.Ok(new { token = tokens.RequestToken });
         }).RequireRateLimiting("auth");
-        group.MapPost("/auth/login", async (LoginRequest request, HttpContext context, IIdentityStore store, ISessionService sessions, CancellationToken cancellationToken) =>
+        group.MapPost("/auth/login", async (LoginRequest request, HttpContext context, IIdentityStore store, ISessionService sessions, MfaCredentialManager mfa, TimeProvider clock, CancellationToken cancellationToken) =>
         {
             var identity = await store.AuthenticateAsync(request.Email, request.Password, cancellationToken);
             if (identity is null) return Results.Unauthorized();
             if (!Guid.TryParse(request.TenantId, out var selectedTenant) || selectedTenant == Guid.Empty) return Results.BadRequest(new { code = "tenant.required" });
             var selected = await store.FindActiveMembershipAsync(identity.Id, new(selectedTenant), cancellationToken);
             if (selected is null) return Results.Unauthorized();
+            var mfaEnabled = await mfa.IsEnabledAsync(identity.Id, cancellationToken);
+            if (mfaEnabled && !await mfa.VerifyAsync(identity.Id, request.MfaCode, clock.GetUtcNow(), cancellationToken)) return Results.Unauthorized();
             var session = await sessions.CreateAsync(identity, selected, cancellationToken);
             if (session is null) return Results.Unauthorized();
-            var claims = new[] { new Claim(ClaimTypes.NameIdentifier, identity.Id.Value.ToString("D")), new Claim("membership_id", selected.Id.Value.ToString("D")), new Claim("tenant_id", selected.TenantId.Value.ToString("D")), new Claim("security_stamp", identity.SecurityStamp.ToString("D")) };
+            var claims = new[] { new Claim(ClaimTypes.NameIdentifier, identity.Id.Value.ToString("D")), new Claim("membership_id", selected.Id.Value.ToString("D")), new Claim("tenant_id", selected.TenantId.Value.ToString("D")), new Claim("security_stamp", identity.SecurityStamp.ToString("D")), new Claim("mfa_verified", mfaEnabled.ToString().ToLowerInvariant()) };
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
             return Results.Ok(new { authenticated = true, tenantId = selected.TenantId.Value });
-        });
+        }).RequireRateLimiting("auth");
+        group.MapPost("/auth/mfa/enroll", async (HttpContext context, MfaCredentialManager mfa, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
+            var enrollment = await mfa.EnrollAsync(new(identityId), cancellationToken);
+            return Results.Ok(new { secretBase32 = enrollment.SecretBase32, recoveryCodes = enrollment.RecoveryCodes });
+        }).RequireAuthorization();
         group.MapPost("/auth/logout", async (HttpContext context) => { await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme); return Results.NoContent(); }).RequireAuthorization();
+        group.MapPost("/auth/sessions/revoke", async (HttpContext context, IIdentityStore store, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
+            await store.RevokeSessionsAsync(new(identityId), cancellationToken);
+            await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return Results.NoContent();
+        }).RequireAuthorization();
         group.MapGet("/modules", (IModuleRegistry registry) => Results.Ok(registry.GetAll()));
         group.MapGet("/session", (HttpContext context) => context.User.Identity?.IsAuthenticated == true ? Results.Ok(new { authenticated = true, tenantId = context.User.FindFirstValue("tenant_id") }) : Results.Unauthorized()).RequireAuthorization();
         group.MapGet("/authorization/check", async (string permission, HttpContext context, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
@@ -135,5 +165,5 @@ public static class PlatformHostingExtensions
     }
 
     private sealed record TenantSelection(string TenantId);
-    private sealed record LoginRequest(string Email, string Password, string? TenantId);
+    private sealed record LoginRequest(string Email, string Password, string? TenantId, string? MfaCode);
 }

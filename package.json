@@ -9,6 +9,7 @@
     "architecture:frontend": "node scripts/architecture/check-frontend-module-boundaries.mjs && node scripts/architecture/verify-frontend-module-fixtures.mjs",
     "architecture:modules": "node scripts/architecture/validate-module-manifests.mjs",
     "database:policy": "node scripts/architecture/validate-database-policy.mjs",
+    "database:migration-policy": "node scripts/database/validate-migration-policy.mjs",
     "api:contract": "node scripts/architecture/validate-openapi.mjs",
     "api:generate": "node scripts/api/generate-platform-client.mjs",
     "api:drift": "node scripts/api/generate-platform-client.mjs --check",

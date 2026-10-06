@@ -49,9 +49,12 @@ public sealed class SupportAccessService(TimeProvider timeProvider)
         return grant;
     }
 
-    public SupportAccessGrant Approve(Guid grantId, Guid approvedBy)
+    public SupportAccessGrant Approve(Guid grantId, Guid approvedBy) => Approve(null, grantId, approvedBy);
+
+    public SupportAccessGrant Approve(TenantId? tenantId, Guid grantId, Guid approvedBy)
     {
         if (!grants.TryGetValue(grantId, out var grant)) throw new KeyNotFoundException("support.grant_not_found");
+        if (tenantId is { } selectedTenant && grant.TenantId != selectedTenant) throw new KeyNotFoundException("support.grant_not_found");
         if (grant.ExpiresAt <= timeProvider.GetUtcNow()) throw new InvalidOperationException("support.grant_expired");
         var approved = grant with { ApprovedBy = approvedBy, Status = SupportAccessStatus.Approved };
         grants[grantId] = approved;
@@ -70,9 +73,28 @@ public sealed class SupportAccessService(TimeProvider timeProvider)
         return true;
     }
 
-    public void Revoke(Guid grantId)
+    public bool Revoke(Guid grantId)
     {
-        if (grants.TryGetValue(grantId, out var grant)) grants[grantId] = grant with { Status = SupportAccessStatus.Revoked };
+        return Revoke(null, grantId);
+    }
+
+    public bool Revoke(TenantId? tenantId, Guid grantId)
+    {
+        if (!grants.TryGetValue(grantId, out var grant) || tenantId is { } selectedTenant && grant.TenantId != selectedTenant) return false;
+        grants[grantId] = grant with { Status = SupportAccessStatus.Revoked };
+        return true;
+    }
+
+    public int ExpireDueGrants()
+    {
+        var now = timeProvider.GetUtcNow();
+        var expired = 0;
+        foreach (var pair in grants)
+        {
+            if (pair.Value.ExpiresAt > now || pair.Value.Status is SupportAccessStatus.Expired or SupportAccessStatus.Revoked) continue;
+            if (grants.TryUpdate(pair.Key, pair.Value with { Status = SupportAccessStatus.Expired }, pair.Value)) expired++;
+        }
+        return expired;
     }
 }
 

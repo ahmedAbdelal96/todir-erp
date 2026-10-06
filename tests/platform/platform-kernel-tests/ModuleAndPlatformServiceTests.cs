@@ -12,6 +12,21 @@ namespace Todir.Platform.Tests;
 
 public sealed class ModuleAndPlatformServiceTests
 {
+    [Theory]
+    [InlineData(NotificationChannel.InApp)]
+    [InlineData(NotificationChannel.Email)]
+    public async Task NotificationDispatcherKeepsProviderDetailsOutsideTheCallingModule(NotificationChannel channel)
+    {
+        var sender = new RecordingNotificationSender(channel);
+        var dispatcher = new NotificationDispatcher(new InMemoryNotificationStore(), [sender]);
+        var notification = await dispatcher.EnqueueAsync(TenantId.New(), "identity:member", "membership.invited", channel, JsonSerializer.SerializeToElement(new { displayName = "Member" }));
+
+        Assert.True(await dispatcher.DispatchNextAsync(notification.TenantId));
+        Assert.Single(sender.Sent);
+        Assert.Equal(notification.Id, sender.Sent[0].Id);
+        Assert.False(await dispatcher.DispatchNextAsync(notification.TenantId));
+    }
+
     [Fact]
     public void RegistryReturnsDependencyFirstOrderAndRejectsCycles()
     {
@@ -117,4 +132,15 @@ public sealed class ModuleAndPlatformServiceTests
     }
 
     private static ModuleManifest Manifest(string id, IReadOnlyList<string> hard) => new(id, "1.0.0", 1, "L0", "kernel", false, "tenant", new(hard, []), new(id, []), [], new([], []), new([], []), new(false, "never_disable"));
+
+    private sealed class RecordingNotificationSender(NotificationChannel channel) : INotificationSender
+    {
+        public NotificationChannel Channel => channel;
+        public List<Notification> Sent { get; } = [];
+        public Task SendAsync(Notification notification, CancellationToken cancellationToken = default)
+        {
+            Sent.Add(notification);
+            return Task.CompletedTask;
+        }
+    }
 }

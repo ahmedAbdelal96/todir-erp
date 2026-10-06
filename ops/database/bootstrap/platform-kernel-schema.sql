@@ -315,6 +315,9 @@ CREATE TABLE IF NOT EXISTS platform_notifications.notification
     sent_at timestamptz,
     UNIQUE (tenant_id, id)
 );
+CREATE INDEX IF NOT EXISTS ix_notification_pending
+    ON platform_notifications.notification (tenant_id, created_at, id)
+    WHERE status = 'Pending';
 CREATE TABLE IF NOT EXISTS platform_notifications.notification_delivery
 (
     id uuid PRIMARY KEY,
@@ -326,6 +329,8 @@ CREATE TABLE IF NOT EXISTS platform_notifications.notification_delivery
     error_code text,
     FOREIGN KEY (tenant_id, notification_id) REFERENCES platform_notifications.notification (tenant_id, id)
 );
+CREATE INDEX IF NOT EXISTS ix_notification_delivery_lookup
+    ON platform_notifications.notification_delivery (tenant_id, notification_id, attempt_at DESC);
 CREATE TABLE IF NOT EXISTS platform_scheduling.job_schedule
 (
     id uuid PRIMARY KEY,
@@ -350,6 +355,32 @@ CREATE TABLE IF NOT EXISTS platform_iam.support_access_grant
     status text NOT NULL CHECK (status IN ('Requested', 'Approved', 'Active', 'Expired', 'Revoked')),
     created_at timestamptz NOT NULL
 );
+CREATE INDEX IF NOT EXISTS ix_support_access_expiry
+    ON platform_iam.support_access_grant (tenant_id, expires_at, status);
+
+CREATE OR REPLACE FUNCTION platform_iam.expire_support_access_grants()
+RETURNS TABLE
+(
+    id uuid,
+    tenant_id uuid,
+    support_actor_id uuid,
+    reason text,
+    approved_by uuid,
+    expires_at timestamptz,
+    status text,
+    created_at timestamptz
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = platform_iam, pg_catalog
+AS $$
+    UPDATE platform_iam.support_access_grant
+    SET status = 'Expired'
+    WHERE expires_at <= now()
+      AND status IN ('Requested', 'Approved', 'Active')
+    RETURNING id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at;
+$$;
+GRANT EXECUTE ON FUNCTION platform_iam.expire_support_access_grants() TO erp_app;
 
 DO $$ DECLARE item record; BEGIN
   FOR item IN SELECT schemaname, tablename FROM (VALUES

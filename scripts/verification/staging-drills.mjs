@@ -1,9 +1,14 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { randomUUID } from "node:crypto";
+import { pbkdf2Sync, randomBytes, randomUUID } from "node:crypto";
 
 const exec = promisify(execFile);
 const api = process.env.STAGING_API_URL ?? "http://127.0.0.1:18080";
+const rabbitContainer = process.env.STAGING_RABBIT_CONTAINER;
+const postgresContainer = process.env.STAGING_POSTGRES_CONTAINER;
+const workerContainer = process.env.STAGING_WORKER_CONTAINER;
+const databaseName = process.env.STAGING_DATABASE_NAME ?? "todir_staging";
+const dockerSql = sql => exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-v", "ON_ERROR_STOP=1", "-c", sql]);
 const request = async path => {
   const started = performance.now();
   const response = await fetch(`${api}${path}`);
@@ -15,6 +20,10 @@ const summarize = values => ({
   maxMs: Math.round(Math.max(...values)),
   averageMs: Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
 });
+const responseCookies = response => typeof response.headers.getSetCookie === "function"
+  ? response.headers.getSetCookie().map(cookie => cookie.split(";", 1)[0])
+  : (response.headers.get("set-cookie") ?? "").split(/,(?=[^;]+=)/).filter(Boolean).map(cookie => cookie.split(";", 1)[0]);
+const mergeCookies = (...cookieLists) => [...new Map(cookieLists.flat().map(cookie => [cookie.split("=", 1)[0], cookie])).values()].join("; ");
 
 const live = await Promise.all(Array.from({ length: 100 }, () => request("/health/live")));
 if (live.some(result => result.status !== 200)) throw new Error("live health load did not remain available");
@@ -28,37 +37,70 @@ const permissionChecks = await Promise.all(Array.from({ length: 20 }, () => requ
 if (permissionChecks.some(result => result.status !== 401)) throw new Error("unauthenticated permission checks were not rejected");
 console.log(`authorization-denials=${permissionChecks.length}`);
 
+const drillTenantId = randomUUID();
+const secondaryTenantId = randomUUID();
+const drillIdentityId = randomUUID();
+const drillEmail = `drill-${drillIdentityId.replaceAll("-", "")}@example.com`;
+const drillPassword = "DrillPassword-Only-For-CI";
+if (postgresContainer) {
+  const salt = randomBytes(16).toString("base64");
+  const hash = pbkdf2Sync(drillPassword, Buffer.from(salt, "base64"), 120_000, 32, "sha256").toString("base64");
+  await dockerSql(`insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('${drillTenantId}', 'auth-${drillTenantId.replaceAll("-", "")}', 'Auth Drill', 'Active', now(), 1), ('${secondaryTenantId}', 'auth-${secondaryTenantId.replaceAll("-", "")}', 'Secondary Drill', 'Active', now(), 1); insert into platform_iam.identity (id, normalized_email, email_verified, password_hash, status, created_at, security_stamp, version) values ('${drillIdentityId}', '${drillEmail.toUpperCase()}', true, 'pbkdf2-sha256$120000$${salt}$${hash}', 'Active', now(), '${randomUUID()}', 1); insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('${randomUUID()}', '${drillTenantId}', '${drillIdentityId}', 'Auth Drill', 'Active', now(), 1), ('${randomUUID()}', '${secondaryTenantId}', '${drillIdentityId}', 'Secondary Drill', 'Active', now(), 1);`);
+  const csrfResponse = await fetch(`${api}/api/v1/auth/csrf`);
+  if (csrfResponse.status !== 200) throw new Error(`csrf bootstrap failed: ${csrfResponse.status}`);
+  const csrf = (await csrfResponse.json()).token;
+  const csrfCookie = mergeCookies(responseCookies(csrfResponse));
+  const loginResponse = await fetch(`${api}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-csrf-token": csrf, Cookie: csrfCookie },
+    body: JSON.stringify({ email: drillEmail, password: drillPassword, tenantId: drillTenantId })
+  });
+  if (loginResponse.status !== 200) throw new Error(`authenticated login failed: ${loginResponse.status}`);
+  let sessionCookie = mergeCookies(responseCookies(loginResponse), responseCookies(csrfResponse));
+  const session = await fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } });
+  if (session.status !== 200) throw new Error(`authenticated session failed: ${session.status}`);
+  const switchResponse = await fetch(`${api}/api/v1/context/tenant`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-csrf-token": csrf, Cookie: sessionCookie },
+    body: JSON.stringify({ tenantId: secondaryTenantId })
+  });
+  if (switchResponse.status !== 204) throw new Error(`tenant context switch failed: ${switchResponse.status}`);
+  sessionCookie = mergeCookies(responseCookies(switchResponse), sessionCookie);
+  const switched = await fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } });
+  if (switched.status !== 200 || (await switched.json()).tenantId !== secondaryTenantId) throw new Error("tenant context did not switch to the second tenant");
+  const authenticatedPermissions = await Promise.all(Array.from({ length: 20 }, () => fetch(`${api}/api/v1/authorization/check?permission=kernel.read`, { headers: { Cookie: sessionCookie } })));
+  if (authenticatedPermissions.some(result => result.status !== 403)) throw new Error("backend permission evaluation did not reject the unassigned permission");
+  console.log(`authentication-load=${authenticatedPermissions.length};tenant-switch=isolated;permission-evaluation=forbidden`);
+}
+
 const authBurst = await Promise.all(Array.from({ length: 20 }, () => request("/api/v1/auth/csrf")));
 const limited = authBurst.filter(result => result.status === 429).length;
 if (limited === 0) throw new Error("authentication rate limiting did not activate");
 console.log(`auth-rate-limit-429=${limited}`);
 
-const rabbitContainer = process.env.STAGING_RABBIT_CONTAINER;
-const postgresContainer = process.env.STAGING_POSTGRES_CONTAINER;
-const databaseName = process.env.STAGING_DATABASE_NAME ?? "todir_staging";
 if (rabbitContainer && postgresContainer) {
-  const tenantId = randomUUID();
-  const messageId = randomUUID();
-  const sql = `insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('${tenantId}', 'drill-${tenantId.replaceAll("-", "")}', 'Drill', 'Active', now(), 1); insert into platform_messaging.outbox_message (id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, status) values ('${messageId}', 'StagingDrillV1', '{}'::jsonb, '${tenantId}', now(), '${randomUUID()}', '${randomUUID()}', 'kernel', 'Pending');`;
+  const tenantId = drillTenantId;
+  const messageIds = Array.from({ length: 20 }, () => randomUUID());
+  const messageValues = messageIds.map(messageId => `('${messageId}', 'StagingDrillV1', '{}'::jsonb, '${tenantId}', now(), '${randomUUID()}', '${randomUUID()}', 'kernel', 'Pending')`).join(", ");
+  const sql = `insert into platform_messaging.outbox_message (id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, status) values ${messageValues};`;
   await exec("docker", ["pause", rabbitContainer]);
   try {
-    await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-v", "ON_ERROR_STOP=1", "-c", sql]);
+    await dockerSql(sql);
     await new Promise(resolve => setTimeout(resolve, 8000));
-    const during = (await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select status from platform_messaging.outbox_message where id = '${messageId}'`])).stdout.trim();
-    if (!/^Pending|Failed$/.test(during)) throw new Error(`outbox did not remain durable during broker outage: ${during}`);
-    console.log(`broker-outage-outbox-status=${during}`);
+    const during = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.outbox_message where tenant_id = '${tenantId}' and status in ('Pending', 'Failed')`])).stdout.trim());
+    if (during !== messageIds.length) throw new Error(`outbox did not remain durable during broker outage: ${during}/${messageIds.length}`);
+    console.log(`broker-outage-outbox-pending=${during}`);
   } finally {
     await exec("docker", ["unpause", rabbitContainer]);
   }
-  let recovered = "";
+  let recovered = 0;
   for (let attempt = 0; attempt < 30; attempt++) {
-    recovered = (await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select status from platform_messaging.outbox_message where id = '${messageId}'`])).stdout.trim();
-    if (recovered === "Published") break;
+    recovered = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.outbox_message where tenant_id = '${tenantId}' and status = 'Published'`])).stdout.trim());
+    if (recovered === messageIds.length) break;
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
-  if (recovered !== "Published") throw new Error(`outbox did not recover after broker restart: ${recovered}`);
-  console.log("broker-recovery=published");
-  const workerContainer = process.env.STAGING_WORKER_CONTAINER;
+  if (recovered !== messageIds.length) throw new Error(`outbox did not recover after broker restart: ${recovered}/${messageIds.length}`);
+  console.log(`broker-recovery=published;outbox-throughput=${recovered}`);
   if (workerContainer) {
     await exec("docker", ["restart", workerContainer]);
     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -66,14 +108,15 @@ if (rabbitContainer && postgresContainer) {
     if (running !== "true") throw new Error("worker did not recover after controlled restart");
     let inboxCount = 0;
     for (let attempt = 0; attempt < 15; attempt++) {
-      inboxCount = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.inbox_message where message_id = '${messageId}'`])).stdout.trim());
-      if (inboxCount === 1) break;
+      inboxCount = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.inbox_message where tenant_id = '${tenantId}' and message_id in (${messageIds.map(id => `'${id}'`).join(",")})`])).stdout.trim());
+      if (inboxCount === messageIds.length) break;
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    if (inboxCount !== 1) throw new Error(`consumer did not record one idempotent inbox row after worker restart: ${inboxCount}`);
+    const duplicateInbox = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select coalesce(max(message_count), 0) from (select message_id, count(*) as message_count from platform_messaging.inbox_message where tenant_id = '${tenantId}' and message_id in (${messageIds.map(id => `'${id}'`).join(",")}) group by message_id) counts`])).stdout.trim());
+    if (inboxCount !== messageIds.length || duplicateInbox > 1) throw new Error(`consumer did not preserve one idempotent inbox row per message after worker restart: ${inboxCount}/${messageIds.length};max=${duplicateInbox}`);
     console.log(`worker-restart=running;inbox-rows=${inboxCount}`);
   }
-  await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-v", "ON_ERROR_STOP=1", "-c", `delete from platform_messaging.outbox_message where id = '${messageId}'; delete from platform_tenancy.tenant where id = '${tenantId}';`]);
+  await dockerSql(`delete from platform_messaging.inbox_message where tenant_id = '${tenantId}'; delete from platform_messaging.outbox_message where tenant_id = '${tenantId}'; delete from platform_iam.membership where tenant_id in ('${tenantId}', '${secondaryTenantId}'); delete from platform_iam.identity where id = '${drillIdentityId}'; delete from platform_tenancy.tenant where id in ('${tenantId}', '${secondaryTenantId}');`);
 } else {
   console.log("broker-recovery=not-run-no-staging-container-identifiers");
 }

@@ -106,6 +106,9 @@ jobs:
       - name: Validate database policy declarations
         run: pnpm database:policy
 
+      - name: Validate migration expand-contract policy
+        run: pnpm database:migration-policy
+
       - name: Validate API contract
         run: pnpm api:contract
 
@@ -200,6 +203,7 @@ jobs:
             -keyout "$rabbit_tls_directory/server.key" \
             -out "$rabbit_tls_directory/ca.crt" >/dev/null 2>&1
           cp "$rabbit_tls_directory/ca.crt" "$rabbit_tls_directory/server.crt"
+          chmod 644 "$rabbit_tls_directory/ca.crt" "$rabbit_tls_directory/server.crt"
           chmod 644 "$rabbit_tls_directory/server.key"
           echo "::add-mask::$database_password"
           echo "::add-mask::$rabbit_password"
@@ -231,6 +235,8 @@ jobs:
           curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18080/health
           curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18080/health/ready
           curl --fail --retry 30 --retry-delay 2 --retry-connrefused http://127.0.0.1:18081/
+          web_api_status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18081/api/v1/session)"
+          test "$web_api_status" = "401"
 
       - name: Run staging load and broker recovery drills
         env:

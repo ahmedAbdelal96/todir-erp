@@ -19,9 +19,15 @@ public sealed class NpgsqlAuditWriter(NpgsqlDataSource dataSource) : IAuditWrite
 {
     public async Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default)
     {
-        const string sql = "insert into platform_audit.audit_entry (id, tenant_id, legal_entity_id, branch_id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, before_json, after_json, reason, source, correlation_id, trace_id, occurred_at, metadata_json) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19::jsonb)";
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await WriteAsync(connection, transaction, entry, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public static async Task WriteAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, AuditEntry entry, CancellationToken cancellationToken = default)
+    {
+        const string sql = "insert into platform_audit.audit_entry (id, tenant_id, legal_entity_id, branch_id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, before_json, after_json, reason, source, correlation_id, trace_id, occurred_at, metadata_json) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19::jsonb)";
         await using (var context = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction))
         {
             context.Parameters.AddWithValue(entry.TenantId.Value.ToString("D"));
@@ -30,7 +36,6 @@ public sealed class NpgsqlAuditWriter(NpgsqlDataSource dataSource) : IAuditWrite
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue(entry.Id); command.Parameters.AddWithValue(entry.TenantId.Value); command.Parameters.AddWithValue((object?)entry.LegalEntityId ?? DBNull.Value); command.Parameters.AddWithValue((object?)entry.BranchId ?? DBNull.Value); command.Parameters.AddWithValue(entry.ActorType); command.Parameters.AddWithValue((object?)entry.ActorId ?? DBNull.Value); command.Parameters.AddWithValue((object?)entry.MembershipId ?? DBNull.Value); command.Parameters.AddWithValue(entry.Module); command.Parameters.AddWithValue(entry.Action); command.Parameters.AddWithValue(entry.EntityType); command.Parameters.AddWithValue(entry.EntityId); command.Parameters.AddWithValue((object?)entry.BeforeJson ?? DBNull.Value); command.Parameters.AddWithValue((object?)entry.AfterJson ?? DBNull.Value); command.Parameters.AddWithValue((object?)entry.Reason ?? DBNull.Value); command.Parameters.AddWithValue(entry.Source); command.Parameters.AddWithValue(entry.CorrelationId); command.Parameters.AddWithValue((object?)entry.TraceId ?? DBNull.Value); command.Parameters.AddWithValue(entry.OccurredAt); command.Parameters.AddWithValue((object?)entry.MetadataJson ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
     }
 }
 
@@ -117,4 +122,8 @@ public interface IImporter { string ImporterId { get; } Task ValidateAsync(Impor
 public enum NotificationChannel { InApp, Email, WhatsApp, Sms }
 public enum NotificationStatus { Pending, Sending, Sent, Failed }
 public sealed record Notification(Guid Id, TenantId TenantId, string RecipientRef, string TemplateKey, NotificationChannel Channel, JsonElement Payload, NotificationStatus Status, int Attempts, DateTimeOffset CreatedAt, DateTimeOffset? SentAt);
-public interface INotificationSender { Task SendAsync(Notification notification, CancellationToken cancellationToken = default); }
+public interface INotificationSender
+{
+    NotificationChannel Channel { get; }
+    Task SendAsync(Notification notification, CancellationToken cancellationToken = default);
+}

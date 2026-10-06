@@ -15,6 +15,20 @@ CREATE TABLE IF NOT EXISTS platform_iam.identity
 );
 ALTER TABLE platform_iam.identity ADD COLUMN IF NOT EXISTS password_hash text;
 ALTER TABLE platform_iam.identity ADD COLUMN IF NOT EXISTS phone text;
+ALTER TABLE platform_iam.identity ADD COLUMN IF NOT EXISTS mfa_secret_protected text;
+ALTER TABLE platform_iam.identity ADD COLUMN IF NOT EXISTS mfa_enabled boolean NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS platform_iam.mfa_recovery_code
+(
+    identity_id uuid NOT NULL REFERENCES platform_iam.identity (id),
+    digest text NOT NULL,
+    created_at timestamptz NOT NULL,
+    consumed_at timestamptz,
+    PRIMARY KEY (identity_id, digest)
+);
+CREATE INDEX IF NOT EXISTS ix_mfa_recovery_available
+    ON platform_iam.mfa_recovery_code (identity_id, digest)
+    WHERE consumed_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS platform_iam.membership
 (

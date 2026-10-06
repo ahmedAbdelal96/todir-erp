@@ -21,6 +21,20 @@ public sealed class OutboxPublishedMessageConsumer(IInboxStore inboxStore) : ICo
         await inboxStore.MarkProcessedAsync(Endpoint, context.Message.MessageId, context.Message.TenantId, context.CancellationToken);
     }
 }
+
+public sealed class OutboxPublishedMessageConsumerDefinition : ConsumerDefinition<OutboxPublishedMessageConsumer>
+{
+    public OutboxPublishedMessageConsumerDefinition()
+    {
+        EndpointName = "platform-outbox-probe";
+        ConcurrentMessageLimit = 8;
+    }
+
+    protected override void ConfigureConsumer(IReceiveEndpointConfigurator endpointConfigurator, IConsumerConfigurator<OutboxPublishedMessageConsumer> consumerConfigurator, IRegistrationContext context)
+    {
+        endpointConfigurator.UseMessageRetry(retry => retry.Exponential(8, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(2)));
+    }
+}
 public sealed record MessageRetryDecision(bool Retry, DateTimeOffset? NextAttemptAt, string? ErrorCode);
 public interface IMessageRetryPolicy
 {

@@ -82,6 +82,7 @@ resource "docker_container" "api" {
     "TODIR_DATA_PROTECTION_KEYS=/app/keys",
     "TODIR_DATA_PROTECTION_CERTIFICATE_BASE64=${var.data_protection_certificate_base64}",
     "TODIR_DATA_PROTECTION_CERTIFICATE_PASSWORD=${var.data_protection_certificate_password}",
+    "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
     "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
     "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
     "TODIR_RABBITMQ_PORT=5671",
@@ -90,6 +91,7 @@ resource "docker_container" "api" {
     "TODIR_RABBITMQ_PASSWORD=${var.rabbit_password}",
     "TODIR_RABBITMQ_TLS=true",
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
+    "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_CORS_ORIGINS=http://127.0.0.1:${var.web_port}",
   ]
   ports {
@@ -100,8 +102,14 @@ resource "docker_container" "api" {
     volume_name    = docker_volume.data_protection.name
     container_path = "/app/keys"
   }
+  volumes {
+    host_path      = abspath("${var.rabbit_tls_directory}/ca.crt")
+    container_path = "/etc/rabbitmq/tls/ca.crt"
+    read_only      = true
+  }
   networks_advanced {
-    name = docker_network.private.name
+    name    = docker_network.private.name
+    aliases = ["api"]
   }
   depends_on = [docker_container.migrator, docker_container.rabbitmq]
 }
@@ -110,6 +118,7 @@ resource "docker_container" "worker" {
   name  = "${local.project}-worker"
   image = var.worker_image
   env = [
+    "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
     "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
     "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
     "TODIR_RABBITMQ_PORT=5671",
@@ -118,8 +127,14 @@ resource "docker_container" "worker" {
     "TODIR_RABBITMQ_PASSWORD=${var.rabbit_password}",
     "TODIR_RABBITMQ_TLS=true",
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
+    "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_RABBITMQ_CONSUMER=true",
   ]
+  volumes {
+    host_path      = abspath("${var.rabbit_tls_directory}/ca.crt")
+    container_path = "/etc/rabbitmq/tls/ca.crt"
+    read_only      = true
+  }
   networks_advanced {
     name = docker_network.private.name
   }
