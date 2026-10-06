@@ -58,7 +58,8 @@ public sealed class NpgsqlImportJobScheduler(ITransactionCoordinator transaction
             {
                 chunk.Parameters.AddWithValue(batch.TenantId.Value); chunk.Parameters.AddWithValue(batch.Id); chunk.Parameters.AddWithValue(startRow); chunk.Parameters.AddWithValue(rowCount); chunk.Parameters.AddWithValue(scheduledAt);
                 var insertedAt = await chunk.ExecuteScalarAsync(token);
-                if (insertedAt is DateTimeOffset value) { persistedAt = value; isNew = true; }
+                if (insertedAt is DateTimeOffset insertedDate) { persistedAt = insertedDate; isNew = true; }
+                else if (insertedAt is DateTime insertedDateTime) { persistedAt = new DateTimeOffset(DateTime.SpecifyKind(insertedDateTime, DateTimeKind.Utc)); isNew = true; }
                 else persistedAt = null;
             }
             if (persistedAt is null)
