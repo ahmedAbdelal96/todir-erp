@@ -151,6 +151,18 @@ public sealed class ModuleAndPlatformServiceTests
     }
 
     [Fact]
+    public void CapabilityResolverUsesAnAvailableFallbackProvider()
+    {
+        var tenant = TenantId.New();
+        var unavailable = new FallbackCapability(false);
+        var fallback = new FallbackCapability(true);
+        var resolver = new CapabilityResolver([unavailable, fallback]);
+
+        Assert.True(resolver.IsAvailable<FallbackCapability>(new CapabilityContext(tenant)));
+        Assert.Same(fallback, resolver.Resolve<FallbackCapability>(new CapabilityContext(tenant)));
+    }
+
+    [Fact]
     public void CapabilityChecksRemainTenantBoundUnderLoad()
     {
         var tenant = TenantId.New();
@@ -227,5 +239,11 @@ public sealed class ModuleAndPlatformServiceTests
             Sent.Add(notification);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FallbackCapability(bool available) : ICapabilityProvider, IScopedCapabilityProvider
+    {
+        public string Capability => "verification.fallback";
+        public bool IsAvailable(CapabilityContext context) => available;
     }
 }

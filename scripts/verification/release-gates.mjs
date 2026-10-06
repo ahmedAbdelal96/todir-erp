@@ -53,13 +53,14 @@ const checks = [
   ["restore drill records measured evidence", ["backup-artifact-sha256=", "backup-duration-seconds=", "restore-duration-seconds=", "restore-schema-checksum=passed"].every(marker => read(".github/workflows/repository-validation.yml").includes(marker))],
   ["runtime role cannot bypass RLS", read("ops/database/bootstrap/runtime-roles-and-schemas.sql").includes("NOBYPASSRLS")],
   ["tenant tables force RLS", read("ops/database/bootstrap/platform-kernel-schema.sql").includes("FORCE ROW LEVEL SECURITY")],
+  ["capability fallback is registered and tested", read("src/backend/platform/platform-kernel/Hosting/PlatformHostingExtensions.cs").includes("ICapabilityResolver") && read("tests/platform/platform-kernel-tests/ModuleAndPlatformServiceTests.cs").includes("CapabilityResolverUsesAnAvailableFallbackProvider")],
   ["migration history is module-scoped", read("src/backend/hosts/database-migrator/Program.cs").includes("module_id") && read("src/backend/hosts/database-migrator/Program.cs").includes("ModuleIdForScript")],
   ["inbox has lease and attempts", read("ops/database/bootstrap/platform-kernel-schema.sql").includes("lease_until") && read("ops/database/bootstrap/platform-kernel-schema.sql").includes("attempts")],
   ["messaging faults are recorded and replay is audited", read("src/backend/platform/platform-kernel/Messaging/MessageRecovery.cs").includes("MessageFailureObserver") && read("src/backend/platform/platform-kernel/Messaging/MessageRecovery.cs").includes("IMessageReplayService") && read("src/backend/platform/platform-kernel/Messaging/MessageRecovery.cs").includes("message_replayed")],
   ["staging can exercise poison and replay", read(".github/workflows/repository-validation.yml").includes("crash-after-inbox-commit,poison-message") && read("src/backend/platform/platform-kernel/Messaging/Messaging.cs").includes("StagingPoisonV1")],
   ["metrics and alerts are wired", read("src/backend/shared/Todir.BuildingBlocks/Observability/observability-extensions.cs").includes("AddPrometheusExporter") && read("ops/monitoring/alerts.yml").includes("todir_outbox_oldest_pending_age_seconds")],
   ["threat model is reviewed", read("docs/security/platform-threat-model.md").includes("Cross-tenant leakage") && read("docs/security/platform-threat-model.md").includes("Support abuse")],
-  ["verification record exists", /focused platform tests \(28\)/.test(read("docs/platform/kernel-verification.md"))]
+  ["verification record exists", /focused platform tests \(29\)/.test(read("docs/platform/kernel-verification.md"))]
 ];
 
 for (const file of requiredRunbooks) checks.push([`runbook exists: ${file}`, fs.existsSync(path.join(root, "docs", "runbooks", file))]);

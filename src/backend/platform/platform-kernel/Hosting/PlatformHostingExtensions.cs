@@ -75,6 +75,7 @@ public static class PlatformHostingExtensions
         var entitlementKey = configuration["TODIR_ENTITLEMENT_HMAC_KEY"];
         services.AddSingleton<IEntitlementVerifier>(_ => new HmacEntitlementVerifier(string.IsNullOrWhiteSpace(entitlementKey) ? new Dictionary<string, byte[]>() : new Dictionary<string, byte[]> { ["current"] = Encoding.UTF8.GetBytes(entitlementKey) }));
         services.AddSingleton<IEntitlementGuard, EntitlementGuard>();
+        services.AddSingleton<ICapabilityResolver, CapabilityResolver>();
         services.AddSingleton<IPermissionAuthorizer, PermissionAuthorizer>();
         services.AddSingleton<IAuthorizationSubjectStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlAuthorizationSubjectStore(dataSource) : new NullAuthorizationSubjectStore());
         var fileSigningSecret = configuration["TODIR_FILE_SIGNING_SECRET"];
