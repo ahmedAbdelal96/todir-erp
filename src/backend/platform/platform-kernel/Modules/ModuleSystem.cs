@@ -108,7 +108,7 @@ public sealed class ModuleLifecycleService
         ArgumentException.ThrowIfNullOrWhiteSpace(operationKey);
         if (!entitled) throw new InvalidOperationException("module.not_entitled");
         var manifest = registry.Find(instance.ModuleId);
-        var missing = manifest.Dependencies.Hard.Where(dependency => dependencyInstances?.Any(candidate => candidate.ModuleId == dependency && candidate.Status == ModuleInstanceStatus.Active) != true).ToArray();
+        var missing = manifest.Dependencies.Hard.Where(dependency => dependencyInstances?.Any(candidate => candidate.TenantId == instance.TenantId && candidate.ModuleId == dependency && candidate.Status == ModuleInstanceStatus.Active) != true).ToArray();
         if (missing.Length > 0) throw new InvalidOperationException($"module.dependency_not_active:{missing[0]}");
 
         var executionKey = ExecutionKey(instance, operationKey);
@@ -165,7 +165,7 @@ public sealed class ModuleLifecycleService
     public ModuleImpactReport CreateImpactReport(ModuleInstance instance, IReadOnlyCollection<ModuleInstance> knownInstances, IReadOnlyList<string>? optionalCapabilitiesLost = null, IReadOnlyList<string>? openOperations = null)
     {
         var hardDependents = registry.GetDependents(instance.ModuleId)
-            .Where(moduleId => knownInstances.Any(candidate => candidate.ModuleId == moduleId && candidate.Status is not ModuleInstanceStatus.Disabled and not ModuleInstanceStatus.Failed))
+            .Where(moduleId => knownInstances.Any(candidate => candidate.TenantId == instance.TenantId && candidate.ModuleId == moduleId && candidate.Status is not ModuleInstanceStatus.Disabled and not ModuleInstanceStatus.Failed))
             .ToArray();
         var open = openOperations ?? [];
         return new ModuleImpactReport(hardDependents, optionalCapabilitiesLost ?? [], open, registry.Find(instance.ModuleId).Lifecycle.SupportsGoLive);

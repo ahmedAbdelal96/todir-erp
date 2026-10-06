@@ -292,6 +292,8 @@ public sealed class ModuleAndPlatformServiceTests
         var feature = new ModuleInstance("feature-instance", tenant, "feature", "tenant", null, ModuleInstanceStatus.Requested, 1);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => lifecycle.ActivateAsync(feature, true, "activate-1", []));
+        var otherTenantBase = baseInstance with { TenantId = TenantId.New().Value.ToString("D") };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => lifecycle.ActivateAsync(feature, true, "activate-2", [otherTenantBase]));
         var dependent = new ModuleInstance("dependent-instance", tenant, "dependent", "tenant", null, ModuleInstanceStatus.Active, 1);
         var impact = lifecycle.CreateImpactReport(baseInstance, [dependent]);
         await Assert.ThrowsAsync<InvalidOperationException>(() => lifecycle.DeactivateAsync(baseInstance, impact, "deactivate-1"));
