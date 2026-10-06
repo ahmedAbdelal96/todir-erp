@@ -1,0 +1,16 @@
+{
+  "$schema": "../../docs/platform/module-manifest-schema.json",
+  "id": "platform-kernel",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L0",
+  "type": "kernel",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": { "hard": [], "optionalCapabilities": [] },
+  "owns": { "schema": "platform", "entities": ["tenant", "identity", "membership", "audit"] },
+  "permissions": [],
+  "capabilities": { "provides": ["tenant-context", "authorization", "transaction-coordination"], "consumes": [] },
+  "messaging": { "publishes": [], "consumes": [] },
+  "lifecycle": { "supportsGoLive": false, "deactivationPolicy": "never_disable" }
+}

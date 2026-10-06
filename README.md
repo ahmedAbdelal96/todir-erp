@@ -1,10 +1,12 @@
 # TODIR
 
-TODIR is a production-grade, multi-tenant ERP SaaS for Arabic-market-first operations. It is being designed as a one-codebase Modular Monolith with strong module ownership, a future ASP.NET Core backend, React/TypeScript frontend, PostgreSQL persistence, and production-grade operations.
+TODIR is a production-grade, multi-tenant ERP SaaS for Arabic-market-first operations. It is implemented as a one-codebase Modular Monolith with strong module ownership, an ASP.NET Core backend, React/TypeScript frontend shell, PostgreSQL persistence, and production-grade platform boundaries.
 
 ## Current stage
 
-P00 repository and toolchain bootstrap is established. Platform Kernel and application implementation have not begun.
+The Platform Kernel baseline is implemented in `src/backend/platform/Todir.Platform`, with API/Worker/Migrator hosts, tenant-safe SQL bootstrap, module manifests, authorization, authentication/session foundations, transactions, messaging/outbox/inbox contracts, platform services, and the RTL frontend shell.
+
+Environment-dependent PostgreSQL, RabbitMQ HA, restore, chaos/load, and staging gates require the approved external environment.
 
 ## Bootstrap requirements and validation
 
@@ -21,7 +23,7 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm typecheck
 ```
 
-The solution contains only an empty `Todir.SharedKernel` build anchor so restore/build validation is warning-free. TypeScript contains one no-business-code compiler sentinel so the strict gate is executable. Platform Kernel and application implementation have not begun.
+The solution includes shared primitives, platform implementation, API, Worker, and dedicated database migrator projects. TypeScript strict typechecking, frontend boundary validation, module-manifest validation, database-policy validation, and API contract validation are executable repository gates.
 
 ## Repository map
 

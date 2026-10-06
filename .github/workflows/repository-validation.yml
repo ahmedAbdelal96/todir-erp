@@ -28,6 +28,20 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      rabbitmq:
+        image: rabbitmq:4-management
+        env:
+          RABBITMQ_DEFAULT_USER: todir
+          RABBITMQ_DEFAULT_PASS: todir-dev-only
+          RABBITMQ_DEFAULT_VHOST: /erp-dev
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -54,11 +68,22 @@ jobs:
       - name: Build .NET solution
         run: dotnet build Todir.sln --no-restore
 
+      - name: Apply controlled database bootstrap
+        run: dotnet run --project src/backend/hosts/Todir.DbMigrator/Todir.DbMigrator.csproj --no-build
+        env:
+          TODIR_MIGRATOR_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
+          TODIR_REPOSITORY_ROOT: ${{ github.workspace }}
+
       - name: Run .NET tests
         run: dotnet test Todir.sln --no-build
         env:
           TODIR_P03_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
           TODIR_P04_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
+          TODIR_RABBITMQ_HOST: localhost
+          TODIR_RABBITMQ_PORT: 5672
+          TODIR_RABBITMQ_VHOST: /erp-dev
+          TODIR_RABBITMQ_USERNAME: todir
+          TODIR_RABBITMQ_PASSWORD: todir-dev-only
 
       - name: Restore frontend tooling
         run: pnpm install --frozen-lockfile
@@ -68,6 +93,15 @@ jobs:
 
       - name: Validate frontend module boundaries
         run: pnpm architecture:frontend
+
+      - name: Validate module manifests and dependency graph
+        run: pnpm architecture:modules
+
+      - name: Validate database policy declarations
+        run: pnpm database:policy
+
+      - name: Validate API contract
+        run: pnpm api:contract
 
       - name: Validate Docker Compose skeleton
         run: docker compose config

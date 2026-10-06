@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <AssemblyName>Todir.Worker</AssemblyName>
+    <RootNamespace>Todir.Worker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <ProjectReference Include="../../platform/Todir.Platform/Todir.Platform.csproj" />
+  </ItemGroup>
+</Project>

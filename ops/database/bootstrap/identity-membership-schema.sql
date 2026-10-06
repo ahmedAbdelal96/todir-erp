@@ -5,12 +5,16 @@ CREATE TABLE IF NOT EXISTS platform_iam.identity
     id uuid PRIMARY KEY,
     normalized_email text NOT NULL UNIQUE,
     email_verified boolean NOT NULL DEFAULT false,
+    password_hash text,
+    phone text,
     status text NOT NULL CHECK (status IN ('Active', 'Suspended', 'Revoked')),
     created_at timestamptz NOT NULL,
     last_login_at timestamptz,
     security_stamp uuid NOT NULL,
     version bigint NOT NULL
 );
+ALTER TABLE platform_iam.identity ADD COLUMN IF NOT EXISTS password_hash text;
+ALTER TABLE platform_iam.identity ADD COLUMN IF NOT EXISTS phone text;
 
 CREATE TABLE IF NOT EXISTS platform_iam.membership
 (
@@ -26,6 +30,7 @@ CREATE TABLE IF NOT EXISTS platform_iam.membership
     created_at timestamptz NOT NULL,
     version bigint NOT NULL,
     UNIQUE (tenant_id, identity_id),
+    UNIQUE (tenant_id, id),
     FOREIGN KEY (tenant_id) REFERENCES platform_tenancy.tenant (id),
     FOREIGN KEY (tenant_id, default_legal_entity_id)
         REFERENCES platform_org.legal_entity (tenant_id, id),

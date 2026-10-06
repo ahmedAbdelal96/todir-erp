@@ -1,0 +1,6 @@
+{
+  "id": "sample-a", "version": "1.0.0", "contractsVersion": 1, "layer": "L0", "type": "kernel", "purchasable": false, "scope": "tenant",
+  "dependencies": { "hard": [], "optionalCapabilities": [] }, "owns": { "schema": "sample_a", "entities": ["sample"] }, "permissions": [],
+  "capabilities": { "provides": ["sample-provider"], "consumes": [] }, "messaging": { "publishes": ["SampleEntityCreatedV1"], "consumes": [] },
+  "lifecycle": { "supportsGoLive": false, "deactivationPolicy": "never_disable" }
+}

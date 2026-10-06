@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["id", "version", "contractsVersion", "layer", "type", "purchasable", "scope", "dependencies", "owns", "permissions", "capabilities", "messaging", "lifecycle"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "contractsVersion": { "type": "integer", "minimum": 1 },
+    "layer": { "type": "string", "pattern": "^L[0-6]$" },
+    "type": { "type": "string" },
+    "purchasable": { "type": "boolean" },
+    "scope": { "type": "string" },
+    "dependencies": { "$ref": "#/$defs/dependencies" },
+    "owns": { "type": "object", "required": ["schema", "entities"], "properties": { "schema": { "type": "string" }, "entities": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+    "permissions": { "type": "array", "items": { "type": "string" } },
+    "capabilities": { "$ref": "#/$defs/listPair" },
+    "messaging": { "$ref": "#/$defs/listPair" },
+    "lifecycle": { "type": "object", "required": ["supportsGoLive", "deactivationPolicy"], "properties": { "supportsGoLive": { "type": "boolean" }, "deactivationPolicy": { "type": "string" } }, "additionalProperties": false }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "dependencies": { "type": "object", "required": ["hard", "optionalCapabilities"], "properties": { "hard": { "type": "array", "items": { "type": "string" } }, "optionalCapabilities": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+    "listPair": { "type": "object", "required": ["provides", "consumes"], "properties": { "provides": { "type": "array", "items": { "type": "string" } }, "consumes": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false }
+  }
+}

@@ -18,6 +18,14 @@ Before modifying anything: inspect the repository; read this file and every near
 
 When a completed phase passes its exit gate, continue to the next approved phase without waiting for a new prompt. Use the repository roadmap to identify the next incomplete phase and execute: `DISCOVER → PLAN → IMPLEMENT → TEST → REVIEW → FIX → RE-VERIFY → COMMIT → PUSH → CONTINUE`. Do not stop at a phase boundary for routine review or normal implementation choices. Choose the narrowest safe and reversible option when it does not alter domain ownership, source of truth, public business semantics, security boundaries, transaction semantics, approved technology, or destructive data behavior. Stop only for those material owner decisions, unresolved governing document contradictions, or required external credentials.
 
+For an explicitly authorized continuous Platform Kernel execution mission, the
+entire Platform Kernel pack is one implementation contract. Its internal phases
+are sequencing and verification boundaries, not user handoff, commit, push or
+reporting boundaries. Keep verified implementation changes in the working tree
+until the complete pack and final release gate pass; then create one final
+focused commit and push it to `origin/dev`. Existing published commits are not
+rewritten.
+
 ## Universal naming and file discipline
 
 Every new normal or durable file and folder must describe its responsibility, not the product brand, project marketing name, phase, date, version, or history. Use concise kebab-case for Markdown, scripts, workflows and operational files; use language/framework conventions for source files and tests. Do not introduce `TODIR_`, `Todir_`, `ERP_`, `P00_`–`P99_`, `Phase1_`, `Final_`, `New_`, `Latest_`, or `V2_` prefixes. Existing numbered architecture/module packs and technical `.NET` `Todir.*` project, assembly, namespace and solution identities are legacy/canonical exceptions and are not to be mass-renamed during routine work. This exception does not apply to new documentation, scripts, workflows, runbooks or support files.

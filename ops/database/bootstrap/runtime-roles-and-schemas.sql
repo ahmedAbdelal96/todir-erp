@@ -27,12 +27,24 @@ BEGIN
             NOREPLICATION
             NOBYPASSRLS;
     END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'erp_dispatcher') THEN
+        CREATE ROLE erp_dispatcher
+            NOLOGIN
+            NOSUPERUSER
+            NOCREATEDB
+            NOCREATEROLE
+            NOINHERIT
+            NOREPLICATION
+            BYPASSRLS;
+    END IF;
 END
 $$;
 
 -- Reassert the security posture on every deployment run so drift is corrected.
 ALTER ROLE erp_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 ALTER ROLE erp_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+ALTER ROLE erp_dispatcher NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION BYPASSRLS;
 
 -- Platform schemas are owned by the migration role and are never owned by the
 -- API/Worker runtime role. Business module schemas follow the same contract.
