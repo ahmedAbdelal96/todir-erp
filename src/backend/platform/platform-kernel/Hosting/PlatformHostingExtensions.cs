@@ -168,9 +168,25 @@ public static class PlatformHostingExtensions
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
             return Results.NoContent();
         }).RequireAuthorization();
+        group.MapPost("/messaging/replay", async (MessageReplayRequest request, HttpContext context, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, IMessageReplayService replay, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(request.MessageId, out var messageId) || !Guid.TryParse(request.TenantId, out var tenantId)) return Problem(StatusCodes.Status400BadRequest, "message.replay_context_invalid", "Replay context is invalid");
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var operatorId) || !Guid.TryParse(context.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
+            if (!string.Equals(context.User.FindFirstValue("tenant_id"), tenantId.ToString("D"), StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+            if (!string.Equals(context.User.FindFirstValue("mfa_verified"), "true", StringComparison.OrdinalIgnoreCase)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_required", "Multi-factor authentication is required");
+            var subject = await subjectStore.LoadAsync(new(tenantId), membershipId, cancellationToken);
+            if (subject is null || !authorizer.Authorize(subject, "platform.messaging.replay", PermissionScope.ForTenant(new(tenantId)))) return Results.Forbid();
+            try
+            {
+                await replay.ReplayAsync(messageId, new(tenantId), operatorId, request.Reason, cancellationToken);
+                return Results.NoContent();
+            }
+            catch (KeyNotFoundException) { return Problem(StatusCodes.Status404NotFound, "message.replay_not_found", "Message replay target was not found"); }
+            catch (InvalidOperationException exception) when (exception.Message == "message.replay_not_authorized") { return Problem(StatusCodes.Status409Conflict, exception.Message, "Message replay requires an unresolved error record"); }
+        }).RequireAuthorization();
         if (app.Configuration.GetValue<bool>("TODIR_STAGING_VERIFICATION"))
         {
-            group.MapPost("/internal/messages/{messageId:guid}/replay", async (Guid messageId, ReplayRequest request, HttpContext context, IMessageReplayService replay, IConfiguration configuration, CancellationToken cancellationToken) =>
+            group.MapPost("/internal/messages/{messageId:guid}/replay", async (Guid messageId, StagingReplayRequest request, HttpContext context, IMessageReplayService replay, IConfiguration configuration, CancellationToken cancellationToken) =>
             {
                 var expected = configuration["TODIR_STAGING_REPLAY_TOKEN"];
                 var supplied = context.Request.Headers["X-Staging-Replay-Token"].ToString();
@@ -190,7 +206,8 @@ public static class PlatformHostingExtensions
 
     private sealed record TenantSelection(string TenantId);
     private sealed record LoginRequest(string Email, string Password, string? TenantId, string? MfaCode);
-    private sealed record ReplayRequest(string TenantId, string OperatorId, string Reason);
+    private sealed record MessageReplayRequest(string MessageId, string TenantId, string Reason);
+    private sealed record StagingReplayRequest(string TenantId, string OperatorId, string Reason);
 
     private static IResult Problem(int statusCode, string code, string title) => Results.Problem(statusCode: statusCode, title: title, extensions: new Dictionary<string, object?> { ["code"] = code });
 }

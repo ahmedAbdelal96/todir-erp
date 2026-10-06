@@ -11,5 +11,6 @@
     "/api/v1/context/tenant": { "post": { "responses": { "204": { "description": "Tenant context selected" }, "403": { "description": "Membership not authorized" } } } },
     "/api/v1/modules": { "get": { "responses": { "200": { "description": "Registered modules" } } } },
     "/api/v1/authorization/check": { "get": { "parameters": [{ "name": "permission", "in": "query", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Permission granted" }, "401": { "description": "Unauthenticated" }, "403": { "description": "Permission denied" } } } }
+    ,"/api/v1/messaging/replay": { "post": { "requestBody": { "required": true }, "responses": { "204": { "description": "Message republished and error resolved" }, "403": { "description": "MFA or permission is required" }, "404": { "description": "Message not found" }, "409": { "description": "No unresolved error is available" } } } }
   }
 }

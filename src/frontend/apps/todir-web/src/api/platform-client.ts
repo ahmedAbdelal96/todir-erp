@@ -7,6 +7,7 @@ export const platformApiPaths = [
   "/api/v1/auth/sessions/revoke",
   "/api/v1/authorization/check",
   "/api/v1/context/tenant",
+  "/api/v1/messaging/replay",
   "/api/v1/modules",
   "/api/v1/session"
 ] as const;
