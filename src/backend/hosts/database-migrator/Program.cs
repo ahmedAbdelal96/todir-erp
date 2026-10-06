@@ -63,6 +63,14 @@ if (!string.IsNullOrWhiteSpace(runtimePassword))
     await applyPassword.ExecuteNonQueryAsync();
 }
 
+await using (var ownerDatabaseGrant = new NpgsqlCommand("select format('grant create on database %I to erp_owner', current_database())", connection))
+{
+    var grant = (string?)await ownerDatabaseGrant.ExecuteScalarAsync();
+    if (string.IsNullOrWhiteSpace(grant)) throw new InvalidOperationException("migration owner database grant command was not generated");
+    await using var applyGrant = new NpgsqlCommand(grant, connection);
+    await applyGrant.ExecuteNonQueryAsync();
+}
+
 await using (var setOwner = new NpgsqlCommand("set role erp_owner", connection))
     await setOwner.ExecuteNonQueryAsync();
 
