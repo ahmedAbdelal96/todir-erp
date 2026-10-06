@@ -14,6 +14,7 @@ jobs:
   validate:
     name: Repository validation
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:18
@@ -266,10 +267,10 @@ jobs:
       - name: Run staging health smoke test
         id: staging_health
         run: |
-          curl --fail --insecure --retry 30 --retry-delay 2 --retry-connrefused https://127.0.0.1:18081/health
-          curl --fail --insecure --retry 30 --retry-delay 2 --retry-connrefused https://127.0.0.1:18081/health/ready
-          curl --fail --insecure --retry 30 --retry-delay 2 --retry-connrefused https://127.0.0.1:18081/
-          web_api_status="$(curl --silent --insecure --output /dev/null --write-out '%{http_code}' https://127.0.0.1:18081/api/v1/session)"
+          curl --fail --insecure --connect-timeout 5 --max-time 10 --retry 30 --retry-delay 2 --retry-connrefused https://127.0.0.1:18081/health
+          curl --fail --insecure --connect-timeout 5 --max-time 10 --retry 30 --retry-delay 2 --retry-connrefused https://127.0.0.1:18081/health/ready
+          curl --fail --insecure --connect-timeout 5 --max-time 10 --retry 30 --retry-delay 2 --retry-connrefused https://127.0.0.1:18081/
+          web_api_status="$(curl --silent --insecure --connect-timeout 5 --max-time 10 --output /dev/null --write-out '%{http_code}' https://127.0.0.1:18081/api/v1/session)"
           test "$web_api_status" = "401"
 
       - name: Collect staging container diagnostics
