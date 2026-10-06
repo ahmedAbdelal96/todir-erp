@@ -1,4 +1,4 @@
 /**
- * Keeps the P00 strict TypeScript gate executable before frontend implementation begins.
+ * Keeps the strict TypeScript baseline executable before frontend implementation begins.
  */
-export type P00TypecheckSentinel = Readonly<Record<never, never>>;
+export type StrictTypecheckSentinel = Readonly<Record<never, never>>;
