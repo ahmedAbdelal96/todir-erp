@@ -28,7 +28,8 @@ public sealed class OutboxDispatchWorker(
     private async Task DrainAsync(CancellationToken cancellationToken)
     {
         var dataSource = services.GetService<NpgsqlDataSource>();
-        var publisher = services.GetService<IPublishEndpoint>();
+        await using var scope = services.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetService<IPublishEndpoint>();
         if (dataSource is null || publisher is null) return;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);

@@ -8,6 +8,7 @@
     <PackageReference Include="Npgsql" />
     <PackageReference Include="MassTransit.RabbitMQ" />
     <PackageReference Include="Quartz.Extensions.Hosting" />
+    <PackageReference Include="Quartz.Serialization.Json" />
     <ProjectReference Include="../../shared/Todir.BuildingBlocks/Todir.BuildingBlocks.csproj" />
     <ProjectReference Include="../../shared/Todir.Contracts/Todir.Contracts.csproj" />
   </ItemGroup>

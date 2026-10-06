@@ -14,6 +14,7 @@ public static class SchedulingHostingExtensions
         services.AddSingleton<IPlatformMaintenanceTask, PlatformMaintenanceTask>();
         services.AddQuartz(options =>
         {
+            options.SetProperty("quartz.serializer.type", "json");
             options.SchedulerId = "TodirScheduler";
             options.SchedulerName = "TODIR persistent scheduler";
             options.AddJob<PlatformMaintenanceJob>(job => job

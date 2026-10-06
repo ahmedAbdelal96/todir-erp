@@ -8,6 +8,7 @@ if (!string.IsNullOrWhiteSpace(connectionString))
     await DatabaseReadiness.WaitForPlatformSchemaAsync(connectionString, CancellationToken.None);
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.Services.AddRouting();
 builder.Services.AddTodirPlatform(builder.Configuration, SampleModuleExtensions.ConfigureSampleMessaging);
 builder.Services.AddSampleModule();
 builder.Services.AddTodirScheduling(builder.Configuration);
