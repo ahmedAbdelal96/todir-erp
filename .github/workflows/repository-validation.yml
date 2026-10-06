@@ -271,6 +271,22 @@ jobs:
           web_api_status="$(curl --silent --insecure --output /dev/null --write-out '%{http_code}' https://127.0.0.1:18081/api/v1/session)"
           test "$web_api_status" = "401"
 
+      - name: Collect staging container diagnostics
+        if: failure() && steps.create_staging.outcome == 'failure'
+        run: |
+          docker ps --all --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+          for container in \
+            "kernel-${{ github.sha }}-api" \
+            "kernel-${{ github.sha }}-worker" \
+            "kernel-${{ github.sha }}-worker-secondary" \
+            "kernel-${{ github.sha }}-web" \
+            "kernel-${{ github.sha }}-migrator" \
+            "kernel-${{ github.sha }}-rabbitmq" \
+            "kernel-${{ github.sha }}-minio"; do
+            echo "===== $container ====="
+            docker logs --tail 200 "$container" 2>&1 || true
+          done
+
       - name: Run staging load and broker recovery drills
         env:
           STAGING_API_URL: https://127.0.0.1:18081
