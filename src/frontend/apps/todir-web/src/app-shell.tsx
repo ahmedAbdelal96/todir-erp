@@ -3,7 +3,12 @@ import { Component, type ErrorInfo, type FormEvent, type ReactNode, useEffect, u
 type Language = "ar" | "en";
 type Screen = "loading" | "signed-out" | "authenticated" | "forbidden" | "error";
 type ModuleRegistration = { id: string; label: string; permission?: string };
-type Session = { authenticated: boolean; tenantId: string };
+type Session = {
+  authenticated: boolean;
+  tenantId: string;
+  memberships: Array<{ id: string; tenantId: string; displayName: string }>;
+  context: { legalEntities: Array<{ id: string; code: string; name: string }>; branches: Array<{ id: string; legalEntityId: string; code: string; name: string }> };
+};
 
 const fallbackModules: ModuleRegistration[] = [
   { id: "home", label: "الرئيسية" },
@@ -21,6 +26,11 @@ export function AppShell() {
   const [language, setLanguage] = useState<Language>("ar");
   const [screen, setScreen] = useState<Screen>("loading");
   const [tenant, setTenant] = useState("");
+  const [memberships, setMemberships] = useState<Session["memberships"]>([]);
+  const [legalEntities, setLegalEntities] = useState<Session["context"]["legalEntities"]>([]);
+  const [branches, setBranches] = useState<Session["context"]["branches"]>([]);
+  const [legalEntity, setLegalEntity] = useState("");
+  const [branch, setBranch] = useState("");
   const [modules, setModules] = useState<ModuleRegistration[]>(fallbackModules);
   const [contextError, setContextError] = useState<string>();
   const [operation, setOperation] = useState<string>();
@@ -36,12 +46,17 @@ export function AppShell() {
   async function loadSession() {
     setScreen("loading");
     try {
-      const response = await fetch("/api/v1/session", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
+      const response = await fetch("/api/v1/session/context", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
       if (response.status === 401) { setScreen("signed-out"); return; }
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("session.load_failed");
       const session = await response.json() as Session;
       setTenant(session.tenantId);
+      setMemberships(session.memberships);
+      setLegalEntities(session.context.legalEntities);
+      setBranches(session.context.branches);
+      setLegalEntity((current) => session.context.legalEntities.some(item => item.id === current) ? current : "");
+      setBranch((current) => session.context.branches.some(item => item.id === current) ? current : "");
       await loadNavigation();
       setScreen("authenticated");
     } catch {
@@ -78,10 +93,28 @@ export function AppShell() {
       if (response.status === 401) { setScreen("signed-out"); return; }
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("context.update_failed");
-      setTenant(value);
-      await loadNavigation();
+      await loadSession();
     } catch {
       setContextError(language === "ar" ? "تعذر تحديث السياق" : "Could not update context");
+    } finally {
+      setOperation(undefined);
+    }
+  }
+
+  async function switchOrganization(nextLegalEntity: string, nextBranch: string) {
+    setOperation(labels.progress);
+    setContextError(undefined);
+    try {
+      const csrf = await requestCsrf();
+      const response = await fetch("/api/v1/context/organization", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrf, "X-Correlation-Id": crypto.randomUUID() }, body: JSON.stringify({ legalEntityId: nextLegalEntity || null, branchId: nextBranch || null }) });
+      if (response.status === 401) { setScreen("signed-out"); return; }
+      if (response.status === 403) { setScreen("forbidden"); return; }
+      if (!response.ok) throw new Error("context.organization_update_failed");
+      setLegalEntity(nextLegalEntity);
+      setBranch(nextBranch);
+      await loadNavigation();
+    } catch {
+      setContextError(language === "ar" ? "تعذر تحديث النطاق التنظيمي" : "Could not update the organization scope");
     } finally {
       setOperation(undefined);
     }
@@ -103,11 +136,11 @@ export function AppShell() {
       <a className="brand" href="/" aria-label="TODIR">TODIR</a>
       <div className="context-controls">
         <label htmlFor="tenant-select">{labels.tenant}</label>
-        <select id="tenant-select" aria-label={labels.switcher} value={tenant} onChange={(event) => void switchTenant(event.target.value)}><option value={tenant}>{tenant}</option></select>
+        <select id="tenant-select" aria-label={labels.switcher} value={tenant} onChange={(event) => void switchTenant(event.target.value)}>{memberships.map(item => <option key={item.tenantId} value={item.tenantId}>{item.displayName}</option>)}</select>
         <label htmlFor="entity-select">{labels.entity}</label>
-        <select id="entity-select" defaultValue=""><option value="">—</option></select>
+        <select id="entity-select" value={legalEntity} onChange={(event) => void switchOrganization(event.target.value, "")}><option value="">—</option>{legalEntities.map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</select>
         <label htmlFor="branch-select">{labels.branch}</label>
-        <select id="branch-select" defaultValue=""><option value="">—</option></select>
+        <select id="branch-select" value={branch} onChange={(event) => void switchOrganization(legalEntity, event.target.value)}><option value="">—</option>{branches.filter(item => !legalEntity || item.legalEntityId === legalEntity).map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</select>
         <button type="button" onClick={() => setLanguage(language === "ar" ? "en" : "ar")}>{labels.language}</button>
         <button type="button" onClick={() => void signOut()}>{labels.signOut}</button>
       </div>

@@ -13,10 +13,17 @@
     "/api/v1/auth/mfa/enroll": { "post": { "responses": { "200": { "description": "MFA enrollment secret and one-time recovery codes" }, "401": { "description": "Unauthenticated" } } } },
     "/api/v1/auth/sessions/revoke": { "post": { "responses": { "204": { "description": "All current identity sessions revoked" }, "401": { "description": "Unauthenticated" } } } },
     "/api/v1/session": { "get": { "responses": { "200": { "description": "Current secure session" }, "401": { "description": "Unauthenticated" } } } },
+    "/api/v1/session/context": { "get": { "responses": { "200": { "description": "Current tenant, memberships, legal entities, and branches" }, "401": { "description": "Unauthenticated" }, "404": { "description": "Tenant context not found" } } } },
     "/api/v1/context/tenant": {
       "post": {
         "requestBody": { "$ref": "#/components/requestBodies/TenantSelection" },
         "responses": { "204": { "description": "Tenant context selected" }, "403": { "description": "Membership not authorized" } }
+      }
+    },
+    "/api/v1/context/organization": {
+      "post": {
+        "requestBody": { "$ref": "#/components/requestBodies/OrganizationSelection" },
+        "responses": { "204": { "description": "Organization context selected" }, "400": { "description": "Invalid organization scope" }, "404": { "description": "Organization scope not found" } }
       }
     },
     "/api/v1/tenants/{tenantId}/memberships": {
@@ -52,6 +59,12 @@
         "responses": { "204": { "description": "Membership suspended" }, "403": { "description": "Membership management permission is required" }, "404": { "description": "Membership not found" } }
       }
     },
+    "/api/v1/tenants/{tenantId}/organization": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Tenant organization context" }, "403": { "description": "Organization read permission is required" } } } },
+    "/api/v1/tenants/{tenantId}/roles": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "offset", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 0, "default": 0 } }, { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 } }], "responses": { "200": { "description": "Tenant roles" }, "403": { "description": "Role management permission is required" } } } },
+    "/api/v1/tenants/{tenantId}/modules": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "offset", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 0, "default": 0 } }, { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 } }], "responses": { "200": { "description": "Tenant module instances" }, "403": { "description": "Module view permission is required" } } } },
+    "/api/v1/tenants/{tenantId}/settings": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "offset", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 0, "default": 0 } }, { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 } }], "responses": { "200": { "description": "Tenant settings" }, "403": { "description": "Settings read permission is required" } } } },
+    "/api/v1/tenants/{tenantId}/audit": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "offset", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 0, "default": 0 } }, { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 } }], "responses": { "200": { "description": "Tenant audit entries" }, "403": { "description": "Audit view permission is required" } } } },
+    "/api/v1/tenants/{tenantId}/entitlement": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Current entitlement summary" }, "403": { "description": "Module view permission is required" }, "404": { "description": "Entitlement snapshot not found" } } } },
     "/api/v1/modules": { "get": { "responses": { "200": { "description": "Registered modules" } } } },
     "/api/v1/sample/items": {
       "post": {
@@ -71,6 +84,7 @@
     "requestBodies": {
       "LoginRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } } },
       "TenantSelection": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TenantSelection" } } } },
+      "OrganizationSelection": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrganizationSelection" } } } },
       "MessageReplayRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageReplayRequest" } } } },
       "CreateSampleItemRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSampleItemRequest" } } } },
       "MembershipInvitationRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MembershipInvitationRequest" } } } },
@@ -87,6 +101,11 @@
         "type": "object",
         "required": ["tenantId"],
         "properties": { "tenantId": { "type": "string", "format": "uuid" } },
+        "additionalProperties": false
+      },
+      "OrganizationSelection": {
+        "type": "object",
+        "properties": { "legalEntityId": { "type": ["string", "null"], "format": "uuid" }, "branchId": { "type": ["string", "null"], "format": "uuid" } },
         "additionalProperties": false
       },
       "MessageReplayRequest": {

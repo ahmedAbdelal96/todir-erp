@@ -38,6 +38,7 @@ public static class PlatformHostingExtensions
         }
         services.AddSingleton<IIdentityStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlIdentityStore(dataSource) : new NullIdentityStore());
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IIdentityMembershipAdminStore, NpgsqlIdentityMembershipAdminStore>();
+        services.AddSingleton<IPlatformAdminSurfaceStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlPlatformAdminSurfaceStore(dataSource) : new NullPlatformAdminSurfaceStore());
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options =>
         {
             options.Cookie.Name = "todir_session";
@@ -96,7 +97,7 @@ public static class PlatformHostingExtensions
         services.AddSingleton<INotificationStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlNotificationStore(dataSource) : new InMemoryNotificationStore());
         services.AddSingleton<NotificationDispatcher>();
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<ITransactionCoordinator, NpgsqlTransactionCoordinator>();
-        services.AddSingleton<IModuleManifestProvider>(new StaticModuleManifestProvider(new ModuleManifest("platform-kernel", "1.0.0", 1, "L0", "kernel", false, "tenant", new([], []), new("platform", ["tenant-context", "authorization", "transaction-coordination"]), ["platform.membership.manage", "platform.role.manage", "platform.module.view", "platform.module.activate", "platform.module.deactivate", "platform.settings.manage", "platform.audit.view", "platform.support_access.request", "platform.support_access.approve", "platform.message.replay"], new(["tenant-context", "authorization", "transaction-coordination"], []), new([], []), new(false, "never_disable"))));
+        services.AddSingleton<IModuleManifestProvider>(new StaticModuleManifestProvider(new ModuleManifest("platform-kernel", "1.0.0", 1, "L0", "kernel", false, "tenant", new([], []), new("platform", ["tenant-context", "authorization", "transaction-coordination"]), ["platform.membership.manage", "platform.role.manage", "platform.module.view", "platform.module.activate", "platform.module.deactivate", "platform.settings.manage", "platform.settings.read", "platform.audit.view", "platform.support_access.request", "platform.support_access.approve", "platform.message.replay", "platform.organization.read", "platform.identity.read", "platform.tenancy.read"], new(["tenant-context", "authorization", "transaction-coordination"], []), new([], []), new(false, "never_disable"))));
         services.AddSingleton<IModuleManifestProvider>(new StaticModuleManifestProvider(new ModuleManifest("tenancy", "1.0.0", 1, "L0", "kernel", false, "tenant", new([], []), new("platform_tenancy", ["tenant"]), [], new([], []), new([], []), new(false, "never_disable"))));
         services.AddSingleton<IModuleManifestProvider>(new StaticModuleManifestProvider(new ModuleManifest("iam", "1.0.0", 1, "L0", "kernel", false, "tenant", new(["tenancy"], []), new("platform_iam", ["identity", "membership"]), [], new([], []), new([], []), new(false, "never_disable"))));
         services.AddSingleton<IModuleManifestProvider>(new StaticModuleManifestProvider(new ModuleManifest("org", "1.0.0", 1, "L0", "kernel", false, "tenant", new(["tenancy"], []), new("platform_org", ["legal_entity", "branch"]), [], new([], []), new([], []), new(false, "never_disable"))));
@@ -144,6 +145,14 @@ public static class PlatformHostingExtensions
         }).RequireAuthorization();
         group.MapGet("/modules", (IModuleRegistry registry) => Results.Ok(registry.GetAll()));
         group.MapGet("/session", (HttpContext context) => context.User.Identity?.IsAuthenticated == true ? Results.Ok(new { authenticated = true, tenantId = context.User.FindFirstValue("tenant_id") }) : Results.Unauthorized()).RequireAuthorization();
+        group.MapGet("/session/context", async (HttpContext context, IIdentityStore identityStore, IPlatformAdminSurfaceStore surfaceStore, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId) || !Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId)) return Results.Unauthorized();
+            var snapshot = await surfaceStore.LoadTenantContextAsync(new(tenantId), cancellationToken);
+            if (snapshot is null) return Results.NotFound();
+            var memberships = await identityStore.ListActiveMembershipsAsync(new(identityId), cancellationToken);
+            return Results.Ok(new { authenticated = true, tenantId, memberships = memberships.Select(membership => new { id = membership.Id.Value, tenantId = membership.TenantId.Value, displayName = membership.DisplayName }), context = snapshot });
+        }).RequireAuthorization();
         group.MapGet("/authorization/check", async (string permission, HttpContext context, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(context.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
@@ -167,6 +176,20 @@ public static class PlatformHostingExtensions
             claims.Add(new Claim("membership_id", membership.Id.Value.ToString("D")));
             if (membership.DefaultLegalEntityId is { } legalEntity) claims.Add(new Claim("legal_entity_id", legalEntity.Value.ToString("D")));
             if (membership.DefaultBranchId is { } branch) claims.Add(new Claim("branch_id", branch.Value.ToString("D")));
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
+            return Results.NoContent();
+        }).RequireAuthorization();
+        group.MapPost("/context/organization", async (OrganizationSelection request, HttpContext context, IPlatformAdminSurfaceStore surfaceStore, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId)) return Results.Unauthorized();
+            if (request.LegalEntityId is not null && !Guid.TryParse(request.LegalEntityId, out _)) return Problem(StatusCodes.Status400BadRequest, "organization.legal_entity_invalid", "Legal entity identifier is invalid");
+            if (request.BranchId is not null && !Guid.TryParse(request.BranchId, out _)) return Problem(StatusCodes.Status400BadRequest, "organization.branch_invalid", "Branch identifier is invalid");
+            var legalEntityId = request.LegalEntityId is null ? (Guid?)null : Guid.Parse(request.LegalEntityId);
+            var branchId = request.BranchId is null ? (Guid?)null : Guid.Parse(request.BranchId);
+            if (!await surfaceStore.OrganizationScopeExistsAsync(new(tenantId), legalEntityId, branchId, cancellationToken)) return Results.NotFound();
+            var claims = context.User.Claims.Where(claim => claim.Type is not "legal_entity_id" and not "branch_id").ToList();
+            if (legalEntityId is not null) claims.Add(new Claim("legal_entity_id", legalEntityId.Value.ToString("D")));
+            if (branchId is not null) claims.Add(new Claim("branch_id", branchId.Value.ToString("D")));
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
             return Results.NoContent();
         }).RequireAuthorization();
@@ -197,6 +220,40 @@ public static class PlatformHostingExtensions
         {
             if (!await HasTenantPermissionAsync(context, new(tenantId), "platform.membership.manage", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
             return await membershipStore.SuspendAsync(new(tenantId), new(membershipId), cancellationToken) ? Results.NoContent() : Results.NotFound();
+        }).RequireAuthorization();
+        group.MapGet("/tenants/{tenantId:guid}/organization", async (Guid tenantId, HttpContext context, IPlatformAdminSurfaceStore surfaceStore, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        {
+            if (!await HasTenantPermissionAsync(context, new(tenantId), "platform.organization.read", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
+            return await surfaceStore.LoadTenantContextAsync(new(tenantId), cancellationToken) is { } snapshot ? Results.Ok(snapshot) : Results.NotFound();
+        }).RequireAuthorization();
+        group.MapGet("/tenants/{tenantId:guid}/roles", async (Guid tenantId, int? offset, int? limit, HttpContext context, IPlatformAdminSurfaceStore surfaceStore, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        {
+            if (!await HasTenantPermissionAsync(context, new(tenantId), "platform.role.manage", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
+            try { return Results.Ok(await surfaceStore.ListRolesAsync(new(tenantId), offset ?? 0, limit ?? 100, cancellationToken)); }
+            catch (ArgumentOutOfRangeException exception) { return Problem(StatusCodes.Status400BadRequest, "platform.pagination_invalid", exception.Message); }
+        }).RequireAuthorization();
+        group.MapGet("/tenants/{tenantId:guid}/modules", async (Guid tenantId, int? offset, int? limit, HttpContext context, IPlatformAdminSurfaceStore surfaceStore, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        {
+            if (!await HasTenantPermissionAsync(context, new(tenantId), "platform.module.view", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
+            try { return Results.Ok(await surfaceStore.ListModuleInstancesAsync(new(tenantId), offset ?? 0, limit ?? 100, cancellationToken)); }
+            catch (ArgumentOutOfRangeException exception) { return Problem(StatusCodes.Status400BadRequest, "platform.pagination_invalid", exception.Message); }
+        }).RequireAuthorization();
+        group.MapGet("/tenants/{tenantId:guid}/settings", async (Guid tenantId, int? offset, int? limit, HttpContext context, IPlatformAdminSurfaceStore surfaceStore, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        {
+            if (!await HasTenantPermissionAsync(context, new(tenantId), "platform.settings.read", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
+            try { return Results.Ok(await surfaceStore.ListSettingsAsync(new(tenantId), offset ?? 0, limit ?? 100, cancellationToken)); }
+            catch (ArgumentOutOfRangeException exception) { return Problem(StatusCodes.Status400BadRequest, "platform.pagination_invalid", exception.Message); }
+        }).RequireAuthorization();
+        group.MapGet("/tenants/{tenantId:guid}/audit", async (Guid tenantId, int? offset, int? limit, HttpContext context, IPlatformAdminSurfaceStore surfaceStore, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        {
+            if (!await HasTenantPermissionAsync(context, new(tenantId), "platform.audit.view", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
+            try { return Results.Ok(await surfaceStore.ListAuditAsync(new(tenantId), offset ?? 0, limit ?? 100, cancellationToken)); }
+            catch (ArgumentOutOfRangeException exception) { return Problem(StatusCodes.Status400BadRequest, "platform.pagination_invalid", exception.Message); }
+        }).RequireAuthorization();
+        group.MapGet("/tenants/{tenantId:guid}/entitlement", async (Guid tenantId, HttpContext context, IPlatformAdminSurfaceStore surfaceStore, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        {
+            if (!await HasTenantPermissionAsync(context, new(tenantId), "platform.module.view", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
+            return await surfaceStore.LoadEntitlementAsync(new(tenantId), cancellationToken) is { } entitlement ? Results.Ok(entitlement) : Results.NotFound();
         }).RequireAuthorization();
         group.MapPost("/messaging/replay", async (MessageReplayRequest request, HttpContext context, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, IMessageReplayService replay, CancellationToken cancellationToken) =>
         {
@@ -235,6 +292,7 @@ public static class PlatformHostingExtensions
     }
 
     private sealed record TenantSelection(string TenantId);
+    private sealed record OrganizationSelection(string? LegalEntityId, string? BranchId);
     private sealed record LoginRequest(string Email, string Password, string? TenantId, string? MfaCode);
     private sealed record MembershipInvitationRequest(string IdentityId, string DisplayName, DateTimeOffset ExpiresAt);
     private sealed record MembershipInvitationAcceptanceRequest(string Token);

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 using Todir.Modules.Sample;
 using Todir.Platform.Hosting;
 using Todir.Platform.Modules;
@@ -25,5 +26,39 @@ public sealed class SampleModuleTests
         Assert.Contains("sample.item.create", sample.Permissions);
         Assert.Contains(registry.GetAll(), module => module.Id == "platform-kernel");
         Assert.Contains(registry.GetAll(), module => module.Id == "sample");
+    }
+
+    [Fact]
+    public void SampleModuleAFixturesResolveBeforeSampleModuleBAndRejectInvalidGraphs()
+    {
+        var sampleA = ModuleRegistry.Load(File.ReadAllText(Path.Combine(RepositoryRoot, "tests", "platform", "fixtures", "sample-a", "module.manifest.json")));
+        var sampleB = ModuleRegistry.Load(File.ReadAllText(Path.Combine(RepositoryRoot, "tests", "platform", "fixtures", "sample-b", "module.manifest.json")));
+        var registry = new ModuleRegistry([sampleB, sampleA]);
+
+        Assert.Equal(["sample-a", "sample-b"], registry.TopologicalOrder());
+        Assert.Equal(sampleB, registry.Find("sample-b"));
+        Assert.Equal(["sample-a"], registry.GetHardDependencies("sample-b"));
+        Assert.Throws<InvalidOperationException>(() => { _ = new ModuleRegistry([sampleB]); });
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            _ = new ModuleRegistry([
+                sampleA with { Id = "cycle-a", Dependencies = new(["cycle-b"], []) },
+                sampleB with { Id = "cycle-b", Dependencies = new(["cycle-a"], []) }]);
+        });
+
+        using var parsed = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepositoryRoot, "tests", "platform", "fixtures", "sample-a", "module.manifest.json")));
+        Assert.True(parsed.RootElement.TryGetProperty("dependencies", out var dependencies));
+        Assert.True(dependencies.TryGetProperty("hard", out var hardDependencies));
+        Assert.Equal(JsonValueKind.Array, hardDependencies.ValueKind);
+    }
+
+    private static string RepositoryRoot
+    {
+        get
+        {
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Todir.sln"))) directory = directory.Parent;
+            return directory?.FullName ?? throw new InvalidOperationException("Unable to locate the repository root.");
+        }
     }
 }

@@ -20,7 +20,7 @@ if (foundationalScripts.Any(script => !File.Exists(script)))
 var manifests = DiscoverManifests(repositoryRoot);
 var orderedModules = TopologicalOrder(manifests);
 var scripts = foundationalScripts.Skip(1)
-    .Concat(orderedModules.Select(module => ResolveModuleMigration(bootstrapDirectory, module)))
+    .Concat(orderedModules.SelectMany(module => ResolveModuleMigrations(bootstrapDirectory, module)))
     .Append(Path.Combine(bootstrapDirectory, "scheduling-schema.sql"))
     .ToArray();
 
@@ -122,16 +122,20 @@ await using (var supportExpiryOwnership = new NpgsqlCommand("alter function plat
 Console.WriteLine($"Applied or verified {scripts.Length} ordered platform scripts from {manifests.Count} module manifests.");
 return 0;
 
-static string ModuleIdForScript(string scriptName) => Path.GetFileName(scriptName) switch
+static string ModuleIdForScript(string scriptName)
 {
-    "tenant-boundary.sql" => "tenancy",
-    "organization-schema.sql" => "org",
-    "identity-membership-schema.sql" => "iam",
-    "scheduling-schema.sql" => "scheduling",
-    "platform-kernel-schema.sql" => "platform-kernel",
-    var file when file.EndsWith("-schema.sql", StringComparison.Ordinal) => file[..^"-schema.sql".Length],
-    _ => throw new InvalidOperationException($"No module migration identity is declared for {scriptName}.")
-};
+    var file = Path.GetFileName(scriptName);
+    if (file is "tenant-boundary.sql") return "tenancy";
+    if (file is "organization-schema.sql") return "org";
+    if (file is "identity-membership-schema.sql") return "iam";
+    if (file is "scheduling-schema.sql") return "scheduling";
+    if (file is "platform-kernel-schema.sql") return "platform-kernel";
+    if (file.EndsWith("-schema.sql", StringComparison.Ordinal)) return file[..^"-schema.sql".Length];
+    const string forwardFixMarker = "-forward-fix-";
+    var marker = file.IndexOf(forwardFixMarker, StringComparison.Ordinal);
+    if (marker > 0 && file.EndsWith(".sql", StringComparison.Ordinal)) return file[..marker];
+    throw new InvalidOperationException($"No module migration identity is declared for {scriptName}.");
+}
 
 static IReadOnlyDictionary<string, ModuleManifest> DiscoverManifests(string repositoryRoot)
 {
@@ -172,11 +176,11 @@ static IReadOnlyList<ModuleManifest> TopologicalOrder(IReadOnlyDictionary<string
     return ordered;
 }
 
-static string ResolveModuleMigration(string bootstrapDirectory, ModuleManifest module)
+static IReadOnlyList<string> ResolveModuleMigrations(string bootstrapDirectory, ModuleManifest module)
 {
-    var path = Path.Combine(bootstrapDirectory, $"{module.Id}-schema.sql");
-    if (!File.Exists(path)) throw new FileNotFoundException($"No migration script exists for module manifest {module.Id}.", path);
-    return path;
+    var basePath = Path.Combine(bootstrapDirectory, $"{module.Id}-schema.sql");
+    if (!File.Exists(basePath)) throw new FileNotFoundException($"No migration script exists for module manifest {module.Id}.", basePath);
+    return [basePath, .. Directory.EnumerateFiles(bootstrapDirectory, $"{module.Id}-forward-fix-*.sql").OrderBy(path => path, StringComparer.Ordinal)];
 }
 
 sealed record ModuleManifest(string Id, IReadOnlyList<string> HardDependencies);

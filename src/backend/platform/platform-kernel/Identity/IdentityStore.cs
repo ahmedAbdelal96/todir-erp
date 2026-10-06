@@ -9,6 +9,7 @@ namespace Todir.Platform.Identity;
 public interface IIdentityStore
 {
     Task<Identity?> AuthenticateAsync(string email, string password, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default);
     Task<Membership?> FindActiveMembershipAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default);
     Task<bool> ValidateSessionAsync(IdentityId identityId, TenantId tenantId, Guid securityStamp, CancellationToken cancellationToken = default);
@@ -27,6 +28,7 @@ public interface IIdentityMembershipAdminStore
 public sealed class NullIdentityStore : IIdentityStore
 {
     public Task<Identity?> AuthenticateAsync(string email, string password, CancellationToken cancellationToken = default) => Task.FromResult<Identity?>(null);
+    public Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Membership>>([]);
     public Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Membership>>([]);
     public Task<Membership?> FindActiveMembershipAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default) => Task.FromResult<Membership?>(null);
     public Task<bool> ValidateSessionAsync(IdentityId identityId, TenantId tenantId, Guid securityStamp, CancellationToken cancellationToken = default) => Task.FromResult(false);
@@ -57,6 +59,16 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
         while (await reader.ReadAsync(cancellationToken)) memberships.Add(ReadMembership(reader));
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
+        return memberships;
+    }
+
+    public async Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, CancellationToken cancellationToken = default)
+    {
+        await using var command = dataSource.CreateCommand("select id, tenant_id, identity_id, display_name, status, default_legal_entity_id, default_branch_id, locale, timezone, created_at, version from platform_iam.list_active_memberships($1) order by created_at, id");
+        command.Parameters.AddWithValue(identityId.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var memberships = new List<Membership>();
+        while (await reader.ReadAsync(cancellationToken)) memberships.Add(ReadMembership(reader));
         return memberships;
     }
 

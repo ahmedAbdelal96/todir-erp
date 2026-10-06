@@ -93,6 +93,60 @@ public sealed class TransactionIntegrationTests
     }
 
     [Fact]
+    public async Task SampleModuleAAndBContextsCommitAndRollbackWithTenantRlsAndOutbox()
+    {
+        var adminConnectionString = Require("TODIR_P04_ADMIN_CONNECTION");
+        var tenantId = TenantId.New();
+        var successA = Guid.CreateVersion7();
+        var successB = Guid.CreateVersion7();
+        var successMessage = Guid.CreateVersion7();
+        var rollbackA = Guid.CreateVersion7();
+        var rollbackB = Guid.CreateVersion7();
+        var rollbackMessage = Guid.CreateVersion7();
+        var password = await SetRuntimePasswordAsync(adminConnectionString);
+        var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString;
+
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        try
+        {
+            await ExecuteAsync(admin, "set role erp_owner; create schema sample_a; create schema sample_b; create table sample_a.entity (id uuid primary key, tenant_id uuid not null); create table sample_b.entity (id uuid primary key, tenant_id uuid not null); alter table sample_a.entity enable row level security; alter table sample_a.entity force row level security; alter table sample_b.entity enable row level security; alter table sample_b.entity force row level security; create policy tenant_isolation on sample_a.entity using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid); create policy tenant_isolation on sample_b.entity using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid); grant usage on schema sample_a, sample_b to erp_app; grant select, insert on sample_a.entity, sample_b.entity to erp_app; reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantId.Value}', 'sample-ab-{tenantId.Value:N}', 'Sample A/B', 'Active', now(), 1); reset app.tenant_id; reset role;");
+
+            await using var dataSource = NpgsqlDataSource.Create(appConnectionString);
+            var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+            var visibleCounts = await coordinator.ExecuteAsync(tenantId, async (context, cancellationToken) =>
+            {
+                await InsertSampleRowAsync(context, "sample_a.entity", successA, tenantId, cancellationToken);
+                await InsertSampleRowAsync(context, "sample_b.entity", successB, tenantId, cancellationToken);
+                context.AddOutbox(new OutboxMessage(successMessage, "SampleModulesCommittedV1", "{}", tenantId, DateTimeOffset.UtcNow, Guid.CreateVersion7(), Guid.CreateVersion7(), "sample-a"));
+                return (await CountSampleRowsAsync(context, "sample_a.entity", cancellationToken), await CountSampleRowsAsync(context, "sample_b.entity", cancellationToken));
+            });
+
+            Assert.Equal((1L, 1L), visibleCounts);
+            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from sample_a.entity where id = '{successA}'"));
+            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from sample_b.entity where id = '{successB}'"));
+            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform_messaging.outbox_message where id = '{successMessage}'"));
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.ExecuteAsync<bool>(tenantId, async (context, cancellationToken) =>
+            {
+                await InsertSampleRowAsync(context, "sample_a.entity", rollbackA, tenantId, cancellationToken);
+                await InsertSampleRowAsync(context, "sample_b.entity", rollbackB, tenantId, cancellationToken);
+                context.AddOutbox(new OutboxMessage(rollbackMessage, "SampleModulesRolledBackV1", "{}", tenantId, DateTimeOffset.UtcNow, Guid.CreateVersion7(), Guid.CreateVersion7(), "sample-a"));
+                throw new InvalidOperationException("sample-b-controlled-failure");
+            }));
+
+            Assert.Equal(0L, await ScalarAsync(admin, $"select count(*) from sample_a.entity where id = '{rollbackA}'"));
+            Assert.Equal(0L, await ScalarAsync(admin, $"select count(*) from sample_b.entity where id = '{rollbackB}'"));
+            Assert.Equal(0L, await ScalarAsync(admin, $"select count(*) from platform_messaging.outbox_message where id = '{rollbackMessage}'"));
+        }
+        finally
+        {
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; delete from platform_messaging.outbox_message where id in ('{successMessage}', '{rollbackMessage}'); delete from platform_tenancy.tenant where id = '{tenantId.Value}'; reset app.tenant_id; drop schema if exists sample_a cascade; drop schema if exists sample_b cascade; reset role;");
+        }
+    }
+
+    [Fact]
     public async Task DatabaseCommandTimeoutCancelsLongRunningQuery()
     {
         var adminConnectionString = Require("TODIR_P04_ADMIN_CONNECTION");
@@ -115,6 +169,20 @@ public sealed class TransactionIntegrationTests
         await connection.OpenAsync();
         await ExecuteAsync(connection, $"ALTER ROLE erp_app PASSWORD '{password}'");
         return password;
+    }
+
+    private static async Task InsertSampleRowAsync(ITransactionContext context, string table, Guid id, TenantId tenantId, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"insert into {table} (id, tenant_id) values ($1, $2)", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(id);
+        command.Parameters.AddWithValue(tenantId.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<long> CountSampleRowsAsync(ITransactionContext context, string table, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"select count(*) from {table}", context.Connection, context.Transaction);
+        return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
     private static async Task ExecuteAsync(NpgsqlConnection connection, string sql)

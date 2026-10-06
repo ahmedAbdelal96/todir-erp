@@ -10,6 +10,7 @@ public static class SchedulingHostingExtensions
     public static IServiceCollection AddTodirScheduling(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("Todir") ?? configuration["TODIR_DATABASE_CONNECTION"];
+        var maintenanceIntervalSeconds = int.TryParse(configuration["TODIR_MAINTENANCE_INTERVAL_SECONDS"], out var configuredInterval) && configuredInterval > 0 ? configuredInterval : 300;
         services.AddSingleton<IPlatformMaintenanceTask, PlatformMaintenanceTask>();
         services.AddQuartz(options =>
         {
@@ -24,7 +25,7 @@ public static class SchedulingHostingExtensions
                 .WithIdentity(PlatformMaintenanceJob.Trigger)
                 .StartNow()
                 .WithSimpleSchedule(schedule => schedule
-                    .WithIntervalInMinutes(5)
+                    .WithIntervalInSeconds(maintenanceIntervalSeconds)
                     .RepeatForever()
                     .WithMisfireHandlingInstructionFireNow()));
             if (!string.IsNullOrWhiteSpace(connectionString))

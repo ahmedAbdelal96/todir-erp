@@ -157,6 +157,7 @@ resource "docker_container" "worker" {
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_RABBITMQ_CONSUMER=true",
+    "TODIR_MAINTENANCE_INTERVAL_SECONDS=2",
     "TODIR_FAILURE_INJECTION=${var.failure_injection}",
     "TODIR_FAILURE_INJECTION_MARKER=/tmp/crash-after-inbox-commit",
     "TODIR_FAILURE_INJECTION_POISON_MARKER=/tmp/poison-message",
@@ -187,6 +188,7 @@ resource "docker_container" "worker_secondary" {
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_RABBITMQ_CONSUMER=true",
+    "TODIR_MAINTENANCE_INTERVAL_SECONDS=2",
   ]
   volumes {
     host_path      = abspath("${var.rabbit_tls_directory}/ca.crt")

@@ -68,12 +68,14 @@ console.log(`authorization-denials=${permissionChecks.length}`);
 const drillTenantId = randomUUID();
 const secondaryTenantId = randomUUID();
 const drillIdentityId = randomUUID();
+const maintenanceGrantId = randomUUID();
+const restartedMaintenanceGrantId = randomUUID();
 const drillEmail = `drill-${drillIdentityId.replaceAll("-", "")}@example.com`;
 const drillPassword = "DrillPassword-Only-For-CI";
 if (postgresContainer) {
   const salt = randomBytes(16).toString("base64");
   const hash = pbkdf2Sync(drillPassword, Buffer.from(salt, "base64"), 120_000, 32, "sha256").toString("base64");
-  await dockerSql(`insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('${drillTenantId}', 'auth-${drillTenantId.replaceAll("-", "")}', 'Auth Drill', 'Active', now(), 1), ('${secondaryTenantId}', 'auth-${secondaryTenantId.replaceAll("-", "")}', 'Secondary Drill', 'Active', now(), 1); insert into platform_iam.identity (id, normalized_email, email_verified, password_hash, status, created_at, security_stamp, version) values ('${drillIdentityId}', '${drillEmail.toUpperCase()}', true, 'pbkdf2-sha256$120000$${salt}$${hash}', 'Active', now(), '${randomUUID()}', 1); insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('${randomUUID()}', '${drillTenantId}', '${drillIdentityId}', 'Auth Drill', 'Active', now(), 1), ('${randomUUID()}', '${secondaryTenantId}', '${drillIdentityId}', 'Secondary Drill', 'Active', now(), 1);`);
+  await dockerSql(`insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('${drillTenantId}', 'auth-${drillTenantId.replaceAll("-", "")}', 'Auth Drill', 'Active', now(), 1), ('${secondaryTenantId}', 'auth-${secondaryTenantId.replaceAll("-", "")}', 'Secondary Drill', 'Active', now(), 1); insert into platform_iam.identity (id, normalized_email, email_verified, password_hash, status, created_at, security_stamp, version) values ('${drillIdentityId}', '${drillEmail.toUpperCase()}', true, 'pbkdf2-sha256$120000$${salt}$${hash}', 'Active', now(), '${randomUUID()}', 1); insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('${randomUUID()}', '${drillTenantId}', '${drillIdentityId}', 'Auth Drill', 'Active', now(), 1), ('${randomUUID()}', '${secondaryTenantId}', '${drillIdentityId}', 'Secondary Drill', 'Active', now(), 1); insert into platform_iam.support_access_grant (id, tenant_id, support_actor_id, reason, expires_at, status, created_at) values ('${maintenanceGrantId}', '${drillTenantId}', '${drillIdentityId}', 'scheduler expiry verification', now() - interval '1 minute', 'Approved', now() - interval '2 minutes');`);
   const csrfResponse = await fetch(`${api}/api/v1/auth/csrf`);
   if (csrfResponse.status !== 200) throw new Error(`csrf bootstrap failed: ${csrfResponse.status}`);
   const csrf = (await csrfResponse.json()).token;
@@ -177,6 +179,15 @@ if (rabbitContainer && postgresContainer) {
     await new Promise(resolve => setTimeout(resolve, 5000));
     const running = (await exec("docker", ["inspect", "-f", "{{.State.Running}}", workerContainer])).stdout.trim();
     if (running !== "true") throw new Error("worker did not recover after controlled restart");
+    await dockerSql(`insert into platform_iam.support_access_grant (id, tenant_id, support_actor_id, reason, expires_at, status, created_at) values ('${restartedMaintenanceGrantId}', '${tenantId}', '${drillIdentityId}', 'scheduler restart verification', now() - interval '1 minute', 'Approved', now() - interval '2 minutes');`);
+    let schedulerStatus = "";
+    for (let attempt = 0; attempt < 30; attempt++) {
+      schedulerStatus = (await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select status from platform_iam.support_access_grant where id = '${restartedMaintenanceGrantId}'`])).stdout.trim();
+      if (schedulerStatus === "Expired") break;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    if (schedulerStatus !== "Expired") throw new Error(`persistent scheduler did not expire the controlled grant: ${schedulerStatus || "missing"}`);
+    console.log("scheduler-expiry=passed;clustered-workers=2");
     let inboxCount = 0;
     let sampleInbox = 0;
     for (let attempt = 0; attempt < 15; attempt++) {
@@ -220,7 +231,7 @@ if (rabbitContainer && postgresContainer) {
     if (poisonInbox !== 1 || resolvedErrors !== 1 || replayAudits !== 1) throw new Error(`message replay was not durable and audited: inbox=${poisonInbox};resolved=${resolvedErrors};audits=${replayAudits}`);
     console.log(`poison-error=recorded;replay=audited;inbox-rows=${poisonInbox}`);
   }
-  await dockerSql(`delete from sample.sample_projection where tenant_id = '${tenantId}'; delete from platform_messaging.message_error where tenant_id = '${tenantId}'; delete from platform_audit.audit_entry where tenant_id = '${tenantId}' and entity_id = '${poisonMessageId}'; delete from platform_messaging.inbox_message where tenant_id = '${tenantId}'; delete from platform_messaging.outbox_message where tenant_id = '${tenantId}'; delete from platform_iam.membership where tenant_id in ('${tenantId}', '${secondaryTenantId}'); delete from platform_iam.identity where id = '${drillIdentityId}'; delete from platform_tenancy.tenant where id in ('${tenantId}', '${secondaryTenantId}');`);
+  await dockerSql(`delete from sample.sample_projection where tenant_id = '${tenantId}'; delete from platform_messaging.message_error where tenant_id = '${tenantId}'; delete from platform_audit.audit_entry where tenant_id = '${tenantId}' and entity_id = '${poisonMessageId}'; delete from platform_messaging.inbox_message where tenant_id = '${tenantId}'; delete from platform_messaging.outbox_message where tenant_id = '${tenantId}'; delete from platform_iam.support_access_grant where id in ('${maintenanceGrantId}', '${restartedMaintenanceGrantId}'); delete from platform_iam.membership where tenant_id in ('${tenantId}', '${secondaryTenantId}'); delete from platform_iam.identity where id = '${drillIdentityId}'; delete from platform_tenancy.tenant where id in ('${tenantId}', '${secondaryTenantId}');`);
 } else {
   console.log("broker-recovery=not-run-no-staging-container-identifiers");
 }
