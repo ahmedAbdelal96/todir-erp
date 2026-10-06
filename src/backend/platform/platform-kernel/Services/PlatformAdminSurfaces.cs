@@ -39,127 +39,144 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
 {
     public async Task<TenantContextSnapshot?> LoadTenantContextAsync(TenantId tenantId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
-        await using var tenant = new NpgsqlCommand("select id, slug, display_name, status from platform_tenancy.tenant where id = $1", connection);
-        tenant.Parameters.AddWithValue(tenantId.Value);
-        await using var reader = await tenant.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) return null;
-        var snapshot = new TenantContextSnapshot(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), [], []);
-        await reader.DisposeAsync();
-
-        var legalEntities = new List<LegalEntitySummary>();
-        await using (var entities = new NpgsqlCommand("select id, code, legal_name, timezone, locale from platform_org.legal_entity where tenant_id = $1 order by code, id", connection))
+        return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
-            entities.Parameters.AddWithValue(tenantId.Value);
-            await using var entityReader = await entities.ExecuteReaderAsync(cancellationToken);
-            while (await entityReader.ReadAsync(cancellationToken)) legalEntities.Add(new(entityReader.GetGuid(0), entityReader.GetString(1), entityReader.GetString(2), entityReader.GetString(3), entityReader.GetString(4)));
-        }
+            TenantContextSnapshot snapshot;
+            await using (var tenant = new NpgsqlCommand("select id, slug, display_name, status from platform_tenancy.tenant where id = $1", connection, transaction))
+            {
+                tenant.Parameters.AddWithValue(tenantId.Value);
+                await using var reader = await tenant.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, token);
+                if (!await reader.ReadAsync(token)) return null;
+                snapshot = new TenantContextSnapshot(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), [], []);
+            }
 
-        var branches = new List<BranchSummary>();
-        await using (var branchCommand = new NpgsqlCommand("select id, legal_entity_id, code, name, status from platform_org.branch where tenant_id = $1 order by legal_entity_id, code, id", connection))
-        {
-            branchCommand.Parameters.AddWithValue(tenantId.Value);
-            await using var branchReader = await branchCommand.ExecuteReaderAsync(cancellationToken);
-            while (await branchReader.ReadAsync(cancellationToken)) branches.Add(new(branchReader.GetGuid(0), branchReader.GetGuid(1), branchReader.GetString(2), branchReader.GetString(3), branchReader.GetString(4)));
-        }
+            var legalEntities = new List<LegalEntitySummary>();
+            await using (var entities = new NpgsqlCommand("select id, code, legal_name, timezone, locale from platform_org.legal_entity where tenant_id = $1 order by code, id", connection, transaction))
+            {
+                entities.Parameters.AddWithValue(tenantId.Value);
+                await using var entityReader = await entities.ExecuteReaderAsync(token);
+                while (await entityReader.ReadAsync(token)) legalEntities.Add(new(entityReader.GetGuid(0), entityReader.GetString(1), entityReader.GetString(2), entityReader.GetString(3), entityReader.GetString(4)));
+            }
 
-        return snapshot with { LegalEntities = legalEntities, Branches = branches };
+            var branches = new List<BranchSummary>();
+            await using (var branchCommand = new NpgsqlCommand("select id, legal_entity_id, code, name, status from platform_org.branch where tenant_id = $1 order by legal_entity_id, code, id", connection, transaction))
+            {
+                branchCommand.Parameters.AddWithValue(tenantId.Value);
+                await using var branchReader = await branchCommand.ExecuteReaderAsync(token);
+                while (await branchReader.ReadAsync(token)) branches.Add(new(branchReader.GetGuid(0), branchReader.GetGuid(1), branchReader.GetString(2), branchReader.GetString(3), branchReader.GetString(4)));
+            }
+
+            return snapshot with { LegalEntities = legalEntities, Branches = branches };
+        }, cancellationToken);
     }
 
     public async Task<bool> OrganizationScopeExistsAsync(TenantId tenantId, Guid? legalEntityId, Guid? branchId, CancellationToken cancellationToken = default)
     {
         if (branchId is not null && legalEntityId is null) return false;
-        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
-        const string sql = "select case when $2::uuid is null then exists (select 1 from platform_org.legal_entity where tenant_id = $1 and id = $3) else exists (select 1 from platform_org.branch where tenant_id = $1 and id = $2 and legal_entity_id = $3) end";
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue(tenantId.Value);
-        command.Parameters.AddWithValue((object?)branchId ?? DBNull.Value);
-        command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
+        return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
+        {
+            const string sql = "select case when $2::uuid is null then exists (select 1 from platform_org.legal_entity where tenant_id = $1 and id = $3) else exists (select 1 from platform_org.branch where tenant_id = $1 and id = $2 and legal_entity_id = $3) end";
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.Parameters.AddWithValue(tenantId.Value);
+            command.Parameters.AddWithValue((object?)branchId ?? DBNull.Value);
+            command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value);
+            return (bool)(await command.ExecuteScalarAsync(token))!;
+        }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<RoleSummary>> ListRolesAsync(TenantId tenantId, int offset, int limit, CancellationToken cancellationToken = default)
     {
         ValidatePage(offset, limit);
-        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
-        const string sql = "select r.id, r.code, r.name, r.is_system_template, r.is_active, r.version, coalesce(array_agg(p.permission_code order by p.permission_code) filter (where p.permission_code is not null), '{}') from platform_authz.role r left join platform_authz.role_permission p on p.tenant_id = r.tenant_id and p.role_id = r.id where r.tenant_id = $1 group by r.id, r.code, r.name, r.is_system_template, r.is_active, r.version order by r.code, r.id limit $2 offset $3";
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<RoleSummary>();
-        while (await reader.ReadAsync(cancellationToken)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3), reader.GetBoolean(4), reader.GetInt64(5), reader.GetFieldValue<string[]>(6)));
-        return result;
+        return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
+        {
+            const string sql = "select r.id, r.code, r.name, r.is_system_template, r.is_active, r.version, coalesce(array_agg(p.permission_code order by p.permission_code) filter (where p.permission_code is not null), '{}') from platform_authz.role r left join platform_authz.role_permission p on p.tenant_id = r.tenant_id and p.role_id = r.id where r.tenant_id = $1 group by r.id, r.code, r.name, r.is_system_template, r.is_active, r.version order by r.code, r.id limit $2 offset $3";
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
+            await using var reader = await command.ExecuteReaderAsync(token);
+            var result = new List<RoleSummary>();
+            while (await reader.ReadAsync(token)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3), reader.GetBoolean(4), reader.GetInt64(5), reader.GetFieldValue<string[]>(6)));
+            return result;
+        }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ModuleInstanceSummary>> ListModuleInstancesAsync(TenantId tenantId, int offset, int limit, CancellationToken cancellationToken = default)
     {
         ValidatePage(offset, limit);
-        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("select id, module_id, scope_type, scope_id, status, manifest_version, version from platform_modules.module_instance where tenant_id = $1 order by module_id, id limit $2 offset $3", connection);
-        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<ModuleInstanceSummary>();
-        while (await reader.ReadAsync(cancellationToken)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetInt64(6)));
-        return result;
+        return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
+        {
+            await using var command = new NpgsqlCommand("select id, module_id, scope_type, scope_id, status, manifest_version, version from platform_modules.module_instance where tenant_id = $1 order by module_id, id limit $2 offset $3", connection, transaction);
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
+            await using var reader = await command.ExecuteReaderAsync(token);
+            var result = new List<ModuleInstanceSummary>();
+            while (await reader.ReadAsync(token)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetInt64(6)));
+            return result;
+        }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<SettingSummary>> ListSettingsAsync(TenantId tenantId, int offset, int limit, CancellationToken cancellationToken = default)
     {
         ValidatePage(offset, limit);
-        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
-        const string sql = "select d.id, d.setting_key, d.data_type, d.scope, d.sensitive, v.value::text, coalesce(v.version, d.version) from platform_settings.setting_definition d left join platform_settings.setting_value v on v.setting_definition_id = d.id and v.tenant_id = $1 order by d.setting_key, v.scope, v.scope_id limit $2 offset $3";
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<SettingSummary>();
-        while (await reader.ReadAsync(cancellationToken))
+        return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
-            JsonElement? value = null;
-            if (!reader.IsDBNull(5) && !reader.GetBoolean(4)) using (var document = JsonDocument.Parse(reader.GetString(5))) value = document.RootElement.Clone();
-            result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), value, reader.GetInt64(6)));
-        }
-        return result;
+            const string sql = "select d.id, d.setting_key, d.data_type, d.scope, d.sensitive, v.value::text, coalesce(v.version, d.version) from platform_settings.setting_definition d left join platform_settings.setting_value v on v.setting_definition_id = d.id and v.tenant_id = $1 order by d.setting_key, v.scope, v.scope_id limit $2 offset $3";
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
+            await using var reader = await command.ExecuteReaderAsync(token);
+            var result = new List<SettingSummary>();
+            while (await reader.ReadAsync(token))
+            {
+                JsonElement? value = null;
+                if (!reader.IsDBNull(5) && !reader.GetBoolean(4)) using (var document = JsonDocument.Parse(reader.GetString(5))) value = document.RootElement.Clone();
+                result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), value, reader.GetInt64(6)));
+            }
+            return result;
+        }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<AuditSummary>> ListAuditAsync(TenantId tenantId, int offset, int limit, CancellationToken cancellationToken = default)
     {
         ValidatePage(offset, limit);
-        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("select id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, reason, occurred_at, trace_id from platform_audit.audit_entry where tenant_id = $1 order by occurred_at desc, id desc limit $2 offset $3", connection);
-        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<AuditSummary>();
-        while (await reader.ReadAsync(cancellationToken)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.IsDBNull(3) ? null : reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetGuid(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9), reader.IsDBNull(10) ? null : reader.GetString(10)));
-        return result;
+        return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
+        {
+            await using var command = new NpgsqlCommand("select id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, reason, occurred_at, trace_id from platform_audit.audit_entry where tenant_id = $1 order by occurred_at desc, id desc limit $2 offset $3", connection, transaction);
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
+            await using var reader = await command.ExecuteReaderAsync(token);
+            var result = new List<AuditSummary>();
+            while (await reader.ReadAsync(token)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.IsDBNull(3) ? null : reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetGuid(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9), reader.IsDBNull(10) ? null : reader.GetString(10)));
+            return result;
+        }, cancellationToken);
     }
 
     public async Task<EntitlementSummary?> LoadEntitlementAsync(TenantId tenantId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("select snapshot_version, issued_at, valid_until, key_id, modules::text, features::text, limits::text from platform_entitlements.entitlement_snapshot where tenant_id = $1 order by snapshot_version desc limit 1", connection);
-        command.Parameters.AddWithValue(tenantId.Value);
-        await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) return null;
-        var modules = JsonSerializer.Deserialize<string[]>(reader.GetString(4)) ?? [];
-        var features = JsonSerializer.Deserialize<string[]>(reader.GetString(5)) ?? [];
-        var limits = JsonSerializer.Deserialize<Dictionary<string, long>>(reader.GetString(6)) ?? [];
-        return new(reader.GetInt64(0), reader.GetFieldValue<DateTimeOffset>(1), reader.GetFieldValue<DateTimeOffset>(2), reader.GetString(3), modules, features, limits);
+        return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
+        {
+            await using var command = new NpgsqlCommand("select snapshot_version, issued_at, valid_until, key_id, modules::text, features::text, limits::text from platform_entitlements.entitlement_snapshot where tenant_id = $1 order by snapshot_version desc limit 1", connection, transaction);
+            command.Parameters.AddWithValue(tenantId.Value);
+            await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, token);
+            if (!await reader.ReadAsync(token)) return null;
+            var modules = JsonSerializer.Deserialize<string[]>(reader.GetString(4)) ?? [];
+            var features = JsonSerializer.Deserialize<string[]>(reader.GetString(5)) ?? [];
+            var limits = JsonSerializer.Deserialize<Dictionary<string, long>>(reader.GetString(6)) ?? [];
+            return new EntitlementSummary(reader.GetInt64(0), reader.GetFieldValue<DateTimeOffset>(1), reader.GetFieldValue<DateTimeOffset>(2), reader.GetString(3), modules, features, limits);
+        }, cancellationToken);
     }
 
-    private async Task<NpgsqlConnection> OpenTenantConnectionAsync(TenantId tenantId, CancellationToken cancellationToken)
+    private async Task<TResult> WithTenantTransactionAsync<TResult>(TenantId tenantId, Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken)
     {
         var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        try
+        await using (connection)
         {
-            await using var command = new NpgsqlCommand("select set_config('app.tenant_id', $1, false)", connection);
-            command.Parameters.AddWithValue(tenantId.Value.ToString("D"));
-            await command.ExecuteNonQueryAsync(cancellationToken);
-            return connection;
-        }
-        catch
-        {
-            await connection.DisposeAsync();
-            throw;
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using (var command = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction))
+            {
+                command.Parameters.AddWithValue(tenantId.Value.ToString("D"));
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            var result = await operation(connection, transaction, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return result;
         }
     }
 
