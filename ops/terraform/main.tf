@@ -106,8 +106,10 @@ resource "docker_container" "migrator" {
 }
 
 resource "docker_container" "api" {
-  name  = "${local.project}-api"
-  image = var.api_image
+  name     = "${local.project}-api"
+  image    = var.api_image
+  restart  = "on-failure"
+  must_run = false
   env = [
     "ASPNETCORE_ENVIRONMENT=${var.environment_name}",
     "TODIR_DATA_PROTECTION_KEYS=/app/keys",
@@ -145,8 +147,10 @@ resource "docker_container" "api" {
 }
 
 resource "docker_container" "worker" {
-  name  = "${local.project}-worker"
-  image = var.worker_image
+  name     = "${local.project}-worker"
+  image    = var.worker_image
+  restart  = "on-failure"
+  must_run = false
   env = [
     "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
     "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
@@ -176,8 +180,10 @@ resource "docker_container" "worker" {
 }
 
 resource "docker_container" "worker_secondary" {
-  name  = "${local.project}-worker-secondary"
-  image = var.worker_image
+  name     = "${local.project}-worker-secondary"
+  image    = var.worker_image
+  restart  = "on-failure"
+  must_run = false
   env = [
     "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
     "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
@@ -204,8 +210,10 @@ resource "docker_container" "worker_secondary" {
 }
 
 resource "docker_container" "web" {
-  name  = "${local.project}-web"
-  image = var.web_image
+  name     = "${local.project}-web"
+  image    = var.web_image
+  restart  = "on-failure"
+  must_run = false
   ports {
     internal = 8443
     external = var.web_port

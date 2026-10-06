@@ -264,6 +264,7 @@ jobs:
           -var="failure_injection=crash-after-inbox-commit,poison-message"
 
       - name: Run staging health smoke test
+        id: staging_health
         run: |
           curl --fail --insecure --retry 30 --retry-delay 2 --retry-connrefused https://127.0.0.1:18081/health
           curl --fail --insecure --retry 30 --retry-delay 2 --retry-connrefused https://127.0.0.1:18081/health/ready
@@ -272,7 +273,7 @@ jobs:
           test "$web_api_status" = "401"
 
       - name: Collect staging container diagnostics
-        if: failure() && steps.create_staging.outcome == 'failure'
+        if: failure() && (steps.create_staging.outcome == 'failure' || steps.staging_health.outcome == 'failure')
         run: |
           docker ps --all --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
           for container in \
