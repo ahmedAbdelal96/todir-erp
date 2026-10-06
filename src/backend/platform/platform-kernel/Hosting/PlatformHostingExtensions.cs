@@ -214,7 +214,7 @@ public static class PlatformHostingExtensions
             try
             {
                 var invitation = await membershipStore.InviteAsync(tenant, new(identityId), request.DisplayName.Trim(), request.ExpiresAt, cancellationToken);
-                return Results.Created($"/api/v1/tenants/{tenantId:D}/memberships/invitations/{invitation.MembershipId.Value:D}", invitation);
+                return Results.Created($"/api/v1/tenants/{tenantId:D}/memberships/invitations/{invitation.MembershipId.Value:D}", new { membershipId = invitation.MembershipId.Value, invitation.Token, invitation.ExpiresAt });
             }
             catch (ArgumentOutOfRangeException exception) { return Problem(StatusCodes.Status400BadRequest, "membership.invitation_expiry_required", exception.Message); }
         }).RequireAuthorization();
