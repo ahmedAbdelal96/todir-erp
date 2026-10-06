@@ -145,7 +145,7 @@ if (rabbitContainer && postgresContainer) {
   let recovered = 0;
   for (let attempt = 0; attempt < 30; attempt++) {
     recovered = Number((await exec("docker", ["exec", postgresContainer, "psql", "-U", "postgres", "-d", databaseName, "-At", "-c", `select count(*) from platform_messaging.outbox_message where tenant_id = '${tenantId}' and status = 'Published'`])).stdout.trim());
-    if (recovered === messageIds.length) break;
+    if (recovered === messageIds.length + 1) break;
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
   if (recovered !== messageIds.length + 1) throw new Error(`outbox did not recover after broker restart: ${recovered}/${messageIds.length + 1}`);

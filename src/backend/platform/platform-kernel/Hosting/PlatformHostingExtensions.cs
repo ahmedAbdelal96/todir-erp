@@ -184,7 +184,7 @@ public static class PlatformHostingExtensions
             catch (KeyNotFoundException) { return Problem(StatusCodes.Status404NotFound, "message.replay_not_found", "Message replay target was not found"); }
             catch (InvalidOperationException exception) when (exception.Message == "message.replay_not_authorized") { return Problem(StatusCodes.Status409Conflict, exception.Message, "Message replay requires an unresolved error record"); }
         }).RequireAuthorization();
-        if (app.Configuration.GetValue<bool>("TODIR_STAGING_VERIFICATION"))
+        if (app.Configuration.GetValue<bool>("TODIR_STAGING_VERIFICATION") && !string.IsNullOrWhiteSpace(app.Configuration["TODIR_STAGING_REPLAY_TOKEN"]))
         {
             group.MapPost("/internal/messages/{messageId:guid}/replay", async (Guid messageId, StagingReplayRequest request, HttpContext context, IMessageReplayService replay, IConfiguration configuration, CancellationToken cancellationToken) =>
             {

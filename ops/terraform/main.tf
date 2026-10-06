@@ -122,7 +122,7 @@ resource "docker_container" "api" {
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_CORS_ORIGINS=https://127.0.0.1:${var.web_port}",
-    "TODIR_STAGING_VERIFICATION=true",
+    "TODIR_STAGING_VERIFICATION=${var.staging_replay_token != "" ? "true" : "false"}",
     "TODIR_STAGING_REPLAY_TOKEN=${var.staging_replay_token}",
   ]
   volumes {

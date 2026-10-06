@@ -20,6 +20,7 @@ public sealed class OutboxPublishedMessageConsumer(IInboxStore inboxStore) : ICo
     public async Task Consume(ConsumeContext<OutboxPublishedMessage> context)
     {
         var started = Stopwatch.GetTimestamp();
+        FailureInjection.ThrowIfPoison(context.Message.MessageType);
         if (!await inboxStore.TryBeginAsync(EndpointName, context.Message.MessageId, context.Message.TenantId, context.CancellationToken))
         {
             TodirMetrics.InboxDuplicate.Add(1, new KeyValuePair<string, object?>("endpoint", EndpointName));
@@ -28,19 +29,23 @@ public sealed class OutboxPublishedMessageConsumer(IInboxStore inboxStore) : ICo
         await inboxStore.MarkProcessedAsync(EndpointName, context.Message.MessageId, context.Message.TenantId, context.CancellationToken);
         TodirMetrics.InboxProcessed.Add(1, new KeyValuePair<string, object?>("endpoint", EndpointName));
         TodirMetrics.MessageProcessingDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("endpoint", EndpointName));
-        FailureInjection.Apply(context.Message.MessageType);
+        FailureInjection.CrashAfterInboxCommit();
     }
 
     private static class FailureInjection
     {
-        public static void Apply(string messageType)
+        public static void ThrowIfPoison(string messageType)
         {
             var configured = Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION") ?? string.Empty;
             if (configured.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains("poison-message", StringComparer.OrdinalIgnoreCase)
                 && string.Equals(messageType, "StagingPoisonV1", StringComparison.Ordinal)
                 && ShouldPoison(Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION_POISON_MARKER")))
                 throw new InvalidOperationException("controlled.poison_message");
+        }
 
+        public static void CrashAfterInboxCommit()
+        {
+            var configured = Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION") ?? string.Empty;
             if (!configured.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains("crash-after-inbox-commit", StringComparer.OrdinalIgnoreCase)) return;
             var markerPath = Environment.GetEnvironmentVariable("TODIR_FAILURE_INJECTION_MARKER");
             if (!CreateMarker(markerPath)) return;
