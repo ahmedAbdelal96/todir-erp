@@ -3,14 +3,56 @@
   "info": { "title": "TODIR Platform API", "version": "1.0.0" },
   "paths": {
     "/api/v1/auth/csrf": { "get": { "responses": { "200": { "description": "CSRF request token" } } } },
-    "/api/v1/auth/login": { "post": { "requestBody": { "required": true }, "responses": { "200": { "description": "Authenticated or tenant selection required" }, "401": { "description": "Invalid credentials" } } } },
+    "/api/v1/auth/login": {
+      "post": {
+        "requestBody": { "$ref": "#/components/requestBodies/LoginRequest" },
+        "responses": { "200": { "description": "Authenticated or tenant selection required" }, "401": { "description": "Invalid credentials" } }
+      }
+    },
     "/api/v1/auth/logout": { "post": { "responses": { "204": { "description": "Signed out" } } } },
     "/api/v1/auth/mfa/enroll": { "post": { "responses": { "200": { "description": "MFA enrollment secret and one-time recovery codes" }, "401": { "description": "Unauthenticated" } } } },
     "/api/v1/auth/sessions/revoke": { "post": { "responses": { "204": { "description": "All current identity sessions revoked" }, "401": { "description": "Unauthenticated" } } } },
     "/api/v1/session": { "get": { "responses": { "200": { "description": "Current secure session" }, "401": { "description": "Unauthenticated" } } } },
-    "/api/v1/context/tenant": { "post": { "responses": { "204": { "description": "Tenant context selected" }, "403": { "description": "Membership not authorized" } } } },
+    "/api/v1/context/tenant": {
+      "post": {
+        "requestBody": { "$ref": "#/components/requestBodies/TenantSelection" },
+        "responses": { "204": { "description": "Tenant context selected" }, "403": { "description": "Membership not authorized" } }
+      }
+    },
     "/api/v1/modules": { "get": { "responses": { "200": { "description": "Registered modules" } } } },
-    "/api/v1/authorization/check": { "get": { "parameters": [{ "name": "permission", "in": "query", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Permission granted" }, "401": { "description": "Unauthenticated" }, "403": { "description": "Permission denied" } } } }
-    ,"/api/v1/messaging/replay": { "post": { "requestBody": { "required": true }, "responses": { "204": { "description": "Message republished and error resolved" }, "403": { "description": "MFA or permission is required" }, "404": { "description": "Message not found" }, "409": { "description": "No unresolved error is available" } } } }
+    "/api/v1/authorization/check": { "get": { "parameters": [{ "name": "permission", "in": "query", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Permission granted" }, "401": { "description": "Unauthenticated" }, "403": { "description": "Permission denied" } } } },
+    "/api/v1/messaging/replay": {
+      "post": {
+        "requestBody": { "$ref": "#/components/requestBodies/MessageReplayRequest" },
+        "responses": { "204": { "description": "Message republished and error resolved" }, "403": { "description": "MFA or permission is required" }, "404": { "description": "Message not found" }, "409": { "description": "No unresolved error is available" } }
+      }
+    }
+  },
+  "components": {
+    "requestBodies": {
+      "LoginRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } } },
+      "TenantSelection": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TenantSelection" } } } },
+      "MessageReplayRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageReplayRequest" } } } }
+    },
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password", "tenantId"],
+        "properties": { "email": { "type": "string", "format": "email" }, "password": { "type": "string", "format": "password" }, "tenantId": { "type": "string", "format": "uuid" }, "mfaCode": { "type": ["string", "null"] } },
+        "additionalProperties": false
+      },
+      "TenantSelection": {
+        "type": "object",
+        "required": ["tenantId"],
+        "properties": { "tenantId": { "type": "string", "format": "uuid" } },
+        "additionalProperties": false
+      },
+      "MessageReplayRequest": {
+        "type": "object",
+        "required": ["messageId", "tenantId", "consumerEndpoint", "reason"],
+        "properties": { "messageId": { "type": "string", "format": "uuid" }, "tenantId": { "type": "string", "format": "uuid" }, "consumerEndpoint": { "type": "string", "minLength": 1, "maxLength": 200 }, "reason": { "type": "string", "minLength": 1, "maxLength": 2000 } },
+        "additionalProperties": false
+      }
+    }
   }
 }
