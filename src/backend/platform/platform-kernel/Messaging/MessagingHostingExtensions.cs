@@ -26,9 +26,12 @@ public static class MessagingHostingExtensions
             });
             options.UsingRabbitMq((context, bus) =>
             {
+                var configuredVirtualHost = configuration["TODIR_RABBITMQ_VHOST"] ?? "/erp-dev";
+                if (!configuredVirtualHost.StartsWith('/')) configuredVirtualHost = $"/{configuredVirtualHost}";
+                // RabbitMQ vhosts whose names begin with '/' must be percent-encoded in the transport URI.
                 var hostAddress = new UriBuilder("rabbitmq", host)
                 {
-                    Path = configuration["TODIR_RABBITMQ_VHOST"] ?? "/erp-dev"
+                    Path = $"/{Uri.EscapeDataString(configuredVirtualHost)}"
                 };
                 if (ushort.TryParse(configuration["TODIR_RABBITMQ_PORT"], out var port)) hostAddress.Port = port;
                 bus.Host(hostAddress.Uri, hostSettings =>

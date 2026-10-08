@@ -107,8 +107,8 @@ At the date of this document:
 | Server state | TanStack Query v5 |
 | Forms | React Hook Form |
 | Validation | Zod |
-| UI primitives | MUI |
-| Complex ERP grids | MUI X Data Grid |
+| UI primitives | Headless UI primitives (Spike selection) |
+| Complex ERP grids | Platform DataGrid wrapper (Spike selection) |
 | Local shared UI state | Zustand only when justified |
 | Internationalization | i18next + react-i18next |
 | Unit/component tests | Vitest + React Testing Library |
@@ -123,8 +123,8 @@ At the date of this document:
 - API DTO types are generated, not manually duplicated.
 - Business calculations are not implemented independently in the browser.
 - The UI never decides permissions by itself; backend authorization is authoritative.
-- MUI is wrapped behind the ERP Design System where practical.
-- Premium MUI X features are not used unless their license is explicitly approved.
+- Reusable UI primitives and components are brand-neutral and token-driven.
+- Paid/commercial dependencies are strictly forbidden for core functionality (Free-Only Core Dependency Rule).
 
 ---
 
@@ -1680,26 +1680,26 @@ when another module needs a UI integration.
 
 ---
 
-# 51. ERP Design System
+# 51. ERP Design System & Frontend Platform
 
-MUI is the base, not the product design language.
+The frontend foundation is brand-neutral and token-driven, built on headless UI primitives (governed by ADR-021 and `FRONTEND_PLATFORM_AND_DESIGN_SYSTEM_CONTRACT.md`).
 
 Create:
 
 ```text
 packages/ui/
+packages/design-tokens/
+packages/theme/
 ```
 
-with ERP components:
+with brand-neutral reusable components:
 
 ```text
-ErpButton
-ErpField
+Button
+Field
 MoneyField
 QuantityField
 DateField
-PartyPicker
-ProductPicker
 EntitySelector
 DataGrid
 StatusBadge
@@ -1709,7 +1709,7 @@ FormSection
 AuditTrail
 ```
 
-Business screens should prefer ERP components rather than raw MUI primitives.
+Business screens must consume brand-neutral design system components and semantic tokens rather than vendor-specific libraries or raw palette values.
 
 ---
 
@@ -1768,9 +1768,9 @@ Rules:
 
 ---
 
-# 55. Large ERP Tables
+# 55. Large ERP Tables & DataGrid
 
-Use MUI X Data Grid through our `DataGrid` wrapper.
+Use the platform `DataGrid` wrapper (governed by ADR-021 and `FRONTEND_PLATFORM_AND_DESIGN_SYSTEM_CONTRACT.md`, backed by an evidence-based free grid engine).
 
 Required behavior:
 
@@ -1782,6 +1782,8 @@ Required behavior:
 - virtualization.
 - bulk actions.
 - export permissions.
+- exact financial value formatting without JS number conversion.
+- free-only core dependency rule (no AG Grid Enterprise or paid grid licenses).
 
 Never load the entire ledger or stock history into browser memory.
 
@@ -3729,7 +3731,9 @@ React Router
 TanStack Query v5
 React Hook Form
 Zod
-MUI / MUI X
+Headless UI Primitives (Spike-selected)
+Platform DataGrid (Spike-selected)
+Tailwind CSS v4
 i18next
 
 ASP.NET Core Identity

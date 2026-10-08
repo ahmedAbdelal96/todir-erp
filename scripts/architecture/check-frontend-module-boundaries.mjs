@@ -1,16 +1,16 @@
 import path from "node:path";
-import { validateFrontendModuleBoundaries } from "./frontend-module-boundary.mjs";
+import { validateFrontendArchitecture } from "./frontend-module-boundary.mjs";
 
-const modulesRoot = path.resolve(process.argv[2] ?? "src/frontend/apps/todir-web/src/modules");
-const violations = validateFrontendModuleBoundaries(modulesRoot);
+const rootDir = path.resolve(process.argv[2] ?? "src/frontend/apps/todir-web/src");
+const result = validateFrontendArchitecture({ rootDir });
 
-if (violations.length > 0) {
-  console.error(`Frontend module boundary violations in ${modulesRoot}:`);
-  for (const violation of violations) {
+if (result.violations.length > 0) {
+  console.error(`Frontend architecture violations in ${rootDir}:`);
+  for (const violation of result.violations) {
     console.error(`- ${violation}`);
   }
 
   process.exitCode = 1;
 } else {
-  console.log(`Frontend module boundaries are valid in ${modulesRoot}.`);
+  console.log(`Frontend architecture boundaries are valid in ${rootDir}.`);
 }

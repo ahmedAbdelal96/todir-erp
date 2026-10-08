@@ -72,6 +72,7 @@ const maintenanceGrantId = randomUUID();
 const restartedMaintenanceGrantId = randomUUID();
 const drillEmail = `drill-${drillIdentityId.replaceAll("-", "")}@example.com`;
 const drillPassword = "DrillPassword-Only-For-CI";
+let sessionCookie = "";
 if (postgresContainer) {
   const salt = randomBytes(16).toString("base64");
   const hash = pbkdf2Sync(drillPassword, Buffer.from(salt, "base64"), 120_000, 32, "sha256").toString("base64");
@@ -89,7 +90,7 @@ if (postgresContainer) {
   const sessionSetCookie = rawResponseCookies(loginResponse).find(cookie => cookie.toLowerCase().startsWith("todir_session="));
   if (!sessionSetCookie || !/secure/i.test(sessionSetCookie) || !/httponly/i.test(sessionSetCookie) || !/samesite=strict/i.test(sessionSetCookie)) throw new Error("session cookie security attributes were not enforced");
   console.log("session-cookie-security=passed");
-  let sessionCookie = mergeCookies(responseCookies(loginResponse), responseCookies(csrfResponse));
+  sessionCookie = mergeCookies(responseCookies(loginResponse), responseCookies(csrfResponse));
   const session = await fetch(`${api}/api/v1/session`, { headers: { Cookie: sessionCookie } });
   if (session.status !== 200) throw new Error(`authenticated session failed: ${session.status}`);
   const primaryTenantSessionCookie = sessionCookie;
@@ -119,19 +120,6 @@ if (postgresContainer) {
   console.log(`authentication-load=${authenticatedPermissions.length};tenant-switch=isolated;permission-evaluation=forbidden;noisy-tenant=${noisyTenantRequests.length};quiet-tenant=${quietTenantRequests.length}`);
 }
 
-const authCsrfResponse = await fetch(`${api}/api/v1/auth/csrf`);
-if (authCsrfResponse.status !== 200) throw new Error(`authentication rate-limit csrf bootstrap failed: ${authCsrfResponse.status}`);
-const authCsrf = (await authCsrfResponse.json()).token;
-const authCookie = mergeCookies(responseCookies(authCsrfResponse));
-const authBurst = await Promise.all(Array.from({ length: 20 }, () => fetch(`${api}/api/v1/auth/login`, {
-  method: "POST",
-  headers: { "content-type": "application/json", "x-csrf-token": authCsrf, Cookie: authCookie },
-  body: JSON.stringify({ email: "invalid@example.com", password: "Invalid-Only-For-CI", tenantId: drillTenantId })
-})));
-const limited = authBurst.filter(result => result.status === 429).length;
-if (limited === 0) throw new Error("authentication rate limiting did not activate");
-console.log(`auth-rate-limit-429=${limited}`);
-
 if (rabbitContainer && postgresContainer) {
   let queueType = "";
   for (let attempt = 0; attempt < 30; attempt++) {
@@ -149,6 +137,11 @@ if (rabbitContainer && postgresContainer) {
   }
   if (queueType !== "quorum") throw new Error(`critical consumer endpoint is not a quorum queue: ${queueType || "missing"}`);
   console.log("critical-queue=platform-outbox-probe;type=quorum");
+  let secondaryStoppedForCrash = false;
+  if (workerSecondaryContainer && expectWorkerCrash) {
+    await exec("docker", ["stop", "--time", "1", workerSecondaryContainer]);
+    secondaryStoppedForCrash = true;
+  }
   const tenantId = drillTenantId;
   const messageIds = Array.from({ length: 20 }, () => randomUUID());
   const sampleMessageId = randomUUID();
@@ -161,6 +154,12 @@ if (rabbitContainer && postgresContainer) {
   ].join(", ");
   const normalMessageIds = [...messageIds, sampleMessageId];
   const sql = `insert into platform_messaging.outbox_message (id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, status) values ${messageValues};`;
+  if (workerContainer && expectWorkerCrash) {
+    // Arm the controlled crash only after the broker-recovery assertion. The
+    // worker also dispatches the outbox, so an immediately armed consumer
+    // crash can interrupt the recovery transaction and leave all rows pending.
+    await exec("docker", ["exec", workerContainer, "touch", "/tmp/crash-after-inbox-commit"]);
+  }
   await exec("docker", ["stop", "--time", "1", rabbitContainer]);
   try {
     await dockerSql(sql);
@@ -181,6 +180,7 @@ if (rabbitContainer && postgresContainer) {
   console.log(`broker-recovery=published;outbox-throughput=${recovered}`);
   if (workerContainer) {
     if (expectWorkerCrash) {
+      await exec("docker", ["exec", workerContainer, "rm", "-f", "/tmp/crash-after-inbox-commit"]);
       let workerState = "";
       for (let attempt = 0; attempt < 30; attempt++) {
         workerState = (await exec("docker", ["inspect", "-f", "{{.State.Status}}", workerContainer])).stdout.trim();
@@ -189,6 +189,7 @@ if (rabbitContainer && postgresContainer) {
       }
       if (workerState !== "exited") throw new Error(`worker did not stop after controlled post-commit failure injection: ${workerState}`);
       await exec("docker", ["start", workerContainer]);
+      if (secondaryStoppedForCrash) await exec("docker", ["start", workerSecondaryContainer]);
     } else {
       await exec("docker", ["restart", workerContainer]);
     }
@@ -225,6 +226,7 @@ if (rabbitContainer && postgresContainer) {
     }
     if (poisonErrors !== 1 || !replayToken) throw new Error(`poison message did not reach the durable error path: errors=${poisonErrors};replay-token=${Boolean(replayToken)}`);
     await exec("docker", ["exec", workerContainer, "touch", "/tmp/poison-message.allow"]);
+    if (workerSecondaryContainer) await exec("docker", ["exec", workerSecondaryContainer, "touch", "/tmp/poison-message.allow"]);
     const csrfForReplay = await fetch(`${api}/api/v1/auth/csrf`, { headers: { Cookie: sessionCookie } });
     if (csrfForReplay.status !== 200) throw new Error(`replay csrf bootstrap failed: ${csrfForReplay.status}`);
     const replayCsrf = (await csrfForReplay.json()).token;
@@ -251,3 +253,18 @@ if (rabbitContainer && postgresContainer) {
 } else {
   console.log("broker-recovery=not-run-no-staging-container-identifiers");
 }
+
+// Run the auth burst last: the production auth limiter is IP-partitioned and
+// must not affect the recovery, replay, or cleanup requests above.
+const authCsrfResponse = await fetch(`${api}/api/v1/auth/csrf`);
+if (authCsrfResponse.status !== 200) throw new Error(`authentication rate-limit csrf bootstrap failed: ${authCsrfResponse.status}`);
+const authCsrf = (await authCsrfResponse.json()).token;
+const authCookie = mergeCookies(responseCookies(authCsrfResponse));
+const authBurst = await Promise.all(Array.from({ length: 20 }, () => fetch(`${api}/api/v1/auth/login`, {
+  method: "POST",
+  headers: { "content-type": "application/json", "x-csrf-token": authCsrf, Cookie: authCookie },
+  body: JSON.stringify({ email: "invalid@example.com", password: "Invalid-Only-For-CI", tenantId: drillTenantId })
+})));
+const limited = authBurst.filter(result => result.status === 429).length;
+if (limited === 0) throw new Error("authentication rate limiting did not activate");
+console.log(`auth-rate-limit-429=${limited}`);

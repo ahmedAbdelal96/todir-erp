@@ -6,6 +6,10 @@
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
+    "useUnknownInCatchVariables": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
     "noEmit": true,
     "skipLibCheck": true
   },

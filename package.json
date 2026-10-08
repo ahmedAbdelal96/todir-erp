@@ -1,11 +1,13 @@
 {
   "name": "todir-erp",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.18.0",
   "engines": {
     "node": "24.13.0"
   },
   "scripts": {
+    "test:frontend": "node --test src/frontend/apps/todir-web/src/platform/runtime/runtime-context.test.ts src/frontend/apps/todir-web/src/platform/theme/theme.test.ts tests/spikes/primitives/primitive-spike.test.ts tests/spikes/grid/grid-spike.test.ts",
     "architecture:frontend": "node scripts/architecture/check-frontend-module-boundaries.mjs && node scripts/architecture/verify-frontend-module-fixtures.mjs",
     "architecture:modules": "node scripts/architecture/validate-module-manifests.mjs",
     "database:policy": "node scripts/architecture/validate-database-policy.mjs",

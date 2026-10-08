@@ -31,7 +31,7 @@ resource "docker_container" "postgres" {
 
 resource "docker_container" "rabbitmq" {
   name  = "${local.project}-rabbitmq"
-  image = "rabbitmq:4-management"
+  image = "rabbitmq:4.1-management"
   # The image entrypoint drops to the rabbitmq account after fixing ownership
   # of the mounted TLS material; the container never runs the broker as root.
   user = "0"
@@ -116,6 +116,7 @@ resource "docker_container" "api" {
     "TODIR_DATA_PROTECTION_CERTIFICATE_BASE64=${var.data_protection_certificate_base64}",
     "TODIR_DATA_PROTECTION_CERTIFICATE_PASSWORD=${var.data_protection_certificate_password}",
     "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
+    "TODIR_DB_MAX_POOL_SIZE=20",
     "TODIR_ENTITLEMENT_HMAC_KEY=${var.entitlement_hmac_key}",
     "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
     "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
@@ -153,6 +154,7 @@ resource "docker_container" "worker" {
   must_run = false
   env = [
     "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
+    "TODIR_DB_MAX_POOL_SIZE=20",
     "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
     "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
     "TODIR_RABBITMQ_PORT=5671",
@@ -186,6 +188,7 @@ resource "docker_container" "worker_secondary" {
   must_run = false
   env = [
     "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
+    "TODIR_DB_MAX_POOL_SIZE=20",
     "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
     "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
     "TODIR_RABBITMQ_PORT=5671",
@@ -197,6 +200,8 @@ resource "docker_container" "worker_secondary" {
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_RABBITMQ_CONSUMER=true",
     "TODIR_MAINTENANCE_INTERVAL_SECONDS=2",
+    "TODIR_FAILURE_INJECTION=poison-message",
+    "TODIR_FAILURE_INJECTION_POISON_MARKER=/tmp/poison-message",
   ]
   volumes {
     host_path      = abspath("${var.rabbit_tls_directory}/ca.crt")

@@ -13,7 +13,7 @@ services:
       timeout: 5s
       retries: 12
   rabbitmq:
-    image: rabbitmq:4-management
+    image: rabbitmq:4.1-management
     environment:
       RABBITMQ_DEFAULT_USER: todir
       RABBITMQ_DEFAULT_PASS: todir-dev-only

@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type FormEvent, type ReactNode, useEffect, u
 
 type Language = "ar" | "en";
 type Screen = "loading" | "signed-out" | "authenticated" | "forbidden" | "error";
-type ModuleRegistration = { id: string; label: string; permission?: string };
+type ModuleRegistration = { id: string; label: string; permission?: string | undefined };
 type Session = {
   authenticated: boolean;
   tenantId: string;
@@ -32,9 +32,9 @@ export function AppShell() {
   const [legalEntity, setLegalEntity] = useState("");
   const [branch, setBranch] = useState("");
   const [modules, setModules] = useState<ModuleRegistration[]>(fallbackModules);
-  const [contextError, setContextError] = useState<string>();
-  const [operation, setOperation] = useState<string>();
-  const [error, setError] = useState<string>();
+  const [contextError, setContextError] = useState<string | undefined>();
+  const [operation, setOperation] = useState<string | undefined>();
+  const [error, setError] = useState<string | undefined>();
 
   const direction = language === "ar" ? "rtl" : "ltr";
   const labels = useMemo(() => language === "ar" ? {
@@ -77,7 +77,7 @@ export function AppShell() {
       const permissionResponse = await fetch(`/api/v1/authorization/check?permission=${encodeURIComponent(item.permission!)}`, { headers: { "X-Correlation-Id": crypto.randomUUID() } });
       return permissionResponse.ok ? item : null;
     }))).filter((item): item is ModuleRegistration => item !== null);
-    const home = candidates.find(item => item.id === "home") ?? fallbackModules[0];
+    const home = candidates.find(item => item.id === "home") ?? fallbackModules[0]!;
     setModules([home, ...permitted]);
   }
 
@@ -129,7 +129,7 @@ export function AppShell() {
   if (screen === "loading") return <StatusView direction={direction} message={labels.loading} />;
   if (screen === "signed-out") return <LoginView language={language} onAuthenticated={() => void loadSession()} />;
   if (screen === "forbidden") return <AccessView direction={direction} kind="forbidden" language={language} onRetry={() => void loadSession()} />;
-  if (screen === "error") return <AccessView direction={direction} kind="error" language={language} message={error} onRetry={() => void loadSession()} />;
+  if (screen === "error") return <AccessView direction={direction} kind="error" language={language} message={error ?? undefined} onRetry={() => void loadSession()} />;
 
   return <div className="shell" dir={direction}>
     <header className="topbar">
@@ -158,7 +158,7 @@ function LoginView({ language, onAuthenticated }: { language: Language; onAuthen
   const [password, setPassword] = useState("");
   const [tenantId, setTenantId] = useState("");
   const [mfaCode, setMfaCode] = useState("");
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const arabic = language === "ar";
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -177,7 +177,7 @@ function LoginView({ language, onAuthenticated }: { language: Language; onAuthen
 
 function StatusView({ direction, message }: { direction: "rtl" | "ltr"; message: string }) { return <main className="status-page" dir={direction}><p role="status">{message}</p></main>; }
 
-function AccessView({ direction, kind, language, message, onRetry }: { direction: "rtl" | "ltr"; kind: "forbidden" | "error"; language: Language; message?: string; onRetry: () => void }) {
+function AccessView({ direction, kind, language, message, onRetry }: { direction: "rtl" | "ltr"; kind: "forbidden" | "error"; language: Language; message?: string | undefined; onRetry: () => void }) {
   const arabic = language === "ar";
   return <main className="status-page" dir={direction}><div className="auth-card"><h1>{kind === "forbidden" ? (arabic ? "لا تملك الصلاحية" : "Access denied") : (arabic ? "حدث خطأ" : "Something went wrong")}</h1><p>{message ?? (arabic ? "لا يمكن متابعة العملية الحالية." : "The current operation cannot continue.")}</p><button type="button" onClick={onRetry}>{arabic ? "إعادة المحاولة" : "Retry"}</button></div></main>;
 }
@@ -192,8 +192,9 @@ async function requestCsrf(): Promise<string> {
 
 type BoundaryState = { failed: boolean };
 export class ShellErrorBoundary extends Component<{ children: ReactNode }, BoundaryState> {
-  state: BoundaryState = { failed: false };
+  override state: BoundaryState = { failed: false };
   static getDerivedStateFromError(): BoundaryState { return { failed: true }; }
-  componentDidCatch(_error: Error, _info: ErrorInfo): void { /* Host middleware owns correlation logging. */ }
-  render() { return this.state.failed ? <AccessView direction="rtl" kind="error" language="ar" onRetry={() => this.setState({ failed: false })} /> : this.props.children; }
+  override componentDidCatch(_error: Error, _info: ErrorInfo): void { /* Host middleware owns correlation logging. */ }
+  override render() { return this.state.failed ? <AccessView direction="rtl" kind="error" language="ar" onRetry={() => this.setState({ failed: false })} /> : this.props.children; }
 }
+

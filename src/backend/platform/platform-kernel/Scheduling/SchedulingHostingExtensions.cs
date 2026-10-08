@@ -10,6 +10,11 @@ public static class SchedulingHostingExtensions
     public static IServiceCollection AddTodirScheduling(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("Todir") ?? configuration["TODIR_DATABASE_CONNECTION"];
+        if (!string.IsNullOrWhiteSpace(connectionString) && int.TryParse(configuration["TODIR_DB_MAX_POOL_SIZE"], out var maxPoolSize) && maxPoolSize > 0)
+        {
+            var boundedConnection = new Npgsql.NpgsqlConnectionStringBuilder(connectionString) { MaxPoolSize = maxPoolSize };
+            connectionString = boundedConnection.ConnectionString;
+        }
         var maintenanceIntervalSeconds = int.TryParse(configuration["TODIR_MAINTENANCE_INTERVAL_SECONDS"], out var configuredInterval) && configuredInterval > 0 ? configuredInterval : 300;
         services.AddSingleton<IPlatformMaintenanceTask, PlatformMaintenanceTask>();
         services.AddQuartz(options =>

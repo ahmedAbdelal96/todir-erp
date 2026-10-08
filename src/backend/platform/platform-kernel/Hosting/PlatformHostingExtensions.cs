@@ -32,6 +32,11 @@ public static class PlatformHostingExtensions
         services.AddTodirRabbitMq(configuration, configureConsumers);
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
+            if (int.TryParse(configuration["TODIR_DB_MAX_POOL_SIZE"], out var maxPoolSize) && maxPoolSize > 0)
+            {
+                var boundedConnection = new NpgsqlConnectionStringBuilder(connectionString) { MaxPoolSize = maxPoolSize };
+                connectionString = boundedConnection.ConnectionString;
+            }
             var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
             dataSourceBuilder.ConnectionStringBuilder.CommandTimeout = int.TryParse(configuration["TODIR_DB_COMMAND_TIMEOUT_SECONDS"], out var commandTimeout) && commandTimeout > 0 ? commandTimeout : 15;
             services.AddSingleton(dataSourceBuilder.Build());
@@ -87,7 +92,7 @@ public static class PlatformHostingExtensions
         services.AddSingleton<ISequenceAllocator>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlSequenceAllocator(dataSource) : new InMemorySequenceAllocator());
         services.AddSingleton<IMessageRetryPolicy, ExponentialMessageRetryPolicy>();
         services.AddSingleton<IMessageErrorStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlMessageErrorStore(dataSource) : new InMemoryMessageErrorStore());
-        services.AddSingleton<IMessageReplayService>(provider =>
+        services.AddScoped<IMessageReplayService>(provider =>
         {
             var dataSource = provider.GetService<NpgsqlDataSource>();
             var publisher = provider.GetService<IPublishEndpoint>();

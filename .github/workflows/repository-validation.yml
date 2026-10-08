@@ -333,14 +333,14 @@ jobs:
           backup_started="$(date +%s)"
           docker exec "$STAGING_POSTGRES_CONTAINER" pg_dump --username=postgres --format=custom --file=/tmp/platform-backup.dump todir_staging
           docker cp "$STAGING_POSTGRES_CONTAINER:/tmp/platform-backup.dump" "$backup_file"
-          docker exec "$STAGING_POSTGRES_CONTAINER" pg_dump --username=postgres --schema-only --no-owner todir_staging > "$original_schema"
+          docker exec "$STAGING_POSTGRES_CONTAINER" pg_dump --username=postgres --schema-only --no-owner todir_staging | sed -E '/^\\(un)?restrict /d' > "$original_schema"
           backup_finished="$(date +%s)"
           backup_checksum="$(sha256sum "$backup_file" | cut -d ' ' -f 1)"
           docker exec "$STAGING_POSTGRES_CONTAINER" dropdb --if-exists --username=postgres "$restore_database"
           docker exec "$STAGING_POSTGRES_CONTAINER" createdb --username=postgres "$restore_database"
           restore_started="$(date +%s)"
           docker exec "$STAGING_POSTGRES_CONTAINER" pg_restore --username=postgres --exit-on-error --dbname="$restore_database" /tmp/platform-backup.dump
-          docker exec "$STAGING_POSTGRES_CONTAINER" pg_dump --username=postgres --schema-only --no-owner "$restore_database" > "$restored_schema"
+          docker exec "$STAGING_POSTGRES_CONTAINER" pg_dump --username=postgres --schema-only --no-owner "$restore_database" | sed -E '/^\\(un)?restrict /d' > "$restored_schema"
           cmp --silent "$original_schema" "$restored_schema"
           restore_finished="$(date +%s)"
           docker run --rm --network "$STAGING_NETWORK" \

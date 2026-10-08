@@ -39,7 +39,8 @@ const requiredAdrs = [
   "custom-fields.md",
   "import-framework.md",
   "observability.md",
-  "migration-strategy.md"
+  "migration-strategy.md",
+  "frontend-platform-foundation.md"
 ];
 const checks = [
   ["naming prohibition is recorded in applicable governance files", ["AGENTS.md", "src/backend/AGENTS.md", "src/backend/platform/AGENTS.md", "tests/AGENTS.md"].every(file => { const text = read(file).toLowerCase(); return text.includes("basename") && text.includes("todir"); })],
