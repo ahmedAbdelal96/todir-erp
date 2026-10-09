@@ -103,7 +103,7 @@ export function DocumentPage({
                 )}
                 {statuses.accounting && (
                   <StatusBadge
-                    status={statuses.accounting === "Posted" ? "posted" : "neutral"}
+                    intent={statuses.accounting === "Posted" ? "success" : "neutral"}
                     label={`GL: ${statuses.accounting}`}
                     size="small"
                   />

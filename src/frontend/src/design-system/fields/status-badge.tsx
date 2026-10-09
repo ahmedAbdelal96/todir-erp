@@ -1,35 +1,50 @@
 import React, { type ReactNode } from "react";
 import clsx from "clsx";
 
-export type StatusVariant =
-  | "success"
-  | "warning"
-  | "danger"
-  | "info"
-  | "neutral"
-  | "draft"
-  | "posted"
-  | "archived";
+export type StatusIntent = "neutral" | "info" | "success" | "warning" | "danger";
+export type StatusVariant = StatusIntent;
 
 export interface StatusBadgeProps {
-  readonly status: StatusVariant | string;
-  readonly label?: ReactNode;
-  readonly size?: "small" | "medium";
-  readonly className?: string;
+  readonly intent?: StatusIntent | undefined;
+  /**
+   * Semantic intent or fallback status text when label is omitted.
+   * If status matches a standard StatusIntent, it is used as the default intent.
+   */
+  readonly status?: StatusIntent | string | undefined;
+  readonly label?: ReactNode | undefined;
+  readonly icon?: ReactNode | undefined;
+  readonly size?: "small" | "medium" | undefined;
+  readonly className?: string | undefined;
 }
 
+const VALID_INTENTS: ReadonlySet<string> = new Set<StatusIntent>([
+  "neutral",
+  "info",
+  "success",
+  "warning",
+  "danger"
+]);
+
 export function StatusBadge({
+  intent,
   status,
   label,
+  icon,
   size = "medium",
   className
 }: StatusBadgeProps): React.JSX.Element {
-  const normalizedStatus = status.toLowerCase() as StatusVariant;
-  const styles = getStatusStyles(normalizedStatus);
+  const resolvedIntent: StatusIntent =
+    intent ??
+    (status && VALID_INTENTS.has(status.toLowerCase())
+      ? (status.toLowerCase() as StatusIntent)
+      : "neutral");
+
+  const styles = getIntentStyles(resolvedIntent);
+  const displayContent = label ?? status ?? "";
 
   return (
     <span
-      className={clsx("ui-status-badge", `ui-status-badge--${normalizedStatus}`, className)}
+      className={clsx("ui-status-badge", `ui-status-badge--${resolvedIntent}`, className)}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -46,57 +61,58 @@ export function StatusBadge({
         whiteSpace: "nowrap"
       }}
     >
-      <span
-        style={{
-          width: "0.375rem",
-          height: "0.375rem",
-          borderRadius: "50%",
-          backgroundColor: styles.dotColor
-        }}
-      />
-      <span>{label ?? status}</span>
+      {icon ? (
+        <span style={{ display: "inline-flex", alignItems: "center" }}>{icon}</span>
+      ) : (
+        <span
+          style={{
+            width: "0.375rem",
+            height: "0.375rem",
+            borderRadius: "50%",
+            backgroundColor: styles.dotColor
+          }}
+        />
+      )}
+      <span>{displayContent}</span>
     </span>
   );
 }
 
-function getStatusStyles(status: StatusVariant): {
+function getIntentStyles(intent: StatusIntent): {
   backgroundColor: string;
   color: string;
   borderColor: string;
   dotColor: string;
 } {
-  switch (status) {
+  switch (intent) {
     case "success":
-    case "posted":
       return {
-        backgroundColor: "rgba(34, 197, 94, 0.1)",
-        color: "#15803d",
-        borderColor: "rgba(34, 197, 94, 0.2)",
-        dotColor: "#22c55e"
+        backgroundColor: "var(--color-status-success-subtle)",
+        color: "var(--color-status-success-content)",
+        borderColor: "var(--color-status-success-border)",
+        dotColor: "var(--color-status-success)"
       };
     case "warning":
-    case "draft":
       return {
-        backgroundColor: "rgba(245, 158, 11, 0.1)",
-        color: "#b45309",
-        borderColor: "rgba(245, 158, 11, 0.2)",
-        dotColor: "#f59e0b"
+        backgroundColor: "var(--color-status-warning-subtle)",
+        color: "var(--color-status-warning-content)",
+        borderColor: "var(--color-status-warning-border)",
+        dotColor: "var(--color-status-warning)"
       };
     case "danger":
       return {
-        backgroundColor: "rgba(239, 68, 68, 0.1)",
-        color: "#b91c1c",
-        borderColor: "rgba(239, 68, 68, 0.2)",
-        dotColor: "#ef4444"
+        backgroundColor: "var(--color-status-danger-subtle)",
+        color: "var(--color-status-danger-content)",
+        borderColor: "var(--color-status-danger-border)",
+        dotColor: "var(--color-status-danger)"
       };
     case "info":
       return {
-        backgroundColor: "rgba(59, 130, 246, 0.1)",
-        color: "#1d4ed8",
-        borderColor: "rgba(59, 130, 246, 0.2)",
-        dotColor: "#3b82f6"
+        backgroundColor: "var(--color-status-info-subtle)",
+        color: "var(--color-status-info-content)",
+        borderColor: "var(--color-status-info-border)",
+        dotColor: "var(--color-status-info)"
       };
-    case "archived":
     case "neutral":
     default:
       return {

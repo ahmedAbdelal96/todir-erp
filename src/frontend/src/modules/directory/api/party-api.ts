@@ -25,29 +25,29 @@ export const partyApi = {
     if (params.page) query.set("page", String(params.page));
     if (params.pageSize) query.set("pageSize", String(params.pageSize));
 
-    const url = `/api/v1/parties?${query.toString()}`;
+    const url = `/api/v1/directory/parties?${query.toString()}`;
     return httpClient<PartyListResult>(url, {
       ...(tenantId !== undefined ? { tenantId } : {})
     });
   },
 
   getById: async (id: string, tenantId?: string): Promise<Party> => {
-    return httpClient<Party>(`/api/v1/parties/${id}`, {
+    return httpClient<Party>(`/api/v1/directory/parties/${id}`, {
       ...(tenantId !== undefined ? { tenantId } : {})
     });
   },
 
   create: async (input: CreatePartyInput, tenantId?: string): Promise<Party> => {
-    return httpClient<Party>("/api/v1/parties", {
+    return httpClient<Party>("/api/v1/directory/parties", {
       method: "POST",
       body: JSON.stringify(input),
       ...(tenantId !== undefined ? { tenantId } : {})
     });
   },
 
-  update: async (id: string, input: Partial<CreatePartyInput>, tenantId?: string): Promise<Party> => {
-    return httpClient<Party>(`/api/v1/parties/${id}`, {
-      method: "PUT",
+  update: async (id: string, input: Partial<CreatePartyInput> & { version: number }, tenantId?: string): Promise<Party> => {
+    return httpClient<Party>(`/api/v1/directory/parties/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(input),
       ...(tenantId !== undefined ? { tenantId } : {})
     });

@@ -66,6 +66,24 @@
     "/api/v1/tenants/{tenantId}/audit": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "offset", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 0, "default": 0 } }, { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 } }], "responses": { "200": { "description": "Tenant audit entries" }, "403": { "description": "Audit view permission is required" } } } },
     "/api/v1/tenants/{tenantId}/entitlement": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Current entitlement summary" }, "403": { "description": "Module view permission is required" }, "404": { "description": "Entitlement snapshot not found" } } } },
     "/api/v1/modules": { "get": { "responses": { "200": { "description": "Registered modules" } } } },
+    "/api/v1/directory/parties": {
+      "get": { "parameters": [{ "name": "search", "in": "query", "schema": { "type": "string" } }, { "name": "partyType", "in": "query", "schema": { "type": "string", "enum": ["Person", "Organization"] } }, { "name": "role", "in": "query", "schema": { "type": "string", "enum": ["Customer", "Supplier"] } }, { "name": "status", "in": "query", "schema": { "type": "string" } }, { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } }, { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }], "responses": { "200": { "description": "Paged tenant-scoped parties" }, "403": { "description": "Party read permission is required" } } },
+      "post": { "requestBody": { "$ref": "#/components/requestBodies/CreateDirectoryPartyRequest" }, "responses": { "201": { "description": "Party created" }, "400": { "description": "Validation failure" }, "409": { "description": "Duplicate or concurrency conflict" } } }
+    },
+    "/api/v1/directory/parties/{partyId}": {
+      "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "get": { "responses": { "200": { "description": "Party details" }, "404": { "description": "Party not found" } } },
+      "patch": { "requestBody": { "$ref": "#/components/requestBodies/UpdateDirectoryPartyRequest" }, "responses": { "200": { "description": "Party updated" }, "409": { "description": "Concurrency conflict" } } }
+    },
+    "/api/v1/directory/parties/{partyId}/roles": { "post": { "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "$ref": "#/components/requestBodies/AddDirectoryRoleRequest" }, "responses": { "200": { "description": "Role enabled" } } } },
+    "/api/v1/directory/parties/{partyId}/roles/{role}": { "delete": { "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "role", "in": "path", "required": true, "schema": { "type": "string", "enum": ["Customer", "Supplier"] } }], "responses": { "200": { "description": "Role disabled" } } } },
+    "/api/v1/directory/parties/{partyId}/identifiers": { "post": { "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "$ref": "#/components/requestBodies/DirectoryIdentifierRequest" }, "responses": { "200": { "description": "Identifier added" }, "409": { "description": "Identifier already exists" } } } },
+    "/api/v1/directory/parties/{partyId}/contacts": { "post": { "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "$ref": "#/components/requestBodies/DirectoryContactRequest" }, "responses": { "200": { "description": "Contact point added" } } } },
+    "/api/v1/directory/parties/{partyId}/addresses": { "post": { "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "$ref": "#/components/requestBodies/DirectoryAddressRequest" }, "responses": { "200": { "description": "Address added" } } } },
+    "/api/v1/directory/parties/{partyId}/archive": { "post": { "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "$ref": "#/components/requestBodies/DirectoryVersionRequest" }, "responses": { "200": { "description": "Party archived" } } } },
+    "/api/v1/directory/parties/{partyId}/restore": { "post": { "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "$ref": "#/components/requestBodies/DirectoryVersionRequest" }, "responses": { "200": { "description": "Party restored" } } } },
+    "/api/v1/directory/parties/{partyId}/duplicate-candidates": { "get": { "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Duplicate candidates" } } } },
+    "/api/v1/directory/parties/{partyId}/readiness": { "get": { "parameters": [{ "name": "partyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Party readiness" } } } },
     "/api/v1/sample/items": {
       "post": {
         "requestBody": { "$ref": "#/components/requestBodies/CreateSampleItemRequest" },
@@ -87,6 +105,13 @@
       "OrganizationSelection": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrganizationSelection" } } } },
       "MessageReplayRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageReplayRequest" } } } },
       "CreateSampleItemRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSampleItemRequest" } } } },
+      "CreateDirectoryPartyRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateDirectoryPartyRequest" } } } },
+      "UpdateDirectoryPartyRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateDirectoryPartyRequest" } } } },
+      "AddDirectoryRoleRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AddDirectoryRoleRequest" } } } },
+      "DirectoryVersionRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DirectoryVersionRequest" } } } },
+      "DirectoryIdentifierRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DirectoryIdentifierRequest" } } } },
+      "DirectoryContactRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DirectoryContactRequest" } } } },
+      "DirectoryAddressRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DirectoryAddressRequest" } } } },
       "MembershipInvitationRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MembershipInvitationRequest" } } } },
       "MembershipInvitationAcceptanceRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MembershipInvitationAcceptanceRequest" } } } }
     },
@@ -120,6 +145,19 @@
         "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 200 } },
         "additionalProperties": false
       },
+      "CreateDirectoryPartyRequest": {
+        "type": "object", "required": ["partyType", "displayName", "roles"],
+        "properties": { "partyType": { "type": "string", "enum": ["Person", "Organization"] }, "displayName": { "type": "string", "minLength": 1, "maxLength": 300 }, "legalName": { "type": ["string", "null"] }, "tradeName": { "type": ["string", "null"] }, "nameAr": { "type": ["string", "null"] }, "nameEn": { "type": ["string", "null"] }, "firstName": { "type": ["string", "null"] }, "middleName": { "type": ["string", "null"] }, "lastName": { "type": ["string", "null"] }, "countryCode": { "type": ["string", "null"] }, "primaryLanguage": { "type": ["string", "null"] }, "roles": { "type": "array", "items": { "type": "string", "enum": ["Customer", "Supplier"] } }, "identifiers": { "type": "array" }, "contactPoints": { "type": "array" }, "addresses": { "type": "array" } },
+        "additionalProperties": false
+      },
+      "UpdateDirectoryPartyRequest": {
+        "type": "object", "required": ["displayName", "version"], "properties": { "displayName": { "type": "string", "maxLength": 300 }, "legalName": { "type": ["string", "null"] }, "tradeName": { "type": ["string", "null"] }, "nameAr": { "type": ["string", "null"] }, "nameEn": { "type": ["string", "null"] }, "firstName": { "type": ["string", "null"] }, "middleName": { "type": ["string", "null"] }, "lastName": { "type": ["string", "null"] }, "countryCode": { "type": ["string", "null"] }, "primaryLanguage": { "type": ["string", "null"] }, "version": { "type": "integer", "minimum": 1 } }, "additionalProperties": false
+      },
+      "AddDirectoryRoleRequest": { "type": "object", "required": ["role", "version"], "properties": { "role": { "type": "string", "enum": ["Customer", "Supplier"] }, "version": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
+      "DirectoryVersionRequest": { "type": "object", "required": ["version"], "properties": { "version": { "type": "integer", "minimum": 1 } }, "additionalProperties": false },
+      "DirectoryIdentifierRequest": { "type": "object", "required": ["type", "value"], "properties": { "type": { "type": "string" }, "value": { "type": "string" }, "countryCode": { "type": ["string", "null"] }, "authority": { "type": ["string", "null"] }, "isPrimary": { "type": "boolean" } }, "additionalProperties": false },
+      "DirectoryContactRequest": { "type": "object", "required": ["type", "value"], "properties": { "type": { "type": "string", "enum": ["Email", "Phone", "Website", "Other"] }, "value": { "type": "string" }, "label": { "type": ["string", "null"] }, "isPrimary": { "type": "boolean" } }, "additionalProperties": false },
+      "DirectoryAddressRequest": { "type": "object", "required": ["usage", "countryCode", "line1"], "properties": { "usage": { "type": "string", "enum": ["General", "Billing", "Shipping", "Registered"] }, "countryCode": { "type": "string" }, "city": { "type": ["string", "null"] }, "region": { "type": ["string", "null"] }, "postalCode": { "type": ["string", "null"] }, "line1": { "type": "string" }, "line2": { "type": ["string", "null"] }, "isDefault": { "type": "boolean" } }, "additionalProperties": false },
       "MembershipInvitationRequest": {
         "type": "object",
         "required": ["identityId", "displayName", "expiresAt"],

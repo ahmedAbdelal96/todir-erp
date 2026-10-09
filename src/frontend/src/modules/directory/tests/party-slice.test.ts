@@ -8,9 +8,10 @@ describe("Directory / Party Vertical Slice", () => {
     const validData = {
       partyType: "Organization",
       displayName: "Al-Ahram Industrial LLC",
-      taxId: "100-200-300",
-      primaryEmail: "info@alahram.com",
-      roles: ["Customer", "Vendor"]
+      identifierType: "tax",
+      identifierValue: "100-200-300",
+      email: "info@alahram.com",
+      roles: ["Customer", "Supplier"]
     };
 
     const result = partyFormSchema.safeParse(validData);
@@ -35,14 +36,14 @@ describe("Directory / Party Vertical Slice", () => {
     const invalidData = {
       partyType: "Person",
       displayName: "Jane Doe",
-      primaryEmail: "not-an-email",
+      email: "not-an-email",
       roles: ["Customer"]
     };
 
     const result = partyFormSchema.safeParse(invalidData);
     assert.equal(result.success, false);
     if (!result.success) {
-      assert.ok(result.error.issues.some((i) => i.path.includes("primaryEmail")));
+      assert.ok(result.error.issues.some((i) => i.path.includes("email")));
     }
   });
 

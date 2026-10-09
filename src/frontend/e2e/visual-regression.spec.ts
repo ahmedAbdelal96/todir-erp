@@ -44,7 +44,7 @@ test.describe('Deterministic Visual Regression', () => {
       });
     });
 
-    await page.route('**/api/v1/parties*', async (route) => {
+    await page.route('**/api/v1/directory/parties*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -52,10 +52,9 @@ test.describe('Deterministic Visual Regression', () => {
           items: [
             {
               id: 'party-001',
-              partyNumber: 'PRT-1001',
               partyType: 'Organization',
               status: 'Active',
-              roles: ['Customer', 'Vendor'],
+              roles: [{ code: 'Customer', status: 'Active', version: 1 }, { code: 'Supplier', status: 'Active', version: 1 }],
               displayName: 'شركة الأفق للتجارة والمقاولات',
               legalName: 'شركة الأفق للتجارة العامة ذ.م.م',
               taxId: '300123456700003',
@@ -66,7 +65,6 @@ test.describe('Deterministic Visual Regression', () => {
             },
             {
               id: 'party-002',
-              partyNumber: 'PRT-1002',
               partyType: 'Person',
               status: 'Active',
               roles: ['Customer'],

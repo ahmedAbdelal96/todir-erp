@@ -25,7 +25,7 @@ type Session = {
 
 const fallbackModules: ModuleRegistration[] = [
   { id: "home", label: "الرئيسية" },
-  { id: "directory", label: "دليل الأطراف", permission: "directory.parties.read" },
+  { id: "directory", label: "دليل الأطراف", permission: "directory.party.read" },
   { id: "invoicing", label: "فواتير المبيعات", permission: "invoicing.invoices.read" },
   { id: "payments", label: "المدفوعات", permission: "payments.transactions.read" },
   { id: "accounting", label: "المحاسبة العامة", permission: "accounting.journals.read" },
@@ -36,7 +36,7 @@ const fallbackModules: ModuleRegistration[] = [
 
 const moduleLabels: Record<string, { ar: string; en: string; permission?: string }> = {
   home: { ar: "الرئيسية", en: "Home" },
-  directory: { ar: "دليل الأطراف", en: "Directory", permission: "directory.parties.read" },
+  directory: { ar: "دليل الأطراف", en: "Directory", permission: "directory.party.read" },
   invoicing: { ar: "فواتير المبيعات", en: "Invoices", permission: "invoicing.invoices.read" },
   payments: { ar: "المدفوعات", en: "Payments", permission: "payments.transactions.read" },
   accounting: { ar: "المحاسبة العامة", en: "Accounting", permission: "accounting.journals.read" },

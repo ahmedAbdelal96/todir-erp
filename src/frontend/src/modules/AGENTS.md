@@ -35,16 +35,16 @@ Before writing code, read the exact approved module pack (`docs/modules/`) and i
 
 ### Phase 2: MANDATORY REUSE INVENTORY
 Before creating any UI component, inspect existing shared foundations:
-1. **Design System Primitives:** (`Button`, `Dialog`, `ComboBox`, `Select`, `TextField`, `Tabs`, `Menu`, etc.)
-2. **Domain Fields & Displays:** (`MoneyField`, `MoneyDisplay`, `QuantityField`, `QuantityDisplay`, `DateField`, `StatusBadge`)
-3. **Form System:** (`FormField`, `FormSection`, `FormActions`, `mapServerErrorsToForm`)
+1. **Design System Primitives & Feedback:** (`Button`, `Dialog`, `ConfirmDialog`, `Alert`, `Toast`, `ProgressBar`, `Skeleton`, `ComboBox`, `Select`, `TextField`, `TextArea`, `SearchField`, `FilterBar`, `Tabs`, `Menu`, `Pagination`, `Table`, `FileInput`, `Spinner`)
+2. **Domain Fields & Displays:** (`MoneyField`, `MoneyDisplay`, `QuantityField`, `QuantityDisplay`, `PercentageField`, `PercentageDisplay`, `DateField`, `DateDisplay`, `DateTimeDisplay`, `PhoneField`, `EmailField`, `StatusBadge`, `EntityRefDisplay`)
+3. **Form System:** (`FormField`, `FormSection`, `FormActions`, `ValidationSummary`, `useUnsavedChanges`, `mapServerErrorsToForm`)
 4. **DataGrid:** (`DataGrid` from `@ui/grid` with exact decimal renderers)
-5. **Page Archetypes:** (`ListPage`, `RecordPage`, `DocumentPage`, `SettingsPage`, `WizardPage`)
+5. **Page Archetypes:** (`ListPage`, `RecordPage`, `DocumentPage`, `SettingsPage`, `WizardPage`, `DashboardPage` from `src/frontend/src/design-system/pages/`)
 6. **Platform Runtime & API:** (`httpClient`, `queryKeyFactory`, `useRuntimeContext`)
 7. **Existing Module Pickers:** (`PartyPicker` from Directory, `AccountPicker` from Accounting)
 
 The implementation plan MUST explicitly categorize:
-- **Reused Shared Components:** (e.g. `ListPage`, `DataGrid`, `MoneyField`)
+- **Reused Shared Components:** (e.g. `ListPage`, `DataGrid`, `MoneyField`, `FilterBar`)
 - **New Domain-Specific UI:** (e.g. `InvoiceLinesEditor`, `AccountPicker`)
 - **Discovered Shared Foundation Gaps:** (if a generic UI pattern is missing, escalate to `design-system/` first)
 
@@ -72,7 +72,7 @@ src/frontend/src/modules/<module-name>/
 ### 1. Cross-Module Boundaries & Public Surface
 - Other modules MUST NOT import internal module files (`pages/`, `features/`, `api/`, `hooks/`).
 - Cross-module integration occurs strictly through `public.ts`.
-- Entity pickers (e.g. `PartyPicker`, `ProductPicker`) belong to the owning module and are exported via `public.ts`.
+- **Entity Pickers Architecture:** Design System owns generic selection mechanics (`ComboBox`, `Select`). Owning modules assemble domain pickers (`PartyPicker` in Directory, `AccountPicker` in Accounting, `ProductPicker` in Catalog) by binding their module query hook and API to the ComboBox, exporting them via `public.ts`.
 
 ### 2. Direct Vendor Import Ban
 - NEVER import `ag-grid-community`, `ag-grid-react`, `react-aria-components`, or `@react-aria/*` directly into business modules.
@@ -82,7 +82,7 @@ src/frontend/src/modules/<module-name>/
 - Never call raw `fetch()` directly in pages or components.
 - API calls go through `src/frontend/src/modules/<module>/api/` using `httpClient`.
 - Query keys MUST use `queryKeyFactory.list(...)` or `queryKeyFactory.detail(...)` to preserve tenant/entity isolation.
-- Mutations for high-risk operations (payments, postings) must include an `Idempotency-Key` header bound to the logical attempt.
+- Mutations for high-risk operations (payments, postings, journals, invoicing, settlements) MUST NOT use optimistic success updates. The lifecycle is strictly `submit -> pending -> backend result -> success/failure/unknown`. Idempotency keys (`Idempotency-Key` header) must be bound to the logical attempt.
 
 ### 4. Exact Financial Data Discipline
 - Authoritative financial values, quantities, and prices MUST use `DecimalString`, `MoneyValue`, or `QuantityValue`.

@@ -1,5 +1,5 @@
 import React from "react";
-import type { Party, PartyRole } from "../types.ts";
+import type { Party, PartyRoleCode } from "../types.ts";
 import { usePartyList } from "../hooks/party-queries.ts";
 import { ComboBox, type ComboBoxOption } from "../../../design-system/primitives/combobox.tsx";
 
@@ -9,7 +9,7 @@ export interface PartyPickerProps {
   readonly errorMessage?: string | undefined;
   readonly value?: string | undefined;
   readonly onChange?: ((partyId: string, party?: Party) => void) | undefined;
-  readonly roleFilter?: PartyRole | undefined;
+  readonly roleFilter?: PartyRoleCode | undefined;
   readonly isRequired?: boolean | undefined;
   readonly isReadOnly?: boolean | undefined;
   readonly isLocked?: boolean | undefined;
@@ -39,7 +39,7 @@ export function PartyPicker({
 
   const options: ComboBoxOption[] = parties.map((p) => ({
     id: p.id,
-    label: `${p.displayName} (${p.partyNumber})`,
+    label: p.displayName,
     description: p.legalName && p.legalName !== p.displayName ? p.legalName : undefined,
   }));
 

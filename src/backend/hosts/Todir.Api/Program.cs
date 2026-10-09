@@ -1,18 +1,22 @@
 using Todir.BuildingBlocks.Observability;
 using Todir.Platform.Hosting;
 using Todir.Modules.Sample;
+using Todir.Modules.Directory;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddTodirObservability(builder.Environment.ApplicationName, builder.Environment.EnvironmentName);
 builder.Services.AddTodirPlatform(builder.Configuration);
 builder.Services.AddSampleModule();
+builder.Services.AddDirectoryModule();
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
+builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 var configuredOrigins = (builder.Configuration["TODIR_CORS_ORIGINS"] ?? string.Empty)
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 builder.Services.AddCors(options => options.AddPolicy("web", policy =>
@@ -112,6 +116,7 @@ app.MapGet("/health/ready", async (IServiceProvider services, CancellationToken 
 if (builder.Configuration.GetValue<bool>("TODIR_METRICS_ENABLED")) app.MapPrometheusScrapingEndpoint("/internal/metrics");
 app.MapTodirPlatform();
 app.MapSampleModule();
+app.MapDirectoryModule();
 app.Run();
 
 public partial class Program;

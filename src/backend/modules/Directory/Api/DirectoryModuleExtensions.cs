@@ -1,0 +1,110 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Todir.Modules.Directory.Application;
+using Todir.Modules.Directory.Contracts;
+using Todir.Modules.Directory.Domain;
+using Todir.Platform.Authorization;
+using Todir.Platform.Modules;
+using Todir.SharedKernel.Identifiers;
+
+namespace Todir.Modules.Directory;
+
+public static class DirectoryModuleExtensions
+{
+    public static IServiceCollection AddDirectoryModule(this IServiceCollection services)
+    {
+        services.AddSingleton<IModuleManifestProvider, DirectoryModuleManifestProvider>();
+        services.AddSingleton<DirectoryService>();
+        return services;
+    }
+
+    public static WebApplication MapDirectoryModule(this WebApplication app)
+    {
+        var group = app.MapGroup("/api/v1/directory").RequireAuthorization().RequireRateLimiting("api");
+        group.MapGet("/parties", async (HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string? search, string? partyType, string? role, string? status, int? page, int? pageSize, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
+                ? await Execute(http, access, () => service.ListAsync(access.Tenant, search, Parse<PartyType>(partyType), Parse<PartyRoleCode>(role), Parse<PartyStatus>(status), page ?? 1, pageSize ?? 25, ct))
+                : Results.Unauthorized());
+        group.MapGet("/parties/{partyId:guid}", async (Guid partyId, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
+                ? await Execute(http, access, () => service.GetAsync(access.Tenant, partyId, access.IdentifierView, ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties", async (CreatePartyRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.create", ct) is { } access
+                ? await Execute(http, access, () => service.CreateAsync(access.Tenant, access.ActorId, access.MembershipId, request, Correlation(http), ActivityId(http), access.DuplicateOverride, ct), StatusCodes.Status201Created)
+                : Results.Unauthorized());
+        group.MapPatch("/parties/{partyId:guid}", async (Guid partyId, UpdatePartyRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.edit", ct) is { } access
+                ? await Execute(http, access, () => service.UpdateAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, request, Correlation(http), ActivityId(http), ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties/{partyId:guid}/roles", async (Guid partyId, AddRoleRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.role.manage", ct) is { } access
+                ? await Execute(http, access, () => service.AddRoleAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, request, Correlation(http), ActivityId(http), ct))
+                : Results.Unauthorized());
+        group.MapDelete("/parties/{partyId:guid}/roles/{role}", async (Guid partyId, string role, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.role.manage", ct) is { } access && Enum.TryParse<PartyRoleCode>(role, true, out var roleCode)
+                ? await Execute(http, access, () => service.DisableRoleAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, roleCode, Correlation(http), ct))
+                : Results.BadRequest());
+        group.MapPost("/parties/{partyId:guid}/identifiers", async (Guid partyId, IdentifierInput request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.identifier.manage", ct) is { } access
+                ? await Execute(http, access, () => service.AddIdentifierAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, request, Correlation(http), ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties/{partyId:guid}/contacts", async (Guid partyId, ContactPointInput request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.contact.manage", ct) is { } access
+                ? await Execute(http, access, () => service.AddContactPointAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, request, Correlation(http), ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties/{partyId:guid}/addresses", async (Guid partyId, AddressInput request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.address.manage", ct) is { } access
+                ? await Execute(http, access, () => service.AddAddressAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, request, Correlation(http), ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties/{partyId:guid}/archive", async (Guid partyId, VersionRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.archive", ct) is { } access
+                ? await Execute(http, access, () => service.ChangeStatusAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, false, request.Version, Correlation(http), ActivityId(http), ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties/{partyId:guid}/restore", async (Guid partyId, VersionRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.edit", ct) is { } access
+                ? await Execute(http, access, () => service.ChangeStatusAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, true, request.Version, Correlation(http), ActivityId(http), ct))
+                : Results.Unauthorized());
+        group.MapGet("/parties/{partyId:guid}/duplicate-candidates", async (Guid partyId, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
+                ? await Execute(http, access, () => service.DuplicatesAsync(access.Tenant, partyId, ct))
+                : Results.Unauthorized());
+        group.MapGet("/parties/{partyId:guid}/readiness", async (Guid partyId, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
+                ? await Execute(http, access, () => service.ReadinessAsync(access.Tenant, partyId, ct))
+                : Results.Unauthorized());
+        return app;
+    }
+
+    private static async Task<Access?> ReadPermission(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, CancellationToken ct)
+    {
+        if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(http.User.FindFirstValue("membership_id"), out var membershipId) || !Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return null;
+        var tenant = new TenantId(tenantId); var subject = await subjects.LoadAsync(tenant, membershipId, ct);
+        if (subject is null || !authorizer.Authorize(subject, permission, PermissionScope.ForTenant(tenant))) return new Access(tenant, actorId, membershipId, false, false, false);
+        var identifierView = authorizer.Authorize(subject, "directory.party.identifier.view", PermissionScope.ForTenant(tenant));
+        var duplicateOverride = authorizer.Authorize(subject, "directory.duplicate.override", PermissionScope.ForTenant(tenant));
+        return new Access(tenant, actorId, membershipId, true, identifierView, duplicateOverride);
+    }
+
+    private static async Task<IResult> Execute<T>(HttpContext http, Access access, Func<Task<T>> action, int successStatus = StatusCodes.Status200OK)
+    {
+        if (!access.Allowed) return Results.Forbid();
+        try { var result = await action(); return successStatus == StatusCodes.Status201Created ? Results.Created(http.Request.Path, result) : Results.Ok(result); }
+        catch (DirectoryException ex) { return Results.Problem(statusCode: ex.Code.Contains("concurrency", StringComparison.Ordinal) || ex.Code.Contains("duplicate", StringComparison.Ordinal) ? 409 : 400, title: ex.Message, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); }
+        catch (KeyNotFoundException) { return Results.NotFound(); }
+    }
+
+    private static T? Parse<T>(string? value) where T : struct, Enum => Enum.TryParse<T>(value, true, out var parsed) ? parsed : null;
+    private static Guid Correlation(HttpContext http) => Guid.TryParse(http.Request.Headers["X-Correlation-Id"], out var value) ? value : Guid.CreateVersion7();
+    private static string? ActivityId(HttpContext http) => System.Diagnostics.Activity.Current?.Id;
+    private sealed record Access(TenantId Tenant, Guid ActorId, Guid MembershipId, bool Allowed, bool IdentifierView, bool DuplicateOverride);
+    public sealed record VersionRequest(long Version);
+}
+
+public sealed class DirectoryModuleManifestProvider : IModuleManifestProvider
+{
+    public ModuleManifest Manifest { get; } = new("directory", "1.0.0", 1, "L1", "foundation", false, "tenant", new(["platform-kernel"], []), new("foundation_directory", ["party", "party_role", "party_identifier", "contact_person", "address"]), ["directory.party.read", "directory.party.create", "directory.party.edit", "directory.party.archive", "directory.party.role.manage", "directory.party.identifier.view", "directory.party.identifier.manage", "directory.contact.manage", "directory.address.manage", "directory.party.merge", "directory.party.visibility.manage", "directory.duplicate.override", "directory.import", "directory.export", "directory.audit.view", "directory.party.quick_create"], new(["directory.party"], []), new(["DirectoryPartyCreatedV1", "DirectoryPartyIdentityChangedV1", "DirectoryPartyArchivedV1", "DirectoryPartyRoleChangedV1"], []), new(true, "blocked_if_dependents"));
+}

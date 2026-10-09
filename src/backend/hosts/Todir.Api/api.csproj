@@ -8,5 +8,6 @@
     <ProjectReference Include="../../shared/Todir.BuildingBlocks/Todir.BuildingBlocks.csproj" />
     <ProjectReference Include="../../platform/platform-kernel/platform-kernel.csproj" />
     <ProjectReference Include="../../modules/Sample/sample.csproj" />
+    <ProjectReference Include="../../modules/Directory/directory.csproj" />
   </ItemGroup>
 </Project>

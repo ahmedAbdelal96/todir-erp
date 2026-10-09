@@ -75,7 +75,7 @@ export function useUpdateParty(context: UsePartyContext = {}) {
   const tenantId = context.tenantId || DEFAULT_TENANT;
   const entityId = context.entityId || DEFAULT_ENTITY;
 
-  return useMutation<Party, Error, { id: string; input: Partial<CreatePartyInput> }>({
+  return useMutation<Party, Error, { id: string; input: Partial<CreatePartyInput> & { version: number } }>({
     mutationFn: ({ id, input }) => partyApi.update(id, input, tenantId),
     onSuccess: (_data, { id }) => {
       void queryClient.invalidateQueries({

@@ -59,11 +59,11 @@ Business Modules (`modules/*`)
 Business modules MUST use the approved Design System components for all standard interactions. Creating local ad-hoc duplicates is strictly forbidden.
 
 ### Approved Standard Components:
-- **Primitives:** `Button`, `IconButton`, `TextField`, `TextArea`, `Checkbox`, `Radio`, `Switch`, `Select`, `ComboBox`, `Dialog`, `Popover`, `Tooltip`, `Menu`, `Tabs`, `Spinner`.
+- **Primitives & Feedback:** `Button`, `IconButton`, `TextField`, `TextArea`, `SearchField`, `FilterBar`, `Checkbox`, `Radio`, `Switch`, `Select`, `ComboBox`, `Dialog`, `ConfirmDialog`, `Alert`, `Toast` (`ToastProvider`, `useToast`), `ProgressBar`, `Skeleton`, `Popover`, `Tooltip`, `Menu`, `Tabs`, `Pagination`, `Table` (semantic HTML), `FileInput`, `Spinner`.
 - **Domain Fields & Displays:** `MoneyField`, `MoneyDisplay`, `QuantityField`, `QuantityDisplay`, `PercentageField`, `PercentageDisplay`, `DateField`, `DateDisplay`, `DateTimeDisplay`, `PhoneField`, `EmailField`, `StatusBadge`, `EntityRefDisplay`.
-- **Form System:** `FormField`, `FormSection`, `FormActions`.
+- **Form System:** `FormField`, `FormSection`, `FormActions`, `ValidationSummary`, `useUnsavedChanges`, `mapServerErrorsToForm`.
 - **DataGrid:** `DataGrid` (wrapping AG Grid Community with full RTL, keyboard navigation, density engine, and exact decimal renderers).
-- **Page Archetypes:** `ListPage`, `RecordPage`, `DocumentPage`, `SettingsPage`, `WizardPage`.
+- **Page Archetypes:** `ListPage`, `RecordPage`, `DocumentPage`, `SettingsPage`, `WizardPage`, `DashboardPage` (located strictly under `src/frontend/src/design-system/pages/`).
 
 ### Local duplication prohibition:
 Never create module-local generic components like `sales-button.tsx`, `invoice-dialog.tsx`, `accounting-text-field.tsx`, or `custom-table.tsx`. Module-owned components are permitted only when expressing domain-specific logic (e.g. `invoice-lines-editor.tsx`, `party-picker.tsx`, `account-picker.tsx`).
@@ -146,6 +146,7 @@ Page / Feature Component
 - **High-Risk Operations:** Money movement, financial posting, and state transitions must enforce client-generated idempotency keys (`Idempotency-Key` header).
 - **Logical Attempt Lifecycle:** The idempotency key is bound to the *logical business attempt*. In-flight double clicks are locked; retrying after a network timeout reuses the same key; a genuinely new transaction generates a new key.
 - **Unknown Outcome Handling:** If a high-risk mutation times out (HTTP 504), display an explicit "Unknown Outcome / حالة غير مؤكدة" recovery dialog; do not resubmit blindly.
+- **Optimistic Mutation Safety Policy:** Optimistic updates MUST NOT be used for authoritative high-risk business commands (e.g. payment execution, invoice finalization, journal posting, financial settlement, stock movements, payroll finalization, destructive deletion). For high-risk operations, the lifecycle is strictly `submit -> pending/loading -> backend result -> success/failure/unknown`. Optimistic updates are permitted ONLY for low-risk, reversible UX state (e.g., expanding an accordion, toggling local display preferences). Backend authority is final.
 
 ---
 

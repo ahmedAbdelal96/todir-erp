@@ -8,116 +8,20 @@ import { Dialog } from "../../../design-system/primitives/dialog.tsx";
 import { PartyForm } from "../features/party-form.tsx";
 import type { PartyFormData } from "../schemas/party-schema.ts";
 
-export interface PartyRecordPageProps {
-  readonly partyId?: string | undefined;
-  readonly onBack?: (() => void) | undefined;
-}
+export interface PartyRecordPageProps { readonly partyId?: string; readonly onBack?: (() => void) | undefined; }
+function toForm(party: Party): Partial<PartyFormData> { const email = party.contactPoints.find(item => item.type === "Email")?.value ?? ""; const phone = party.contactPoints.find(item => item.type === "Phone")?.value ?? ""; const identifier = party.identifiers[0]; const address = party.addresses[0]; return { partyType: party.partyType, displayName: party.displayName, legalName: party.legalName ?? "", tradeName: party.tradeName ?? "", nameAr: party.nameAr ?? "", nameEn: party.nameEn ?? "", firstName: party.firstName ?? "", middleName: party.middleName ?? "", lastName: party.lastName ?? "", countryCode: party.countryCode ?? "EG", primaryLanguage: party.primaryLanguage ?? "ar", roles: party.roles.filter(item => item.status === "Active").map(item => item.code), email, phone, identifierType: identifier?.type ?? "", identifierValue: identifier?.value ?? "", identifierCountryCode: identifier?.countryCode ?? "EG", addressLine1: address?.line1 ?? "", addressCity: address?.city ?? "", addressCountryCode: address?.countryCode ?? "EG" }; }
 
-export function PartyRecordPage({ partyId = "party-001", onBack }: PartyRecordPageProps): React.JSX.Element {
-  const [isEditOpen, setIsEditOpen] = useState(false);
-
-  const { data: party, isLoading, error } = usePartyRecord(partyId);
-  const updatePartyMutation = useUpdateParty();
-
-  if (isLoading) {
-    return <div style={{ padding: "2rem", textAlign: "center" }}>جارٍ تحميل تفاصيل الطرف...</div>;
-  }
-
-  if (error || !party) {
-    return (
-      <div style={{ padding: "2rem", textAlign: "center" }}>
-        <p>تعذر تحميل بيانات السجل أو أن السجل غير موجود.</p>
-        {onBack && <Button onPress={onBack}>العودة للقائمة</Button>}
-      </div>
-    );
-  }
-
-  const handleEditSubmit = async (formData: PartyFormData) => {
-    try {
-      await updatePartyMutation.mutateAsync({
-        id: party.id,
-        input: formData,
-      });
-      setIsEditOpen(false);
-    } catch {
-      setIsEditOpen(false);
-    }
-  };
-
-  return (
-    <RecordPage
-      title={party.displayName}
-      recordCode={party.partyNumber}
-      status={party.status === "Active" ? "success" : party.status === "Suspended" ? "warning" : "neutral"}
-      breadcrumbs={[
-        { label: "دليل الأطراف", href: "#directory" },
-        { label: "الأطراف", href: "#parties", onClick: onBack },
-        { label: party.displayName },
-      ]}
-      headerActions={
-        <>
-          {onBack && <Button variant="secondary" onPress={onBack}>العودة</Button>}
-          <Button variant="primary" onPress={() => setIsEditOpen(true)}>تعديل البيانات</Button>
-        </>
-      }
-      auditInfo={{
-        createdAt: party.createdAt,
-        createdBy: "النظام الرئيسي",
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        <FormSection title="البيانات القانونية والتعريفية">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-            <div>
-              <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>الاسم القانوني</div>
-              <div style={{ fontWeight: 600 }}>{party.legalName || "—"}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>نوع الطرف</div>
-              <div style={{ fontWeight: 600 }}>{party.partyType === "Organization" ? "منشأة / شركة" : "فرد"}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>الرقم الضريبي</div>
-              <div style={{ fontWeight: 600, fontFamily: "var(--font-mono)" }}>{party.taxId || "—"}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>الهوية الوطنية / الإقامة</div>
-              <div style={{ fontWeight: 600, fontFamily: "var(--font-mono)" }}>{party.nationalId || "—"}</div>
-            </div>
-          </div>
-        </FormSection>
-
-        <FormSection title="بيانات الاتصال">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-            <div>
-              <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>البريد الإلكتروني الأساسي</div>
-              <div>{party.primaryEmail || "—"}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>رقم الهاتف الأساسي</div>
-              <div style={{ direction: "ltr", textAlign: "end" }}>{party.primaryPhone || "—"}</div>
-            </div>
-          </div>
-        </FormSection>
-      </div>
-
-      <Dialog
-        isOpen={isEditOpen}
-        onOpenChange={setIsEditOpen}
-        title="تعديل بيانات الطرف التجاري"
-        description={`تحديث بيانات السجل: ${party.displayName}`}
-        size="large"
-      >
-        <PartyForm
-          initialData={{
-            ...party,
-            roles: [...party.roles]
-          }}
-          onSubmit={handleEditSubmit}
-          onCancel={() => setIsEditOpen(false)}
-          isSubmitting={updatePartyMutation.isPending}
-        />
-      </Dialog>
-    </RecordPage>
-  );
+export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps): React.JSX.Element {
+  const [editing, setEditing] = useState(false); const { data: party, isLoading, error } = usePartyRecord(partyId); const update = useUpdateParty();
+  if (isLoading) return <div style={{ padding: "2rem", textAlign: "center" }}>جارٍ تحميل بيانات الطرف...</div>;
+  if (error || !party) return <div style={{ padding: "2rem", textAlign: "center" }}><p>تعذر تحميل السجل.</p>{onBack ? <Button onPress={onBack}>العودة</Button> : null}</div>;
+  return <RecordPage title={party.displayName} recordCode={party.id} status={party.status === "Active" ? "success" : "neutral"} breadcrumbs={[{ label: "دليل الأطراف", href: "#directory" }, { label: party.displayName }]} headerActions={<><Button variant="secondary" onPress={onBack}>العودة</Button><Button variant="primary" onPress={() => setEditing(true)}>تعديل</Button></>} auditInfo={{ createdAt: party.createdAt, createdBy: "النظام" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+      <FormSection title="الهوية والحالة"><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "1rem" }}><div><small>النوع</small><div>{party.partyType === "Organization" ? "منشأة / شركة" : "فرد"}</div></div><div><small>الاسم القانوني</small><div>{party.legalName || "—"}</div></div><div><small>الحالة</small><div>{party.status}</div></div><div><small>الأدوار</small><div>{party.roles.map(item => item.code).join("، ") || "—"}</div></div></div></FormSection>
+      <FormSection title="المعرفات"><div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>{party.identifiers.length ? party.identifiers.map(item => <div key={item.id}><strong>{item.type}</strong>: <span style={{ fontFamily: "var(--font-mono)" }}>{item.value}</span> <small>{item.verificationStatus}</small></div>) : "لا توجد معرفات مسجلة."}</div></FormSection>
+      <FormSection title="قنوات الاتصال"><div>{party.contactPoints.length ? party.contactPoints.map(item => <div key={item.id}>{item.type}: {item.value}</div>) : "لا توجد قنوات اتصال."}</div></FormSection>
+      <FormSection title="العناوين"><div>{party.addresses.length ? party.addresses.map(item => <div key={item.id}>{item.usage}: {item.line1} — {item.city ?? ""}</div>) : "لا توجد عناوين."}</div></FormSection>
+    </div>
+    <Dialog isOpen={editing} onOpenChange={setEditing} title="تعديل هوية الطرف" description="يحافظ التعديل على رقم الإصدار للتزامن المتفائل." size="large"><PartyForm initialData={toForm(party)} onSubmit={async (data: PartyFormData) => { await update.mutateAsync({ id: party.id, input: { ...data, version: party.version } }); setEditing(false); }} onCancel={() => setEditing(false)} isSubmitting={update.isPending} /></Dialog>
+  </RecordPage>;
 }

@@ -3,6 +3,7 @@ export type {
   PartyType,
   PartyStatus,
   PartyRole,
+  PartyRoleCode,
   CreatePartyInput,
   ContactInfo
 } from "./types.ts";
