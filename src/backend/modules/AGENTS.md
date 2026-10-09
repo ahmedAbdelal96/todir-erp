@@ -146,3 +146,9 @@ A module is complete only when all applicable plan requirements and exit gates p
 ## Z. Senior self-review and reporting
 
 Use the required workflow: **DISCOVER, MODEL, PLAN, IMPLEMENT, TEST, REVIEW, FIX, RE-VERIFY, REPORT**. PLAN maps the approved module-pack sequence into concrete reviewable steps. Before reporting, review boundaries, ownership, integrity, security, tenant isolation, transactions, performance/query plans/indexes, tests, docs, observability, migration safety, temporary/debug artifacts and deviations. Report files changed, verification evidence, relevant security/performance/database considerations, risks and decisions needed.
+
+## AA. Frontend platform alignment and business authority
+
+1. **Backend as Sole Source of Truth:** The backend owns all domain state machines, financial arithmetic (tax liability, rounding, posting balances), inventory valuation, and authorization truth. The frontend is an accessible presentation and workflow tier; it must never be given independent financial or business calculation authority.
+2. **OpenAPI as Authoritative Contract:** Backend endpoints must be documented with complete, accurate OpenAPI specifications. The frontend generates and validates its API client from these contracts.
+3. **No Frontend Business Semantics Invention:** Do not design backend endpoints that force the frontend to reconstruct domain state or invent business rules. Provide rich, server-authoritative previews, exact decimal strings, and explicit multi-axis status values.

@@ -1,0 +1,32 @@
+# Platform Runtime & Data Infrastructure Governance (`src/frontend/src/platform/`)
+
+## Identity and responsibility
+
+The `platform/` directory owns cross-cutting runtime infrastructure, security boundaries, API transport, authentication/session management, authorization/permissions, capability evaluation, context switching, caching architecture, and RFC-7807 problem details error mapping.
+
+Core principle:
+> **`platform/` provides shared runtime capabilities and data infrastructure. It is NOT a business module and must never depend on business modules.**
+
+---
+
+## 1. Absolute filename prohibition
+
+Never create or introduce a new file or directory whose basename contains `todir` in any casing. Use descriptive kebab-case names (e.g. `http-client.ts`, `query-keys.ts`, `runtime-context.ts`).
+
+---
+
+## 2. Architectural rules for `platform/`
+
+1. **Zero Business Module Dependencies:** `platform/` MUST NOT import anything from `src/frontend/src/modules/` (enforced by AST boundary check).
+2. **Authoritative API Transport:**
+   - All network requests go through `httpClient` (`platform/api/http-client.ts`), which automatically attaches CSRF tokens, Correlation IDs (`X-Correlation-Id`), Idempotency keys (`Idempotency-Key`), and ETag concurrency headers (`If-Match`).
+   - OpenAPI generated contracts (`platform-client.ts`) are the single source of truth for platform endpoints. Never edit generated files manually; run `pnpm api:generate`.
+3. **Tenant & Entity Cache Isolation:**
+   - All TanStack Query keys must be generated via `queryKeyFactory` (`platform/api/query-keys.ts`) with `[tenantId, legalEntityId, ...]` prefixes.
+   - Tenant context switching unconditionally executes `queryClient.clear()` to prevent data leakage across security boundaries.
+4. **Permissions & Capabilities:**
+   - Backend authorization remains authoritative. Frontend permission and capability sets (`platform/runtime/permissions.ts`, `platform/runtime/capabilities.ts`) provide UI-level guidance (enabling/disabling buttons, hiding unauthorized links) but never bypass server enforcement.
+5. **Standard Error Infrastructure:**
+   - Standardizes parsing and handling of RFC-7807 Problem Details and machine-readable error codes.
+6. **No UI Component Library:** `platform/` does not export buttons, dialogs, or layout components (these belong to `design-system/`).
+7. **No Local Business Truth:** `platform/` does not calculate invoice taxes, journal balances, or stock valuation.

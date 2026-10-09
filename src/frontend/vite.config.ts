@@ -1,0 +1,27 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+const sourceRoot = fileURLToPath(new URL("./src", import.meta.url));
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      "/api": {
+        target: process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:5080",
+        changeOrigin: true,
+        secure: false
+      }
+    }
+  },
+  resolve: {
+    alias: {
+      "@app": path.resolve(sourceRoot, "app"),
+      "@platform": path.resolve(sourceRoot, "platform"),
+      "@ui": path.resolve(sourceRoot, "design-system"),
+      "@modules": path.resolve(sourceRoot, "modules")
+    }
+  }
+});

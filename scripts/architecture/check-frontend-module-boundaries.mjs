@@ -1,7 +1,7 @@
 import path from "node:path";
 import { validateFrontendArchitecture } from "./frontend-module-boundary.mjs";
 
-const rootDir = path.resolve(process.argv[2] ?? "src/frontend/apps/todir-web/src");
+const rootDir = path.resolve(process.argv[2] ?? "src/frontend/src");
 const result = validateFrontendArchitecture({ rootDir });
 
 if (result.violations.length > 0) {

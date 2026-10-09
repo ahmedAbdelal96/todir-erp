@@ -15,7 +15,7 @@ const FORBIDDEN_COMMERCIAL_PACKAGES = [
 ];
 
 export function validateFrontendArchitecture(options = {}) {
-  const rootDir = path.resolve(options.rootDir ?? "src/frontend/apps/todir-web/src");
+  const rootDir = path.resolve(options.rootDir ?? "src/frontend/src");
   const modulesRoot = path.resolve(options.modulesRoot ?? path.join(rootDir, "modules"));
 
   const violations = [];
@@ -40,7 +40,7 @@ export function validateFrontendArchitecture(options = {}) {
         }
 
         const sourceModule = moduleNameFor(modulesRoot, sourcePath);
-        const isPlatformOrApp = !sourceModule && isPlatformOrAppFile(rootDir, sourcePath);
+        const sourceArea = sourceAreaFor(rootDir, sourcePath);
 
         for (const importSpecifier of sourceFile.imports) {
           const specifierText = importSpecifier.text;
@@ -52,6 +52,20 @@ export function validateFrontendArchitecture(options = {}) {
                 `${relative(rootDir, sourcePath)} imports forbidden commercial/paid package '${specifierText}'. TODIR Core enforces the Free-Only Core Dependency Rule.`
               );
             }
+          }
+
+          // Check 1b: Direct grid engine imports forbidden in business modules
+          if (sourceArea === "modules" && (specifierText.startsWith("ag-grid-community") || specifierText.startsWith("ag-grid-react"))) {
+            violations.push(
+              `${relative(rootDir, sourcePath)} imports '${specifierText}' directly. Business modules must consume the design system DataGrid wrapper (@ui/grid or design-system/grid), not the grid engine directly.`
+            );
+          }
+
+          // Check 1c: Direct unstyled headless primitive imports forbidden in business modules
+          if (sourceArea === "modules" && (specifierText.startsWith("react-aria-components") || specifierText.startsWith("@react-aria/"))) {
+            violations.push(
+              `${relative(rootDir, sourcePath)} imports '${specifierText}' directly. Business modules must consume approved design system primitives (@ui/* or design-system/primitives), not raw React Aria components directly.`
+            );
           }
 
           // Resolve target path for local / aliased modules
@@ -77,11 +91,16 @@ export function validateFrontendArchitecture(options = {}) {
             }
           }
 
-          // Check 3: Platform / App importing module internals
-          if (isPlatformOrApp && targetModule) {
-            if (!isApprovedPublicSurface(targetPath, modulesRoot, targetModule)) {
+          // Check 3: Platform / Design System must not depend on business modules
+          if ((sourceArea === "platform" || sourceArea === "design-system") && targetModule) {
+            const owner = sourceArea === "design-system" ? "Design System" : "Platform";
+            if (isApprovedPublicSurface(targetPath, modulesRoot, targetModule)) {
               violations.push(
-                `${relative(rootDir, sourcePath)} imports internal file ${relative(modulesRoot, targetPath)} from module '${targetModule}'. Platform must not depend on module internals.`
+                `${relative(rootDir, sourcePath)} imports module '${targetModule}' public surface. ${owner} must not depend on business modules.`
+              );
+            } else {
+              violations.push(
+                `${relative(rootDir, sourcePath)} imports internal file ${relative(modulesRoot, targetPath)} from module '${targetModule}'. ${owner} must not depend on module internals.`
               );
             }
           }
@@ -213,9 +232,13 @@ function moduleNameFor(modulesRoot, filePath) {
   return relativePath.split(path.sep)[0];
 }
 
-function isPlatformOrAppFile(rootDir, filePath) {
+function sourceAreaFor(rootDir, filePath) {
   const relativePath = path.relative(rootDir, filePath);
-  return !relativePath.startsWith("..") && !path.isAbsolute(relativePath) && !relativePath.startsWith("modules");
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    return undefined;
+  }
+
+  return relativePath.split(path.sep)[0];
 }
 
 function isApprovedPublicSurface(targetPath, modulesRoot, targetModule) {

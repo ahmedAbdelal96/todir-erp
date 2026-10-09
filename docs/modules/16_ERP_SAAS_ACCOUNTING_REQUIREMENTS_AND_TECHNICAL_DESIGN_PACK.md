@@ -6554,7 +6554,7 @@ Not Day 1.
 Recommended:
 
 ```text
-src/frontend/apps/erp-web/src/modules/accounting/
+src/frontend/src/modules/accounting/
 
 ├── api/
 ├── routes/

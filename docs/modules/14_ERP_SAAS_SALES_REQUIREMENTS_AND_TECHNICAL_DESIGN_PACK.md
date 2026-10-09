@@ -4957,7 +4957,7 @@ Must not create long DB locks due to external APIs.
 Recommended:
 
 ```text
-src/frontend/apps/erp-web/src/modules/sales/
+src/frontend/src/modules/sales/
 
 ├── api/
 ├── routes/

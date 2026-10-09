@@ -58,5 +58,8 @@ The initial engineering baseline in `02_ERP_SAAS_PRODUCTION_READY_TECH_STACK_AND
 - `docs/architecture/02_ERP_SAAS_PRODUCTION_READY_TECH_STACK_AND_PROJECT_STRUCTURE.md`
 - `tests/spikes/primitives/primitive-spike.test.ts` (F06 Primitive Spike Suite)
 - `tests/spikes/grid/grid-spike.test.ts` (F07 Grid Spike Suite)
-- `src/frontend/apps/todir-web/src/platform/grid/grid-contract.ts` (Platform DataGrid Boundary)
+- `src/frontend/src/design-system/grid/grid-contract.ts` (Design System DataGrid Boundary)
 
+## Physical Structure Clarification
+
+TODIR currently has one frontend application rooted at `src/frontend/` with source under `src/frontend/src/`. The logical `app`, `platform`, `design-system`, and `modules` boundaries are enforced by TypeScript aliases and architecture validation; they do not require separate npm packages. Package extraction remains possible when independent deployment, independent versioning, proven cross-application reuse, or a build/tooling need justifies it.

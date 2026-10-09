@@ -82,7 +82,10 @@ jobs:
           TODIR_REPOSITORY_ROOT: ${{ github.workspace }}
 
       - name: Run .NET tests
-        run: dotnet test Todir.sln --no-build
+        # Database and broker integration projects share the isolated CI
+        # services; run solution projects serially so per-test role/bootstrap
+        # setup cannot race across test assemblies.
+        run: dotnet test Todir.sln --no-build -m:1
         env:
           TODIR_P03_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
           TODIR_P04_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
@@ -116,7 +119,7 @@ jobs:
       - name: Regenerate API client and verify clean tree
         run: |
           pnpm api:generate
-          git diff --exit-code -- src/frontend/apps/todir-web/src/api/platform-client.ts
+          git diff --exit-code -- src/frontend/src/platform/api/platform-client.ts
 
       - name: Validate generated API client
         run: pnpm api:drift

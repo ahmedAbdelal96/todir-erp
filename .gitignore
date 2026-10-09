@@ -25,6 +25,9 @@ node_modules/
 # Test, coverage, logs, and generated local workspace output
 artifacts/
 TestResults/
+test-results/
+playwright-report/
+dist-storybook/
 coverage/
 *.coverage
 *.coveragexml

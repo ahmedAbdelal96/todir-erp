@@ -3783,7 +3783,7 @@ No direct DB.
 # 176. Frontend Folder Structure
 
 ```text
-src/frontend/apps/erp-web/src/modules/directory/
+src/frontend/src/modules/directory/
 
 ├── api/
 ├── routes/

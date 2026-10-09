@@ -48,6 +48,18 @@ Current approved packs are `docs/architecture/01_ERP_SAAS_MASTER_MODULE_AND_DEPE
 
 Keep a Modular Monolith and one codebase. Tenant isolation is a security boundary. Preserve the single source of truth and single writer. Modules never directly read or write another module's tables; use approved contracts and keep the dependency DAG acyclic. Immediate invariants use approved synchronous contracts; asynchronous integration happens after commit and uses the approved Outbox/Inbox guarantees. Customer forks and ownership bypasses are forbidden. Posted accounting records and completed stock movements are immutable. AI never accesses the database directly. Infrastructure complexity must earn its place.
 
+### Completed shared foundation rule
+
+The approved Frontend Platform & Design System (`src/frontend/`) is an established, shared platform contract. All future business modules MUST build upon and reuse this shared foundation. A module must not create a parallel design system, form system, grid engine, API client, caching architecture, theme engine, error mapping system, page shell, runtime context, or permission UX. Material modifications to shared frontend architectural decisions require explicit architectural review and an ADR.
+
+### End-to-end module principle
+
+A business module is implemented as one coherent business capability across: Domain, Application, Persistence, Contracts/API, Permissions, Frontend, Tests, and Operations/Documentation. Frontend and backend are complementary tiers of one module contract; backend remains authoritative for domain truth, calculations, and invariants, while the frontend renders accessible, Arabic/RTL-first UX using approved design system primitives and platform query hooks.
+
+### Module-pack authority
+
+Before starting any business module work, the exact approved module pack (`docs/modules/`), dependency packs, Platform Kernel pack, and actual backend/OpenAPI contracts must be read completely. Chat history, reference slices, and speculative mock structures are not authoritative business truth.
+
 Do not silently change source of truth, domain/single-writer ownership, public contracts, dependency direction/DAG, transaction boundary, tenancy/RLS, identity or authorization, database/schema ownership, financial or posting semantics, stock immutability, messaging/Outbox/Inbox, topology, major technology, activation, ID/date-time/API/migration strategy, or fundamental performance design. Stop and seek architectural review/ADR.
 
 ## Placement and hygiene

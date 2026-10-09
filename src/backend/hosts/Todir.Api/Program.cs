@@ -46,6 +46,12 @@ var requestBodyLimit = long.TryParse(builder.Configuration["TODIR_REQUEST_BODY_L
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = requestBodyLimit);
 builder.Services.AddRateLimiter(options =>
 {
+    options.OnRejected = (context, _) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.Headers.RetryAfter = "60";
+        return ValueTask.CompletedTask;
+    };
     options.AddPolicy("api", context => RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirst("membership_id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));

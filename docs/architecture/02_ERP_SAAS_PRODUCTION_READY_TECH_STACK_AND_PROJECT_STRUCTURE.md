@@ -1585,65 +1585,42 @@ Public API breaking changes require version strategy.
 
 ```text
 src/frontend/
-
-├── apps/
-│   └── erp-web/
-│       ├── src/
-│       │   ├── app/
-│       │   ├── platform/
-│       │   ├── modules/
-│       │   ├── shared/
-│       │   ├── assets/
-│       │   └── main.tsx
-│       ├── index.html
-│       └── vite.config.ts
-│
-└── packages/
-    ├── ui/
-    ├── api-client/
-    ├── auth/
-    ├── i18n/
-    ├── eslint-config/
-    └── tsconfig/
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+├── index.html
+└── src/
+    ├── main.tsx
+    ├── app/
+    ├── platform/
+    ├── design-system/
+    └── modules/
 ```
+
+The current repository has one frontend application. Logical boundaries are enforced within `src/frontend/src/`; separate npm packages are introduced only when independent deployment/versioning, proven cross-application reuse, or a build/tooling need justifies extraction.
 
 ---
 
 # 49. Frontend Application Structure
 
 ```text
-erp-web/src/
+src/frontend/src/
 
 ├── app/
-│   ├── router/
-│   ├── providers/
-│   ├── layout/
-│   └── bootstrap/
+│   ├── bootstrap/
+│   └── shell/
 │
 ├── platform/
-│   ├── auth/
-│   ├── tenant/
-│   ├── permissions/
-│   ├── localization/
-│   ├── notifications/
-│   └── error-handling/
+│   ├── api/
+│   └── runtime/
+
+├── design-system/
+│   ├── tokens/
+│   ├── theme/
+│   └── grid/
 │
-├── modules/
-│   ├── directory/
-│   ├── catalog/
-│   ├── ledger/
-│   ├── invoicing/
-│   ├── inventory/
-│   ├── sales/
-│   └── ...
-│
-└── shared/
-    ├── components/
-    ├── hooks/
-    ├── formatting/
-    ├── money/
-    ├── dates/
-    └── types/
+└── modules/
+    └── AGENTS.md
 ```
 
 ---

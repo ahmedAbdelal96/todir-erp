@@ -270,36 +270,26 @@ Future public marketing/SEO portals may decide separately.
 
 ```text
 src/frontend/
-├── apps/
-│   └── todir-web/
-│       ├── src/
-│       │   ├── app/
-│       │   ├── platform/
-│       │   ├── modules/
-│       │   ├── assets/
-│       │   └── main.tsx
-│       ├── index.html
-│       └── vite.config.ts
-│
-└── packages/
-    ├── design-tokens/
-    ├── theme/
-    ├── ui/
-    ├── api-client/
-    ├── auth/
-    ├── i18n/
-    ├── eslint-config/
-    └── tsconfig/
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+├── index.html
+└── src/
+    ├── main.tsx
+    ├── app/
+    ├── platform/
+    ├── design-system/
+    └── modules/
 ```
 
-Do NOT create empty speculative packages. Extract a package only when it earns the boundary.
+TODIR currently has one frontend application. Logical ownership boundaries are enforced inside `src/frontend/src/` and do not require separate npm packages. Extract a package only when independent deployment, independent versioning, proven cross-application reuse, or a build/tooling need earns the boundary.
 
 ---
 
 # 12. Application Structure
 
 ```text
-apps/todir-web/src/
+src/frontend/src/
 ├── app/
 │   ├── bootstrap/
 │   ├── providers/
@@ -316,6 +306,10 @@ apps/todir-web/src/
 │   ├── notifications/
 │   ├── navigation/
 │   └── preferences/
+├── design-system/
+│   ├── tokens/
+│   ├── theme/
+│   └── grid/
 └── modules/
     ├── directory/
     ├── catalog/
@@ -4128,46 +4122,26 @@ UI theme cannot control invoice numbering, QR, tax fields, compliance data or ma
 
 ```text
 src/frontend/
-├── apps/
-│   └── todir-web/
-│       └── src/
-│           ├── app/
-│           │   ├── bootstrap/
-│           │   ├── providers/
-│           │   ├── router/
-│           │   └── shell/
-│           ├── platform/
-│           │   ├── runtime/
-│           │   ├── capabilities/
-│           │   ├── permissions/
-│           │   ├── entity-context/
-│           │   ├── entity-ref/
-│           │   ├── api/
-│           │   ├── errors/
-│           │   ├── navigation/
-│           │   ├── notifications/
-│           │   └── preferences/
-│           └── modules/
-│               ├── directory/
-│               ├── catalog/
-│               ├── invoicing/
-│               └── ...
-└── packages/
-    ├── design-tokens/
-    ├── theme/
-    ├── ui/
-    │   ├── primitives/
-    │   ├── fields/
-    │   ├── forms/
-    │   ├── grid/
-    │   ├── patterns/
-    │   └── pages/
-    ├── api-client/
-    ├── auth/
-    ├── i18n/
-    ├── eslint-config/
-    └── tsconfig/
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+├── index.html
+└── src/
+    ├── main.tsx
+    ├── app/
+    │   ├── bootstrap/
+    │   └── shell/
+    ├── platform/
+    │   ├── api/
+    │   └── runtime/
+    ├── design-system/
+    │   ├── tokens/
+    │   ├── theme/
+    │   └── grid/
+    └── modules/
 ```
+
+The four major source areas are logical boundaries in one application. They are not separate npm packages today; future extraction remains possible when real reuse or deployment requirements appear.
 
 Do not create a package solely because diagram contains it.
 

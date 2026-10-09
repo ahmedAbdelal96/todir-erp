@@ -1,0 +1,6 @@
+export * from "./list-page.tsx";
+export * from "./record-page.tsx";
+export * from "./document-page.tsx";
+export * from "./settings-page.tsx";
+export * from "./wizard-page.tsx";
+export * from "./dashboard-page.tsx";
