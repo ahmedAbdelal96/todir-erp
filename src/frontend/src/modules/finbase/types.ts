@@ -1,0 +1,3 @@
+export type Currency = { readonly code: string; readonly numericCode: number; readonly nameAr: string; readonly nameEn: string; readonly minorUnit: number; readonly status: string; readonly datasetVersion: string };
+export type PaymentTermRule = { readonly sequence: number; readonly allocationType: "Percentage" | "Fixed" | "Balance"; readonly percentage?: number; readonly fixedAmount?: string; readonly dueDateBasis: "InvoiceDate" | "DeliveryDate" | "MonthEnd"; readonly days: number; readonly monthOffset: number };
+export type PaymentScheduleLine = { readonly sequence: number; readonly amount: string; readonly dueDate: string; readonly allocation: PaymentTermRule["allocationType"] };

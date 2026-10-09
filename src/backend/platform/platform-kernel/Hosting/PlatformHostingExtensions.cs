@@ -44,6 +44,7 @@ public static class PlatformHostingExtensions
         services.AddSingleton<IIdentityStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlIdentityStore(dataSource) : new NullIdentityStore());
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IIdentityMembershipAdminStore, NpgsqlIdentityMembershipAdminStore>();
         services.AddSingleton<IPlatformAdminSurfaceStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlPlatformAdminSurfaceStore(dataSource) : new NullPlatformAdminSurfaceStore());
+        services.AddSingleton<ILegalEntityFinancialReadStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlLegalEntityFinancialReadStore(dataSource) : new NullLegalEntityFinancialReadStore());
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options =>
         {
             options.Cookie.Name = "todir_session";

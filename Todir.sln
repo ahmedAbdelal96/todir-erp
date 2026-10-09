@@ -63,6 +63,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "directory-tests", "tests\mo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "catalog-tests", "tests\modules\catalog-tests\catalog-tests.csproj", "{D5D8C2E1-BF61-43B7-97E9-2D2DC6B72749}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "finbase", "src\backend\modules\FinBase\finbase.csproj", "{B7A55F85-3A93-42CB-9A8B-4A5DEB86B7D1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "finbase-tests", "tests\modules\finbase-tests\finbase-tests.csproj", "{CE1D9B67-FB5A-4E9F-8D70-5F1B74D6B4D2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -217,6 +221,14 @@ Global
 		{D5D8C2E1-BF61-43B7-97E9-2D2DC6B72749}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D5D8C2E1-BF61-43B7-97E9-2D2DC6B72749}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D5D8C2E1-BF61-43B7-97E9-2D2DC6B72749}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B7A55F85-3A93-42CB-9A8B-4A5DEB86B7D1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B7A55F85-3A93-42CB-9A8B-4A5DEB86B7D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B7A55F85-3A93-42CB-9A8B-4A5DEB86B7D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B7A55F85-3A93-42CB-9A8B-4A5DEB86B7D1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE1D9B67-FB5A-4E9F-8D70-5F1B74D6B4D2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE1D9B67-FB5A-4E9F-8D70-5F1B74D6B4D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE1D9B67-FB5A-4E9F-8D70-5F1B74D6B4D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE1D9B67-FB5A-4E9F-8D70-5F1B74D6B4D2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -250,5 +262,7 @@ Global
 		{D7DC9B74-6BC4-2470-2038-1E57C2DCB73B} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{A30CA92D-BD97-476F-9646-4289DC8EE58F} = {D7DC9B74-6BC4-2470-2038-1E57C2DCB73B}
 		{D5D8C2E1-BF61-43B7-97E9-2D2DC6B72749} = {D7DC9B74-6BC4-2470-2038-1E57C2DCB73B}
+		{B7A55F85-3A93-42CB-9A8B-4A5DEB86B7D1} = {D7DC9B74-6BC4-2470-2038-1E57C2DCB73B}
+		{CE1D9B67-FB5A-4E9F-8D70-5F1B74D6B4D2} = {D7DC9B74-6BC4-2470-2038-1E57C2DCB73B}
 	EndGlobalSection
 EndGlobal

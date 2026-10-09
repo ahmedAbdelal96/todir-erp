@@ -14,6 +14,7 @@ const InvoiceDocumentPage = lazy(() => import("../../modules/invoicing/pages/inv
 const PaymentEntryDialog = lazy(() => import("../../modules/payments/features/payment-entry-dialog.tsx").then(m => ({ default: m.PaymentEntryDialog })));
 const ManualJournalPage = lazy(() => import("../../modules/accounting/pages/manual-journal-page.tsx").then(m => ({ default: m.ManualJournalPage })));
 const ImportWizardPage = lazy(() => import("../../modules/migration/pages/import-wizard-page.tsx").then(m => ({ default: m.ImportWizardPage })));
+const FinBasePage = lazy(() => import("../../modules/finbase/pages/finbase-page.tsx").then(m => ({ default: m.FinBasePage })));
 
 type Language = "ar" | "en";
 type Screen = "loading" | "signed-out" | "authenticated" | "forbidden" | "error";
@@ -33,6 +34,7 @@ const fallbackModules: ModuleRegistration[] = [
   { id: "payments", label: "المدفوعات", permission: "payments.transactions.read" },
   { id: "accounting", label: "المحاسبة العامة", permission: "accounting.journals.read" },
   { id: "migration", label: "معالج الاستيراد", permission: "platform.migration.execute" },
+  { id: "finbase", label: "الأساس المالي", permission: "finbase.currency.read" },
   { id: "preview", label: "معاينة النظام" },
   { id: "settings", label: "الإعدادات", permission: "platform.settings.read" },
 ];
@@ -45,6 +47,7 @@ const moduleLabels: Record<string, { ar: string; en: string; permission?: string
   payments: { ar: "المدفوعات", en: "Payments", permission: "payments.transactions.read" },
   accounting: { ar: "المحاسبة العامة", en: "Accounting", permission: "accounting.journals.read" },
   migration: { ar: "معالج الاستيراد", en: "Import Wizard", permission: "platform.migration.execute" },
+  finbase: { ar: "الأساس المالي", en: "Financial foundation", permission: "finbase.currency.read" },
   preview: { ar: "معاينة النظام", en: "System Preview" },
   tenancy: { ar: "المؤسسات", en: "Tenants", permission: "platform.tenancy.read" },
   iam: { ar: "الهوية والعضويات", en: "Identity & memberships", permission: "platform.identity.read" },
@@ -254,6 +257,8 @@ export function AppShell() {
               <ManualJournalPage onBack={() => setCurrentView("home")} />
             ) : currentView === "migration" ? (
               <ImportWizardPage onFinish={() => setCurrentView("directory")} />
+            ) : currentView === "finbase" ? (
+              <FinBasePage />
             ) : currentView === "preview" ? (
               <ShowcasePreview density={density} />
             ) : (
