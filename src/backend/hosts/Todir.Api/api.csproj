@@ -9,5 +9,6 @@
     <ProjectReference Include="../../platform/platform-kernel/platform-kernel.csproj" />
     <ProjectReference Include="../../modules/Sample/sample.csproj" />
     <ProjectReference Include="../../modules/Directory/directory.csproj" />
+    <ProjectReference Include="../../modules/Catalog/catalog.csproj" />
   </ItemGroup>
 </Project>

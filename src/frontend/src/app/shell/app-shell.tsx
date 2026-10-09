@@ -8,6 +8,8 @@ import { Dialog } from "../../design-system/primitives/dialog.tsx";
 
 const PartyListPage = lazy(() => import("../../modules/directory/pages/party-list-page.tsx").then(m => ({ default: m.PartyListPage })));
 const PartyRecordPage = lazy(() => import("../../modules/directory/pages/party-record-page.tsx").then(m => ({ default: m.PartyRecordPage })));
+const ProductListPage = lazy(() => import("../../modules/catalog/pages/product-list-page.tsx").then(m => ({ default: m.ProductListPage })));
+const ProductRecordPage = lazy(() => import("../../modules/catalog/pages/product-record-page.tsx").then(m => ({ default: m.ProductRecordPage })));
 const InvoiceDocumentPage = lazy(() => import("../../modules/invoicing/pages/invoice-document-page.tsx").then(m => ({ default: m.InvoiceDocumentPage })));
 const PaymentEntryDialog = lazy(() => import("../../modules/payments/features/payment-entry-dialog.tsx").then(m => ({ default: m.PaymentEntryDialog })));
 const ManualJournalPage = lazy(() => import("../../modules/accounting/pages/manual-journal-page.tsx").then(m => ({ default: m.ManualJournalPage })));
@@ -26,6 +28,7 @@ type Session = {
 const fallbackModules: ModuleRegistration[] = [
   { id: "home", label: "الرئيسية" },
   { id: "directory", label: "دليل الأطراف", permission: "directory.party.read" },
+  { id: "catalog", label: "الكتالوج", permission: "catalog.product.read" },
   { id: "invoicing", label: "فواتير المبيعات", permission: "invoicing.invoices.read" },
   { id: "payments", label: "المدفوعات", permission: "payments.transactions.read" },
   { id: "accounting", label: "المحاسبة العامة", permission: "accounting.journals.read" },
@@ -37,6 +40,7 @@ const fallbackModules: ModuleRegistration[] = [
 const moduleLabels: Record<string, { ar: string; en: string; permission?: string }> = {
   home: { ar: "الرئيسية", en: "Home" },
   directory: { ar: "دليل الأطراف", en: "Directory", permission: "directory.party.read" },
+  catalog: { ar: "الكتالوج", en: "Catalog", permission: "catalog.product.read" },
   invoicing: { ar: "فواتير المبيعات", en: "Invoices", permission: "invoicing.invoices.read" },
   payments: { ar: "المدفوعات", en: "Payments", permission: "payments.transactions.read" },
   accounting: { ar: "المحاسبة العامة", en: "Accounting", permission: "accounting.journals.read" },
@@ -63,6 +67,7 @@ export function AppShell() {
   const [error, setError] = useState<string | undefined>();
   const [currentView, setCurrentView] = useState<string>("home");
   const [selectedPartyId, setSelectedPartyId] = useState<string>("party-001");
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [theme, setTheme] = useState<string>("default");
   const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
 
@@ -224,6 +229,10 @@ export function AppShell() {
                   setCurrentView("party-record");
                 }}
               />
+            ) : currentView === "catalog" ? (
+              <ProductListPage onSelectProduct={(product) => { setSelectedProductId(product.id); setCurrentView("catalog-record"); }} />
+            ) : currentView === "catalog-record" ? (
+              <ProductRecordPage productId={selectedProductId} onBack={() => setCurrentView("catalog")} />
             ) : currentView === "party-record" ? (
               <PartyRecordPage
                 partyId={selectedPartyId}

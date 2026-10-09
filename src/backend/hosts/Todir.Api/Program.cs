@@ -2,6 +2,7 @@ using Todir.BuildingBlocks.Observability;
 using Todir.Platform.Hosting;
 using Todir.Modules.Sample;
 using Todir.Modules.Directory;
+using Todir.Modules.Catalog;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -15,6 +16,7 @@ builder.Services.AddTodirObservability(builder.Environment.ApplicationName, buil
 builder.Services.AddTodirPlatform(builder.Configuration);
 builder.Services.AddSampleModule();
 builder.Services.AddDirectoryModule();
+builder.Services.AddCatalogModule();
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 var configuredOrigins = (builder.Configuration["TODIR_CORS_ORIGINS"] ?? string.Empty)
@@ -117,6 +119,7 @@ if (builder.Configuration.GetValue<bool>("TODIR_METRICS_ENABLED")) app.MapPromet
 app.MapTodirPlatform();
 app.MapSampleModule();
 app.MapDirectoryModule();
+app.MapCatalogModule();
 app.Run();
 
 public partial class Program;
