@@ -24,7 +24,7 @@ export function EntityRefLink({
   if (href || onClick) {
     return (
       <a
-        href={href ?? "#"}
+        href={href ?? "/"}
         onClick={(e) => {
           if (onClick) {
             e.preventDefault();

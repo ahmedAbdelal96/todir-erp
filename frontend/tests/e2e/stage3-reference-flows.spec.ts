@@ -166,7 +166,7 @@ test.describe('Stage 3 Reference Foundation Validation Flows', () => {
   });
 
   test('F18: Invoice Reference Flow verifies multi-axis status, locking and correction dialog', async ({ page }) => {
-    await page.goto('/#invoicing');
+    await page.goto('/invoicing');
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByRole('heading', { name: 'INV-2026-0091' })).toBeVisible();
@@ -187,7 +187,7 @@ test.describe('Stage 3 Reference Foundation Validation Flows', () => {
   });
 
   test('F19: Payment Reference Flow verifies confirmation, idempotency and dispatch', async ({ page }) => {
-    await page.goto('/#payments');
+    await page.goto('/payments');
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByRole('heading', { name: 'المدفوعات والمقبوضات' })).toBeVisible();
@@ -216,7 +216,7 @@ test.describe('Stage 3 Reference Foundation Validation Flows', () => {
   });
 
   test('F20: Accounting Manual Journal verifies heavy grid and balance indicators', async ({ page }) => {
-    await page.goto('/#accounting');
+    await page.goto('/accounting');
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByRole('heading', { name: 'JV-2026-0045' })).toBeVisible();
@@ -226,7 +226,7 @@ test.describe('Stage 3 Reference Foundation Validation Flows', () => {
   });
 
   test('F21: Import Wizard verifies multi-step operational workflow and reconciliation', async ({ page }) => {
-    await page.goto('/#migration');
+    await page.goto('/migration');
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByRole('heading', { name: 'معالج استيراد بيانات الأطراف التجارية' })).toBeVisible();

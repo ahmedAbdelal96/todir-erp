@@ -20,7 +20,7 @@ test.describe('Directory / Party Vertical Slice Browser Flow', () => {
     });
   });
   test('should render Party list, filter records, and open party detail view', async ({ page }) => {
-    await page.goto('/#directory'); await page.waitForLoadState('networkidle');
+    await page.goto('/directory'); await page.waitForLoadState('networkidle');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl'); await expect(page.getByRole('heading', { name: 'دليل الأطراف' })).toBeVisible();
     const partyButton = page.getByRole('button', { name: 'شركة الأفق للتجارة والمقاولات' }); await expect(partyButton).toBeVisible(); await expect(page.getByText('محمد عبد الله الشمري')).toBeVisible();
     await page.getByRole('button', { name: 'إضافة طرف' }).click(); await expect(page.getByRole('heading', { name: 'إضافة طرف جديد' })).toBeVisible(); await expect(page.getByText('الاسم التجاري / المعروض')).toBeVisible();

@@ -193,7 +193,7 @@ test.describe('Deterministic Visual Regression', () => {
   });
 
   test('visual regression: Directory Party List Page', async ({ page }) => {
-    await page.goto('/#directory');
+    await page.goto('/directory');
     await page.waitForLoadState('networkidle');
 
     await expect(page).toHaveScreenshot('party-list-rtl.png', {
@@ -203,7 +203,7 @@ test.describe('Deterministic Visual Regression', () => {
   });
 
   test('visual regression: Design System Showcase (MoneyField & DataGrid)', async ({ page }) => {
-    await page.goto('/#preview');
+    await page.goto('/preview');
     await page.waitForLoadState('networkidle');
 
     await expect(page).toHaveScreenshot('design-system-preview.png', {
@@ -213,7 +213,7 @@ test.describe('Deterministic Visual Regression', () => {
   });
 
   test('visual regression: Alternate Theme & Compact Density', async ({ page }) => {
-    await page.goto('/#preview');
+    await page.goto('/preview');
     await page.waitForLoadState('networkidle');
 
     // Toggle theme and density
@@ -234,7 +234,7 @@ test.describe('Deterministic Visual Regression', () => {
   });
 
   test('visual regression: Invoice Document Page', async ({ page }) => {
-    await page.goto('/#invoicing');
+    await page.goto('/invoicing');
     await page.waitForLoadState('networkidle');
 
     await expect(page).toHaveScreenshot('invoice-document-rtl.png', {
@@ -244,7 +244,7 @@ test.describe('Deterministic Visual Regression', () => {
   });
 
   test('visual regression: Manual Journal Accounting Grid', async ({ page }) => {
-    await page.goto('/#accounting');
+    await page.goto('/accounting');
     await page.waitForLoadState('networkidle');
 
     await expect(page).toHaveScreenshot('manual-journal-rtl.png', {
@@ -254,7 +254,7 @@ test.describe('Deterministic Visual Regression', () => {
   });
 
   test('visual regression: Import Wizard Workflow', async ({ page }) => {
-    await page.goto('/#migration');
+    await page.goto('/migration');
     await page.waitForLoadState('networkidle');
 
     await expect(page).toHaveScreenshot('import-wizard-rtl.png', {

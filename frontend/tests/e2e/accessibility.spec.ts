@@ -80,7 +80,7 @@ test.describe('Automated Accessibility Gate (A11y)', () => {
   });
 
   test('Directory / Party List Page should pass a11y scan', async ({ page }) => {
-    await page.goto('/#directory');
+    await page.goto('/directory');
     await page.waitForLoadState('networkidle');
 
     const accessibilityScanResults = await new AxeBuilder({ page })
@@ -92,7 +92,7 @@ test.describe('Automated Accessibility Gate (A11y)', () => {
   });
 
   test('Design System Showcase (MoneyField, DataGrid, ComboBox, Dialog) should pass a11y scan', async ({ page }) => {
-    await page.goto('/#preview');
+    await page.goto('/preview');
     await page.waitForLoadState('networkidle');
 
     const accessibilityScanResults = await new AxeBuilder({ page })
@@ -104,7 +104,7 @@ test.describe('Automated Accessibility Gate (A11y)', () => {
   });
 
   test('Invoice Document Page should pass a11y scan', async ({ page }) => {
-    await page.goto('/#invoicing');
+    await page.goto('/invoicing');
     await page.waitForLoadState('networkidle');
 
     const accessibilityScanResults = await new AxeBuilder({ page })
@@ -116,7 +116,7 @@ test.describe('Automated Accessibility Gate (A11y)', () => {
   });
 
   test('Manual Journal Page should pass a11y scan', async ({ page }) => {
-    await page.goto('/#accounting');
+    await page.goto('/accounting');
     await page.waitForLoadState('networkidle');
 
     const accessibilityScanResults = await new AxeBuilder({ page })
@@ -128,7 +128,7 @@ test.describe('Automated Accessibility Gate (A11y)', () => {
   });
 
   test('Import Wizard Page should pass a11y scan', async ({ page }) => {
-    await page.goto('/#migration');
+    await page.goto('/migration');
     await page.waitForLoadState('networkidle');
 
     const accessibilityScanResults = await new AxeBuilder({ page })

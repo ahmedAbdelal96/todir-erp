@@ -10,7 +10,7 @@ test.describe('FinBase financial foundation flow', () => {
   });
 
   test('renders the Arabic financial foundation and exact schedule preview', async ({ page }) => {
-    await page.goto('/#finbase');
+    await page.goto('/finbase');
     await expect(page.getByRole('heading', { name: 'الأساس المالي' })).toBeVisible();
     await expect(page.getByText('EGP · جنيه مصري')).toBeVisible();
     await expect(page.getByRole('button', { name: 'حساب 33.33% ثم الرصيد' })).toBeVisible();

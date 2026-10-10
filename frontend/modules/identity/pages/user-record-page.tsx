@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { RecordPage } from "../../../components/pages/record-page.tsx";
-import { FormSection } from "../../../components/forms/form-section.tsx";
+import { Surface } from "../../../components/pages/surface.tsx";
+import { PropertyGrid, PropertyItem, StatCard } from "../../../components/pages/property-grid.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Spinner } from "../../../components/primitives/spinner.tsx";
+import { UserIcon, ShieldIcon, KeyIcon, MailIcon, CheckCircleIcon } from "../../../components/primitives/icons.tsx";
 import { useUserRecord, type UseIdentityContext } from "../hooks/identity-queries.ts";
 import { AdminPasswordResetDialog } from "../features/admin-password-reset-dialog.tsx";
 import { DeactivateUserDialog } from "../features/deactivate-user-dialog.tsx";
@@ -29,7 +31,7 @@ export function UserRecordPage({
 
   if (isLoading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", padding: "4rem" }}>
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "360px" }}>
         <Spinner size="large" aria-label="جارٍ تحميل بيانات المستخدم..." />
       </div>
     );
@@ -37,8 +39,8 @@ export function UserRecordPage({
 
   if (error || !user) {
     return (
-      <div style={{ padding: "2rem", textAlign: "center" }}>
-        <p style={{ color: "var(--color-status-danger, #ef4444)", fontWeight: 600 }}>
+      <div style={{ padding: "3rem", textAlign: "center" }}>
+        <p style={{ color: "var(--color-status-danger, #ef4444)", fontWeight: 600, marginBottom: "1rem" }}>
           تعذر العثور على بيانات المستخدم المطلوب.
         </p>
         <Button variant="secondary" onPress={onBack}>
@@ -50,17 +52,44 @@ export function UserRecordPage({
 
   const isActive = user.status === "Active";
 
+  const kpiCards = (
+    <>
+      <StatCard
+        title="حالة الحساب"
+        value={isActive ? "نشط ومفعّل" : "معطّل"}
+        intent={isActive ? "success" : "neutral"}
+        icon={<CheckCircleIcon size={20} />}
+        subtitle={isActive ? "يمتلك صلاحية الدخول للنظام" : "تم إيقاف صلاحية الدخول مؤقتاً"}
+      />
+      <StatCard
+        title="حالة كلمة المرور"
+        value={user.mustChangePassword ? "مطلوب التغيير" : "محدّثة وآمنة"}
+        intent={user.mustChangePassword ? "warning" : "success"}
+        icon={<KeyIcon size={20} />}
+        subtitle={user.mustChangePassword ? "يلزم التغيير عند أول تسجيل دخول" : "تم تعيينها والتحقق منها بنجاح"}
+      />
+      <StatCard
+        title="النطاق / بادئة الدخول"
+        value={user.loginPrefix ?? "الافتراضي"}
+        intent="info"
+        icon={<ShieldIcon size={20} />}
+        subtitle="نطاق تسجيل الدخول المحدد للمنشأة"
+      />
+    </>
+  );
+
   return (
     <RecordPage
       title={user.name}
-      recordCode={user.loginPrefix}
+      recordCode={user.loginPrefix ? `@${user.loginPrefix}` : undefined}
       status={isActive ? "success" : "neutral"}
+      kpiCards={kpiCards}
       breadcrumbs={[
-        { label: "المستخدمون", onClick: onBack },
+        { label: "إدارة الهوية والمستخدمين", onClick: onBack },
         { label: user.name }
       ]}
       headerActions={
-        <div style={{ display: "flex", gap: "0.75rem" }}>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <Button variant="secondary" onPress={() => setResetTargetUser(user)}>
             إعادة تعيين كلمة المرور
           </Button>
@@ -69,8 +98,8 @@ export function UserRecordPage({
               تعطيل المستخدم
             </Button>
           ) : (
-            <Button variant="secondary" onPress={() => setReactivateTargetUser(user)}>
-              إعادة تفعيل المستخدم
+            <Button variant="primary" onPress={() => setReactivateTargetUser(user)}>
+              إعادة تفعيل الحساب
             </Button>
           )}
           <Button variant="secondary" onPress={onBack}>
@@ -78,68 +107,88 @@ export function UserRecordPage({
           </Button>
         </div>
       }
+      auditInfo={{
+        createdAt: user.createdAt
+      }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        <FormSection
-          title="معلومات الحساب الأساسية"
-          description="بيانات الهوية والبريد المستخدم لتسجيل الدخول إلى النظام"
+        {/* Basic Identity Information */}
+        <Surface
+          title="بيانات الحساب والهوية"
+          description="المعلومات الأساسية وبيانات الاعتماد المستخدمة لتسجيل الدخول"
         >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-              gap: "1.25rem",
-              padding: "1rem 0"
-            }}
-          >
-            <div>
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>الاسم:</span>
-              <div style={{ fontWeight: 600, fontSize: "1rem", color: "var(--color-content-primary, #0f172a)", marginTop: "0.25rem" }}>
-                {user.name}
-              </div>
-            </div>
-
-            <div>
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>البريد المستخدم لتسجيل الدخول:</span>
-              <div style={{ fontWeight: 600, fontSize: "1rem", color: "var(--color-content-primary, #0f172a)", marginTop: "0.25rem" }}>
-                <bdi dir="ltr">{user.email}</bdi>
-              </div>
-            </div>
-
-            <div>
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>حالة الحساب:</span>
-              <div style={{ marginTop: "0.25rem" }}>
+          <PropertyGrid columns={3}>
+            <PropertyItem
+              label="الاسم الكامل"
+              value={user.name}
+              icon={<UserIcon size={16} />}
+            />
+            <PropertyItem
+              label="البريد الإلكتروني الأساسي"
+              value={<bdi dir="ltr">{user.email}</bdi>}
+              isCopyable
+              rawCopyValue={user.email}
+              icon={<MailIcon size={16} />}
+            />
+            <PropertyItem
+              label="بادئة الدخول (Login Prefix)"
+              value={user.loginPrefix || "—"}
+            />
+            <PropertyItem
+              label="حالة الحساب"
+              value={
                 <StatusBadge
                   intent={isActive ? "success" : "neutral"}
-                  label={isActive ? "نشط" : "معطّل"}
+                  label={isActive ? "نشط ومفعّل" : "معطّل"}
                   size="small"
                 />
-              </div>
-            </div>
-
-            <div>
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>حالة كلمة المرور:</span>
-              <div style={{ marginTop: "0.25rem", fontWeight: 500, fontSize: "0.875rem" }}>
-                {user.mustChangePassword ? (
-                  <span style={{ color: "var(--color-status-warning, #f59e0b)", fontWeight: 600 }}>
-                    مطلوب تغيير كلمة المرور عند تسجيل الدخول القادم
+              }
+            />
+            <PropertyItem
+              label="إلزامية تغيير كلمة المرور"
+              value={
+                user.mustChangePassword ? (
+                  <span style={{ color: "var(--color-status-warning, #d97706)", fontWeight: 600 }}>
+                    مطلوب عند الدخول القادم
                   </span>
                 ) : (
-                  <span style={{ color: "var(--color-status-success, #15803d)", fontWeight: 600 }}>
-                    كلمة المرور مفعّلة ومحدثة
+                  <span style={{ color: "var(--color-status-success, #16a34a)", fontWeight: 600 }}>
+                    غير مطلوب
                   </span>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
+            <PropertyItem
+              label="تاريخ الإنشاء في النظام"
+              value={
+                user.createdAt
+                  ? new Date(user.createdAt).toLocaleDateString("ar-EG", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric"
+                    })
+                  : "—"
+              }
+            />
+          </PropertyGrid>
+        </Surface>
 
-            <div>
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>تاريخ إنشاء الحساب:</span>
-              <div style={{ fontWeight: 500, fontSize: "0.875rem", color: "var(--color-content-secondary, #334155)", marginTop: "0.25rem" }}>
-                {user.createdAt ? new Date(user.createdAt).toLocaleDateString("ar-EG") : "—"}
-              </div>
-            </div>
-          </div>
-        </FormSection>
+        {/* Security & Access Settings */}
+        <Surface
+          title="الأمان وسياسة الوصول"
+          description="إعدادات الحماية وصلاحيات الحساب وسجلات الدخول"
+        >
+          <PropertyGrid columns={2}>
+            <PropertyItem
+              label="سياسة التحقق والتوثيق"
+              value="المصادقة القياسية بكلمة المرور المشفرة"
+            />
+            <PropertyItem
+              label="مستوى الجلسة والنشاط"
+              value={isActive ? "متاح للاتصال عبر بوابة الويب والتطبيقات" : "محظور من الاتصال مؤقتاً"}
+            />
+          </PropertyGrid>
+        </Surface>
       </div>
 
       <AdminPasswordResetDialog

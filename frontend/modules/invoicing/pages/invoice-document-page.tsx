@@ -86,8 +86,8 @@ export function InvoiceDocumentPage({
       documentNumber={invoice.invoiceNumber}
       statuses={statusGroup}
       breadcrumbs={[
-        { label: "المبيعات", href: "#sales" },
-        { label: "فواتير المبيعات", href: "#invoices", onClick: onBack },
+        { label: "المبيعات", href: "/invoicing" },
+        { label: "فواتير المبيعات", href: "/invoicing", onClick: onBack },
         { label: invoice.invoiceNumber }
       ]}
       headerActions={

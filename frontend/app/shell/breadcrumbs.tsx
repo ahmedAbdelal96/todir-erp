@@ -1,5 +1,6 @@
 import React, { type ReactNode } from "react";
 import clsx from "clsx";
+import { Link, useInRouterContext } from "react-router-dom";
 
 export interface BreadcrumbItem {
   readonly label: ReactNode;
@@ -13,6 +14,12 @@ export interface BreadcrumbsProps {
 }
 
 export function Breadcrumbs({ items, className }: BreadcrumbsProps): React.JSX.Element {
+  const inRouter = useInRouterContext();
+  const normalizeHref = (href: string | undefined): string => {
+    if (!href) return "/";
+    return href.startsWith("#") ? `/${href.slice(1)}` : href;
+  };
+
   return (
     <nav aria-label="Breadcrumbs" className={clsx("ui-breadcrumbs", className)}>
       <ol
@@ -44,21 +51,33 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps): React.JSX.E
                   {item.label}
                 </span>
               ) : (
-                <a
-                  href={item.href ?? "#"}
-                  onClick={(e) => {
-                    if (item.onClick) {
-                      e.preventDefault();
-                      item.onClick();
-                    }
-                  }}
-                  style={{
-                    color: "var(--color-content-secondary)",
-                    textDecoration: "none"
-                  }}
-                >
-                  {item.label}
-                </a>
+                inRouter ? (
+                  <Link
+                    to={normalizeHref(item.href)}
+                    onClick={(e) => {
+                      if (item.onClick) {
+                        e.preventDefault();
+                        item.onClick();
+                      }
+                    }}
+                    style={{ color: "var(--color-content-secondary)", textDecoration: "none" }}
+                  >
+                    {item.label}
+                  </Link>
+                ) : (
+                  <a
+                    href={normalizeHref(item.href)}
+                    onClick={(e) => {
+                      if (item.onClick) {
+                        e.preventDefault();
+                        item.onClick();
+                      }
+                    }}
+                    style={{ color: "var(--color-content-secondary)", textDecoration: "none" }}
+                  >
+                    {item.label}
+                  </a>
+                )
               )}
             </li>
           );

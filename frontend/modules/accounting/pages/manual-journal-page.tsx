@@ -137,8 +137,8 @@ export function ManualJournalPage({
       documentNumber={initialJournal.entryNumber}
       statuses={statuses}
       breadcrumbs={[
-        { label: "المحاسبة العامة", href: "#accounting" },
-        { label: "قيود اليومية", href: "#journals", onClick: onBack },
+        { label: "المحاسبة العامة", href: "/accounting" },
+        { label: "قيود اليومية", href: "/accounting", onClick: onBack },
         { label: initialJournal.entryNumber }
       ]}
       headerActions={

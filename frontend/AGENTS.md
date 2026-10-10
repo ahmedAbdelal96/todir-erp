@@ -134,21 +134,22 @@ Not every page follows the same layout; the presentation archetype MUST be chose
    - *When to use*: Master records (Customers, Suppliers, Users, Products, Employees, Chart of Accounts).
    - *Canonical Composition*:
      - **Header**: Record code in `<bdi>`, status badge, entity title, primary & secondary action buttons (`تعديل`, `تعطيل`, `رجوع`), and breadcrumbs.
-     - **KPI / Stat Metric Cards**: Optional top row for high-impact numbers (e.g. Total Invoiced, Credit Limit, Open Balance).
-     - **Main Content**: Responsive 2-column or multi-section layout composed of structured `Surface` cards (e.g. Identity Card, Contact & Address Card, Financial Card).
+     - **KPI / Stat Metric Cards (`StatCard`)**: Top summary cards for high-impact numbers and operational status (e.g. Account Status, Balance, Nature, Base UoM, Verified Status).
+     - **Structured Property Grids (`PropertyGrid` & `PropertyItem`)**: High-density 2, 3, or 4-column key-value grids with optional icons, copy-to-clipboard buttons, and `<bdi>` isolation.
+     - **Main Content**: Responsive layout composed of structured `Surface` cards (e.g. Identity Card, Contact & Address Card, Financial Card).
      - **Tabbed Sub-Views**: For deep records, compose `Tabs` (e.g. Overview, Transactions, Activity History, Documents).
-     - **Audit Footer**: Creation and modification metadata (`تم الإنشاء بواسطة...`).
+     - **Audit Footer**: Formatted localized Arabic timestamps (`تم الإنشاء في...`).
 2. **`DocumentPage` (Transactional & Financial Document Details)**:
    - *When to use*: Commercial and accounting transaction documents (Invoices, Purchase Orders, Bills, Payment Vouchers, Manual Journals).
    - *Canonical Composition*:
-     - **Document Header**: Document type pill, document number title, multi-axis statuses (Lifecycle, Approval, GL Posting, Compliance, Settlement), and locked reason badge with `LockIcon`.
+     - **Document Header**: Document type pill, document number title, multi-axis localized statuses (Lifecycle, Approval, GL Posting, Compliance, Settlement), and locked reason badge with `LockIcon`.
      - **Document Metadata Surface**: Compact key-value grid for Party, Issue Date, Due Date, Payment Terms, and Currency.
      - **Line Items Grid Surface**: Zero-horizontal-scroll line items table displaying products, descriptions, quantities, unit prices, tax rates, and line totals.
      - **Totals & Summary Surface**: Subtotal, Tax breakdown, Discounts, and Grand Total with exact money formatting, alongside document notes.
 3. **`WizardPage` (Multi-Step Guided Linear Workflows)**:
    - *When to use*: Multi-stage operational operations (Data Import/Migration, Period Closing, Setup Onboarding, Batch Processing).
    - *Canonical Composition*:
-     - **Stepper Header**: Numbered & labeled step indicators with Completed (`✓`), Current (active ring), and Upcoming states.
+     - **Stepper Header**: Numbered & labeled step indicators connected by animated progression bars, featuring Completed (`✓`), Current (active ring), and Upcoming states.
      - **Focused Step Surface**: Dedicated card containing only the active step's form fields or data preview.
      - **Sticky Action Footer**: Standardized `السابق`, `التالي`, and `إنهاء / حفظ` buttons with built-in loading and validation gating.
 4. **`SettingsPage` (Category-Driven Configuration Layout)**:

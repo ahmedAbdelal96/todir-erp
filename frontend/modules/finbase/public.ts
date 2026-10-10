@@ -1,1 +1,1 @@
-export { FinBasePage } from "./pages/finbase-page.tsx";
+export { finbaseRoutes } from "./routes.tsx";

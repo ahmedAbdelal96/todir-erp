@@ -127,7 +127,7 @@ test.describe('Identity, Authentication & User Management Journeys', () => {
       }
     });
 
-    await page.goto('/#users');
+    await page.goto('/users');
 
     // Verify User List Page renders in Arabic RTL
     await expect(page.getByRole('heading', { name: 'المستخدمون' })).toBeVisible();
@@ -163,7 +163,7 @@ test.describe('Identity, Authentication & User Management Journeys', () => {
     await expect(page.getByText('ahmed.ali@atlas.com')).toBeVisible();
 
     // Navigate to Login Domain Settings
-    await page.goto('/#domain-settings');
+    await page.goto('/domain-settings');
     await expect(page.getByRole('heading', { name: 'إعدادات تسجيل الدخول للشركة' })).toBeVisible();
     await expect(page.getByText('@atlas.com', { exact: true })).toBeVisible();
 
@@ -385,7 +385,7 @@ test.describe('Identity, Authentication & User Management Journeys', () => {
       });
     });
 
-    await page.goto('/#users');
+    await page.goto('/users');
 
     // 1. Deactivate User
     await expect(page.getByText('محمود حسن')).toBeVisible();

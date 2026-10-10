@@ -76,4 +76,12 @@ test.describe('App Shell Bootstrap & Localization', () => {
     const switchBack = page.getByRole('button', { name: 'العربية' });
     await expect(switchBack).toBeVisible();
   });
+
+  test('should preserve a real browser path on direct navigation', async ({ page }) => {
+    await page.goto('/settings');
+
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page).not.toHaveURL(/#/);
+    await expect(page.getByRole('heading', { name: 'الإعدادات' })).toBeVisible();
+  });
 });

@@ -7,3 +7,4 @@ export * from "./document-page.tsx";
 export * from "./settings-page.tsx";
 export * from "./wizard-page.tsx";
 export * from "./dashboard-page.tsx";
+export * from "./property-grid.tsx";

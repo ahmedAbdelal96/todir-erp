@@ -1,12 +1,5 @@
 export * from "./types.ts";
-export * from "./pages/user-list-page.tsx";
-export * from "./pages/user-record-page.tsx";
-export * from "./pages/login-domain-settings-page.tsx";
-export * from "./features/create-user-dialog.tsx";
-export * from "./features/admin-password-reset-dialog.tsx";
-export * from "./features/deactivate-user-dialog.tsx";
-export * from "./features/reactivate-user-dialog.tsx";
-export * from "./features/login-domain-change-dialog.tsx";
 export * from "./hooks/identity-queries.ts";
 export * from "./services/identity-api.ts";
 export * from "./validation/identity-schemas.ts";
+export { identityRoutes } from "./routes.tsx";

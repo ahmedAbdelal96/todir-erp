@@ -39,7 +39,7 @@ export function NavBar({
         return (
           <a
             key={item.id}
-            href={item.href ?? `#${item.id}`}
+            href={item.href ?? `/${item.id}`}
             onClick={(e) => {
               if (onSelect) {
                 e.preventDefault();
