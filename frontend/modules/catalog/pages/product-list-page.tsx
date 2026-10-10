@@ -54,7 +54,7 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
           style={{
             border: 0,
             background: "none",
-            color: "var(--color-action-primary, #0f766e)",
+            color: "var(--color-brand-primary, #4f46e5)",
             cursor: "pointer",
             fontWeight: 600,
             fontSize: "0.875rem",

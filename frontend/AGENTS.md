@@ -101,6 +101,28 @@ All business modules reuse the established platform and design system. Do not cr
 - Hardcoded physical properties (`left`, `right`, `margin-left`, `padding-right`) are forbidden for directional styling.
 - Mixed text, entity codes, currency codes, phone numbers, and decimal numbers must use `<bdi>` or `dir="ltr"` isolation to prevent Arabic punctuation/number flips.
 
+### 7.6. DataTable & ListPage Architectural Standard (Mandatory for All 50+ Business Modules)
+To ensure complete visual and behavioral uniformity across the entire platform, every list page and tabular view across all 50+ future business modules MUST strictly adhere to this standardized architecture:
+
+1. **Mandatory Standard Composition Pipeline**:
+   - Every module list page must compose:
+     `ListPage` → `FilterBar` (with `SearchField`, filter `Select` controls, active count badge, and reset action) → `DataGrid` (for dynamic datasets/virtualized columns) or `Table` (for semantic lightweight records) → `Pagination` (passed via the `pagination` prop or container bottom) → contextual `EmptyState`, `ErrorState`, and `LoadingState`.
+2. **Strict Prohibition of Local Ad-hoc Tables & Pagers**:
+   - Modules MUST NOT create custom HTML `<table>` tags with local ad-hoc styling.
+   - Modules MUST NOT build custom pagination logic or buttons. The shared `Pagination` primitive is the single source of truth for pagination across all modules.
+   - Modules MUST NOT build bespoke filter bars or detached search inputs. Use `FilterBar` or `PageToolbar`.
+3. **Action Buttons & Page Actions Hierarchy**:
+   - Main creation/add action: Passed as `primaryAction` to `ListPage` / `PageHeader` (e.g. `label: "إضافة عميل"`, `onClick: () => setIsCreateOpen(true)`).
+   - Table row actions: Always use standard `Button` with `size="compact"` and semantically correct variants (`secondary` for details/edit, `danger` for deactivate/delete, `ghost` for subtle tertiary actions).
+4. **Cell Presentation & Domain Value Display**:
+   - Monetary values: Always render with `MoneyDisplay` or `MoneyCell` (never raw string concatenation or floating point numbers).
+   - Dates & Datetimes: Always render with `LocalDateDisplay` or `DateCell`.
+   - Statuses: Always render with `StatusBadge` or `StatusCell`.
+   - Identifiers, emails, codes, and phone numbers: Always wrap with `<bdi>` or `dir="ltr"` to guarantee flawless Arabic/English bidirectional rendering.
+5. **RTL / LTR & Density Integration**:
+   - `DataGrid` must always receive `enableRtl={true}` in Arabic contexts.
+   - All tables and grids must respect the global `density` ("comfortable" vs "compact").
+
 Do not create module-local generic duplicates such as a second button, table, dialog, or text field. Module-owned components are appropriate for domain behavior such as a party picker or invoice-lines editor. Promote a module component to `components/` only after genuine broad reuse, domain neutrality, accessibility, RTL/theme support, and the required story and unit test.
 
 ## 8. TypeScript, forms, and state

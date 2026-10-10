@@ -10,6 +10,7 @@ export interface ListPageProps {
   readonly primaryAction?: PageAction | undefined;
   readonly secondaryActions?: ReactNode | undefined;
   readonly filterBar?: ReactNode | undefined;
+  readonly pagination?: ReactNode | undefined;
   readonly children: ReactNode;
   readonly className?: string | undefined;
 }
@@ -21,6 +22,7 @@ export function ListPage({
   primaryAction,
   secondaryActions,
   filterBar,
+  pagination,
   children,
   className
 }: ListPageProps): React.JSX.Element {
@@ -51,6 +53,11 @@ export function ListPage({
 
       <main style={{ width: "100%", display: "flex", flexDirection: "column", gap: "1rem" }}>
         {children}
+        {pagination && (
+          <div style={{ width: "100%", marginTop: "0.25rem" }}>
+            {pagination}
+          </div>
+        )}
       </main>
     </div>
   );

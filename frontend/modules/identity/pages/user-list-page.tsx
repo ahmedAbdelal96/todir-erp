@@ -6,6 +6,7 @@ import { SearchField } from "../../../components/primitives/search-field.tsx";
 import { FilterBar } from "../../../components/primitives/filter-bar.tsx";
 import { Select, SelectItem } from "../../../components/primitives/select.tsx";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../../../components/primitives/table.tsx";
+import { Pagination } from "../../../components/primitives/pagination.tsx";
 import { LoadingState } from "../../../components/primitives/loading-state.tsx";
 import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { EmptyState } from "../../../components/primitives/empty-state.tsx";
@@ -25,6 +26,8 @@ export interface UserListPageProps {
 export function UserListPage({ onSelectUser, context }: UserListPageProps): React.JSX.Element {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   // Dialog States
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -53,6 +56,12 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
     });
   }, [users, searchTerm]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+  const paginatedUsers = useMemo(() => {
+    const startIndex = (page - 1) * pageSize;
+    return filteredUsers.slice(startIndex, startIndex + pageSize);
+  }, [filteredUsers, page, pageSize]);
+
   return (
     <ListPage
       title="المستخدمون"
@@ -61,6 +70,21 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
         label: "إضافة مستخدم",
         onClick: () => setIsCreateOpen(true)
       }}
+      pagination={
+        filteredUsers.length > 0 ? (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={filteredUsers.length}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+          />
+        ) : undefined
+      }
       filterBar={
         <FilterBar
           searchInput={
@@ -135,7 +159,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredUsers.map((user) => {
+              {paginatedUsers.map((user) => {
                 const isActive = user.status === "Active";
                 return (
                   <TableRow key={user.id}>

@@ -12,6 +12,7 @@ export interface PaginationProps {
   readonly pageSizeOptions?: readonly number[] | undefined;
   readonly isDisabled?: boolean | undefined;
   readonly size?: "comfortable" | "compact" | undefined;
+  readonly language?: "ar" | "en" | undefined;
   readonly className?: string | undefined;
 }
 
@@ -25,11 +26,22 @@ export function Pagination({
   pageSizeOptions = [10, 20, 50, 100],
   isDisabled = false,
   size = "comfortable",
+  language = "ar",
   className
 }: PaginationProps): React.JSX.Element {
+  const isArabic = language === "ar";
   const safePage = Math.max(1, Math.min(page, Math.max(1, totalPages)));
   const canGoPrev = safePage > 1 && !isDisabled;
   const canGoNext = safePage < totalPages && !isDisabled;
+
+  const labels = {
+    nav: isArabic ? "التنقل بين الصفحات" : "Pagination navigation",
+    total: isArabic ? "إجمالي السجلات:" : "Total records:",
+    perPage: isArabic ? "لكل صفحة:" : "Per page:",
+    prev: isArabic ? "السابق" : "Previous",
+    next: isArabic ? "التالي" : "Next",
+    pageLabel: (p: number) => (isArabic ? `الصفحة ${p}` : `Page ${p}`)
+  };
 
   // Generate visible page range (e.g. 1 ... 4 5 6 ... 10)
   const getPageNumbers = (): (number | "ellipsis")[] => {
@@ -50,7 +62,7 @@ export function Pagination({
   return (
     <nav
       className={clsx("ui-pagination", className)}
-      aria-label="التنقل بين الصفحات"
+      aria-label={labels.nav}
       style={{
         display: "flex",
         alignItems: "center",
@@ -59,18 +71,18 @@ export function Pagination({
         gap: "0.75rem",
         padding: size === "compact" ? "0.375rem 0" : "0.75rem 0",
         fontSize: size === "compact" ? "0.8125rem" : "0.875rem",
-        color: "var(--color-content-default)"
+        color: "var(--color-content-primary)"
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-content-muted)" }}>
         {totalItems !== undefined && (
           <span>
-            إجمالي السجلات: <strong style={{ color: "var(--color-content-default)" }}>{totalItems.toLocaleString("ar-SA")}</strong>
+            {labels.total} <strong style={{ color: "var(--color-content-primary)" }}><bdi>{totalItems.toLocaleString(isArabic ? "ar-EG" : "en-US")}</bdi></strong>
           </span>
         )}
         {onPageSizeChange && (
           <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginInlineStart: "0.75rem" }}>
-            <span>لكل صفحة:</span>
+            <span>{labels.perPage}</span>
             <select
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
@@ -79,9 +91,10 @@ export function Pagination({
                 padding: "0.25rem 0.5rem",
                 borderRadius: "var(--radius-sm)",
                 border: "1px solid var(--color-border-default)",
-                backgroundColor: "var(--color-surface-default)",
-                color: "var(--color-content-default)",
-                fontSize: "inherit"
+                backgroundColor: "var(--color-surface-card)",
+                color: "var(--color-content-primary)",
+                fontSize: "inherit",
+                cursor: "pointer"
               }}
             >
               {pageSizeOptions.map((opt) => (
@@ -100,9 +113,9 @@ export function Pagination({
           size={size}
           isDisabled={!canGoPrev}
           onPress={() => onPageChange(safePage - 1)}
-          aria-label="الصفحة السابقة"
+          aria-label={labels.prev}
         >
-          السابق
+          {labels.prev}
         </Button>
 
         {pages.map((item, index) => {
@@ -127,7 +140,7 @@ export function Pagination({
               isDisabled={isDisabled}
               onPress={() => onPageChange(item)}
               {...(isCurrent ? { "aria-current": "page" as const } : {})}
-              aria-label={`الصفحة ${item}`}
+              aria-label={labels.pageLabel(item)}
               style={{ minWidth: size === "compact" ? "32px" : "36px", padding: "0 0.5rem" }}
             >
               {item}
@@ -140,9 +153,9 @@ export function Pagination({
           size={size}
           isDisabled={!canGoNext}
           onPress={() => onPageChange(safePage + 1)}
-          aria-label="الصفحة التالية"
+          aria-label={labels.next}
         >
-          التالي
+          {labels.next}
         </Button>
       </div>
     </nav>
