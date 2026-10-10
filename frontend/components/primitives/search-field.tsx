@@ -1,6 +1,6 @@
-import React, { useState, useEffect, type ChangeEvent } from "react";
+import React, { useState, useEffect } from "react";
 import { TextField } from "./text-field.tsx";
-import { Button } from "./button.tsx";
+import { SearchIcon, CloseIcon } from "./icons.tsx";
 import clsx from "clsx";
 
 export interface SearchFieldProps {
@@ -73,16 +73,16 @@ export function SearchField({
         style={{
           position: "absolute",
           insetInlineStart: "0.75rem",
-          color: "var(--color-content-muted)",
+          color: "var(--color-content-muted, #94a3b8)",
           pointerEvents: "none",
-          fontSize: "0.875rem",
           display: "flex",
           alignItems: "center",
+          justifyContent: "center",
           zIndex: 1
         }}
         aria-hidden="true"
       >
-        🔍
+        <SearchIcon size={16} />
       </span>
 
       <div style={{ width: "100%" }}>
@@ -104,14 +104,15 @@ export function SearchField({
           style={{
             position: "absolute",
             insetInlineEnd: "0.75rem",
-            fontSize: "0.75rem",
-            color: "var(--color-content-muted)",
-            animation: "spin 1s linear infinite"
+            width: "1rem",
+            height: "1rem",
+            border: "2px solid var(--color-border-default)",
+            borderTopColor: "var(--color-action-primary)",
+            borderRadius: "50%",
+            animation: "spin 0.6s linear infinite"
           }}
           aria-hidden="true"
-        >
-          ⏳
-        </span>
+        />
       ) : currentValue && !isDisabled ? (
         <button
           type="button"
@@ -124,15 +125,21 @@ export function SearchField({
             border: "none",
             padding: "0.25rem",
             cursor: "pointer",
-            color: "var(--color-content-muted)",
-            fontSize: "0.75rem",
+            color: "var(--color-content-muted, #94a3b8)",
             borderRadius: "50%",
             display: "flex",
             alignItems: "center",
-            justifyContent: "center"
+            justifyContent: "center",
+            transition: "color 150ms ease"
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "var(--color-content-primary, #0f172a)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "var(--color-content-muted, #94a3b8)";
           }}
         >
-          ✕
+          <CloseIcon size={14} />
         </button>
       ) : null}
     </div>

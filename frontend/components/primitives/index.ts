@@ -23,3 +23,4 @@ export * from "./pagination.tsx";
 export * from "./table.tsx";
 export * from "./file-input.tsx";
 export * from "./toast.tsx";
+export * from "./icons.tsx";

@@ -12,6 +12,19 @@ export interface AuthViewProps {
 
 type AuthStep = "login" | "initial-password" | "mfa";
 
+interface DevelopmentLoginProfile {
+  readonly label: string;
+  readonly email: string;
+}
+
+const developmentLoginPassword = import.meta.env.DEV ? import.meta.env.VITE_DEV_LOGIN_PASSWORD : undefined;
+const developmentLoginProfiles: readonly DevelopmentLoginProfile[] = developmentLoginPassword
+  ? [
+      { label: "Atlas — مسؤول النظام", email: "admin@atlas.com" },
+      { label: "Delta — مسؤول النظام", email: "admin@delta.com" }
+    ]
+  : [];
+
 export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): React.JSX.Element {
   const [step, setStep] = useState<AuthStep>("login");
   const [challengeToken, setChallengeToken] = useState<string>("");
@@ -43,6 +56,8 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
     hidePassword: isArabic ? "إخفاء" : "Hide",
     signInButton: isArabic ? "تسجيل الدخول" : "Sign in",
     signingIn: isArabic ? "جارٍ تسجيل الدخول..." : "Signing in...",
+    developmentAccountsTitle: isArabic ? "حسابات الاختبار السريعة" : "Quick development accounts",
+    developmentAccountsHint: isArabic ? "متاحة في بيئة التطوير فقط لتسريع الاختبار المحلي." : "Available only in development to speed up local testing.",
 
     // Initial password strings
     initPasswordTitle: isArabic ? "تعيين كلمة المرور الجديدة" : "Set New Password",
@@ -100,19 +115,30 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
     return t.defaultError;
   }
 
-  async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submitLogin(loginEmail: string, loginPassword: string) {
     setError(undefined);
     setSubmitting(true);
 
     try {
-      const result = await loginUser(email.trim(), password);
+      const result = await loginUser(loginEmail.trim(), loginPassword);
       handleNextStep(result.state, result.challengeToken);
     } catch (err) {
       setError(mapAuthError(err));
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void submitLogin(email, password);
+  }
+
+  function handleDevelopmentLogin(profile: DevelopmentLoginProfile) {
+    if (!developmentLoginPassword) return;
+    setEmail(profile.email);
+    setPassword(developmentLoginPassword);
+    void submitLogin(profile.email, developmentLoginPassword);
   }
 
   async function handleInitialPasswordSubmit(event: FormEvent<HTMLFormElement>) {
@@ -200,132 +226,266 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
         minHeight: "100vh",
         padding: "1.5rem",
         backgroundColor: "var(--color-surface-page, #f8fafc)",
-        fontFamily: "var(--font-sans, system-ui, -apple-system, sans-serif)"
+        fontFamily: "var(--font-sans, system-ui, -apple-system, sans-serif)",
+        background: "radial-gradient(circle at 50% 0%, rgba(15, 118, 110, 0.08) 0%, transparent 75%), var(--color-surface-page, #f8fafc)"
       }}
     >
       <div
-        className="auth-card"
+        className="auth-container"
         style={{
           width: "100%",
-          maxWidth: "420px",
+          maxWidth: "880px",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
           backgroundColor: "var(--color-surface-card, #ffffff)",
-          borderRadius: "var(--radius-lg, 0.75rem)",
-          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.02)",
+          borderRadius: "var(--radius-xl, 1rem)",
+          boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03)",
           border: "1px solid var(--color-border-default, #e2e8f0)",
-          padding: "2.25rem",
-          boxSizing: "border-box"
+          overflow: "hidden",
+          minHeight: "560px"
         }}
       >
-        {/* Brand Header */}
-        <div style={{ textAlign: "center", marginBottom: "1.75rem" }}>
-          <span
+        {/* Brand Showcase Hero Column */}
+        <div
+          style={{
+            backgroundColor: "oklch(0.2 0.04 245)",
+            color: "#ffffff",
+            padding: "3rem 2.5rem",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            position: "relative",
+            overflow: "hidden",
+            background: "linear-gradient(145deg, oklch(0.22 0.05 245) 0%, oklch(0.14 0.03 245) 100%)"
+          }}
+        >
+          {/* Subtle geometric background glow */}
+          <div
             style={{
-              display: "inline-block",
-              fontSize: "1.25rem",
-              fontWeight: 800,
-              letterSpacing: "0.05em",
-              color: "var(--color-action-primary, #0f766e)",
-              marginBottom: "0.5rem"
+              position: "absolute",
+              top: "-20%",
+              insetInlineEnd: "-20%",
+              width: "300px",
+              height: "300px",
+              borderRadius: "50%",
+              background: "radial-gradient(circle, rgba(15, 118, 110, 0.3) 0%, transparent 70%)",
+              pointerEvents: "none"
             }}
-          >
-            {t.brand}
-          </span>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "1.5rem",
-              fontWeight: 700,
-              color: "var(--color-content-primary, #0f172a)"
-            }}
-          >
-            {step === "login"
-              ? t.loginTitle
-              : step === "initial-password"
-              ? t.initPasswordTitle
-              : t.mfaTitle}
-          </h1>
-          <p
-            style={{
-              margin: "0.5rem 0 0 0",
-              fontSize: "0.875rem",
-              color: "var(--color-content-muted, #64748b)",
-              lineHeight: 1.5
-            }}
-          >
-            {step === "login"
-              ? t.loginSubtitle
-              : step === "initial-password"
-              ? t.initPasswordSubtitle
-              : t.mfaSubtitle}
-          </p>
-        </div>
+          />
 
-        {/* Global Error Alert */}
-        {error && (
-          <div style={{ marginBottom: "1.25rem" }}>
-            <Alert variant="danger">{error}</Alert>
-          </div>
-        )}
-
-        {/* STEP 1: LOGIN FORM */}
-        {step === "login" && (
-          <form onSubmit={(e) => void handleLoginSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-            <div>
-              <label
-                htmlFor="login-email"
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "2rem" }}>
+              <div
                 style={{
-                  display: "block",
-                  fontSize: "0.875rem",
-                  fontWeight: 600,
-                  marginBottom: "0.375rem",
-                  color: "var(--color-content-primary, #0f172a)"
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "var(--radius-md, 0.5rem)",
+                  backgroundColor: "var(--color-action-primary, #0f766e)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 900,
+                  fontSize: "1.25rem",
+                  color: "#ffffff",
+                  boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.2)"
                 }}
               >
-                {t.emailLabel}
-              </label>
-              <input
-                id="login-email"
-                type="email"
-                autoComplete="username"
-                autoFocus
-                required
-                placeholder={t.emailPlaceholder}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "0.625rem 0.875rem",
-                  fontSize: "0.9375rem",
-                  borderRadius: "var(--radius-md, 0.375rem)",
-                  border: "1px solid var(--color-border-default, #cbd5e1)",
-                  backgroundColor: "var(--color-surface-subtle, #ffffff)",
-                  color: "var(--color-content-primary, #0f172a)",
-                  boxSizing: "border-box",
-                  direction: "ltr",
-                  textAlign: isArabic ? "right" : "left"
-                }}
-              />
+                T
+              </div>
+              <span style={{ fontSize: "1.5rem", fontWeight: 800, letterSpacing: "0.06em", color: "#ffffff" }}>
+                TODIR
+              </span>
             </div>
 
-            <PasswordField
-              id="login-password"
-              label={t.passwordLabel}
-              isRequired
-              autoComplete="current-password"
-              value={password}
-              onChange={setPassword}
-            />
-
-            <Button
-              type="submit"
-              variant="primary"
-              isLoading={submitting}
-              style={{ width: "100%", marginTop: "0.5rem" }}
+            <h2
+              style={{
+                margin: "0 0 1rem 0",
+                fontSize: "1.625rem",
+                fontWeight: 800,
+                lineHeight: 1.35,
+                color: "#ffffff"
+              }}
             >
-              {submitting ? t.signingIn : t.signInButton}
-            </Button>
-          </form>
-        )}
+              {isArabic
+                ? "نظام تخطيط الموارد المالي والإداري للشركات الرائدة"
+                : "Enterprise Resource Planning for Modern Business"}
+            </h2>
+
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.875rem",
+                lineHeight: 1.6,
+                color: "rgba(255, 255, 255, 0.75)"
+              }}
+            >
+              {isArabic
+                ? "إدارة مالية دقيقة، وعزل أمني صارم، وسرعة فائقة لدعم نمو أعمالك بثقة واحترافية."
+                : "Exact financial tracking, strict multi-tenant isolation, and high performance designed for operational confidence."}
+            </p>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "2rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", fontSize: "0.8125rem", color: "rgba(255, 255, 255, 0.85)" }}>
+              <span style={{ color: "#34d399" }}>✓</span>
+              <span>{isArabic ? "عزل بيانات المؤسسات وتشفير متكامل" : "Strict Tenant Isolation & Encryption"}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", fontSize: "0.8125rem", color: "rgba(255, 255, 255, 0.85)" }}>
+              <span style={{ color: "#34d399" }}>✓</span>
+              <span>{isArabic ? "توافق كامل مع متطلبات السوق العربي والفوترة" : "Arabic-First & Local Compliance"}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", fontSize: "0.8125rem", color: "rgba(255, 255, 255, 0.85)" }}>
+              <span style={{ color: "#34d399" }}>✓</span>
+              <span>{isArabic ? "مصادقة متقدمة وحماية متعددة العوامل MFA" : "Progressive MFA & Session Security"}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Form Column */}
+        <div
+          style={{
+            padding: "2.75rem 2.5rem",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center"
+          }}
+        >
+          <div style={{ marginBottom: "1.75rem" }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "1.5rem",
+                fontWeight: 700,
+                color: "var(--color-content-primary, #0f172a)"
+              }}
+            >
+              {step === "login"
+                ? t.loginTitle
+                : step === "initial-password"
+                ? t.initPasswordTitle
+                : t.mfaTitle}
+            </h1>
+            <p
+              style={{
+                margin: "0.375rem 0 0 0",
+                fontSize: "0.875rem",
+                color: "var(--color-content-muted, #64748b)",
+                lineHeight: 1.5
+              }}
+            >
+              {step === "login"
+                ? t.loginSubtitle
+                : step === "initial-password"
+                ? t.initPasswordSubtitle
+                : t.mfaSubtitle}
+            </p>
+          </div>
+
+          {/* Global Error Alert */}
+          {error && (
+            <div style={{ marginBottom: "1.25rem" }}>
+              <Alert variant="danger">{error}</Alert>
+            </div>
+          )}
+
+          {/* STEP 1: LOGIN FORM */}
+          {step === "login" && (
+            <form onSubmit={(e) => void handleLoginSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "1.125rem" }}>
+              <div>
+                <label
+                  htmlFor="login-email"
+                  style={{
+                    display: "block",
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    marginBottom: "0.375rem",
+                    color: "var(--color-content-primary, #0f172a)"
+                  }}
+                >
+                  {t.emailLabel}
+                </label>
+                <input
+                  id="login-email"
+                  type="email"
+                  autoComplete="username"
+                  autoFocus
+                  required
+                  placeholder={t.emailPlaceholder}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.625rem 0.875rem",
+                    fontSize: "0.9375rem",
+                    borderRadius: "var(--radius-md, 0.375rem)",
+                    border: "1px solid var(--color-border-default, #cbd5e1)",
+                    backgroundColor: "var(--color-surface-subtle, #ffffff)",
+                    color: "var(--color-content-primary, #0f172a)",
+                    boxSizing: "border-box",
+                    direction: "ltr",
+                    textAlign: isArabic ? "right" : "left"
+                  }}
+                />
+              </div>
+
+              <PasswordField
+                id="login-password"
+                label={t.passwordLabel}
+                isRequired
+                autoComplete="current-password"
+                value={password}
+                onChange={setPassword}
+              />
+
+              <Button
+                type="submit"
+                variant="primary"
+                isLoading={submitting}
+                style={{ width: "100%", marginTop: "0.5rem" }}
+              >
+                {submitting ? t.signingIn : t.signInButton}
+              </Button>
+
+              {developmentLoginProfiles.length > 0 && (
+                <fieldset
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.5rem",
+                    margin: "0.5rem 0 0",
+                    padding: "0.75rem",
+                    border: "1px dashed var(--color-border-default, #cbd5e1)",
+                    borderRadius: "var(--radius-md, 0.375rem)"
+                  }}
+                >
+                  <legend
+                    style={{
+                      paddingInline: "0.375rem",
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      color: "var(--color-content-muted, #64748b)"
+                    }}
+                  >
+                    {t.developmentAccountsTitle}
+                  </legend>
+                  {developmentLoginProfiles.map((profile) => (
+                    <Button
+                      key={profile.email}
+                      type="button"
+                      variant="secondary"
+                      size="compact"
+                      isDisabled={submitting}
+                      onPress={() => handleDevelopmentLogin(profile)}
+                      style={{ width: "100%", justifyContent: "space-between" }}
+                    >
+                      <span>{profile.label}</span>
+                      <span dir="ltr" style={{ fontSize: "0.75rem" }}>{profile.email}</span>
+                    </Button>
+                  ))}
+                </fieldset>
+              )}
+            </form>
+          )}
 
         {/* STEP 2: INITIAL PASSWORD CHANGE */}
         {step === "initial-password" && (
@@ -427,6 +587,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
             </Button>
           </form>
         )}
+        </div>
       </div>
     </main>
   );

@@ -1,5 +1,6 @@
 import React, { useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { Button } from "./button.tsx";
+import { FolderIcon, FileTextIcon, CloseIcon } from "./icons.tsx";
 import clsx from "clsx";
 
 export interface FileInputProps {
@@ -94,13 +95,13 @@ export function FileInput({
   return (
     <div className={clsx("ui-file-input", className)} style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
       {label && (
-        <label style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--color-content-default)" }}>
+        <label style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-primary, #0f172a)" }}>
           {label} {isRequired && <span style={{ color: "var(--color-status-danger)" }}>*</span>}
         </label>
       )}
 
       {description && (
-        <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+        <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
           {description}
         </p>
       )}
@@ -122,10 +123,10 @@ export function FileInput({
         onDrop={handleDrop}
         onClick={() => !isDisabled && inputRef.current?.click()}
         style={{
-          border: `2px dashed ${isDragOver ? "var(--color-brand-primary)" : effectiveError ? "var(--color-status-danger)" : "var(--color-border-default)"}`,
-          backgroundColor: isDragOver ? "var(--color-surface-primary-subtle, #eff6ff)" : "var(--color-surface-subtle)",
-          borderRadius: "var(--radius-md)",
-          padding: "1.5rem",
+          border: `2px dashed ${isDragOver ? "var(--color-action-primary, #0f766e)" : effectiveError ? "var(--color-status-danger)" : "var(--color-border-default, #cbd5e1)"}`,
+          backgroundColor: isDragOver ? "var(--color-surface-subtle, #f0fdf4)" : "var(--color-surface-subtle, #f8fafc)",
+          borderRadius: "var(--radius-md, 0.375rem)",
+          padding: "1.75rem 1.5rem",
           textAlign: "center",
           cursor: isDisabled ? "not-allowed" : "pointer",
           opacity: isDisabled ? 0.6 : 1,
@@ -140,11 +141,13 @@ export function FileInput({
           }
         }}
       >
-        <div style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>📁</div>
-        <p style={{ margin: "0 0 0.25rem 0", fontWeight: 600, fontSize: "0.875rem" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.5rem", color: "var(--color-action-primary, #0f766e)" }}>
+          <FolderIcon size={32} />
+        </div>
+        <p style={{ margin: "0 0 0.25rem 0", fontWeight: 600, fontSize: "0.875rem", color: "var(--color-content-primary, #0f172a)" }}>
           اسحب الملف وأفلته هنا، أو انقر للتصفح
         </p>
-        <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+        <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
           {accept ? `الصيغ المدعومة: ${accept}` : "جميع أنواع الملفات مدعومة"}
           {maxSizeBytes && ` (الحد الأقصى: ${formatFileSize(maxSizeBytes)})`}
         </span>
@@ -166,29 +169,31 @@ export function FileInput({
                 alignItems: "center",
                 justifyContent: "space-between",
                 padding: "0.5rem 0.75rem",
-                borderRadius: "var(--radius-sm)",
-                backgroundColor: "var(--color-surface-default)",
-                border: "1px solid var(--color-border-default)",
+                borderRadius: "var(--radius-sm, 0.25rem)",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                border: "1px solid var(--color-border-default, #e2e8f0)",
                 fontSize: "0.8125rem"
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", overflow: "hidden" }}>
-                <span>📄</span>
+                <span style={{ color: "var(--color-action-primary, #0f766e)", display: "inline-flex" }}>
+                  <FileTextIcon size={16} />
+                </span>
                 <span style={{ fontWeight: 500, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
                   {file.name}
                 </span>
-                <span style={{ color: "var(--color-content-muted)", fontSize: "0.75rem" }}>
+                <span style={{ color: "var(--color-content-muted, #64748b)", fontSize: "0.75rem" }}>
                   ({formatFileSize(file.size)})
                 </span>
               </div>
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="compact"
                 isDisabled={isDisabled}
                 onPress={() => handleRemoveFile(index)}
                 aria-label={`حذف الملف ${file.name}`}
               >
-                ✕
+                <CloseIcon size={14} />
               </Button>
             </li>
           ))}

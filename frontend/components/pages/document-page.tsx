@@ -1,6 +1,7 @@
 import React, { type ReactNode } from "react";
 import { Breadcrumbs, type BreadcrumbItem } from "../../app/shell/breadcrumbs.tsx";
 import { StatusBadge, type StatusVariant } from "../fields/status-badge.tsx";
+import { LockIcon } from "../primitives/icons.tsx";
 import clsx from "clsx";
 
 export interface DocumentSummaryItem {
@@ -125,6 +126,9 @@ export function DocumentPage({
                 {statuses.isLocked && (
                   <span
                     style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.25rem",
                       fontSize: "0.75rem",
                       fontWeight: 600,
                       padding: "0.125rem 0.5rem",
@@ -134,7 +138,8 @@ export function DocumentPage({
                       border: "1px solid var(--color-border-default)"
                     }}
                   >
-                    🔒 {statuses.lockedReason ?? "Locked"}
+                    <LockIcon size={12} />
+                    <span>{statuses.lockedReason ?? "Locked"}</span>
                   </span>
                 )}
               </>

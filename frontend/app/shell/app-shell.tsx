@@ -5,6 +5,25 @@ import { DataGrid, type DataGridColumn } from "../../components/grid/index.ts";
 import { ComboBox } from "../../components/primitives/combobox.tsx";
 import { Button } from "../../components/primitives/button.tsx";
 import { Dialog } from "../../components/primitives/dialog.tsx";
+import {
+  HomeIcon,
+  UsersIcon,
+  DomainIcon,
+  DirectoryIcon,
+  CatalogIcon,
+  InvoicingIcon,
+  PaymentsIcon,
+  AccountingIcon,
+  MigrationIcon,
+  FinBaseIcon,
+  SettingsIcon,
+  BuildingIcon,
+  GlobeIcon,
+  SunMoonIcon,
+  DensityIcon,
+  LogOutIcon,
+  ShieldCheckIcon
+} from "../../components/primitives/icons.tsx";
 import { AuthView } from "../auth/index.ts";
 import { requestCsrf, logoutUser } from "../../core/api/auth-service.ts";
 
@@ -64,6 +83,39 @@ const moduleLabels: Record<string, { ar: string; en: string; permission?: string
   settings: { ar: "الإعدادات", en: "Settings", permission: "platform.settings.read" },
 };
 
+function getModuleIcon(id: string): React.JSX.Element {
+  switch (id) {
+    case "home":
+      return <HomeIcon size={18} />;
+    case "users":
+    case "iam":
+      return <UsersIcon size={18} />;
+    case "domain-settings":
+    case "tenancy":
+      return <DomainIcon size={18} />;
+    case "directory":
+      return <DirectoryIcon size={18} />;
+    case "catalog":
+      return <CatalogIcon size={18} />;
+    case "invoicing":
+      return <InvoicingIcon size={18} />;
+    case "payments":
+      return <PaymentsIcon size={18} />;
+    case "accounting":
+      return <AccountingIcon size={18} />;
+    case "migration":
+      return <MigrationIcon size={18} />;
+    case "finbase":
+      return <FinBaseIcon size={18} />;
+    case "preview":
+      return <ShieldCheckIcon size={18} />;
+    case "settings":
+      return <SettingsIcon size={18} />;
+    default:
+      return <BuildingIcon size={18} />;
+  }
+}
+
 export function AppShell() {
   const [language, setLanguage] = useState<Language>("ar");
   const [screen, setScreen] = useState<Screen>("loading");
@@ -76,7 +128,13 @@ export function AppShell() {
   const [contextError, setContextError] = useState<string | undefined>();
   const [operation, setOperation] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
-  const [currentView, setCurrentView] = useState<string>("home");
+  const [currentView, setCurrentView] = useState<string>(() => {
+    if (typeof window !== "undefined" && window.location.hash) {
+      const hash = window.location.hash.replace("#", "");
+      if (hash) return hash;
+    }
+    return "home";
+  });
   const [selectedPartyId, setSelectedPartyId] = useState<string>("party-001");
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [selectedUserId, setSelectedUserId] = useState<string>("");
@@ -93,9 +151,7 @@ export function AppShell() {
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.replace("#", "");
-      if (hash) {
-        setCurrentView(hash);
-      }
+      setCurrentView(hash || "home");
     };
     window.addEventListener("hashchange", handleHash);
     handleHash();
@@ -179,39 +235,185 @@ export function AppShell() {
   return (
     <div className="todir-app-shell shell" dir={direction} data-theme={theme} data-density={density}>
       <header className="topbar">
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <a className="brand" href="/" aria-label="TODIR">TODIR</a>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
+          <a className="brand" href="/" aria-label="TODIR">
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "32px", height: "32px", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-action-primary, #0f766e)", color: "#ffffff", fontWeight: 900, fontSize: "1rem" }}>
+              T
+            </span>
+            <span>TODIR</span>
+          </a>
           <span
             style={{
               padding: "0.25rem 0.625rem",
-              borderRadius: "var(--radius-sm, 0.25rem)",
-              backgroundColor: "var(--color-surface-subtle, rgba(255, 255, 255, 0.1))",
+              borderRadius: "var(--radius-full, 9999px)",
+              backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
               fontSize: "0.8125rem",
               fontWeight: 600,
-              color: "var(--color-content-primary, #ffffff)"
+              color: "var(--color-content-secondary, #475569)",
+              border: "1px solid var(--color-border-subtle, #e2e8f0)"
             }}
           >
             {companyName}
           </span>
         </div>
+
         <div className="context-controls">
-          <label htmlFor="entity-select">{labels.entity}</label>
-          <select id="entity-select" aria-label={labels.entity} value={legalEntity} onChange={(event) => void switchOrganization(event.target.value, "")}><option value="">—</option>{legalEntities.map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</select>
-          <label htmlFor="branch-select">{labels.branch}</label>
-          <select id="branch-select" aria-label={labels.branch} value={branch} onChange={(event) => void switchOrganization(legalEntity, event.target.value)}><option value="">—</option>{branches.filter(item => !legalEntity || item.legalEntityId === legalEntity).map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</select>
-          <button type="button" onClick={() => setTheme(theme === "default" ? "sapphire-modern" : "default")}>
-            {theme === "default" ? "السمة البديلة" : "السمة الافتراضية"}
-          </button>
-          <button type="button" onClick={() => setDensity(density === "comfortable" ? "compact" : "comfortable")}>
-            {density === "comfortable" ? "كثافة مدمجة" : "كثافة مريحة"}
-          </button>
-          <button type="button" onClick={() => setLanguage(language === "ar" ? "en" : "ar")}>{labels.language}</button>
-          <button type="button" onClick={() => void signOut()}>{labels.signOut}</button>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.375rem",
+              backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
+              padding: "0.25rem 0.5rem",
+              borderRadius: "var(--radius-md, 0.375rem)",
+              border: "1px solid var(--color-border-default, #e2e8f0)"
+            }}
+          >
+            <BuildingIcon size={14} style={{ color: "var(--color-content-muted)" }} />
+            <label htmlFor="entity-select" style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-content-muted)" }}>
+              {labels.entity}
+            </label>
+            <select
+              id="entity-select"
+              aria-label={labels.entity}
+              value={legalEntity}
+              onChange={(event) => void switchOrganization(event.target.value, "")}
+              style={{
+                background: "transparent",
+                border: "none",
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                color: "var(--color-content-primary)",
+                cursor: "pointer",
+                outline: "none"
+              }}
+            >
+              <option value="">—</option>
+              {legalEntities.map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}
+            </select>
+
+            <span style={{ color: "var(--color-border-strong, #cbd5e1)" }}>|</span>
+
+            <label htmlFor="branch-select" style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-content-muted)" }}>
+              {labels.branch}
+            </label>
+            <select
+              id="branch-select"
+              aria-label={labels.branch}
+              value={branch}
+              onChange={(event) => void switchOrganization(legalEntity, event.target.value)}
+              style={{
+                background: "transparent",
+                border: "none",
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                color: "var(--color-content-primary)",
+                cursor: "pointer",
+                outline: "none"
+              }}
+            >
+              <option value="">—</option>
+              {branches.filter(item => !legalEntity || item.legalEntityId === legalEntity).map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}
+            </select>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+            <button
+              type="button"
+              onClick={() => setTheme(theme === "default" ? "sapphire-modern" : "default")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.375rem",
+                padding: "0.375rem 0.625rem",
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                borderRadius: "var(--radius-md, 0.375rem)",
+                border: "1px solid var(--color-border-default, #e2e8f0)",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                color: "var(--color-content-secondary, #475569)",
+                cursor: "pointer",
+                transition: "all 150ms ease"
+              }}
+            >
+              <SunMoonIcon size={14} />
+              <span>{theme === "default" ? "السمة البديلة" : "السمة الافتراضية"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDensity(density === "comfortable" ? "compact" : "comfortable")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.375rem",
+                padding: "0.375rem 0.625rem",
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                borderRadius: "var(--radius-md, 0.375rem)",
+                border: "1px solid var(--color-border-default, #e2e8f0)",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                color: "var(--color-content-secondary, #475569)",
+                cursor: "pointer",
+                transition: "all 150ms ease"
+              }}
+            >
+              <DensityIcon size={14} />
+              <span>{density === "comfortable" ? "كثافة مدمجة" : "كثافة مريحة"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setLanguage(language === "ar" ? "en" : "ar")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.375rem",
+                padding: "0.375rem 0.625rem",
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                borderRadius: "var(--radius-md, 0.375rem)",
+                border: "1px solid var(--color-border-default, #e2e8f0)",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                color: "var(--color-content-secondary, #475569)",
+                cursor: "pointer",
+                transition: "all 150ms ease"
+              }}
+            >
+              <GlobeIcon size={14} />
+              <span>{labels.language}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.375rem",
+                padding: "0.375rem 0.75rem",
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                borderRadius: "var(--radius-md, 0.375rem)",
+                border: "1px solid var(--color-border-default, #e2e8f0)",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                color: "var(--color-status-danger, #e11d48)",
+                cursor: "pointer",
+                transition: "all 150ms ease"
+              }}
+            >
+              <LogOutIcon size={14} />
+              <span>{labels.signOut}</span>
+            </button>
+          </div>
         </div>
       </header>
       {operation ? <div className="operation-progress" role="status" aria-live="polite">{operation}</div> : null}
       <div className="layout">
         <aside className="sidebar" aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}>
+          <div style={{ padding: "0.25rem 0.5rem 0.75rem", fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-content-muted, #94a3b8)" }}>
+            {language === "ar" ? "الوحدات والخدمات" : "Modules & Apps"}
+          </div>
           <nav>
             {modules.map(item => (
               <a
@@ -220,7 +422,10 @@ export function AppShell() {
                 className={currentView === item.id ? "active" : undefined}
                 onClick={() => setCurrentView(item.id)}
               >
-                {item.label}
+                <span style={{ display: "inline-flex", alignItems: "center", color: currentView === item.id ? "var(--color-action-primary)" : "var(--color-content-muted)" }}>
+                  {getModuleIcon(item.id)}
+                </span>
+                <span>{item.label}</span>
               </a>
             ))}
           </nav>
@@ -279,27 +484,194 @@ export function AppShell() {
             ) : currentView === "preview" ? (
               <ShowcasePreview density={density} />
             ) : (
-              <div>
-                <p className="eyebrow">{companyName}</p>
-                <h1>{labels.title}</h1>
-                <div className="empty-state">
-                  <p>{labels.empty}</p>
-                  <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                    <Button variant="primary" onPress={() => setCurrentView("users")}>
-                      المستخدمون
-                    </Button>
-                    <Button variant="secondary" onPress={() => setCurrentView("directory")}>
-                      دليل الأطراف
-                    </Button>
-                    <Button variant="secondary" onPress={() => setCurrentView("invoicing")}>
-                      فواتير المبيعات
-                    </Button>
-                    <Button variant="secondary" onPress={() => setCurrentView("accounting")}>
-                      قيود اليومية
-                    </Button>
-                    <Button variant="secondary" onPress={() => setCurrentView("migration")}>
-                      معالج الاستيراد
-                    </Button>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem" }}>
+                <div
+                  style={{
+                    backgroundColor: "var(--color-surface-card, #ffffff)",
+                    borderRadius: "var(--radius-lg, 0.75rem)",
+                    border: "1px solid var(--color-border-default, #e2e8f0)",
+                    padding: "2rem",
+                    boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))",
+                    position: "relative",
+                    overflow: "hidden"
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.375rem",
+                        padding: "0.25rem 0.625rem",
+                        borderRadius: "var(--radius-full, 9999px)",
+                        backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                        color: "var(--color-action-primary, #0f766e)"
+                      }}
+                    >
+                      <BuildingIcon size={12} />
+                      {companyName}
+                    </span>
+                  </div>
+                  <h1
+                    style={{
+                      margin: "0 0 0.5rem 0",
+                      fontSize: "1.75rem",
+                      fontWeight: 800,
+                      color: "var(--color-content-primary, #0f172a)",
+                      letterSpacing: "-0.02em"
+                    }}
+                  >
+                    {labels.title}
+                  </h1>
+                  <p style={{ margin: 0, fontSize: "0.9375rem", color: "var(--color-content-muted, #64748b)" }}>
+                    {language === "ar"
+                      ? "نظام تخطيط وإدارة موارد المؤسسة المالي والتشغيلي الموحد."
+                      : "Unified financial and operational enterprise resource planning system."}
+                  </p>
+                </div>
+
+                <div>
+                  <h2 style={{ fontSize: "1.125rem", fontWeight: 700, margin: "0 0 1rem 0", color: "var(--color-content-primary, #0f172a)" }}>
+                    {language === "ar" ? "الوصول السريع للوحدات" : "Quick Module Launchpad"}
+                  </h2>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                      gap: "1rem"
+                    }}
+                  >
+                    <div
+                      style={{
+                        backgroundColor: "var(--color-surface-card, #ffffff)",
+                        border: "1px solid var(--color-border-default, #e2e8f0)",
+                        borderRadius: "var(--radius-md, 0.5rem)",
+                        padding: "1.25rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.75rem",
+                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
+                          <UsersIcon size={20} />
+                        </div>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>المستخدمون</h3>
+                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>إدارة حسابات الفريق والصلاحيات</p>
+                        </div>
+                      </div>
+                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("users")} style={{ width: "100%" }}>
+                        المستخدمون
+                      </Button>
+                    </div>
+
+                    <div
+                      style={{
+                        backgroundColor: "var(--color-surface-card, #ffffff)",
+                        border: "1px solid var(--color-border-default, #e2e8f0)",
+                        borderRadius: "var(--radius-md, 0.5rem)",
+                        padding: "1.25rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.75rem",
+                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
+                          <DirectoryIcon size={20} />
+                        </div>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>دليل الأطراف</h3>
+                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>العملاء والموردون وجهات الاتصال</p>
+                        </div>
+                      </div>
+                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("directory")} style={{ width: "100%" }}>
+                        دليل الأطراف
+                      </Button>
+                    </div>
+
+                    <div
+                      style={{
+                        backgroundColor: "var(--color-surface-card, #ffffff)",
+                        border: "1px solid var(--color-border-default, #e2e8f0)",
+                        borderRadius: "var(--radius-md, 0.5rem)",
+                        padding: "1.25rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.75rem",
+                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
+                          <InvoicingIcon size={20} />
+                        </div>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>فواتير المبيعات</h3>
+                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>الفواتير الضريبية والمطالبات</p>
+                        </div>
+                      </div>
+                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("invoicing")} style={{ width: "100%" }}>
+                        فواتير المبيعات
+                      </Button>
+                    </div>
+
+                    <div
+                      style={{
+                        backgroundColor: "var(--color-surface-card, #ffffff)",
+                        border: "1px solid var(--color-border-default, #e2e8f0)",
+                        borderRadius: "var(--radius-md, 0.5rem)",
+                        padding: "1.25rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.75rem",
+                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
+                          <AccountingIcon size={20} />
+                        </div>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>قيود اليومية</h3>
+                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>المحاسبة العامة ودفتر الأستاذ</p>
+                        </div>
+                      </div>
+                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("accounting")} style={{ width: "100%" }}>
+                        قيود اليومية
+                      </Button>
+                    </div>
+
+                    <div
+                      style={{
+                        backgroundColor: "var(--color-surface-card, #ffffff)",
+                        border: "1px solid var(--color-border-default, #e2e8f0)",
+                        borderRadius: "var(--radius-md, 0.5rem)",
+                        padding: "1.25rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.75rem",
+                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
+                          <MigrationIcon size={20} />
+                        </div>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>معالج الاستيراد</h3>
+                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>استيراد البيانات وتجهيز النظام</p>
+                        </div>
+                      </div>
+                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("migration")} style={{ width: "100%" }}>
+                        معالج الاستيراد
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>

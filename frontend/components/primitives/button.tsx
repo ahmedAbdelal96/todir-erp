@@ -65,12 +65,13 @@ export function Button({
         alignItems: "center",
         justifyContent: "center",
         gap: "0.5rem",
-        fontWeight: "500",
+        fontWeight: "600",
+        fontSize: size === "compact" ? "0.8125rem" : "0.875rem",
         fontFamily: "var(--font-sans)",
-        borderRadius: "var(--radius-md)",
+        borderRadius: "var(--radius-md, 0.375rem)",
         cursor: isEffectiveDisabled ? "not-allowed" : "pointer",
         opacity: isEffectiveDisabled ? 0.6 : 1,
-        transition: "background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease",
+        transition: "all 150ms cubic-bezier(0.4, 0, 0.2, 1)",
         height: size === "compact" ? "var(--density-field-height, 2rem)" : "var(--density-field-height, 2.5rem)",
         paddingInline: size === "compact" ? "var(--density-button-padding-inline, 0.75rem)" : "var(--density-button-padding-inline, 1rem)",
         borderWidth: "1px",
@@ -94,10 +95,10 @@ export function Button({
           }}
         />
       ) : (
-        startIcon && <span className="ui-button__icon-start">{startIcon}</span>
+        startIcon && <span className="ui-button__icon-start" style={{ display: "inline-flex", alignItems: "center" }}>{startIcon}</span>
       )}
       <span className="ui-button__content">{children}</span>
-      {!isLoading && endIcon && <span className="ui-button__icon-end">{endIcon}</span>}
+      {!isLoading && endIcon && <span className="ui-button__icon-end" style={{ display: "inline-flex", alignItems: "center" }}>{endIcon}</span>}
     </AriaButton>
   );
 }
@@ -132,33 +133,36 @@ function getVariantStyles(variant: ButtonVariant): React.CSSProperties {
   switch (variant) {
     case "primary":
       return {
-        backgroundColor: "var(--color-action-primary)",
-        borderColor: "var(--color-action-primary)",
-        color: "var(--color-action-primary-content)"
+        backgroundColor: "var(--color-action-primary, #0f766e)",
+        borderColor: "var(--color-action-primary, #0f766e)",
+        color: "var(--color-action-primary-content, #ffffff)",
+        boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.15)"
       };
     case "secondary":
       return {
-        backgroundColor: "var(--color-action-secondary)",
-        borderColor: "var(--color-border-default)",
-        color: "var(--color-action-secondary-content)"
+        backgroundColor: "var(--color-surface-card, #ffffff)",
+        borderColor: "var(--color-border-default, #cbd5e1)",
+        color: "var(--color-content-primary, #0f172a)",
+        boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)"
       };
     case "danger":
       return {
-        backgroundColor: "var(--color-status-danger)",
-        borderColor: "var(--color-status-danger)",
-        color: "var(--color-content-inverse)"
+        backgroundColor: "var(--color-status-danger, #e11d48)",
+        borderColor: "var(--color-status-danger, #e11d48)",
+        color: "var(--color-content-inverse, #ffffff)",
+        boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.08)"
       };
     case "tertiary":
       return {
-        backgroundColor: "var(--color-surface-subtle)",
+        backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
         borderColor: "transparent",
-        color: "var(--color-content-primary)"
+        color: "var(--color-content-primary, #0f172a)"
       };
     case "ghost":
       return {
         backgroundColor: "transparent",
         borderColor: "transparent",
-        color: "var(--color-content-primary)"
+        color: "var(--color-content-secondary, #475569)"
       };
   }
 }

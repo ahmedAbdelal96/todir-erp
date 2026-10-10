@@ -9,6 +9,7 @@ import {
   referenceRadiiSharp,
   referenceRadiiSoft,
   referenceRadiiStandard,
+  referenceShadows,
   referenceTypography,
   referenceZIndex
 } from "../tokens/reference-tokens.ts";
@@ -125,6 +126,13 @@ export function compileTheme(
     "--radius-lg": radii.lg,
     "--radius-xl": radii.xl,
     "--radius-full": radii.full,
+
+    // Shadows
+    "--shadow-none": referenceShadows.none,
+    "--shadow-sm": referenceShadows.sm,
+    "--shadow-md": referenceShadows.md,
+    "--shadow-lg": referenceShadows.lg,
+    "--shadow-xl": referenceShadows.xl,
 
     // Typography
     "--font-sans": referenceTypography.fontFamily.sans,
