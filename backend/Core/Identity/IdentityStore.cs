@@ -9,8 +9,10 @@ namespace Core.Identity;
 public interface IIdentityStore
 {
     Task<Identity?> AuthenticateAsync(string email, string password, CancellationToken cancellationToken = default);
+    Task<Identity?> LoadActiveAsync(IdentityId identityId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AuthenticationAccessContext>> ListActiveAccessContextsAsync(IdentityId identityId, CancellationToken cancellationToken = default);
     Task<Membership?> FindActiveMembershipAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default);
     Task<bool> ValidateSessionAsync(IdentityId identityId, TenantId tenantId, Guid securityStamp, CancellationToken cancellationToken = default);
     Task<bool> RevokeSessionsAsync(IdentityId identityId, CancellationToken cancellationToken = default);
@@ -28,8 +30,10 @@ public interface IIdentityMembershipAdminStore
 public sealed class NullIdentityStore : IIdentityStore
 {
     public Task<Identity?> AuthenticateAsync(string email, string password, CancellationToken cancellationToken = default) => Task.FromResult<Identity?>(null);
+    public Task<Identity?> LoadActiveAsync(IdentityId identityId, CancellationToken cancellationToken = default) => Task.FromResult<Identity?>(null);
     public Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Membership>>([]);
     public Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Membership>>([]);
+    public Task<IReadOnlyList<AuthenticationAccessContext>> ListActiveAccessContextsAsync(IdentityId identityId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AuthenticationAccessContext>>([]);
     public Task<Membership?> FindActiveMembershipAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default) => Task.FromResult<Membership?>(null);
     public Task<bool> ValidateSessionAsync(IdentityId identityId, TenantId tenantId, Guid securityStamp, CancellationToken cancellationToken = default) => Task.FromResult(false);
     public Task<bool> RevokeSessionsAsync(IdentityId identityId, CancellationToken cancellationToken = default) => Task.FromResult(false);
@@ -37,14 +41,58 @@ public sealed class NullIdentityStore : IIdentityStore
 
 public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentityStore
 {
+    private const string DummyPasswordHash = "pbkdf2-sha256$120000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
     public async Task<Identity?> AuthenticateAsync(string email, string password, CancellationToken cancellationToken = default)
     {
-        await using var command = dataSource.CreateCommand("select id, normalized_email, email_verified, status, created_at, last_login_at, security_stamp, password_hash from platform_iam.identity where normalized_email = $1 limit 1");
-        command.Parameters.AddWithValue(IdentityConventions.NormalizeEmail(email));
+        var normalizedEmail = IdentityConventions.NormalizeEmail(email);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("select id, normalized_email, email_verified, status, created_at, last_login_at, security_stamp, password_hash, failed_login_count, locked_until from platform_iam.identity where normalized_email = $1 for update", connection, transaction);
+        command.Parameters.AddWithValue(normalizedEmail);
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) return null;
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            await reader.DisposeAsync();
+            IdentityConventions.VerifyPassword(password, DummyPasswordHash);
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
         var identity = ReadIdentity(reader);
-        return identity.Status == IdentityStatus.Active && IdentityConventions.VerifyPassword(password, identity.PasswordHash ?? "") ? identity : null;
+        var lockedUntil = reader.IsDBNull(9) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(9);
+        await reader.DisposeAsync();
+        var now = DateTimeOffset.UtcNow;
+        var locked = lockedUntil is not null && lockedUntil > now;
+        var valid = identity.Status == IdentityStatus.Active && !locked && IdentityConventions.VerifyPassword(password, identity.PasswordHash ?? "");
+        if (!valid)
+        {
+            if (identity.Status == IdentityStatus.Active && !locked)
+            {
+                await using var failure = new NpgsqlCommand("update platform_iam.identity set failed_login_count = least(failed_login_count + 1, $2), locked_until = case when failed_login_count + 1 >= $2 then $3 else locked_until end, version = version + 1 where id = $1", connection, transaction);
+                failure.Parameters.AddWithValue(identity.Id.Value);
+                failure.Parameters.AddWithValue(IdentityConventions.FailedLoginThreshold);
+                failure.Parameters.AddWithValue(now.Add(IdentityConventions.LockoutDuration));
+                await failure.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
+        await using (var success = new NpgsqlCommand("update platform_iam.identity set failed_login_count = 0, locked_until = null, last_login_at = $2, version = version + 1 where id = $1", connection, transaction))
+        {
+            success.Parameters.AddWithValue(identity.Id.Value);
+            success.Parameters.AddWithValue(now);
+            await success.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return identity with { LastLoginAt = now };
+    }
+
+    public async Task<Identity?> LoadActiveAsync(IdentityId identityId, CancellationToken cancellationToken = default)
+    {
+        await using var command = dataSource.CreateCommand("select id, normalized_email, email_verified, status, created_at, last_login_at, security_stamp, password_hash from platform_iam.identity where id = $1 and status = 'Active' limit 1");
+        command.Parameters.AddWithValue(identityId.Value);
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadIdentity(reader) : null;
     }
 
     public async Task<IReadOnlyList<Membership>> ListActiveMembershipsAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default)
@@ -70,6 +118,16 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
         var memberships = new List<Membership>();
         while (await reader.ReadAsync(cancellationToken)) memberships.Add(ReadMembership(reader));
         return memberships;
+    }
+
+    public async Task<IReadOnlyList<AuthenticationAccessContext>> ListActiveAccessContextsAsync(IdentityId identityId, CancellationToken cancellationToken = default)
+    {
+        await using var command = dataSource.CreateCommand("select id, tenant_id, identity_id, display_name, status, default_legal_entity_id, default_branch_id, locale, timezone, created_at, version, organization_name from platform_iam.list_active_access_contexts($1) order by organization_name, created_at, id");
+        command.Parameters.AddWithValue(identityId.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var contexts = new List<AuthenticationAccessContext>();
+        while (await reader.ReadAsync(cancellationToken)) contexts.Add(new(ReadMembership(reader), reader.GetString(11)));
+        return contexts;
     }
 
     public async Task<Membership?> FindActiveMembershipAsync(IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default)

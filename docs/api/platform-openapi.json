@@ -6,7 +6,19 @@
     "/api/v1/auth/login": {
       "post": {
         "requestBody": { "$ref": "#/components/requestBodies/LoginRequest" },
-        "responses": { "200": { "description": "Authenticated or tenant selection required" }, "401": { "description": "Invalid credentials" } }
+        "responses": { "200": { "description": "Authenticated, MFA verification required, or organization selection required" }, "401": { "description": "Enumeration-safe authentication failure" } }
+      }
+    },
+    "/api/v1/auth/mfa/verify": {
+      "post": {
+        "requestBody": { "$ref": "#/components/requestBodies/MfaVerificationRequest" },
+        "responses": { "200": { "description": "MFA verified or organization selection required" }, "401": { "description": "Invalid or expired challenge" } }
+      }
+    },
+    "/api/v1/auth/organization/select": {
+      "post": {
+        "requestBody": { "$ref": "#/components/requestBodies/OrganizationSelectionRequest" },
+        "responses": { "200": { "description": "Authenticated with the selected server-validated organization" }, "401": { "description": "Invalid, expired, or unauthorized challenge selection" } }
       }
     },
     "/api/v1/auth/logout": { "post": { "responses": { "204": { "description": "Signed out" } } } },
@@ -125,6 +137,8 @@
   "components": {
     "requestBodies": {
       "LoginRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } } },
+      "MfaVerificationRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MfaVerificationRequest" } } } },
+      "OrganizationSelectionRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrganizationSelectionRequest" } } } },
       "TenantSelection": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TenantSelection" } } } },
       "OrganizationSelection": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrganizationSelection" } } } },
       "MessageReplayRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageReplayRequest" } } } },
@@ -154,8 +168,20 @@
     "schemas": {
       "LoginRequest": {
         "type": "object",
-        "required": ["email", "password", "tenantId"],
-        "properties": { "email": { "type": "string", "format": "email" }, "password": { "type": "string", "format": "password" }, "tenantId": { "type": "string", "format": "uuid" }, "mfaCode": { "type": ["string", "null"] } },
+        "required": ["email", "password"],
+        "properties": { "email": { "type": "string", "format": "email" }, "password": { "type": "string", "format": "password" } },
+        "additionalProperties": false
+      },
+      "MfaVerificationRequest": {
+        "type": "object",
+        "required": ["challengeToken", "code"],
+        "properties": { "challengeToken": { "type": "string", "minLength": 32 }, "code": { "type": "string", "minLength": 1, "maxLength": 64 } },
+        "additionalProperties": false
+      },
+      "OrganizationSelectionRequest": {
+        "type": "object",
+        "required": ["challengeToken", "membershipId"],
+        "properties": { "challengeToken": { "type": "string", "minLength": 32 }, "membershipId": { "type": "string", "format": "uuid" } },
         "additionalProperties": false
       },
       "TenantSelection": {

@@ -74,6 +74,8 @@ public static class PlatformHostingExtensions
         services.AddDataProtection();
         services.AddSingleton<IMfaCredentialStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlMfaCredentialStore(dataSource) : new InMemoryMfaCredentialStore());
         services.AddSingleton<MfaCredentialManager>();
+        services.AddSingleton<IAuthenticationChallengeStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlAuthenticationChallengeStore(dataSource) : new InMemoryAuthenticationChallengeStore(provider.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<AuthenticationFlowService>();
         services.AddSingleton<FileUploadPolicy>();
         services.AddSingleton<SupportAccessService>();
         services.AddSingleton<ISupportAccessWorkflow>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
@@ -127,20 +129,20 @@ public static class PlatformHostingExtensions
             var tokens = antiforgery.GetAndStoreTokens(context);
             return Results.Ok(new { token = tokens.RequestToken });
         });
-        group.MapPost("/auth/login", async (LoginRequest request, HttpContext context, IIdentityStore store, ISessionService sessions, MfaCredentialManager mfa, TimeProvider clock, CancellationToken cancellationToken) =>
+        group.MapPost("/auth/login", async (LoginRequest request, HttpContext context, AuthenticationFlowService flow, CancellationToken cancellationToken) =>
         {
-            var identity = await store.AuthenticateAsync(request.Email, request.Password, cancellationToken);
-            if (identity is null) return Results.Unauthorized();
-            if (!Guid.TryParse(request.TenantId, out var selectedTenant) || selectedTenant == Guid.Empty) return Problem(StatusCodes.Status400BadRequest, "tenant.required", "Tenant selection is required");
-            var selected = await store.FindActiveMembershipAsync(identity.Id, new(selectedTenant), cancellationToken);
-            if (selected is null) return Results.Unauthorized();
-            var mfaEnabled = await mfa.IsEnabledAsync(identity.Id, cancellationToken);
-            if (mfaEnabled && !await mfa.VerifyAsync(identity.Id, request.MfaCode, clock.GetUtcNow(), cancellationToken)) return Problem(StatusCodes.Status401Unauthorized, "auth.mfa_required", "Valid multi-factor authentication is required");
-            var session = await sessions.CreateAsync(identity, selected, cancellationToken);
-            if (session is null) return Results.Unauthorized();
-            var claims = new[] { new Claim(ClaimTypes.NameIdentifier, identity.Id.Value.ToString("D")), new Claim("membership_id", selected.Id.Value.ToString("D")), new Claim("tenant_id", selected.TenantId.Value.ToString("D")), new Claim("security_stamp", identity.SecurityStamp.ToString("D")), new Claim("mfa_verified", mfaEnabled.ToString().ToLowerInvariant()) };
-            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
-            return Results.Ok(new { authenticated = true, tenantId = selected.TenantId.Value });
+            var result = await flow.BeginAsync(request.Email, request.Password, cancellationToken);
+            return await RenderAuthenticationResult(result, context);
+        }).RequireRateLimiting("auth");
+        group.MapPost("/auth/mfa/verify", async (MfaVerificationRequest request, HttpContext context, AuthenticationFlowService flow, CancellationToken cancellationToken) =>
+        {
+            var result = await flow.VerifyMfaAsync(request.ChallengeToken, request.Code, cancellationToken);
+            return await RenderAuthenticationResult(result, context);
+        }).RequireRateLimiting("auth");
+        group.MapPost("/auth/organization/select", async (OrganizationSelectionRequest request, HttpContext context, AuthenticationFlowService flow, CancellationToken cancellationToken) =>
+        {
+            var result = await flow.SelectOrganizationAsync(request.ChallengeToken, request.MembershipId, cancellationToken);
+            return await RenderAuthenticationResult(result, context);
         }).RequireRateLimiting("auth");
         group.MapPost("/auth/mfa/enroll", async (HttpContext context, MfaCredentialManager mfa, CancellationToken cancellationToken) =>
         {
@@ -308,13 +310,42 @@ public static class PlatformHostingExtensions
 
     private sealed record TenantSelection(string TenantId);
     private sealed record OrganizationSelection(string? LegalEntityId, string? BranchId);
-    private sealed record LoginRequest(string Email, string Password, string? TenantId, string? MfaCode);
+    private sealed record LoginRequest(string Email, string Password);
+    private sealed record MfaVerificationRequest(string ChallengeToken, string Code);
+    private sealed record OrganizationSelectionRequest(string ChallengeToken, Guid MembershipId);
     private sealed record MembershipInvitationRequest(string IdentityId, string DisplayName, DateTimeOffset ExpiresAt);
     private sealed record MembershipInvitationAcceptanceRequest(string Token);
     private sealed record MessageReplayRequest(string MessageId, string TenantId, string ConsumerEndpoint, string Reason);
     private sealed record StagingReplayRequest(string TenantId, string OperatorId, string Reason);
 
     private static IResult Problem(int statusCode, string code, string title) => Results.Problem(statusCode: statusCode, title: title, extensions: new Dictionary<string, object?> { ["code"] = code });
+
+    private static async Task<IResult> RenderAuthenticationResult(AuthenticationFlowResult result, HttpContext context)
+    {
+        if (result.State == AuthenticationNextStep.Rejected) return Problem(StatusCodes.Status401Unauthorized, result.ErrorCode ?? "auth.invalid_credentials", "Authentication could not be completed");
+        if (result.State == AuthenticationNextStep.Authenticated && result.Session is { } session)
+        {
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, session.IdentityId.Value.ToString("D")),
+                new Claim("membership_id", session.MembershipId.Value.ToString("D")),
+                new Claim("tenant_id", session.TenantId.Value.ToString("D")),
+                new Claim("security_stamp", session.SecurityStamp.ToString("D")),
+                new Claim("mfa_verified", result.MfaVerified.ToString().ToLowerInvariant())
+            };
+            if (session.LegalEntityId is { } legalEntity) claims = [.. claims, new Claim("legal_entity_id", legalEntity.Value.ToString("D"))];
+            if (session.BranchId is { } branch) claims = [.. claims, new Claim("branch_id", branch.Value.ToString("D"))];
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
+            return Results.Ok(new { state = result.State.ToString(), authenticated = true, tenantId = session.TenantId.Value });
+        }
+        return Results.Ok(new
+        {
+            state = result.State.ToString(),
+            challengeToken = result.ChallengeToken,
+            organizations = result.Organizations,
+            errorCode = result.ErrorCode
+        });
+    }
 
     private static async Task<bool> HasTenantPermissionAsync(HttpContext context, TenantId tenant, string permission, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken)
     {

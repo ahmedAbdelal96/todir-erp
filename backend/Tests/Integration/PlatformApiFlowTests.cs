@@ -161,8 +161,23 @@ public sealed class PlatformApiFlowTests
 
     private static async Task LoginAsync(HttpClient client, string email, string password, Guid tenantId)
     {
-        var response = await PostAsync(client, "/api/v1/auth/login", new { email, password, tenantId });
+        var response = await PostAsync(client, "/api/v1/auth/login", new { email, password });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var authentication = JsonSerializer.Deserialize<JsonElement>(responseBody);
+        Assert.True(authentication.TryGetProperty("state", out _), responseBody);
+        if (authentication.GetProperty("state").GetString() == "Authenticated")
+        {
+            Assert.Equal(tenantId, authentication.GetProperty("tenantId").GetGuid());
+            return;
+        }
+        Assert.Equal("SelectOrganization", authentication.GetProperty("state").GetString());
+        var challengeToken = authentication.GetProperty("challengeToken").GetString();
+        var organization = authentication.GetProperty("organizations").EnumerateArray().Single(value => value.GetProperty("tenantId").GetGuid() == tenantId);
+        var selection = await PostAsync(client, "/api/v1/auth/organization/select", new { challengeToken, membershipId = organization.GetProperty("membershipId").GetGuid() });
+        Assert.Equal(HttpStatusCode.OK, selection.StatusCode);
+        var completed = await selection.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Authenticated", completed.GetProperty("state").GetString());
     }
 
     private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string path, object? body)

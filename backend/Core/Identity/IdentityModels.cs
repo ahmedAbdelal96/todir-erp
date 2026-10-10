@@ -54,6 +54,11 @@ public interface ISessionService
 
 public static class IdentityConventions
 {
+    public const int FailedLoginThreshold = 5;
+    public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan AuthenticationChallengeLifetime = TimeSpan.FromMinutes(5);
+    public const int AuthenticationChallengeMaxAttempts = 5;
+
     public static string NormalizeEmail(string email)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(email);

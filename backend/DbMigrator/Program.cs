@@ -120,6 +120,9 @@ foreach (var script in scripts)
 await using (var resetOwner = new NpgsqlCommand("reset role", connection))
     await resetOwner.ExecuteNonQueryAsync();
 
+await using (var identityAccessContextOwnership = new NpgsqlCommand("alter function platform_iam.list_active_access_contexts(uuid) owner to erp_dispatcher; alter function platform_iam.list_active_memberships(uuid) owner to erp_dispatcher", connection))
+    await identityAccessContextOwnership.ExecuteNonQueryAsync();
+
 await using (var dispatcherOwnership = new NpgsqlCommand("alter function platform_messaging.claim_pending_outbox(integer) owner to erp_dispatcher", connection))
     await dispatcherOwnership.ExecuteNonQueryAsync();
 await using (var dispatcherBacklogOwnership = new NpgsqlCommand("alter function platform_messaging.observe_pending_outbox() owner to erp_dispatcher", connection))
@@ -195,7 +198,12 @@ static IReadOnlyList<string> ResolveModuleMigrations(string bootstrapDirectory, 
 {
     var basePath = Path.Combine(bootstrapDirectory, $"{module.Id}-schema.sql");
     if (!File.Exists(basePath)) throw new FileNotFoundException($"No migration script exists for module manifest {module.Id}.", basePath);
-    return [basePath, .. Directory.EnumerateFiles(bootstrapDirectory, $"{module.Id}-forward-fix-*.sql").OrderBy(path => path, StringComparer.Ordinal)];
+    var fixes = Directory.EnumerateFiles(bootstrapDirectory, $"{module.Id}-forward-fix-*.sql")
+        .OrderBy(path => MigrationPriority(Path.GetFileName(path)), Comparer<int>.Default)
+        .ThenBy(path => path, StringComparer.Ordinal);
+    return [basePath, .. fixes];
 }
+
+static int MigrationPriority(string fileName) => fileName.EndsWith("-authentication-challenges.sql", StringComparison.Ordinal) ? 0 : 1;
 
 sealed record ModuleManifest(string Id, IReadOnlyList<string> HardDependencies);
