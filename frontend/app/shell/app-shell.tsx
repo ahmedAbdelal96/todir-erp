@@ -5,6 +5,8 @@ import { DataGrid, type DataGridColumn } from "../../components/grid/index.ts";
 import { ComboBox } from "../../components/primitives/combobox.tsx";
 import { Button } from "../../components/primitives/button.tsx";
 import { Dialog } from "../../components/primitives/dialog.tsx";
+import { PageHeader } from "../../components/pages/page-header.tsx";
+import { UserMenu } from "./user-menu.tsx";
 import {
   HomeIcon,
   UsersIcon,
@@ -235,16 +237,23 @@ export function AppShell() {
   return (
     <div className="todir-app-shell shell" dir={direction} data-theme={theme} data-density={density}>
       <header className="topbar">
+        {/* Left Side (in LTR) / Right Side (in RTL): Brand & Company */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
-          <a className="brand" href="/" aria-label="TODIR">
-            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "32px", height: "32px", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-action-primary, #0f766e)", color: "#ffffff", fontWeight: 900, fontSize: "1rem" }}>
+          <a className="brand" href="/" aria-label="TODIR" onClick={(e) => { e.preventDefault(); setCurrentView("home"); window.location.hash = ""; }}>
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "30px", height: "30px", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-action-primary, #0f766e)", color: "#ffffff", fontWeight: 900, fontSize: "0.9375rem" }}>
               T
             </span>
-            <span>TODIR</span>
+            <span style={{ fontSize: "1.125rem", fontWeight: 800, letterSpacing: "0.04em" }}>TODIR</span>
           </a>
+
+          <span style={{ color: "var(--color-border-strong, #cbd5e1)" }}>|</span>
+
           <span
             style={{
-              padding: "0.25rem 0.625rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.375rem",
+              padding: "0.2rem 0.625rem",
               borderRadius: "var(--radius-full, 9999px)",
               backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
               fontSize: "0.8125rem",
@@ -253,10 +262,12 @@ export function AppShell() {
               border: "1px solid var(--color-border-subtle, #e2e8f0)"
             }}
           >
+            <BuildingIcon size={13} style={{ color: "var(--color-action-primary, #0f766e)" }} />
             {companyName}
           </span>
         </div>
 
+        {/* Center / Operational Context (Legal Entity & Branch) */}
         <div className="context-controls">
           <div
             style={{
@@ -269,7 +280,6 @@ export function AppShell() {
               border: "1px solid var(--color-border-default, #e2e8f0)"
             }}
           >
-            <BuildingIcon size={14} style={{ color: "var(--color-content-muted)" }} />
             <label htmlFor="entity-select" style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-content-muted)" }}>
               {labels.entity}
             </label>
@@ -317,98 +327,46 @@ export function AppShell() {
             </select>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
-            <button
-              type="button"
-              onClick={() => setTheme(theme === "default" ? "sapphire-modern" : "default")}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.375rem",
-                padding: "0.375rem 0.625rem",
-                fontSize: "0.8125rem",
-                fontWeight: 600,
-                borderRadius: "var(--radius-md, 0.375rem)",
-                border: "1px solid var(--color-border-default, #e2e8f0)",
-                backgroundColor: "var(--color-surface-card, #ffffff)",
-                color: "var(--color-content-secondary, #475569)",
-                cursor: "pointer",
-                transition: "all 150ms ease"
-              }}
-            >
-              <SunMoonIcon size={14} />
-              <span>{theme === "default" ? "السمة البديلة" : "السمة الافتراضية"}</span>
-            </button>
+          {/* Clean Language quick toggle */}
+          <button
+            type="button"
+            onClick={() => setLanguage(language === "ar" ? "en" : "ar")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.375rem",
+              padding: "0.3125rem 0.625rem",
+              fontSize: "0.8125rem",
+              fontWeight: 600,
+              borderRadius: "var(--radius-md, 0.375rem)",
+              border: "1px solid var(--color-border-default, #e2e8f0)",
+              backgroundColor: "var(--color-surface-card, #ffffff)",
+              color: "var(--color-content-secondary, #475569)",
+              cursor: "pointer",
+              transition: "all 150ms ease"
+            }}
+          >
+            <GlobeIcon size={14} />
+            <span>{labels.language}</span>
+          </button>
 
-            <button
-              type="button"
-              onClick={() => setDensity(density === "comfortable" ? "compact" : "comfortable")}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.375rem",
-                padding: "0.375rem 0.625rem",
-                fontSize: "0.8125rem",
-                fontWeight: 600,
-                borderRadius: "var(--radius-md, 0.375rem)",
-                border: "1px solid var(--color-border-default, #e2e8f0)",
-                backgroundColor: "var(--color-surface-card, #ffffff)",
-                color: "var(--color-content-secondary, #475569)",
-                cursor: "pointer",
-                transition: "all 150ms ease"
-              }}
-            >
-              <DensityIcon size={14} />
-              <span>{density === "comfortable" ? "كثافة مدمجة" : "كثافة مريحة"}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setLanguage(language === "ar" ? "en" : "ar")}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.375rem",
-                padding: "0.375rem 0.625rem",
-                fontSize: "0.8125rem",
-                fontWeight: 600,
-                borderRadius: "var(--radius-md, 0.375rem)",
-                border: "1px solid var(--color-border-default, #e2e8f0)",
-                backgroundColor: "var(--color-surface-card, #ffffff)",
-                color: "var(--color-content-secondary, #475569)",
-                cursor: "pointer",
-                transition: "all 150ms ease"
-              }}
-            >
-              <GlobeIcon size={14} />
-              <span>{labels.language}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void signOut()}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.375rem",
-                padding: "0.375rem 0.75rem",
-                fontSize: "0.8125rem",
-                fontWeight: 600,
-                borderRadius: "var(--radius-md, 0.375rem)",
-                border: "1px solid var(--color-border-default, #e2e8f0)",
-                backgroundColor: "var(--color-surface-card, #ffffff)",
-                color: "var(--color-status-danger, #e11d48)",
-                cursor: "pointer",
-                transition: "all 150ms ease"
-              }}
-            >
-              <LogOutIcon size={14} />
-              <span>{labels.signOut}</span>
-            </button>
-          </div>
+          {/* Consolidated User Menu */}
+          <UserMenu
+            userName="مسؤول النظام"
+            userEmail="admin@atlas.com"
+            language={language}
+            onToggleLanguage={() => setLanguage(language === "ar" ? "en" : "ar")}
+            theme={theme}
+            onToggleTheme={() => setTheme(theme === "default" ? "sapphire-modern" : "default")}
+            density={density}
+            onToggleDensity={() => setDensity(density === "comfortable" ? "compact" : "comfortable")}
+            onSignOut={() => void signOut()}
+          />
         </div>
       </header>
+
       {operation ? <div className="operation-progress" role="status" aria-live="polite">{operation}</div> : null}
+
       <div className="layout">
         <aside className="sidebar" aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}>
           <div style={{ padding: "0.25rem 0.5rem 0.75rem", fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-content-muted, #94a3b8)" }}>
@@ -430,9 +388,10 @@ export function AppShell() {
             ))}
           </nav>
         </aside>
+
         <main className="content" aria-live="polite">
           {contextError ? <div className="error" role="alert">{contextError}</div> : null}
-          <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center" }}>جارٍ التحميل...</div>}>
+          <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>جارٍ التحميل...</div>}>
             {currentView === "users" || currentView === "iam" ? (
               <UserListPage
                 onSelectUser={(user) => {
@@ -484,19 +443,15 @@ export function AppShell() {
             ) : currentView === "preview" ? (
               <ShowcasePreview density={density} />
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem" }}>
-                <div
-                  style={{
-                    backgroundColor: "var(--color-surface-card, #ffffff)",
-                    borderRadius: "var(--radius-lg, 0.75rem)",
-                    border: "1px solid var(--color-border-default, #e2e8f0)",
-                    padding: "2rem",
-                    boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))",
-                    position: "relative",
-                    overflow: "hidden"
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                <PageHeader
+                  title={labels.title}
+                  subtitle={
+                    language === "ar"
+                      ? "نظام تخطيط وإدارة موارد المؤسسة المالي والتشغيلي الموحد."
+                      : "Unified financial and operational enterprise resource planning system."
+                  }
+                  status={
                     <span
                       style={{
                         display: "inline-flex",
@@ -507,33 +462,18 @@ export function AppShell() {
                         backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
                         fontSize: "0.75rem",
                         fontWeight: 700,
-                        color: "var(--color-action-primary, #0f766e)"
+                        color: "var(--color-action-primary, #0f766e)",
+                        border: "1px solid var(--color-border-default, #e2e8f0)"
                       }}
                     >
                       <BuildingIcon size={12} />
                       {companyName}
                     </span>
-                  </div>
-                  <h1
-                    style={{
-                      margin: "0 0 0.5rem 0",
-                      fontSize: "1.75rem",
-                      fontWeight: 800,
-                      color: "var(--color-content-primary, #0f172a)",
-                      letterSpacing: "-0.02em"
-                    }}
-                  >
-                    {labels.title}
-                  </h1>
-                  <p style={{ margin: 0, fontSize: "0.9375rem", color: "var(--color-content-muted, #64748b)" }}>
-                    {language === "ar"
-                      ? "نظام تخطيط وإدارة موارد المؤسسة المالي والتشغيلي الموحد."
-                      : "Unified financial and operational enterprise resource planning system."}
-                  </p>
-                </div>
+                  }
+                />
 
                 <div>
-                  <h2 style={{ fontSize: "1.125rem", fontWeight: 700, margin: "0 0 1rem 0", color: "var(--color-content-primary, #0f172a)" }}>
+                  <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, margin: "0 0 1rem 0", color: "var(--color-content-primary, #0f172a)" }}>
                     {language === "ar" ? "الوصول السريع للوحدات" : "Quick Module Launchpad"}
                   </h2>
                   <div
@@ -543,135 +483,105 @@ export function AppShell() {
                       gap: "1rem"
                     }}
                   >
-                    <div
-                      style={{
-                        backgroundColor: "var(--color-surface-card, #ffffff)",
-                        border: "1px solid var(--color-border-default, #e2e8f0)",
-                        borderRadius: "var(--radius-md, 0.5rem)",
-                        padding: "1.25rem",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "0.75rem",
-                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
-                      }}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentView("users")}
+                      style={launchpadCardStyle}
+                      onMouseEnter={handleCardHover}
+                      onMouseLeave={handleCardLeave}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
-                          <UsersIcon size={20} />
-                        </div>
-                        <div>
-                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>المستخدمون</h3>
-                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>إدارة حسابات الفريق والصلاحيات</p>
-                        </div>
+                      <div style={cardIconContainerStyle}>
+                        <UsersIcon size={22} />
                       </div>
-                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("users")} style={{ width: "100%" }}>
-                        المستخدمون
-                      </Button>
-                    </div>
+                      <div style={{ flex: 1, textAlign: "start" }}>
+                        <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                          المستخدمون
+                        </h3>
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                          إدارة حسابات الفريق والصلاحيات
+                        </p>
+                      </div>
+                    </button>
 
-                    <div
-                      style={{
-                        backgroundColor: "var(--color-surface-card, #ffffff)",
-                        border: "1px solid var(--color-border-default, #e2e8f0)",
-                        borderRadius: "var(--radius-md, 0.5rem)",
-                        padding: "1.25rem",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "0.75rem",
-                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
-                      }}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentView("directory")}
+                      style={launchpadCardStyle}
+                      onMouseEnter={handleCardHover}
+                      onMouseLeave={handleCardLeave}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
-                          <DirectoryIcon size={20} />
-                        </div>
-                        <div>
-                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>دليل الأطراف</h3>
-                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>العملاء والموردون وجهات الاتصال</p>
-                        </div>
+                      <div style={cardIconContainerStyle}>
+                        <DirectoryIcon size={22} />
                       </div>
-                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("directory")} style={{ width: "100%" }}>
-                        دليل الأطراف
-                      </Button>
-                    </div>
+                      <div style={{ flex: 1, textAlign: "start" }}>
+                        <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                          دليل الأطراف
+                        </h3>
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                          العملاء والموردون وجهات الاتصال
+                        </p>
+                      </div>
+                    </button>
 
-                    <div
-                      style={{
-                        backgroundColor: "var(--color-surface-card, #ffffff)",
-                        border: "1px solid var(--color-border-default, #e2e8f0)",
-                        borderRadius: "var(--radius-md, 0.5rem)",
-                        padding: "1.25rem",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "0.75rem",
-                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
-                      }}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentView("invoicing")}
+                      style={launchpadCardStyle}
+                      onMouseEnter={handleCardHover}
+                      onMouseLeave={handleCardLeave}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
-                          <InvoicingIcon size={20} />
-                        </div>
-                        <div>
-                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>فواتير المبيعات</h3>
-                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>الفواتير الضريبية والمطالبات</p>
-                        </div>
+                      <div style={cardIconContainerStyle}>
+                        <InvoicingIcon size={22} />
                       </div>
-                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("invoicing")} style={{ width: "100%" }}>
-                        فواتير المبيعات
-                      </Button>
-                    </div>
+                      <div style={{ flex: 1, textAlign: "start" }}>
+                        <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                          فواتير المبيعات
+                        </h3>
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                          الفواتير الضريبية والمطالبات
+                        </p>
+                      </div>
+                    </button>
 
-                    <div
-                      style={{
-                        backgroundColor: "var(--color-surface-card, #ffffff)",
-                        border: "1px solid var(--color-border-default, #e2e8f0)",
-                        borderRadius: "var(--radius-md, 0.5rem)",
-                        padding: "1.25rem",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "0.75rem",
-                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
-                      }}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentView("accounting")}
+                      style={launchpadCardStyle}
+                      onMouseEnter={handleCardHover}
+                      onMouseLeave={handleCardLeave}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
-                          <AccountingIcon size={20} />
-                        </div>
-                        <div>
-                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>قيود اليومية</h3>
-                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>المحاسبة العامة ودفتر الأستاذ</p>
-                        </div>
+                      <div style={cardIconContainerStyle}>
+                        <AccountingIcon size={22} />
                       </div>
-                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("accounting")} style={{ width: "100%" }}>
-                        قيود اليومية
-                      </Button>
-                    </div>
+                      <div style={{ flex: 1, textAlign: "start" }}>
+                        <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                          قيود اليومية
+                        </h3>
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                          المحاسبة العامة ودفتر الأستاذ
+                        </p>
+                      </div>
+                    </button>
 
-                    <div
-                      style={{
-                        backgroundColor: "var(--color-surface-card, #ffffff)",
-                        border: "1px solid var(--color-border-default, #e2e8f0)",
-                        borderRadius: "var(--radius-md, 0.5rem)",
-                        padding: "1.25rem",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "0.75rem",
-                        boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
-                      }}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentView("migration")}
+                      style={launchpadCardStyle}
+                      onMouseEnter={handleCardHover}
+                      onMouseLeave={handleCardLeave}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        <div style={{ padding: "0.5rem", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", color: "var(--color-action-primary, #0f766e)" }}>
-                          <MigrationIcon size={20} />
-                        </div>
-                        <div>
-                          <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700 }}>معالج الاستيراد</h3>
-                          <p style={{ margin: "0.125rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>استيراد البيانات وتجهيز النظام</p>
-                        </div>
+                      <div style={cardIconContainerStyle}>
+                        <MigrationIcon size={22} />
                       </div>
-                      <Button variant="secondary" size="compact" onPress={() => setCurrentView("migration")} style={{ width: "100%" }}>
-                        معالج الاستيراد
-                      </Button>
-                    </div>
+                      <div style={{ flex: 1, textAlign: "start" }}>
+                        <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                          معالج الاستيراد
+                        </h3>
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                          استيراد البيانات وتجهيز النظام
+                        </p>
+                      </div>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -683,128 +593,191 @@ export function AppShell() {
   );
 }
 
-function PaymentSection() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [latestPayment, setLatestPayment] = useState<any | null>(null);
+const launchpadCardStyle: React.CSSProperties = {
+  backgroundColor: "var(--color-surface-card, #ffffff)",
+  border: "1px solid var(--color-border-default, #e2e8f0)",
+  borderRadius: "var(--radius-md, 0.5rem)",
+  padding: "1.25rem",
+  display: "flex",
+  alignItems: "center",
+  gap: "1rem",
+  cursor: "pointer",
+  outline: "none",
+  transition: "border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease",
+  boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
+};
 
+const cardIconContainerStyle: React.CSSProperties = {
+  padding: "0.625rem",
+  borderRadius: "var(--radius-md, 0.375rem)",
+  backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
+  color: "var(--color-action-primary, #0f766e)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0
+};
+
+function handleCardHover(e: React.MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.borderColor = "var(--color-action-primary, #0f766e)";
+  e.currentTarget.style.backgroundColor = "var(--color-surface-subtle, #f8fafc)";
+}
+
+function handleCardLeave(e: React.MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.borderColor = "var(--color-border-default, #e2e8f0)";
+  e.currentTarget.style.backgroundColor = "var(--color-surface-card, #ffffff)";
+}
+
+function StatusView({ direction, message }: { direction: string; message: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-        <Button variant="primary" onPress={() => setIsOpen(true)}>
-          + تسجيل دفعة مالية جديدة
-        </Button>
-      </div>
+    <div dir={direction} style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+      <p role="status">{message}</p>
+    </div>
+  );
+}
 
-      {latestPayment && (
-        <div style={{ padding: "1rem", backgroundColor: "var(--color-surface-success-subtle, #ecfdf5)", color: "var(--color-status-success)", borderRadius: "var(--radius-md)" }}>
-          تم تسجيل آخر دفعة بنجاح: {latestPayment.referenceNumber} بمبلغ {latestPayment.amount} {latestPayment.currency}
+function AccessView({ direction, kind, language, message, onRetry }: { direction: string; kind: "forbidden" | "error"; language: Language; message?: string | undefined; onRetry: () => void }) {
+  const isArabic = language === "ar";
+  const title = kind === "forbidden" ? (isArabic ? "غير مصرح لك بالوصول" : "Access Denied") : (isArabic ? "حدث خطأ غير متوقع" : "An error occurred");
+  const fallbackMessage = kind === "forbidden" ? (isArabic ? "لا تملك الصلاحيات الكافية للوصول إلى هذا المورد." : "You do not have permission to access this resource.") : (isArabic ? "تعذر تحميل البيانات المطلوبة." : "Could not load the requested data.");
+  return (
+    <div dir={direction} className="status-page">
+      <div className="auth-card" style={{ textAlign: "center" }}>
+        <h2 style={{ margin: "0 0 0.5rem 0", color: kind === "forbidden" ? "var(--color-status-warning)" : "var(--color-status-danger)" }}>{title}</h2>
+        <p style={{ margin: "0 0 1.5rem 0", color: "var(--color-content-muted)" }}>{message || fallbackMessage}</p>
+        <button type="button" onClick={onRetry} style={{ padding: "0.5rem 1.25rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", background: "var(--color-surface-subtle)", cursor: "pointer", fontWeight: 600 }}>
+          {isArabic ? "إعادة المحاولة" : "Retry"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export class ShellErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Uncaught application shell error:", error, errorInfo);
+  }
+
+  override render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: "2rem", textAlign: "center", direction: "rtl", fontFamily: "var(--font-sans)" }}>
+          <h2 style={{ color: "var(--color-status-danger)" }}>حدث خطأ غير متوقع في واجهة النظام</h2>
+          <p style={{ color: "var(--color-content-muted)" }}>{this.state.error?.message || "يرجى إعادة تحميل الصفحة والمحاولة مرة أخرى."}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", cursor: "pointer" }}
+          >
+            إعادة تحميل الصفحة
+          </button>
         </div>
-      )}
+      );
+    }
+    return this.props.children;
+  }
+}
 
-      <div style={{ backgroundColor: "var(--color-surface-card)", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", padding: "1.5rem" }}>
-        <h3 style={{ margin: "0 0 0.5rem 0" }}>سجل المعاملات النقدية والتحويلات</h3>
-        <p style={{ color: "var(--color-content-muted)", margin: 0 }}>
-          انقر فوق زر تسجيل الدفعة للتحقق من تدفق الأمان المالي، ومفتاح Idempotency، وحماية الإرسال المتكرر.
-        </p>
-      </div>
-
-      <PaymentEntryDialog
-        isOpen={isOpen}
-        onOpenChange={setIsOpen}
-        onPaymentComplete={(res) => setLatestPayment(res)}
-      />
+function PaymentSection() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <Button variant="primary" onPress={() => setOpen(true)}>+ تسجيل دفعة مالية جديدة</Button>
+      <PaymentEntryDialog isOpen={open} onOpenChange={setOpen} onPaymentComplete={() => setOpen(false)} />
     </div>
   );
 }
 
 function ShowcasePreview({ density }: { density: "comfortable" | "compact" }) {
-  const [money, setMoney] = useState({ amount: "125000.50", currency: "SAR" });
+  const [amount, setAmount] = useState<{ amount: string; currency: string }>({ amount: "12500.50", currency: "SAR" });
+  const [selectedCity, setSelectedCity] = useState<string | null>("ruh");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedCity, setSelectedCity] = useState<string | number | null>("RUH");
 
-  const sampleRows = [
-    { id: "1", code: "INV-001", party: "شركة الأفق للتجارة", amount: "15,400.00 SAR", status: "Active" },
-    { id: "2", code: "INV-002", party: "مؤسسة الرياض للحلول", amount: "8,920.00 SAR", status: "Active" },
+  const sampleColumns: DataGridColumn<{ id: string; code: string; name: string; balance: string }>[] = [
+    { id: "code", header: "كود الحساب", width: 120 },
+    { id: "name", header: "اسم الحساب", width: "1fr" },
+    { id: "balance", header: "الرصيد الحالي", width: 160, align: "end" }
   ];
 
-  const columns: DataGridColumn<(typeof sampleRows)[0]>[] = [
-    { id: "code", header: "رقم الفاتورة", width: 140 },
-    { id: "party", header: "الطرف التجاري", width: "1fr" },
-    { id: "amount", header: "المبلغ الإجمالي", width: 160, align: "end" },
+  const sampleRows = [
+    { id: "1", code: "1010", name: "الصندوق الرئيسي", balance: "25,400.00 ر.س" },
+    { id: "2", code: "1020", name: "بنك الراجحي - جاري", balance: "148,920.50 ر.س" },
+    { id: "3", code: "1030", name: "البنك الأهلي التجاري", balance: "82,150.00 ر.س" },
+    { id: "4", code: "1210", name: "ذمم العملاء المدينة", balance: "63,200.00 ر.س" }
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", padding: "1rem" }}>
-      <h2>معاينة مكونات نظام التصميم</h2>
-      <div data-testid="money-field-surface" style={{ maxWidth: "360px", background: "var(--color-surface-subtle)", padding: "1rem", borderRadius: "8px" }}>
-        <h3>حقل المبالغ النقدية (MoneyField)</h3>
-        <MoneyField
-          label="المبلغ المالي"
-          value={money}
-          onChange={setMoney}
-          size={density}
-        />
-        <div style={{ marginTop: "0.5rem", fontSize: "0.875rem" }}>
-          العرض المنسق: <MoneyDisplay value={money} />
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      <PageHeader
+        title="معاينة عناصر التصميم ومكونات المنظومة"
+        subtitle="فحص مباشر للمكونات التفاعلية، الحقول النقدية، وجداول البيانات في بيئة التشغيل الفعلية"
+      />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.25rem" }}>
+        <div style={{ backgroundColor: "var(--color-surface-card)", padding: "1.25rem", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border-default)" }}>
+          <h3 style={{ margin: "0 0 1rem 0", fontSize: "1rem" }}>حقل الإدخال النقدي الدقيق (MoneyField)</h3>
+          <MoneyField
+            label="المبلغ المالي المستحق"
+            value={amount}
+            onChange={setAmount}
+            description="يدعم الأرقام الدقيقة بدون كسور عائمة"
+          />
+          <div style={{ marginTop: "1rem", fontSize: "0.875rem" }}>
+            <span>القيمة المسجلة: </span>
+            <MoneyDisplay value={amount} displayCurrencyCode />
+          </div>
         </div>
-      </div>
 
-      <div data-testid="datagrid-surface" style={{ background: "#fff", padding: "1rem", borderRadius: "8px" }}>
-        <h3>جدول البيانات (DataGrid)</h3>
-        <DataGrid
-          columns={columns}
-          staticRows={sampleRows}
-          density={density}
-          selectable="single"
-        />
-      </div>
-
-      <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-        <Button variant="primary" size={density} onPress={() => setIsDialogOpen(true)}>
-          فتح نافذة التأكيد
-        </Button>
-        <div style={{ width: "240px" }}>
+        <div style={{ backgroundColor: "var(--color-surface-card)", padding: "1.25rem", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border-default)" }}>
+          <h3 style={{ margin: "0 0 1rem 0", fontSize: "1rem" }}>قائمة الاختيار والبحث (ComboBox)</h3>
           <ComboBox
-            label="المدينة"
+            label="المدينة / الفرع"
+            placeholder="اختر المدينة..."
             selectedKey={selectedCity}
-            onSelectionChange={setSelectedCity}
+            onSelectionChange={(k) => setSelectedCity(k as string)}
             options={[
-              { id: "RUH", label: "الرياض (Riyadh)" },
-              { id: "JED", label: "جدة (Jeddah)" },
-              { id: "CAI", label: "القاهرة (Cairo)" },
+              { id: "ruh", label: "الرياض (المقر الرئيسي)" },
+              { id: "jed", label: "جدة (فرع المنطقة الغربية)" },
+              { id: "dmm", label: "الدمام (فرع المنطقة الشرقية)" }
             ]}
           />
+          <div style={{ marginTop: "1rem" }}>
+            <Button variant="secondary" onPress={() => setIsDialogOpen(true)}>فتح نافذة تأكيد تجريبية</Button>
+          </div>
         </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <h3 style={{ margin: 0, fontSize: "1rem" }}>جدول البيانات عالي الكفاءة (DataGrid)</h3>
+        <DataGrid
+          columns={sampleColumns}
+          staticRows={sampleRows}
+          density={density}
+          enableRtl={true}
+        />
       </div>
 
       <Dialog
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
-        title="تأكيد العملية"
-        description="هل تود تأكيد حفظ الإعدادات المحددة؟"
+        title="تأكيد العملية المالية"
+        description="هل أنت متأكد من رغبتك في إتمام ترحيل القيد المحاسبي؟ هذه العملية غير قابلة للتراجع."
+        size="medium"
       >
-        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", marginTop: "1rem" }}>
-          <Button variant="secondary" onPress={() => setIsDialogOpen(false)}>إلغاء</Button>
-          <Button variant="primary" onPress={() => setIsDialogOpen(false)}>تأكيد</Button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1.5rem" }}>
+          <Button variant="ghost" onPress={() => setIsDialogOpen(false)}>إلغاء</Button>
+          <Button variant="primary" onPress={() => setIsDialogOpen(false)}>تأكيد الترحيل</Button>
         </div>
       </Dialog>
     </div>
   );
-}
-
-function StatusView({ direction, message }: { direction: "rtl" | "ltr"; message: string }) { return <main className="status-page" dir={direction}><p role="status">{message}</p></main>; }
-
-function AccessView({ direction, kind, language, message, onRetry }: { direction: "rtl" | "ltr"; kind: "forbidden" | "error"; language: Language; message?: string | undefined; onRetry: () => void }) {
-  const arabic = language === "ar";
-  return <main className="status-page" dir={direction}><div className="auth-card"><h1>{kind === "forbidden" ? (arabic ? "لا تملك الصلاحية" : "Access denied") : (arabic ? "حدث خطأ" : "Something went wrong")}</h1><p>{message ?? (arabic ? "لا يمكن متابعة العملية الحالية." : "The current operation cannot continue.")}</p><button type="button" onClick={onRetry}>{arabic ? "إعادة المحاولة" : "Retry"}</button></div></main>;
-}
-
-export class ShellErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error?: string }> {
-  constructor(props: { children: ReactNode }) { super(props); this.state = { hasError: false }; }
-  static getDerivedStateFromError(error: Error) { return { hasError: true, error: error.message }; }
-  override componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error("Shell crashed:", error, errorInfo); }
-  override render() {
-    if (!this.state.hasError) return this.props.children;
-    return <main className="status-page" dir="rtl"><div className="auth-card"><h1>حدث خطأ غير متوقع</h1><p>تعذر عرض الواجهة بسبب خطأ غير معالج.</p><p className="meta">{this.state.error}</p><button type="button" onClick={() => window.location.reload()}>إعادة تحميل الصفحة</button></div></main>;
-  }
 }

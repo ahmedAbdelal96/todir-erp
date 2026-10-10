@@ -29,7 +29,11 @@ export function Dialog({
   className,
   children,
   ...props
-}: DialogProps): React.JSX.Element {
+}: DialogProps): React.JSX.Element | null {
+  if (isOpen === false) {
+    return null;
+  }
+
   const getMaxWidth = () => {
     switch (size) {
       case "small":

@@ -6,7 +6,10 @@ import { SearchField } from "../../../components/primitives/search-field.tsx";
 import { FilterBar } from "../../../components/primitives/filter-bar.tsx";
 import { Select, SelectItem } from "../../../components/primitives/select.tsx";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../../../components/primitives/table.tsx";
-import { Spinner } from "../../../components/primitives/spinner.tsx";
+import { LoadingState } from "../../../components/primitives/loading-state.tsx";
+import { ErrorState } from "../../../components/primitives/error-state.tsx";
+import { EmptyState } from "../../../components/primitives/empty-state.tsx";
+import { UsersIcon } from "../../../components/primitives/icons.tsx";
 import { useUsersList, useLoginDomain, type UseIdentityContext } from "../hooks/identity-queries.ts";
 import { CreateUserDialog } from "../features/create-user-dialog.tsx";
 import { AdminPasswordResetDialog } from "../features/admin-password-reset-dialog.tsx";
@@ -31,7 +34,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
 
   const activeParam = statusFilter === "all" ? undefined : statusFilter === "active";
 
-  const { data: users = [], isLoading, error } = useUsersList(
+  const { data: users = [], isLoading, error, refetch } = useUsersList(
     {
       search: searchTerm.trim() || undefined,
       active: activeParam
@@ -89,44 +92,33 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
       }
     >
       {isLoading ? (
-        <div style={{ display: "flex", justifyContent: "center", padding: "4rem" }}>
-          <Spinner size="large" aria-label="جارٍ تحميل المستخدمين..." />
-        </div>
+        <LoadingState message="جارٍ تحميل قائمة المستخدمين..." />
       ) : error ? (
-        <div className="empty-state" style={{ padding: "3rem", textAlign: "center" }}>
-          <p style={{ color: "var(--color-status-danger, #ef4444)", fontWeight: 600 }}>
-            تعذر تحميل بيانات المستخدمين. يرجى المحاولة مرة أخرى.
-          </p>
-        </div>
+        <ErrorState
+          title="تعذر تحميل بيانات المستخدمين"
+          message="حدث خطأ أثناء جلب قائمة المستخدمين من الخادم. يرجى المحاولة مرة أخرى."
+          onRetry={() => void refetch()}
+        />
       ) : filteredUsers.length === 0 ? (
-        <div
-          className="empty-state"
-          style={{
-            padding: "4rem 2rem",
-            textAlign: "center",
-            backgroundColor: "var(--color-surface-card, #ffffff)",
-            borderRadius: "var(--radius-lg, 0.5rem)",
-            border: "1px dashed var(--color-border-default, #cbd5e1)"
-          }}
-        >
-          <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>👥</div>
-          <h3 style={{ margin: "0 0 0.5rem 0", fontSize: "1.125rem", color: "var(--color-content-primary, #0f172a)" }}>
-            لا يوجد مستخدمون حتى الآن
-          </h3>
-          <p style={{ margin: "0 0 1.5rem 0", color: "var(--color-content-muted, #64748b)", fontSize: "0.875rem" }}>
-            {searchTerm || statusFilter !== "all"
-              ? "لم يتم العثور على مستخدمين يطابقون معايير البحث."
-              : "ابدأ بإضافة مستخدمي الشركة لتزويدهم بحسابات تسجيل الدخول."}
-          </p>
-          <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
-            إضافة مستخدم جديد
-          </Button>
-        </div>
+        <EmptyState
+          icon={<UsersIcon size={28} />}
+          title="لا يوجد مستخدمون حتى الآن"
+          description={
+            searchTerm || statusFilter !== "all"
+              ? "لم يتم العثور على مستخدمين يطابقون معايير البحث الحالية."
+              : "ابدأ بإضافة مستخدمي الشركة لتزويدهم بحسابات وصلاحيات الوصول."
+          }
+          action={
+            <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
+              إضافة مستخدم جديد
+            </Button>
+          }
+        />
       ) : (
         <div
           style={{
             backgroundColor: "var(--color-surface-card, #ffffff)",
-            borderRadius: "var(--radius-lg, 0.5rem)",
+            borderRadius: "var(--radius-md, 0.5rem)",
             border: "1px solid var(--color-border-default, #e2e8f0)",
             overflow: "hidden"
           }}
@@ -152,7 +144,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
                     </TableCell>
 
                     <TableCell>
-                      <bdi dir="ltr" style={{ color: "var(--color-content-secondary, #334155)", fontFamily: "monospace" }}>
+                      <bdi dir="ltr" style={{ color: "var(--color-content-secondary, #334155)", fontFamily: "var(--font-mono, monospace)", fontSize: "0.875rem" }}>
                         {user.email}
                       </bdi>
                     </TableCell>

@@ -65,9 +65,41 @@ Support required viewport sizes. Do not compress a desktop table blindly onto a 
 
 ## 7. Platform and dependency rules
 
-All business modules reuse the established platform. Do not create a parallel design system, form system, API client, query/cache architecture, theme engine, error mapper, page shell, runtime context, or permission UX. Use only free dependencies; commercial packages such as `ag-grid-enterprise`, `@mui/x-data-grid-pro`, and `handsontable` are prohibited. Business modules must not import `ag-grid-community`, `ag-grid-react`, `react-aria-components`, or `@react-aria/*` directly; use approved wrappers in `components/`.
+All business modules reuse the established platform and design system. Do not create a parallel design system, form system, API client, query/cache architecture, theme engine, error mapper, page shell, runtime context, or permission UX. Use only free dependencies; commercial packages such as `ag-grid-enterprise`, `@mui/x-data-grid-pro`, and `handsontable` are prohibited. Business modules must not import `ag-grid-community`, `ag-grid-react`, `react-aria-components`, or `@react-aria/*` directly; use approved wrappers in `components/`.
 
-Use approved primitives and fields, including buttons, fields, feedback, dialogs, menus, tabs, pagination, semantic tables, `DataGrid`, `MoneyField`/`MoneyDisplay`, quantity/percentage/date/phone/email displays, status/entity references, `FormField`, `FormSection`, `FormActions`, validation summaries, server-error mapping, and page archetypes. Standard screens use `ListPage`, `RecordPage`, `DocumentPage`, `WizardPage`, `SettingsPage`, or `DashboardPage` as appropriate and render breadcrumbs, title, actions, loading, empty, error, permission-denied, and locked states.
+### 7.1. Semantic Design Tokens & Theme Foundation
+- Use CSS variables for all styling: colors (`var(--color-surface-*)`, `var(--color-content-*)`, `var(--color-border-*)`, `var(--color-status-*)`), spacing (`var(--space-*)`), radii (`var(--radius-*)`), typography (`var(--font-size-*)`), and elevation (`var(--shadow-*)`).
+- Theme tokens must support light, dark, and high-contrast modes, plus compact/comfortable density modes seamlessly.
+- Never hardcode raw hex values or pixel spacing in module components.
+
+### 7.2. App Shell & Navigation Foundation
+- **TopBar Structure**: Clean, balanced SaaS topbar consisting of:
+  1. Brand logo & company identity pill;
+  2. Multi-entity & branch context selectors (e.g. `#entity-select`, `#branch-select`);
+  3. Language quick-toggle button;
+  4. Unified `UserMenu` dropdown containing: user avatar/initials, full name, email, language switch, theme switch, density toggle, and logout button.
+  - *Never scatter standalone action buttons (logout, theme, density, profile) across the topbar.*
+- **Launchpad / Home Screen**: Clean `PageHeader` + responsive module grid. Module cards must be interactive, clean, visually distinct, with informative descriptions and subtle hover states. Do NOT put duplicate standalone buttons inside cards repeating the card title, and avoid oversized marketing hero banners.
+
+### 7.3. Reusable Page Archetypes & Surfaces
+- Standard screens compose standardized layout primitives:
+  - `PageHeader`: standardizes title, subtitle/description, breadcrumbs, status badges, primary actions, and secondary actions.
+  - `PageToolbar`: provides consistent filtering, search, view switches, and secondary action bars.
+  - `Surface`: provides clean card-like containment for grouped content sections with optional header, footer, and variant styling.
+  - `ListPage`: standard list archetype composing `PageHeader`, filter toolbar, table/grid, and integrated loading/error/empty states.
+  - `RecordPage`, `DocumentPage`, `WizardPage`, `SettingsPage`, `DashboardPage`.
+
+### 7.4. Unified Feedback & Input Primitives
+- **Loading State**: Always use `LoadingState` (spinner or skeleton layout), never raw empty whitespace.
+- **Error State**: Always use `ErrorState` with an icon, clear title, friendly description, and a retry action button. Never render unstyled floating red text.
+- **Empty State**: Always use `EmptyState` with a contextual icon, title, description, and primary creation action when appropriate.
+- **Search & Filter**: Use `SearchField` with built-in adornment slots (never absolute-positioned icons overlapping placeholder text) and compose within `FilterBar`.
+- **DataGrid & Table**: Use `DataGrid` (with `enableRtl={true}` in RTL environments) or semantic `Table` for structured records.
+
+### 7.5. RTL & Bidirectional Isolation Discipline
+- All layout rules must use CSS logical properties: `margin-inline`, `padding-inline`, `inset-inline-start`, `border-inline-start`, `text-align: start`.
+- Hardcoded physical properties (`left`, `right`, `margin-left`, `padding-right`) are forbidden for directional styling.
+- Mixed text, entity codes, currency codes, phone numbers, and decimal numbers must use `<bdi>` or `dir="ltr"` isolation to prevent Arabic punctuation/number flips.
 
 Do not create module-local generic duplicates such as a second button, table, dialog, or text field. Module-owned components are appropriate for domain behavior such as a party picker or invoice-lines editor. Promote a module component to `components/` only after genuine broad reuse, domain neutrality, accessibility, RTL/theme support, and the required story and unit test.
 

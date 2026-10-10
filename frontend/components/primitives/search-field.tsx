@@ -58,90 +58,78 @@ export function SearchField({
     onSearch?.("");
   };
 
+  const startAdornment = (
+    <span
+      style={{
+        color: "var(--color-content-muted, #94a3b8)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      }}
+      aria-hidden="true"
+    >
+      <SearchIcon size={16} />
+    </span>
+  );
+
+  const endAdornment = isPending ? (
+    <span
+      style={{
+        width: "1rem",
+        height: "1rem",
+        border: "2px solid var(--color-border-default)",
+        borderTopColor: "var(--color-action-primary)",
+        borderRadius: "50%",
+        animation: "spin 0.6s linear infinite",
+        display: "inline-block"
+      }}
+      aria-hidden="true"
+    />
+  ) : currentValue && !isDisabled ? (
+    <button
+      type="button"
+      onClick={handleClear}
+      aria-label="مسح البحث"
+      style={{
+        background: "none",
+        border: "none",
+        padding: "0.125rem",
+        cursor: "pointer",
+        color: "var(--color-content-muted, #94a3b8)",
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        transition: "color 150ms ease"
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.color = "var(--color-content-primary, #0f172a)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = "var(--color-content-muted, #94a3b8)";
+      }}
+    >
+      <CloseIcon size={14} />
+    </button>
+  ) : undefined;
+
   return (
     <div
       className={clsx("ui-search-field", className)}
       style={{
-        position: "relative",
-        display: "flex",
-        alignItems: "center",
         width: "100%",
         maxWidth: "360px"
       }}
     >
-      <span
-        style={{
-          position: "absolute",
-          insetInlineStart: "0.75rem",
-          color: "var(--color-content-muted, #94a3b8)",
-          pointerEvents: "none",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1
-        }}
-        aria-hidden="true"
-      >
-        <SearchIcon size={16} />
-      </span>
-
-      <div style={{ width: "100%" }}>
-        <TextField
-          value={currentValue}
-          onChange={handleChange}
-          placeholder={placeholder}
-          isDisabled={isDisabled}
-          aria-label={ariaLabel}
-          style={{
-            paddingInlineStart: "2.25rem",
-            paddingInlineEnd: currentValue ? "2rem" : "0.75rem"
-          }}
-        />
-      </div>
-
-      {isPending ? (
-        <span
-          style={{
-            position: "absolute",
-            insetInlineEnd: "0.75rem",
-            width: "1rem",
-            height: "1rem",
-            border: "2px solid var(--color-border-default)",
-            borderTopColor: "var(--color-action-primary)",
-            borderRadius: "50%",
-            animation: "spin 0.6s linear infinite"
-          }}
-          aria-hidden="true"
-        />
-      ) : currentValue && !isDisabled ? (
-        <button
-          type="button"
-          onClick={handleClear}
-          aria-label="مسح البحث"
-          style={{
-            position: "absolute",
-            insetInlineEnd: "0.5rem",
-            background: "none",
-            border: "none",
-            padding: "0.25rem",
-            cursor: "pointer",
-            color: "var(--color-content-muted, #94a3b8)",
-            borderRadius: "50%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "color 150ms ease"
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = "var(--color-content-primary, #0f172a)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = "var(--color-content-muted, #94a3b8)";
-          }}
-        >
-          <CloseIcon size={14} />
-        </button>
-      ) : null}
+      <TextField
+        value={currentValue}
+        onChange={handleChange}
+        placeholder={placeholder}
+        isDisabled={isDisabled}
+        aria-label={ariaLabel}
+        startAdornment={startAdornment}
+        endAdornment={endAdornment}
+      />
     </div>
   );
 }

@@ -67,9 +67,8 @@ export function DataGrid<TRow extends object>({
     <div
       className={clsx("ui-datagrid", `ui-datagrid--${density}`, { "ag-rtl": enableRtl })}
       style={{
-        height: "100%",
+        height: "480px",
         width: "100%",
-        minHeight: "350px",
         backgroundColor: "var(--color-surface-card)",
         borderRadius: "var(--radius-md)",
         border: "1px solid var(--color-border-default)",

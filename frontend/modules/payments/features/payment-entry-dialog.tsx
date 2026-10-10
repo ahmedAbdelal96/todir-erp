@@ -73,7 +73,6 @@ export function PaymentEntryDialog({
 
       setLastPaymentResult(result);
       setStep("success");
-      onPaymentComplete?.(result);
     } catch (err: any) {
       // In network failure / timeout during high-risk money transfer, enter safe Unknown Outcome state
       if (err?.name === "TypeError" || err?.message?.includes("fetch") || err?.status >= 500) {
@@ -86,6 +85,9 @@ export function PaymentEntryDialog({
   };
 
   const handleClose = () => {
+    if (step === "success" && lastPaymentResult) {
+      onPaymentComplete?.(lastPaymentResult);
+    }
     setStep("form");
     setErrorMessage(null);
     idempotencyKeyRef.current = crypto.randomUUID();

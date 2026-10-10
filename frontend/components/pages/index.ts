@@ -1,3 +1,6 @@
+export * from "./page-header.tsx";
+export * from "./page-toolbar.tsx";
+export * from "./surface.tsx";
 export * from "./list-page.tsx";
 export * from "./record-page.tsx";
 export * from "./document-page.tsx";
