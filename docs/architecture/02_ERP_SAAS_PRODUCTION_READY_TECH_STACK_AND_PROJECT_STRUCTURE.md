@@ -601,26 +601,23 @@ erp-saas/
 # 14. Top-Level Repository Structure
 
 ```text
-erp-saas/
+repository/
 │
-├── src/
-│   ├── backend/
-│   │   ├── hosts/
-│   │   ├── shared/
-│   │   ├── platform/
-│   │   ├── foundation/
-│   │   └── modules/
-│   │
-│   └── frontend/
-│       ├── apps/
-│       └── packages/
+├── backend/
+│   ├── Api/
+│   ├── Worker/
+│   ├── DbMigrator/
+│   ├── Core/
+│   ├── Modules/
+│   ├── Shared/
+│   └── Tests/
 │
-├── tests/
-│   ├── architecture/
-│   ├── integration/
-│   ├── contracts/
-│   ├── e2e/
-│   └── performance/
+├── frontend/
+│   ├── app/
+│   ├── core/
+│   ├── components/
+│   ├── modules/
+│   └── tests/
 │
 ├── docs/
 │   ├── architecture/
@@ -654,29 +651,19 @@ erp-saas/
 # 15. Backend Hosts
 
 ```text
-backend/hosts/
+backend/
 
-├── Todir.Api/
-│   ├── Program.cs
-│   ├── Bootstrap/
-│   ├── Middleware/
-│   ├── OpenApi/
-│   ├── Health/
-│   └── appsettings.*
+├── Api/
+│   └── Program.cs
 │
-├── Todir.Worker/
-│   ├── Program.cs
-│   ├── Consumers/
-│   ├── Scheduling/
-│   ├── Health/
-│   └── appsettings.*
+├── Worker/
+│   └── Program.cs
 │
-└── Todir.DbMigrator/
-    ├── Program.cs
-    └── MigrationRunner/
+└── DbMigrator/
+    └── Program.cs
 ```
 
-## Todir.Api responsibilities
+## Api responsibilities
 
 - HTTP API.
 - Authentication.
@@ -689,7 +676,7 @@ backend/hosts/
 - Synchronous application commands.
 - Transaction coordination.
 
-## Todir.Worker responsibilities
+## Worker responsibilities
 
 - RabbitMQ consumers.
 - Outbox dispatch support.
@@ -698,7 +685,7 @@ backend/hosts/
 - Read-model builders.
 - Long-running jobs.
 
-## Todir.DbMigrator responsibilities
+## DbMigrator responsibilities
 
 - Controlled database migrations.
 - Module schema migration ordering.
@@ -712,15 +699,14 @@ Production API startup **must not blindly apply migrations**.
 # 16. Shared Backend Projects
 
 ```text
-backend/shared/
+backend/Shared/
 
-├── Todir.SharedKernel/
-├── Todir.Contracts/
-├── Todir.BuildingBlocks/
-└── Todir.Testing/
+├── Primitives/
+├── Contracts/
+└── BuildingBlocks/
 ```
 
-## Todir.SharedKernel
+## Shared.Primitives
 
 Must remain tiny.
 
@@ -749,7 +735,7 @@ If it has business meaning, it does not belong in SharedKernel.
 
 ---
 
-## Todir.Contracts
+## Shared.Contracts
 
 Platform-level contracts only.
 
@@ -767,7 +753,7 @@ Business-module contracts live in their own module contract projects.
 
 ---
 
-## Todir.BuildingBlocks
+## Shared.BuildingBlocks
 
 Technical implementation helpers:
 
@@ -816,13 +802,12 @@ They are not customer business modules.
 # 18. Foundation Domains
 
 ```text
-backend/foundation/
+backend/Modules/
 
 ├── Directory/
 ├── Catalog/
 ├── FinBase/
-├── Tax/
-└── Pricing/
+└── FinanceBase/
 ```
 
 They follow the same module boundary rules as business modules.
@@ -1117,7 +1102,7 @@ Use:
 
 # 27. Database Foreign Keys
 
-Allowed to stable platform/foundation IDs:
+Allowed to stable core/foundation IDs:
 
 - tenant_id
 - legal_entity_id
@@ -1589,12 +1574,11 @@ frontend/
 ├── tsconfig.json
 ├── vite.config.ts
 ├── index.html
-└── src/
-    ├── main.tsx
-    ├── app/
-    ├── platform/
-    ├── design-system/
-    └── modules/
+├── main.tsx
+├── app/
+├── core/
+├── components/
+└── modules/
 ```
 
 The current repository has one frontend application. Logical boundaries are enforced within `frontend/`; separate npm packages are introduced only when independent deployment/versioning, proven cross-application reuse, or a build/tooling need justifies extraction.
@@ -1610,17 +1594,18 @@ frontend/
 │   ├── bootstrap/
 │   └── shell/
 │
-├── platform/
+├── core/
 │   ├── api/
 │   └── runtime/
 
-├── design-system/
-│   ├── tokens/
+├── components/
+│   ├── primitives/
 │   ├── theme/
-│   └── grid/
+│   ├── grid/
+│   └── pages/
 │
 └── modules/
-    └── AGENTS.md
+    └── <module>/
 ```
 
 ---
@@ -1630,18 +1615,16 @@ frontend/
 Example:
 
 ```text
-modules/sales/
+frontend/modules/<module>/
 
-├── api/
-├── routes/
+├── services/
 ├── pages/
 ├── features/
 ├── components/
-├── queries/
-├── mutations/
-├── schemas/
-├── permissions/
-├── i18n/
+├── hooks/
+├── validation/
+├── types.ts
+├── public.ts
 └── tests/
 ```
 

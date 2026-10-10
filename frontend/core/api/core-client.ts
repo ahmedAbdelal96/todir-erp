@@ -1,5 +1,5 @@
 // Generated from docs/api/platform-openapi.json. Do not edit manually.
-export const platformApiPaths = [
+export const coreApiPaths = [
   "/api/v1/auth/csrf",
   "/api/v1/auth/login",
   "/api/v1/auth/logout",
@@ -53,4 +53,4 @@ export const platformApiPaths = [
   "/api/v1/tenants/{tenantId}/settings"
 ] as const;
 
-export type PlatformApiPath = (typeof platformApiPaths)[number];
+export type CoreApiPath = (typeof coreApiPaths)[number];

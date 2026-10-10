@@ -22,4 +22,4 @@ Never introduce a new file or directory whose basename contains `todir` in any c
 3. **Capability & Permission-Aware Navigation:** Sidebar navigation and top-level tabs must render items conditionally based on platform capabilities and user permissions.
 4. **No Business Domain Logic:** `app/` must never contain invoice pricing math, ledger balance rules, tax calculations, or domain validation.
 5. **No Direct Module Internals:** `app/` must import business modules only through their public entry points (`modules/<module>/pages/*` or `modules/<module>/public.ts`).
-6. **No Duplicated Platform Infrastructure:** Do not create duplicate HTTP clients, query factories, or theme compilers inside `app/`; consume `platform/*` and `components/*`.
+6. **No Duplicated Platform Infrastructure:** Do not create duplicate HTTP clients, query factories, or theme compilers inside `app/`; consume `core/*` and `components/*`.

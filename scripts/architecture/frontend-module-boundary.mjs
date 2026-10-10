@@ -91,9 +91,9 @@ export function validateFrontendArchitecture(options = {}) {
             }
           }
 
-          // Check 3: Platform / Design System must not depend on business modules
-          if ((sourceArea === "platform" || sourceArea === "components" || sourceArea === "design-system") && targetModule) {
-            const owner = sourceArea === "components" || sourceArea === "design-system" ? "Shared Components" : "Platform";
+          // Check 3: Core / shared components must not depend on business modules
+          if ((sourceArea === "core" || sourceArea === "components" || sourceArea === "design-system") && targetModule) {
+            const owner = sourceArea === "components" || sourceArea === "design-system" ? "Shared Components" : "Core";
             if (isApprovedPublicSurface(targetPath, modulesRoot, targetModule)) {
               violations.push(
                 `${relative(rootDir, sourcePath)} imports module '${targetModule}' public surface. ${owner} must not depend on business modules.`

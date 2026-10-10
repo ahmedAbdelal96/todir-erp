@@ -12,6 +12,17 @@ Every future change is evaluated through product and UX correctness; backend and
 
 Before modifying anything: inspect the repository; read this file and every nearer `AGENTS.md`; locate and read the applicable approved architecture, Platform Kernel, ADR, and module-plan documents; inspect relevant implementation and tests; identify ownership, dependencies, boundaries and scope; then plan. Implement only the approved scope, verify it, self-review it, fix clear in-scope defects, re-verify, and report honestly. Never claim completion before verification.
 
+## Local-first mission discipline
+
+Implementation and verification are local-first. Do not use GitHub Actions, pull
+requests, or remote CI as a substitute for local gates. A one-module mission is
+one coherent end-to-end capability across its approved backend, API/contracts,
+frontend, tests, operations and documentation; do not reopen a completed
+module without concrete evidence of a defect or contract change. For a mission
+that explicitly requests one final commit, keep all changes local until every
+required gate passes, then make the single focused commit and push only to
+`origin/dev`.
+
 ## Development branch execution
 
 `dev` is the active development branch. Work directly on `dev`, create a focused commit for each completed coherent milestone, and push normally to `origin/dev`. Do not create a branch per phase or require a pull request for routine solo development. `main` is frozen and must not receive development work, merges, or pushes unless the owner explicitly authorizes promotion. When the next approved phase is fully specified and no stop condition applies, continue autonomously after committing and pushing the previous phase. Never rewrite published history or force-push.
@@ -50,7 +61,7 @@ Keep a Modular Monolith and one codebase. Tenant isolation is a security boundar
 
 ### Completed shared foundation rule
 
-The approved Frontend Platform & Design System (`frontend/`) is an established, shared platform contract. All future business modules MUST build upon and reuse this shared foundation. A module must not create a parallel design system, form system, grid engine, API client, caching architecture, theme engine, error mapping system, page shell, runtime context, or permission UX. Material modifications to shared frontend architectural decisions require explicit architectural review and an ADR.
+The approved Frontend Core and Design System (`frontend/core` and `frontend/components`) is an established, shared platform contract. All future business modules MUST build upon and reuse this shared foundation. A module must not create a parallel design system, form system, grid engine, API client, caching architecture, theme engine, error mapping system, page shell, runtime context, or permission UX. Material modifications to shared frontend architectural decisions require explicit architectural review and an ADR.
 
 ### End-to-end module principle
 

@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { FormActions } from "../../../components/forms/form-actions.tsx";
 import { FormSection } from "../../../components/forms/form-section.tsx";
-import { productSchema, type ProductFormData } from "../schemas/product-schema.ts";
+import { productSchema, type ProductFormData } from "../validation/product-schema.ts";
 import type { Brand, Category, Uom } from "../types.ts";
 export interface ProductFormProps { readonly initialData?: Partial<ProductFormData>; readonly categories: readonly Category[]; readonly brands: readonly Brand[]; readonly uoms: readonly Uom[]; readonly onSubmit: (data: ProductFormData) => Promise<void>; readonly onCancel?: () => void; readonly isSubmitting?: boolean; readonly isLocked?: boolean; }
 const inputStyle: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "0.6rem 0.7rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-sm)", background: "var(--color-surface-card)", color: "var(--color-content-primary)" };

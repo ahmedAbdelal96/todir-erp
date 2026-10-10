@@ -42,6 +42,17 @@ Create only responsibility folders backed by real files. Do not create empty
 template directories or restore `Application/`, `Infrastructure/`, `Domain/`,
 or generic `Interfaces/` layers merely for convention.
 
+The normal request flow is `Controllers → Services → Repositories/Data`.
+Controllers may bind requests, authorize, call a module service and map the
+approved response/error contract; they must not use `DbContext`, SQL, Npgsql,
+repositories or persistence details directly. Services orchestrate use cases
+and invariants but do not depend on Controllers. Repositories/Data own module
+persistence only. Entities remain independent of Controllers, repositories,
+Data, ASP.NET Core and EF Core. Do not create a folder only to satisfy this
+diagram; if a module has no repository or separate data implementation, keep
+the real persistence responsibility in its approved service until a concrete
+change justifies extraction.
+
 ## E. Dependency rules
 
 Depend on contracts, capabilities, events and ports—not another module's internals. Preserve the approved dependency DAG. New dependencies, cross-module transactions, ownership transfers, or contract changes require review under the governing packs.

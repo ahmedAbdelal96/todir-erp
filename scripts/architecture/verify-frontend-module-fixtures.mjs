@@ -21,14 +21,14 @@ if (aliasViolations.length === 0) {
   throw new Error("Alias-based cross-module internal import fixture was not detected.");
 }
 
-// Check Platform importing module internals
-const platformFixtureRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/platform-imports-module");
-const platformResult = validateFrontendArchitecture({
-  rootDir: platformFixtureRoot,
-  modulesRoot: path.join(platformFixtureRoot, "modules")
+// Check Core importing module internals
+const coreFixtureRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/core-imports-module");
+const coreResult = validateFrontendArchitecture({
+  rootDir: coreFixtureRoot,
+  modulesRoot: path.join(coreFixtureRoot, "modules")
 });
-if (platformResult.violations.length === 0) {
-  throw new Error("Platform importing module internal was not detected.");
+if (coreResult.violations.length === 0) {
+  throw new Error("Core importing module internal was not detected.");
 }
 
 // Check Circular dependencies between modules
@@ -85,7 +85,7 @@ console.log("Frontend architecture fixture verification passed all tests:");
 console.log("- Allowed public imports: PASSED");
 console.log("- Forbidden internal imports: REJECTED (PASS)");
 console.log("- Alias internal imports: REJECTED (PASS)");
-console.log("- Platform importing module internal: REJECTED (PASS)");
+console.log("- Core importing module internal: REJECTED (PASS)");
 console.log("- Circular module dependency: REJECTED (PASS)");
 console.log("- Forbidden paid package: REJECTED (PASS)");
 console.log("- Shared Components importing business module: REJECTED (PASS)");

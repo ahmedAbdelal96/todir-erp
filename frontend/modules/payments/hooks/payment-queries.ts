@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { paymentApi } from "../api/payment-api.ts";
+import { paymentApi } from "../services/payment-api.ts";
 import type { PaymentCommand, PaymentResult, PaymentStatusCheck } from "../types.ts";
-import { queryKeyFactory } from "../../../platform/api/query-keys.ts";
+import { queryKeyFactory } from "../../../core/api/query-keys.ts";
 
 export interface UsePaymentContext {
   readonly tenantId?: string | undefined;

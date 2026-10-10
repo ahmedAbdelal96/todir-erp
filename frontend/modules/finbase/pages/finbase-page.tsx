@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { MoneyField } from "../../../components/fields/money-field.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
-import { finbaseApi } from "../api/finbase-api.ts";
+import { finbaseApi } from "../services/finbase-api.ts";
 import type { Currency, PaymentScheduleLine } from "../types.ts";
 
 export function FinBasePage(): React.JSX.Element {

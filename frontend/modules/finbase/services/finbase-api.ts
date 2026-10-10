@@ -1,4 +1,4 @@
-import { httpClient } from "../../../platform/api/http-client.ts";
+import { httpClient } from "../../../core/api/http-client.ts";
 import type { Currency, PaymentScheduleLine, PaymentTermRule } from "../types.ts";
 
 export const finbaseApi = {

@@ -17,6 +17,7 @@ public static class DirectoryModuleExtensions
     public static IServiceCollection AddDirectoryModule(this IServiceCollection services)
     {
         services.AddSingleton<IModuleManifestProvider, DirectoryModuleManifestProvider>();
+        services.AddSingleton<Repositories.DirectoryRepository>();
         services.AddSingleton<DirectoryService>();
         return services;
     }

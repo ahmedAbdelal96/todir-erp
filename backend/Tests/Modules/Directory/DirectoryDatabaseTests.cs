@@ -58,7 +58,7 @@ public sealed class DirectoryDatabaseTests
         try
         {
             await using var dataSource = NpgsqlDataSource.Create(runtimeConnectionString);
-            var service = new DirectoryService(new NpgsqlTransactionCoordinator(dataSource), dataSource);
+            var service = new DirectoryService(new Modules.Directory.Repositories.DirectoryRepository(new NpgsqlTransactionCoordinator(dataSource), dataSource));
             var request = new CreatePartyRequest(PartyType.Organization, "شركة اختبار الدليل", "شركة اختبار الدليل", null, null, null, null, null, null, "EG", "ar", [PartyRoleCode.Customer], [new IdentifierInput("Tax", "١٢٣٤٥", "EG", "Tax Authority", true)], [new ContactPointInput("Email", "directory@example.com", null, true)], null);
             var created = await service.CreateAsync(new TenantId(tenantId), actorId, membershipId, request, Guid.CreateVersion7(), null, false, CancellationToken.None);
             Assert.Equal("شركة اختبار الدليل", created.DisplayName); Assert.Single(created.Identifiers); Assert.Single(created.Roles);

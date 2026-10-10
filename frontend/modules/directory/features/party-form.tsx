@@ -1,7 +1,7 @@
 import React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { partyFormSchema, type PartyFormData } from "../schemas/party-schema.ts";
+import { partyFormSchema, type PartyFormData } from "../validation/party-schema.ts";
 import { FormSection } from "../../../components/forms/form-section.tsx";
 import { FormActions } from "../../../components/forms/form-actions.tsx";
 import { Checkbox } from "../../../components/primitives/checkbox.tsx";

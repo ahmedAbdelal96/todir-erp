@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE SCHEMA IF NOT EXISTS foundation_catalog AUTHORIZATION erp_owner;
 REVOKE ALL ON SCHEMA foundation_catalog FROM PUBLIC;
 GRANT USAGE ON SCHEMA foundation_catalog TO erp_app;

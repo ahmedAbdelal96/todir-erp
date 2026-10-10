@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { journalApi } from "../api/journal-api.ts";
+import { journalApi } from "../services/journal-api.ts";
 import type { Account, JournalEntry, JournalLine, JournalValidationResult } from "../types.ts";
-import { queryKeyFactory } from "../../../platform/api/query-keys.ts";
+import { queryKeyFactory } from "../../../core/api/query-keys.ts";
 
 export interface UseAccountingContext {
   readonly tenantId?: string | undefined;

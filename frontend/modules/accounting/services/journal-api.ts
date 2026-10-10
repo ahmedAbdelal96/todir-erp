@@ -1,4 +1,4 @@
-import { httpClient } from "../../../platform/api/http-client.ts";
+import { httpClient } from "../../../core/api/http-client.ts";
 import type { Account, JournalEntry, JournalLine, JournalValidationResult } from "../types.ts";
 
 export const journalApi = {

@@ -19,7 +19,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@app": path.resolve(sourceRoot, "app"),
-      "@platform": path.resolve(sourceRoot, "platform"),
+      "@core": path.resolve(sourceRoot, "core"),
       "@ui": path.resolve(sourceRoot, "components"),
       "@modules": path.resolve(sourceRoot, "modules")
     }

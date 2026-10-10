@@ -6,7 +6,7 @@ import { DataGrid, type DataGridColumn } from "../../../components/grid/index.ts
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { PartyForm } from "../features/party-form.tsx";
-import type { PartyFormData } from "../schemas/party-schema.ts";
+import type { PartyFormData } from "../validation/party-schema.ts";
 
 export interface PartyListPageProps { readonly onSelectParty?: ((party: Party) => void) | undefined; }
 function toCreate(data: PartyFormData) { return { partyType: data.partyType, displayName: data.displayName, legalName: data.legalName, tradeName: data.tradeName, nameAr: data.nameAr, nameEn: data.nameEn, firstName: data.firstName, middleName: data.middleName, lastName: data.lastName, countryCode: data.countryCode, primaryLanguage: data.primaryLanguage, roles: data.roles as PartyRoleCode[], identifiers: data.identifierType && data.identifierValue ? [{ type: data.identifierType, value: data.identifierValue, countryCode: data.identifierCountryCode, isPrimary: true }] : [], contactPoints: [{ type: "Email" as const, value: data.email ?? "", isPrimary: true }, { type: "Phone" as const, value: data.phone ?? "", isPrimary: true }].filter(item => item.value), addresses: data.addressLine1 ? [{ usage: "General" as const, countryCode: data.addressCountryCode ?? "EG", city: data.addressCity, line1: data.addressLine1, isDefault: true }] : [] }; }

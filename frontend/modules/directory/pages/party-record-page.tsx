@@ -6,7 +6,7 @@ import { FormSection } from "../../../components/forms/form-section.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { PartyForm } from "../features/party-form.tsx";
-import type { PartyFormData } from "../schemas/party-schema.ts";
+import type { PartyFormData } from "../validation/party-schema.ts";
 
 export interface PartyRecordPageProps { readonly partyId?: string; readonly onBack?: (() => void) | undefined; }
 function toForm(party: Party): Partial<PartyFormData> { const email = party.contactPoints.find(item => item.type === "Email")?.value ?? ""; const phone = party.contactPoints.find(item => item.type === "Phone")?.value ?? ""; const identifier = party.identifiers[0]; const address = party.addresses[0]; return { partyType: party.partyType, displayName: party.displayName, legalName: party.legalName ?? "", tradeName: party.tradeName ?? "", nameAr: party.nameAr ?? "", nameEn: party.nameEn ?? "", firstName: party.firstName ?? "", middleName: party.middleName ?? "", lastName: party.lastName ?? "", countryCode: party.countryCode ?? "EG", primaryLanguage: party.primaryLanguage ?? "ar", roles: party.roles.filter(item => item.status === "Active").map(item => item.code), email, phone, identifierType: identifier?.type ?? "", identifierValue: identifier?.value ?? "", identifierCountryCode: identifier?.countryCode ?? "EG", addressLine1: address?.line1 ?? "", addressCity: address?.city ?? "", addressCountryCode: address?.countryCode ?? "EG" }; }

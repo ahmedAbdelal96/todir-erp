@@ -23,7 +23,7 @@ All frontend source code resides under `frontend/` partitioned into four strictl
 ```text
 frontend/
 ├── app/            # Application composition, routing, providers, AppShell, module lazy-loading
-├── platform/       # Cross-cutting runtime, API transport, auth/session, permissions, tenant/entity context, errors, caching
+├── core/       # Cross-cutting runtime, API transport, auth/session, permissions, tenant/entity context, errors, caching
 ├── components/     # Shared primitives, tokens, theme compiler, fields, forms, DataGrid, page archetypes
 └── modules/        # Business-specific domain workflows and vertical slices
 ```
@@ -40,11 +40,11 @@ The frontend architecture follows a strict downward dependency flow:
 Business Modules (`modules/*`)
       │
       ├──▶ Shared Components (`components/*` / `@ui/*`)
-      └──▶ Platform Runtime & API (`platform/*`)
+      └──▶ Core Runtime & API (`core/*`)
 ```
 
 ### Inviolable boundary rules (Mechanically enforced):
-1. **Platform and Design System MUST NOT depend on Business Modules.**
+1. **Core and Design System MUST NOT depend on Business Modules.**
 2. **Cross-module internal imports are strictly forbidden.** Modules may only consume another module's explicit public API via `frontend/modules/<module>/public.ts`.
 3. **No circular dependencies** between frontend modules.
 4. **Direct vendor imports of grid or primitive engines are forbidden in business modules:**
@@ -105,9 +105,9 @@ Every production module must follow the structured API pipeline:
 ```text
 Backend OpenAPI (`docs/api/platform-openapi.json`)
       ↓
-Generated Platform Client / Types
+Generated Core Client / Types
       ↓
-Module API Adapter (`frontend/modules/<module>/api/`)
+Module Service Adapter (`frontend/modules/<module>/services/`)
       ↓
 TanStack Query Hooks (`frontend/modules/<module>/hooks/`)
       ↓

@@ -23,6 +23,16 @@ public sealed class ProjectGraphValidatorTests
     }
 
     [Fact]
+    public void RepositoryStructureHasNoRetiredPathsOrLayerViolations()
+    {
+        var repositoryRoot = Directory.GetParent(RepositoryRoot)?.FullName
+            ?? throw new InvalidOperationException("Unable to locate the repository root.");
+        var violations = RepositoryStructureValidator.FindViolations(repositoryRoot);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void DetectsDirectModuleImplementationReferenceFixture()
     {
         var violations = ProjectGraphValidator.FindViolations(ProjectGraphValidator.Load(RepositoryRoot, includeFixtures: true));

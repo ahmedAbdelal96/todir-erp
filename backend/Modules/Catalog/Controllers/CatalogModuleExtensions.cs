@@ -16,6 +16,9 @@ public static class CatalogModuleExtensions
     public static IServiceCollection AddCatalogModule(this IServiceCollection services)
     {
         services.AddSingleton<IModuleManifestProvider, CatalogModuleManifestProvider>();
+        services.AddSingleton<Repositories.ProductRepository>();
+        services.AddSingleton<Repositories.CatalogDetailRepository>();
+        services.AddSingleton<Repositories.CatalogMasterDataRepository>();
         services.AddSingleton<ProductService>();
         services.AddSingleton<CatalogMasterDataService>();
         services.AddSingleton<CatalogDetailService>();

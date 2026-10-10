@@ -40,7 +40,7 @@ Before creating any UI component, inspect existing shared foundations:
 3. **Form System:** (`FormField`, `FormSection`, `FormActions`, `ValidationSummary`, `useUnsavedChanges`, `mapServerErrorsToForm`)
 4. **DataGrid:** (`DataGrid` from `@ui/grid` with exact decimal renderers)
 5. **Page Archetypes:** (`ListPage`, `RecordPage`, `DocumentPage`, `SettingsPage`, `WizardPage`, `DashboardPage` from `frontend/components/pages/`)
-6. **Platform Runtime & API:** (`httpClient`, `queryKeyFactory`, `useRuntimeContext`)
+6. **Core Runtime & API:** (`httpClient`, `queryKeyFactory`, `useRuntimeContext`)
 7. **Existing Module Pickers:** (`PartyPicker` from Directory, `AccountPicker` from Accounting)
 
 The implementation plan MUST explicitly categorize:
@@ -56,7 +56,7 @@ A business module is organized cleanly by responsibility. Create only folders re
 
 ```text
 frontend/modules/<module-name>/
-├── api/              # Module API client adapters calling httpClient
+├── services/              # Module API client adapters calling httpClient
 ├── hooks/            # TanStack Query query/mutation hooks
 ├── features/         # Domain-specific feature components (e.g. PartyPicker, PaymentDialog)
 ├── pages/            # Archetype page implementations (ListPage, RecordPage, DocumentPage)
@@ -70,7 +70,7 @@ frontend/modules/<module-name>/
 ## 4. Inviolable Module Rules
 
 ### 1. Cross-Module Boundaries & Public Surface
-- Other modules MUST NOT import internal module files (`pages/`, `features/`, `api/`, `hooks/`).
+- Other modules MUST NOT import internal module files (`pages/`, `features/`, `services/`, `hooks/`).
 - Cross-module integration occurs strictly through `public.ts`.
 - **Entity Pickers Architecture:** Design System owns generic selection mechanics (`ComboBox`, `Select`). Owning modules assemble domain pickers (`PartyPicker` in Directory, `AccountPicker` in Accounting, `ProductPicker` in Catalog) by binding their module query hook and API to the ComboBox, exporting them via `public.ts`.
 
@@ -80,7 +80,7 @@ frontend/modules/<module-name>/
 
 ### 3. API & TanStack Query Pipeline
 - Never call raw `fetch()` directly in pages or components.
-- API calls go through `frontend/modules/<module>/api/` using `httpClient`.
+- API calls go through `frontend/modules/<module>/services/` using `httpClient`.
 - Query keys MUST use `queryKeyFactory.list(...)` or `queryKeyFactory.detail(...)` to preserve tenant/entity isolation.
 - Mutations for high-risk operations (payments, postings, journals, invoicing, settlements) MUST NOT use optimistic success updates. The lifecycle is strictly `submit -> pending -> backend result -> success/failure/unknown`. Idempotency keys (`Idempotency-Key` header) must be bound to the logical attempt.
 

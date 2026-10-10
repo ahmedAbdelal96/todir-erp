@@ -16,6 +16,7 @@ public static class FinanceBaseModuleExtensions
     public static IServiceCollection AddFinanceBaseModule(this IServiceCollection services)
     {
         services.AddSingleton<IModuleManifestProvider, FinanceBaseModuleManifestProvider>();
+        services.AddSingleton<Repositories.FinanceBaseRepository>();
         services.AddSingleton<FinanceBaseService>();
         return services;
     }

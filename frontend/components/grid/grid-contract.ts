@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DensityMode } from "../../platform/runtime/preferences.ts";
+import type { DensityMode } from "../../core/runtime/preferences.ts";
 
 export type ColumnAlign = "start" | "center" | "end";
 

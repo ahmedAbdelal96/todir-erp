@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { catalogApi, type ProductListParams } from "../api/catalog-api.ts";
+import { catalogApi, type ProductListParams } from "../services/catalog-api.ts";
 import type { CreateProductInput } from "../types.ts";
-import { queryKeyFactory } from "../../../platform/api/query-keys.ts";
+import { queryKeyFactory } from "../../../core/api/query-keys.ts";
 const tenant = "tenant-default"; const entity = "entity-default";
 export const catalogKeys = { products: () => queryKeyFactory.resource(tenant, entity, "catalog", "products"), list: (params: ProductListParams) => queryKeyFactory.list(tenant, entity, "catalog", "products", params), detail: (id: string) => queryKeyFactory.detail(tenant, entity, "catalog", "products", id) };
 export function useProductList(params: ProductListParams) { return useQuery({ queryKey: catalogKeys.list(params), queryFn: () => catalogApi.list(params), staleTime: 20_000 }); }

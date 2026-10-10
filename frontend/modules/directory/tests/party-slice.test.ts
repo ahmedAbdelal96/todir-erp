@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { partyFormSchema } from "../schemas/party-schema.ts";
-import { partyApi } from "../api/party-api.ts";
+import { partyFormSchema } from "../validation/party-schema.ts";
+import { partyApi } from "../services/party-api.ts";
 
 describe("Directory / Party Vertical Slice", () => {
   it("validates party schema for organization with valid roles", () => {

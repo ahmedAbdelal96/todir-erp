@@ -274,12 +274,11 @@ frontend/
 ├── tsconfig.json
 ├── vite.config.ts
 ├── index.html
-└── src/
-    ├── main.tsx
-    ├── app/
-    ├── platform/
-    ├── design-system/
-    └── modules/
+├── main.tsx
+├── app/
+├── core/
+├── components/
+└── modules/
 ```
 
 TODIR currently has one frontend application. Logical ownership boundaries are enforced inside `frontend/` and do not require separate npm packages. Extract a package only when independent deployment, independent versioning, proven cross-application reuse, or a build/tooling need earns the boundary.
@@ -295,7 +294,7 @@ frontend/
 │   ├── providers/
 │   ├── router/
 │   └── shell/
-├── platform/
+├── core/
 │   ├── runtime/
 │   ├── capabilities/
 │   ├── permissions/
@@ -306,10 +305,11 @@ frontend/
 │   ├── notifications/
 │   ├── navigation/
 │   └── preferences/
-├── design-system/
-│   ├── tokens/
+├── components/
+│   ├── primitives/
 │   ├── theme/
-│   └── grid/
+│   ├── grid/
+│   └── pages/
 └── modules/
     ├── directory/
     ├── catalog/
@@ -322,17 +322,13 @@ frontend/
 
 ```text
 modules/<module-id>/
-├── api/
+├── services/
 ├── routes/
 ├── pages/
 ├── features/
 ├── components/
-├── queries/
-├── mutations/
-├── schemas/
-├── permissions/
-├── i18n/
-├── registry/
+├── hooks/
+├── validation/
 ├── tests/
 └── public.ts        # only when deliberate public UI surface exists
 ```
@@ -2681,7 +2677,7 @@ Automated rules enforce:
 
 - TypeScript strict;
 - no cross-module internal imports;
-- no optional module import into platform/shared foundation;
+- no optional module import into core/shared foundation;
 - grid vendor imports restricted to grid adapter;
 - primitive vendor imports restricted to UI implementation boundary after migration;
 - no unapproved circular frontend dependency;
@@ -3136,7 +3132,7 @@ Before adding package, check:
 - security history;
 - duplication;
 - RTL/accessibility;
-- whether platform/web APIs suffice.
+- whether core/web APIs suffice.
 
 Do not add packages for trivial helpers.
 
@@ -3559,7 +3555,7 @@ If frontend is bootstrap-only, do not install MUI just because old baseline says
 # 228. Source Ownership Matrix
 
 ```text
-Tenant/User/Auth Context       → Platform/API
+Tenant/User/Auth Context       → core/API
 Legal Entity/Branch truth      → Platform Org contracts
 Capabilities/Entitlements      → Module Registry
 Permissions                    → Backend IAM; frontend projection
@@ -4131,7 +4127,7 @@ frontend/
     ├── app/
     │   ├── bootstrap/
     │   └── shell/
-    ├── platform/
+    ├── core/
     │   ├── api/
     │   └── runtime/
     ├── design-system/

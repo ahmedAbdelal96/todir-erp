@@ -3,12 +3,12 @@ import path from "node:path";
 
 const root = process.cwd();
 const contractPath = path.join(root, "docs/api/platform-openapi.json");
-const outputPath = path.join(root, "frontend/platform/api/platform-client.ts");
+const outputPath = path.join(root, "frontend/core/api/core-client.ts");
 const contract = JSON.parse(fs.readFileSync(contractPath, "utf8"));
 const paths = Object.keys(contract.paths ?? {}).sort();
 if (paths.length === 0) throw new Error("OpenAPI contract has no paths");
 
-const content = `// Generated from docs/api/platform-openapi.json. Do not edit manually.\nexport const platformApiPaths = ${JSON.stringify(paths, null, 2)} as const;\n\nexport type PlatformApiPath = (typeof platformApiPaths)[number];\n`;
+const content = `// Generated from docs/api/platform-openapi.json. Do not edit manually.\nexport const coreApiPaths = ${JSON.stringify(paths, null, 2)} as const;\n\nexport type CoreApiPath = (typeof coreApiPaths)[number];\n`;
 const checkOnly = process.argv.includes("--check");
 if (checkOnly) {
   const current = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8") : "";

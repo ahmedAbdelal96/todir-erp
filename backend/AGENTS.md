@@ -4,7 +4,15 @@
 
 Never create or introduce a new backend source file, project file, or folder whose basename contains `todir` in any casing. This is absolute; use responsibility-based filesystem names while preserving already-established namespaces and assembly identifiers where required by the solution.
 
-Apply root governance and read the approved Platform Kernel and applicable module pack before backend work. Build business correctness first using C# and ASP.NET Core only when bootstrap authorizes it. Preserve module boundaries and domain/application/infrastructure separation; dependencies point inward.
+Apply root governance and read the approved Platform Kernel and applicable module pack before backend work. Build business correctness first using C# and ASP.NET Core only when bootstrap authorizes it. Keep the conventional module folders (`Controllers`, `Services`, `Repositories`, `Entities`, `DTOs`, `Validators`, `Data`, `Permissions`, and `Events`) responsibility-based and create only folders backed by real code; dependencies point inward through approved contracts.
+
+The canonical backend map is `Api/`, `Worker/`, `DbMigrator/`, `Core/`,
+`Modules/`, `Shared/`, and `Tests/`. Controllers are HTTP and authorization
+transport only and follow `Controller → Service → Repository/Data` when
+persistence is separated. Services never depend on Controllers; Entities do
+not depend on transport or persistence; repositories and data code do not own
+HTTP behavior. Do not add generic dumping grounds or restore parallel
+`Application/`, `Infrastructure/`, `Domain/`, or `Interfaces/` project trees.
 
 Cross-module interaction is allowed only through approved public module contracts, capabilities, events, or ports as defined by TODIR architecture. Direct access to another module's implementation, DbContext, entities, repositories, or database tables is forbidden.
 

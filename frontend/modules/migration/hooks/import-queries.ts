@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { importApi } from "../api/import-api.ts";
+import { importApi } from "../services/import-api.ts";
 import type { ImportJob, FieldMapping } from "../types.ts";
-import { queryKeyFactory } from "../../../platform/api/query-keys.ts";
+import { queryKeyFactory } from "../../../core/api/query-keys.ts";
 
 export interface UseImportContext {
   readonly tenantId?: string | undefined;

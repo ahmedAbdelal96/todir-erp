@@ -222,20 +222,16 @@ P29  Kernel Release Gate
 ```text
 erp-saas/
 │
-├── src/
-│   ├── backend/
-│   │   ├── hosts/
-│   │   │   ├── Todir.Api/
-│   │   │   ├── Todir.Worker/
-│   │   │   └── Todir.DbMigrator/
+├── backend/
+│   │   ├── Api/
+│   │   ├── Worker/
+│   │   ├── DbMigrator/
+│   │   ├── Shared/
+│   │   │   ├── Primitives/
+│   │   │   ├── Contracts/
+│   │   │   └── BuildingBlocks/
 │   │   │
-│   │   ├── shared/
-│   │   │   ├── Todir.SharedKernel/
-│   │   │   ├── Todir.Contracts/
-│   │   │   ├── Todir.BuildingBlocks/
-│   │   │   └── Todir.Testing/
-│   │   │
-│   │   ├── platform/
+│   │   ├── Core/
 │   │   │   ├── Tenancy/
 │   │   │   ├── Organization/
 │   │   │   ├── Identity/
@@ -253,29 +249,18 @@ erp-saas/
 │   │   │   ├── Scheduling/
 │   │   │   └── Observability/
 │   │   │
-│   │   ├── foundation/
-│   │   │   └── .gitkeep
-│   │   │
-│   │   └── modules/
-│   │       └── Sample/
+│   │   ├── Modules/
+│   │   │   ├── Directory/
+│   │   │   ├── Catalog/
+│   │   │   └── FinanceBase/
+│   │   └── Tests/
 │   │
 │   └── frontend/
-│       ├── apps/
-│       │   └── erp-web/
-│       └── packages/
-│           ├── api-client/
-│           ├── auth/
-│           ├── i18n/
-│           └── ui/
-│
-├── tests/
-│   ├── architecture/
-│   ├── platform/
-│   ├── integration/
-│   ├── messaging/
-│   ├── security/
-│   ├── e2e/
-│   └── performance/
+│       ├── app/
+│       ├── core/
+│       ├── components/
+│       ├── modules/
+│       └── tests/
 │
 ├── docs/
 │   ├── architecture/
@@ -293,7 +278,6 @@ erp-saas/
 │   └── monitoring/
 │
 ├── tools/
-│   ├── Todir.DevCli/
 │   └── module-generator/
 │
 ├── scripts/
@@ -2678,7 +2662,7 @@ Never `latest`.
 
 ## Migration host
 
-`Todir.DbMigrator`
+`DbMigrator`
 
 API/Worker must not auto-apply production schema migrations.
 

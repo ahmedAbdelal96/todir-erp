@@ -12,8 +12,8 @@ import {
   referenceTypography,
   referenceZIndex
 } from "../tokens/reference-tokens.ts";
-import type { ResolvedTheme } from "../../platform/runtime/runtime-context.ts";
-import type { DensityMode, AppearanceMode } from "../../platform/runtime/preferences.ts";
+import type { ResolvedTheme } from "../../core/runtime/runtime-context.ts";
+import type { DensityMode, AppearanceMode } from "../../core/runtime/preferences.ts";
 
 export interface CompileThemeOptions {
   readonly density?: DensityMode | undefined;

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { partyApi, type PartyListParams, type PartyListResult } from "../api/party-api.ts";
+import { partyApi, type PartyListParams, type PartyListResult } from "../services/party-api.ts";
 import type { Party, CreatePartyInput } from "../types.ts";
-import { queryKeyFactory } from "../../../platform/api/query-keys.ts";
+import { queryKeyFactory } from "../../../core/api/query-keys.ts";
 
 export interface UsePartyContext {
   readonly tenantId?: string | undefined;

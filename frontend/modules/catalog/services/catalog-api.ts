@@ -1,4 +1,4 @@
-import { httpClient } from "../../../platform/api/http-client.ts";
+import { httpClient } from "../../../core/api/http-client.ts";
 import type { Brand, Category, CreateProductInput, ProductDetails, ProductNature, ProductSummary, Uom } from "../types.ts";
 export interface ProductListParams { readonly search?: string | undefined; readonly nature?: ProductNature | undefined; readonly status?: "Active" | "Archived" | undefined; readonly categoryId?: string | undefined; readonly brandId?: string | undefined; readonly page?: number | undefined; readonly pageSize?: number | undefined; }
 export interface ProductListResult { readonly items: readonly ProductSummary[]; readonly totalCount: number; readonly page: number; readonly pageSize: number; }

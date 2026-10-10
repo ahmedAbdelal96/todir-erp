@@ -1,4 +1,4 @@
-import type { DensityMode } from "../../platform/runtime/preferences.ts";
+import type { DensityMode } from "../../core/runtime/preferences.ts";
 
 export interface DensityMetrics {
   readonly fieldHeight: string;
