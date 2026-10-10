@@ -1,29 +1,104 @@
-# Instruction Routing
+# 0. Instruction routing
 
-Always read this file first for every repository task.
+Always read this root file first.
 
-- If the task touches backend code, databases, APIs, workers, migrations, messaging, backend tests, modules, security, or persistence, read `backend/AGENTS.md` after this file.
-- If the task touches frontend code, React, TypeScript, UI, routing, frontend modules, frontend tests, Storybook, or Playwright, read `frontend/AGENTS.md` after this file.
-- If the task touches both areas, read both scoped files. A scoped file adds rules for its area; repository-wide rules here remain mandatory.
-- For architecture, module, API, security, operations, or database decisions, read the applicable canonical documents under `docs/` before changing code. Architecture and module packs define product truth; this file defines execution governance.
-- If applicable documents conflict on ownership, contracts, tenancy, authorization, transaction semantics, technology, or destructive data behavior, stop the affected decision and report the conflict instead of guessing.
+- For backend, database, API, security, messaging, migration, worker, or backend-test work, read `backend/AGENTS.md` before implementation.
+- For frontend, React, TypeScript, UX, UI, copy, routing, frontend-test, Storybook, or Playwright work, read `frontend/AGENTS.md` before implementation.
+- For work spanning both areas, read both scoped files. These scoped files add area rules; this root file always remains mandatory.
 
-# Repository governance
+# 1. Product principles
 
-TODIR is an Arabic-market-first, multi-tenant ERP SaaS in one codebase and a modular monolith. RTL is a Day-1 product concern. Backend domain truth, calculations, invariants, persistence ownership, and authorization remain authoritative; frontend code renders accessible workflows on the approved platform.
+This is a production-grade, Arabic-market-first, multi-tenant ERP SaaS. It is one codebase and a Modular Monolith. PostgreSQL is the system of record; the backend is .NET and the frontend is React/TypeScript. Strong domain ownership, tenant isolation, data integrity, and business simplicity are first-class requirements. Technical sophistication must remain behind a simple user experience.
 
-The active structure is `backend/`, `frontend/`, `docs/`, `ops/`, `scripts/`, and `tools/`. Do not recreate retired `src/backend/`, `src/frontend/src/`, `hosts/`, or `platform-kernel/` runtime roots. The shared frontend platform in `frontend/` is the only design system, form system, API client, query/cache architecture, theme/token engine, error mapping system, page shell, runtime context, and permission UX.
+# 2. Business first
 
-Business correctness comes before code patterns. For every ERP feature, understand the workflow first, then determine ownership, lifecycle/state, invariants, permissions, integrations, accounting impact, exceptional flows, database model, API, UI, and tests. Do not design modules starting from screens or framework patterns. Before changing anything: inspect the repository and current status; read this file and the applicable scoped file; read the approved architecture/module/API/ADR documents; inspect implementation and tests; identify ownership, dependencies, boundaries, and migration impact; then plan. Implement only approved scope, verify it, self-review it, fix clear in-scope defects, and re-verify. Do not add speculative products, packages, folders, compatibility shims, or functionality.
+Do not begin a feature or module from database tables, DTOs, controllers, React screens, or an existing framework pattern. First understand:
 
-Keep one source of truth and one writer per domain. Modules do not read or write another module's tables directly. Use approved synchronous contracts for immediate invariants and Outbox/Inbox guarantees for post-commit integration. Preserve an acyclic dependency graph. Tenant isolation is a security boundary; every tenant-owned path must preserve tenant context, authorization, auditability, and approved PostgreSQL RLS. Posted accounting records and completed stock movements are immutable. AI never accesses the database directly.
+- who uses it and what real task they must complete;
+- how real companies perform the normal workflow and its exceptions;
+- who owns each fact, what may change, and what becomes immutable;
+- permissions, accounting/financial consequences, and related modules;
+- what must happen immediately and what may happen asynchronously.
 
-Every new durable file or folder must describe responsibility, not the product brand, phase, date, version, or history. Never create a new basename containing `todir` in any casing, or prefixes such as `TODIR_`, `ERP_`, `P00_`–`P99_`, `Phase1_`, `Final_`, `New_`, `Latest_`, or `V2_`. Existing numbered canonical documents are retained. Avoid meaningless `Common`, `Helpers`, `Utils`, `Misc`, and `General` names unless the responsibility is explicit and narrow. Use governed directories only; put generated local output under ignored `artifacts/logs`, `artifacts/test-results`, `artifacts/coverage`, `artifacts/performance`, or `artifacts/tmp`.
+Model real operating conditions, not only the happy path: company size, policies, approvals, reversals, cancellation, partial processing, concurrent users, backdated/future-dated operations, inactive and historical records, auditability, and correction without destroying history. Business correctness is more expensive to repair later than UI layout.
 
-Global core and business modules remain country-neutral. Country-specific legal, tax, payroll, and compliance behavior belongs in approved country packs, providers, or adapters.
+# 3. User simplicity and language boundaries
 
-Security, correctness, and maintainability take priority over convenience. Validate inputs and permissions at the backend, avoid sensitive logs and secrets, preserve correlation context, use stable machine-readable errors, bound and paginate access, prevent N+1 queries, and design only justified indexes and constraints. Do not swallow exceptions or report partial failure as success.
+The product is for ordinary business users. Aim for minimum required fields, an obvious next action, familiar terminology, progressive disclosure, no technical identifiers, and no unnecessary decisions. A user should not need ERP or accounting expertise merely to understand a label.
 
-All implementation and debugging happen locally. Do not push fixes to discover whether they work, use GitHub Actions as the normal development loop, or wait for remote CI during implementation; use local builds, tests, Docker, PostgreSQL, RabbitMQ, and runtime verification. `dev` is the active development branch; `main` is frozen unless explicitly authorized. Work directly on `dev`, never rewrite published history or force-push, and do not create phase branches for routine work. For an explicitly authorized implementation mission, use discover → design → implement → targeted local tests → full local verification → one commit → one push to `origin/dev`. Do not commit or push when the user explicitly excludes it. Do not create pull requests for routine solo development.
+Keep these boundaries explicit:
 
-Run the applicable unit, integration, architecture, security, tenant/RLS, contract/API, frontend, browser, performance, build, and documentation checks. Compilation alone is not completion. Report alignment with the plan, changed files, exact test results, architecture/security/database/performance considerations, deviations, risks, and decisions still needed. Never claim unmeasured coverage or a passing gate.
+```text
+DATABASE LANGUAGE != DOMAIN LANGUAGE != API LANGUAGE != USER-FACING LANGUAGE
+```
+
+`TenantId`, `OrganizationId`, `LegalEntityId`, `PartyId`, `MfaChallengeId`, and `EntityRef` are internal concepts. They must not automatically become labels or input fields. Ask for a business concept only when the user genuinely understands and needs it. The frontend must not expose backend implementation details, SQL errors, stack traces, table names, or ORM terminology.
+
+# 4. Locked repository structure
+
+The repository structure is closed. Approved navigation roots are:
+
+```text
+backend/     frontend/     docs/
+```
+
+Backend contains `Api/`, `Worker/`, `DbMigrator/`, `Core/`, `Modules/`, `Shared/`, and `Tests/`. Frontend contains `app/`, `core/`, `components/`, `modules/`, and `tests/`.
+
+Do not recreate `src/`, `src/backend/`, `src/frontend/`, `frontend/src/`, `backend/hosts/`, `backend/platform/`, `frontend/platform/`, `apps/`, `packages/`, or another parallel platform without explicit owner approval. Do not add unnecessary nesting, speculative packages, compatibility shims, or empty folders.
+
+# 5. Naming and file discipline
+
+Technical names describe responsibility rather than product marketing. Never create a new file or folder whose basename contains `todir` in any casing, or phase/history prefixes such as `TODIR_`, `ERP_`, `P00_`–`P99_`, `Phase1_`, `Final_`, `New_`, `Latest_`, or `V2_`. User-facing product branding may remain in UI and product documentation. Avoid generic dumping areas named `Common`, `Helpers`, `Utils`, `Misc`, or `General` unless the responsibility is explicit and narrow.
+
+Create files only in their governed directory. Do not put random SQL, scripts, logs, generated output, temporary files, or duplicate documentation beside source. Use canonical documentation locations and ignored `artifacts/logs`, `artifacts/test-results`, `artifacts/coverage`, `artifacts/performance`, or `artifacts/tmp` for local output.
+
+# 6. Ownership and architecture
+
+Every business module is the single writer and source of truth for its data. No module directly queries or writes another module's tables, schema, `DbContext`, repositories, internal services, or implementation. Cross-module interaction uses approved contracts, capabilities, public APIs, or events. Preserve an acyclic dependency graph and the existing Modular Monolith.
+
+Tenant isolation is a security boundary. Missing tenant context denies access. Backend authorization is authoritative; frontend visibility is UX only. Posted accounting records and completed stock movements are immutable. Immediate invariants use synchronous business contracts; post-commit integration uses approved Outbox/Inbox guarantees. AI never queries or writes the database directly and operates only through authorized application tools/contracts with tenant, permission, and audit controls.
+
+Global core and modules remain country-neutral. Country-specific legal, tax, payroll, and compliance behavior belongs in approved Country Packs, providers, or adapters; do not scatter Egypt, Saudi, UAE, or other country conditionals through global code.
+
+# 7. Backend/frontend mission separation
+
+Backend and frontend are separate missions by default.
+
+The backend mission owns business/domain modeling, database and migrations, repositories, services, APIs, backend security, messaging, backend tests, and runtime verification. A backend agent must not implement frontend work unless the owner explicitly assigns a combined mission.
+
+The frontend mission owns user journeys, UX, screens, navigation, user-facing terminology, forms, components, API integration, RTL, responsive behavior, frontend tests, Playwright, and Product/UX acceptance. A frontend agent must not redesign database ownership, backend security, or backend business rules. If an API is insufficient for correct UX, report the required business capability/API change; do not hack business truth into the frontend.
+
+# 8. Complete capability lifecycle
+
+Use this sequence for a new business capability:
+
+1. Business Discovery
+2. Domain / Ownership Design
+3. Backend + Database Design
+4. Backend Implementation
+5. Backend Verification
+6. Product / UX Discovery
+7. Frontend Design
+8. Frontend Implementation
+9. Integrated Runtime Verification
+10. Product Acceptance
+
+Only applicable stages that pass may support these statuses: `BACKEND COMPLETE`, `FRONTEND COMPLETE`, `PRODUCT / UX ACCEPTANCE COMPLETE`, `INTEGRATION COMPLETE`, and finally `MODULE COMPLETE`. A passing build, existing API, frontend compilation, or Playwright click-through is never by itself module completion.
+
+# 9. Local development and verification
+
+All development and defect discovery happen locally. Use local builds, tests, Docker, PostgreSQL, RabbitMQ, and runtime checks. GitHub is storage/review infrastructure, not the normal test loop; do not push fixes to discover whether they work or wait for remote CI during implementation.
+
+Before changing anything, inspect the repository and current status, read the applicable scoped manual and canonical architecture/module/API/ADR documents, inspect implementation and tests, identify ownership/dependencies/boundaries, then plan. Implement only approved scope, verify it, self-review it, fix clear in-scope defects, and re-verify. Compilation alone is not completion. Never weaken a security or architecture test to make a gate pass.
+
+# 10. Git and completion discipline
+
+Work directly on `dev`; `main` is frozen and must not be touched without explicit owner authorization. A normal implementation mission is `discover → design → implement → targeted tests → full local verification → one commit → one push`. Do not make intermediate commits/pushes, create phase branches, or create routine PRs unless explicitly requested. Never rewrite published history or force-push.
+
+Do not reopen completed work without a real defect, a new requirement, or an explicit owner decision. Avoid unrelated cleanup. Stop only when destructive owner approval, an unresolved product decision, unavailable required access/infrastructure, or a locked architectural conflict genuinely blocks the assigned mission.
+
+# 11. Comments and reporting
+
+Code comments are English and explain why: business invariants, security, performance, concurrency, transaction, retry, or architectural decisions. Do not narrate obvious mechanics.
+
+Before reporting, review scope, ownership, boundaries, data integrity, tenant/RLS security, permissions, API contracts, query/index behavior, performance, tests, documentation, warnings, stale code, and temporary artifacts. Report changed files, exact PASS/FAIL results, deviations, risks, and decisions still needed. Never claim unmeasured coverage or a passing gate.
