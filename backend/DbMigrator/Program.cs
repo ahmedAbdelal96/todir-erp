@@ -1,6 +1,19 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using DbMigrator.SeedData;
 using Npgsql;
+
+var seedDevelopment = args.Length == 2 && string.Equals(args[0], "--seed", StringComparison.OrdinalIgnoreCase) && string.Equals(args[1], "development", StringComparison.OrdinalIgnoreCase);
+if (args.Any(argument => string.Equals(argument, "--seed", StringComparison.OrdinalIgnoreCase)) && !seedDevelopment)
+{
+    Console.Error.WriteLine("Supported seed mode: --seed development");
+    return 2;
+}
+if (seedDevelopment)
+{
+    try { DevelopmentSeedEnvironment.RequireSupported(); }
+    catch (InvalidOperationException exception) { Console.Error.WriteLine(exception.Message); return 2; }
+}
 
 var connectionString = Environment.GetEnvironmentVariable("TODIR_MIGRATOR_CONNECTION");
 if (string.IsNullOrWhiteSpace(connectionString))
@@ -131,6 +144,20 @@ await using (var dispatcherBacklogOwnership = new NpgsqlCommand("alter function 
     await dispatcherBacklogOwnership.ExecuteNonQueryAsync();
 await using (var supportExpiryOwnership = new NpgsqlCommand("alter function platform_iam.expire_support_access_grants() owner to erp_dispatcher", connection))
     await supportExpiryOwnership.ExecuteNonQueryAsync();
+
+if (seedDevelopment)
+{
+    try
+    {
+        var summary = await SeedRunner.RunAsync(connection);
+        summary.Print(Console.Out);
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Development seed failed: {exception}");
+        return 3;
+    }
+}
 
 Console.WriteLine($"Applied or verified {scripts.Length} ordered platform scripts from {manifests.Count} module manifests.");
 return 0;

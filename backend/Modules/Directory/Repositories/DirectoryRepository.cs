@@ -122,6 +122,7 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
         var items = new List<PartySummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken)) items.Add(new PartySummary(reader.GetGuid(0), Enum.Parse<PartyType>(reader.GetString(1)), Enum.Parse<PartyStatus>(reader.GetString(2)), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetFieldValue<string[]>(7).Select(code => new PartyRoleDto(code, "Active", 1)).ToArray(), reader.GetFieldValue<DateTimeOffset>(5), reader.GetInt64(6)));
+        await reader.CloseAsync();
         await transaction.CommitAsync(cancellationToken);
         return new(items, total, page, pageSize);
     }
@@ -153,6 +154,7 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
         await using var command = new NpgsqlCommand("select id,candidate_party_id,reason,confidence,status from foundation_directory.duplicate_candidate where tenant_id=$1 and party_id=$2 order by created_at desc", connection, transaction);
         Add(command, tenantId.Value, partyId); var result = new List<DuplicateCandidateDto>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetDecimal(3), reader.GetString(4)));
+        await reader.CloseAsync();
         await transaction.CommitAsync(cancellationToken); return result;
     }
 

@@ -85,6 +85,8 @@ Use this sequence for a new business capability:
 
 Only applicable stages that pass may support these statuses: `BACKEND COMPLETE`, `FRONTEND COMPLETE`, `PRODUCT / UX ACCEPTANCE COMPLETE`, `INTEGRATION COMPLETE`, and finally `MODULE COMPLETE`. A passing build, existing API, frontend compilation, or Playwright click-through is never by itself module completion.
 
+User-visible backend capabilities must provide canonical realistic development seed scenarios before frontend handoff whenever seeded data is necessary to evaluate the product experience.
+
 # 9. Local development and verification
 
 All development and defect discovery happen locally. Use local builds, tests, Docker, PostgreSQL, RabbitMQ, and runtime checks. GitHub is storage/review infrastructure, not the normal test loop; do not push fixes to discover whether they work or wait for remote CI during implementation.

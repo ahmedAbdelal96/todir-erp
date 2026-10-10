@@ -148,6 +148,14 @@ Services orchestrate use cases, entities, focused repositories, approved module 
 
 Repositories own focused persistence access and expose business-useful patterns, not raw “query everything” escape hatches. Do not create an automatic `GenericRepository<T>` and do not hide business policy in queries. `Data/` owns database-specific configuration, contexts, mappings, migrations, and setup. DTOs are explicit requests/responses and never persistence entities; do not mirror database columns blindly. Validators cover input shape; domain invariants and database constraints remain separate protections.
 
+## 12.1 Development seed data
+
+Canonical realistic development data is a maintained backend deliverable, not a migration fixture or disposable demo. Seed infrastructure lives only in `backend/DbMigrator/SeedData/` and is run explicitly with `DbMigrator --seed development`; API and Worker startup must never seed implicitly. The command is accepted only in an explicitly configured `Development`, `Test`, or `Testing` environment and must fail immediately for Production or an unspecified environment. Required credentials come from environment variables, are never printed or committed, and are hashed through the same ASP.NET Identity password path used by normal account writes.
+
+Development seed data is deterministic, idempotent, stable-ID based, Arabic-first, realistic, and valid. It maintains the two canonical tenants `شركة أطلس للتجارة` (`atlas.com`) and `شركة دلتا للتوريدات` (`delta.com`), seeds both tenants for every implemented user-visible module, respects module ownership and the real dependency order, and never invents future-module facts. It must include meaningful pagination, Arabic/English search variation, sorting/filter variation, active/inactive lifecycle states, and other valid edge states. Tenant-owned writes must preserve RLS and explicit tenant context; real runtime verification must prove Atlas cannot see Delta and Delta cannot see Atlas. Seed reruns ensure their own records without deleting arbitrary developer data.
+
+Every future user-visible business module must add its own `<ModuleName>Seed.cs` stage and focused seed verification before `BACKEND COMPLETE`. A backend module is not `BACKEND COMPLETE — READY FOR FRONTEND` until both backend implementation and `DEVELOPMENT SEED READY` have passed. Performance/load generators are separate from normal development seed data, and Tax or any other unimplemented module must not receive seed data in advance.
+
 ## 13. Authorization, authentication, APIs, and errors
 
 Backend authorization is authoritative. Authentication derives one tenant from the login domain and binds the account to that tenant for the session. Check the tenant-bound authorization subject, role/permission, legal-entity scope, and business-state permission where applicable. There is no organization-selection or tenant-switching authentication flow. UI hiding is not security.
