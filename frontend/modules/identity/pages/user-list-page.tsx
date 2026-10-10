@@ -150,12 +150,12 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
           <Table aria-label="قائمة مستخدمي الشركة">
             <TableHeader>
               <TableRow>
-                <TableHead>الاسم</TableHead>
-                <TableHead>البريد المستخدم لتسجيل الدخول</TableHead>
-                <TableHead>الحالة</TableHead>
-                <TableHead>كلمة المرور المؤقتة</TableHead>
-                <TableHead>تاريخ الإنشاء</TableHead>
-                <TableHead style={{ textAlign: "center" }}>الإجراءات</TableHead>
+                <TableHead style={{ width: "20%" }}>الاسم</TableHead>
+                <TableHead style={{ width: "25%" }}>البريد المستخدم لتسجيل الدخول</TableHead>
+                <TableHead style={{ width: "12%" }}>الحالة</TableHead>
+                <TableHead style={{ width: "13%" }}>كلمة المرور المؤقتة</TableHead>
+                <TableHead style={{ width: "12%" }}>تاريخ الإنشاء</TableHead>
+                <TableHead style={{ width: "18%", textAlign: "center" }}>الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

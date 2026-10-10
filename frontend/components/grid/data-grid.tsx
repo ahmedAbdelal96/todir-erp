@@ -70,7 +70,7 @@ export function DataGrid<TRow extends object>({
         height: "480px",
         width: "100%",
         backgroundColor: "var(--color-surface-card)",
-        borderRadius: "var(--radius-md)",
+        borderRadius: "var(--radius-lg, 0.75rem)",
         border: "1px solid var(--color-border-default)",
         overflow: "hidden"
       }}
@@ -81,6 +81,13 @@ export function DataGrid<TRow extends object>({
         rowHeight={rowHeight}
         headerHeight={headerHeight}
         enableRtl={enableRtl}
+        autoSizeStrategy={{ type: "fitGridWidth", defaultMinWidth: 80 }}
+        onGridReady={(event) => {
+          event.api.sizeColumnsToFit();
+        }}
+        onGridSizeChanged={(event) => {
+          event.api.sizeColumnsToFit();
+        }}
         {...(selectable !== "none" ? { rowSelection: selectable === "multi" ? "multiple" : "single" } : {})}
         onRowClicked={(event) => {
           if (event.data && onSelectionChange) {

@@ -21,19 +21,21 @@ export function Table({
       className="ui-table-container"
       style={{
         width: "100%",
-        overflowX: "auto",
+        overflow: "hidden",
         border: isBordered ? "1px solid var(--color-border-default)" : "none",
-        borderRadius: "var(--radius-md)"
+        borderRadius: "var(--radius-lg, 0.75rem)",
+        backgroundColor: "var(--color-surface-card)"
       }}
     >
       <table
         className={clsx("ui-table", `ui-table--${density}`, { "ui-table--striped": isStriped }, className)}
         style={{
           width: "100%",
+          tableLayout: "fixed",
           borderCollapse: "collapse",
           fontSize: density === "compact" ? "0.8125rem" : "0.875rem",
           textAlign: "start",
-          color: "var(--color-content-default)"
+          color: "var(--color-content-primary)"
         }}
         {...props}
       >
@@ -111,10 +113,14 @@ export function TableHead({ align = "start", className, children, ...props }: Ta
       scope="col"
       className={clsx("ui-table-head", className)}
       style={{
-        padding: "0.75rem 1rem",
+        padding: "0.875rem 1rem",
         textAlign: align,
-        fontWeight: 600,
-        color: "var(--color-content-muted)"
+        fontWeight: 700,
+        fontSize: "0.75rem",
+        letterSpacing: "0.04em",
+        color: "var(--color-content-muted, #64748b)",
+        overflowWrap: "anywhere",
+        wordBreak: "break-word"
       }}
       {...props}
     >
@@ -132,8 +138,11 @@ export function TableCell({ align = "start", className, children, ...props }: Ta
     <td
       className={clsx("ui-table-cell", className)}
       style={{
-        padding: "0.75rem 1rem",
-        textAlign: align
+        padding: "0.875rem 1rem",
+        textAlign: align,
+        verticalAlign: "middle",
+        overflowWrap: "anywhere",
+        wordBreak: "break-word"
       }}
       {...props}
     >

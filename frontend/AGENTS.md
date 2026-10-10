@@ -122,6 +122,10 @@ To ensure complete visual and behavioral uniformity across the entire platform, 
 5. **RTL / LTR & Density Integration**:
    - `DataGrid` must always receive `enableRtl={true}` in Arabic contexts.
    - All tables and grids must respect the global `density` ("comfortable" vs "compact").
+6. **Zero Horizontal Scrolling Mandate (Anti-Pattern Prohibition)**:
+   - Horizontal scrolling in desktop and responsive ERP record tables is strictly prohibited as a broken user experience.
+   - All `Table` and `DataGrid` instances must fit 100% of their container width (`table-layout: fixed`, `width: 100%`, `overflow: hidden`, and `autoSizeStrategy={{ type: "fitGridWidth" }}`).
+   - Columns must distribute proportionally using flex or percentage widths. Cells and headers must use `overflow-wrap: anywhere; word-break: break-word` so text flows cleanly without overflowing the table boundaries.
 
 Do not create module-local generic duplicates such as a second button, table, dialog, or text field. Module-owned components are appropriate for domain behavior such as a party picker or invoice-lines editor. Promote a module component to `components/` only after genuine broad reuse, domain neutrality, accessibility, RTL/theme support, and the required story and unit test.
 

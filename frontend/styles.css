@@ -363,7 +363,7 @@ a {
 /* Reusable DataTable & Grid System */
 .ui-table-container {
   width: 100%;
-  overflow-x: auto;
+  overflow: hidden;
   background-color: var(--color-surface-card, #ffffff);
   border: 1px solid var(--color-border-default, #e2e8f0);
   border-radius: var(--radius-lg, 0.75rem);
@@ -372,6 +372,7 @@ a {
 
 .ui-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   text-align: start;
   color: var(--color-content-primary, #0f172a);
@@ -390,6 +391,8 @@ a {
   text-transform: uppercase;
   color: var(--color-content-muted, #64748b);
   border-bottom: 1px solid var(--color-border-default, #e2e8f0);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ui-table-row {
@@ -410,6 +413,8 @@ a {
   font-size: 0.875rem;
   color: var(--color-content-primary, #0f172a);
   vertical-align: middle;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ui-table--compact .ui-table-head {
