@@ -1,19 +1,47 @@
-# Backend engineering
+# Backend engineering rules
 
-## Absolute filename and folder-name prohibition
+This file governs all work under `backend/`; read the repository root `AGENTS.md` first.
 
-Never create or introduce a new backend source file, project file, or folder whose basename contains `todir` in any casing. This is absolute; use responsibility-based filesystem names while preserving already-established namespaces and assembly identifiers where required by the solution.
+Never create a new file or folder whose basename contains `todir` in any casing. Backend technical names describe responsibility rather than product branding.
 
-Apply root governance and read the approved Platform Kernel and applicable module pack before backend work. Build business correctness first using C# and ASP.NET Core only when bootstrap authorizes it. Keep the conventional module folders (`Controllers`, `Services`, `Repositories`, `Entities`, `DTOs`, `Validators`, `Data`, `Permissions`, and `Events`) responsibility-based and create only folders backed by real code; dependencies point inward through approved contracts.
+## Responsibility map
 
-The canonical backend map is `Api/`, `Worker/`, `DbMigrator/`, `Core/`,
-`Modules/`, `Shared/`, and `Tests/`. Controllers are HTTP and authorization
-transport only and follow `Controller → Service → Repository/Data` when
-persistence is separated. Services never depend on Controllers; Entities do
-not depend on transport or persistence; repositories and data code do not own
-HTTP behavior. Do not add generic dumping grounds or restore parallel
-`Application/`, `Infrastructure/`, `Domain/`, or `Interfaces/` project trees.
+```text
+backend/
+├── Api/            # HTTP host and composition root
+├── Worker/         # Consumers, scheduled jobs, and background work
+├── DbMigrator/     # Controlled migration execution
+├── Core/           # Platform Kernel and reusable technical capabilities
+├── Modules/        # Business modules and their owned contracts/persistence
+├── Shared/         # Small approved cross-cutting technical contracts only
+└── Tests/          # Architecture, Core, Integration, Security, and module tests
+```
 
-Cross-module interaction is allowed only through approved public module contracts, capabilities, events, or ports as defined by TODIR architecture. Direct access to another module's implementation, DbContext, entities, repositories, or database tables is forbidden.
+The backend is an ASP.NET Core/C# modular monolith using PostgreSQL, REST/OpenAPI, approved MassTransit/RabbitMQ messaging, Quartz where required, and the existing host/migration topology. `Api/` owns startup, middleware, auth wiring, OpenAPI, health, and module registration without business logic. `Worker/` owns consumers, scheduled jobs, and long-running async work without taking domain ownership. `DbMigrator/` owns controlled, ordered migrations; production API startup must not blindly migrate. Keep reusable platform behavior in `Core/`, domain behavior in the owning module, and do not recreate retired source roots or add parallel infrastructure.
 
-A module owns its data and persistence and remains its single writer/source of truth. Use EF Core and PostgreSQL according to the approved baseline; enforce transaction, validation, authorization, tenancy/RLS, migration, messaging, and observability rules without inventing them. Design API behavior, stable error codes, retries/idempotency and database indexes as part of each feature. Instrument meaningful operations and verify performance with realistic access patterns. Test domain rules, persistence, contracts, APIs, security, tenancy, messaging, failures and migrations as applicable.
+## Boundaries and module ownership
+
+- `Core/` owns platform capabilities such as tenant context, authorization primitives, transactions, audit, Outbox/Inbox, idempotency, files, notifications, imports, registry, and other approved shared kernel behavior. It must not depend on business modules.
+- `Directory` (`foundation_directory`) is the single writer for Party identity, roles, identifiers, contact points, addresses, archive/restore, and merge redirects. It does not own customer/supplier workflows, accounting, inventory, sales, purchasing, or country-specific legal validation without an approved country pack.
+- `Catalog` (`foundation_catalog`) is the single writer for product templates, variants, identifiers, categories, brands, units of measure, product-specific decimal conversions, and archive/restore. Every product has a default variant. It does not own pricing, tax, inventory, purchasing, or accounting fields.
+- `FinanceBase` (`foundation_finbase`) owns currencies, legal-entity currency, exchange rates, rounding policies, financial policies, and payment terms. It does not own Ledger, Tax, Pricing, inventory, invoicing, payment execution, or posting behavior.
+- `Sample` is a real runtime verification module for registration, API, Worker/MassTransit, schema/migrations, Outbox/Inbox, and integration behavior. Keep it small and do not copy its business semantics into real modules.
+- Other modules consume public contracts/capabilities and never read another module's tables, entities, migrations, or repositories directly. Preserve the approved dependency DAG.
+
+Before module work, read the exact current module pack under `docs/modules/`, the Platform Kernel pack, master blueprint, production engineering baseline, relevant ADRs, and actual API/OpenAPI contracts. A module is one coherent capability across domain, application, persistence, contracts/API, permissions, tests, operations, and documentation.
+
+## Code and persistence shape
+
+Use the narrowest cohesive structure needed by the module: `Controllers/`, `Services/`, `Repositories/`, `Entities/`, `DTOs/`, `Validators/`, `Data/`, `Permissions/`, and `Events/`. Create only folders that have real responsibility; do not create empty folders or default `Application/`, `Infrastructure/`, `UseCases/`, `Features/`, `Commands/`, `Queries/`, `Handlers/`, or `Abstractions/` trees without an exceptional approved reason. Controllers transport requests, authenticate/authorize, and map responses; they do not contain domain rules or persistence. Services orchestrate use cases, transactions, audit, and Outbox behavior; they must not issue SQL or access database connections directly. Repositories/data components own SQL, `DbContext`/Npgsql access, projections, and persistence mapping.
+
+Keep entities and invariants in the owning domain. Keep DTOs/contracts explicit and stable; do not expose entities as API contracts. Validate commands at the boundary and in the domain. Use deterministic decimal precision, nullability, uniqueness, ownership-valid foreign keys, bounded pagination, and indexes tied to real access patterns. Review query shape and avoid N+1 and unbounded reads.
+
+Every tenant-owned table and query must preserve tenant context and the approved composite tenant-safe relationships. Enable and force PostgreSQL RLS as required by the Platform Kernel. Writes use the approved transaction coordinator and preserve audit, idempotency, and Outbox guarantees. Posted accounting records and completed stock movements cannot be edited or deleted; use approved correction/reversal flows. Migrations are owned by the module, safe, ordered, and never hidden in arbitrary scripts.
+
+API authorization is mandatory even when the UI hides an action. Return stable problem-details/error codes without leaking sensitive data. Messaging is post-commit where appropriate, idempotent, retry-aware, and observable. Never use customer forks or ownership bypasses.
+
+## Testing and operations
+
+Place cross-system tests under `backend/Tests/Architecture/`, `Core/`, `Integration/`, `Security/`, or `Modules/<module>/`. Tests use deterministic isolated data and cleanup, do not depend on live production services, and do not sleep when deterministic signaling is possible. Cover architecture boundaries, tenant isolation/RLS, authorization, API contracts, persistence, messaging, idempotency/retry, and meaningful end-to-end behavior as applicable. Shared database/broker integration suites must respect the repository's required serial execution.
+
+Keep generated results in ignored artifact directories. Run focused tests plus solution build, architecture/security/database/API gates, and relevant module verification before reporting. Never weaken or delete a test to make a gate pass; fix the defect or stop at the governing conflict.

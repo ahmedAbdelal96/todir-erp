@@ -43,7 +43,7 @@ const requiredAdrs = [
   "frontend-platform-foundation.md"
 ];
 const checks = [
-  ["naming prohibition is recorded in applicable governance files", ["AGENTS.md", "backend/AGENTS.md", "backend/Core/AGENTS.md", "backend/Tests/AGENTS.md"].every(file => { const text = read(file).toLowerCase(); return text.includes("basename") && text.includes("todir"); })],
+  ["naming prohibition is recorded in applicable governance files", ["AGENTS.md", "backend/AGENTS.md", "frontend/AGENTS.md"].every(file => { const text = read(file).toLowerCase(); return text.includes("basename") && text.includes("todir"); })],
   ["workflow disables premature package-manager cache", read(".github/workflows/repository-validation.yml").includes("package-manager-cache: false")],
   ["workflow enables Corepack before pnpm", /Enable Corepack[\s\S]*Verify pinned pnpm[\s\S]*pnpm install/.test(read(".github/workflows/repository-validation.yml"))],
   ["workflow runs migrator", read(".github/workflows/repository-validation.yml").includes("DbMigrator/DbMigrator.csproj")],

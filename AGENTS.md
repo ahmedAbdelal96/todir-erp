@@ -1,105 +1,29 @@
-# TODIR repository governance
+# Instruction Routing
 
-## Identity and operating role
+Always read this file first for every repository task.
 
-TODIR is a production-grade, Arabic-market-first, multi-tenant ERP SaaS: one codebase, monorepo, and Modular Monolith with strong module boundaries. RTL is a Day-1 product concern. The product name is `TODIR`; technical project, namespace, solution, file, and folder names describe responsibility rather than brand.
+- If the task touches backend code, databases, APIs, workers, migrations, messaging, backend tests, modules, security, or persistence, read `backend/AGENTS.md` after this file.
+- If the task touches frontend code, React, TypeScript, UI, routing, frontend modules, frontend tests, Storybook, or Playwright, read `frontend/AGENTS.md` after this file.
+- If the task touches both areas, read both scoped files. A scoped file adds rules for its area; repository-wide rules here remain mandatory.
+- For architecture, module, API, security, operations, or database decisions, read the applicable canonical documents under `docs/` before changing code. Architecture and module packs define product truth; this file defines execution governance.
+- If applicable documents conflict on ownership, contracts, tenancy, authorization, transaction semantics, technology, or destructive data behavior, stop the affected decision and report the conflict instead of guessing.
 
-Act as a senior cross-functional team: product designer and architect; ERP, software, systems, .NET, React/TypeScript and PostgreSQL architect; security, performance, DevOps, QA/test and production engineer. Evaluate work for business correctness, simplicity, architecture/ownership, data integrity, tenant isolation, security, performance, scalability, maintainability, testing, operations, migration impact and production readiness. Principle: **Simple Outside. Powerful Inside.**
+# Repository governance
 
-Every future change is evaluated through product and UX correctness; backend and frontend design; database, indexing and query behavior; security; performance; DevOps/operations; QA; developer experience; and production readiness. Scoped rules specialize this operating mode; they do not reduce it.
+TODIR is an Arabic-market-first, multi-tenant ERP SaaS in one codebase and a modular monolith. RTL is a Day-1 product concern. Backend domain truth, calculations, invariants, persistence ownership, and authorization remain authoritative; frontend code renders accessible workflows on the approved platform.
 
-## Required working method
+The active structure is `backend/`, `frontend/`, `docs/`, `ops/`, `scripts/`, and `tools/`. Do not recreate retired `src/backend/`, `src/frontend/src/`, `hosts/`, or `platform-kernel/` runtime roots. The shared frontend platform in `frontend/` is the only design system, form system, API client, query/cache architecture, theme/token engine, error mapping system, page shell, runtime context, and permission UX.
 
-Before modifying anything: inspect the repository; read this file and every nearer `AGENTS.md`; locate and read the applicable approved architecture, Platform Kernel, ADR, and module-plan documents; inspect relevant implementation and tests; identify ownership, dependencies, boundaries and scope; then plan. Implement only the approved scope, verify it, self-review it, fix clear in-scope defects, re-verify, and report honestly. Never claim completion before verification.
+Business correctness comes before code patterns. For every ERP feature, understand the workflow first, then determine ownership, lifecycle/state, invariants, permissions, integrations, accounting impact, exceptional flows, database model, API, UI, and tests. Do not design modules starting from screens or framework patterns. Before changing anything: inspect the repository and current status; read this file and the applicable scoped file; read the approved architecture/module/API/ADR documents; inspect implementation and tests; identify ownership, dependencies, boundaries, and migration impact; then plan. Implement only approved scope, verify it, self-review it, fix clear in-scope defects, and re-verify. Do not add speculative products, packages, folders, compatibility shims, or functionality.
 
-## Local-first mission discipline
+Keep one source of truth and one writer per domain. Modules do not read or write another module's tables directly. Use approved synchronous contracts for immediate invariants and Outbox/Inbox guarantees for post-commit integration. Preserve an acyclic dependency graph. Tenant isolation is a security boundary; every tenant-owned path must preserve tenant context, authorization, auditability, and approved PostgreSQL RLS. Posted accounting records and completed stock movements are immutable. AI never accesses the database directly.
 
-Implementation and verification are local-first. Do not use GitHub Actions, pull
-requests, or remote CI as a substitute for local gates. A one-module mission is
-one coherent end-to-end capability across its approved backend, API/contracts,
-frontend, tests, operations and documentation; do not reopen a completed
-module without concrete evidence of a defect or contract change. For a mission
-that explicitly requests one final commit, keep all changes local until every
-required gate passes, then make the single focused commit and push only to
-`origin/dev`.
+Every new durable file or folder must describe responsibility, not the product brand, phase, date, version, or history. Never create a new basename containing `todir` in any casing, or prefixes such as `TODIR_`, `ERP_`, `P00_`–`P99_`, `Phase1_`, `Final_`, `New_`, `Latest_`, or `V2_`. Existing numbered canonical documents are retained. Avoid meaningless `Common`, `Helpers`, `Utils`, `Misc`, and `General` names unless the responsibility is explicit and narrow. Use governed directories only; put generated local output under ignored `artifacts/logs`, `artifacts/test-results`, `artifacts/coverage`, `artifacts/performance`, or `artifacts/tmp`.
 
-## Development branch execution
+Global core and business modules remain country-neutral. Country-specific legal, tax, payroll, and compliance behavior belongs in approved country packs, providers, or adapters.
 
-`dev` is the active development branch. Work directly on `dev`, create a focused commit for each completed coherent milestone, and push normally to `origin/dev`. Do not create a branch per phase or require a pull request for routine solo development. `main` is frozen and must not receive development work, merges, or pushes unless the owner explicitly authorizes promotion. When the next approved phase is fully specified and no stop condition applies, continue autonomously after committing and pushing the previous phase. Never rewrite published history or force-push.
+Security, correctness, and maintainability take priority over convenience. Validate inputs and permissions at the backend, avoid sensitive logs and secrets, preserve correlation context, use stable machine-readable errors, bound and paginate access, prevent N+1 queries, and design only justified indexes and constraints. Do not swallow exceptions or report partial failure as success.
 
-When a completed phase passes its exit gate, continue to the next approved phase without waiting for a new prompt. Use the repository roadmap to identify the next incomplete phase and execute: `DISCOVER → PLAN → IMPLEMENT → TEST → REVIEW → FIX → RE-VERIFY → COMMIT → PUSH → CONTINUE`. Do not stop at a phase boundary for routine review or normal implementation choices. Choose the narrowest safe and reversible option when it does not alter domain ownership, source of truth, public business semantics, security boundaries, transaction semantics, approved technology, or destructive data behavior. Stop only for those material owner decisions, unresolved governing document contradictions, or required external credentials.
+All implementation and debugging happen locally. Do not push fixes to discover whether they work, use GitHub Actions as the normal development loop, or wait for remote CI during implementation; use local builds, tests, Docker, PostgreSQL, RabbitMQ, and runtime verification. `dev` is the active development branch; `main` is frozen unless explicitly authorized. Work directly on `dev`, never rewrite published history or force-push, and do not create phase branches for routine work. For an explicitly authorized implementation mission, use discover → design → implement → targeted local tests → full local verification → one commit → one push to `origin/dev`. Do not commit or push when the user explicitly excludes it. Do not create pull requests for routine solo development.
 
-For an explicitly authorized continuous Platform Kernel execution mission, the
-entire Platform Kernel pack is one implementation contract. Its internal phases
-are sequencing and verification boundaries, not user handoff, commit, push or
-reporting boundaries. Keep verified implementation changes in the working tree
-until the complete pack and final release gate pass; then create one final
-focused commit and push it to `origin/dev`. Existing published commits are not
-rewritten.
-
-## Universal naming and file discipline
-
-Every new normal or durable file and folder must describe its responsibility, not the product brand, project marketing name, phase, date, version, or history. Use concise kebab-case for Markdown, scripts, workflows and operational files; use language/framework conventions for source files and tests. Do not introduce `TODIR_`, `Todir_`, `ERP_`, `P00_`–`P99_`, `Phase1_`, `Final_`, `New_`, `Latest_`, or `V2_` prefixes. Existing numbered architecture/module packs are legacy/canonical exceptions and are not to be mass-renamed during routine work. This exception does not apply to new documentation, scripts, workflows, runbooks or support files.
-
-Create files only in their governed directory. Do not create phase reports, duplicate documentation, random SQL/scripts, logs, generated output or temporary files in source directories; use the approved `artifacts/` paths for ignored local output. Update a canonical document instead of creating `new`, `final`, `updated`, `copy` or `v2` variants.
-
-### Absolute filename and folder-name prohibition
-
-Never create, rename, or introduce a new file or folder whose basename contains `todir` in any casing, including `TODIR`, `Todir`, `todir-`, or `Todir.`. Technical project, namespace, solution, class, interface, file, and folder names must also not use the product brand merely for branding. Product branding may remain in user-facing content, stable environment variables, configuration keys, telemetry contracts, database identifiers, and historical documents.
-
-## Instruction hierarchy
-
-Root `AGENTS.md` defines universal TODIR rules and always remains active. A scoped `AGENTS.md` adds stricter or area-specific execution rules; it must not weaken or contradict root governance. The nearest applicable `AGENTS.md` provides the most specific execution rules. Architecture and module documentation remains authoritative for design and domain decisions; `AGENTS.md` governs execution behavior, not product/domain truth. If AGENTS files or governing documents conflict, stop the affected decision and report the conflict rather than silently choosing.
-
-Architecture and module packs are implementation contracts. Do not substitute chat history or assumptions for repository documentation. Precedence for platform work is: current Platform Kernel pack, master architecture blueprint, production engineering baseline, then ADRs. For a foundation/business module it is: current module pack, Platform Kernel pack, master blueprint, engineering baseline, then ADRs. If governing documents conflict, stop the affected decision, report it, and propose an ADR candidate if resolution changes architecture.
-
-Current approved packs are `docs/architecture/01_ERP_SAAS_MASTER_MODULE_AND_DEPENDENCY_BLUEPRINT.md`, `02_ERP_SAAS_PRODUCTION_READY_TECH_STACK_AND_PROJECT_STRUCTURE.md`, and `03_ERP_SAAS_PLATFORM_KERNEL_AND_MODULE_SYSTEM_TECHNICAL_DESIGN_PACK.md`; current module packs are in `docs/modules/` (numbered `04` onward). Read the exact pack for the module/task, plus newer approved documents and ADRs when present.
-
-## Architecture guardrails
-
-Keep a Modular Monolith and one codebase. Tenant isolation is a security boundary. Preserve the single source of truth and single writer. Modules never directly read or write another module's tables; use approved contracts and keep the dependency DAG acyclic. Immediate invariants use approved synchronous contracts; asynchronous integration happens after commit and uses the approved Outbox/Inbox guarantees. Customer forks and ownership bypasses are forbidden. Posted accounting records and completed stock movements are immutable. AI never accesses the database directly. Infrastructure complexity must earn its place.
-
-### Completed shared foundation rule
-
-The approved Frontend Core and Design System (`frontend/core` and `frontend/components`) is an established, shared platform contract. All future business modules MUST build upon and reuse this shared foundation. A module must not create a parallel design system, form system, grid engine, API client, caching architecture, theme engine, error mapping system, page shell, runtime context, or permission UX. Material modifications to shared frontend architectural decisions require explicit architectural review and an ADR.
-
-### End-to-end module principle
-
-A business module is implemented as one coherent business capability across: Domain, Application, Persistence, Contracts/API, Permissions, Frontend, Tests, and Operations/Documentation. Frontend and backend are complementary tiers of one module contract; backend remains authoritative for domain truth, calculations, and invariants, while the frontend renders accessible, Arabic/RTL-first UX using approved design system primitives and platform query hooks.
-
-### Module-pack authority
-
-Before starting any business module work, the exact approved module pack (`docs/modules/`), dependency packs, Platform Kernel pack, and actual backend/OpenAPI contracts must be read completely. Chat history, reference slices, and speculative mock structures are not authoritative business truth.
-
-Do not silently change source of truth, domain/single-writer ownership, public contracts, dependency direction/DAG, transaction boundary, tenancy/RLS, identity or authorization, database/schema ownership, financial or posting semantics, stock immutability, messaging/Outbox/Inbox, topology, major technology, activation, ID/date-time/API/migration strategy, or fundamental performance design. Stop and seek architectural review/ADR.
-
-## Placement and hygiene
-
-| Content | Location |
-|---|---|
-| Application source | `backend/` and `frontend/` |
-| Backend / frontend | `backend/` / `frontend/` |
-| Architecture, ADR, platform, module, API, runbook, security docs | `docs/architecture/`, `docs/adr/`, `docs/platform/`, `docs/modules/`, `docs/api/`, `docs/runbooks/`, `docs/security/` |
-| Infrastructure, database ops, RabbitMQ, monitoring, containers, compose, IaC | `ops/`, `ops/database/`, `ops/rabbitmq/`, `ops/monitoring/`, `ops/containers/`, `ops/compose/`, `ops/terraform/` |
-| Reusable tools / repository scripts / GitHub automation | `tools/`, `scripts/`, `.github/` |
-| Backend tests | `backend/Tests/` |
-
-The canonical repository navigation roots are `backend/`, `frontend/`, and
-`docs/`. Do not recreate `src/backend/`, `src/frontend/src/`, `hosts/`, or
-`platform-kernel/` as active runtime structure.
-
-No random scripts in source directories, logs beside application code, temporary files, arbitrary SQL, build artifacts, generated test output, or duplicate/noncanonical documentation. Use ignored `artifacts/logs`, `artifacts/test-results`, `artifacts/coverage`, `artifacts/performance`, and `artifacts/tmp` for local/generated workspace output only—not production sources, canonical docs, migrations, or source-controlled generated clients.
-
-## Engineering expectations
-
-Write clear, small, cohesive units with explicit dependencies, correct TODIR terminology and no God classes, speculative framework, needless inheritance/generalization, or copied business logic. Keep business logic out of UI/infrastructure unless it belongs there. Code comments and API documentation are English. Prefer self-explanatory names; comments explain non-obvious **why**, invariants, architectural/security/performance/concurrency/transaction/retry decisions—not obvious mechanics.
-
-Performance never trades away correctness, integrity, security, maintainability or simple UX. Consider bounded/paginated access, N+1, round trips, batching, async I/O, caching only when justified, serialization, and measured hot paths. Database design requires constraints, ownership-valid foreign keys, uniqueness, nullability, deterministic types and decimal precision, tenant enforcement/RLS as approved, safe migrations, and concurrency decisions. Design indexes for real access patterns, including composite ordering; avoid redundant or speculative indexes and review query plans for material paths.
-
-Security is built in: least privilege, backend authorization, explicit permissions, input validation, safe outputs/logs, PII protection, secret protection, auditability where required, and no sensitive plaintext logging. Do not swallow exceptions or falsely report partial failure as success. Use approved stable machine-readable error codes and preserve trace/correlation context without exposing sensitive detail.
-
-## Testing, review, and reporting
-
-Compilation is not completion. Select the applicable unit/domain/validation/architecture/integration/database/tenant-RLS/contract/API/authorization/security/messaging/idempotency/retry/frontend/E2E/performance/regression tests. State "All required tests and exit gates defined for this scope pass" only when true; never claim unmeasured 100% coverage.
-
-Before reporting, review plan and architecture compliance; placement, naming, boundaries, ownership, integrity, security, tenant isolation, DB/query/index behavior, error/idempotency behavior, tests, documentation, observability, maintainability, dead/duplicate/debug code, TODOs, warnings, and temporary artifacts. Fix clear in-scope defects. Report: work and plan alignment; changed files; tests/results; security, performance, database/index and architecture considerations; deviations; risks; decisions needed; and next step. If an issue requires architecture or another module, stop that part and explain it rather than expanding scope silently.
+Run the applicable unit, integration, architecture, security, tenant/RLS, contract/API, frontend, browser, performance, build, and documentation checks. Compilation alone is not completion. Report alignment with the plan, changed files, exact test results, architecture/security/database/performance considerations, deviations, risks, and decisions still needed. Never claim unmeasured coverage or a passing gate.
