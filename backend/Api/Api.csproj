@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <AssemblyName>Api</AssemblyName>
+    <RootNamespace>Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <ProjectReference Include="../Shared/BuildingBlocks/BuildingBlocks.csproj" />
+    <ProjectReference Include="../Core/Core.csproj" />
+    <ProjectReference Include="../Modules/Sample/Sample.csproj" />
+    <ProjectReference Include="../Modules/Directory/Directory.csproj" />
+    <ProjectReference Include="../Modules/FinanceBase/FinanceBase.csproj" />
+    <ProjectReference Include="../Modules/Catalog/Catalog.csproj" />
+  </ItemGroup>
+</Project>

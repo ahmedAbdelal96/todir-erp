@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <AssemblyName>Worker</AssemblyName>
+    <RootNamespace>Worker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Npgsql" />
+    <ProjectReference Include="../Core/Core.csproj" />
+    <ProjectReference Include="../Modules/Sample/Sample.csproj" />
+  </ItemGroup>
+</Project>

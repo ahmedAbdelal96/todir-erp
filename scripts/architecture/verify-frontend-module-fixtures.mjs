@@ -1,9 +1,9 @@
 import path from "node:path";
 import { validateFrontendArchitecture, validateFrontendModuleBoundaries } from "./frontend-module-boundary.mjs";
 
-const allowedRoot = path.resolve("tests/architecture/fixtures/frontend/allowed/modules");
-const forbiddenRoot = path.resolve("tests/architecture/fixtures/frontend/forbidden/modules");
-const aliasRoot = path.resolve("tests/architecture/fixtures/frontend/alias/modules");
+const allowedRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/allowed/modules");
+const forbiddenRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/forbidden/modules");
+const aliasRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/alias/modules");
 
 const allowedViolations = validateFrontendModuleBoundaries(allowedRoot);
 const forbiddenViolations = validateFrontendModuleBoundaries(forbiddenRoot);
@@ -22,7 +22,7 @@ if (aliasViolations.length === 0) {
 }
 
 // Check Platform importing module internals
-const platformFixtureRoot = path.resolve("tests/architecture/fixtures/frontend/platform-imports-module");
+const platformFixtureRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/platform-imports-module");
 const platformResult = validateFrontendArchitecture({
   rootDir: platformFixtureRoot,
   modulesRoot: path.join(platformFixtureRoot, "modules")
@@ -32,7 +32,7 @@ if (platformResult.violations.length === 0) {
 }
 
 // Check Circular dependencies between modules
-const circularFixtureRoot = path.resolve("tests/architecture/fixtures/frontend/circular");
+const circularFixtureRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/circular");
 const circularResult = validateFrontendArchitecture({
   rootDir: circularFixtureRoot,
   modulesRoot: path.join(circularFixtureRoot, "modules")
@@ -42,7 +42,7 @@ if (circularResult.cycles.length === 0) {
 }
 
 // Check Forbidden Commercial / Paid package
-const paidPkgFixtureRoot = path.resolve("tests/architecture/fixtures/frontend/forbidden-paid-package");
+const paidPkgFixtureRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/forbidden-paid-package");
 const paidPkgResult = validateFrontendArchitecture({
   rootDir: paidPkgFixtureRoot,
   modulesRoot: path.join(paidPkgFixtureRoot, "modules")
@@ -51,33 +51,33 @@ if (!paidPkgResult.violations.some(v => v.includes("Free-Only Core Dependency Ru
   throw new Error("Forbidden paid package import was not detected.");
 }
 
-// Check Design System importing any business-module surface
-const designSystemFixtureRoot = path.resolve("tests/architecture/fixtures/frontend/design-system-imports-module");
-const designSystemResult = validateFrontendArchitecture({
-  rootDir: designSystemFixtureRoot,
-  modulesRoot: path.join(designSystemFixtureRoot, "modules")
+// Check Shared Components importing any business-module surface
+const sharedComponentsFixtureRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/shared-components-imports-module");
+const sharedComponentsResult = validateFrontendArchitecture({
+  rootDir: sharedComponentsFixtureRoot,
+  modulesRoot: path.join(sharedComponentsFixtureRoot, "modules")
 });
-if (!designSystemResult.violations.some(v => v.includes("Design System must not depend on business module"))) {
-  throw new Error("Design System importing a business module was not detected.");
+if (!sharedComponentsResult.violations.some(v => v.includes("Shared Components must not depend on business module"))) {
+  throw new Error("Shared Components importing a business module was not detected.");
 }
 
 // Check Business Module directly importing AG Grid engine
-const moduleImportsGridRoot = path.resolve("tests/architecture/fixtures/frontend/module-imports-grid");
+const moduleImportsGridRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/module-imports-grid");
 const moduleImportsGridResult = validateFrontendArchitecture({
   rootDir: moduleImportsGridRoot,
   modulesRoot: path.join(moduleImportsGridRoot, "modules")
 });
-if (!moduleImportsGridResult.violations.some(v => v.includes("Business modules must consume the design system DataGrid wrapper"))) {
+if (!moduleImportsGridResult.violations.some(v => v.includes("Business modules must consume the shared-components DataGrid wrapper"))) {
   throw new Error("Business module directly importing AG Grid was not detected.");
 }
 
 // Check Business Module directly importing React Aria
-const moduleImportsReactAriaRoot = path.resolve("tests/architecture/fixtures/frontend/module-imports-react-aria");
+const moduleImportsReactAriaRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/module-imports-react-aria");
 const moduleImportsReactAriaResult = validateFrontendArchitecture({
   rootDir: moduleImportsReactAriaRoot,
   modulesRoot: path.join(moduleImportsReactAriaRoot, "modules")
 });
-if (!moduleImportsReactAriaResult.violations.some(v => v.includes("Business modules must consume approved design system primitives"))) {
+if (!moduleImportsReactAriaResult.violations.some(v => v.includes("Business modules must consume approved shared-components primitives"))) {
   throw new Error("Business module directly importing React Aria was not detected.");
 }
 
@@ -88,6 +88,6 @@ console.log("- Alias internal imports: REJECTED (PASS)");
 console.log("- Platform importing module internal: REJECTED (PASS)");
 console.log("- Circular module dependency: REJECTED (PASS)");
 console.log("- Forbidden paid package: REJECTED (PASS)");
-console.log("- Design System importing business module: REJECTED (PASS)");
+console.log("- Shared Components importing business module: REJECTED (PASS)");
 console.log("- Business module directly importing AG Grid: REJECTED (PASS)");
 console.log("- Business module directly importing React Aria: REJECTED (PASS)");

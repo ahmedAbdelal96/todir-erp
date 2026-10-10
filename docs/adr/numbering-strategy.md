@@ -12,4 +12,4 @@ Numbering contention is isolated to the relevant sequence scope and legal number
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/Services/PlatformServices.cs`, numbering schema constraints, and numbering tests.
+`backend/Core/Services/PlatformServices.cs`, numbering schema constraints, and numbering tests.

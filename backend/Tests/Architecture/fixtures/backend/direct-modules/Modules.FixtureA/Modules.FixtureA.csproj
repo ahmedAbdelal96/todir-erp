@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Modules.FixtureA</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Modules.FixtureB/Modules.FixtureB.csproj" />
+  </ItemGroup>
+</Project>

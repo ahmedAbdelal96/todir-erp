@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Shared.BuildingBlocks</AssemblyName>
+    <RootNamespace>Shared.BuildingBlocks</RootNamespace>
+    <NoWarn>$(NoWarn);CA1716</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <ProjectReference Include="../Primitives/Primitives.csproj" />
+  </ItemGroup>
+</Project>

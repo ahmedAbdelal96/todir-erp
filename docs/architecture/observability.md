@@ -10,6 +10,6 @@ The API host keeps the approved order explicit: correlation/request activity, ex
 
 ## Trace verification
 
-`tests/observability/Todir.Observability.Tests` runs a real ASP.NET TestServer request to a handler that executes `SELECT 1` through Npgsql. The test captures .NET Activity spans and asserts one trace contains the HTTP request, handler, and PostgreSQL database span. The CI job supplies an ephemeral PostgreSQL service only for this test path; it is not the production database runtime architecture.
+`backend/Tests/Observability` runs a real ASP.NET TestServer request to a handler that executes `SELECT 1` through Npgsql. The test captures .NET Activity spans and asserts one trace contains the HTTP request, handler, and PostgreSQL database span. The CI job supplies an ephemeral PostgreSQL service only for this test path; it is not the production database runtime architecture.
 
 P04 remains responsible for runtime roles, schema ownership, grants, application DB session context, and migration/runtime separation. P03 does not implement those concerns.

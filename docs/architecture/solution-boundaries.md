@@ -4,9 +4,9 @@ This document makes approved dependency boundaries executable before Platform Ke
 
 ## Enforced backend boundaries
 
-- `Todir.SharedKernel` cannot reference any project.
-- `*.Contracts` projects may reference only `Todir.SharedKernel`.
-- `Todir.BuildingBlocks` may reference only `Todir.SharedKernel`; it cannot depend on Contracts, Platform, Foundation, business modules, Hosts, or tests.
+- `Shared.Primitives` cannot reference any project.
+- `*.Contracts` projects may reference only `Shared.Primitives`.
+- `Shared.BuildingBlocks` may reference only `Shared.Primitives`; it cannot depend on Contracts, Core, modules, hosts, or tests.
 - Platform implementation cannot reference Foundation or business-module implementation.
 - Foundation and business-module implementations cannot reference another implementation directly; use approved contracts, capabilities, events, or ports.
 - Domain code inside a Foundation or business module cannot semantically reference a type from that same module's Infrastructure namespace. This is checked from Roslyn semantic symbols, so it applies even when both layers intentionally share one implementation assembly.
@@ -14,7 +14,7 @@ This document makes approved dependency boundaries executable before Platform Ke
 - Production projects cannot reference test projects.
 - The project dependency graph must be acyclic.
 
-`tests/architecture/Todir.ArchitectureTests` discovers convention-following projects from repository metadata and validates their `ProjectReference` relationships. The intra-project layer rule compiles each implementation project's local C# source into a Roslyn semantic model and compares symbol namespaces; it does not infer dependencies from source-text patterns. Controlled fixture projects are excluded from the production graph and demonstrate that validators reject illegal references.
+`backend/Tests/Architecture` discovers convention-following projects from repository metadata and validates their `ProjectReference` relationships. The intra-project layer rule compiles each implementation project's local C# source into a Roslyn semantic model and compares symbol namespaces; it does not infer dependencies from source-text patterns. Controlled fixture projects are excluded from the production graph and demonstrate that validators reject illegal references.
 
 ## Frontend boundary
 
@@ -26,11 +26,11 @@ Project references, cycles, named project shape, BuildingBlocks direction, and r
 
 ## Adding a project or module
 
-Follow the governing `AGENTS.md` files and module plan. Add a project to `Todir.sln` when it is a real production or test project. Do not bypass architecture tests with naming exceptions, direct implementation references, or fixture-like code in production locations.
+Follow the governing `AGENTS.md` files and module plan. Add a project to `Backend.sln` when it is a real production or test project. Do not bypass architecture tests with naming exceptions, direct implementation references, or fixture-like code in production locations.
 
 Run:
 
 ```text
-dotnet test tests/architecture/Todir.ArchitectureTests/Todir.ArchitectureTests.csproj --no-build
+dotnet test backend/Tests/Architecture/ArchitectureTests.csproj --no-build
 corepack pnpm architecture:frontend
 ```

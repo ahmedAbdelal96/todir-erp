@@ -12,4 +12,4 @@ Database invariants and integration intent commit atomically without distributed
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/Transactions/TransactionCoordinator.cs` and PostgreSQL integration transaction tests.
+`backend/Core/Transactions/TransactionCoordinator.cs` and PostgreSQL integration transaction tests.

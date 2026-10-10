@@ -1,17 +1,20 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0.102 AS build
 WORKDIR /src
-COPY ["src/backend/hosts/database-migrator/database-migrator.csproj", "src/backend/hosts/database-migrator/"]
-COPY ["Directory.Packages.props", "Directory.Build.props", "global.json", "./"]
-RUN dotnet restore src/backend/hosts/database-migrator/database-migrator.csproj
+COPY ["backend/DbMigrator/DbMigrator.csproj", "backend/DbMigrator/"]
+COPY ["backend/Directory.Packages.props", "backend/Directory.Build.props", "backend/global.json", "backend/"]
+RUN dotnet restore backend/DbMigrator/DbMigrator.csproj
 COPY . .
-RUN dotnet publish src/backend/hosts/database-migrator/database-migrator.csproj --no-restore -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish backend/DbMigrator/DbMigrator.csproj --no-restore -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
 COPY ops/database/bootstrap /app/ops/database/bootstrap
-COPY src/backend/platform/module.manifest.json /app/src/backend/platform/module.manifest.json
-COPY src/backend/modules/Sample/module.manifest.json /app/src/backend/modules/Sample/module.manifest.json
+COPY backend/Core/module.manifest.json /app/backend/Core/module.manifest.json
+COPY backend/Modules/Sample/module.manifest.json /app/backend/Modules/Sample/module.manifest.json
+COPY backend/Modules/Directory/module.manifest.json /app/backend/Modules/Directory/module.manifest.json
+COPY backend/Modules/Catalog/module.manifest.json /app/backend/Modules/Catalog/module.manifest.json
+COPY backend/Modules/FinanceBase/module.manifest.json /app/backend/Modules/FinanceBase/module.manifest.json
 ENV TODIR_REPOSITORY_ROOT=/app
 USER $APP_UID
-ENTRYPOINT ["dotnet", "Todir.DbMigrator.dll"]
+ENTRYPOINT ["dotnet", "DbMigrator.dll"]

@@ -20,7 +20,7 @@ The initial engineering baseline in `02_ERP_SAAS_PRODUCTION_READY_TECH_STACK_AND
    - React Hook Form + Zod for client-side form management and validation.
    - OpenAPI-generated TypeScript client as the authoritative transport contract with ASP.NET Core backend.
    - i18next / react-i18next for localization and RTL/LTR switching.
-   - Vitest, React Testing Library, and Playwright for testing.
+   - Node's built-in test runner for logic tests and Playwright for browser tests.
    - Tailwind CSS v4 for internal utility styling within the design system.
 
 2. **Reconciled & Superseded Choices:**
@@ -56,10 +56,10 @@ The initial engineering baseline in `02_ERP_SAAS_PRODUCTION_READY_TECH_STACK_AND
 
 - `docs/architecture/FRONTEND_PLATFORM_AND_DESIGN_SYSTEM_CONTRACT.md`
 - `docs/architecture/02_ERP_SAAS_PRODUCTION_READY_TECH_STACK_AND_PROJECT_STRUCTURE.md`
-- `tests/spikes/primitives/primitive-spike.test.ts` (F06 Primitive Spike Suite)
-- `tests/spikes/grid/grid-spike.test.ts` (F07 Grid Spike Suite)
-- `src/frontend/src/design-system/grid/grid-contract.ts` (Design System DataGrid Boundary)
+- `frontend/tests/spikes/primitives/primitive-spike.test.ts` (F06 Primitive Spike Suite)
+- `frontend/tests/spikes/grid/grid-spike.test.ts` (F07 Grid Spike Suite)
+   - `frontend/components/grid/grid-contract.ts` (Shared Components DataGrid Boundary)
 
 ## Physical Structure Clarification
 
-TODIR currently has one frontend application rooted at `src/frontend/` with source under `src/frontend/src/`. The logical `app`, `platform`, `design-system`, and `modules` boundaries are enforced by TypeScript aliases and architecture validation; they do not require separate npm packages. Package extraction remains possible when independent deployment, independent versioning, proven cross-application reuse, or a build/tooling need justifies it.
+TODIR currently has one frontend application rooted at `frontend/`. The logical `app`, `platform`, `components`, and `modules` boundaries are enforced by TypeScript aliases and architecture validation; they do not require separate npm packages. Package extraction remains possible when independent deployment, independent versioning, proven cross-application reuse, or a build/tooling need justifies it.

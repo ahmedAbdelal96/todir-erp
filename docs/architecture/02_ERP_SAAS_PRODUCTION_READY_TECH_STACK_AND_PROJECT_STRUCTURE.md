@@ -593,7 +593,7 @@ erp-saas/
 ├── docker-compose.yml
 ├── .env.example
 ├── README.md
-└── Todir.sln
+└── Backend.sln
 ```
 
 ---
@@ -654,7 +654,7 @@ erp-saas/
 # 15. Backend Hosts
 
 ```text
-src/backend/hosts/
+backend/hosts/
 
 ├── Todir.Api/
 │   ├── Program.cs
@@ -712,7 +712,7 @@ Production API startup **must not blindly apply migrations**.
 # 16. Shared Backend Projects
 
 ```text
-src/backend/shared/
+backend/shared/
 
 ├── Todir.SharedKernel/
 ├── Todir.Contracts/
@@ -787,7 +787,7 @@ BuildingBlocks cannot contain ERP business logic.
 # 17. Platform Modules
 
 ```text
-src/backend/platform/
+backend/Core/
 
 ├── Tenancy/
 ├── Organization/
@@ -816,7 +816,7 @@ They are not customer business modules.
 # 18. Foundation Domains
 
 ```text
-src/backend/foundation/
+backend/foundation/
 
 ├── Directory/
 ├── Catalog/
@@ -836,7 +836,7 @@ They are shared domains, not random helper libraries.
 Planned module tree:
 
 ```text
-src/backend/modules/
+backend/Modules/
 
 ├── Ledger/
 ├── Subledger/
@@ -889,7 +889,7 @@ To avoid hundreds of tiny .NET projects, use:
 Example:
 
 ```text
-src/backend/modules/Sales/
+backend/Modules/Sales/
 
 ├── Todir.Modules.Sales/
 │   ├── Module.cs
@@ -1584,7 +1584,7 @@ Public API breaking changes require version strategy.
 # 48. Frontend Monorepo Structure
 
 ```text
-src/frontend/
+frontend/
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -1597,14 +1597,14 @@ src/frontend/
     └── modules/
 ```
 
-The current repository has one frontend application. Logical boundaries are enforced within `src/frontend/src/`; separate npm packages are introduced only when independent deployment/versioning, proven cross-application reuse, or a build/tooling need justifies extraction.
+The current repository has one frontend application. Logical boundaries are enforced within `frontend/`; separate npm packages are introduced only when independent deployment/versioning, proven cross-application reuse, or a build/tooling need justifies extraction.
 
 ---
 
 # 49. Frontend Application Structure
 
 ```text
-src/frontend/src/
+frontend/
 
 ├── app/
 │   ├── bootstrap/

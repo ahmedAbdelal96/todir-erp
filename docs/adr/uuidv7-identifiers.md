@@ -12,4 +12,4 @@ Identifiers retain time locality for indexes while remaining globally unique and
 
 ## Evidence
 
-`src/backend/shared/Todir.SharedKernel/Identifiers` and shared primitive tests.
+`backend/Shared/Primitives/Identifiers` and shared primitive tests.

@@ -1,6 +1,0 @@
-{
-  "compilerOptions": {
-    "baseUrl": "."
-  },
-  "include": ["design-system/**/*.ts", "modules/**/*.ts"]
-}

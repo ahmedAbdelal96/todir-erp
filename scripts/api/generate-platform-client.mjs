@@ -3,7 +3,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const contractPath = path.join(root, "docs/api/platform-openapi.json");
-const outputPath = path.join(root, "src/frontend/src/platform/api/platform-client.ts");
+const outputPath = path.join(root, "frontend/platform/api/platform-client.ts");
 const contract = JSON.parse(fs.readFileSync(contractPath, "utf8"));
 const paths = Object.keys(contract.paths ?? {}).sort();
 if (paths.length === 0) throw new Error("OpenAPI contract has no paths");

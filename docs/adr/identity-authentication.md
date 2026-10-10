@@ -12,4 +12,4 @@ HTTP authorization is backed by server-side session and membership state. An ext
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/Identity`, `Hosting/PlatformHostingExtensions.cs`, and identity/MFA tests.
+`backend/Core/Identity`, `Hosting/PlatformHostingExtensions.cs`, and identity/MFA tests.

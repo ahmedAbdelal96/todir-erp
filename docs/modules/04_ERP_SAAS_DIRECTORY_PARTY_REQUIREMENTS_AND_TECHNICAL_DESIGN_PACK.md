@@ -3783,7 +3783,7 @@ No direct DB.
 # 176. Frontend Folder Structure
 
 ```text
-src/frontend/src/modules/directory/
+frontend/modules/directory/
 
 ├── api/
 ├── routes/
@@ -3824,7 +3824,7 @@ src/frontend/src/modules/directory/
 # 177. Backend Folder Structure
 
 ```text
-src/backend/foundation/Directory/
+backend/foundation/Directory/
 
 ├── Todir.Foundation.Directory/
 │   ├── Module.cs

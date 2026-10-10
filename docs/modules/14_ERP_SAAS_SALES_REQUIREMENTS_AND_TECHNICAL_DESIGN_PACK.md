@@ -4957,7 +4957,7 @@ Must not create long DB locks due to external APIs.
 Recommended:
 
 ```text
-src/frontend/src/modules/sales/
+frontend/modules/sales/
 
 ├── api/
 ├── routes/
@@ -5009,7 +5009,7 @@ do not show empty Sales Order pages/menu.
 Recommended:
 
 ```text
-src/backend/modules/Sales/
+backend/Modules/Sales/
 
 Todir.Modules.Sales.Domain
 Todir.Modules.Sales.Application

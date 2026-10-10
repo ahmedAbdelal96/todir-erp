@@ -12,4 +12,4 @@ One identity may hold different scoped memberships without duplicate accounts, a
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/Authorization`, API authorization endpoints, and authorization integration tests.
+`backend/Core/Authorization`, API authorization endpoints, and authorization integration tests.

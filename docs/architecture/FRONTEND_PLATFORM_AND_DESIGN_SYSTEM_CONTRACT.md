@@ -43,7 +43,7 @@ Core principles:
 Before changing frontend code, read:
 
 1. root `AGENTS.md`;
-2. `src/frontend/AGENTS.md`;
+2. `frontend/AGENTS.md`;
 3. any nearer scoped `AGENTS.md`;
 4. `01_ERP_SAAS_MASTER_MODULE_AND_DEPENDENCY_BLUEPRINT.md`;
 5. `02_ERP_SAAS_PRODUCTION_READY_TECH_STACK_AND_PROJECT_STRUCTURE.md`;
@@ -139,7 +139,7 @@ Changing product name MUST NOT require renaming foundational packages/components
 
 # 5. Technical Naming Rule
 
-- Existing repository/application identifiers may remain `todir-web` while brand is TODIR.
+- The frontend application is rooted at `frontend/`; its package name is responsibility-based and must not reintroduce a branded technical application name.
 - Reusable frontend foundation package names MUST be brand-neutral.
 - Business module IDs remain canonical domain IDs (`sales`, `inventory`, `directory`, etc.).
 - Visible product/module labels come from localization/brand configuration.
@@ -269,7 +269,7 @@ Future public marketing/SEO portals may decide separately.
 # 11. Frontend Repository Target
 
 ```text
-src/frontend/
+frontend/
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -282,14 +282,14 @@ src/frontend/
     └── modules/
 ```
 
-TODIR currently has one frontend application. Logical ownership boundaries are enforced inside `src/frontend/src/` and do not require separate npm packages. Extract a package only when independent deployment, independent versioning, proven cross-application reuse, or a build/tooling need earns the boundary.
+TODIR currently has one frontend application. Logical ownership boundaries are enforced inside `frontend/` and do not require separate npm packages. Extract a package only when independent deployment, independent versioning, proven cross-application reuse, or a build/tooling need earns the boundary.
 
 ---
 
 # 12. Application Structure
 
 ```text
-src/frontend/src/
+frontend/
 ├── app/
 │   ├── bootstrap/
 │   ├── providers/
@@ -4121,7 +4121,7 @@ UI theme cannot control invoice numbering, QR, tax fields, compliance data or ma
 # 274. Preferred Folder Direction
 
 ```text
-src/frontend/
+frontend/
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts

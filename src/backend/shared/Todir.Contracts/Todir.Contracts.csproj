@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <AssemblyName>Todir.Contracts</AssemblyName>
-    <RootNamespace>Todir.Contracts</RootNamespace>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="../Todir.SharedKernel/Todir.SharedKernel.csproj" />
-  </ItemGroup>
-</Project>

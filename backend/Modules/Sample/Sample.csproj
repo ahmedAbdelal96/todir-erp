@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Modules.Sample</AssemblyName>
+    <RootNamespace>Modules.Sample</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Npgsql" />
+    <ProjectReference Include="../../Core/Core.csproj" />
+    <ProjectReference Include="../../Shared/BuildingBlocks/BuildingBlocks.csproj" />
+    <ProjectReference Include="../../Shared/Contracts/Contracts.csproj" />
+  </ItemGroup>
+</Project>

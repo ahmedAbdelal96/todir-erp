@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <AssemblyName>Todir.Modules.Fixture.Domain</AssemblyName>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="../Todir.Modules.Fixture.Infrastructure/Todir.Modules.Fixture.Infrastructure.csproj" />
-  </ItemGroup>
-</Project>

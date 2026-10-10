@@ -12,4 +12,4 @@ Transport concerns remain replaceable behind the platform messaging contracts, w
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/Messaging/MessagingHostingExtensions.cs`, `ops/containers/rabbitmq.conf`, and staging broker verification.
+`backend/Core/Messaging/MessagingHostingExtensions.cs`, `ops/containers/rabbitmq.conf`, and staging broker verification.

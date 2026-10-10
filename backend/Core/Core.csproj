@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Core</AssemblyName>
+    <RootNamespace>Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <PackageReference Include="Quartz.Extensions.Hosting" />
+    <PackageReference Include="Quartz.Serialization.Json" />
+    <ProjectReference Include="../Shared/BuildingBlocks/BuildingBlocks.csproj" />
+    <ProjectReference Include="../Shared/Contracts/Contracts.csproj" />
+  </ItemGroup>
+</Project>

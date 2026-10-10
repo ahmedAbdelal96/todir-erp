@@ -12,4 +12,4 @@ Commercial entitlement changes do not silently mutate operational state, and dea
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/Entitlements`, `src/backend/platform/platform-kernel/Modules`, and platform service tests.
+`backend/Core/Entitlements`, `backend/Core/Modules`, and platform service tests.

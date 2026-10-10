@@ -6168,7 +6168,7 @@ After Pricing:
 
 ## Local implementation status — 2026-10-09
 
-The FinBase foundation is implemented locally under `src/backend/modules/FinBase` and `src/frontend/src/modules/finbase`. The implementation keeps `platform_org.legal_entity.base_currency_code` as the only base-currency source, uses decimal-string money contracts, explicit rounding, versioned payment-term rules, approved dated exchange-rate records, tenant/entity RLS, authorization, audit and Outbox publication.
+The FinBase foundation is implemented locally under `backend/Modules/FinanceBase` and `frontend/modules/finbase`. The implementation keeps `platform_org.legal_entity.base_currency_code` as the only base-currency source, uses decimal-string money contracts, explicit rounding, versioned payment-term rules, approved dated exchange-rate records, tenant/entity RLS, authorization, audit and Outbox publication.
 
 The implementation intentionally does not create Chart of Accounts, fiscal-year or fiscal-period tables. The Accounting requirements pack assigns canonical CoA and Fiscal Period ownership to Ledger; FinBase provides the currency, conversion and payment-term contracts those later modules consume.
 

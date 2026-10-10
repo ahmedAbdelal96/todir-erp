@@ -2,7 +2,7 @@
 
 ## Identity and operating role
 
-TODIR is a production-grade, Arabic-market-first, multi-tenant ERP SaaS: one codebase, monorepo, and Modular Monolith with strong module boundaries. RTL is a Day-1 product concern. The product name is `TODIR`, the repository is `todir-erp`, .NET projects/namespaces use `Todir.*`, and the frontend application is `todir-web`.
+TODIR is a production-grade, Arabic-market-first, multi-tenant ERP SaaS: one codebase, monorepo, and Modular Monolith with strong module boundaries. RTL is a Day-1 product concern. The product name is `TODIR`; technical project, namespace, solution, file, and folder names describe responsibility rather than brand.
 
 Act as a senior cross-functional team: product designer and architect; ERP, software, systems, .NET, React/TypeScript and PostgreSQL architect; security, performance, DevOps, QA/test and production engineer. Evaluate work for business correctness, simplicity, architecture/ownership, data integrity, tenant isolation, security, performance, scalability, maintainability, testing, operations, migration impact and production readiness. Principle: **Simple Outside. Powerful Inside.**
 
@@ -28,13 +28,13 @@ rewritten.
 
 ## Universal naming and file discipline
 
-Every new normal or durable file and folder must describe its responsibility, not the product brand, project marketing name, phase, date, version, or history. Use concise kebab-case for Markdown, scripts, workflows and operational files; use language/framework conventions for source files and tests. Do not introduce `TODIR_`, `Todir_`, `ERP_`, `P00_`–`P99_`, `Phase1_`, `Final_`, `New_`, `Latest_`, or `V2_` prefixes. Existing numbered architecture/module packs and technical `.NET` `Todir.*` project, assembly, namespace and solution identities are legacy/canonical exceptions and are not to be mass-renamed during routine work. This exception does not apply to new documentation, scripts, workflows, runbooks or support files.
+Every new normal or durable file and folder must describe its responsibility, not the product brand, project marketing name, phase, date, version, or history. Use concise kebab-case for Markdown, scripts, workflows and operational files; use language/framework conventions for source files and tests. Do not introduce `TODIR_`, `Todir_`, `ERP_`, `P00_`–`P99_`, `Phase1_`, `Final_`, `New_`, `Latest_`, or `V2_` prefixes. Existing numbered architecture/module packs are legacy/canonical exceptions and are not to be mass-renamed during routine work. This exception does not apply to new documentation, scripts, workflows, runbooks or support files.
 
 Create files only in their governed directory. Do not create phase reports, duplicate documentation, random SQL/scripts, logs, generated output or temporary files in source directories; use the approved `artifacts/` paths for ignored local output. Update a canonical document instead of creating `new`, `final`, `updated`, `copy` or `v2` variants.
 
 ### Absolute filename and folder-name prohibition
 
-Never create, rename, or introduce a new file or folder whose basename contains `todir` in any casing, including `TODIR`, `Todir`, `todir-`, or `Todir.`. This is an absolute prohibition with no project, platform, assembly, namespace, legacy, phase, or technical exception for new filesystem paths. New paths must describe their responsibility; existing canonical paths are not mass-renamed by routine work. Existing `Todir.*` namespaces and assembly/project identities may remain only when already established and must not be used as new file or folder basenames.
+Never create, rename, or introduce a new file or folder whose basename contains `todir` in any casing, including `TODIR`, `Todir`, `todir-`, or `Todir.`. Technical project, namespace, solution, class, interface, file, and folder names must also not use the product brand merely for branding. Product branding may remain in user-facing content, stable environment variables, configuration keys, telemetry contracts, database identifiers, and historical documents.
 
 ## Instruction hierarchy
 
@@ -50,7 +50,7 @@ Keep a Modular Monolith and one codebase. Tenant isolation is a security boundar
 
 ### Completed shared foundation rule
 
-The approved Frontend Platform & Design System (`src/frontend/`) is an established, shared platform contract. All future business modules MUST build upon and reuse this shared foundation. A module must not create a parallel design system, form system, grid engine, API client, caching architecture, theme engine, error mapping system, page shell, runtime context, or permission UX. Material modifications to shared frontend architectural decisions require explicit architectural review and an ADR.
+The approved Frontend Platform & Design System (`frontend/`) is an established, shared platform contract. All future business modules MUST build upon and reuse this shared foundation. A module must not create a parallel design system, form system, grid engine, API client, caching architecture, theme engine, error mapping system, page shell, runtime context, or permission UX. Material modifications to shared frontend architectural decisions require explicit architectural review and an ADR.
 
 ### End-to-end module principle
 
@@ -66,11 +66,16 @@ Do not silently change source of truth, domain/single-writer ownership, public c
 
 | Content | Location |
 |---|---|
-| Application source | `src/` |
-| Backend / frontend | `src/backend/` / `src/frontend/` |
+| Application source | `backend/` and `frontend/` |
+| Backend / frontend | `backend/` / `frontend/` |
 | Architecture, ADR, platform, module, API, runbook, security docs | `docs/architecture/`, `docs/adr/`, `docs/platform/`, `docs/modules/`, `docs/api/`, `docs/runbooks/`, `docs/security/` |
 | Infrastructure, database ops, RabbitMQ, monitoring, containers, compose, IaC | `ops/`, `ops/database/`, `ops/rabbitmq/`, `ops/monitoring/`, `ops/containers/`, `ops/compose/`, `ops/terraform/` |
-| Reusable tools / repository scripts / tests / GitHub automation | `tools/`, `scripts/`, `tests/`, `.github/` |
+| Reusable tools / repository scripts / GitHub automation | `tools/`, `scripts/`, `.github/` |
+| Backend tests | `backend/Tests/` |
+
+The canonical repository navigation roots are `backend/`, `frontend/`, and
+`docs/`. Do not recreate `src/backend/`, `src/frontend/src/`, `hosts/`, or
+`platform-kernel/` as active runtime structure.
 
 No random scripts in source directories, logs beside application code, temporary files, arbitrary SQL, build artifacts, generated test output, or duplicate/noncanonical documentation. Use ignored `artifacts/logs`, `artifacts/test-results`, `artifacts/coverage`, `artifacts/performance`, and `artifacts/tmp` for local/generated workspace output only—not production sources, canonical docs, migrations, or source-controlled generated clients.
 

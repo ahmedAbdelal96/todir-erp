@@ -1,0 +1,4 @@
+import React from "react";
+import { ComboBox, type ComboBoxOption } from "../../../components/primitives/combobox.tsx";
+import { useProductList } from "../hooks/catalog-queries.ts";
+export function ProductPicker({ value, onChange, label="المنتج" }: { readonly value?: string; readonly onChange?: (id: string) => void; readonly label?: string }): React.JSX.Element { const {data,isLoading}=useProductList({pageSize:50,status:"Active"}); const options:ComboBoxOption[]=(data?.items ?? []).map(item=>({id:item.defaultVariantId,label:item.displayName,description:item.sku ?? item.baseUomCode ?? undefined})); return <ComboBox label={label} selectedKey={value ?? null} onSelectionChange={key=>onChange?.(String(key ?? ""))} options={options} placeholder={isLoading?"جارٍ التحميل...":"ابحث عن المنتج أو SKU..."}/>; }

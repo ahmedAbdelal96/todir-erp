@@ -4,7 +4,7 @@ TODIR is a production-grade, multi-tenant ERP SaaS for Arabic-market-first opera
 
 ## Current stage
 
-The Platform Kernel baseline is implemented in `src/backend/platform/platform-kernel`, with API/Worker/Migrator hosts, tenant-safe SQL bootstrap, module manifests, authorization, authentication/session foundations, transactions, messaging/outbox/inbox contracts, platform services, and the RTL frontend shell.
+The Platform Kernel baseline is implemented in `backend/Core`, with API/Worker/Migrator hosts, tenant-safe SQL bootstrap, module manifests, authorization, authentication/session foundations, transactions, messaging/outbox/inbox contracts, platform services, and the RTL frontend shell.
 
 Environment-dependent PostgreSQL, RabbitMQ HA, restore, chaos/load, and staging gates require the approved external environment.
 
@@ -17,8 +17,8 @@ Environment-dependent PostgreSQL, RabbitMQ HA, restore, chaos/load, and staging 
 From a compatible environment, validate the bootstrap through Corepack (no global pnpm installation is required):
 
 ```text
-dotnet restore Todir.sln
-dotnet build Todir.sln --no-restore
+dotnet restore backend/Backend.sln
+dotnet build backend/Backend.sln --no-restore
 corepack pnpm install --frozen-lockfile
 corepack pnpm typecheck
 ```
@@ -27,9 +27,9 @@ The solution includes shared primitives, platform implementation, API, Worker, a
 
 ## Repository map
 
-- `src/backend/` — future backend hosts, platform, foundation, and business modules.
-- `src/frontend/` — future web app and frontend packages.
-- `tests/` — architecture through performance test categories.
+- `backend/` — future backend hosts, platform, foundation, and business modules.
+- `frontend/` — future web app and frontend packages.
+- `backend/Tests/` — architecture, integration, security, core, observability, and module test projects.
 - `docs/` — canonical architecture, ADR, platform, module, API, runbook, and security documentation.
 - `ops/` — operational infrastructure assets.
 - `tools/` and `scripts/` — reusable engineering tools and repository automation.

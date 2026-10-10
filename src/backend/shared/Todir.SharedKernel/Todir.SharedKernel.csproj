@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <AssemblyName>Todir.SharedKernel</AssemblyName>
-    <RootNamespace>Todir.SharedKernel</RootNamespace>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="NodaTime" />
-  </ItemGroup>
-</Project>

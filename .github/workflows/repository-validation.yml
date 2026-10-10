@@ -67,16 +67,16 @@ jobs:
         run: pnpm --version
 
       - name: Restore .NET solution
-        run: dotnet restore Todir.sln
+        run: dotnet restore backend/Backend.sln
 
       - name: Build .NET solution
-        run: dotnet build Todir.sln --no-restore
+        run: dotnet build backend/Backend.sln --no-restore
 
       - name: Verify .NET formatting
-        run: dotnet format Todir.sln --verify-no-changes --no-restore
+        run: dotnet format backend/Backend.sln --verify-no-changes --no-restore
 
       - name: Apply controlled database bootstrap
-        run: dotnet run --project src/backend/hosts/database-migrator/database-migrator.csproj --no-build
+        run: dotnet run --project backend/DbMigrator/DbMigrator.csproj --no-build
         env:
           TODIR_MIGRATOR_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
           TODIR_REPOSITORY_ROOT: ${{ github.workspace }}
@@ -85,7 +85,7 @@ jobs:
         # Database and broker integration projects share the isolated CI
         # services; run solution projects serially so per-test role/bootstrap
         # setup cannot race across test assemblies.
-        run: dotnet test Todir.sln --no-build -m:1
+        run: dotnet test backend/Backend.sln --no-build -m:1
         env:
           TODIR_P03_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
           TODIR_P04_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
@@ -119,13 +119,13 @@ jobs:
       - name: Regenerate API client and verify clean tree
         run: |
           pnpm api:generate
-          git diff --exit-code -- src/frontend/src/platform/api/platform-client.ts
+          git diff --exit-code -- frontend/platform/api/platform-client.ts
 
       - name: Validate generated API client
         run: pnpm api:drift
 
       - name: Audit .NET dependencies
-        run: dotnet list Todir.sln package --vulnerable --include-transitive
+        run: dotnet list backend/Backend.sln package --vulnerable --include-transitive
 
       - name: Check API breaking changes
         run: pnpm api:breaking

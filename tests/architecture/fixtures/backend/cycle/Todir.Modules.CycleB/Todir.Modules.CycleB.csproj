@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <AssemblyName>Todir.Modules.CycleB</AssemblyName>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="../Todir.Modules.CycleA/Todir.Modules.CycleA.csproj" />
-  </ItemGroup>
-</Project>

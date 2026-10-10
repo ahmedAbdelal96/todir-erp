@@ -15,7 +15,7 @@ const FORBIDDEN_COMMERCIAL_PACKAGES = [
 ];
 
 export function validateFrontendArchitecture(options = {}) {
-  const rootDir = path.resolve(options.rootDir ?? "src/frontend/src");
+  const rootDir = path.resolve(options.rootDir ?? "frontend");
   const modulesRoot = path.resolve(options.modulesRoot ?? path.join(rootDir, "modules"));
 
   const violations = [];
@@ -57,14 +57,14 @@ export function validateFrontendArchitecture(options = {}) {
           // Check 1b: Direct grid engine imports forbidden in business modules
           if (sourceArea === "modules" && (specifierText.startsWith("ag-grid-community") || specifierText.startsWith("ag-grid-react"))) {
             violations.push(
-              `${relative(rootDir, sourcePath)} imports '${specifierText}' directly. Business modules must consume the design system DataGrid wrapper (@ui/grid or design-system/grid), not the grid engine directly.`
+              `${relative(rootDir, sourcePath)} imports '${specifierText}' directly. Business modules must consume the shared-components DataGrid wrapper (@ui/grid or components/grid), not the grid engine directly.`
             );
           }
 
           // Check 1c: Direct unstyled headless primitive imports forbidden in business modules
           if (sourceArea === "modules" && (specifierText.startsWith("react-aria-components") || specifierText.startsWith("@react-aria/"))) {
             violations.push(
-              `${relative(rootDir, sourcePath)} imports '${specifierText}' directly. Business modules must consume approved design system primitives (@ui/* or design-system/primitives), not raw React Aria components directly.`
+              `${relative(rootDir, sourcePath)} imports '${specifierText}' directly. Business modules must consume approved shared-components primitives (@ui/* or components/primitives), not raw React Aria components directly.`
             );
           }
 
@@ -92,8 +92,8 @@ export function validateFrontendArchitecture(options = {}) {
           }
 
           // Check 3: Platform / Design System must not depend on business modules
-          if ((sourceArea === "platform" || sourceArea === "design-system") && targetModule) {
-            const owner = sourceArea === "design-system" ? "Design System" : "Platform";
+          if ((sourceArea === "platform" || sourceArea === "components" || sourceArea === "design-system") && targetModule) {
+            const owner = sourceArea === "components" || sourceArea === "design-system" ? "Shared Components" : "Platform";
             if (isApprovedPublicSurface(targetPath, modulesRoot, targetModule)) {
               violations.push(
                 `${relative(rootDir, sourcePath)} imports module '${targetModule}' public surface. ${owner} must not depend on business modules.`

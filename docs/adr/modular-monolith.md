@@ -12,4 +12,4 @@ Deployment and transactions stay simple while module boundaries are enforced by 
 
 ## Evidence
 
-`tests/architecture/Todir.ArchitectureTests` and `docs/architecture/solution-boundaries.md`.
+`backend/Tests/Architecture` and `docs/architecture/solution-boundaries.md`.

@@ -12,4 +12,4 @@ Original filenames cannot become storage paths, and object-store outages do not 
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/Security/WebhookAndFileAccess.cs`, file policy tests, and staging MinIO initialization.
+`backend/Core/Security/WebhookAndFileAccess.cs`, file policy tests, and staging MinIO initialization.

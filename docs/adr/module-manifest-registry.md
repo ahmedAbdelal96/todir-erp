@@ -12,4 +12,4 @@ Unknown modules, duplicate identifiers and dependency cycles fail validation bef
 
 ## Evidence
 
-`src/backend/platform/module.manifest.json`, `scripts/architecture/validate-module-manifests.mjs`, and `Todir.DbMigrator`.
+`backend/Core/module.manifest.json`, `scripts/architecture/validate-module-manifests.mjs`, and `backend/DbMigrator/DbMigrator.csproj`.

@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "finbase",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L1",
+  "type": "foundation",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": { "hard": ["platform-kernel"], "optionalCapabilities": ["platform.organization"] },
+  "owns": { "schema": "foundation_finbase", "entities": ["currency_reference", "legal_entity_currency", "financial_rounding_policy", "financial_policy", "exchange_rate", "payment_term", "payment_term_version", "payment_term_rule"] },
+  "permissions": ["finbase.currency.read", "finbase.currency.enable", "finbase.rate.read", "finbase.rate.manage", "finbase.rate.approve", "finbase.rounding_policy.read", "finbase.rounding_policy.manage", "finbase.payment_term.read", "finbase.payment_term.manage", "finbase.financial_policy.manage", "finbase.audit.view"],
+  "capabilities": { "provides": ["finbase.currency", "finbase.money", "finbase.exchange-rate", "finbase.payment-terms"], "consumes": ["platform.organization"] },
+  "messaging": { "publishes": ["FinBaseCurrencyEnabledV1", "FinBaseRateApprovedV1", "FinBaseFinancialPolicyChangedV1", "FinBasePaymentTermChangedV1"], "consumes": [] },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}

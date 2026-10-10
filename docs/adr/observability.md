@@ -12,4 +12,4 @@ Cross-service failures can be correlated without exposing tenant data in metric 
 
 ## Evidence
 
-`src/backend/shared/Todir.BuildingBlocks/Observability`, `ops/monitoring/alerts.yml`, and the observability test project.
+`backend/Shared/BuildingBlocks/Observability`, `ops/monitoring/alerts.yml`, and the observability test project.

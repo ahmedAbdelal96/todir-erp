@@ -12,4 +12,4 @@ Activation and deactivation are controlled state transitions rather than feature
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/Modules/ModuleLifecycleService.cs` and lifecycle tests.
+`backend/Core/Modules/ModuleLifecycleService.cs` and lifecycle tests.

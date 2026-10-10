@@ -6554,7 +6554,7 @@ Not Day 1.
 Recommended:
 
 ```text
-src/frontend/src/modules/accounting/
+frontend/modules/accounting/
 
 ├── api/
 ├── routes/
@@ -6624,7 +6624,7 @@ until needed.
 Recommended:
 
 ```text
-src/backend/modules/Accounting/
+backend/Modules/Accounting/
 
 Todir.Modules.Accounting.Domain
 Todir.Modules.Accounting.Application

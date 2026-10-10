@@ -12,4 +12,4 @@ Custom metadata remains extensible without turning the kernel into a universal b
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/CustomFields`, schema policy, and custom-field tests.
+`backend/Core/CustomFields`, schema policy, and custom-field tests.

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Modules.Catalog</AssemblyName>
+    <RootNamespace>Modules.Catalog</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Npgsql" />
+    <ProjectReference Include="../../Core/Core.csproj" />
+    <ProjectReference Include="../../Shared/BuildingBlocks/BuildingBlocks.csproj" />
+    <ProjectReference Include="../../Shared/Contracts/Contracts.csproj" />
+  </ItemGroup>
+</Project>

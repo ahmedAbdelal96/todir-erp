@@ -12,4 +12,4 @@ Progress and retry behavior remain bounded and observable; rollback is never pro
 
 ## Evidence
 
-`src/backend/platform/platform-kernel/Services/ImportSchedulingServices.cs`, import schema, and import scheduling tests.
+`backend/Core/Services/ImportSchedulingServices.cs`, import schema, and import scheduling tests.

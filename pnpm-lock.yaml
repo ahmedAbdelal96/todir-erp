@@ -12,7 +12,7 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
-  src/frontend:
+  frontend:
     dependencies:
       '@hookform/resolvers':
         specifier: ^5.9.1

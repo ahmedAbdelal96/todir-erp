@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const roots = process.argv.slice(2).length > 0 ? process.argv.slice(2) : ["src/backend", "tests/platform/fixtures"];
+const roots = process.argv.slice(2).length > 0 ? process.argv.slice(2) : ["backend"];
 const manifests = roots.flatMap(root => collect(path.resolve(root)));
 const errors = [];
 const modules = new Map();

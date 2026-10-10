@@ -14,4 +14,4 @@ Backend time uses NodaTime. `Instant` denotes a real UTC moment; `LocalDate` den
 
 ## Errors
 
-`DomainError` and its validation, conflict, forbidden, not-found, and concurrency variants carry stable machine codes such as `tenant.not_found` and `concurrency.conflict`. `Todir.SharedKernel` stays framework-neutral. The technical `ProblemDetailsMapper` lives in `Todir.BuildingBlocks` and maps errors to RFC 7807-compatible HTTP responses while preserving the `code` extension; it does not implement exception middleware or request-pipeline behavior.
+`DomainError` and its validation, conflict, forbidden, not-found, and concurrency variants carry stable machine codes such as `tenant.not_found` and `concurrency.conflict`. `Shared.Primitives` stays framework-neutral. The technical `ProblemDetailsMapper` lives in `Shared.BuildingBlocks` and maps errors to RFC 7807-compatible HTTP responses while preserving the `code` extension; it does not implement exception middleware or request-pipeline behavior.

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Shared.Contracts.Fixture</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../domain-infrastructure/Modules.Fixture.Infrastructure/Modules.Fixture.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

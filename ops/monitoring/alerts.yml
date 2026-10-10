@@ -9,7 +9,7 @@ groups:
         annotations:
           summary: Transactional outbox backlog is older than five minutes.
       - alert: WorkerUnavailable
-        expr: up{service="background-worker"} == 0
+        expr: up{service="worker"} == 0
         for: 2m
         labels:
           severity: critical

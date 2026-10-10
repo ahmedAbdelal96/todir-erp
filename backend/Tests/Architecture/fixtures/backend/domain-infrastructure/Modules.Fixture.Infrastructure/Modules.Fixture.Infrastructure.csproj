@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Modules.Fixture.Infrastructure</AssemblyName>
+  </PropertyGroup>
+</Project>
