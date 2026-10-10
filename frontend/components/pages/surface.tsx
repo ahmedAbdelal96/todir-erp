@@ -41,7 +41,8 @@ export function Surface({
       style={{
         backgroundColor: backgroundMap[variant],
         border: borderMap[variant],
-        borderRadius: "var(--radius-md, 0.5rem)",
+        borderRadius: "var(--radius-lg, 0.75rem)",
+        boxShadow: variant === "card" ? "var(--shadow-xs)" : "none",
         padding: paddingMap[padding],
         width: "100%",
         boxSizing: "border-box",

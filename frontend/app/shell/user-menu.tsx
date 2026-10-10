@@ -93,14 +93,15 @@ export function UserMenu({
             width: "28px",
             height: "28px",
             borderRadius: "50%",
-            backgroundColor: "var(--color-action-primary, #0f766e)",
+            background: "linear-gradient(135deg, var(--color-brand-primary, #4f46e5) 0%, var(--color-brand-primary-hover, #4338ca) 100%)",
             color: "#ffffff",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             fontSize: "0.75rem",
             fontWeight: 700,
-            flexShrink: 0
+            flexShrink: 0,
+            boxShadow: "0 1px 2px rgba(79, 70, 229, 0.2)"
           }}
         >
           {initials}
@@ -121,8 +122,8 @@ export function UserMenu({
             width: "240px",
             backgroundColor: "var(--color-surface-card, #ffffff)",
             border: "1px solid var(--color-border-default, #e2e8f0)",
-            borderRadius: "var(--radius-md, 0.5rem)",
-            boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05)",
+            borderRadius: "var(--radius-lg, 0.75rem)",
+            boxShadow: "var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05))",
             padding: "0.5rem",
             zIndex: 1200,
             display: "flex",

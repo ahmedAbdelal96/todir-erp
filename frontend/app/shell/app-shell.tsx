@@ -240,10 +240,10 @@ export function AppShell() {
         {/* Left Side (in LTR) / Right Side (in RTL): Brand & Company */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
           <a className="brand" href="/" aria-label="TODIR" onClick={(e) => { e.preventDefault(); setCurrentView("home"); window.location.hash = ""; }}>
-            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "30px", height: "30px", borderRadius: "var(--radius-md, 0.375rem)", backgroundColor: "var(--color-action-primary, #0f766e)", color: "#ffffff", fontWeight: 900, fontSize: "0.9375rem" }}>
+            <span className="brand-icon" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "32px", height: "32px", borderRadius: "var(--radius-md, 0.5rem)", background: "linear-gradient(135deg, var(--color-brand-primary, #4f46e5) 0%, var(--color-brand-primary-hover, #4338ca) 100%)", color: "#ffffff", fontWeight: 900, fontSize: "1rem", boxShadow: "0 2px 4px rgba(79, 70, 229, 0.25)" }}>
               T
             </span>
-            <span style={{ fontSize: "1.125rem", fontWeight: 800, letterSpacing: "0.04em" }}>TODIR</span>
+            <span style={{ fontSize: "1.125rem", fontWeight: 800, letterSpacing: "0.02em", color: "var(--color-content-primary, #0f172a)" }}>TODIR</span>
           </a>
 
           <span style={{ color: "var(--color-border-strong, #cbd5e1)" }}>|</span>
@@ -253,16 +253,16 @@ export function AppShell() {
               display: "inline-flex",
               alignItems: "center",
               gap: "0.375rem",
-              padding: "0.2rem 0.625rem",
+              padding: "0.25rem 0.625rem",
               borderRadius: "var(--radius-full, 9999px)",
-              backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
+              backgroundColor: "var(--color-surface-subtle, #f8fafc)",
               fontSize: "0.8125rem",
               fontWeight: 600,
               color: "var(--color-content-secondary, #475569)",
-              border: "1px solid var(--color-border-subtle, #e2e8f0)"
+              border: "1px solid var(--color-border-subtle, #f1f5f9)"
             }}
           >
-            <BuildingIcon size={13} style={{ color: "var(--color-action-primary, #0f766e)" }} />
+            <BuildingIcon size={14} style={{ color: "var(--color-brand-primary, #4f46e5)" }} />
             {companyName}
           </span>
         </div>
@@ -596,36 +596,39 @@ export function AppShell() {
 const launchpadCardStyle: React.CSSProperties = {
   backgroundColor: "var(--color-surface-card, #ffffff)",
   border: "1px solid var(--color-border-default, #e2e8f0)",
-  borderRadius: "var(--radius-md, 0.5rem)",
+  borderRadius: "var(--radius-lg, 0.75rem)",
   padding: "1.25rem",
   display: "flex",
   alignItems: "center",
   gap: "1rem",
   cursor: "pointer",
   outline: "none",
-  transition: "border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease",
-  boxShadow: "var(--shadow-sm, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
+  transition: "all 200ms cubic-bezier(0.4, 0, 0.2, 1)",
+  boxShadow: "var(--shadow-xs, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
 };
 
 const cardIconContainerStyle: React.CSSProperties = {
-  padding: "0.625rem",
-  borderRadius: "var(--radius-md, 0.375rem)",
-  backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
-  color: "var(--color-action-primary, #0f766e)",
+  padding: "0.75rem",
+  borderRadius: "var(--radius-md, 0.5rem)",
+  backgroundColor: "var(--color-brand-primary-subtle, #eef2ff)",
+  color: "var(--color-brand-primary, #4f46e5)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  flexShrink: 0
+  flexShrink: 0,
+  transition: "transform 200ms ease"
 };
 
 function handleCardHover(e: React.MouseEvent<HTMLButtonElement>) {
-  e.currentTarget.style.borderColor = "var(--color-action-primary, #0f766e)";
-  e.currentTarget.style.backgroundColor = "var(--color-surface-subtle, #f8fafc)";
+  e.currentTarget.style.borderColor = "var(--color-brand-primary, #4f46e5)";
+  e.currentTarget.style.boxShadow = "var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1))";
+  e.currentTarget.style.transform = "translateY(-2px)";
 }
 
 function handleCardLeave(e: React.MouseEvent<HTMLButtonElement>) {
   e.currentTarget.style.borderColor = "var(--color-border-default, #e2e8f0)";
-  e.currentTarget.style.backgroundColor = "var(--color-surface-card, #ffffff)";
+  e.currentTarget.style.boxShadow = "var(--shadow-xs, 0 1px 2px 0 rgba(0, 0, 0, 0.05))";
+  e.currentTarget.style.transform = "translateY(0)";
 }
 
 function StatusView({ direction, message }: { direction: string; message: string }) {

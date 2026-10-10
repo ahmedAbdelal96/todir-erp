@@ -133,29 +133,29 @@ function getVariantStyles(variant: ButtonVariant): React.CSSProperties {
   switch (variant) {
     case "primary":
       return {
-        backgroundColor: "var(--color-action-primary, #0f766e)",
-        borderColor: "var(--color-action-primary, #0f766e)",
+        backgroundColor: "var(--color-action-primary, #4f46e5)",
+        borderColor: "var(--color-action-primary, #4f46e5)",
         color: "var(--color-action-primary-content, #ffffff)",
-        boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.15)"
+        boxShadow: "0 1px 2px 0 rgba(79, 70, 229, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.2)"
       };
     case "secondary":
       return {
         backgroundColor: "var(--color-surface-card, #ffffff)",
-        borderColor: "var(--color-border-default, #cbd5e1)",
+        borderColor: "var(--color-border-default, #e2e8f0)",
         color: "var(--color-content-primary, #0f172a)",
         boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)"
       };
     case "danger":
       return {
-        backgroundColor: "var(--color-status-danger, #e11d48)",
-        borderColor: "var(--color-status-danger, #e11d48)",
+        backgroundColor: "var(--color-status-danger, #ef4444)",
+        borderColor: "var(--color-status-danger, #ef4444)",
         color: "var(--color-content-inverse, #ffffff)",
-        boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.08)"
+        boxShadow: "0 1px 2px 0 rgba(239, 68, 68, 0.25)"
       };
     case "tertiary":
       return {
         backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
-        borderColor: "transparent",
+        borderColor: "var(--color-border-subtle, #f1f5f9)",
         color: "var(--color-content-primary, #0f172a)"
       };
     case "ghost":

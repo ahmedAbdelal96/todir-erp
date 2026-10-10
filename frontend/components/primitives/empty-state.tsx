@@ -28,11 +28,13 @@ export function EmptyState({
         alignItems: "center",
         justifyContent: "center",
         textAlign: "center",
-        padding: "3.5rem 1.5rem",
+        padding: "3rem 1.5rem",
         backgroundColor: "var(--color-surface-card, #ffffff)",
         border: "1px solid var(--color-border-default, #e2e8f0)",
-        borderRadius: "var(--radius-md, 0.5rem)",
-        margin: "0 auto",
+        borderRadius: "var(--radius-lg, 0.75rem)",
+        boxShadow: "var(--shadow-sm)",
+        margin: "1.5rem auto",
+        maxWidth: "520px",
         width: "100%",
         boxSizing: "border-box",
         ...style
@@ -44,11 +46,12 @@ export function EmptyState({
           height: "48px",
           borderRadius: "50%",
           backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
-          color: "var(--color-content-muted, #64748b)",
+          color: "var(--color-action-primary, #4f46e5)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          marginBottom: "1rem"
+          marginBottom: "1rem",
+          boxShadow: "0 0 0 6px var(--color-surface-subtle, #f1f5f9)"
         }}
       >
         {icon ?? <InboxIcon size={24} />}
