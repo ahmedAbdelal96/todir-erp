@@ -4,6 +4,9 @@ export const coreApiPaths = [
   "/api/v1/auth/login",
   "/api/v1/auth/logout",
   "/api/v1/auth/mfa/enroll",
+  "/api/v1/auth/mfa/verify",
+  "/api/v1/auth/password/change",
+  "/api/v1/auth/password/initial",
   "/api/v1/auth/sessions/revoke",
   "/api/v1/authorization/check",
   "/api/v1/catalog/brands",
@@ -24,7 +27,6 @@ export const coreApiPaths = [
   "/api/v1/catalog/uoms",
   "/api/v1/catalog/variants/{variantId}/uoms",
   "/api/v1/context/organization",
-  "/api/v1/context/tenant",
   "/api/v1/directory/parties",
   "/api/v1/directory/parties/{partyId}",
   "/api/v1/directory/parties/{partyId}/addresses",
@@ -43,14 +45,16 @@ export const coreApiPaths = [
   "/api/v1/session/context",
   "/api/v1/tenants/{tenantId}/audit",
   "/api/v1/tenants/{tenantId}/entitlement",
-  "/api/v1/tenants/{tenantId}/memberships",
-  "/api/v1/tenants/{tenantId}/memberships/invitations",
-  "/api/v1/tenants/{tenantId}/memberships/invitations/accept",
-  "/api/v1/tenants/{tenantId}/memberships/{membershipId}/suspend",
+  "/api/v1/tenants/{tenantId}/login-domain",
   "/api/v1/tenants/{tenantId}/modules",
   "/api/v1/tenants/{tenantId}/organization",
   "/api/v1/tenants/{tenantId}/roles",
-  "/api/v1/tenants/{tenantId}/settings"
+  "/api/v1/tenants/{tenantId}/settings",
+  "/api/v1/tenants/{tenantId}/users",
+  "/api/v1/tenants/{tenantId}/users/{identityId}",
+  "/api/v1/tenants/{tenantId}/users/{identityId}/deactivate",
+  "/api/v1/tenants/{tenantId}/users/{identityId}/password-reset",
+  "/api/v1/tenants/{tenantId}/users/{identityId}/reactivate"
 ] as const;
 
 export type CoreApiPath = (typeof coreApiPaths)[number];

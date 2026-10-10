@@ -1,10 +1,12 @@
-import { Component, lazy, Suspense, type ErrorInfo, type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Component, lazy, Suspense, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from "react";
 import { MoneyField } from "../../components/fields/money-field.tsx";
 import { MoneyDisplay } from "../../components/fields/money-display.tsx";
 import { DataGrid, type DataGridColumn } from "../../components/grid/index.ts";
 import { ComboBox } from "../../components/primitives/combobox.tsx";
 import { Button } from "../../components/primitives/button.tsx";
 import { Dialog } from "../../components/primitives/dialog.tsx";
+import { AuthView } from "../auth/index.ts";
+import { requestCsrf, logoutUser } from "../../core/api/auth-service.ts";
 
 const PartyListPage = lazy(() => import("../../modules/directory/pages/party-list-page.tsx").then(m => ({ default: m.PartyListPage })));
 const PartyRecordPage = lazy(() => import("../../modules/directory/pages/party-record-page.tsx").then(m => ({ default: m.PartyRecordPage })));
@@ -15,6 +17,9 @@ const PaymentEntryDialog = lazy(() => import("../../modules/payments/features/pa
 const ManualJournalPage = lazy(() => import("../../modules/accounting/pages/manual-journal-page.tsx").then(m => ({ default: m.ManualJournalPage })));
 const ImportWizardPage = lazy(() => import("../../modules/migration/pages/import-wizard-page.tsx").then(m => ({ default: m.ImportWizardPage })));
 const FinBasePage = lazy(() => import("../../modules/finbase/pages/finbase-page.tsx").then(m => ({ default: m.FinBasePage })));
+const UserListPage = lazy(() => import("../../modules/identity/pages/user-list-page.tsx").then(m => ({ default: m.UserListPage })));
+const UserRecordPage = lazy(() => import("../../modules/identity/pages/user-record-page.tsx").then(m => ({ default: m.UserRecordPage })));
+const LoginDomainSettingsPage = lazy(() => import("../../modules/identity/pages/login-domain-settings-page.tsx").then(m => ({ default: m.LoginDomainSettingsPage })));
 
 type Language = "ar" | "en";
 type Screen = "loading" | "signed-out" | "authenticated" | "forbidden" | "error";
@@ -22,12 +27,14 @@ type ModuleRegistration = { id: string; label: string; permission?: string | und
 type Session = {
   authenticated: boolean;
   tenantId: string;
-  memberships: Array<{ id: string; tenantId: string; displayName: string }>;
+  memberships?: Array<{ id: string; tenantId: string; displayName: string }> | undefined;
   context: { legalEntities: Array<{ id: string; code: string; name: string }>; branches: Array<{ id: string; legalEntityId: string; code: string; name: string }> };
 };
 
 const fallbackModules: ModuleRegistration[] = [
   { id: "home", label: "الرئيسية" },
+  { id: "users", label: "المستخدمون", permission: "platform.identity.read" },
+  { id: "domain-settings", label: "إعدادات تسجيل الدخول", permission: "platform.tenancy.read" },
   { id: "directory", label: "دليل الأطراف", permission: "directory.party.read" },
   { id: "catalog", label: "الكتالوج", permission: "catalog.product.read" },
   { id: "invoicing", label: "فواتير المبيعات", permission: "invoicing.invoices.read" },
@@ -41,6 +48,8 @@ const fallbackModules: ModuleRegistration[] = [
 
 const moduleLabels: Record<string, { ar: string; en: string; permission?: string }> = {
   home: { ar: "الرئيسية", en: "Home" },
+  users: { ar: "المستخدمون", en: "Users", permission: "platform.identity.read" },
+  "domain-settings": { ar: "إعدادات تسجيل الدخول", en: "Login Domain", permission: "platform.tenancy.read" },
   directory: { ar: "دليل الأطراف", en: "Directory", permission: "directory.party.read" },
   catalog: { ar: "الكتالوج", en: "Catalog", permission: "catalog.product.read" },
   invoicing: { ar: "فواتير المبيعات", en: "Invoices", permission: "invoicing.invoices.read" },
@@ -49,8 +58,8 @@ const moduleLabels: Record<string, { ar: string; en: string; permission?: string
   migration: { ar: "معالج الاستيراد", en: "Import Wizard", permission: "platform.migration.execute" },
   finbase: { ar: "الأساس المالي", en: "Financial foundation", permission: "finbase.currency.read" },
   preview: { ar: "معاينة النظام", en: "System Preview" },
-  tenancy: { ar: "المؤسسات", en: "Tenants", permission: "platform.tenancy.read" },
-  iam: { ar: "الهوية والعضويات", en: "Identity & memberships", permission: "platform.identity.read" },
+  tenancy: { ar: "إعدادات الشركة", en: "Company", permission: "platform.tenancy.read" },
+  iam: { ar: "المستخدمون", en: "Users", permission: "platform.identity.read" },
   org: { ar: "الهيكل التنظيمي", en: "Organization", permission: "platform.organization.read" },
   settings: { ar: "الإعدادات", en: "Settings", permission: "platform.settings.read" },
 };
@@ -58,8 +67,7 @@ const moduleLabels: Record<string, { ar: string; en: string; permission?: string
 export function AppShell() {
   const [language, setLanguage] = useState<Language>("ar");
   const [screen, setScreen] = useState<Screen>("loading");
-  const [tenant, setTenant] = useState("");
-  const [memberships, setMemberships] = useState<Session["memberships"]>([]);
+  const [companyName, setCompanyName] = useState("شركة الأفق للتجارة");
   const [legalEntities, setLegalEntities] = useState<Session["context"]["legalEntities"]>([]);
   const [branches, setBranches] = useState<Session["context"]["branches"]>([]);
   const [legalEntity, setLegalEntity] = useState("");
@@ -71,14 +79,15 @@ export function AppShell() {
   const [currentView, setCurrentView] = useState<string>("home");
   const [selectedPartyId, setSelectedPartyId] = useState<string>("party-001");
   const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [theme, setTheme] = useState<string>("default");
   const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
 
   const direction = language === "ar" ? "rtl" : "ltr";
   const labels = useMemo(() => language === "ar" ? {
-    title: "مساحة العمل", tenant: "المؤسسة", entity: "الكيان القانوني", branch: "الفرع", switcher: "تبديل المؤسسة", language: "English", empty: "اختر مساحة عمل للبدء", loading: "جارٍ التحميل", progress: "جارٍ تحديث السياق", signOut: "تسجيل الخروج",
+    title: "مساحة العمل", entity: "الكيان القانوني", branch: "الفرع", language: "English", empty: "اختر مساحة عمل للبدء", loading: "جارٍ التحميل...", progress: "جارٍ تحديث السياق", signOut: "تسجيل الخروج",
   } : {
-    title: "Workspace", tenant: "Tenant", entity: "Legal entity", branch: "Branch", switcher: "Switch tenant", language: "العربية", empty: "Choose a workspace to begin", loading: "Loading", progress: "Updating context", signOut: "Sign out",
+    title: "Workspace", entity: "Legal entity", branch: "Branch", language: "العربية", empty: "Choose a workspace to begin", loading: "Loading...", progress: "Updating context", signOut: "Sign out",
   }, [language]);
 
   useEffect(() => {
@@ -101,8 +110,9 @@ export function AppShell() {
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("session.load_failed");
       const session = await response.json() as Session;
-      setTenant(session.tenantId);
-      setMemberships(session.memberships);
+      if (session.memberships?.[0]?.displayName) {
+        setCompanyName(session.memberships[0].displayName);
+      }
       setLegalEntities(session.context.legalEntities);
       setBranches(session.context.branches);
       setLegalEntity((current) => session.context.legalEntities.some(item => item.id === current) ? current : "");
@@ -137,24 +147,6 @@ export function AppShell() {
 
   useEffect(() => { void loadSession(); }, []);
 
-  async function switchTenant(value: string) {
-    if (!value || value === tenant) return;
-    setOperation(labels.progress);
-    setContextError(undefined);
-    try {
-      const csrf = await requestCsrf();
-      const response = await fetch("/api/v1/context/tenant", { method: "POST", headers: { "Content-Type": "application/json", "X-Correlation-Id": crypto.randomUUID(), "X-CSRF-TOKEN": csrf }, body: JSON.stringify({ tenantId: value }) });
-      if (response.status === 401) { setScreen("signed-out"); return; }
-      if (response.status === 403) { setScreen("forbidden"); return; }
-      if (!response.ok) throw new Error("context.update_failed");
-      await loadSession();
-    } catch {
-      setContextError(language === "ar" ? "تعذر تحديث السياق" : "Could not update context");
-    } finally {
-      setOperation(undefined);
-    }
-  }
-
   async function switchOrganization(nextLegalEntity: string, nextBranch: string) {
     setOperation(labels.progress);
     setContextError(undefined);
@@ -175,23 +167,34 @@ export function AppShell() {
   }
 
   async function signOut() {
-    const csrf = await requestCsrf();
-    await fetch("/api/v1/auth/logout", { method: "POST", headers: { "X-CSRF-TOKEN": csrf, "X-Correlation-Id": crypto.randomUUID() } });
+    await logoutUser();
     setScreen("signed-out");
   }
 
   if (screen === "loading") return <StatusView direction={direction} message={labels.loading} />;
-  if (screen === "signed-out") return <LoginView language={language} onAuthenticated={() => void loadSession()} />;
+  if (screen === "signed-out") return <AuthView language={language} onAuthenticated={() => void loadSession()} />;
   if (screen === "forbidden") return <AccessView direction={direction} kind="forbidden" language={language} onRetry={() => void loadSession()} />;
   if (screen === "error") return <AccessView direction={direction} kind="error" language={language} message={error ?? undefined} onRetry={() => void loadSession()} />;
 
   return (
     <div className="todir-app-shell shell" dir={direction} data-theme={theme} data-density={density}>
       <header className="topbar">
-        <a className="brand" href="/" aria-label="TODIR">TODIR</a>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <a className="brand" href="/" aria-label="TODIR">TODIR</a>
+          <span
+            style={{
+              padding: "0.25rem 0.625rem",
+              borderRadius: "var(--radius-sm, 0.25rem)",
+              backgroundColor: "var(--color-surface-subtle, rgba(255, 255, 255, 0.1))",
+              fontSize: "0.8125rem",
+              fontWeight: 600,
+              color: "var(--color-content-primary, #ffffff)"
+            }}
+          >
+            {companyName}
+          </span>
+        </div>
         <div className="context-controls">
-          <label htmlFor="tenant-select">{labels.tenant}</label>
-          <select id="tenant-select" aria-label={labels.switcher} value={tenant} onChange={(event) => void switchTenant(event.target.value)}>{memberships.map(item => <option key={item.tenantId} value={item.tenantId}>{item.displayName}</option>)}</select>
           <label htmlFor="entity-select">{labels.entity}</label>
           <select id="entity-select" aria-label={labels.entity} value={legalEntity} onChange={(event) => void switchOrganization(event.target.value, "")}><option value="">—</option>{legalEntities.map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</select>
           <label htmlFor="branch-select">{labels.branch}</label>
@@ -225,7 +228,21 @@ export function AppShell() {
         <main className="content" aria-live="polite">
           {contextError ? <div className="error" role="alert">{contextError}</div> : null}
           <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center" }}>جارٍ التحميل...</div>}>
-            {currentView === "directory" ? (
+            {currentView === "users" || currentView === "iam" ? (
+              <UserListPage
+                onSelectUser={(user) => {
+                  setSelectedUserId(user.id);
+                  setCurrentView("user-record");
+                }}
+              />
+            ) : currentView === "user-record" ? (
+              <UserRecordPage
+                userId={selectedUserId}
+                onBack={() => setCurrentView("users")}
+              />
+            ) : currentView === "domain-settings" ? (
+              <LoginDomainSettingsPage />
+            ) : currentView === "directory" ? (
               <PartyListPage
                 onSelectParty={(party) => {
                   setSelectedPartyId(party.id);
@@ -263,12 +280,15 @@ export function AppShell() {
               <ShowcasePreview density={density} />
             ) : (
               <div>
-                <p className="eyebrow">{tenant}</p>
+                <p className="eyebrow">{companyName}</p>
                 <h1>{labels.title}</h1>
                 <div className="empty-state">
                   <p>{labels.empty}</p>
                   <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                    <Button variant="primary" onPress={() => setCurrentView("directory")}>
+                    <Button variant="primary" onPress={() => setCurrentView("users")}>
+                      المستخدمون
+                    </Button>
+                    <Button variant="secondary" onPress={() => setCurrentView("directory")}>
                       دليل الأطراف
                     </Button>
                     <Button variant="secondary" onPress={() => setCurrentView("invoicing")}>
@@ -400,41 +420,11 @@ function ShowcasePreview({ density }: { density: "comfortable" | "compact" }) {
   );
 }
 
-function LoginView({ language, onAuthenticated }: { language: Language; onAuthenticated: () => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [tenantId, setTenantId] = useState("");
-  const [mfaCode, setMfaCode] = useState("");
-  const [error, setError] = useState<string | undefined>();
-  const [submitting, setSubmitting] = useState(false);
-  const arabic = language === "ar";
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setSubmitting(true); setError(undefined);
-    try {
-      const csrf = await requestCsrf();
-      const response = await fetch("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrf, "X-Correlation-Id": crypto.randomUUID() }, body: JSON.stringify({ email, password, tenantId, mfaCode: mfaCode || undefined }) });
-      if (response.status === 401) { setError(arabic ? "بيانات الدخول أو المؤسسة أو رمز MFA غير صحيحة" : "The credentials, tenant, or MFA code are invalid"); return; }
-      if (!response.ok) throw new Error("auth.login_failed");
-      onAuthenticated();
-    } catch { setError(arabic ? "تعذر الاتصال بالخادم" : "Could not connect to the server"); }
-    finally { setSubmitting(false); }
-  }
-  return <main className="auth-page" dir={arabic ? "rtl" : "ltr"}><form className="auth-card" onSubmit={(event) => void submit(event)}><p className="eyebrow">TODIR</p><h1>{arabic ? "تسجيل الدخول" : "Sign in"}</h1><label htmlFor="email">{arabic ? "البريد الإلكتروني" : "Email"}</label><input id="email" type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} /><label htmlFor="password">{arabic ? "كلمة المرور" : "Password"}</label><input id="password" type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} /><label htmlFor="login-tenant">{arabic ? "معرّف المؤسسة" : "Tenant ID"}</label><input id="login-tenant" required value={tenantId} onChange={event => setTenantId(event.target.value)} /><label htmlFor="mfa-code">{arabic ? "رمز التحقق متعدد العوامل (اختياري)" : "MFA code (if enabled)"}</label><input id="mfa-code" inputMode="numeric" autoComplete="one-time-code" value={mfaCode} onChange={event => setMfaCode(event.target.value)} />{error ? <div className="error" role="alert">{error}</div> : null}<button type="submit" disabled={submitting}>{submitting ? (arabic ? "جارٍ الدخول…" : "Signing in…") : (arabic ? "دخول" : "Sign in")}</button></form></main>;
-}
-
 function StatusView({ direction, message }: { direction: "rtl" | "ltr"; message: string }) { return <main className="status-page" dir={direction}><p role="status">{message}</p></main>; }
 
 function AccessView({ direction, kind, language, message, onRetry }: { direction: "rtl" | "ltr"; kind: "forbidden" | "error"; language: Language; message?: string | undefined; onRetry: () => void }) {
   const arabic = language === "ar";
   return <main className="status-page" dir={direction}><div className="auth-card"><h1>{kind === "forbidden" ? (arabic ? "لا تملك الصلاحية" : "Access denied") : (arabic ? "حدث خطأ" : "Something went wrong")}</h1><p>{message ?? (arabic ? "لا يمكن متابعة العملية الحالية." : "The current operation cannot continue.")}</p><button type="button" onClick={onRetry}>{arabic ? "إعادة المحاولة" : "Retry"}</button></div></main>;
-}
-
-async function requestCsrf(): Promise<string> {
-  const response = await fetch("/api/v1/auth/csrf", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
-  if (!response.ok) throw new Error("csrf.failed");
-  const body = await response.json() as { token?: string };
-  if (!body.token) throw new Error("csrf.missing");
-  return body.token;
 }
 
 export class ShellErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error?: string }> {

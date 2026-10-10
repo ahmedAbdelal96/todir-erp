@@ -1,0 +1,538 @@
+import { useState, type FormEvent, type ReactNode } from "react";
+import { loginUser, changeInitialPassword, verifyMfa, type AuthNextStep } from "../../core/api/auth-service.ts";
+import { ApiError } from "../../core/api/http-client.ts";
+import { Button } from "../../components/primitives/button.tsx";
+import { Alert } from "../../components/primitives/alert.tsx";
+
+export interface AuthViewProps {
+  readonly language?: "ar" | "en";
+  readonly onAuthenticated: () => void;
+}
+
+type AuthStep = "login" | "initial-password" | "mfa";
+
+export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): React.JSX.Element {
+  const [step, setStep] = useState<AuthStep>("login");
+  const [challengeToken, setChallengeToken] = useState<string>("");
+  const [error, setError] = useState<string | undefined>();
+  const [submitting, setSubmitting] = useState(false);
+
+  // Login form state
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Initial password state
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  // MFA state
+  const [mfaCode, setMfaCode] = useState("");
+
+  const isArabic = language === "ar";
+  const direction = isArabic ? "rtl" : "ltr";
+
+  const t = {
+    brand: "TODIR",
+    loginTitle: isArabic ? "تسجيل الدخول" : "Sign in",
+    loginSubtitle: isArabic ? "أدخل بريدك الإلكتروني وكلمة المرور للوصول إلى حساب شركتك" : "Enter your email and password to access your company workspace",
+    emailLabel: isArabic ? "البريد الإلكتروني" : "Email address",
+    emailPlaceholder: isArabic ? "name@company.com" : "name@company.com",
+    passwordLabel: isArabic ? "كلمة المرور" : "Password",
+    showPassword: isArabic ? "عرض" : "Show",
+    hidePassword: isArabic ? "إخفاء" : "Hide",
+    signInButton: isArabic ? "تسجيل الدخول" : "Sign in",
+    signingIn: isArabic ? "جارٍ تسجيل الدخول..." : "Signing in...",
+
+    // Initial password strings
+    initPasswordTitle: isArabic ? "تعيين كلمة المرور الجديدة" : "Set New Password",
+    initPasswordSubtitle: isArabic ? "مرحبًا بك! كإجراء أمني عند تسجيل الدخول لأول مرة، يرجى تعيين كلمة مرور جديدة لحسابك." : "Welcome! For security, please set a new password for your account on first sign in.",
+    newPasswordLabel: isArabic ? "كلمة المرور الجديدة" : "New password",
+    confirmPasswordLabel: isArabic ? "تأكيد كلمة المرور الجديدة" : "Confirm new password",
+    passwordRequirements: isArabic ? "12 حرفًا على الأقل، تتضمن حروفًا كبيرة وصغيرة وأرقامًا ورموزًا خاصة." : "At least 12 characters, including uppercase, lowercase, numbers, and symbols.",
+    savePasswordButton: isArabic ? "حفظ كلمة المرور والمتابعة" : "Save password & continue",
+    savingPassword: isArabic ? "جارٍ حفظ كلمة المرور..." : "Saving password...",
+    passwordsDoNotMatch: isArabic ? "كلمة المرور وتأكيدها غير متطابقين." : "Passwords do not match.",
+
+    // MFA strings
+    mfaTitle: isArabic ? "التحقق من هويتك" : "Verify Your Identity",
+    mfaSubtitle: isArabic ? "أدخل رمز التحقق المكون من 6 أرقام من تطبيق المصادقة (Authenticator) على هاتفك للمتابعة." : "Enter the 6-digit verification code from your authenticator app to proceed.",
+    mfaCodeLabel: isArabic ? "رمز التحقق" : "Verification code",
+    mfaCodePlaceholder: "123456",
+    verifyButton: isArabic ? "تحقق والدخول" : "Verify & proceed",
+    verifying: isArabic ? "جارٍ التحقق..." : "Verifying...",
+    backToLogin: isArabic ? "العودة لتسجيل الدخول" : "Back to sign in",
+
+    // Error messages
+    defaultError: isArabic ? "تعذر إكمال العملية. يرجى المحاولة مرة أخرى." : "Operation could not be completed. Please try again.",
+    invalidCredentials: isArabic ? "البريد الإلكتروني أو كلمة المرور غير صحيحة." : "Invalid email or password.",
+    accountSuspended: isArabic ? "تم تعليق هذا الحساب. يرجى التواصل مع إدارة شركتك." : "This account is suspended. Please contact your company administrator.",
+    accountLocked: isArabic ? "تم قفل الحساب مؤقتًا لكثرة المحاولات غير الصحيحة. يرجى المحاولة بعد 15 دقيقة." : "Account temporarily locked due to multiple failed attempts. Please try again after 15 minutes.",
+    invalidChallenge: isArabic ? "انتهت صلاحية جلسة المصادقة. يرجى تسجيل الدخول مجددًا." : "Authentication session expired. Please sign in again.",
+    invalidMfaCode: isArabic ? "رمز التحقق غير صحيح. يرجى التأكد من الرمز والمحاولة مجددًا." : "Invalid verification code. Please check your app and try again.",
+    mfaAttemptsExceeded: isArabic ? "تجاوزت الحد الأقصى لمحاولات التحقق. يرجى تسجيل الدخول مجددًا." : "Maximum verification attempts exceeded. Please sign in again.",
+    passwordTooShort: isArabic ? "يجب ألا تقل كلمة المرور عن 12 حرفًا." : "Password must be at least 12 characters long."
+  };
+
+  function mapAuthError(err: unknown): string {
+    if (err instanceof ApiError) {
+      const code = err.problemDetails?.code || ((err.problemDetails as Record<string, unknown> | undefined)?.extensions as Record<string, unknown> | undefined)?.code as string | undefined;
+      switch (code) {
+        case "auth.invalid_credentials":
+          return t.invalidCredentials;
+        case "auth.account_suspended":
+          return t.accountSuspended;
+        case "auth.account_locked":
+          return t.accountLocked;
+        case "auth.invalid_challenge":
+        case "auth.expired_challenge":
+          return t.invalidChallenge;
+        case "auth.invalid_mfa_code":
+          return t.invalidMfaCode;
+        case "auth.mfa_attempts_exceeded":
+          return t.mfaAttemptsExceeded;
+        case "auth.password_too_short":
+          return t.passwordTooShort;
+        default:
+          return err.problemDetails?.title || err.message || t.defaultError;
+      }
+    }
+    return t.defaultError;
+  }
+
+  async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(undefined);
+    setSubmitting(true);
+
+    try {
+      const result = await loginUser(email.trim(), password);
+      handleNextStep(result.state, result.challengeToken);
+    } catch (err) {
+      setError(mapAuthError(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleInitialPasswordSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(undefined);
+
+    if (newPassword !== confirmPassword) {
+      setError(t.passwordsDoNotMatch);
+      return;
+    }
+
+    if (newPassword.length < 12) {
+      setError(t.passwordTooShort);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const result = await changeInitialPassword(challengeToken, newPassword);
+      handleNextStep(result.state, result.challengeToken);
+    } catch (err) {
+      setError(mapAuthError(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleMfaSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(undefined);
+    setSubmitting(true);
+
+    try {
+      const result = await verifyMfa(challengeToken, mfaCode.trim());
+      handleNextStep(result.state, result.challengeToken);
+    } catch (err) {
+      setError(mapAuthError(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleNextStep(nextState: AuthNextStep, token?: string | undefined) {
+    if (token) {
+      setChallengeToken(token);
+    }
+
+    switch (nextState) {
+      case "Authenticated":
+        onAuthenticated();
+        break;
+      case "ChangePassword":
+        setStep("initial-password");
+        setError(undefined);
+        break;
+      case "VerifyMfa":
+        setStep("mfa");
+        setError(undefined);
+        break;
+      case "Rejected":
+      default:
+        setError(t.defaultError);
+        break;
+    }
+  }
+
+  function resetToLogin() {
+    setStep("login");
+    setChallengeToken("");
+    setPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setMfaCode("");
+    setError(undefined);
+  }
+
+  return (
+    <main
+      className="auth-page"
+      dir={direction}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+        padding: "1.5rem",
+        backgroundColor: "var(--color-surface-page, #f8fafc)",
+        fontFamily: "var(--font-sans, system-ui, -apple-system, sans-serif)"
+      }}
+    >
+      <div
+        className="auth-card"
+        style={{
+          width: "100%",
+          maxWidth: "420px",
+          backgroundColor: "var(--color-surface-card, #ffffff)",
+          borderRadius: "var(--radius-lg, 0.75rem)",
+          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.02)",
+          border: "1px solid var(--color-border-default, #e2e8f0)",
+          padding: "2.25rem",
+          boxSizing: "border-box"
+        }}
+      >
+        {/* Brand Header */}
+        <div style={{ textAlign: "center", marginBottom: "1.75rem" }}>
+          <span
+            style={{
+              display: "inline-block",
+              fontSize: "1.25rem",
+              fontWeight: 800,
+              letterSpacing: "0.05em",
+              color: "var(--color-action-primary, #0f766e)",
+              marginBottom: "0.5rem"
+            }}
+          >
+            {t.brand}
+          </span>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "1.5rem",
+              fontWeight: 700,
+              color: "var(--color-content-primary, #0f172a)"
+            }}
+          >
+            {step === "login"
+              ? t.loginTitle
+              : step === "initial-password"
+              ? t.initPasswordTitle
+              : t.mfaTitle}
+          </h1>
+          <p
+            style={{
+              margin: "0.5rem 0 0 0",
+              fontSize: "0.875rem",
+              color: "var(--color-content-muted, #64748b)",
+              lineHeight: 1.5
+            }}
+          >
+            {step === "login"
+              ? t.loginSubtitle
+              : step === "initial-password"
+              ? t.initPasswordSubtitle
+              : t.mfaSubtitle}
+          </p>
+        </div>
+
+        {/* Global Error Alert */}
+        {error && (
+          <div style={{ marginBottom: "1.25rem" }}>
+            <Alert variant="danger">{error}</Alert>
+          </div>
+        )}
+
+        {/* STEP 1: LOGIN FORM */}
+        {step === "login" && (
+          <form onSubmit={(e) => void handleLoginSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div>
+              <label
+                htmlFor="login-email"
+                style={{
+                  display: "block",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  marginBottom: "0.375rem",
+                  color: "var(--color-content-primary, #0f172a)"
+                }}
+              >
+                {t.emailLabel}
+              </label>
+              <input
+                id="login-email"
+                type="email"
+                autoComplete="username"
+                autoFocus
+                required
+                placeholder={t.emailPlaceholder}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "0.625rem 0.875rem",
+                  fontSize: "0.9375rem",
+                  borderRadius: "var(--radius-md, 0.375rem)",
+                  border: "1px solid var(--color-border-default, #cbd5e1)",
+                  backgroundColor: "var(--color-surface-subtle, #ffffff)",
+                  color: "var(--color-content-primary, #0f172a)",
+                  boxSizing: "border-box",
+                  direction: "ltr",
+                  textAlign: isArabic ? "right" : "left"
+                }}
+              />
+            </div>
+
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
+                <label
+                  htmlFor="login-password"
+                  style={{
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    color: "var(--color-content-primary, #0f172a)"
+                  }}
+                >
+                  {t.passwordLabel}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    color: "var(--color-action-primary, #0f766e)",
+                    cursor: "pointer"
+                  }}
+                >
+                  {showPassword ? t.hidePassword : t.showPassword}
+                </button>
+              </div>
+              <input
+                id="login-password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "0.625rem 0.875rem",
+                  fontSize: "0.9375rem",
+                  borderRadius: "var(--radius-md, 0.375rem)",
+                  border: "1px solid var(--color-border-default, #cbd5e1)",
+                  backgroundColor: "var(--color-surface-subtle, #ffffff)",
+                  color: "var(--color-content-primary, #0f172a)",
+                  boxSizing: "border-box"
+                }}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              variant="primary"
+              isLoading={submitting}
+              style={{ width: "100%", marginTop: "0.5rem" }}
+            >
+              {submitting ? t.signingIn : t.signInButton}
+            </Button>
+          </form>
+        )}
+
+        {/* STEP 2: INITIAL PASSWORD CHANGE */}
+        {step === "initial-password" && (
+          <form onSubmit={(e) => void handleInitialPasswordSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
+                <label
+                  htmlFor="new-password"
+                  style={{
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    color: "var(--color-content-primary, #0f172a)"
+                  }}
+                >
+                  {t.newPasswordLabel}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    color: "var(--color-action-primary, #0f766e)",
+                    cursor: "pointer"
+                  }}
+                >
+                  {showNewPassword ? t.hidePassword : t.showPassword}
+                </button>
+              </div>
+              <input
+                id="new-password"
+                type={showNewPassword ? "text" : "password"}
+                autoComplete="new-password"
+                autoFocus
+                required
+                minLength={12}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "0.625rem 0.875rem",
+                  fontSize: "0.9375rem",
+                  borderRadius: "var(--radius-md, 0.375rem)",
+                  border: "1px solid var(--color-border-default, #cbd5e1)",
+                  backgroundColor: "var(--color-surface-subtle, #ffffff)",
+                  color: "var(--color-content-primary, #0f172a)",
+                  boxSizing: "border-box"
+                }}
+              />
+              <p style={{ margin: "0.375rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                {t.passwordRequirements}
+              </p>
+            </div>
+
+            <div>
+              <label
+                htmlFor="confirm-password"
+                style={{
+                  display: "block",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  marginBottom: "0.375rem",
+                  color: "var(--color-content-primary, #0f172a)"
+                }}
+              >
+                {t.confirmPasswordLabel}
+              </label>
+              <input
+                id="confirm-password"
+                type={showNewPassword ? "text" : "password"}
+                autoComplete="new-password"
+                required
+                minLength={12}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "0.625rem 0.875rem",
+                  fontSize: "0.9375rem",
+                  borderRadius: "var(--radius-md, 0.375rem)",
+                  border: "1px solid var(--color-border-default, #cbd5e1)",
+                  backgroundColor: "var(--color-surface-subtle, #ffffff)",
+                  color: "var(--color-content-primary, #0f172a)",
+                  boxSizing: "border-box"
+                }}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              variant="primary"
+              isLoading={submitting}
+              style={{ width: "100%", marginTop: "0.5rem" }}
+            >
+              {submitting ? t.savingPassword : t.savePasswordButton}
+            </Button>
+          </form>
+        )}
+
+        {/* STEP 3: MFA CODE VERIFICATION */}
+        {step === "mfa" && (
+          <form onSubmit={(e) => void handleMfaSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div>
+              <label
+                htmlFor="mfa-code-input"
+                style={{
+                  display: "block",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  marginBottom: "0.375rem",
+                  color: "var(--color-content-primary, #0f172a)"
+                }}
+              >
+                {t.mfaCodeLabel}
+              </label>
+              <input
+                id="mfa-code-input"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="one-time-code"
+                autoFocus
+                required
+                maxLength={8}
+                placeholder={t.mfaCodePlaceholder}
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "0.75rem 1rem",
+                  fontSize: "1.25rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.25em",
+                  textAlign: "center",
+                  borderRadius: "var(--radius-md, 0.375rem)",
+                  border: "1px solid var(--color-border-default, #cbd5e1)",
+                  backgroundColor: "var(--color-surface-subtle, #ffffff)",
+                  color: "var(--color-content-primary, #0f172a)",
+                  boxSizing: "border-box",
+                  direction: "ltr"
+                }}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              variant="primary"
+              isLoading={submitting}
+              style={{ width: "100%", marginTop: "0.5rem" }}
+            >
+              {submitting ? t.verifying : t.verifyButton}
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              onPress={resetToLogin}
+              style={{ width: "100%" }}
+            >
+              {t.backToLogin}
+            </Button>
+          </form>
+        )}
+      </div>
+    </main>
+  );
+}
