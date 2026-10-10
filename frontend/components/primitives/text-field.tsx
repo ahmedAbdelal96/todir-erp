@@ -94,16 +94,18 @@ export function TextField({
     >
       {label && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <AriaLabel
-            style={{
-              fontSize: "0.875rem",
-              fontWeight: "500",
-              color: "var(--color-content-primary)"
-            }}
-          >
-            {label}
-            {isRequired && <span style={{ color: "var(--color-status-danger)", marginInlineStart: "0.25rem" }}>*</span>}
-          </AriaLabel>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <AriaLabel
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: "500",
+                color: "var(--color-content-primary)"
+              }}
+            >
+              {label}
+            </AriaLabel>
+            {isRequired && <span aria-hidden="true" style={{ color: "var(--color-status-danger)" }}>*</span>}
+          </div>
           {isLocked && lockedReason && (
             <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
               {lockedReason}

@@ -11,6 +11,7 @@ export * from "./local-date-display.tsx";
 export * from "./date-time-display.tsx";
 export * from "./phone-field.tsx";
 export * from "./email-field.tsx";
+export * from "./password-field.tsx";
 export * from "./status-badge.tsx";
 export { StatusBadge as StatusDisplay } from "./status-badge.tsx";
 export * from "./entity-ref-link.tsx";

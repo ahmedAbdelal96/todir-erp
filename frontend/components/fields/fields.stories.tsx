@@ -5,6 +5,7 @@ import { QuantityField } from './quantity-field.tsx';
 import { QuantityDisplay } from './quantity-display.tsx';
 import { LocalDateField } from './local-date-field.tsx';
 import { LocalDateDisplay } from './local-date-display.tsx';
+import { PasswordField } from './password-field.tsx';
 import type { MoneyValue, QuantityValue } from '../contracts/domain-values.ts';
 
 export default {
@@ -66,6 +67,20 @@ export const LocalDateFieldExample = () => {
         <strong>العرض: </strong>
         <LocalDateDisplay value={date} />
       </div>
+    </div>
+  );
+};
+
+export const PasswordFieldExample = () => {
+  const [password, setPassword] = useState<string>('SecretPass123!');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '320px' }}>
+      <PasswordField
+        label="كلمة المرور"
+        value={password}
+        onChange={setPassword}
+        description="12 حرفاً على الأقل، تتضمن أرقاماً ورموزاً خاصة"
+      />
     </div>
   );
 };

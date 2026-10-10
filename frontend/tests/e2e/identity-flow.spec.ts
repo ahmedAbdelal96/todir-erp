@@ -287,13 +287,23 @@ test.describe('Identity, Authentication & User Management Journeys', () => {
     // 1. Initial Login Screen - verify clean UI without Tenant or MFA inputs
     await expect(page.getByRole('heading', { name: 'تسجيل الدخول' })).toBeVisible();
     await expect(page.getByLabel('البريد الإلكتروني')).toBeVisible();
-    await expect(page.getByLabel('كلمة المرور')).toBeVisible();
+    await expect(page.getByLabel('كلمة المرور', { exact: true })).toBeVisible();
     await expect(page.locator('#login-tenant')).toHaveCount(0); // ZERO Tenant inputs!
     await expect(page.locator('#mfa-code')).toHaveCount(0); // ZERO initial MFA inputs!
 
+    // Verify password field starts with type="password" and eye toggle button can show/hide
+    const passwordInput = page.locator('#login-password');
+    await expect(passwordInput).toHaveAttribute('type', 'password');
+    const toggleButton = page.getByRole('button', { name: 'إظهار كلمة المرور' });
+    await expect(toggleButton).toBeVisible();
+    await toggleButton.click();
+    await expect(passwordInput).toHaveAttribute('type', 'text');
+    await page.getByRole('button', { name: 'إخفاء كلمة المرور' }).click();
+    await expect(passwordInput).toHaveAttribute('type', 'password');
+
     // Fill login credentials
     await page.getByLabel('البريد الإلكتروني').fill('ahmed.ali@atlas.com');
-    await page.getByLabel('كلمة المرور').fill('Temp#Password2026!');
+    await page.getByLabel('كلمة المرور', { exact: true }).fill('Temp#Password2026!');
     await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
 
     // 2. Progressive Initial Password Change Screen

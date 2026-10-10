@@ -3,6 +3,7 @@ import { loginUser, changeInitialPassword, verifyMfa, type AuthNextStep } from "
 import { ApiError } from "../../core/api/http-client.ts";
 import { Button } from "../../components/primitives/button.tsx";
 import { Alert } from "../../components/primitives/alert.tsx";
+import { PasswordField } from "../../components/fields/index.ts";
 
 export interface AuthViewProps {
   readonly language?: "ar" | "en";
@@ -20,12 +21,10 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
   // Login form state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
 
   // Initial password state
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showNewPassword, setShowNewPassword] = useState(false);
 
   // MFA state
   const [mfaCode, setMfaCode] = useState("");
@@ -308,53 +307,14 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
               />
             </div>
 
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
-                <label
-                  htmlFor="login-password"
-                  style={{
-                    fontSize: "0.875rem",
-                    fontWeight: 600,
-                    color: "var(--color-content-primary, #0f172a)"
-                  }}
-                >
-                  {t.passwordLabel}
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    color: "var(--color-action-primary, #0f766e)",
-                    cursor: "pointer"
-                  }}
-                >
-                  {showPassword ? t.hidePassword : t.showPassword}
-                </button>
-              </div>
-              <input
-                id="login-password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "0.625rem 0.875rem",
-                  fontSize: "0.9375rem",
-                  borderRadius: "var(--radius-md, 0.375rem)",
-                  border: "1px solid var(--color-border-default, #cbd5e1)",
-                  backgroundColor: "var(--color-surface-subtle, #ffffff)",
-                  color: "var(--color-content-primary, #0f172a)",
-                  boxSizing: "border-box"
-                }}
-              />
-            </div>
+            <PasswordField
+              id="login-password"
+              label={t.passwordLabel}
+              isRequired
+              autoComplete="current-password"
+              value={password}
+              onChange={setPassword}
+            />
 
             <Button
               type="submit"
@@ -370,92 +330,27 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
         {/* STEP 2: INITIAL PASSWORD CHANGE */}
         {step === "initial-password" && (
           <form onSubmit={(e) => void handleInitialPasswordSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
-                <label
-                  htmlFor="new-password"
-                  style={{
-                    fontSize: "0.875rem",
-                    fontWeight: 600,
-                    color: "var(--color-content-primary, #0f172a)"
-                  }}
-                >
-                  {t.newPasswordLabel}
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword(!showNewPassword)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    color: "var(--color-action-primary, #0f766e)",
-                    cursor: "pointer"
-                  }}
-                >
-                  {showNewPassword ? t.hidePassword : t.showPassword}
-                </button>
-              </div>
-              <input
-                id="new-password"
-                type={showNewPassword ? "text" : "password"}
-                autoComplete="new-password"
-                autoFocus
-                required
-                minLength={12}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "0.625rem 0.875rem",
-                  fontSize: "0.9375rem",
-                  borderRadius: "var(--radius-md, 0.375rem)",
-                  border: "1px solid var(--color-border-default, #cbd5e1)",
-                  backgroundColor: "var(--color-surface-subtle, #ffffff)",
-                  color: "var(--color-content-primary, #0f172a)",
-                  boxSizing: "border-box"
-                }}
-              />
-              <p style={{ margin: "0.375rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
-                {t.passwordRequirements}
-              </p>
-            </div>
+            <PasswordField
+              id="new-password"
+              label={t.newPasswordLabel}
+              isRequired
+              autoFocus
+              autoComplete="new-password"
+              minLength={12}
+              value={newPassword}
+              onChange={setNewPassword}
+              description={t.passwordRequirements}
+            />
 
-            <div>
-              <label
-                htmlFor="confirm-password"
-                style={{
-                  display: "block",
-                  fontSize: "0.875rem",
-                  fontWeight: 600,
-                  marginBottom: "0.375rem",
-                  color: "var(--color-content-primary, #0f172a)"
-                }}
-              >
-                {t.confirmPasswordLabel}
-              </label>
-              <input
-                id="confirm-password"
-                type={showNewPassword ? "text" : "password"}
-                autoComplete="new-password"
-                required
-                minLength={12}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "0.625rem 0.875rem",
-                  fontSize: "0.9375rem",
-                  borderRadius: "var(--radius-md, 0.375rem)",
-                  border: "1px solid var(--color-border-default, #cbd5e1)",
-                  backgroundColor: "var(--color-surface-subtle, #ffffff)",
-                  color: "var(--color-content-primary, #0f172a)",
-                  boxSizing: "border-box"
-                }}
-              />
-            </div>
+            <PasswordField
+              id="confirm-password"
+              label={t.confirmPasswordLabel}
+              isRequired
+              autoComplete="new-password"
+              minLength={12}
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+            />
 
             <Button
               type="submit"
