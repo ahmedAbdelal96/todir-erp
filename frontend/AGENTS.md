@@ -55,7 +55,7 @@ Success messages describe what happened: `تم حفظ المنتج`, `تم إن�
 
 Do not ask users to type technical identifiers unless they are genuine business-recognized identifiers. Do not expose `TenantId`, `OrganizationId`, `LegalEntityId`, `PartyId`, `EntityId`, GUIDs, or `MfaChallengeId` as normal form fields. Use search, selection, automatic context, business codes, and names.
 
-Do not place every state and option on one form. Reveal information when needed. Authentication is the permanent example: initial login is email + password + `تسجيل الدخول`; after credentials, select a company only when multiple companies are available; request MFA only when required. Never show organization ID, tenant ID, or an optional MFA code on the initial login form. The general rule is `USER JOURNEY > API SHAPE`.
+Do not place every state and option on one form. Reveal information when needed. Authentication is the permanent example: initial login is email + password + `تسجيل الدخول`; the backend derives the tenant from the email domain and never asks the user to select or switch companies; request an initial password change or MFA only when required. Never show organization ID, tenant ID, or an optional MFA code on the initial login form. The general rule is `USER JOURNEY > API SHAPE`.
 
 ## 6. RTL, Arabic, responsive UX, and accessibility
 

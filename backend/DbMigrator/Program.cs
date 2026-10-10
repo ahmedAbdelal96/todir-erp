@@ -120,8 +120,10 @@ foreach (var script in scripts)
 await using (var resetOwner = new NpgsqlCommand("reset role", connection))
     await resetOwner.ExecuteNonQueryAsync();
 
-await using (var identityAccessContextOwnership = new NpgsqlCommand("alter function platform_iam.list_active_access_contexts(uuid) owner to erp_dispatcher; alter function platform_iam.list_active_memberships(uuid) owner to erp_dispatcher", connection))
+await using (var identityAccessContextOwnership = new NpgsqlCommand("alter function platform_iam.resolve_login_domain(text) owner to erp_dispatcher", connection))
     await identityAccessContextOwnership.ExecuteNonQueryAsync();
+await using (var identityTenantResolverOwnership = new NpgsqlCommand("alter function platform_iam.resolve_identity_tenant(uuid) owner to erp_dispatcher", connection))
+    await identityTenantResolverOwnership.ExecuteNonQueryAsync();
 
 await using (var dispatcherOwnership = new NpgsqlCommand("alter function platform_messaging.claim_pending_outbox(integer) owner to erp_dispatcher", connection))
     await dispatcherOwnership.ExecuteNonQueryAsync();
@@ -204,6 +206,6 @@ static IReadOnlyList<string> ResolveModuleMigrations(string bootstrapDirectory, 
     return [basePath, .. fixes];
 }
 
-static int MigrationPriority(string fileName) => fileName.EndsWith("-authentication-challenges.sql", StringComparison.Ordinal) ? 0 : 1;
+static int MigrationPriority(string fileName) => fileName.EndsWith("-authentication-challenges.sql", StringComparison.Ordinal) ? 0 : fileName.EndsWith("-tenant-bound-identity.sql", StringComparison.Ordinal) ? 1 : 2;
 
 sealed record ModuleManifest(string Id, IReadOnlyList<string> HardDependencies);

@@ -6,70 +6,44 @@
     "/api/v1/auth/login": {
       "post": {
         "requestBody": { "$ref": "#/components/requestBodies/LoginRequest" },
-        "responses": { "200": { "description": "Authenticated, MFA verification required, or organization selection required" }, "401": { "description": "Enumeration-safe authentication failure" } }
+        "responses": { "200": { "description": "Authenticated, initial password change, or MFA verification required" }, "401": { "description": "Enumeration-safe authentication failure" } }
       }
     },
     "/api/v1/auth/mfa/verify": {
       "post": {
         "requestBody": { "$ref": "#/components/requestBodies/MfaVerificationRequest" },
-        "responses": { "200": { "description": "MFA verified or organization selection required" }, "401": { "description": "Invalid or expired challenge" } }
+        "responses": { "200": { "description": "MFA verified or initial password change required" }, "401": { "description": "Invalid or expired challenge" } }
       }
     },
-    "/api/v1/auth/organization/select": {
+    "/api/v1/auth/password/initial": {
       "post": {
-        "requestBody": { "$ref": "#/components/requestBodies/OrganizationSelectionRequest" },
-        "responses": { "200": { "description": "Authenticated with the selected server-validated organization" }, "401": { "description": "Invalid, expired, or unauthorized challenge selection" } }
+        "requestBody": { "$ref": "#/components/requestBodies/InitialPasswordChangeRequest" },
+        "responses": { "200": { "description": "Initial password changed, then MFA or authentication continues" }, "401": { "description": "Invalid or expired challenge" } }
       }
     },
+    "/api/v1/auth/password/change": { "post": { "requestBody": { "$ref": "#/components/requestBodies/ChangePasswordRequest" }, "responses": { "204": { "description": "Password changed and sessions invalidated according to policy" }, "400": { "description": "Password change failed" }, "401": { "description": "Unauthenticated" } } } },
     "/api/v1/auth/logout": { "post": { "responses": { "204": { "description": "Signed out" } } } },
     "/api/v1/auth/mfa/enroll": { "post": { "responses": { "200": { "description": "MFA enrollment secret and one-time recovery codes" }, "401": { "description": "Unauthenticated" } } } },
     "/api/v1/auth/sessions/revoke": { "post": { "responses": { "204": { "description": "All current identity sessions revoked" }, "401": { "description": "Unauthenticated" } } } },
     "/api/v1/session": { "get": { "responses": { "200": { "description": "Current secure session" }, "401": { "description": "Unauthenticated" } } } },
-    "/api/v1/session/context": { "get": { "responses": { "200": { "description": "Current tenant, memberships, legal entities, and branches" }, "401": { "description": "Unauthenticated" }, "404": { "description": "Tenant context not found" } } } },
-    "/api/v1/context/tenant": {
-      "post": {
-        "requestBody": { "$ref": "#/components/requestBodies/TenantSelection" },
-        "responses": { "204": { "description": "Tenant context selected" }, "403": { "description": "Membership not authorized" } }
-      }
-    },
+    "/api/v1/session/context": { "get": { "responses": { "200": { "description": "Current server-derived tenant, legal entities, and branches" }, "401": { "description": "Unauthenticated" }, "404": { "description": "Tenant context not found" } } } },
     "/api/v1/context/organization": {
       "post": {
         "requestBody": { "$ref": "#/components/requestBodies/OrganizationSelection" },
         "responses": { "204": { "description": "Organization context selected" }, "400": { "description": "Invalid organization scope" }, "404": { "description": "Organization scope not found" } }
       }
     },
-    "/api/v1/tenants/{tenantId}/memberships": {
-      "get": {
-        "parameters": [
-          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
-          { "name": "offset", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 0, "default": 0 } },
-          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 } }
-        ],
-        "responses": { "200": { "description": "Tenant memberships" }, "403": { "description": "Membership management permission is required" } }
-      }
+    "/api/v1/tenants/{tenantId}/users": {
+      "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "search", "in": "query", "schema": { "type": "string" } }, { "name": "active", "in": "query", "schema": { "type": "boolean" } }, { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } }, { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 } }], "responses": { "200": { "description": "Bounded tenant user list" }, "403": { "description": "Identity read permission is required" } } },
+      "post": { "requestBody": { "$ref": "#/components/requestBodies/CreateUserRequest" }, "responses": { "201": { "description": "Tenant user created with one-time temporary password" }, "400": { "description": "Invalid user data" }, "403": { "description": "Identity management permission is required" }, "409": { "description": "User or role conflict" } } }
     },
-    "/api/v1/tenants/{tenantId}/memberships/invitations": {
-      "post": {
-        "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
-        "requestBody": { "$ref": "#/components/requestBodies/MembershipInvitationRequest" },
-        "responses": { "201": { "description": "Membership invitation created" }, "400": { "description": "Invalid invitation" }, "403": { "description": "Membership management permission is required" } }
-      }
-    },
-    "/api/v1/tenants/{tenantId}/memberships/invitations/accept": {
-      "post": {
-        "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
-        "requestBody": { "$ref": "#/components/requestBodies/MembershipInvitationAcceptanceRequest" },
-        "responses": { "204": { "description": "Membership accepted" }, "404": { "description": "Invitation not found or expired" } }
-      }
-    },
-    "/api/v1/tenants/{tenantId}/memberships/{membershipId}/suspend": {
-      "post": {
-        "parameters": [
-          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
-          { "name": "membershipId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
-        ],
-        "responses": { "204": { "description": "Membership suspended" }, "403": { "description": "Membership management permission is required" }, "404": { "description": "Membership not found" } }
-      }
+    "/api/v1/tenants/{tenantId}/users/{identityId}": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "identityId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Tenant user" }, "403": { "description": "Identity read permission is required" }, "404": { "description": "User not found in tenant" } } } },
+    "/api/v1/tenants/{tenantId}/users/{identityId}/password-reset": { "post": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "identityId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "One-time temporary password returned to authorized administrator" }, "403": { "description": "Identity management permission is required" }, "404": { "description": "Active user not found" } } } },
+    "/api/v1/tenants/{tenantId}/users/{identityId}/deactivate": { "post": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "identityId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "204": { "description": "User deactivated and sessions invalidated" }, "403": { "description": "Identity management permission is required" }, "404": { "description": "User not found" } } } },
+    "/api/v1/tenants/{tenantId}/users/{identityId}/reactivate": { "post": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "identityId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "204": { "description": "User reactivated" }, "403": { "description": "Identity management permission is required" }, "404": { "description": "User not found" } } } },
+    "/api/v1/tenants/{tenantId}/login-domain": {
+      "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Tenant login domain" }, "403": { "description": "Tenant read permission is required" } } },
+      "put": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "requestBody": { "$ref": "#/components/requestBodies/LoginDomainRequest" }, "responses": { "200": { "description": "Tenant login domain changed atomically" }, "400": { "description": "Invalid login domain" }, "403": { "description": "MFA and tenant management permission are required" }, "409": { "description": "Domain conflict" } } }
     },
     "/api/v1/tenants/{tenantId}/organization": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "responses": { "200": { "description": "Tenant organization context" }, "403": { "description": "Organization read permission is required" } } } },
     "/api/v1/tenants/{tenantId}/roles": { "get": { "parameters": [{ "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }, { "name": "offset", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 0, "default": 0 } }, { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 } }], "responses": { "200": { "description": "Tenant roles" }, "403": { "description": "Role management permission is required" } } } },
@@ -138,9 +112,11 @@
     "requestBodies": {
       "LoginRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } } },
       "MfaVerificationRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MfaVerificationRequest" } } } },
-      "OrganizationSelectionRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrganizationSelectionRequest" } } } },
-      "TenantSelection": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TenantSelection" } } } },
       "OrganizationSelection": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrganizationSelection" } } } },
+      "InitialPasswordChangeRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InitialPasswordChangeRequest" } } } },
+      "ChangePasswordRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChangePasswordRequest" } } } },
+      "CreateUserRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateUserRequest" } } } },
+      "LoginDomainRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginDomainRequest" } } } },
       "MessageReplayRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageReplayRequest" } } } },
       "CreateSampleItemRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSampleItemRequest" } } } },
       "CreateDirectoryPartyRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateDirectoryPartyRequest" } } } },
@@ -161,9 +137,7 @@
       "AddCatalogProductUomRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AddCatalogProductUomRequest" } } } },
       "AddCatalogAliasRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AddCatalogAliasRequest" } } } },
       "AddCatalogTranslationRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AddCatalogTranslationRequest" } } } },
-      "AddCatalogReferenceRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AddCatalogReferenceRequest" } } } },
-      "MembershipInvitationRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MembershipInvitationRequest" } } } },
-      "MembershipInvitationAcceptanceRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MembershipInvitationAcceptanceRequest" } } } }
+      "AddCatalogReferenceRequest": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AddCatalogReferenceRequest" } } } }
     },
     "schemas": {
       "LoginRequest": {
@@ -178,23 +152,15 @@
         "properties": { "challengeToken": { "type": "string", "minLength": 32 }, "code": { "type": "string", "minLength": 1, "maxLength": 64 } },
         "additionalProperties": false
       },
-      "OrganizationSelectionRequest": {
-        "type": "object",
-        "required": ["challengeToken", "membershipId"],
-        "properties": { "challengeToken": { "type": "string", "minLength": 32 }, "membershipId": { "type": "string", "format": "uuid" } },
-        "additionalProperties": false
-      },
-      "TenantSelection": {
-        "type": "object",
-        "required": ["tenantId"],
-        "properties": { "tenantId": { "type": "string", "format": "uuid" } },
-        "additionalProperties": false
-      },
       "OrganizationSelection": {
         "type": "object",
         "properties": { "legalEntityId": { "type": ["string", "null"], "format": "uuid" }, "branchId": { "type": ["string", "null"], "format": "uuid" } },
         "additionalProperties": false
       },
+      "InitialPasswordChangeRequest": { "type": "object", "required": ["challengeToken", "newPassword"], "properties": { "challengeToken": { "type": "string", "minLength": 32 }, "newPassword": { "type": "string", "format": "password", "minLength": 12, "maxLength": 128 } }, "additionalProperties": false },
+      "ChangePasswordRequest": { "type": "object", "required": ["currentPassword", "newPassword"], "properties": { "currentPassword": { "type": "string", "format": "password" }, "newPassword": { "type": "string", "format": "password", "minLength": 12, "maxLength": 128 } }, "additionalProperties": false },
+      "CreateUserRequest": { "type": "object", "required": ["name", "emailPrefix"], "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 200 }, "emailPrefix": { "type": "string", "minLength": 1, "maxLength": 64 }, "roleIds": { "type": "array", "items": { "type": "string", "format": "uuid" } } }, "additionalProperties": false },
+      "LoginDomainRequest": { "type": "object", "required": ["loginDomain"], "properties": { "loginDomain": { "type": "string", "minLength": 3, "maxLength": 253 } }, "additionalProperties": false },
       "MessageReplayRequest": {
         "type": "object",
         "required": ["messageId", "tenantId", "consumerEndpoint", "reason"],
@@ -231,19 +197,7 @@
       "AddCatalogProductUomRequest": { "type": "object", "required": ["uomId", "factorToBase", "effectiveFrom"], "properties": { "uomId": { "type": "string", "format": "uuid" }, "factorToBase": { "type": "number" }, "effectiveFrom": { "type": "string", "format": "date-time" }, "effectiveTo": { "type": ["string", "null"], "format": "date-time" } }, "additionalProperties": false },
       "AddCatalogAliasRequest": { "type": "object", "required": ["variantId", "alias", "aliasType"], "properties": { "variantId": { "type": "string", "format": "uuid" }, "alias": { "type": "string", "minLength": 1 }, "aliasType": { "type": "string", "minLength": 1 }, "languageCode": { "type": ["string", "null"] } }, "additionalProperties": false },
       "AddCatalogTranslationRequest": { "type": "object", "required": ["languageCode", "name"], "properties": { "languageCode": { "type": "string", "minLength": 2 }, "name": { "type": "string", "minLength": 1 }, "description": { "type": ["string", "null"] } }, "additionalProperties": false },
-      "AddCatalogReferenceRequest": { "type": "object", "required": ["variantId", "referenceType", "referenceCode"], "properties": { "variantId": { "type": "string", "format": "uuid" }, "referenceType": { "type": "string", "minLength": 1 }, "partyId": { "type": ["string", "null"], "format": "uuid" }, "referenceCode": { "type": "string", "minLength": 1 } }, "additionalProperties": false },
-      "MembershipInvitationRequest": {
-        "type": "object",
-        "required": ["identityId", "displayName", "expiresAt"],
-        "properties": { "identityId": { "type": "string", "format": "uuid" }, "displayName": { "type": "string", "minLength": 1, "maxLength": 200 }, "expiresAt": { "type": "string", "format": "date-time" } },
-        "additionalProperties": false
-      },
-      "MembershipInvitationAcceptanceRequest": {
-        "type": "object",
-        "required": ["token"],
-        "properties": { "token": { "type": "string", "minLength": 1, "maxLength": 256 } },
-        "additionalProperties": false
-      }
+      "AddCatalogReferenceRequest": { "type": "object", "required": ["variantId", "referenceType", "referenceCode"], "properties": { "variantId": { "type": "string", "format": "uuid" }, "referenceType": { "type": "string", "minLength": 1 }, "partyId": { "type": ["string", "null"], "format": "uuid" }, "referenceCode": { "type": "string", "minLength": 1 } }, "additionalProperties": false }
     }
   }
 }

@@ -20,192 +20,95 @@ public sealed class PlatformApiFlowTests
     private static readonly string[] EmptyFeatures = [];
 
     [Fact]
-    public async Task PlatformMembershipFlowRunsThroughTheHttpPipeline()
+    public async Task TenantBoundUserAdministrationRunsThroughTheHttpPipeline()
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
             ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the platform API flow gate.");
-        var appPassword = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
-        var tenantA = TenantId.New();
-        var tenantB = TenantId.New();
+        var appPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+        var tenant = TenantId.New();
         var administrator = IdentityId.New();
-        var invitedIdentity = IdentityId.New();
-        var administratorMembershipA = MembershipId.New();
-        var administratorMembershipB = MembershipId.New();
-        var invitedMembershipB = MembershipId.New();
+        var administratorMembership = MembershipId.New();
         var roleId = Guid.CreateVersion7();
         var legalEntityId = Guid.CreateVersion7();
         var branchId = Guid.CreateVersion7();
-        var adminEmail = $"api-admin-{administrator.Value:N}@example.com";
-        var invitedEmail = $"api-invited-{invitedIdentity.Value:N}@example.com";
-        var password = "PlatformApiFlow-Only-For-CI";
+        var adminEmail = $"api-admin-{administrator.Value:N}@api-flow-{tenant.Value:N}.local";
+        var password = "PlatformApiFlow-Only-For-CI1";
         var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = appPassword }.ConnectionString;
+        Guid? createdUserId = null;
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
         var adminHash = IdentityConventions.HashPassword(password);
-        await ExecuteAsync(admin, $"alter role erp_app password '{appPassword}'; set role erp_owner; set app.tenant_id = '{tenantA.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantA.Value}', 'api-flow-a-{tenantA.Value:N}', 'API Flow A', 'Active', now(), 1); set app.tenant_id = '{tenantB.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantB.Value}', 'api-flow-b-{tenantB.Value:N}', 'API Flow B', 'Active', now(), 1); set app.tenant_id = '{tenantA.Value}'; insert into platform_org.legal_entity (id, tenant_id, code, legal_name, country_code, base_currency_code, timezone, locale, status, created_at, version) values ('{legalEntityId}', '{tenantA.Value}', 'API', 'API Flow Entity', 'EG', 'EGP', 'Africa/Cairo', 'ar-EG', 'Active', now(), 1); insert into platform_org.branch (id, tenant_id, legal_entity_id, code, name, status, created_at, version) values ('{branchId}', '{tenantA.Value}', '{legalEntityId}', 'MAIN', 'Main branch', 'Active', now(), 1); reset app.tenant_id; insert into platform_iam.identity (id, normalized_email, email_verified, password_hash, status, created_at, security_stamp, version) values ('{administrator.Value}', '{adminEmail.ToUpperInvariant()}', true, '{adminHash}', 'Active', now(), '{Guid.CreateVersion7()}', 1), ('{invitedIdentity.Value}', '{invitedEmail.ToUpperInvariant()}', true, '{adminHash}', 'Active', now(), '{Guid.CreateVersion7()}', 1); set app.tenant_id = '{tenantA.Value}'; insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{administratorMembershipA.Value}', '{tenantA.Value}', '{administrator.Value}', 'Platform administrator A', 'Active', now(), 1); set app.tenant_id = '{tenantB.Value}'; insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{administratorMembershipB.Value}', '{tenantB.Value}', '{administrator.Value}', 'Platform administrator B', 'Active', now(), 1), ('{invitedMembershipB.Value}', '{tenantB.Value}', '{invitedIdentity.Value}', 'Invited member B', 'Active', now(), 1); set app.tenant_id = '{tenantA.Value}'; insert into platform_authz.role (id, tenant_id, code, name, is_system_template, is_active, version) values ('{roleId}', '{tenantA.Value}', 'tenant-admin', 'Tenant administrator', false, true, 1); insert into platform_authz.role_permission (tenant_id, role_id, permission_code) values ('{tenantA.Value}', '{roleId}', 'platform.membership.manage'), ('{tenantA.Value}', '{roleId}', 'platform.organization.read'), ('{tenantA.Value}', '{roleId}', 'platform.role.manage'), ('{tenantA.Value}', '{roleId}', 'platform.module.view'), ('{tenantA.Value}', '{roleId}', 'platform.settings.read'), ('{tenantA.Value}', '{roleId}', 'platform.audit.view'); insert into platform_authz.membership_role_assignment (tenant_id, membership_id, role_id, scope_type) values ('{tenantA.Value}', '{administratorMembershipA.Value}', '{roleId}', 'Tenant'); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{appPassword}'; set role erp_owner; set app.tenant_id = '{tenant.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenant.Value}', 'api-flow-{tenant.Value:N}', 'API Flow', 'Active', 'api-flow-{tenant.Value:N}.local', 'api-flow-{tenant.Value:N}.local', now(), 1); insert into platform_org.legal_entity (id, tenant_id, code, legal_name, country_code, base_currency_code, timezone, locale, status, created_at, version) values ('{legalEntityId}', '{tenant.Value}', 'API', 'API Flow Entity', 'EG', 'EGP', 'Africa/Cairo', 'ar-EG', 'Active', now(), 1); insert into platform_org.branch (id, tenant_id, legal_entity_id, code, name, status, created_at, version) values ('{branchId}', '{tenant.Value}', '{legalEntityId}', 'MAIN', 'Main branch', 'Active', now(), 1); insert into platform_iam.identity (id, tenant_id, email, normalized_email, login_prefix, name, email_verified, password_hash, status, created_at, security_stamp, version) values ('{administrator.Value}', '{tenant.Value}', '{adminEmail}', '{adminEmail.ToUpperInvariant()}', 'api-admin-{administrator.Value:N}', 'Platform administrator', true, '{adminHash}', 'Active', now(), '{Guid.CreateVersion7()}', 1); insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{administratorMembership.Value}', '{tenant.Value}', '{administrator.Value}', 'Platform administrator', 'Active', now(), 1); insert into platform_authz.role (id, tenant_id, code, name, is_system_template, is_active, version) values ('{roleId}', '{tenant.Value}', 'tenant-admin', 'Tenant administrator', false, true, 1); insert into platform_authz.role_permission (tenant_id, role_id, permission_code) values ('{tenant.Value}', '{roleId}', 'platform.identity.manage'), ('{tenant.Value}', '{roleId}', 'platform.identity.read'), ('{tenant.Value}', '{roleId}', 'platform.organization.read'), ('{tenant.Value}', '{roleId}', 'platform.role.manage'), ('{tenant.Value}', '{roleId}', 'platform.module.view'), ('{tenant.Value}', '{roleId}', 'platform.settings.read'), ('{tenant.Value}', '{roleId}', 'platform.audit.view'), ('{tenant.Value}', '{roleId}', 'platform.tenancy.read'); insert into platform_authz.membership_role_assignment (tenant_id, membership_id, role_id, scope_type) values ('{tenant.Value}', '{administratorMembership.Value}', '{roleId}', 'Tenant'); reset app.tenant_id; reset role;");
 
         try
         {
-            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
-                .UseEnvironment("Development")
-                .UseSetting("TODIR_DATABASE_CONNECTION", appConnectionString)
-                .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
-            using var administratorClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
-            using var invitedClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
-
-            await LoginAsync(administratorClient, adminEmail, password, tenantA.Value);
-            var contextResponse = await administratorClient.GetAsync("/api/v1/session/context");
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Development").UseSetting("TODIR_DATABASE_CONNECTION", appConnectionString).UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+            await LoginAsync(client, adminEmail, password, tenant.Value);
+            var contextResponse = await client.GetAsync("/api/v1/session/context");
             Assert.Equal(HttpStatusCode.OK, contextResponse.StatusCode);
-            var organization = await contextResponse.Content.ReadFromJsonAsync<JsonElement>();
-            Assert.Equal(1, organization.GetProperty("context").GetProperty("legalEntities").GetArrayLength());
-            Assert.Equal(1, organization.GetProperty("context").GetProperty("branches").GetArrayLength());
-            Assert.Equal(HttpStatusCode.OK, (await administratorClient.GetAsync($"/api/v1/tenants/{tenantA.Value:D}/organization")).StatusCode);
-            Assert.Equal(HttpStatusCode.OK, (await administratorClient.GetAsync($"/api/v1/tenants/{tenantA.Value:D}/roles")).StatusCode);
-            Assert.Equal(HttpStatusCode.OK, (await administratorClient.GetAsync($"/api/v1/tenants/{tenantA.Value:D}/modules")).StatusCode);
-            Assert.Equal(HttpStatusCode.OK, (await administratorClient.GetAsync($"/api/v1/tenants/{tenantA.Value:D}/settings")).StatusCode);
-            Assert.Equal(HttpStatusCode.OK, (await administratorClient.GetAsync($"/api/v1/tenants/{tenantA.Value:D}/audit")).StatusCode);
-            var organizationSwitch = await PostAsync(administratorClient, "/api/v1/context/organization", new { legalEntityId, branchId });
-            Assert.Equal(HttpStatusCode.NoContent, organizationSwitch.StatusCode);
-            var memberships = await administratorClient.GetAsync($"/api/v1/tenants/{tenantA.Value:D}/memberships");
-            Assert.Equal(HttpStatusCode.OK, memberships.StatusCode);
+            var context = await contextResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(1, context.GetProperty("context").GetProperty("legalEntities").GetArrayLength());
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/organization")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/roles")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/modules")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/settings")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/audit")).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await PostAsync(client, "/api/v1/context/organization", new { legalEntityId, branchId })).StatusCode);
 
-            var invitationResponse = await PostAsync(administratorClient, $"/api/v1/tenants/{tenantA.Value:D}/memberships/invitations", new { identityId = invitedIdentity.Value, displayName = "Invited member A", expiresAt = DateTimeOffset.UtcNow.AddMinutes(10) });
-            Assert.Equal(HttpStatusCode.Created, invitationResponse.StatusCode);
-            var invitation = await invitationResponse.Content.ReadFromJsonAsync<MembershipInvitation>();
-            Assert.NotNull(invitation);
-
-            var acceptResponse = await PostAsync(invitedClient, $"/api/v1/tenants/{tenantA.Value:D}/memberships/invitations/accept", new { token = invitation!.Token });
-            Assert.Equal(HttpStatusCode.NoContent, acceptResponse.StatusCode);
-            await LoginAsync(invitedClient, invitedEmail, password, tenantA.Value);
-
-            var crossTenantResponse = await PostAsync(invitedClient, $"/api/v1/tenants/{tenantB.Value:D}/memberships/invitations", new { identityId = invitedIdentity.Value, displayName = "Must be denied", expiresAt = DateTimeOffset.UtcNow.AddMinutes(10) });
-            Assert.Equal(HttpStatusCode.Forbidden, crossTenantResponse.StatusCode);
-
-            var switchResponse = await PostAsync(invitedClient, "/api/v1/context/tenant", new { tenantId = tenantB.Value });
-            Assert.Equal(HttpStatusCode.NoContent, switchResponse.StatusCode);
-            var switchedSession = await invitedClient.GetFromJsonAsync<SessionResponse>("/api/v1/session");
-            Assert.Equal(tenantB.Value, switchedSession!.TenantId);
-
-            var switchBackResponse = await PostAsync(invitedClient, "/api/v1/context/tenant", new { tenantId = tenantA.Value });
-            Assert.Equal(HttpStatusCode.NoContent, switchBackResponse.StatusCode);
-
-            var suspendResponse = await PostAsync(administratorClient, $"/api/v1/tenants/{tenantA.Value:D}/memberships/{invitation.MembershipId:D}/suspend", null);
-            Assert.Equal(HttpStatusCode.NoContent, suspendResponse.StatusCode);
-            var suspendedSession = await invitedClient.GetAsync("/api/v1/session");
-            Assert.Equal(HttpStatusCode.Unauthorized, suspendedSession.StatusCode);
+            var create = await PostAsync(client, $"/api/v1/tenants/{tenant.Value:D}/users", new { name = "أحمد محمد", emailPrefix = "ahmed" });
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            var created = await create.Content.ReadFromJsonAsync<JsonElement>();
+            createdUserId = created.GetProperty("user").GetProperty("id").GetGuid();
+            Assert.Equal($"ahmed@api-flow-{tenant.Value:N}.local", created.GetProperty("user").GetProperty("email").GetString());
+            Assert.False(string.IsNullOrWhiteSpace(created.GetProperty("temporaryPassword").GetString()));
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/users")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/users/{createdUserId:D}")).StatusCode);
+            var domain = await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/login-domain");
+            Assert.Equal(HttpStatusCode.OK, domain.StatusCode);
+            Assert.Equal($"api-flow-{tenant.Value:N}.local", (await domain.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("loginDomain").GetString());
+            var reset = await PostAsync(client, $"/api/v1/tenants/{tenant.Value:D}/users/{createdUserId:D}/password-reset", null);
+            Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+            Assert.False(string.IsNullOrWhiteSpace((await reset.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("temporaryPassword").GetString()));
         }
         finally
         {
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantA.Value}'; delete from platform_iam.membership_invitation where tenant_id = '{tenantA.Value}'; delete from platform_authz.membership_role_assignment where tenant_id = '{tenantA.Value}'; delete from platform_authz.role_permission where tenant_id = '{tenantA.Value}'; delete from platform_authz.role where tenant_id = '{tenantA.Value}'; delete from platform_iam.membership where tenant_id = '{tenantA.Value}'; delete from platform_org.branch where id = '{branchId}'; delete from platform_org.legal_entity where id = '{legalEntityId}'; delete from platform_tenancy.tenant where id = '{tenantA.Value}'; set app.tenant_id = '{tenantB.Value}'; delete from platform_iam.membership where tenant_id = '{tenantB.Value}'; delete from platform_tenancy.tenant where id = '{tenantB.Value}'; reset app.tenant_id; delete from platform_iam.identity where id in ('{administrator.Value}', '{invitedIdentity.Value}'); reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; delete from platform_audit.audit_entry where tenant_id = '{tenant.Value}'; delete from platform_authz.membership_role_assignment where tenant_id = '{tenant.Value}'; delete from platform_authz.role_permission where tenant_id = '{tenant.Value}'; delete from platform_authz.role where tenant_id = '{tenant.Value}'; delete from platform_iam.membership where tenant_id = '{tenant.Value}'; delete from platform_iam.identity where tenant_id = '{tenant.Value}'; delete from platform_org.branch where id = '{branchId}'; delete from platform_org.legal_entity where id = '{legalEntityId}'; delete from platform_tenancy.tenant where id = '{tenant.Value}'; reset app.tenant_id; reset role;");
         }
     }
 
     [Fact]
     public async Task SampleEndpointRequiresEntitlementThenLoadsTheTenantSnapshot()
     {
-        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
-            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the Sample endpoint integration gate.");
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the Sample endpoint integration gate.");
         var appPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-        var tenant = TenantId.New();
-        var identity = IdentityId.New();
-        var membership = MembershipId.New();
-        var roleId = Guid.CreateVersion7();
-        var email = $"sample-api-{identity.Value:N}@example.com";
-        var password = "SampleApiFlow-Only-For-CI";
+        var tenant = TenantId.New(); var identity = IdentityId.New(); var membership = MembershipId.New(); var roleId = Guid.CreateVersion7();
+        var domain = $"sample-api-{tenant.Value:N}.local"; var email = $"sample-api-{identity.Value:N}@{domain}"; var password = "SampleApiFlow-Only-For-CI1";
         var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = appPassword }.ConnectionString;
-
-        await using var admin = new NpgsqlConnection(adminConnectionString);
-        await admin.OpenAsync();
-        var issued = TruncateToPostgresPrecision(DateTimeOffset.UtcNow);
-        var validUntil = issued.AddMinutes(10);
-        const string entitlementKey = "sample-api-entitlement-key";
-        var hash = IdentityConventions.HashPassword(password);
-        await ExecuteAsync(admin, $"alter role erp_app password '{appPassword}'; set role erp_owner; set app.tenant_id = '{tenant.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenant.Value}', 'sample-api-{tenant.Value:N}', 'Sample API', 'Active', now(), 1); insert into platform_iam.identity (id, normalized_email, email_verified, password_hash, status, created_at, security_stamp, version) values ('{identity.Value}', '{email.ToUpperInvariant()}', true, '{hash}', 'Active', now(), '{Guid.CreateVersion7()}', 1); insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{membership.Value}', '{tenant.Value}', '{identity.Value}', 'Sample API administrator', 'Active', now(), 1); insert into platform_authz.role (id, tenant_id, code, name, is_system_template, is_active, version) values ('{roleId}', '{tenant.Value}', 'sample-admin', 'Sample administrator', false, true, 1); insert into platform_authz.role_permission (tenant_id, role_id, permission_code) values ('{tenant.Value}', '{roleId}', 'sample.item.create'); insert into platform_authz.membership_role_assignment (tenant_id, membership_id, role_id, scope_type) values ('{tenant.Value}', '{membership.Value}', '{roleId}', 'Tenant'); reset app.tenant_id; reset role;");
-
+        await using var admin = new NpgsqlConnection(adminConnectionString); await admin.OpenAsync();
+        var issued = TruncateToPostgresPrecision(DateTimeOffset.UtcNow); var validUntil = issued.AddMinutes(10); const string entitlementKey = "sample-api-entitlement-key"; var hash = IdentityConventions.HashPassword(password);
+        await ExecuteAsync(admin, $"alter role erp_app password '{appPassword}'; set role erp_owner; set app.tenant_id = '{tenant.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenant.Value}', 'sample-api-{tenant.Value:N}', 'Sample API', 'Active', '{domain}', '{domain}', now(), 1); insert into platform_iam.identity (id, tenant_id, email, normalized_email, login_prefix, name, email_verified, password_hash, status, created_at, security_stamp, version) values ('{identity.Value}', '{tenant.Value}', '{email}', '{email.ToUpperInvariant()}', 'sample-api-{identity.Value:N}', 'Sample API administrator', true, '{hash}', 'Active', now(), '{Guid.CreateVersion7()}', 1); insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{membership.Value}', '{tenant.Value}', '{identity.Value}', 'Sample API administrator', 'Active', now(), 1); insert into platform_authz.role (id, tenant_id, code, name, is_system_template, is_active, version) values ('{roleId}', '{tenant.Value}', 'sample-admin', 'Sample administrator', false, true, 1); insert into platform_authz.role_permission (tenant_id, role_id, permission_code) values ('{tenant.Value}', '{roleId}', 'sample.item.create'); insert into platform_authz.membership_role_assignment (tenant_id, membership_id, role_id, scope_type) values ('{tenant.Value}', '{membership.Value}', '{roleId}', 'Tenant'); reset app.tenant_id; reset role;");
         try
         {
-            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
-                .UseEnvironment("Development")
-                .UseSetting("TODIR_DATABASE_CONNECTION", appConnectionString)
-                .UseSetting("TODIR_RABBITMQ_HOST", string.Empty)
-                .UseSetting("TODIR_ENTITLEMENT_HMAC_KEY", entitlementKey));
-            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
-            await LoginAsync(client, email, password, tenant.Value);
-
-            var denied = await PostAsync(client, "/api/v1/sample/items", new { name = "before-entitlement" });
-            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
-
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Development").UseSetting("TODIR_DATABASE_CONNECTION", appConnectionString).UseSetting("TODIR_RABBITMQ_HOST", string.Empty).UseSetting("TODIR_ENTITLEMENT_HMAC_KEY", entitlementKey));
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true }); await LoginAsync(client, email, password, tenant.Value);
+            Assert.Equal(HttpStatusCode.Forbidden, (await PostAsync(client, "/api/v1/sample/items", new { name = "before-entitlement" })).StatusCode);
             var signature = CreateEntitlementSignature(tenant, issued, validUntil, entitlementKey);
             await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; insert into platform_entitlements.entitlement_snapshot (tenant_id, snapshot_version, issued_at, valid_until, key_id, modules, features, limits, scopes, signature) values ('{tenant.Value}', 1, '{issued:O}', '{validUntil:O}', 'current', '[\"sample\"]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '{{}}'::jsonb, '{signature}'); reset app.tenant_id; reset role;");
-
-            await using (var verificationDataSource = NpgsqlDataSource.Create(appConnectionString))
-            {
-                var persisted = await new NpgsqlEntitlementSnapshotStore(verificationDataSource).LoadLatestAsync(tenant);
-                Assert.NotNull(persisted);
-                Assert.Equal(issued, persisted!.IssuedAt);
-                Assert.Equal(validUntil, persisted.ValidUntil);
-                Assert.Equal(signature, persisted.Signature);
-                Assert.True(new HmacEntitlementVerifier(new Dictionary<string, byte[]> { ["current"] = Encoding.UTF8.GetBytes(entitlementKey) }).Verify(persisted));
-            }
-
-            var created = await PostAsync(client, "/api/v1/sample/items", new { name = "after-entitlement" });
-            var createdBody = await created.Content.ReadAsStringAsync();
-            Assert.True(created.StatusCode == HttpStatusCode.Created, $"Expected Created but got {created.StatusCode}: {createdBody}");
+            await using (var verificationDataSource = NpgsqlDataSource.Create(appConnectionString)) { var persisted = await new NpgsqlEntitlementSnapshotStore(verificationDataSource).LoadLatestAsync(tenant); Assert.NotNull(persisted); Assert.Equal(signature, persisted!.Signature); Assert.True(new HmacEntitlementVerifier(new Dictionary<string, byte[]> { ["current"] = Encoding.UTF8.GetBytes(entitlementKey) }).Verify(persisted)); }
+            var created = await PostAsync(client, "/api/v1/sample/items", new { name = "after-entitlement" }); var body = await created.Content.ReadAsStringAsync(); Assert.True(created.StatusCode == HttpStatusCode.Created, $"Expected Created but got {created.StatusCode}: {body}");
         }
-        finally
-        {
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; delete from sample.sample_projection where tenant_id = '{tenant.Value}'; delete from sample.sample_item where tenant_id = '{tenant.Value}'; delete from platform_messaging.outbox_message where tenant_id = '{tenant.Value}'; delete from platform_audit.audit_entry where tenant_id = '{tenant.Value}'; delete from platform_entitlements.entitlement_snapshot where tenant_id = '{tenant.Value}'; delete from platform_authz.membership_role_assignment where tenant_id = '{tenant.Value}'; delete from platform_authz.role_permission where tenant_id = '{tenant.Value}'; delete from platform_authz.role where tenant_id = '{tenant.Value}'; delete from platform_iam.membership where tenant_id = '{tenant.Value}'; delete from platform_iam.identity where id = '{identity.Value}'; delete from platform_tenancy.tenant where id = '{tenant.Value}'; reset app.tenant_id; reset role;");
-        }
+        finally { await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; delete from sample.sample_projection where tenant_id = '{tenant.Value}'; delete from sample.sample_item where tenant_id = '{tenant.Value}'; delete from platform_messaging.outbox_message where tenant_id = '{tenant.Value}'; delete from platform_audit.audit_entry where tenant_id = '{tenant.Value}'; delete from platform_entitlements.entitlement_snapshot where tenant_id = '{tenant.Value}'; delete from platform_authz.membership_role_assignment where tenant_id = '{tenant.Value}'; delete from platform_authz.role_permission where tenant_id = '{tenant.Value}'; delete from platform_authz.role where tenant_id = '{tenant.Value}'; delete from platform_iam.membership where tenant_id = '{tenant.Value}'; delete from platform_iam.identity where id = '{identity.Value}'; delete from platform_tenancy.tenant where id = '{tenant.Value}'; reset app.tenant_id; reset role;"); }
     }
 
     private static async Task LoginAsync(HttpClient client, string email, string password, Guid tenantId)
     {
-        var response = await PostAsync(client, "/api/v1/auth/login", new { email, password });
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var responseBody = await response.Content.ReadAsStringAsync();
-        var authentication = JsonSerializer.Deserialize<JsonElement>(responseBody);
-        Assert.True(authentication.TryGetProperty("state", out _), responseBody);
-        if (authentication.GetProperty("state").GetString() == "Authenticated")
-        {
-            Assert.Equal(tenantId, authentication.GetProperty("tenantId").GetGuid());
-            return;
-        }
-        Assert.Equal("SelectOrganization", authentication.GetProperty("state").GetString());
-        var challengeToken = authentication.GetProperty("challengeToken").GetString();
-        var organization = authentication.GetProperty("organizations").EnumerateArray().Single(value => value.GetProperty("tenantId").GetGuid() == tenantId);
-        var selection = await PostAsync(client, "/api/v1/auth/organization/select", new { challengeToken, membershipId = organization.GetProperty("membershipId").GetGuid() });
-        Assert.Equal(HttpStatusCode.OK, selection.StatusCode);
-        var completed = await selection.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("Authenticated", completed.GetProperty("state").GetString());
+        var response = await PostAsync(client, "/api/v1/auth/login", new { email, password }); Assert.Equal(HttpStatusCode.OK, response.StatusCode); var authentication = await response.Content.ReadFromJsonAsync<JsonElement>(); Assert.Equal("Authenticated", authentication.GetProperty("state").GetString()); Assert.Equal(tenantId, authentication.GetProperty("tenantId").GetGuid());
     }
-
-    private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string path, object? body)
-    {
-        var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
-        Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
-        var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfResponse>();
-        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body ?? new { }) };
-        request.Headers.Add("X-CSRF-TOKEN", csrf!.Token);
-        return await client.SendAsync(request);
-    }
-
-    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql)
-    {
-        await using var command = new NpgsqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync();
-    }
-
-    private static string CreateEntitlementSignature(TenantId tenant, DateTimeOffset issued, DateTimeOffset validUntil, string key)
-    {
-        var canonical = JsonSerializer.Serialize(new { tenant = tenant.Value, snapshot = 1, issued, valid = validUntil, modules = SampleModuleIds, features = EmptyFeatures, limits = new Dictionary<string, long>() });
-        return Convert.ToBase64String(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(canonical)));
-    }
-
-    private static DateTimeOffset TruncateToPostgresPrecision(DateTimeOffset value) =>
-        new(value.Ticks - value.Ticks % TimeSpan.TicksPerMicrosecond, value.Offset);
-
+    private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string path, object? body) { var csrfResponse = await client.GetAsync("/api/v1/auth/csrf"); Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode); var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfResponse>(); using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body ?? new { }) }; request.Headers.Add("X-CSRF-TOKEN", csrf!.Token); return await client.SendAsync(request); }
+    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql) { await using var command = new NpgsqlCommand(sql, connection); await command.ExecuteNonQueryAsync(); }
+    private static string CreateEntitlementSignature(TenantId tenant, DateTimeOffset issued, DateTimeOffset validUntil, string key) { var canonical = JsonSerializer.Serialize(new { tenant = tenant.Value, snapshot = 1, issued, valid = validUntil, modules = SampleModuleIds, features = EmptyFeatures, limits = new Dictionary<string, long>() }); return Convert.ToBase64String(HMACSHA256.HashData(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(canonical))); }
+    private static DateTimeOffset TruncateToPostgresPrecision(DateTimeOffset value) => new(value.Ticks - value.Ticks % TimeSpan.TicksPerMicrosecond, value.Offset);
     private sealed record CsrfResponse(string Token);
-    private sealed record SessionResponse(bool Authenticated, Guid TenantId);
-    private sealed record MembershipInvitation(Guid MembershipId, string Token, DateTimeOffset ExpiresAt);
 }

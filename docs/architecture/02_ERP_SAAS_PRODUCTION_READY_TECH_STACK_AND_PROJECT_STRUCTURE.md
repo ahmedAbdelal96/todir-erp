@@ -2658,7 +2658,7 @@ External systems use WireMock.Net or sandbox environments.
 
 Playwright scenarios focus on high-value workflows:
 
-- login / tenant switch.
+- login / tenant-bound session establishment.
 - customer create.
 - product create.
 - quotation.

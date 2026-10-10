@@ -1509,7 +1509,7 @@ Each mutation defines explicit invalidation/update behavior.
 
 Avoid broad global invalidation.
 
-Entity/tenant switch must never retain stale scoped data.
+Tenant context initialization or legal-entity change must never retain stale scoped data.
 
 Optimistic updates only where correctness risk is low and rollback is clear.
 

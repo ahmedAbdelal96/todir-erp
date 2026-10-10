@@ -23,7 +23,7 @@ public sealed class TransactionIntegrationTests
         await admin.OpenAsync();
         try
         {
-            await ExecuteAsync(admin, $"SET ROLE erp_owner; SET app.tenant_id = '{tenantId.Value}'; INSERT INTO platform_tenancy.tenant (id, slug, display_name, status, created_at, version) VALUES ('{tenantId.Value}', 'tx-{tenantId.Value:N}', 'Transaction', 'Active', now(), 1); RESET app.tenant_id; RESET ROLE;");
+            await ExecuteAsync(admin, $"SET ROLE erp_owner; SET app.tenant_id = '{tenantId.Value}'; INSERT INTO platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) VALUES ('{tenantId.Value}', 'tx-{tenantId.Value:N}', 'Transaction', 'Active', 'tx-{tenantId.Value:N}.local', 'tx-{tenantId.Value:N}.local', now(), 1); RESET app.tenant_id; RESET ROLE;");
             await using var dataSource = NpgsqlDataSource.Create(appConnectionString);
             var coordinator = new NpgsqlTransactionCoordinator(dataSource);
             await coordinator.ExecuteAsync(tenantId, async (context, cancellationToken) =>
@@ -65,7 +65,7 @@ public sealed class TransactionIntegrationTests
         await admin.OpenAsync();
         try
         {
-            await ExecuteAsync(admin, $"SET ROLE erp_owner; SET app.tenant_id = '{tenantId.Value}'; INSERT INTO platform_tenancy.tenant (id, slug, display_name, status, created_at, version) VALUES ('{tenantId.Value}', 'tx-rollback-{tenantId.Value:N}', 'Rollback', 'Active', now(), 1); RESET app.tenant_id; RESET ROLE;");
+            await ExecuteAsync(admin, $"SET ROLE erp_owner; SET app.tenant_id = '{tenantId.Value}'; INSERT INTO platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) VALUES ('{tenantId.Value}', 'tx-rollback-{tenantId.Value:N}', 'Rollback', 'Active', 'tx-rollback-{tenantId.Value:N}.local', 'tx-rollback-{tenantId.Value:N}.local', now(), 1); RESET app.tenant_id; RESET ROLE;");
             await using var dataSource = NpgsqlDataSource.Create(appConnectionString);
             var coordinator = new NpgsqlTransactionCoordinator(dataSource);
             await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.ExecuteAsync<bool>(tenantId, async (context, cancellationToken) =>
@@ -111,7 +111,7 @@ public sealed class TransactionIntegrationTests
         try
         {
             await ExecuteAsync(admin, "set role erp_owner; create schema sample_a; create schema sample_b; create table sample_a.entity (id uuid primary key, tenant_id uuid not null); create table sample_b.entity (id uuid primary key, tenant_id uuid not null); alter table sample_a.entity enable row level security; alter table sample_a.entity force row level security; alter table sample_b.entity enable row level security; alter table sample_b.entity force row level security; create policy tenant_isolation on sample_a.entity using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid); create policy tenant_isolation on sample_b.entity using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid); grant usage on schema sample_a, sample_b to erp_app; grant select, insert on sample_a.entity, sample_b.entity to erp_app; reset role;");
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantId.Value}', 'sample-ab-{tenantId.Value:N}', 'Sample A/B', 'Active', now(), 1); reset app.tenant_id; reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'sample-ab-{tenantId.Value:N}', 'Sample A/B', 'Active', 'sample-ab-{tenantId.Value:N}.local', 'sample-ab-{tenantId.Value:N}.local', now(), 1); reset app.tenant_id; reset role;");
 
             await using var dataSource = NpgsqlDataSource.Create(appConnectionString);
             var coordinator = new NpgsqlTransactionCoordinator(dataSource);

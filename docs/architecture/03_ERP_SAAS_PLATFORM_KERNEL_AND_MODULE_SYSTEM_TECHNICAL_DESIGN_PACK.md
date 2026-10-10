@@ -889,10 +889,9 @@ timezone?
 created_at
 ```
 
-## Membership state
+## Tenant-bound authorization subject state
 
 ```text
-Invited
 Active
 Suspended
 Revoked
@@ -901,15 +900,15 @@ Revoked
 ## Login flow
 
 ```text
-Identity authentication
+Email and password authentication
         ↓
-List active memberships
+Parse login domain and resolve one active tenant
         ↓
-Choose / resolve tenant
+Load tenant-bound account by normalized email
         ↓
-Create tenant-scoped session context
+Create session bound to that tenant
         ↓
-Membership authorization
+Authorization subject evaluation
 ```
 
 ## Web authentication
@@ -2555,7 +2554,6 @@ Generated client is not manually edited.
 Must implement:
 
 - login;
-- tenant switcher;
 - legal entity switcher;
 - branch context;
 - module-aware navigation;
@@ -3027,18 +3025,6 @@ Unique:
 
 ```text
 (tenant_id, identity_id)
-```
-
-### `membership_invitation`
-
-```text
-id
-tenant_id
-email
-token_hash
-expires_at
-status
-invited_by
 ```
 
 ## 39.4 `platform_authz`
@@ -4194,7 +4180,7 @@ Do not create business roles (Sales Manager, Accountant) in Kernel; modules late
 # 93. Platform Permission Examples
 
 ```text
-platform.membership.manage
+platform.identity.manage
 platform.role.manage
 platform.module.view
 platform.module.activate
@@ -4631,7 +4617,7 @@ effectivePermissions
 
 Do not trust this state for backend security.
 
-On tenant switch:
+When tenant context is established at login:
 
 - clear tenant-scoped TanStack Query cache;
 - regenerate current context;

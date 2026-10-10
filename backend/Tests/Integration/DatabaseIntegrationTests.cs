@@ -16,7 +16,7 @@ public sealed class DatabaseIntegrationTests
         var password = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
         var tenantA = Guid.CreateVersion7();
         var tenantB = Guid.CreateVersion7();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantA}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantA}', 'fuzz-a-{tenantA:N}', 'A', 'Active', now(), 1); set app.tenant_id = '{tenantB}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantB}', 'fuzz-b-{tenantB:N}', 'B', 'Active', now(), 1); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantA}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantA}', 'fuzz-a-{tenantA:N}', 'A', 'Active', 'fuzz-a-{tenantA:N}.local', 'fuzz-a-{tenantA:N}.local', now(), 1); set app.tenant_id = '{tenantB}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantB}', 'fuzz-b-{tenantB:N}', 'B', 'Active', 'fuzz-b-{tenantB:N}.local', 'fuzz-b-{tenantB:N}.local', now(), 1); reset app.tenant_id; reset role;");
         var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString;
         try
         {

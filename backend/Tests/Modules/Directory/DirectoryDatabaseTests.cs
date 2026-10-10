@@ -21,8 +21,8 @@ public sealed class DirectoryDatabaseTests
         await using (var admin = NpgsqlDataSource.Create(adminConnectionString))
         await using (var connection = await admin.OpenConnectionAsync())
         {
-            await using var command = new NpgsqlCommand("insert into platform_tenancy.tenant (id,slug,display_name,status,created_at,version) values ($1,$2,$3,'Active',now(),1),($4,$5,$6,'Active',now(),1)", connection);
-            command.Parameters.AddWithValue(tenantA); command.Parameters.AddWithValue($"directory-a-{tenantA:N}"); command.Parameters.AddWithValue("Directory A"); command.Parameters.AddWithValue(tenantB); command.Parameters.AddWithValue($"directory-b-{tenantB:N}"); command.Parameters.AddWithValue("Directory B"); await command.ExecuteNonQueryAsync();
+            await using var command = new NpgsqlCommand("insert into platform_tenancy.tenant (id,slug,display_name,status,login_domain,normalized_login_domain,created_at,version) values ($1,$2,$3,'Active',$4,$4,now(),1),($5,$6,$7,'Active',$8,$8,now(),1)", connection);
+            command.Parameters.AddWithValue(tenantA); command.Parameters.AddWithValue($"directory-a-{tenantA:N}"); command.Parameters.AddWithValue("Directory A"); command.Parameters.AddWithValue($"directory-a-{tenantA:N}.local"); command.Parameters.AddWithValue(tenantB); command.Parameters.AddWithValue($"directory-b-{tenantB:N}"); command.Parameters.AddWithValue("Directory B"); command.Parameters.AddWithValue($"directory-b-{tenantB:N}.local"); await command.ExecuteNonQueryAsync();
         }
         try
         {
@@ -53,7 +53,7 @@ public sealed class DirectoryDatabaseTests
         await using (var admin = NpgsqlDataSource.Create(adminConnectionString))
         await using (var connection = await admin.OpenConnectionAsync())
         {
-            await using var command = new NpgsqlCommand("insert into platform_tenancy.tenant (id,slug,display_name,status,created_at,version) values ($1,$2,$3,'Active',now(),1)", connection); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue($"directory-service-{tenantId:N}"); command.Parameters.AddWithValue("Directory Service Test"); await command.ExecuteNonQueryAsync();
+            await using var command = new NpgsqlCommand("insert into platform_tenancy.tenant (id,slug,display_name,status,login_domain,normalized_login_domain,created_at,version) values ($1,$2,$3,'Active',$4,$4,now(),1)", connection); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue($"directory-service-{tenantId:N}"); command.Parameters.AddWithValue("Directory Service Test"); command.Parameters.AddWithValue($"directory-service-{tenantId:N}.local"); await command.ExecuteNonQueryAsync();
         }
         try
         {

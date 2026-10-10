@@ -1,10 +1,12 @@
-# Identity and membership
+# Tenant-bound identity and authorization subject
 
-Authentication identity is global and independent from tenant membership. A
-single identity may have multiple memberships, while every membership is
-tenant-scoped and may carry default legal-entity and branch references.
+Every login account is created inside exactly one tenant and keeps that tenant
+for its lifetime. The login domain routes the request to one active tenant,
+then the account is loaded by tenant and normalized full email. There is no
+global identity, cross-tenant account, organization-selection challenge, or
+tenant-switching session.
 
-Membership status is explicit (`Invited`, `Active`, `Suspended`, `Revoked`).
-Tenant RLS protects memberships, and session validation must resolve an active
-membership before establishing tenant context. Employee records are not part of
-this kernel boundary.
+The existing tenant-bound authorization subject is created with the account so
+roles and legal-entity/branch scope remain owned by the same tenant; it is not
+a login membership or a cross-company relationship. Employee records are not
+part of this kernel boundary.

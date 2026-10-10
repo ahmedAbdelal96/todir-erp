@@ -20,7 +20,7 @@ public sealed class NotificationIntegrationTests
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantId.Value}', 'notification-{tenantId.Value:N}', 'Notification', 'Active', now(), 1); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'notification-{tenantId.Value:N}', 'Notification', 'Active', 'notification-{tenantId.Value:N}.local', 'notification-{tenantId.Value:N}.local', now(), 1); reset app.tenant_id; reset role;");
 
         try
         {

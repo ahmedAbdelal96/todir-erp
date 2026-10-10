@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Identity;
 using Shared.Primitives.Identifiers;
 
 namespace Core.Identity;
@@ -15,7 +16,12 @@ public sealed record Identity(
     DateTimeOffset CreatedAt,
     DateTimeOffset? LastLoginAt,
     Guid SecurityStamp,
-    string? PasswordHash = null);
+    string? PasswordHash = null,
+    TenantId? TenantId = null,
+    string? Name = null,
+    string? LoginPrefix = null,
+    bool MustChangePassword = false,
+    bool MfaEnabled = false);
 
 public sealed record Membership(
     MembershipId Id,
@@ -40,6 +46,37 @@ public sealed record SessionContext(
     DateTimeOffset ExpiresAt,
     Guid SecurityStamp);
 
+public static class LoginDomainConventions
+{
+    private static readonly System.Text.RegularExpressions.Regex DomainPattern = new(
+        "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static readonly System.Text.RegularExpressions.Regex PrefixPattern = new(
+        "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    public static string NormalizeDomain(string domain)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(domain);
+        var normalized = domain.Trim().ToLowerInvariant();
+        if (normalized.Contains('@') || normalized.Contains("://", StringComparison.Ordinal) || normalized.Contains('/') || !DomainPattern.IsMatch(normalized))
+            throw new ArgumentException("identity.login_domain_invalid", nameof(domain));
+        return normalized;
+    }
+
+    public static string NormalizePrefix(string prefix)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
+        var normalized = prefix.Trim().ToLowerInvariant();
+        if (!PrefixPattern.IsMatch(normalized) || normalized.Contains('@') || normalized.Any(char.IsControl))
+            throw new ArgumentException("identity.email_prefix_invalid", nameof(prefix));
+        return normalized;
+    }
+
+    public static string BuildEmail(string prefix, string domain) => $"{NormalizePrefix(prefix)}@{NormalizeDomain(domain)}";
+}
+
 public interface IIdentityAuthenticator
 {
     Task<Identity?> AuthenticateAsync(string email, string password, CancellationToken cancellationToken = default);
@@ -54,6 +91,7 @@ public interface ISessionService
 
 public static class IdentityConventions
 {
+    private static readonly PasswordHasher<object> PasswordHasher = new();
     public const int FailedLoginThreshold = 5;
     public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
     public static readonly TimeSpan AuthenticationChallengeLifetime = TimeSpan.FromMinutes(5);
@@ -68,14 +106,23 @@ public static class IdentityConventions
     public static string HashPassword(string password)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(password);
-        var salt = RandomNumberGenerator.GetBytes(16);
-        var hash = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, 120_000, HashAlgorithmName.SHA256, 32);
-        return $"pbkdf2-sha256$120000${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+        return PasswordHasher.HashPassword(new object(), password);
     }
 
     public static bool VerifyPassword(string password, string encoded)
     {
         if (string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(encoded)) return false;
+        try
+        {
+            if (PasswordHasher.VerifyHashedPassword(new object(), encoded, password) is PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded) return true;
+        }
+        catch (FormatException) { }
+        return VerifyLegacyPassword(password, encoded);
+    }
+
+    private static bool VerifyLegacyPassword(string password, string encoded)
+    {
+        // Existing accounts may still carry the pre-correction hash format; new writes always use PasswordHasher.
         var parts = encoded.Split('$');
         if (parts.Length != 4 || parts[0] != "pbkdf2-sha256" || !int.TryParse(parts[1], out var iterations)) return false;
         try

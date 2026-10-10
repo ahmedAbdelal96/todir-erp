@@ -24,7 +24,7 @@ public sealed class SupportAccessIntegrationTests
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, created_at, version) values ('{tenantId.Value}', 'support-{tenantId.Value:N}', 'Support', 'Active', now(), 1); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'support-{tenantId.Value:N}', 'Support', 'Active', 'support-{tenantId.Value:N}.local', 'support-{tenantId.Value:N}.local', now(), 1); reset app.tenant_id; reset role;");
 
         try
         {

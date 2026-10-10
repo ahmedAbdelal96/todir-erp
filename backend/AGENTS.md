@@ -150,9 +150,9 @@ Repositories own focused persistence access and expose business-useful patterns,
 
 ## 13. Authorization, authentication, APIs, and errors
 
-Backend authorization is authoritative. Check tenant membership, role/permission, legal-entity scope, and business-state permission where applicable. UI hiding is not security.
+Backend authorization is authoritative. Authentication derives one tenant from the login domain and binds the account to that tenant for the session. Check the tenant-bound authorization subject, role/permission, legal-entity scope, and business-state permission where applicable. There is no organization-selection or tenant-switching authentication flow. UI hiding is not security.
 
-Authentication APIs model the user journey. Normal login begins with email and password, not `TenantId`, `OrganizationId`, or internal IDs. If one organization is available, continue automatically where business rules permit; if multiple are available, return a business-level organization selection challenge; if MFA is required, return a distinct MFA challenge/state. MFA is not a random optional field on the initial login form.
+Authentication APIs model the user journey. Normal login begins with email and password, not `TenantId`, `OrganizationId`, or internal IDs. The backend parses the email domain, resolves exactly one active tenant, and continues automatically. If an initial password change or MFA is required, return its distinct short-lived challenge/state. MFA is not a random optional field on the initial login form.
 
 Design REST/JSON/OpenAPI around business capabilities, not automatic database CRUD. Keep routes and contracts stable, list endpoints bounded, and error responses consistent `ProblemDetails` with stable machine-readable codes and frontend-usable context. Do not expose SQL errors, stack traces, table names, ORM language, database constraint names, or unnecessary internal identifiers; translate failures into business/application meaning.
 
