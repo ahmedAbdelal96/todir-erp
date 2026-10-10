@@ -127,6 +127,38 @@ To ensure complete visual and behavioral uniformity across the entire platform, 
    - All `Table` and `DataGrid` instances must fit 100% of their container width (`table-layout: fixed`, `width: 100%`, `overflow: hidden`, and `autoSizeStrategy={{ type: "fitGridWidth" }}`).
    - Columns must distribute proportionally using flex or percentage widths. Cells and headers must use `overflow-wrap: anywhere; word-break: break-word` so text flows cleanly without overflowing the table boundaries.
 
+### 7.7. Details Pages & Presentation Archetypes Standard (Data-Driven Taxonomy)
+Not every page follows the same layout; the presentation archetype MUST be chosen based on the volume, structure, and operational nature of the data:
+
+1. **`RecordPage` (Master Entity & 360-View Details)**:
+   - *When to use*: Master records (Customers, Suppliers, Users, Products, Employees, Chart of Accounts).
+   - *Canonical Composition*:
+     - **Header**: Record code in `<bdi>`, status badge, entity title, primary & secondary action buttons (`تعديل`, `تعطيل`, `رجوع`), and breadcrumbs.
+     - **KPI / Stat Metric Cards**: Optional top row for high-impact numbers (e.g. Total Invoiced, Credit Limit, Open Balance).
+     - **Main Content**: Responsive 2-column or multi-section layout composed of structured `Surface` cards (e.g. Identity Card, Contact & Address Card, Financial Card).
+     - **Tabbed Sub-Views**: For deep records, compose `Tabs` (e.g. Overview, Transactions, Activity History, Documents).
+     - **Audit Footer**: Creation and modification metadata (`تم الإنشاء بواسطة...`).
+2. **`DocumentPage` (Transactional & Financial Document Details)**:
+   - *When to use*: Commercial and accounting transaction documents (Invoices, Purchase Orders, Bills, Payment Vouchers, Manual Journals).
+   - *Canonical Composition*:
+     - **Document Header**: Document type pill, document number title, multi-axis statuses (Lifecycle, Approval, GL Posting, Compliance, Settlement), and locked reason badge with `LockIcon`.
+     - **Document Metadata Surface**: Compact key-value grid for Party, Issue Date, Due Date, Payment Terms, and Currency.
+     - **Line Items Grid Surface**: Zero-horizontal-scroll line items table displaying products, descriptions, quantities, unit prices, tax rates, and line totals.
+     - **Totals & Summary Surface**: Subtotal, Tax breakdown, Discounts, and Grand Total with exact money formatting, alongside document notes.
+3. **`WizardPage` (Multi-Step Guided Linear Workflows)**:
+   - *When to use*: Multi-stage operational operations (Data Import/Migration, Period Closing, Setup Onboarding, Batch Processing).
+   - *Canonical Composition*:
+     - **Stepper Header**: Numbered & labeled step indicators with Completed (`✓`), Current (active ring), and Upcoming states.
+     - **Focused Step Surface**: Dedicated card containing only the active step's form fields or data preview.
+     - **Sticky Action Footer**: Standardized `السابق`, `التالي`, and `إنهاء / حفظ` buttons with built-in loading and validation gating.
+4. **`SettingsPage` (Category-Driven Configuration Layout)**:
+   - *When to use*: Multi-category module and platform settings (Tax rules, Company profile, Number series, Notification preferences).
+   - *Canonical Composition*:
+     - **Side Navigation Rail**: Vertical tab navigation for settings categories.
+     - **Section Form Surfaces**: Distinct card sections with title, description, form fields, and Save/Reset action bar.
+5. **`Surface` Card Discipline**:
+   - All details sections must be encapsulated in standard `Surface` containers (with optional `title`, `description`, `headerActions`, and `footer`) rather than unbordered floating text or ad-hoc boxes.
+
 Do not create module-local generic duplicates such as a second button, table, dialog, or text field. Module-owned components are appropriate for domain behavior such as a party picker or invoice-lines editor. Promote a module component to `components/` only after genuine broad reuse, domain neutrality, accessibility, RTL/theme support, and the required story and unit test.
 
 ## 8. TypeScript, forms, and state

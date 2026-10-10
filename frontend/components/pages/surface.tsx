@@ -2,6 +2,10 @@ import React, { type ReactNode } from "react";
 import clsx from "clsx";
 
 export interface SurfaceProps {
+  readonly title?: string | undefined;
+  readonly description?: string | undefined;
+  readonly headerActions?: ReactNode | undefined;
+  readonly footer?: ReactNode | undefined;
   readonly children: ReactNode;
   readonly padding?: "none" | "compact" | "normal" | "spacious" | undefined;
   readonly variant?: "card" | "subtle" | "flat" | undefined;
@@ -10,6 +14,10 @@ export interface SurfaceProps {
 }
 
 export function Surface({
+  title,
+  description,
+  headerActions,
+  footer,
   children,
   padding = "normal",
   variant = "card",
@@ -25,7 +33,7 @@ export function Surface({
 
   const backgroundMap = {
     card: "var(--color-surface-card, #ffffff)",
-    subtle: "var(--color-surface-subtle, #f1f5f9)",
+    subtle: "var(--color-surface-subtle, #f8fafc)",
     flat: "transparent"
   };
 
@@ -35,6 +43,8 @@ export function Surface({
     flat: "none"
   };
 
+  const hasHeader = Boolean(title || headerActions || description);
+
   return (
     <div
       className={clsx("ui-surface", `ui-surface--${variant}`, className)}
@@ -43,14 +53,56 @@ export function Surface({
         border: borderMap[variant],
         borderRadius: "var(--radius-lg, 0.75rem)",
         boxShadow: variant === "card" ? "var(--shadow-xs)" : "none",
-        padding: paddingMap[padding],
         width: "100%",
         boxSizing: "border-box",
         overflow: "hidden",
         ...style
       }}
     >
-      {children}
+      {hasHeader && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+            padding: "0.875rem 1.25rem",
+            borderBottom: "1px solid var(--color-border-subtle, #f1f5f9)",
+            backgroundColor: variant === "card" ? "var(--color-surface-subtle, #f8fafc)" : "transparent"
+          }}
+        >
+          <div>
+            {title && (
+              <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                {title}
+              </h3>
+            )}
+            {description && (
+              <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                {description}
+              </p>
+            )}
+          </div>
+          {headerActions && <div>{headerActions}</div>}
+        </div>
+      )}
+
+      <div style={{ padding: paddingMap[padding] }}>
+        {children}
+      </div>
+
+      {footer && (
+        <div
+          style={{
+            padding: "0.75rem 1.25rem",
+            borderTop: "1px solid var(--color-border-subtle, #f1f5f9)",
+            backgroundColor: "var(--color-surface-subtle, #f8fafc)"
+          }}
+        >
+          {footer}
+        </div>
+      )}
     </div>
   );
 }

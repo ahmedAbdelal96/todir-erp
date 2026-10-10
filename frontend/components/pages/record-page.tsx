@@ -9,6 +9,8 @@ export interface RecordPageProps {
   readonly status?: StatusVariant | string | undefined;
   readonly breadcrumbs?: readonly BreadcrumbItem[] | undefined;
   readonly headerActions?: ReactNode | undefined;
+  readonly kpiCards?: ReactNode | undefined;
+  readonly tabs?: ReactNode | undefined;
   readonly sidebar?: ReactNode | undefined;
   readonly auditInfo?: {
     readonly createdAt?: string | undefined;
@@ -26,6 +28,8 @@ export function RecordPage({
   status,
   breadcrumbs,
   headerActions,
+  kpiCards,
+  tabs,
   sidebar,
   auditInfo,
   children,
@@ -55,21 +59,22 @@ export function RecordPage({
           flexWrap: "wrap",
           gap: "1rem",
           paddingBottom: "1rem",
-          borderBottom: "1px solid var(--color-border-default)"
+          borderBottom: "1px solid var(--color-border-default, #e2e8f0)"
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
               {recordCode && (
                 <span
                   style={{
                     fontFamily: "var(--font-mono, monospace)",
                     fontSize: "0.875rem",
-                    color: "var(--color-content-muted)"
+                    fontWeight: 600,
+                    color: "var(--color-content-muted, #64748b)"
                   }}
                 >
-                  {recordCode}
+                  <bdi>{recordCode}</bdi>
                 </span>
               )}
               {status && <StatusBadge status={status} size="small" />}
@@ -78,8 +83,9 @@ export function RecordPage({
               style={{
                 margin: "0.25rem 0 0 0",
                 fontSize: "1.5rem",
-                fontWeight: 700,
-                color: "var(--color-content-primary)",
+                fontWeight: 800,
+                letterSpacing: "-0.01em",
+                color: "var(--color-content-primary, #0f172a)",
                 fontFamily: "var(--font-sans)"
               }}
             >
@@ -89,21 +95,42 @@ export function RecordPage({
         </div>
 
         {headerActions && (
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
             {headerActions}
           </div>
         )}
       </header>
 
+      {/* Optional Top KPI / Metrics Summary Row */}
+      {kpiCards && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "1rem",
+            width: "100%"
+          }}
+        >
+          {kpiCards}
+        </div>
+      )}
+
+      {/* Optional Tab Navigation */}
+      {tabs && (
+        <div style={{ width: "100%" }}>
+          {tabs}
+        </div>
+      )}
+
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: sidebar ? "1fr 320px" : "1fr",
+          gridTemplateColumns: sidebar ? "1fr 340px" : "1fr",
           gap: "1.5rem",
           alignItems: "start"
         }}
       >
-        <main style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        <main style={{ display: "flex", flexDirection: "column", gap: "1.5rem", minWidth: 0 }}>
           {children}
         </main>
 
@@ -127,24 +154,24 @@ export function RecordPage({
           style={{
             marginTop: "2rem",
             paddingTop: "1rem",
-            borderTop: "1px solid var(--color-border-default)",
+            borderTop: "1px solid var(--color-border-subtle, #f1f5f9)",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             fontSize: "0.75rem",
-            color: "var(--color-content-muted)",
+            color: "var(--color-content-muted, #64748b)",
             flexWrap: "wrap",
             gap: "0.5rem"
           }}
         >
           {auditInfo.createdAt && (
             <span>
-              Created: {auditInfo.createdAt} {auditInfo.createdBy ? `by ${auditInfo.createdBy}` : ""}
+              تم الإنشاء: <bdi>{auditInfo.createdAt}</bdi> {auditInfo.createdBy ? `بواسطة ${auditInfo.createdBy}` : ""}
             </span>
           )}
           {auditInfo.updatedAt && (
             <span>
-              Last modified: {auditInfo.updatedAt} {auditInfo.updatedBy ? `by ${auditInfo.updatedBy}` : ""}
+              آخر تعديل: <bdi>{auditInfo.updatedAt}</bdi> {auditInfo.updatedBy ? `بواسطة ${auditInfo.updatedBy}` : ""}
             </span>
           )}
         </footer>
