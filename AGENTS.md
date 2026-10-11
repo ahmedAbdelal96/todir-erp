@@ -10,6 +10,24 @@ Always read this root file first.
 
 This is a production-grade, Arabic-market-first, multi-tenant ERP SaaS. It is one codebase and a Modular Monolith. PostgreSQL is the system of record; the backend is .NET and the frontend is React/TypeScript. Strong domain ownership, tenant isolation, data integrity, and business simplicity are first-class requirements. Technical sophistication must remain behind a simple user experience.
 
+# 1.1 Canonical module documentation governance
+
+Every current and future module implementation is driven by its canonical Module Pack under `docs/modules/`. Before implementation, identify the exact current pack and read its full scope, business purpose, domain model, ownership, workflows, lifecycle, invariants, permissions intent, integrations, edge cases, UX intent, MVP scope, explicitly deferred scope, development seed scenarios, acceptance scenarios, and Definition of Done. The Module Pack defines **WHAT** and **WHY**; the applicable `AGENTS.md` files define **HOW**. Both remain active references throughout implementation.
+
+Existing code, database tables, DTOs, endpoints, screens, or framework patterns are not authority when they conflict with the documented module decision. Do not implement by assumption, silently reduce the documented scope, invent undocumented behavior, or mark work complete because a build, current API, or existing test passes. If the documentation is incomplete or contradictory, record the exact gap and stop the affected decision until it is resolved or explicitly deferred.
+
+Every module mission report must name the canonical pack, summarize the documented scope, list the acceptance scenarios, identify MVP versus deferred items, and list unresolved gaps. No module may be reported as `MODULE COMPLETE` until this chain is covered:
+
+```text
+Canonical Module Pack
+→ DB Coverage
+→ Backend Coverage
+→ Development Seed Coverage
+→ Frontend Coverage
+→ Documented Acceptance Scenarios
+→ Product/UX Acceptance
+```
+
 # 2. Business first
 
 Do not begin a feature or module from database tables, DTOs, controllers, React screens, or an existing framework pattern. First understand:
@@ -44,6 +62,8 @@ backend/     frontend/     docs/
 
 Backend contains `Api/`, `Worker/`, `DbMigrator/`, `Core/`, `Modules/`, `Shared/`, and `Tests/`. Frontend contains `app/`, `core/`, `components/`, `modules/`, and `tests/`.
 
+All backend database ownership, SQL baselines, migrations, database backup/restore helpers, and migration verification files live under `backend/DbMigrator/Database/`. `ops/` is reserved for deployment and infrastructure assets; never create or reference `ops/database` for backend database work.
+
 Do not recreate `src/`, `src/backend/`, `src/frontend/`, `frontend/src/`, `backend/hosts/`, `backend/platform/`, `frontend/platform/`, `apps/`, `packages/`, or another parallel platform without explicit owner approval. Do not add unnecessary nesting, speculative packages, compatibility shims, or empty folders.
 
 # 5. Naming and file discipline
@@ -55,6 +75,8 @@ Create files only in their governed directory. Do not put random SQL, scripts, l
 # 6. Ownership and architecture
 
 Every business module is the single writer and source of truth for its data. No module directly queries or writes another module's tables, schema, `DbContext`, repositories, internal services, or implementation. Cross-module interaction uses approved contracts, capabilities, public APIs, or events. Preserve an acyclic dependency graph and the existing Modular Monolith.
+
+The PostgreSQL topology is fixed: the Platform Kernel owns the single `platform` schema; each real foundation or business module owns exactly one layer-prefixed schema such as `foundation_directory` or `business_sales`; `platform_migration` is reserved for migration history; `public` contains no application data. Do not recreate one schema per Platform capability, tenant, organization, or technical service.
 
 Tenant isolation is a security boundary. Missing tenant context denies access. Backend authorization is authoritative; frontend visibility is UX only. Posted accounting records and completed stock movements are immutable. Immediate invariants use synchronous business contracts; post-commit integration uses approved Outbox/Inbox guarantees. AI never queries or writes the database directly and operates only through authorized application tools/contracts with tenant, permission, and audit controls.
 

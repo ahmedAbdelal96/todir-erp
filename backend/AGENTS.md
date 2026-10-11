@@ -17,7 +17,7 @@ backend/
 └── Tests/          # Architecture, Core, Integration, Security, and module tests
 ```
 
-`Api/` owns startup, middleware, authentication/authorization wiring, OpenAPI, health, and module registration; it is not a business-logic location. `Worker/` owns message consumers, scheduled jobs, external async processing, and long-running work; domain rules remain in the owning module. `DbMigrator/` owns controlled, ordered migration execution; production API startup must not blindly migrate. `Core/` owns platform capabilities and never depends on business modules. `Shared/` is reserved for small approved technical concepts such as primitives, contracts, and building blocks; business concepts such as Customer, Product, Invoice, Employee, or Warehouse stay in their modules. `Tests/` protects all boundaries and runtime behavior.
+`Api/` owns startup, middleware, authentication/authorization wiring, OpenAPI, health, and module registration; it is not a business-logic location. `Worker/` owns message consumers, scheduled jobs, external async processing, and long-running work; domain rules remain in the owning module. `DbMigrator/` owns controlled, ordered migration execution; production API startup must not blindly migrate. All backend database assets live under `DbMigrator/Database/`; `ops/database` is forbidden. `Core/` owns platform capabilities and never depends on business modules. `Shared/` is reserved for small approved technical concepts such as primitives, contracts, and building blocks; business concepts such as Customer, Product, Invoice, Employee, or Warehouse stay in their modules. `Tests/` protects all boundaries and runtime behavior.
 
 The approved backend technology is the existing ASP.NET Core/.NET modular monolith, PostgreSQL, REST/JSON/OpenAPI, MassTransit/RabbitMQ, Quartz where approved, and the existing host/migration topology. Do not add parallel infrastructure.
 
@@ -39,6 +39,12 @@ Before writing code, record answers to these questions in the work plan or appro
 12. What volumes, concurrency, retention, and operational workloads are realistic?
 
 Do not code while ownership, source of truth, transaction semantics, or required business decisions are unclear. Before module work, read the exact current module pack under `docs/modules/`, the Platform Kernel pack, master blueprint, production engineering baseline, relevant ADRs, and actual backend/OpenAPI contracts.
+
+### Mandatory canonical Module Pack gate
+
+Backend work must begin from the exact current module pack under `docs/modules/`. Record the pack path and reconcile its documented business purpose, domain model, ownership boundaries, workflows, lifecycle transitions, invariants, permissions intent, integrations, edge cases, MVP scope, deferred scope, development seed scenarios, acceptance scenarios, and Definition of Done against the current database, backend implementation, tests, and development seed. The Module Pack is the authority for **WHAT** and **WHY**; this manual is the authority for **HOW**.
+
+Implement every documented backend capability that is in scope, including missing work discovered during reconciliation. Preserve the documented module ownership, invariants, tenant boundaries, transaction semantics, and cross-module contracts. Add realistic, deterministic development seed coverage for every user-visible scenario required by the pack. A passing build, existing API, or passing current tests is not enough for `BACKEND COMPLETE`; that status requires documented backend scope and seed coverage to be complete, or each uncovered item to be explicitly recorded as deferred with its reason and impact. Do not invent behavior or silently reinterpret an unclear requirement; report the exact unresolved documentation or contract gap.
 
 ## 2. Physical module structure
 
@@ -136,7 +142,20 @@ Tenant isolation is defense in depth, not a convention. Never trust client-provi
 
 ## 11. Migrations and reference data
 
-`DbMigrator` owns migration execution. Migrations are deterministic and ordered, idempotent where the repository strategy requires it, forward-safe, production-aware, and tested against existing data. Add indexes/constraints safely and consider lock time and runtime for large tables. Do not casually rewrite or destroy production data and do not let API startup blindly migrate production.
+`DbMigrator` owns migration execution. The database system is intentionally a squashed baseline and must remain stable:
+
+- The only migration root is `backend/DbMigrator/Database/bootstrap/`.
+- The current baseline consists of `runtime-roles-and-schemas.sql`, one `<module>-schema.sql` per registered module, and the final `platform-rls-finalization.sql` pass.
+- `platform-kernel-schema.sql` is the complete Platform Kernel baseline and creates objects only in `platform`; it must not be split into `platform_tenancy`, `platform_iam`, `platform_org`, or other capability schemas.
+- Every foundation or business module owns one layer-prefixed schema and one baseline file. A new module is not allowed to write another module's schema.
+- `platform_migration.applied_script` identifies a migration by `(module_id, script_name)` and stores the checksum. Migration identity must use the file name, never an absolute or repository path.
+- Never edit a baseline or an applied migration after it is used by a shared environment. Future changes use a new `<module>-forward-fix-<description>.sql` file, are additive/expand-contract, and are discovered by `DbMigrator` in deterministic order.
+- `platform-rls-finalization.sql` runs after all module baselines so cross-module foreign-key creation can complete before `FORCE ROW LEVEL SECURITY` is applied. Tenant-owned tables must end with both RLS enabled and forced.
+- SQL baselines must not contain application seed data, destructive reset commands, `DROP SCHEMA`, or references to the retired `ops/database` path.
+- Only `DbMigrator` may create or alter application database objects. API and Worker startup must never migrate, seed, squash, or repair the database.
+- A baseline squash/reset is allowed only before shared or production environments exist, with explicit owner approval and a fresh database. Once a shared environment exists, preserve its migration chain and add forward-fixes instead of deleting history.
+
+Migrations are deterministic, idempotent where the repository strategy requires it, forward-safe, production-aware, and tested against an empty database and existing data. Add indexes/constraints safely and consider lock time and runtime for large tables. Do not casually rewrite or destroy production data and do not let API startup blindly migrate production.
 
 Reference data has explicit ownership and versioning. Do not seed mutable customer business data as code migrations. Country-specific legal/reference data belongs in the approved country/provider architecture.
 
@@ -150,11 +169,13 @@ Repositories own focused persistence access and expose business-useful patterns,
 
 ## 12.1 Development seed data
 
-Canonical realistic development data is a maintained backend deliverable, not a migration fixture or disposable demo. Seed infrastructure lives only in `backend/DbMigrator/SeedData/` and is run explicitly with `DbMigrator --seed development`; API and Worker startup must never seed implicitly. The command is accepted only in an explicitly configured `Development`, `Test`, or `Testing` environment and must fail immediately for Production or an unspecified environment. Required credentials come from environment variables, are never printed or committed, and are hashed through the same ASP.NET Identity password path used by normal account writes.
+Canonical realistic development data is a maintained backend deliverable, not a migration fixture or disposable demo. Seed infrastructure lives only in `backend/DbMigrator/SeedData/` and is run explicitly with `DbMigrator --seed development`; API and Worker startup must never seed implicitly. The command is accepted only in an explicitly configured `Development`, `Test`, or `Testing` environment and must fail immediately for Production or an unspecified environment. Local development credentials are read from the ignored shared `backend/appsettings.Development.json` under `Seed:`, alongside the shared connection string; they are never printed or committed and are hashed through the same ASP.NET Identity password path used by normal account writes. CI or other controlled environments may provide an equivalent configuration source without changing seed code.
 
 Development seed data is deterministic, idempotent, stable-ID based, Arabic-first, realistic, and valid. It maintains the two canonical tenants `شركة أطلس للتجارة` (`atlas.com`) and `شركة دلتا للتوريدات` (`delta.com`), seeds both tenants for every implemented user-visible module, respects module ownership and the real dependency order, and never invents future-module facts. It must include meaningful pagination, Arabic/English search variation, sorting/filter variation, active/inactive lifecycle states, and other valid edge states. Tenant-owned writes must preserve RLS and explicit tenant context; real runtime verification must prove Atlas cannot see Delta and Delta cannot see Atlas. Seed reruns ensure their own records without deleting arbitrary developer data.
 
 Every future user-visible business module must add its own `<ModuleName>Seed.cs` stage and focused seed verification before `BACKEND COMPLETE`. A backend module is not `BACKEND COMPLETE — READY FOR FRONTEND` until both backend implementation and `DEVELOPMENT SEED READY` have passed. Performance/load generators are separate from normal development seed data, and Tax or any other unimplemented module must not receive seed data in advance.
+
+For every backend module mission report, include the canonical Module Pack path, documented backend scope, documented acceptance scenarios, MVP and deferred items, database/backend/seed coverage, and unresolved gaps. Do not report `BACKEND COMPLETE` while any documented in-scope capability or required seed scenario is missing.
 
 ## 13. Authorization, authentication, APIs, and errors
 

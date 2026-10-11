@@ -42,6 +42,18 @@ frontend/
 
 ---
 
+## 0.1 Canonical Module Documentation Governance
+
+Every frontend module mission must identify and read the exact current Module Pack under `docs/modules/` before design or implementation. Read the documented product vision, intended users, business workflows, canonical terminology, roles and permissions intent, lifecycle and edge cases, UX intent, MVP scope, explicitly deferred scope, development seed scenarios, acceptance scenarios, and Definition of Done. The Module Pack defines **WHAT** and **WHY**; this manual defines **HOW**. Keep referring to the pack during implementation and verification.
+
+Design from the documented business workflow and user task, not from DTOs, database columns, existing endpoints, or an existing screen pattern. Use the pack's business terminology, progressive disclosure, and realistic seeded scenarios. Do not hide a documented journey, invent UI behavior by assumption, silently reduce scope, or treat passing TypeScript, component tests, or Playwright clicks as UX completion.
+
+Before frontend completion, inspect the backend and API contract against the Module Pack. If a documented user journey lacks the backend capability, contract, permission, or data needed for a correct experience, stop that journey and report the exact backend gap and affected acceptance scenario; do not work around business truth in the frontend. Frontend completion requires the documented user journeys and acceptance scenarios to work with canonical development seed data, or each uncovered item to be explicitly recorded as deferred with its reason and impact.
+
+Every frontend module mission report must include the canonical Module Pack path, documented product/UX scope, acceptance scenarios, MVP and deferred items, backend/API gaps, seed scenarios used for verification, and unresolved gaps.
+
+---
+
 ## 1. Core Product & UX Principles
 
 ### Simple Outside. Powerful Inside.
