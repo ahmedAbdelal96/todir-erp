@@ -12,19 +12,27 @@ namespace Modules.Directory.Repositories;
 
 public sealed class DirectoryRepository(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource)
 {
-    public async Task<PartyDetails> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, CreatePartyRequest request, Guid correlationId, string? traceParent, bool allowDuplicate, CancellationToken cancellationToken)
+    public Task<PartyDetails> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, CreatePartyRequest request, Guid correlationId, string? traceParent, bool allowDuplicate, CancellationToken cancellationToken) => CreateAsync(tenantId, actorId, membershipId, request, correlationId, traceParent, allowDuplicate, null, cancellationToken);
+
+    public async Task<PartyDetails> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, CreatePartyRequest request, Guid correlationId, string? traceParent, bool allowDuplicate, string? idempotencyKey, CancellationToken cancellationToken)
     {
         Validate(request);
         var id = Guid.CreateVersion7();
         await coordinator.ExecuteAsync(tenantId, async (context, ct) =>
         {
             var now = DateTimeOffset.UtcNow;
+            if (!string.IsNullOrWhiteSpace(idempotencyKey))
+            {
+                await using var prior = new NpgsqlCommand("select response_json->>'partyId' from foundation_directory.import_operation where tenant_id=$1 and idempotency_key=$2", context.Connection, context.Transaction);
+                Add(prior, tenantId.Value, idempotencyKey.Trim());
+                if (await prior.ExecuteScalarAsync(ct) is string priorParty && Guid.TryParse(priorParty, out var priorId)) return priorId;
+            }
             var normalizedName = DirectoryNormalization.Name(request.DisplayName);
             var duplicate = await FindDuplicateAsync(context.Connection, context.Transaction, tenantId, request, ct);
             if (duplicate is not null && !allowDuplicate) throw new DirectoryException("directory.duplicate_suspected", duplicate.Value.Reason);
             await ExecuteAsync(context, "insert into foundation_directory.party (tenant_id,id,party_type,status,display_name,display_name_normalized,legal_name,trade_name,name_ar,name_en,first_name,middle_name,last_name,country_code,primary_language,created_by,updated_by,created_at,updated_at,version) values ($1,$2,$3,'Active',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$16,1)",
                 ct, tenantId.Value, id, request.PartyType.ToString(), request.DisplayName.Trim(), normalizedName, Null(request.LegalName), Null(request.TradeName), Null(request.NameAr), Null(request.NameEn), Null(request.FirstName), Null(request.MiddleName), Null(request.LastName), Null(request.CountryCode), Null(request.PrimaryLanguage), actorId, now);
-            foreach (var role in request.Roles.Distinct()) await ExecuteAsync(context, "insert into foundation_directory.party_role (tenant_id,party_id,role_code,status,created_by,created_at,updated_at,version) values ($1,$2,$3,'Active',$4,$5,$5,1)", ct, tenantId.Value, id, role.ToString(), actorId, now);
+            foreach (var role in (request.Roles ?? []).Distinct()) await ExecuteAsync(context, "insert into foundation_directory.party_role (tenant_id,party_id,role_code,status,created_by,created_at,updated_at,version,active_from) values ($1,$2,$3,'Active',$4,$5,$5,1,$5::date)", ct, tenantId.Value, id, role.ToString(), actorId, now);
             await ExecuteAsync(context, "insert into foundation_directory.party_visibility (tenant_id,visibility_id,party_id,scope_type) values ($1,$2,$3,'TenantWide')", ct, tenantId.Value, Guid.CreateVersion7(), id);
             foreach (var identifier in request.Identifiers ?? []) await InsertIdentifierAsync(context, tenantId, id, identifier, ct);
             foreach (var point in request.ContactPoints ?? []) await InsertContactPointAsync(context, tenantId, id, point, ct);
@@ -32,6 +40,7 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
             if (duplicate is not null) await ExecuteAsync(context, "insert into foundation_directory.duplicate_candidate (tenant_id,id,party_id,candidate_party_id,reason,confidence,status,created_at) values ($1,$2,$3,$4,$5,$6,'Open',$7)", ct, tenantId.Value, Guid.CreateVersion7(), id, duplicate.Value.PartyId, duplicate.Value.Reason, duplicate.Value.Confidence, now);
             await AuditAsync(context, tenantId, actorId, membershipId, id, "party_created", null, new { request.DisplayName, request.PartyType }, correlationId, now, ct);
             context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "DirectoryPartyCreatedV1", JsonSerializer.Serialize(new { partyId = id }), tenantId, now, correlationId, id, "directory", traceParent));
+            if (!string.IsNullOrWhiteSpace(idempotencyKey)) await ExecuteAsync(context, "insert into foundation_directory.import_operation (tenant_id,id,idempotency_key,operation_type,response_json,created_at,completed_at) values ($1,$2,$3,'DirectoryPartyCreate',jsonb_build_object('partyId',$4),$5,$5)", ct, tenantId.Value, Guid.CreateVersion7(), idempotencyKey.Trim(), id, now);
             return id;
         }, cancellationToken);
         return await GetAsync(tenantId, id, true, cancellationToken) ?? throw new DirectoryException("directory.party_not_found", "Created party could not be read.");
@@ -61,7 +70,7 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
             var changed = await ExecuteAsync(context, "update foundation_directory.party set status=$3,updated_by=$4,updated_at=$5,version=version+1 where tenant_id=$1 and id=$2 and version=$6 and status=$7", ct, tenantId.Value, partyId, target, actorId, now, version, restore ? "Archived" : "Active");
             if (changed == 0) throw new DirectoryException("directory.concurrency_conflict", "The party status was changed by another request or is not in the expected state.");
             await AuditAsync(context, tenantId, actorId, membershipId, partyId, restore ? "party_restored" : "party_archived", null, new { status = target }, correlationId, now, ct);
-            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "DirectoryPartyArchivedV1", JsonSerializer.Serialize(new { partyId, status = target }), tenantId, now, correlationId, partyId, "directory", traceParent));
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), target == PartyStatus.Archived.ToString() ? "DirectoryPartyArchivedV1" : "DirectoryPartyRestoredV1", JsonSerializer.Serialize(new { partyId, status = target }), tenantId, now, correlationId, partyId, "directory", traceParent));
             return true;
         }, cancellationToken);
         return await GetAsync(tenantId, partyId, true, cancellationToken) ?? throw new DirectoryException("directory.party_not_found", "Party was not found.");
@@ -74,7 +83,7 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
             var now = DateTimeOffset.UtcNow;
             var changed = await ExecuteAsync(context, "update foundation_directory.party set updated_by=$3,updated_at=$4,version=version+1 where tenant_id=$1 and id=$2 and version=$5", ct, tenantId.Value, partyId, actorId, now, request.Version);
             if (changed == 0) throw new DirectoryException("directory.concurrency_conflict", "The party was changed by another request.");
-            await ExecuteAsync(context, "insert into foundation_directory.party_role (tenant_id,party_id,role_code,status,created_by,created_at,updated_at,version) values ($1,$2,$3,'Active',$4,$5,$5,1) on conflict (tenant_id,party_id,role_code) do update set status='Active',updated_at=excluded.updated_at,version=foundation_directory.party_role.version+1", ct, tenantId.Value, partyId, request.Role.ToString(), actorId, now);
+            await ExecuteAsync(context, "insert into foundation_directory.party_role (tenant_id,party_id,role_code,status,created_by,created_at,updated_at,version,active_from) values ($1,$2,$3,'Active',$4,$5,$5,1,$5::date) on conflict (tenant_id,party_id,role_code) do update set status='Active',updated_at=excluded.updated_at,version=foundation_directory.party_role.version+1", ct, tenantId.Value, partyId, request.Role.ToString(), actorId, now);
             await AuditAsync(context, tenantId, actorId, membershipId, partyId, "party_role_changed", null, new { role = request.Role, status = "Active" }, correlationId, now, ct);
             context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "DirectoryPartyRoleChangedV1", JsonSerializer.Serialize(new { partyId, role = request.Role.ToString() }), tenantId, now, correlationId, partyId, "directory", traceParent));
             return true;
@@ -84,19 +93,19 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
 
     public async Task<PartyDetails> AddIdentifierAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid partyId, IdentifierInput input, Guid correlationId, CancellationToken cancellationToken)
     {
-        await coordinator.ExecuteAsync(tenantId, async (context, ct) => { var now = DateTimeOffset.UtcNow; await InsertIdentifierAsync(context, tenantId, partyId, input, ct); await AuditAsync(context, tenantId, actorId, membershipId, partyId, "party_identifier_added", null, new { input.Type }, correlationId, now, ct); return true; }, cancellationToken);
+        await coordinator.ExecuteAsync(tenantId, async (context, ct) => { var now = DateTimeOffset.UtcNow; await InsertIdentifierAsync(context, tenantId, partyId, input, ct); await AuditAsync(context, tenantId, actorId, membershipId, partyId, "party_identifier_added", null, new { type = input.Type }, correlationId, now, ct); context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "DirectoryPartyIdentifierChangedV1", JsonSerializer.Serialize(new { partyId, type = input.Type }), tenantId, now, correlationId, partyId, "directory")); return true; }, cancellationToken);
         return await GetAsync(tenantId, partyId, true, cancellationToken) ?? throw new DirectoryException("directory.party_not_found", "Party was not found.");
     }
 
     public async Task<PartyDetails> AddContactPointAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid partyId, ContactPointInput input, Guid correlationId, CancellationToken cancellationToken)
     {
-        await coordinator.ExecuteAsync(tenantId, async (context, ct) => { var now = DateTimeOffset.UtcNow; await InsertContactPointAsync(context, tenantId, partyId, input, ct); await AuditAsync(context, tenantId, actorId, membershipId, partyId, "party_contact_point_added", null, new { input.Type }, correlationId, now, ct); return true; }, cancellationToken);
+        await coordinator.ExecuteAsync(tenantId, async (context, ct) => { var now = DateTimeOffset.UtcNow; await InsertContactPointAsync(context, tenantId, partyId, input, ct); await AuditAsync(context, tenantId, actorId, membershipId, partyId, "party_contact_point_added", null, new { type = input.Type }, correlationId, now, ct); context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "DirectoryPartyContactPointChangedV1", JsonSerializer.Serialize(new { partyId, type = input.Type }), tenantId, now, correlationId, partyId, "directory")); return true; }, cancellationToken);
         return await GetAsync(tenantId, partyId, true, cancellationToken) ?? throw new DirectoryException("directory.party_not_found", "Party was not found.");
     }
 
     public async Task<PartyDetails> AddAddressAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid partyId, AddressInput input, Guid correlationId, CancellationToken cancellationToken)
     {
-        await coordinator.ExecuteAsync(tenantId, async (context, ct) => { var now = DateTimeOffset.UtcNow; await InsertAddressAsync(context, tenantId, partyId, input, ct); await AuditAsync(context, tenantId, actorId, membershipId, partyId, "party_address_added", null, new { input.Usage }, correlationId, now, ct); return true; }, cancellationToken);
+        await coordinator.ExecuteAsync(tenantId, async (context, ct) => { var now = DateTimeOffset.UtcNow; await InsertAddressAsync(context, tenantId, partyId, input, ct); await AuditAsync(context, tenantId, actorId, membershipId, partyId, "party_address_added", null, new { usage = input.Usage }, correlationId, now, ct); context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "DirectoryPartyAddressChangedV1", JsonSerializer.Serialize(new { partyId, usage = input.Usage }), tenantId, now, correlationId, partyId, "directory")); return true; }, cancellationToken);
         return await GetAsync(tenantId, partyId, true, cancellationToken) ?? throw new DirectoryException("directory.party_not_found", "Party was not found.");
     }
 
@@ -169,7 +178,6 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
     {
         if (string.IsNullOrWhiteSpace(request.DisplayName)) throw new DirectoryException("directory.display_name_required", "Display name is required.");
         if (request.DisplayName.Length > 300) throw new DirectoryException("directory.display_name_too_long", "Display name is too long.");
-        if (request.Roles is null || request.Roles.Count == 0) throw new DirectoryException("directory.role_required", "At least one role is required.");
         if (request.PartyType == PartyType.Organization && (!string.IsNullOrWhiteSpace(request.FirstName) || !string.IsNullOrWhiteSpace(request.LastName))) throw new DirectoryException("directory.person_name_for_organization", "Person name fields are not valid for an organization.");
     }
 

@@ -18,6 +18,7 @@ public static class DirectoryModuleExtensions
     {
         services.AddSingleton<IModuleManifestProvider, DirectoryModuleManifestProvider>();
         services.AddSingleton<Repositories.DirectoryRepository>();
+        services.AddSingleton<Repositories.DirectoryAdvancedRepository>();
         services.AddSingleton<DirectoryService>();
         return services;
     }
@@ -27,15 +28,15 @@ public static class DirectoryModuleExtensions
         var group = app.MapGroup("/api/v1/directory").RequireAuthorization().RequireRateLimiting("api");
         group.MapGet("/parties", async (HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string? search, string? partyType, string? role, string? status, int? page, int? pageSize, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
-                ? await Execute(http, access, () => service.ListAsync(access.Tenant, search, Parse<PartyType>(partyType), Parse<PartyRoleCode>(role), Parse<PartyStatus>(status), page ?? 1, pageSize ?? 25, ct))
+                ? await Execute(http, access, () => service.ListVisibleAsync(access.Tenant, search, Parse<PartyType>(partyType), Parse<PartyRoleCode>(role), Parse<PartyStatus>(status), access.LegalEntityId, page ?? 1, pageSize ?? 25, ct))
                 : Results.Unauthorized());
         group.MapGet("/parties/{partyId:guid}", async (Guid partyId, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
-                ? await Execute(http, access, () => service.GetAsync(access.Tenant, partyId, access.IdentifierView, ct))
+                ? await Execute(http, access, () => service.GetVisibleAsync(access.Tenant, partyId, access.LegalEntityId, ct))
                 : Results.Unauthorized());
         group.MapPost("/parties", async (CreatePartyRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.party.create", ct) is { } access
-                ? await Execute(http, access, () => service.CreateAsync(access.Tenant, access.ActorId, access.MembershipId, request, Correlation(http), ActivityId(http), access.DuplicateOverride, ct), StatusCodes.Status201Created)
+                ? await Execute(http, access, () => service.CreateAsync(access.Tenant, access.ActorId, access.MembershipId, request, Correlation(http), ActivityId(http), access.DuplicateOverride, http.Request.Headers["Idempotency-Key"].ToString(), ct), StatusCodes.Status201Created)
                 : Results.Unauthorized());
         group.MapPatch("/parties/{partyId:guid}", async (Guid partyId, UpdatePartyRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.party.edit", ct) is { } access
@@ -75,7 +76,35 @@ public static class DirectoryModuleExtensions
                 : Results.Unauthorized());
         group.MapGet("/parties/{partyId:guid}/readiness", async (Guid partyId, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
-                ? await Execute(http, access, () => service.ReadinessAsync(access.Tenant, partyId, ct))
+                ? await Execute(http, access, () => service.ReadinessFrameworkAsync(access.Tenant, partyId, ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties/{partyId:guid}/contact-persons", async (Guid partyId, ContactPersonInput person, ContactPersonLinkInput link, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.contact.manage", ct) is { } access
+                ? await Execute(http, access, () => service.AddContactPersonAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, person, link, Correlation(http), ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties/{partyId:guid}/aliases", async (Guid partyId, AliasInput request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.edit", ct) is { } access
+                ? await Execute(http, access, () => service.AddAliasAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, request, Correlation(http), ct))
+                : Results.Unauthorized());
+        group.MapPut("/parties/{partyId:guid}/visibility", async (Guid partyId, VisibilityInput request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.visibility.manage", ct) is { } access
+                ? await Execute(http, access, () => service.SetVisibilityAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, request, Correlation(http), ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties/{partyId:guid}/merge", async (Guid partyId, MergePartyRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.party.merge", ct) is { } access
+                ? await Execute(http, access, () => service.MergeAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, request, Correlation(http), ct))
+                : Results.Unauthorized());
+        group.MapGet("/parties/{partyId:guid}/audit", async (Guid partyId, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.audit.view", ct) is { } access
+                ? await Execute(http, access, () => service.AuditAsync(access.Tenant, partyId, ct))
+                : Results.Unauthorized());
+        group.MapGet("/parties/export", async (HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string? search, bool? includeArchived, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.export", ct) is { } access
+                ? await ExecuteCsv(http, access, () => service.ExportCsvAsync(access.Tenant, search, includeArchived ?? false, access.LegalEntityId, ct))
+                : Results.Unauthorized());
+        group.MapPost("/parties/import", async (DirectoryImportRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await ReadPermission(http, subjects, authorizer, "directory.import", ct) is { } access
+                ? await Execute(http, access, () => service.ImportAsync(access.Tenant, access.ActorId, access.MembershipId, request, http.Request.Headers["Idempotency-Key"].ToString(), Correlation(http), ct))
                 : Results.Unauthorized());
         return app;
     }
@@ -87,7 +116,8 @@ public static class DirectoryModuleExtensions
         if (subject is null || !authorizer.Authorize(subject, permission, PermissionScope.ForTenant(tenant))) return new Access(tenant, actorId, membershipId, false, false, false);
         var identifierView = authorizer.Authorize(subject, "directory.party.identifier.view", PermissionScope.ForTenant(tenant));
         var duplicateOverride = authorizer.Authorize(subject, "directory.duplicate.override", PermissionScope.ForTenant(tenant));
-        return new Access(tenant, actorId, membershipId, true, identifierView, duplicateOverride);
+        var legalEntityId = Guid.TryParse(http.User.FindFirstValue("legal_entity_id"), out var entityId) ? entityId : (Guid?)null;
+        return new Access(tenant, actorId, membershipId, true, identifierView, duplicateOverride, legalEntityId);
     }
 
     private static async Task<IResult> Execute<T>(HttpContext http, Access access, Func<Task<T>> action, int successStatus = StatusCodes.Status200OK)
@@ -98,14 +128,21 @@ public static class DirectoryModuleExtensions
         catch (KeyNotFoundException) { return Results.NotFound(); }
     }
 
+    private static async Task<IResult> ExecuteCsv(HttpContext http, Access access, Func<Task<string>> action)
+    {
+        if (!access.Allowed) return Results.Forbid();
+        try { return Results.Text(await action(), "text/csv; charset=utf-8"); }
+        catch (DirectoryException ex) { return Results.Problem(statusCode: 400, title: ex.Message, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); }
+    }
+
     private static T? Parse<T>(string? value) where T : struct, Enum => Enum.TryParse<T>(value, true, out var parsed) ? parsed : null;
     private static Guid Correlation(HttpContext http) => Guid.TryParse(http.Request.Headers["X-Correlation-Id"], out var value) ? value : Guid.CreateVersion7();
     private static string? ActivityId(HttpContext http) => System.Diagnostics.Activity.Current?.Id;
-    private sealed record Access(TenantId Tenant, Guid ActorId, Guid MembershipId, bool Allowed, bool IdentifierView, bool DuplicateOverride);
+    private sealed record Access(TenantId Tenant, Guid ActorId, Guid MembershipId, bool Allowed, bool IdentifierView, bool DuplicateOverride, Guid? LegalEntityId = null);
     public sealed record VersionRequest(long Version);
 }
 
 public sealed class DirectoryModuleManifestProvider : IModuleManifestProvider
 {
-    public ModuleManifest Manifest { get; } = new("directory", "1.0.0", 1, "L1", "foundation", false, "tenant", new(["platform-kernel"], []), new("foundation_directory", ["party", "party_role", "party_identifier", "contact_person", "address"]), ["directory.party.read", "directory.party.create", "directory.party.edit", "directory.party.archive", "directory.party.role.manage", "directory.party.identifier.view", "directory.party.identifier.manage", "directory.contact.manage", "directory.address.manage", "directory.party.merge", "directory.party.visibility.manage", "directory.duplicate.override", "directory.import", "directory.export", "directory.audit.view", "directory.party.quick_create"], new(["directory.party"], []), new(["DirectoryPartyCreatedV1", "DirectoryPartyIdentityChangedV1", "DirectoryPartyArchivedV1", "DirectoryPartyRoleChangedV1"], []), new(true, "blocked_if_dependents"));
+    public ModuleManifest Manifest { get; } = new("directory", "1.0.0", 1, "L1", "foundation", false, "tenant", new(["platform-kernel"], []), new("foundation_directory", ["party", "party_role", "party_identifier", "contact_person", "contact_point", "party_contact", "address", "party_address", "party_alias", "party_relationship", "party_merge_redirect", "party_visibility", "duplicate_candidate", "external_reference", "import_operation"]), ["directory.party.read", "directory.party.create", "directory.party.edit", "directory.party.archive", "directory.party.role.manage", "directory.party.identifier.view", "directory.party.identifier.manage", "directory.contact.manage", "directory.address.manage", "directory.party.merge", "directory.party.visibility.manage", "directory.duplicate.override", "directory.import", "directory.export", "directory.audit.view", "directory.party.quick_create"], new(["directory.party"], []), new(["DirectoryPartyCreatedV1", "DirectoryPartyIdentityChangedV1", "DirectoryPartyArchivedV1", "DirectoryPartyRestoredV1", "DirectoryPartyRoleChangedV1", "DirectoryPartyIdentifierChangedV1", "DirectoryPartyContactPointChangedV1", "DirectoryPartyContactChangedV1", "DirectoryPartyAddressChangedV1", "DirectoryPartyAliasChangedV1", "DirectoryPartyVisibilityChangedV1", "DirectoryPartyMergedV1", "DirectoryPartyImportCompletedV1"], []), new(true, "blocked_if_dependents"));
 }
