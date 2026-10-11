@@ -1,230 +1,894 @@
-# Frontend product, UX, and engineering operating manual
+# Frontend Product, UX, and Engineering Operating Manual
 
-Read the repository root `AGENTS.md` first. This file governs frontend work and is sufficient, together with the root, to take an approved feature from user/problem discovery to `PRODUCT / UX ACCEPTANCE COMPLETE`.
+Read the repository root `AGENTS.md` first. This file governs all frontend architecture, UX, UI engineering, and module implementation. Together with the root manual, it provides the complete, authoritative operational standard required to discover, design, build, and verify any ERP business module from scratch to `MODULE COMPLETE`.
 
-Never create a new file or folder whose basename contains `todir` in any casing; frontend names must describe responsibility rather than product branding.
+Never create a new file or folder whose basename contains `todir` in any casing; technical names describe responsibility rather than product marketing.
 
-## 0. Frontend map
+---
+
+## 0. Frontend Architecture Map & Directory Structure
+
+The repository structure is locked. The approved frontend navigation roots are:
 
 ```text
 frontend/
-├── app/         # Bootstrap, providers, router, AppShell, module loading
-├── core/        # API transport/client, auth/session, tenant context, permissions, errors, query/cache runtime
-├── components/  # Tokens, theme, accessible primitives, fields, forms, grid, page archetypes
-├── modules/     # Business vertical slices and domain-specific UI
-└── tests/       # Global, contract, browser, accessibility, and visual tests
+├── app/         # Bootstrap, application providers, router, AppShell, topbar, user menu
+├── core/        # API transport/httpClient, session/auth, tenant context, permissions, query cache
+├── components/  # Design system tokens, accessible primitives, fields, forms, grid, page archetypes
+│   ├── fields/      # Domain-aware display & input fields (MoneyDisplay, MoneyField, StatusBadge, etc.)
+│   ├── forms/       # Form structure (FormField, FormSection, FormActions, ValidationSummary)
+│   ├── grid/        # Zero-horizontal-scroll DataGrid, column definitions, and specialized cells
+│   ├── pages/       # Reusable page archetypes (ListPage, RecordPage, DocumentPage, WizardPage, Surface, PropertyGrid)
+│   └── primitives/  # Accessible UI primitives (Button, Dialog, Select, ComboBox, Table, Pagination, Icons, etc.)
+├── modules/     # Autonomous vertical business slices (directory, catalog, invoicing, accounting, payments, etc.)
+└── tests/       # Global, contract, accessibility (axe), browser E2E (Playwright), and visual tests
 ```
 
-Do not recreate `frontend/src/`, `frontend/platform/`, `apps/`, or `packages/` without explicit owner approval. Within a module, create only needed `pages/`, `components/`, `services/`, `hooks/`, `types/`, `validation/`, and `tests/` folders; never create empty templates. Current active slices include `directory`, `catalog`, `finbase`, `accounting`, `invoicing`, `payments`, and `migration`.
+### Module Boundary Rules
+1. `app/` owns composition, shell, topbar, navigation registry, and router. It never contains business domain logic.
+2. `core/` owns cross-application technical infrastructure and never imports from `modules/`.
+3. `components/` is the single source of truth for all reusable UI primitives, fields, grids, and page archetypes. Modules NEVER build duplicate buttons, custom tables, bespoke pagers, or unstyled card wrappers.
+4. `modules/<module-name>/` is self-contained. Every business module owns its own:
+   - `pages/`: Page archetype implementations (`<entity>-list-page.tsx`, `<entity>-record-page.tsx`).
+   - `features/`: Complex modal dialogs, workflows, and form sheets (`create-<entity>-dialog.tsx`).
+   - `components/`: Domain-specific components only (e.g. `party-picker.tsx`, `account-picker.tsx`).
+   - `services/`: API client adapters using `httpClient`.
+   - `hooks/`: TanStack Query hooks using `queryKeyFactory`.
+   - `validation/`: Zod schemas and validation rules.
+   - `types.ts`: Domain models and DTO shapes.
+   - `routes.tsx`: Sub-routes definition conforming to `ModuleRouteRegistration`.
+   - `public.ts`: The explicit, minimal public export barrel for cross-module integration.
+   - `tests/`: Slice-level component and integration tests.
 
-`app/` owns composition, bootstrap, providers, layout, router, and lazy loading; it does not own business rules. `core/` owns cross-application technical runtime and never depends on modules. `components/` contains genuinely shared, accessible UI and design-system behavior; it must not become a business-module dumping ground. `modules/` owns business UI by vertical slice. Module components remain module-owned unless genuine reuse justifies promotion.
+---
 
-## 1. Frontend does not start from DTOs
+## 1. Core Product & UX Principles
 
-NEVER create a screen by reading a backend DTO and creating one field per property. The backend contract is an integration contract, not a screen specification. Design the UI from the user's task, mental model, workflow, and acceptance criteria, then map that UX state explicitly to API commands and responses. Do not put backend business truth or financial calculations into the frontend merely because a DTO exposes fields.
+### Simple Outside. Powerful Inside.
+TODIR is an Arabic-first, multi-tenant enterprise ERP SaaS designed for people who spend 6 to 10 hours daily inside the interface.
 
-## 2. Product discovery before UI
+* **CALM & FOCUSED**: No visual noise, unnecessary gradients, decorative glow effects, or jarring animations.
+* **HIGH-DENSITY & SPACE-EFFICIENT**: ERP users need information density without clutter. Use compact spacing, clear typography, and structured grids.
+* **FAST & RESPONSIVE**: Every click provides instant feedback. Loading states use spinners/skeletons, never blank screens.
+* **PREDICTABLE & CONSISTENT**: Every page feels like it belongs to the exact same software suite. A user who learns one list page or record page automatically knows how to use all other 50+ modules.
 
-Before creating a module screen, answer:
+### The Sacred Boundary
+```text
+DATABASE LANGUAGE != DOMAIN LANGUAGE != API LANGUAGE != USER-FACING LANGUAGE
+```
+* **NEVER design screens by mirroring backend DTOs**: A DTO is an integration packet, not a UX specification. Do not put one field per DTO property on a screen.
+* **Internal Identifiers are Forbidden in the UI**: `TenantId`, `OrganizationId`, `LegalEntityId`, `PartyId`, GUIDs (`0192e2b3-...`), and `MfaChallengeId` are technical database plumbing. They MUST NEVER be rendered as labels, inputs, or titles. Always display the human-readable business reference code (e.g. `#INV-2026-0045`, `#PRT-001`) or the entity name.
+* **Dates and Timestamps**: Never expose raw ISO strings (`2026-01-01T09:00:00+00:00`). Always format using `LocalDateDisplay` or `.toLocaleDateString("ar-EG", { year: "numeric", month: "long", day: "numeric" })`.
 
-- Who is the user: owner, cashier, sales employee, warehouse worker, accountant, HR employee, manager, or another real role?
-- What are they trying to accomplish, and how do people in that business describe it?
-- What information do they already know and what can the system infer safely?
-- What mistakes are common, what action is most frequent, and what exceptional actions exist?
-- What is the entry point, normal path, success, validation error, business error, permission error, empty state, loading state, retry/recovery, cancellation, and other exceptional state?
+---
 
-Every screen has one clear primary purpose. A user must immediately know where they are, what they can do, and the main action. Do not build giant all-purpose screens or forms.
+## 2. Arabic-First & Market Language Dictionary
 
-## 3. Market language research
+Arabic in TODIR is native product copy, never literal translation. All labels, messages, buttons, and statuses must use natural Arabic business terms familiar to accountants, cashiers, warehouse workers, and business owners.
 
-Before defining user-facing terminology for a new ERP module, research established products and Arabic-market conventions relevant to the module, such as Odoo, Daftra, Zoho, local accounting/POS/HR products, and domain-specific market language. Compare navigation labels, document names, action labels, field names, empty states, error language, and flow order. Do not copy competitors blindly or assume they are always correct; use research to choose the clearest natural term for the target user.
+### 2.1. Canonical ERP Domain Vocabulary
+| English Concept | Canonical Arabic Term | Prohibited / Machine-Translated Terms |
+|---|---|---|
+| Customer | `العميل` | `زبون` / `مشتري` |
+| Vendor / Supplier | `المورد` | `بائع` / `مزود` |
+| Business Party | `الطرف التجاري` / `الأطراف` | `الكيان` / `الطرف الثالث` |
+| Product / Item | `المنتج` / `الصنف` | `المادة` / `عنصر` |
+| Service | `خدمة` (غير مخزنية) | `عمل` |
+| Stock / Goods | `بضاعة مخزنية` | `سلعة` |
+| Warehouse | `المستودع` / `المخزن` | `المحل` |
+| Unit of Measure (UoM) | `وحدة القياس` | `المعيار` |
+| SKU | `رمز التخزين التعريفي (SKU)` | `كود القطعة` |
+| Barcode | `الباركود` | `رمز الشفرة` |
+| Sales Invoice | `فاتورة مبيعات` | `فاتورة البيع` |
+| Tax Invoice | `فاتورة ضريبية` | `فاتورة الضرائب` |
+| Purchase Order | `أمر شراء` | `طلب الشراء` |
+| Quotation | `عرض سعر` | `اقتباس` / `تقدير` |
+| Credit Note | `إشعار دائن (تصحيح)` | `مذكرة دائنة` |
+| Debit Note | `إشعار مدين` | `مذكرة مدينة` |
+| Subtotal | `المجموع الفرعي (قبل الضريبة)` | `المجموع الجزئي` |
+| Value Added Tax (VAT) | `ضريبة القيمة المضافة` | `الضريبة` (مجردة بدون توضيح) |
+| Total Amount Due | `المبلغ الإجمالي المستحق` | `المبلغ الكلي` |
+| Manual Journal Entry | `قيد يومية يدوي` | `يومية عامة` |
+| General Ledger | `دفتر الأستاذ العام` | `دفتر الحسابات` |
+| Chart of Accounts | `دليل الحسابات` | `شجرة الحسابات` |
+| Debit | `مدين (Debit)` | `خصم` |
+| Credit | `دائن (Credit)` | `إضافة` |
+| Balanced | `متوازن` | `مستقر` |
+| Cost Center | `مركز التكلفة` | `قسم المصاريف` |
+| Payment Voucher | `سند صرف` | `إيصال دفع` |
+| Receipt Voucher | `سند قبض` | `إيصال استلام` |
+| Login Prefix | `بادئة الدخول` | `معرف التسجيل` |
+| System Template | `قالب قياسي معتمد` | `نموذج النظام` |
 
-Arabic is product copy, not translation. Never translate an English phrase literally by default. Ask what a normal Arabic-speaking employee would call the concept. Avoid formal, academic, legalistic, technical, or machine-translated language when a familiar business term exists. Write for ordinary users and use short, specific, familiar words.
+### 2.2. Standard Button Action Verbs
+Buttons must describe the exact action clearly. Generic buttons like `تنفيذ` or `إجراء` or `Submit` are strictly prohibited.
+* Primary Creation: `إضافة عميل`, `إضافة منتج`, `إنشاء فاتورة جديدة`, `تسجيل دفعة`
+* Modification & Persistence: `حفظ التغييرات`, `تعديل البيانات`, `تحديث`
+* Financial & Operational Lifecycle: `ترحيل إلى الحسابات`, `اعتماد المستند`, `إصدار إشعار دائن`
+* Deactivation & Archival: `تعطيل الحساب`, `أرشفة الصنف`, `إلغاء الأرشفة`
+* Destructive Actions: `حذف السجل نهائياً`, `إلغاء المستند`
+* Navigation & Dismissal: `العودة للقائمة`, `رجوع`, `إلغاء`, `إغلاق`
 
-Useful vocabulary examples are Customer → `العميل`, Supplier/Vendor → `المورد`, Product → `المنتج`, Quotation → `عرض سعر`, Purchase Order → `أمر شراء`, Invoice → `فاتورة`, Warehouse → the intentionally approved `المستودع` or `المخزن`, Employee → `الموظف`, Attendance → `الحضور والانصراف`, and Leave → `الإجازات`. Do not alternate between terms such as `شركة`/`مؤسسة`/`منشأة` or `مخزن`/`مستودع` without an intentional module vocabulary.
+### 2.3. System Feedback & Status Copy
+* **Success Messages**: State exactly what happened (`تم إنشاء الفاتورة بنجاح`, `تم ترحيل القيد إلى دفتر الأستاذ`, `تم حفظ الصنف الجديد`). Avoid generic `تمت العملية بنجاح`.
+* **Error Messages**: Explain the business problem in friendly terms and offer the next step. Never display SQL exceptions, status codes alone, or stack traces. Map RFC-7807 problem details to clean Arabic.
+* **Empty States**: Must be contextual with an actionable next step:
+  - Title: `لا توجد فواتير مبيعات حتى الآن`
+  - Subtitle: `ابدأ بإنشاء أول فاتورة مبيعات لإدارة مطالبات العملاء والامتثال الضريبي.`
+  - Action Button: `+ إنشاء فاتورة جديدة`
 
-## 4. User-facing copy rules
+---
 
-Before implementation, maintain an internal vocabulary list for the module's name, main entities, documents, actions, statuses, common errors, and navigation terms. It need not become a repository document unless useful, but it must be consistent.
+## 3. RTL, Bidirectional Isolation & Layout Engineering
 
-Labels are specific, short, familiar, and actionable. Avoid vague labels such as `البيانات`, `القيمة`, `المعرف`, `الكيان`, `الإجراء`, or `تنفيذ` when a specific business term exists. Buttons describe the action: `حفظ`, `إضافة عميل`, `إنشاء عرض سعر`, `إرسال`, `اعتماد`, `رفض`, `إلغاء`, `تسجيل دفعة`, or `تحويل إلى فاتورة`. Avoid generic `تنفيذ`, `إجراء`, `Submit`, `Process`, or `تأكيد العملية` when the actual action is known.
+Arabic RTL is not merely setting `dir="rtl"`. It requires strict bidirectional engineering:
 
-Success messages describe what happened: `تم حفظ المنتج`, `تم إنشاء الفاتورة`, `تم تسجيل الدفعة`. Avoid `تمت العملية بنجاح` when a more specific message is possible. Errors explain what went wrong and, where useful, what to do next. Never show SQL errors, HTTP codes alone, stack traces, constraint names, or technical exception text; map backend ProblemDetails to natural user language. Empty states are contextual, such as `لا توجد فواتير حتى الآن`, and may offer the next action. Confirmation dialogs state the business consequence, such as `هل تريد إلغاء الفاتورة؟`, especially for destructive or high-impact actions.
+1. **CSS Logical Properties Mandatory**:
+   - `margin-inline-start`, `margin-inline-end`, `padding-inline`, `padding-block`.
+   - `inset-inline-start`, `inset-inline-end`.
+   - `border-inline-start`, `border-inline-end`.
+   - `text-align: start`, `text-align: end`.
+   - **STRICT PROHIBITION**: Hardcoded directional properties (`left`, `right`, `margin-left`, `margin-right`, `padding-left`, `padding-right`) are forbidden for directional layout.
 
-## 5. Internal identifiers and progressive disclosure
+2. **Bidirectional Text Isolation (`<bdi>` & `dir="ltr"`)**:
+   Numbers, prices, codes, and mixed text easily corrupt when rendered inside Arabic RTL paragraphs (causing the `+` sign on phone numbers to jump to the right, or punctuation to invert).
+   - **Phone Numbers**: `<bdi dir="ltr" style={{ fontFamily: "var(--font-mono)" }}>+966 50 123 4567</bdi>`
+   - **SKU / Codes**: `<bdi dir="ltr">{product.sku}</bdi>`
+   - **Emails**: `<bdi dir="ltr">{user.email}</bdi>`
+   - **Reference Identifiers**: `<bdi>#INV-2026-0045</bdi>`
+   - **Currency & Exact Numbers**: Always wrap in `<MoneyDisplay>` or `<bdi>`.
 
-Do not ask users to type technical identifiers unless they are genuine business-recognized identifiers. Do not expose `TenantId`, `OrganizationId`, `LegalEntityId`, `PartyId`, `EntityId`, GUIDs, or `MfaChallengeId` as normal form fields. Use search, selection, automatic context, business codes, and names.
+3. **Zero Horizontal Scrolling Mandate**:
+   Horizontal scrolling in tables, cards, or page bodies is a broken user experience.
+   - All `Table` and `DataGrid` instances must occupy 100% of their container width (`table-layout: fixed`, `width: 100%`, `overflow: hidden`).
+   - Columns must distribute proportionally using flex/fractional widths (`1fr`, percentage, or compact min-widths).
+   - Content cells must use `overflow-wrap: anywhere; word-break: break-word` to ensure long names wrap cleanly without triggering horizontal scrollbars.
 
-Do not place every state and option on one form. Reveal information when needed. Authentication is the permanent example: initial login is email + password + `تسجيل الدخول`; the backend derives the tenant from the email domain and never asks the user to select or switch companies; request an initial password change or MFA only when required. Never show organization ID, tenant ID, or an optional MFA code on the initial login form. The general rule is `USER JOURNEY > API SHAPE`.
+---
 
-## 6. RTL, Arabic, responsive UX, and accessibility
+## 4. Canonical Reusable Page Archetypes (The 5 Core Systems)
 
-RTL is mandatory and must feel natural, not merely be `direction: rtl`. Verify labels, forms, tables, dialogs, navigation, numbers, currencies, mixed Arabic/English, long product names, dates, search, icons, and directional controls. Use CSS logical properties and correct bidirectional isolation for numeric, currency, phone, and mixed-language values.
+Every screen in TODIR MUST be built using one of the five approved canonical page archetypes located in `frontend/components/pages/`. Never create custom page containers.
 
-Support required viewport sizes. Do not compress a desktop table blindly onto a small screen; adapt the interaction and information hierarchy. Use semantic controls, keyboard navigation, visible focus, accessible labels, correct error association, adequate contrast, and never rely only on color. The target is zero Axe-core violations.
+### 4.1. Archetype 1: `ListPage` (Tabular Records & Dynamic Grids)
+* **When to use**: All master list screens (Customers, Products, Invoices, Journals, Users).
+* **Composition Pipeline**:
+  ```text
+  ListPage
+  ├── PageHeader (Title, Subtitle, Breadcrumbs, Primary Action button)
+  ├── FilterBar (SearchField + Select dropdown filters + Active filter badge + Reset action)
+  ├── DataGrid or Table (Zero horizontal scroll, localized cells, compact row height)
+  ├── Pagination (Server-side pager with page size selector)
+  └── Contextual EmptyState / LoadingState / ErrorState
+  ```
+* **Key Props**:
+  - `title`: e.g. `"دليل الأطراف التجارية"`
+  - `subtitle`: Brief description of what the table represents.
+  - `primaryAction`: `{ label: "إضافة طرف جديد", onClick: () => setIsCreateOpen(true) }`
+  - `filterBar`: `<FilterBar searchInput={<SearchField ... />} ...>`
+  - `pagination`: `<Pagination page={page} totalPages={totalPages} ... />`
 
-## 7. Platform and dependency rules
+### 4.2. Archetype 2: `RecordPage` (Master Entity 360-View Details)
+* **When to use**: Master entity profiles (Party Details, Product Details, User Account Details).
+* **Composition Pipeline**:
+  ```text
+  RecordPage
+  ├── Header: Title, business code in <bdi>, status badge, action buttons (تعديل, تعطيل, رجوع)
+  ├── Top KPI Row: 3 to 4 StatCard components summarizing high-impact metrics
+  ├── Main Body: Multiple structured Surface cards (Identity, Legal, Contact, Settings)
+  │   └── PropertyGrid (2, 3, or 4 columns) with PropertyItem key-value displays
+  ├── Tabbed Sub-Views: (Optional) Tabs for related transactions, history, audit
+  └── Formatted Audit Footer: Localized Egyptian/Arabic timestamp and user info
+  ```
+* **StatCard Standard**:
+  - `title`: Metric label (e.g. `"حالة الحساب"`, `"طبيعة الكيان"`, `"الرصيد الافتتاحي"`)
+  - `value`: Main stat (e.g. `"نشط ومفعّل"`, `"منشأة تجارية"`, `"15,000.00 ر.س"`)
+  - `subtitle`: Contextual explanation
+  - `intent`: `"primary" | "success" | "warning" | "danger" | "info" | "neutral"`
+  - `icon`: Relevant icon component (`<CheckCircleIcon size={20} />`)
+* **PropertyItem Standard**:
+  - `label`: Field label
+  - `value`: Display content (or formatted component)
+  - `icon`: Optional small icon (`size={14}`)
+  - `isCopyable`: Enables one-click clipboard copying for codes, emails, and tax IDs
+  - `rawCopyValue`: The exact plain string to copy
 
-All business modules reuse the established platform and design system. Do not create a parallel design system, form system, API client, query/cache architecture, theme engine, error mapper, page shell, runtime context, or permission UX. Use only free dependencies; commercial packages such as `ag-grid-enterprise`, `@mui/x-data-grid-pro`, and `handsontable` are prohibited. Business modules must not import `ag-grid-community`, `ag-grid-react`, `react-aria-components`, or `@react-aria/*` directly; use approved wrappers in `components/`.
+### 4.3. Archetype 3: `DocumentPage` (Financial & Commercial Transactions)
+* **When to use**: Transactional and accounting documents (Invoices, Orders, Receipts, Journals).
+* **Composition Pipeline**:
+  ```text
+  DocumentPage
+  ├── Header: Document type badge, document number, multi-axis statuses, locked badge
+  ├── Metadata Section: Surface card with key document dates, parties, currency, terms
+  ├── Line Items Section: Surface card containing zero-scroll items table
+  ├── Document Notes Section: Surface card for terms, notes, and payment instructions
+  └── Totals & Summary Card: Structured breakdown (Subtotal, Discount, Tax, Grand Total)
+  ```
+* **Multi-Axis Status Model**:
+  Never collapse document statuses into a single string. Financial ERPs require orthogonal dimensions:
+  - `lifecycle`: `"Draft" | "Issued" | "Cancelled"`
+  - `approval`: `"Pending" | "Approved" | "Rejected"`
+  - `accounting`: `"Posted" | "Unposted"`
+  - `compliance`: `"Valid" | "UnderReview"`
+  - `settlement`: `"Paid" | "Partial" | "Unpaid"`
+  - `isLocked`: boolean with `lockedReason` (e.g. `"المستند مرحل ومقيد محاسبياً"`)
 
-### 7.1. Semantic Design Tokens & Theme Foundation
-- Use CSS variables for all styling: colors (`var(--color-surface-*)`, `var(--color-content-*)`, `var(--color-border-*)`, `var(--color-status-*)`), spacing (`var(--space-*)`), radii (`var(--radius-*)`), typography (`var(--font-size-*)`), and elevation (`var(--shadow-*)`).
-- Theme tokens must support light, dark, and high-contrast modes, plus compact/comfortable density modes seamlessly.
-- Never hardcode raw hex values or pixel spacing in module components.
+### 4.4. Archetype 4: `WizardPage` (Guided Multi-Step Linear Operations)
+* **When to use**: Complex sequential operations (Data Import/Migration, Initial Onboarding, Fiscal Year Closing).
+* **Composition Pipeline**:
+  ```text
+  WizardPage
+  ├── Stepper Navigation: Connected numbered steps (1, 2, 3) with ✓ checkmarks
+  ├── Active Step Surface: Focused card rendering only current step's inputs
+  └── Sticky Footer: Standardized buttons (السابق, التالي, إنهاء / حفظ) with loading states
+  ```
 
-### 7.2. App Shell & Navigation Foundation
-- **TopBar Structure**: Clean, balanced SaaS topbar consisting of:
-  1. Brand logo & company identity pill;
-  2. Multi-entity & branch context selectors (e.g. `#entity-select`, `#branch-select`);
-  3. Language quick-toggle button;
-  4. Unified `UserMenu` dropdown containing: user avatar/initials, full name, email, language switch, theme switch, density toggle, and logout button.
-  - *Never scatter standalone action buttons (logout, theme, density, profile) across the topbar.*
-- **Launchpad / Home Screen**: Clean `PageHeader` + responsive module grid. Module cards must be interactive, clean, visually distinct, with informative descriptions and subtle hover states. Do NOT put duplicate standalone buttons inside cards repeating the card title, and avoid oversized marketing hero banners.
+### 4.5. Archetype 5: `SettingsPage` (Module & Platform Configurations)
+* **When to use**: Configuration panels (Company Profile, Number Series, Tax Rules, Login Domain).
+* **Composition Pipeline**:
+  ```text
+  SettingsPage
+  ├── Vertical Navigation Rail: Categorized navigation tabs
+  └── Settings Section Surfaces: Clean cards with title, description, and save action
+  ```
 
-### 7.3. Reusable Page Archetypes & Surfaces
-- Standard screens compose standardized layout primitives:
-  - `PageHeader`: standardizes title, subtitle/description, breadcrumbs, status badges, primary actions, and secondary actions.
-  - `PageToolbar`: provides consistent filtering, search, view switches, and secondary action bars.
-  - `Surface`: provides clean card-like containment for grouped content sections with optional header, footer, and variant styling.
-  - `ListPage`: standard list archetype composing `PageHeader`, filter toolbar, table/grid, and integrated loading/error/empty states.
-  - `RecordPage`, `DocumentPage`, `WizardPage`, `SettingsPage`, `DashboardPage`.
+---
 
-### 7.4. Unified Feedback & Input Primitives
-- **Loading State**: Always use `LoadingState` (spinner or skeleton layout), never raw empty whitespace.
-- **Error State**: Always use `ErrorState` with an icon, clear title, friendly description, and a retry action button. Never render unstyled floating red text.
-- **Empty State**: Always use `EmptyState` with a contextual icon, title, description, and primary creation action when appropriate.
-- **Search & Filter**: Use `SearchField` with built-in adornment slots (never absolute-positioned icons overlapping placeholder text) and compose within `FilterBar`.
-- **DataGrid & Table**: Use `DataGrid` (with `enableRtl={true}` in RTL environments) or semantic `Table` for structured records.
+## 5. Master Design System Import Catalog
 
-### 7.5. RTL & Bidirectional Isolation Discipline
-- All layout rules must use CSS logical properties: `margin-inline`, `padding-inline`, `inset-inline-start`, `border-inline-start`, `text-align: start`.
-- Hardcoded physical properties (`left`, `right`, `margin-left`, `padding-right`) are forbidden for directional styling.
-- Mixed text, entity codes, currency codes, phone numbers, and decimal numbers must use `<bdi>` or `dir="ltr"` isolation to prevent Arabic punctuation/number flips.
+Use this definitive matrix for all imports. Never import internal third-party dependencies (`ag-grid`, `react-aria`, etc.) directly into business modules.
 
-### 7.6. DataTable & ListPage Architectural Standard (Mandatory for All 50+ Business Modules)
-To ensure complete visual and behavioral uniformity across the entire platform, every list page and tabular view across all 50+ future business modules MUST strictly adhere to this standardized architecture:
+### Page Archetypes & Surfaces
+```tsx
+import {
+  ListPage,
+  RecordPage,
+  DocumentPage,
+  WizardPage,
+  SettingsPage,
+  DashboardPage,
+  PageHeader,
+  PageToolbar,
+  Surface,
+  PropertyGrid,
+  PropertyItem,
+  StatCard
+} from "../../../components/pages/index.ts";
+```
 
-1. **Mandatory Standard Composition Pipeline**:
-   - Every module list page must compose:
-     `ListPage` → `FilterBar` (with `SearchField`, filter `Select` controls, active count badge, and reset action) → `DataGrid` (for dynamic datasets/virtualized columns) or `Table` (for semantic lightweight records) → `Pagination` (passed via the `pagination` prop or container bottom) → contextual `EmptyState`, `ErrorState`, and `LoadingState`.
-2. **Strict Prohibition of Local Ad-hoc Tables & Pagers**:
-   - Modules MUST NOT create custom HTML `<table>` tags with local ad-hoc styling.
-   - Modules MUST NOT build custom pagination logic or buttons. The shared `Pagination` primitive is the single source of truth for pagination across all modules.
-   - Modules MUST NOT build bespoke filter bars or detached search inputs. Use `FilterBar` or `PageToolbar`.
-3. **Action Buttons & Page Actions Hierarchy**:
-   - Main creation/add action: Passed as `primaryAction` to `ListPage` / `PageHeader` (e.g. `label: "إضافة عميل"`, `onClick: () => setIsCreateOpen(true)`).
-   - Table row actions: Always use standard `Button` with `size="compact"` and semantically correct variants (`secondary` for details/edit, `danger` for deactivate/delete, `ghost` for subtle tertiary actions).
-4. **Cell Presentation & Domain Value Display**:
-   - Monetary values: Always render with `MoneyDisplay` or `MoneyCell` (never raw string concatenation or floating point numbers).
-   - Dates & Datetimes: Always render with `LocalDateDisplay` or `DateCell`.
-   - Statuses: Always render with `StatusBadge` or `StatusCell`.
-   - Identifiers, emails, codes, and phone numbers: Always wrap with `<bdi>` or `dir="ltr"` to guarantee flawless Arabic/English bidirectional rendering.
-5. **RTL / LTR & Density Integration**:
-   - `DataGrid` must always receive `enableRtl={true}` in Arabic contexts.
-   - All tables and grids must respect the global `density` ("comfortable" vs "compact").
-6. **Zero Horizontal Scrolling Mandate (Anti-Pattern Prohibition)**:
-   - Horizontal scrolling in desktop and responsive ERP record tables is strictly prohibited as a broken user experience.
-   - All `Table` and `DataGrid` instances must fit 100% of their container width (`table-layout: fixed`, `width: 100%`, `overflow: hidden`, and `autoSizeStrategy={{ type: "fitGridWidth" }}`).
-   - Columns must distribute proportionally using flex or percentage widths. Cells and headers must use `overflow-wrap: anywhere; word-break: break-word` so text flows cleanly without overflowing the table boundaries.
+### Form Fields & Domain Displays
+```tsx
+import {
+  MoneyDisplay,
+  MoneyField,
+  StatusBadge,
+  LocalDateDisplay,
+  LocalDateField,
+  QuantityDisplay,
+  QuantityField,
+  PercentageDisplay,
+  PercentageField,
+  EmailField,
+  PhoneField,
+  PasswordField,
+  EntityRefLink,
+  CurrencyDisplay,
+  DateTimeDisplay
+} from "../../../components/fields/index.ts"; // or specific component paths
+```
 
-### 7.7. Details Pages & Presentation Archetypes Standard (Data-Driven Taxonomy)
-Not every page follows the same layout; the presentation archetype MUST be chosen based on the volume, structure, and operational nature of the data:
+### Accessible UI Primitives
+```tsx
+import {
+  Button,
+  Dialog,
+  ConfirmDialog,
+  Select,
+  SelectItem,
+  ComboBox,
+  Checkbox,
+  Switch,
+  Radio,
+  RadioGroup,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  Pagination,
+  FilterBar,
+  SearchField,
+  TextField,
+  TextArea,
+  FileInput,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanel,
+  Alert,
+  Toast,
+  LoadingState,
+  ErrorState,
+  EmptyState,
+  Spinner,
+  Skeleton,
+  Separator
+} from "../../../components/primitives/index.ts"; // or specific component paths
+```
 
-1. **`RecordPage` (Master Entity & 360-View Details)**:
-   - *When to use*: Master records (Customers, Suppliers, Users, Products, Employees, Chart of Accounts).
-   - *Canonical Composition*:
-     - **Header**: Record code in `<bdi>`, status badge, entity title, primary & secondary action buttons (`تعديل`, `تعطيل`, `رجوع`), and breadcrumbs.
-     - **KPI / Stat Metric Cards (`StatCard`)**: Top summary cards for high-impact numbers and operational status (e.g. Account Status, Balance, Nature, Base UoM, Verified Status).
-     - **Structured Property Grids (`PropertyGrid` & `PropertyItem`)**: High-density 2, 3, or 4-column key-value grids with optional icons, copy-to-clipboard buttons, and `<bdi>` isolation.
-     - **Main Content**: Responsive layout composed of structured `Surface` cards (e.g. Identity Card, Contact & Address Card, Financial Card).
-     - **Tabbed Sub-Views**: For deep records, compose `Tabs` (e.g. Overview, Transactions, Activity History, Documents).
-     - **Audit Footer**: Formatted localized Arabic timestamps (`تم الإنشاء في...`).
-2. **`DocumentPage` (Transactional & Financial Document Details)**:
-   - *When to use*: Commercial and accounting transaction documents (Invoices, Purchase Orders, Bills, Payment Vouchers, Manual Journals).
-   - *Canonical Composition*:
-     - **Document Header**: Document type pill, document number title, multi-axis localized statuses (Lifecycle, Approval, GL Posting, Compliance, Settlement), and locked reason badge with `LockIcon`.
-     - **Document Metadata Surface**: Compact key-value grid for Party, Issue Date, Due Date, Payment Terms, and Currency.
-     - **Line Items Grid Surface**: Zero-horizontal-scroll line items table displaying products, descriptions, quantities, unit prices, tax rates, and line totals.
-     - **Totals & Summary Surface**: Subtotal, Tax breakdown, Discounts, and Grand Total with exact money formatting, alongside document notes.
-3. **`WizardPage` (Multi-Step Guided Linear Workflows)**:
-   - *When to use*: Multi-stage operational operations (Data Import/Migration, Period Closing, Setup Onboarding, Batch Processing).
-   - *Canonical Composition*:
-     - **Stepper Header**: Numbered & labeled step indicators connected by animated progression bars, featuring Completed (`✓`), Current (active ring), and Upcoming states.
-     - **Focused Step Surface**: Dedicated card containing only the active step's form fields or data preview.
-     - **Sticky Action Footer**: Standardized `السابق`, `التالي`, and `إنهاء / حفظ` buttons with built-in loading and validation gating.
-4. **`SettingsPage` (Category-Driven Configuration Layout)**:
-   - *When to use*: Multi-category module and platform settings (Tax rules, Company profile, Number series, Notification preferences).
-   - *Canonical Composition*:
-     - **Side Navigation Rail**: Vertical tab navigation for settings categories.
-     - **Section Form Surfaces**: Distinct card sections with title, description, form fields, and Save/Reset action bar.
-5. **`Surface` Card Discipline**:
-   - All details sections must be encapsulated in standard `Surface` containers (with optional `title`, `description`, `headerActions`, and `footer`) rather than unbordered floating text or ad-hoc boxes.
+### Vector Icons
+```tsx
+import {
+  HomeIcon,
+  UsersIcon,
+  DomainIcon,
+  DirectoryIcon,
+  CatalogIcon,
+  InvoicingIcon,
+  PaymentsIcon,
+  AccountingIcon,
+  MigrationIcon,
+  FinBaseIcon,
+  SettingsIcon,
+  BuildingIcon,
+  UserIcon,
+  ShieldIcon,
+  ShieldCheckIcon,
+  KeyIcon,
+  MailIcon,
+  PhoneIcon,
+  MapPinIcon,
+  TagIcon,
+  FolderIcon,
+  LockIcon,
+  CheckIcon,
+  CheckCircleIcon,
+  AlertCircleIcon,
+  SearchIcon,
+  FilterIcon,
+  RefreshIcon
+} from "../../../components/primitives/icons.tsx";
+```
 
-Do not create module-local generic duplicates such as a second button, table, dialog, or text field. Module-owned components are appropriate for domain behavior such as a party picker or invoice-lines editor. Promote a module component to `components/` only after genuine broad reuse, domain neutrality, accessibility, RTL/theme support, and the required story and unit test.
+### Core API Client & Query Infrastructure
+```tsx
+import { httpClient, ApiError } from "../../../core/api/http-client.ts";
+import { queryKeyFactory } from "../../../core/api/query-keys.ts";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+```
 
-## 8. TypeScript, forms, and state
+---
 
-Use strict TypeScript. Do not use `any`, `unknown`, unsafe casts, or broad catch-all types to bypass a contract; model the type or validate at the boundary. Keep types split by responsibility as modules grow.
+## 6. End-to-End Blueprint for Building Any New Module
 
-Forms use React Hook Form, Zod, approved design-system fields, and explicit mappers between UX form state and API command DTOs. RFC-7807 field errors map through `mapServerErrorsToForm`; never parse English error strings. Distinguish default, submitting, disabled, read-only, and locked states. Client validation improves UX and never replaces backend validation; validation messages use user language.
-
-Separate local UI state from server state. Use TanStack Query according to project conventions and do not copy server state unnecessarily into global stores. Query keys use `queryKeyFactory` and isolate `[tenantId, legalEntityId, module, resource, ...]`; switching tenants clears the query client. Avoid hiding arbitrary business architecture inside generic hooks.
-
-## 9. API integration and financial truth
-
-The production pipeline is:
+Follow this exact 10-step sequence to implement any new business module (e.g. `purchasing`, `inventory`, `hr`, `crm`):
 
 ```text
-Backend OpenAPI → generated core client/types → module service adapter → TanStack Query hooks → page/feature component
+Step 1: Discover Backend OpenAPI & Business Rules
+  └── Inspect backend controllers, DTOs, and OpenAPI paths in docs/
+Step 2: Scaffold Module Directory Structure
+  └── frontend/modules/<module-name>/{pages,features,components,services,hooks,validation,tests}
+Step 3: Define Domain Types in types.ts
+  └── Model clean entities, summaries, list parameters, and command inputs
+Step 4: Define Zod Schemas in validation/<entity>-schema.ts
+  └── Strict schema validation with clear Arabic error messages
+Step 5: Implement API Service in services/<entity>-api.ts
+  └── Use httpClient with parameterized URLs and standard HTTP methods
+Step 6: Implement TanStack Query Hooks in hooks/<entity>-queries.ts
+  └── Integrate queryKeyFactory for tenant/entity isolated cache management
+Step 7: Implement List Page in pages/<entity>-list-page.tsx
+  └── Compose ListPage, FilterBar, DataGrid/Table, Pagination, StatusBadge
+Step 8: Implement Record / Details Page in pages/<entity>-record-page.tsx
+  └── Compose RecordPage, StatCard KPIs, Surface cards, PropertyGrid
+Step 9: Implement Create / Action Dialog in features/create-<entity>-dialog.tsx
+  └── Accessible Dialog, React Hook Form / Zod, RFC-7807 server error handling
+Step 10: Wire Routes & Public Contract
+  └── Define routes.tsx, export barrel public.ts, register in app-router.tsx
 ```
 
-API calls live in module services or the approved generated-client layer. Pages and components never call raw `fetch()`. Verify endpoints against the real backend OpenAPI; fixtures are not production truth. If the API cannot support a correct journey, report the missing backend capability instead of inventing business logic locally.
+---
 
-Authoritative money, tax, quantity, discount, exchange-rate, and financial values use `DecimalString`, `MoneyValue`, or `QuantityValue`. Never represent or calculate financial truth with JavaScript binary floating point: no `parseFloat`, `Number()`, `.toFixed()`, `Math.*`, or frontend tax/rounding/allocation/posting calculations. Backend totals, rounding, tax, allocation, posting, and settlement remain authoritative; display through approved exact formatters.
+## 7. Production Code Blueprints (Canonical Boilerplates)
 
-Preserve orthogonal document states such as lifecycle, settlement, approval, compliance, and accounting; do not collapse them into one status. Posted/finalized documents lock line items, dates, and amounts, show a clear locked reason, and offer only approved reversal/correction workflows.
+### Blueprint A: API Client (`services/<entity>-api.ts`)
+```ts
+import { httpClient } from "../../../core/api/http-client.ts";
+import type { Customer, CreateCustomerInput, CustomerListParams, CustomerListResult } from "../types.ts";
 
-## 10. Permissions, mutations, and runtime behavior
+export const customerApi = {
+  list: async (params: CustomerListParams = {}, tenantId?: string): Promise<CustomerListResult> => {
+    const query = new URLSearchParams();
+    if (params.search) query.set("search", params.search);
+    if (params.status) query.set("status", params.status);
+    if (params.page) query.set("page", String(params.page));
+    if (params.pageSize) query.set("pageSize", String(params.pageSize));
 
-Frontend permission checks hide or disable actions for UX only; backend authorization is authoritative. Do not assume a hidden button protects an action.
+    return httpClient<CustomerListResult>(`/api/v1/customers?${query.toString()}`, {
+      ...(tenantId ? { tenantId } : {})
+    });
+  },
 
-High-risk mutations use a client-generated `Idempotency-Key`. Lock in-flight double clicks, reuse the key after a network timeout for the same logical attempt, and generate a new key only for a genuinely new attempt. A timeout shows an explicit unknown-outcome recovery state and must not blindly resubmit. Do not optimistically update authoritative money movement, posting, settlement, stock, payroll, finalization, or destructive deletion; optimism is limited to low-risk reversible display preferences or local UI state.
+  getById: async (id: string, tenantId?: string): Promise<Customer> => {
+    return httpClient<Customer>(`/api/v1/customers/${id}`, {
+      ...(tenantId ? { tenantId } : {})
+    });
+  },
 
-Business module pages and heavy dependencies are lazy-loaded with `React.lazy()` and `Suspense`; keep the initial shell small. Avoid waterfalls, duplicate requests, unbounded polling, unnecessary rerenders, huge downloads, large DOM tables, and massive unbounded lists. Use server-side pagination, filtering, virtualization when justified, and correct query caching. Stop background polling at terminal job states.
+  create: async (input: CreateCustomerInput, tenantId?: string): Promise<Customer> => {
+    return httpClient<Customer>("/api/v1/customers", {
+      method: "POST",
+      body: JSON.stringify(input),
+      ...(tenantId ? { tenantId } : {})
+    });
+  },
 
-## 11. Product journey and screen construction
+  update: async (id: string, input: Partial<CreateCustomerInput> & { version: number }, tenantId?: string): Promise<Customer> => {
+    return httpClient<Customer>(`/api/v1/customers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+      ...(tenantId ? { tenantId } : {})
+    });
+  }
+};
+```
 
-Before components, describe the journey: entry → normal path → success → validation error → business error → permission error → empty → loading → retry/recovery → cancellation → exceptional states. Forms request only information required at that moment, use safe defaults/inference, group related fields, and hide advanced options until needed.
+### Blueprint B: Query & Mutation Hooks (`hooks/<entity>-queries.ts`)
+```ts
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { customerApi } from "../services/customer-api.ts";
+import type { Customer, CreateCustomerInput, CustomerListParams, CustomerListResult } from "../types.ts";
+import { queryKeyFactory } from "../../../core/api/query-keys.ts";
 
-Pages compose focused components and hooks; they do not contain API code, large business calculations, giant reusable components, or permission implementation. Services own API communication, hooks own React-specific reusable behavior, and validation owns client schemas. Keep each screen's primary purpose obvious and use the appropriate page archetype.
+export interface UseCustomerContext {
+  readonly tenantId?: string | undefined;
+  readonly entityId?: string | undefined;
+}
 
-## 12. Testing and acceptance
+const DEFAULT_TENANT = "tenant-default";
+const DEFAULT_ENTITY = "entity-default";
 
-Test normal flow, validation, business errors, empty states, loading/recovery, permissions, RTL, accessibility, and important business state changes. Playwright must verify real meaningful user journeys; do not write E2E merely to prove a bad form can submit. Preserve the current test framework, Storybook, architecture checks, and real API/infrastructure boundary tests; do not introduce a new framework because it is fashionable.
+export function useCustomerList(params: CustomerListParams = {}, context: UseCustomerContext = {}) {
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
 
-Before `FRONTEND COMPLETE`, perform Product/UX acceptance. Ask:
+  return useQuery<CustomerListResult>({
+    queryKey: queryKeyFactory.list(tenantId, entityId, "customers", "list", params),
+    queryFn: () => customerApi.list(params, tenantId),
+    staleTime: 30_000
+  });
+}
 
-- Would a normal non-technical user understand every visible term?
-- Does any field expose implementation detail or ask for something the system already knows?
-- Is any label a literal translation?
-- Are actions specific, errors useful, and empty states understandable?
-- Are normal tasks short and advanced complexity hidden until needed?
-- Does RTL feel natural at required viewport sizes?
-- Can the actual cashier, warehouse employee, salesperson, accountant, HR clerk, or owner finish the main task without technical explanation?
+export function useCustomerRecord(id: string, context: UseCustomerContext = {}) {
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
 
-Required checks as applicable include:
+  return useQuery<Customer>({
+    queryKey: queryKeyFactory.detail(tenantId, entityId, "customers", "record", id),
+    queryFn: () => customerApi.getById(id, tenantId),
+    enabled: Boolean(id),
+    staleTime: 60_000
+  });
+}
+
+export function useCreateCustomer(context: UseCustomerContext = {}) {
+  const queryClient = useQueryClient();
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
+
+  return useMutation<Customer, Error, CreateCustomerInput>({
+    mutationFn: (input) => customerApi.create(input, tenantId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeyFactory.resource(tenantId, entityId, "customers", "list")
+      });
+    }
+  });
+}
+```
+
+### Blueprint C: Canonical List Page (`pages/<entity>-list-page.tsx`)
+```tsx
+import React, { useState } from "react";
+import { ListPage } from "../../../components/pages/list-page.tsx";
+import { FilterBar } from "../../../components/primitives/filter-bar.tsx";
+import { SearchField } from "../../../components/primitives/search-field.tsx";
+import { Select, SelectItem } from "../../../components/primitives/select.tsx";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../../../components/primitives/table.tsx";
+import { Pagination } from "../../../components/primitives/pagination.tsx";
+import { StatusBadge } from "../../../components/fields/status-badge.tsx";
+import { LoadingState } from "../../../components/primitives/loading-state.tsx";
+import { ErrorState } from "../../../components/primitives/error-state.tsx";
+import { EmptyState } from "../../../components/primitives/empty-state.tsx";
+import { useCustomerList } from "../hooks/customer-queries.ts";
+import { CreateCustomerDialog } from "../features/create-customer-dialog.tsx";
+import type { CustomerSummary } from "../types.ts";
+
+export interface CustomerListPageProps {
+  readonly onSelectCustomer?: (customer: CustomerSummary) => void;
+}
+
+export function CustomerListPage({ onSelectCustomer }: CustomerListPageProps): React.JSX.Element {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+  const { data, isLoading, error, refetch } = useCustomerList({
+    search: searchTerm.trim() || undefined,
+    status: statusFilter === "all" ? undefined : statusFilter,
+    page,
+    pageSize
+  });
+
+  const customers = data?.items ?? [];
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return (
+    <ListPage
+      title="قائمة العملاء"
+      subtitle="إدارة بيانات العملاء والحسابات التجارية والاتصال"
+      breadcrumbs={[{ label: "الرئيسية", href: "/" }, { label: "العملاء" }]}
+      primaryAction={{
+        label: "إضافة عميل جديد",
+        onClick: () => setIsCreateOpen(true)
+      }}
+      filterBar={
+        <FilterBar
+          searchInput={
+            <SearchField
+              ariaLabel="البحث عن عميل"
+              placeholder="البحث بالاسم أو السجل أو الرقم الضريبي..."
+              value={searchTerm}
+              onChange={setSearchTerm}
+            />
+          }
+          activeFilterCount={(statusFilter !== "all" ? 1 : 0) + (searchTerm ? 1 : 0)}
+          onResetFilters={() => {
+            setSearchTerm("");
+            setStatusFilter("all");
+            setPage(1);
+          }}
+        >
+          <div style={{ minWidth: "160px" }}>
+            <Select
+              label="حالة الحساب"
+              selectedKey={statusFilter}
+              onSelectionChange={(key) => {
+                setStatusFilter(String(key));
+                setPage(1);
+              }}
+            >
+              <SelectItem id="all" textValue="جميع الحالات">جميع الحالات</SelectItem>
+              <SelectItem id="Active" textValue="نشط">نشط</SelectItem>
+              <SelectItem id="Suspended" textValue="معطّل">معطّل</SelectItem>
+            </Select>
+          </div>
+        </FilterBar>
+      }
+      pagination={
+        totalCount > 0 ? (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalCount}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+          />
+        ) : undefined
+      }
+    >
+      {isLoading ? (
+        <LoadingState message="جارٍ تحميل قائمة العملاء..." />
+      ) : error ? (
+        <ErrorState
+          title="تعذر تحميل قائمة العملاء"
+          description="حدث خطأ أثناء جلب البيانات من الخادم. يرجى المحاولة مرة أخرى."
+          onRetry={() => void refetch()}
+        />
+      ) : customers.length === 0 ? (
+        <EmptyState
+          title="لا يوجد عملاء مسجلون حتى الآن"
+          description="ابدأ بإضافة أول عميل لتسجيل البيانات التجارية والفواتير."
+          actionLabel="إضافة عميل جديد"
+          onAction={() => setIsCreateOpen(true)}
+        />
+      ) : (
+        <Table aria-label="جدول العملاء" style={{ width: "100%", tableLayout: "fixed" }}>
+          <TableHeader>
+            <TableRow>
+              <TableHead style={{ width: "40%" }}>اسم العميل / المنشأة</TableHead>
+              <TableHead style={{ width: "20%" }}>الرقم الضريبي</TableHead>
+              <TableHead style={{ width: "25%" }}>البريد الإلكتروني</TableHead>
+              <TableHead style={{ width: "15%", textAlign: "center" }}>الحالة</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {customers.map((c) => (
+              <TableRow key={c.id}>
+                <TableCell>
+                  <button
+                    type="button"
+                    onClick={() => onSelectCustomer?.(c)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--color-brand-primary, #4f46e5)",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      padding: 0,
+                      textAlign: "start"
+                    }}
+                  >
+                    {c.displayName}
+                  </button>
+                </TableCell>
+                <TableCell>
+                  <bdi style={{ fontFamily: "var(--font-mono)" }}>{c.taxNumber || "—"}</bdi>
+                </TableCell>
+                <TableCell>
+                  <bdi dir="ltr">{c.email || "—"}</bdi>
+                </TableCell>
+                <TableCell style={{ textAlign: "center" }}>
+                  <StatusBadge
+                    intent={c.status === "Active" ? "success" : "neutral"}
+                    label={c.status === "Active" ? "نشط" : "معطّل"}
+                    size="small"
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+
+      <CreateCustomerDialog
+        isOpen={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+      />
+    </ListPage>
+  );
+}
+```
+
+### Blueprint D: Canonical 360 Record Page (`pages/<entity>-record-page.tsx`)
+```tsx
+import React, { useState } from "react";
+import { RecordPage } from "../../../components/pages/record-page.tsx";
+import { Surface } from "../../../components/pages/surface.tsx";
+import { PropertyGrid, PropertyItem, StatCard } from "../../../components/pages/property-grid.tsx";
+import { Button } from "../../../components/primitives/button.tsx";
+import { StatusBadge } from "../../../components/fields/status-badge.tsx";
+import { Spinner } from "../../../components/primitives/spinner.tsx";
+import { BuildingIcon, MailIcon, PhoneIcon, CheckCircleIcon, TagIcon } from "../../../components/primitives/icons.tsx";
+import { useCustomerRecord } from "../hooks/customer-queries.ts";
+
+export interface CustomerRecordPageProps {
+  readonly customerId: string;
+  readonly onBack: () => void;
+}
+
+export function CustomerRecordPage({ customerId, onBack }: CustomerRecordPageProps): React.JSX.Element {
+  const { data: customer, isLoading, error } = useCustomerRecord(customerId);
+  const [editing, setEditing] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "360px" }}>
+        <Spinner size="large" aria-label="جارٍ تحميل بيانات العميل..." />
+      </div>
+    );
+  }
+
+  if (error || !customer) {
+    return (
+      <div style={{ padding: "3rem", textAlign: "center" }}>
+        <p style={{ color: "var(--color-status-danger)", fontWeight: 600, marginBottom: "1rem" }}>
+          تعذر العثور على سجل العميل المطلوب.
+        </p>
+        <Button variant="secondary" onPress={onBack}>العودة لقائمة العملاء</Button>
+      </div>
+    );
+  }
+
+  const isActive = customer.status === "Active";
+
+  const kpis = (
+    <>
+      <StatCard
+        title="حالة الحساب"
+        value={isActive ? "نشط ومفعل" : "معطّل مؤقتاً"}
+        intent={isActive ? "success" : "neutral"}
+        icon={<CheckCircleIcon size={20} />}
+        subtitle="حالة التعامل التجاري وإصدار الفواتير"
+      />
+      <StatCard
+        title="الحد الائتماني المعتمد"
+        value={`${customer.creditLimit || "0.00"} ر.س`}
+        intent="primary"
+        icon={<TagIcon size={20} />}
+        subtitle="أقصى رصيد آجل مسموح به"
+      />
+      <StatCard
+        title="حالة الامتثال الضريبي"
+        value={customer.taxNumber ? "مسجل ضريبياً" : "غير مسجل"}
+        intent={customer.taxNumber ? "info" : "neutral"}
+        icon={<BuildingIcon size={20} />}
+        subtitle="مطابق لمتطلبات الفاتورة الإلكترونية"
+      />
+    </>
+  );
+
+  return (
+    <RecordPage
+      title={customer.displayName}
+      recordCode={customer.code ? `#${customer.code}` : undefined}
+      status={isActive ? "success" : "neutral"}
+      kpiCards={kpis}
+      breadcrumbs={[
+        { label: "العملاء", onClick: onBack },
+        { label: customer.displayName }
+      ]}
+      headerActions={
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <Button variant="primary" onPress={() => setEditing(true)}>تعديل البيانات</Button>
+          <Button variant="secondary" onPress={onBack}>رجوع</Button>
+        </div>
+      }
+      auditInfo={{
+        createdAt: customer.createdAt,
+        updatedAt: customer.updatedAt
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        {/* Surface 1: الهوية والبيانات التجارية */}
+        <Surface
+          title="الهوية والبيانات التجارية"
+          description="المعلومات الأساسية والأسماء القانونية والسجلات الرسمية"
+        >
+          <PropertyGrid columns={3}>
+            <PropertyItem
+              label="الاسم التجاري"
+              value={customer.displayName}
+              icon={<BuildingIcon size={16} />}
+            />
+            <PropertyItem
+              label="الاسم القانوني الكامل"
+              value={customer.legalName || "—"}
+            />
+            <PropertyItem
+              label="الرقم الضريبي (VAT)"
+              value={customer.taxNumber ? <bdi style={{ fontFamily: "var(--font-mono)" }}>{customer.taxNumber}</bdi> : "—"}
+              isCopyable={Boolean(customer.taxNumber)}
+              rawCopyValue={customer.taxNumber}
+            />
+            <PropertyItem
+              label="حالة الحساب"
+              value={
+                <StatusBadge
+                  intent={isActive ? "success" : "neutral"}
+                  label={isActive ? "نشط" : "معطّل"}
+                  size="small"
+                />
+              }
+            />
+          </PropertyGrid>
+        </Surface>
+
+        {/* Surface 2: قنوات التواصل والعناوين */}
+        <Surface
+          title="قنوات الاتصال والعناوين"
+          description="البريد الإلكتروني المعتمد وأرقام الهواتف والمقر الجغرافي"
+        >
+          <PropertyGrid columns={2}>
+            <PropertyItem
+              label="البريد الإلكتروني"
+              value={customer.email ? <bdi dir="ltr">{customer.email}</bdi> : "—"}
+              icon={<MailIcon size={16} />}
+              isCopyable={Boolean(customer.email)}
+              rawCopyValue={customer.email}
+            />
+            <PropertyItem
+              label="رقم الهاتف"
+              value={customer.phone ? <bdi dir="ltr" style={{ fontFamily: "var(--font-mono)" }}>{customer.phone}</bdi> : "—"}
+              icon={<PhoneIcon size={16} />}
+            />
+            <PropertyItem
+              label="العنوان الوطني / المقر"
+              value={customer.address || "لم يتم تسجيل عنوان."}
+              isFullWidth={true}
+            />
+          </PropertyGrid>
+        </Surface>
+      </div>
+    </RecordPage>
+  );
+}
+```
+
+### Blueprint E: Routes & Public Contract (`routes.tsx` & `public.ts`)
+```tsx
+// routes.tsx
+import { lazy } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import type { ModuleRouteRegistration } from "@app/router/route-contract.ts";
+
+const CustomerListPage = lazy(() => import("./pages/customer-list-page.tsx").then(m => ({ default: m.CustomerListPage })));
+const CustomerRecordPage = lazy(() => import("./pages/customer-record-page.tsx").then(m => ({ default: m.CustomerRecordPage })));
+
+function CustomerListRoute(): React.JSX.Element {
+  const navigate = useNavigate();
+  return <CustomerListPage onSelectCustomer={(c) => navigate(`/customers/${encodeURIComponent(c.id)}`)} />;
+}
+
+function CustomerRecordRoute(): React.JSX.Element {
+  const navigate = useNavigate();
+  const { customerId = "" } = useParams();
+  return <CustomerRecordPage customerId={customerId} onBack={() => navigate("/customers")} />;
+}
+
+export const customerRoutes: ModuleRouteRegistration = {
+  navigation: {
+    id: "customers",
+    moduleIds: ["customers"],
+    path: "/customers",
+    label: { ar: "العملاء", en: "Customers" },
+    permission: "crm.customer.read",
+    icon: "directory"
+  },
+  routes: [
+    { path: "customers", element: <CustomerListRoute /> },
+    { path: "customers/:customerId", element: <CustomerRecordRoute /> }
+  ]
+};
+```
+
+```ts
+// public.ts
+export type { Customer, CustomerSummary, CreateCustomerInput } from "./types.ts";
+export { customerApi } from "./services/customer-api.ts";
+export { customerRoutes } from "./routes.tsx";
+```
+
+---
+
+## 8. Quality Verification & Completion Gates
+
+Before claiming `FRONTEND COMPLETE` or `MODULE COMPLETE`, you MUST run and pass all 9 local verification gates:
 
 ```powershell
+# 1. Verify module boundary integrity and forbidden imports
 pnpm run architecture:frontend
+
+# 2. Strict TypeScript type check (zero errors tolerated)
 pnpm run typecheck
+
+# 3. Unit and domain slice logic tests
 pnpm run test:frontend
+
+# 4. OpenAPI backend schema drift check
 pnpm run api:drift
-pnpm run frontend:smoke
+
+# 5. Production bundle build
+pnpm --filter frontend build
+
+# 6. Repository-wide 73 release gates verification
 pnpm run release:gates
-pnpm --dir frontend build
-pnpm --dir frontend exec playwright test
+
+# 7. Complete Playwright browser E2E test suite
+pnpm --filter frontend exec playwright test --workers=4
+
+# 8. Check for any trailing whitespace or formatting errors
+git diff --check
+
+# 9. Verify STRICT frontend boundary isolation (Must be completely empty!)
+git diff -- backend
 ```
 
-## 13. Frontend completion gate
-
-`FRONTEND COMPLETE` requires the correct user journey, market terminology, natural Arabic, API integration, RTL, responsive behavior, loading/error/empty/recovery states, permissions UX, exact financial display, frontend tests, Playwright coverage, and Product/UX acceptance. A passing build alone is not completion.
+A passing build alone is NEVER completion. Full compliance with the UX archetypes, natural Arabic copy, zero horizontal scrolling, RTL bidirectional isolation, and automated tests is mandatory.
