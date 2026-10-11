@@ -7,8 +7,9 @@ describe("Directory / Party Vertical Slice", () => {
   it("validates party schema for organization with valid roles", () => {
     const validData = {
       partyType: "Organization",
-      displayName: "Al-Ahram Industrial LLC",
-      identifierType: "tax",
+      displayName: "شركة الأهرام للصناعات المتطورة",
+      legalName: "الأهرام للصناعات ذ.م.م",
+      identifierType: "TaxId",
       identifierValue: "100-200-300",
       email: "info@alahram.com",
       roles: ["Customer", "Supplier"]
@@ -16,6 +17,37 @@ describe("Directory / Party Vertical Slice", () => {
 
     const result = partyFormSchema.safeParse(validData);
     assert.equal(result.success, true);
+  });
+
+  it("validates party schema for individual person with first and last name", () => {
+    const validPerson = {
+      partyType: "Person",
+      displayName: "أحمد محمود النجار",
+      firstName: "أحمد",
+      middleName: "محمود",
+      lastName: "النجار",
+      email: "ahmed@example.com",
+      phone: "+201012345678",
+      roles: ["Customer"]
+    };
+
+    const result = partyFormSchema.safeParse(validPerson);
+    assert.equal(result.success, true);
+  });
+
+  it("rejects organization with person name fields according to domain boundary", () => {
+    const invalidOrg = {
+      partyType: "Organization",
+      displayName: "شركة النيل للتجارة",
+      firstName: "أحمد",
+      roles: ["Customer"]
+    };
+
+    const result = partyFormSchema.safeParse(invalidOrg);
+    assert.equal(result.success, false);
+    if (!result.success) {
+      assert.ok(result.error.issues.some((i) => i.path.includes("firstName")));
+    }
   });
 
   it("rejects party form without roles", () => {
@@ -47,10 +79,19 @@ describe("Directory / Party Vertical Slice", () => {
     }
   });
 
-  it("provides partyApi methods without throwing on import", () => {
+  it("provides comprehensive partyApi methods covering full backend lifecycle", () => {
     assert.equal(typeof partyApi.list, "function");
     assert.equal(typeof partyApi.getById, "function");
     assert.equal(typeof partyApi.create, "function");
     assert.equal(typeof partyApi.update, "function");
+    assert.equal(typeof partyApi.archive, "function");
+    assert.equal(typeof partyApi.restore, "function");
+    assert.equal(typeof partyApi.addRole, "function");
+    assert.equal(typeof partyApi.disableRole, "function");
+    assert.equal(typeof partyApi.addIdentifier, "function");
+    assert.equal(typeof partyApi.addContactPoint, "function");
+    assert.equal(typeof partyApi.addAddress, "function");
+    assert.equal(typeof partyApi.getDuplicates, "function");
+    assert.equal(typeof partyApi.getReadiness, "function");
   });
 });
