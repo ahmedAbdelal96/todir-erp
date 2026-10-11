@@ -45,7 +45,7 @@ export function PartyForm({
       lastName: initialData?.lastName ?? "",
       countryCode: initialData?.countryCode ?? "EG",
       primaryLanguage: initialData?.primaryLanguage ?? "ar",
-      roles: initialData?.roles ?? ["Customer"],
+      roles: initialData?.roles ?? [],
       identifierType: initialData?.identifierType ?? "",
       identifierValue: initialData?.identifierValue ?? "",
       identifierCountryCode: initialData?.identifierCountryCode ?? "EG",
@@ -253,8 +253,8 @@ export function PartyForm({
 
       {/* 2. الأدوار التجارية */}
       <FormSection
-        title="الأدوار والعلاقات التجارية *"
-        description="يمكن للطرف التجاري أن يكون عميلاً نبيع له، أو مورداً نشتري منه، أو كلاهما في نفس الوقت."
+        title="الأدوار والعلاقات التجارية (اختياري)"
+        description="تحديد دور الطرف كعميل أو مورد، أو يمكن تركه بدون أدوار كطرف عام في الدليل."
       >
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", alignItems: "center" }}>

@@ -50,18 +50,15 @@ describe("Directory / Party Vertical Slice", () => {
     }
   });
 
-  it("rejects party form without roles", () => {
-    const invalidData = {
+  it("accepts party form without roles according to canonical pack", () => {
+    const validData = {
       partyType: "Person",
       displayName: "John Doe",
       roles: []
     };
 
-    const result = partyFormSchema.safeParse(invalidData);
-    assert.equal(result.success, false);
-    if (!result.success) {
-      assert.ok(result.error.issues.some((i) => i.path.includes("roles")));
-    }
+    const result = partyFormSchema.safeParse(validData);
+    assert.equal(result.success, true);
   });
 
   it("rejects party form with invalid email format", () => {

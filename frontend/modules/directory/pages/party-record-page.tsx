@@ -40,6 +40,7 @@ import {
 import { PartyForm } from "../features/party-form.tsx";
 import type { PartyFormData } from "../validation/party-schema.ts";
 import { useToast } from "../../../components/primitives/toast.tsx";
+import { usePermissions } from "../../../core/runtime/runtime-provider.tsx";
 
 export interface PartyRecordPageProps {
   readonly partyId?: string;
@@ -220,14 +221,26 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
   const activeCustomer = party.roles.some(r => r.code === "Customer" && r.status === "Active");
   const activeSupplier = party.roles.some(r => r.code === "Supplier" && r.status === "Active");
 
+  let perms;
+  try {
+    perms = usePermissions();
+  } catch {
+    perms = null;
+  }
+  const canEdit = perms?.hasPermission("directory.party.edit") ?? true;
+  const canArchive = perms?.hasPermission("directory.party.archive") ?? true;
+  const canMerge = perms?.hasPermission("directory.party.merge") ?? true;
+  const canManageVisibility = perms?.hasPermission("directory.visibility.manage") ?? true;
+  const canManageIdentifiers = perms?.hasPermission("directory.party.identifier.manage") ?? true;
+  const canManageContacts = perms?.hasPermission("directory.contact.manage") ?? true;
+
   const handleToggleRole = async (roleCode: PartyRoleCode, currentlyActive: boolean) => {
+    if (!canEdit) {
+      showToast({ type: "warning", title: "صلاحية غير كافية", description: "لا تملك صلاحية تعديل بيانات وأدوار الطرف التجاري." });
+      return;
+    }
     try {
       if (currentlyActive) {
-        const activeCount = (activeCustomer ? 1 : 0) + (activeSupplier ? 1 : 0);
-        if (activeCount <= 1) {
-          showToast({ type: "warning", title: "تنبيه", description: "يجب الإبقاء على دور تجاري واحد نشط على الأقل (عميل أو مورد)." });
-          return;
-        }
         await disableRole.mutateAsync({ id: party.id, role: roleCode });
         showToast({ type: "success", title: "تم تحديث الدور التجاري", description: `تم إيقاف دور ${roleCode === "Customer" ? "العميل" : "المورد"}.` });
       } else {
@@ -413,20 +426,28 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
           )}
           {!isArchived && !isMerged ? (
             <>
-              <Button variant="secondary" onPress={() => setVisibilityOpen(true)}>
-                نطاق الرؤية
-              </Button>
-              <Button variant="primary" onPress={() => setEditing(true)}>
-                تعديل البيانات
-              </Button>
-              <Button variant="danger" onPress={() => setMergeOpen(true)}>
-                دمج السجل
-              </Button>
-              <Button variant="danger" onPress={() => setArchiveConfirmOpen(true)}>
-                أرشفة الطرف
-              </Button>
+              {canManageVisibility && (
+                <Button variant="secondary" onPress={() => setVisibilityOpen(true)}>
+                  نطاق الرؤية
+                </Button>
+              )}
+              {canEdit && (
+                <Button variant="primary" onPress={() => setEditing(true)}>
+                  تعديل البيانات
+                </Button>
+              )}
+              {canMerge && (
+                <Button variant="danger" onPress={() => setMergeOpen(true)}>
+                  دمج السجل
+                </Button>
+              )}
+              {canArchive && (
+                <Button variant="danger" onPress={() => setArchiveConfirmOpen(true)}>
+                  أرشفة الطرف
+                </Button>
+              )}
             </>
-          ) : isArchived ? (
+          ) : isArchived && canArchive ? (
             <Button variant="primary" onPress={() => setRestoreConfirmOpen(true)}>
               استعادة من الأرشيف
             </Button>
@@ -485,17 +506,37 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                 >
                   <div style={{ flex: 1 }}>
                     <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-status-warning-content, #92400e)", display: "block" }}>
-                      {d.reason}
+                      ✓ {d.reason}
                     </span>
                     <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
                       {d.status === "Pending" ? "في انتظار المراجعة" : d.status === "Dismissed" ? "تم تجاهله" : d.status}
                       {d.confidence > 0.9 ? " · تطابق قوي جداً" : d.confidence > 0.7 ? " · تطابق محتمل" : " · تشابه ملحوظ"}
                     </span>
                   </div>
-                  <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
-                    <Button size="compact" variant="secondary" onPress={() => { setMasterPartyId(d.candidatePartyId); setMergeOpen(true); }}>
-                      دمج مع الموجود
+                  <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0, alignItems: "center" }}>
+                    <Button
+                      size="compact"
+                      variant="secondary"
+                      onPress={() => {
+                        if (onBack) {
+                          onBack();
+                        }
+                      }}
+                    >
+                      عرض ومقارنة
                     </Button>
+                    {canMerge && (
+                      <Button
+                        size="compact"
+                        variant="secondary"
+                        onPress={() => {
+                          setMasterPartyId(d.candidatePartyId);
+                          setMergeOpen(true);
+                        }}
+                      >
+                        دمج السجلات
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -607,7 +648,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                 title="الأسماء البديلة والتجارية"
                 description="اسماء بديلة أو تجارية إضافية معتمدة لهذا الطرف"
                 headerActions={
-                  !isArchived && !isMerged ? (
+                  !isArchived && !isMerged && canEdit ? (
                     <Button size="compact" variant="secondary" onPress={() => setAddAliasOpen(true)}>
                       إضافة اسم بديل
                     </Button>
@@ -724,7 +765,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
               title="نطاق الرؤية في المنظومة"
               description="تحديد الجهات القانونية التي يمكنها رؤية واستخدام هذا السجل"
               headerActions={
-                !isArchived && !isMerged ? (
+                !isArchived && !isMerged && canManageVisibility ? (
                   <Button size="compact" variant="secondary" onPress={() => setVisibilityOpen(true)}>
                     تعديل النطاق
                   </Button>
@@ -755,7 +796,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
               title="قنوات الاتصال المعتمدة"
               description="أرقام الهواتف وعناوين البريد الإلكتروني والمواقع الإلكترونية المسجلة لهذا الطرف"
               headerActions={
-                !isArchived && !isMerged ? (
+                !isArchived && !isMerged && canManageContacts ? (
                   <Button size="compact" variant="primary" onPress={() => setAddContactOpen(true)}>
                     إضافة وسيلة تواصل
                   </Button>
@@ -791,7 +832,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
               title="جهات الاتصال المباشرة"
               description="الأشخاص المسؤولون عن التواصل المباشر وإدارة العلاقة التجارية مع هذا الطرف"
               headerActions={
-                !isArchived && !isMerged ? (
+                !isArchived && !isMerged && canManageContacts ? (
                   <Button size="compact" variant="primary" onPress={() => setAddContactPersonOpen(true)}>
                     إضافة جهة اتصال
                   </Button>
@@ -826,7 +867,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
             title="العناوين الجغرافية المسجلة"
             description="عناوين الفوترة والشحن والمقر الرئيسي المسجلة لهذا الطرف التجاري"
             headerActions={
-              !isArchived && !isMerged ? (
+              !isArchived && !isMerged && canEdit ? (
                 <Button size="compact" variant="primary" onPress={() => setAddAddressOpen(true)}>
                   إضافة عنوان
                 </Button>
@@ -864,7 +905,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
             title="المعرفات والسجلات الرسمية"
             description="الأرقام الضريبية والسجلات التجارية والمراجع الداخلية الموثقة"
             headerActions={
-              !isArchived && !isMerged ? (
+              !isArchived && !isMerged && canManageIdentifiers ? (
                 <Button size="compact" variant="primary" onPress={() => setAddIdentifierOpen(true)}>
                   إضافة معرف
                 </Button>

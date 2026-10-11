@@ -16,6 +16,7 @@ import { DirectoryIcon } from "../../../components/primitives/icons.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { PartyForm } from "../features/party-form.tsx";
+import { QuickCreatePartyDialog } from "../features/quick-create-party-dialog.tsx";
 import type { PartyFormData } from "../validation/party-schema.ts";
 import { useToast } from "../../../components/primitives/toast.tsx";
 
@@ -68,7 +69,8 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
+  const [isFullCreateOpen, setIsFullCreateOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -298,7 +300,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
       breadcrumbs={[{ label: "دليل العلاقات التجارية" }, { label: "العملاء والموردون" }]}
       primaryAction={{
         label: "إضافة طرف تجاري",
-        onClick: () => setIsCreateOpen(true)
+        onClick: () => setIsQuickCreateOpen(true)
       }}
       secondaryActions={
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -400,7 +402,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
               : "ابدأ بتسجيل أول عميل أو مورد لفتح الحسابات والمعاملات التجارية للمؤسسة."
           }
           action={
-            <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
+            <Button variant="primary" onPress={() => setIsQuickCreateOpen(true)}>
               إضافة طرف تجاري جديد
             </Button>
           }
@@ -416,19 +418,32 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
         />
       )}
 
-      {/* Quick/Full Create Dialog */}
+      {/* Quick Create Dialog (Section 49 canonical pack) */}
+      <QuickCreatePartyDialog
+        isOpen={isQuickCreateOpen}
+        onOpenChange={setIsQuickCreateOpen}
+        onCreated={(created) => {
+          void refetch();
+          if (onSelectParty) {
+            onSelectParty(created);
+          }
+        }}
+        onOpenFullForm={() => setIsFullCreateOpen(true)}
+      />
+
+      {/* Full Detailed Party Creation Dialog */}
       <Dialog
-        isOpen={isCreateOpen}
-        onOpenChange={setIsCreateOpen}
-        title="إضافة طرف تجاري جديد"
-        description="تسجيل هوية تجارية جديدة وتحديد أدوارها كعميل أو مورد مع بيانات الاتصال والتوثيق."
+        isOpen={isFullCreateOpen}
+        onOpenChange={setIsFullCreateOpen}
+        title="التسجيل المفصل لطرف تجاري"
+        description="تسجيل كامل وموسع للهوية التجارية، الأدوار، المعرفات الضريبية، والعناوين التفصيلية."
         size="large"
       >
         <PartyForm
           onSubmit={async (formData) => {
             try {
               const created = await create.mutateAsync(toCreate(formData));
-              setIsCreateOpen(false);
+              setIsFullCreateOpen(false);
               showToast({
                 type: "success",
                 title: "تمت إضافة الطرف التجاري بنجاح",
@@ -445,7 +460,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
               });
             }
           }}
-          onCancel={() => setIsCreateOpen(false)}
+          onCancel={() => setIsFullCreateOpen(false)}
           isSubmitting={create.isPending}
         />
       </Dialog>

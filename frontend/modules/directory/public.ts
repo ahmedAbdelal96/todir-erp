@@ -53,4 +53,5 @@ export {
   useImportParties
 } from "./hooks/party-queries.ts";
 export { PartyPicker, type PartyPickerProps } from "./components/party-picker.tsx";
+export { QuickCreatePartyDialog, type QuickCreatePartyDialogProps } from "./features/quick-create-party-dialog.tsx";
 export { directoryRoutes } from "./routes.tsx";

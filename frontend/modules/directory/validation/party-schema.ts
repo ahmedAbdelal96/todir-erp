@@ -12,7 +12,7 @@ export const partyFormSchema = z.object({
   lastName: z.string().optional(),
   countryCode: z.string().max(2).optional(),
   primaryLanguage: z.string().max(10).optional(),
-  roles: z.array(z.enum(["Customer", "Supplier"])).min(1, "يرجى تحديد دور واحد على الأقل (عميل أو مورد)"),
+  roles: z.array(z.enum(["Customer", "Supplier"])),
   identifierType: z.string().optional(),
   identifierValue: z.string().optional(),
   identifierCountryCode: z.string().max(2).optional(),
