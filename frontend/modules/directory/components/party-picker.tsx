@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { Party, PartyRoleCode } from "../types.ts";
 import { usePartyList } from "../hooks/party-queries.ts";
 import { ComboBox, type ComboBoxOption } from "../../../components/primitives/combobox.tsx";
@@ -17,6 +17,11 @@ export interface PartyPickerProps {
   readonly placeholder?: string | undefined;
 }
 
+/**
+ * PartyPicker — server-side debounced search.
+ * Queries the real /parties API on every keystroke (debounced 350ms)
+ * so large tenants are never pre-loaded in bulk.
+ */
 export function PartyPicker({
   label = "الطرف التجاري",
   description,
@@ -30,9 +35,25 @@ export function PartyPicker({
   lockedReason,
   placeholder = "ابحث عن الطرف بالاسم أو الرمز أو الرقم الضريبي...",
 }: PartyPickerProps): React.JSX.Element {
+  const [inputValue, setInputValue] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce input: only fire query after 350 ms of user inactivity
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setDebouncedSearch(inputValue);
+    }, 350);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [inputValue]);
+
   const { data, isLoading } = usePartyList({
+    search: debouncedSearch || undefined,
     role: roleFilter,
-    pageSize: 50,
+    pageSize: 20,
   });
 
   const parties: readonly Party[] = data?.items ?? [];
@@ -49,6 +70,8 @@ export function PartyPicker({
       description={description}
       errorMessage={errorMessage}
       selectedKey={value ?? null}
+      inputValue={inputValue}
+      onInputChange={setInputValue}
       onSelectionChange={(selected) => {
         const id = String(selected ?? "");
         const matched = parties.find((p) => p.id === id);
@@ -57,7 +80,7 @@ export function PartyPicker({
         }
       }}
       options={options}
-      placeholder={isLoading ? "جارٍ التحميل..." : placeholder}
+      placeholder={isLoading ? "جارٍ البحث..." : placeholder}
       isRequired={isRequired}
       isReadOnly={isReadOnly}
       isLocked={isLocked}

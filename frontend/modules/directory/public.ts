@@ -13,8 +13,22 @@ export type {
   IdentifierInput,
   ContactPointInput,
   AddressInput,
+  AddContactPersonRequest,
+  ContactPersonInput,
+  ContactPersonLinkInput,
+  AliasInput,
+  VisibilityInput,
+  MergePartyRequest,
   DuplicateCandidate,
-  PartyReadiness
+  PartyReadiness,
+  ReadinessCapabilityDto,
+  ContactPersonDto,
+  PartyAliasDto,
+  PartyVisibilityDto,
+  AuditEntryDto,
+  DirectoryImportRow,
+  DirectoryImportResult,
+  DirectoryMergeResult
 } from "./types.ts";
 
 export { partyApi, type PartyListParams, type PartyListResult } from "./services/party-api.ts";
@@ -23,13 +37,20 @@ export {
   usePartyRecord,
   usePartySearch,
   useCreateParty,
+  useCreatePartyWithOverride,
   useUpdateParty,
   useArchiveParty,
   useRestoreParty,
   useAddPartyRole,
   useDisablePartyRole,
   usePartyReadiness,
-  usePartyDuplicates
+  usePartyDuplicates,
+  usePartyAudit,
+  useAddPartyContactPerson,
+  useAddPartyAlias,
+  useSetPartyVisibility,
+  useMergeParty,
+  useImportParties
 } from "./hooks/party-queries.ts";
 export { PartyPicker, type PartyPickerProps } from "./components/party-picker.tsx";
 export { directoryRoutes } from "./routes.tsx";

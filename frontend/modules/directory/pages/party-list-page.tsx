@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import type { Party, PartyRoleCode } from "../types.ts";
-import { usePartyList, useCreateParty } from "../hooks/party-queries.ts";
+import type { Party, PartyRoleCode, DirectoryImportRow } from "../types.ts";
+import { usePartyList, useCreateParty, useImportParties } from "../hooks/party-queries.ts";
+import { partyApi } from "../services/party-api.ts";
 import { ListPage } from "../../../components/pages/list-page.tsx";
 import { DataGrid, type DataGridColumn } from "../../../components/grid/index.ts";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
@@ -13,6 +14,7 @@ import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { EmptyState } from "../../../components/primitives/empty-state.tsx";
 import { DirectoryIcon } from "../../../components/primitives/icons.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
+import { TextField } from "../../../components/primitives/text-field.tsx";
 import { PartyForm } from "../features/party-form.tsx";
 import type { PartyFormData } from "../validation/party-schema.ts";
 import { useToast } from "../../../components/primitives/toast.tsx";
@@ -67,6 +69,16 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Import dialog state
+  const [importRef, setImportRef] = useState("");
+  const [importName, setImportName] = useState("");
+  const [importPartyType, setImportPartyType] = useState<"Organization" | "Person">("Organization");
+  const [importRole, setImportRole] = useState<string>("Customer");
+  const [importEmail, setImportEmail] = useState("");
+  const [importTaxId, setImportTaxId] = useState("");
 
   const { showToast } = useToast();
 
@@ -80,6 +92,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
   });
 
   const create = useCreateParty();
+  const importParties = useImportParties();
   const parties = data?.items ?? [];
   const totalCount = data?.totalCount ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -102,6 +115,79 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
   const handleStatusChange = (key: string | number | null) => {
     setStatus(String(key ?? ""));
     setPage(1);
+  };
+
+  const handleExportCsv = async () => {
+    try {
+      setIsExporting(true);
+      const csv = await partyApi.exportCsv({
+        ...(search ? { search } : {}),
+        includeArchived: status === "Archived"
+      });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `directory-parties-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast({
+        type: "success",
+        title: "تم تصدير البيانات بنجاح",
+        description: "تم تجهيز ملف CSV وتنزيله."
+      });
+    } catch (err: unknown) {
+      showToast({
+        type: "error",
+        title: "تعذر تصدير السجلات",
+        description: (err as Error)?.message || "حدث خطأ أثناء التصدير."
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportSubmit = async () => {
+    if (!importName.trim()) {
+      showToast({
+        type: "warning",
+        title: "بيانات ناقصة",
+        description: "يرجى إدخال اسم الطرف التجاري للاستيراد."
+      });
+      return;
+    }
+
+    const row: DirectoryImportRow = {
+      externalReference: importRef.trim() || `EXT-${Date.now()}`,
+      partyType: importPartyType,
+      displayName: importName.trim(),
+      role: importRole || "Customer",
+      email: importEmail.trim() || undefined,
+      identifierType: importTaxId.trim() ? "TaxId" : undefined,
+      identifierValue: importTaxId.trim() || undefined
+    };
+
+    try {
+      const result = await importParties.mutateAsync({ rows: [row], commit: true });
+      setIsImportOpen(false);
+      setImportRef("");
+      setImportName("");
+      setImportEmail("");
+      setImportTaxId("");
+      const successCount = result.rows.filter(r => r.action === "Created" || r.action === "Updated").length;
+      showToast({
+        type: "success",
+        title: "تم استيراد البيانات بنجاح",
+        description: `تم إدراج ${successCount} سجل(سجلات) في الدليل التجاري.`
+      });
+      void refetch();
+    } catch (err: unknown) {
+      showToast({
+        type: "error",
+        title: "تعذر الاستيراد",
+        description: (err as Error)?.message || "حدث خطأ أثناء استيراد البيانات."
+      });
+    }
   };
 
   const columns: DataGridColumn<Party>[] = [
@@ -185,7 +271,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
         return (
           <StatusBadge
             status={isActive ? "success" : isArchived ? "neutral" : "warning"}
-            label={isActive ? "نشط ومعتمد" : isArchived ? "مؤرشف" : row.status === "Blocked" ? "محظور" : row.status}
+            label={isActive ? "نشط" : isArchived ? "مؤرشف" : row.status === "Blocked" ? "محظور" : row.status === "Merged" ? "مدموج" : row.status}
             size="small"
           />
         );
@@ -214,6 +300,16 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
         label: "إضافة طرف تجاري",
         onClick: () => setIsCreateOpen(true)
       }}
+      secondaryActions={
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <Button variant="secondary" size="compact" onPress={() => setIsImportOpen(true)}>
+            استيراد سجلات
+          </Button>
+          <Button variant="secondary" size="compact" onPress={handleExportCsv} isDisabled={isExporting}>
+            {isExporting ? "جارٍ التصدير..." : "تصدير CSV"}
+          </Button>
+        </div>
+      }
       filterBar={
         <FilterBar
           searchInput={
@@ -320,6 +416,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
         />
       )}
 
+      {/* Quick/Full Create Dialog */}
       <Dialog
         isOpen={isCreateOpen}
         onOpenChange={setIsCreateOpen}
@@ -340,17 +437,82 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
               if (onSelectParty) {
                 onSelectParty(created);
               }
-            } catch (err: any) {
+            } catch (err: unknown) {
               showToast({
                 type: "error",
                 title: "تعذر حفظ الطرف التجاري",
-                description: err?.message || "حدث خطأ أثناء الاتصال بالخادم."
+                description: (err as Error)?.message || "حدث خطأ أثناء الاتصال بالخادم."
               });
             }
           }}
           onCancel={() => setIsCreateOpen(false)}
           isSubmitting={create.isPending}
         />
+      </Dialog>
+
+      {/* Import Records Dialog */}
+      <Dialog
+        isOpen={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        title="استيراد أطراف تجارية جديدة"
+        description="إدخال واستيراد سجلات أطراف تجارية مع المطابقة الآلية والتحديث."
+        size="medium"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.5rem" }}>
+          <TextField
+            label="الاسم التجاري / المعروض *"
+            placeholder="مثال: شركة النصر للتوريدات"
+            value={importName}
+            onChange={setImportName}
+            isRequired
+          />
+          <div>
+            <Select
+              label="نوع الكيان"
+              selectedKey={importPartyType}
+              onSelectionChange={(k) => setImportPartyType(String(k ?? "Organization") as "Organization" | "Person")}
+            >
+              <SelectItem id="Organization" textValue="منشأة / شركة">منشأة / شركة</SelectItem>
+              <SelectItem id="Person" textValue="فرد مستقل">فرد مستقل</SelectItem>
+            </Select>
+          </div>
+          <div>
+            <Select
+              label="الدور التجاري"
+              selectedKey={importRole}
+              onSelectionChange={(k) => setImportRole(String(k ?? "Customer"))}
+            >
+              <SelectItem id="Customer" textValue="عميل">عميل</SelectItem>
+              <SelectItem id="Supplier" textValue="مورد">مورد</SelectItem>
+            </Select>
+          </div>
+          <TextField
+            label="الرقم الضريبي (اختياري)"
+            placeholder="مثال: 300123456700003"
+            value={importTaxId}
+            onChange={setImportTaxId}
+          />
+          <TextField
+            label="البريد الإلكتروني (اختياري)"
+            placeholder="info@company.com"
+            value={importEmail}
+            onChange={setImportEmail}
+          />
+          <TextField
+            label="المرجع الخارجي / الكود (اختياري)"
+            placeholder="مثال: ERP-CUST-1001"
+            value={importRef}
+            onChange={setImportRef}
+          />
+          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", marginTop: "0.5rem" }}>
+            <Button variant="secondary" onPress={() => setIsImportOpen(false)}>
+              إلغاء
+            </Button>
+            <Button variant="primary" onPress={handleImportSubmit} isDisabled={importParties.isPending}>
+              {importParties.isPending ? "جارٍ الاستيراد..." : "تأكيد الاستيراد"}
+            </Button>
+          </div>
+        </div>
       </Dialog>
     </ListPage>
   );

@@ -8,8 +8,16 @@ import type {
   IdentifierInput,
   ContactPointInput,
   AddressInput,
+  AddContactPersonRequest,
+  AliasInput,
+  VisibilityInput,
+  MergePartyRequest,
   DuplicateCandidate,
-  PartyReadiness
+  PartyReadiness,
+  AuditEntryDto,
+  DirectoryImportRow,
+  DirectoryImportResult,
+  DirectoryMergeResult
 } from "../types.ts";
 import { queryKeyFactory } from "../../../core/api/query-keys.ts";
 
@@ -95,6 +103,21 @@ export function usePartyReadiness(
   });
 }
 
+export function usePartyAudit(
+  partyId: string,
+  context: UsePartyContext = {}
+) {
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
+
+  return useQuery<readonly AuditEntryDto[]>({
+    queryKey: [...queryKeyFactory.detail(tenantId, entityId, "directory", "parties", partyId), "audit"],
+    queryFn: () => partyApi.getAudit(partyId, tenantId),
+    enabled: Boolean(partyId),
+    staleTime: 30_000,
+  });
+}
+
 export function useCreateParty(context: UsePartyContext = {}) {
   const queryClient = useQueryClient();
   const tenantId = context.tenantId || DEFAULT_TENANT;
@@ -102,6 +125,21 @@ export function useCreateParty(context: UsePartyContext = {}) {
 
   return useMutation<Party, Error, CreatePartyInput>({
     mutationFn: (input: CreatePartyInput) => partyApi.create(input, tenantId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeyFactory.resource(tenantId, entityId, "directory", "parties"),
+      });
+    },
+  });
+}
+
+export function useCreatePartyWithOverride(context: UsePartyContext = {}) {
+  const queryClient = useQueryClient();
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
+
+  return useMutation<Party, Error, CreatePartyInput>({
+    mutationFn: (input: CreatePartyInput) => partyApi.createWithDuplicateOverride(input, tenantId),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeyFactory.resource(tenantId, entityId, "directory", "parties"),
@@ -247,6 +285,81 @@ export function useAddPartyAddress(context: UsePartyContext = {}) {
       void queryClient.invalidateQueries({
         queryKey: queryKeyFactory.detail(tenantId, entityId, "directory", "parties", id),
       });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeyFactory.resource(tenantId, entityId, "directory", "parties"),
+      });
+    },
+  });
+}
+
+export function useAddPartyContactPerson(context: UsePartyContext = {}) {
+  const queryClient = useQueryClient();
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
+
+  return useMutation<Party, Error, { id: string; input: AddContactPersonRequest }>({
+    mutationFn: ({ id, input }) => partyApi.addContactPerson(id, input, tenantId),
+    onSuccess: (_data, { id }) => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeyFactory.detail(tenantId, entityId, "directory", "parties", id),
+      });
+    },
+  });
+}
+
+export function useAddPartyAlias(context: UsePartyContext = {}) {
+  const queryClient = useQueryClient();
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
+
+  return useMutation<Party, Error, { id: string; input: AliasInput }>({
+    mutationFn: ({ id, input }) => partyApi.addAlias(id, input, tenantId),
+    onSuccess: (_data, { id }) => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeyFactory.detail(tenantId, entityId, "directory", "parties", id),
+      });
+    },
+  });
+}
+
+export function useSetPartyVisibility(context: UsePartyContext = {}) {
+  const queryClient = useQueryClient();
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
+
+  return useMutation<Party, Error, { id: string; input: VisibilityInput }>({
+    mutationFn: ({ id, input }) => partyApi.setVisibility(id, input, tenantId),
+    onSuccess: (_data, { id }) => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeyFactory.detail(tenantId, entityId, "directory", "parties", id),
+      });
+    },
+  });
+}
+
+export function useMergeParty(context: UsePartyContext = {}) {
+  const queryClient = useQueryClient();
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
+
+  return useMutation<DirectoryMergeResult, Error, { sourcePartyId: string; input: MergePartyRequest }>({
+    mutationFn: ({ sourcePartyId, input }) => partyApi.merge(sourcePartyId, input, tenantId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeyFactory.resource(tenantId, entityId, "directory", "parties"),
+      });
+    },
+  });
+}
+
+export function useImportParties(context: UsePartyContext = {}) {
+  const queryClient = useQueryClient();
+  const tenantId = context.tenantId || DEFAULT_TENANT;
+  const entityId = context.entityId || DEFAULT_ENTITY;
+
+  return useMutation<DirectoryImportResult, Error, { rows: readonly DirectoryImportRow[]; commit: boolean }>({
+    mutationFn: ({ rows, commit }) => partyApi.importRows(rows, commit, tenantId),
+    onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeyFactory.resource(tenantId, entityId, "directory", "parties"),
       });

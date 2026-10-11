@@ -7,8 +7,16 @@ import type {
   IdentifierInput,
   ContactPointInput,
   AddressInput,
+  AddContactPersonRequest,
+  AliasInput,
+  VisibilityInput,
+  MergePartyRequest,
   DuplicateCandidate,
-  PartyReadiness
+  PartyReadiness,
+  AuditEntryDto,
+  DirectoryImportResult,
+  DirectoryMergeResult,
+  DirectoryImportRow
 } from "../types.ts";
 
 export interface PartyListParams {
@@ -53,6 +61,15 @@ export const partyApi = {
     return httpClient<Party>("/api/v1/directory/parties", {
       method: "POST",
       body: JSON.stringify(input),
+      ...(tenantId !== undefined ? { tenantId } : {})
+    });
+  },
+
+  createWithDuplicateOverride: async (input: CreatePartyInput, tenantId?: string): Promise<Party> => {
+    return httpClient<Party>("/api/v1/directory/parties", {
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: { "X-Duplicate-Override": "true" },
       ...(tenantId !== undefined ? { tenantId } : {})
     });
   },
@@ -120,6 +137,38 @@ export const partyApi = {
     });
   },
 
+  addContactPerson: async (id: string, input: AddContactPersonRequest, tenantId?: string): Promise<Party> => {
+    return httpClient<Party>(`/api/v1/directory/parties/${id}/contact-persons`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      ...(tenantId !== undefined ? { tenantId } : {})
+    });
+  },
+
+  addAlias: async (id: string, input: AliasInput, tenantId?: string): Promise<Party> => {
+    return httpClient<Party>(`/api/v1/directory/parties/${id}/aliases`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      ...(tenantId !== undefined ? { tenantId } : {})
+    });
+  },
+
+  setVisibility: async (id: string, input: VisibilityInput, tenantId?: string): Promise<Party> => {
+    return httpClient<Party>(`/api/v1/directory/parties/${id}/visibility`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+      ...(tenantId !== undefined ? { tenantId } : {})
+    });
+  },
+
+  merge: async (sourcePartyId: string, input: MergePartyRequest, tenantId?: string): Promise<DirectoryMergeResult> => {
+    return httpClient<DirectoryMergeResult>(`/api/v1/directory/parties/${sourcePartyId}/merge`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      ...(tenantId !== undefined ? { tenantId } : {})
+    });
+  },
+
   getDuplicates: async (id: string, tenantId?: string): Promise<readonly DuplicateCandidate[]> => {
     return httpClient<readonly DuplicateCandidate[]>(`/api/v1/directory/parties/${id}/duplicate-candidates`, {
       ...(tenantId !== undefined ? { tenantId } : {})
@@ -128,6 +177,29 @@ export const partyApi = {
 
   getReadiness: async (id: string, tenantId?: string): Promise<PartyReadiness> => {
     return httpClient<PartyReadiness>(`/api/v1/directory/parties/${id}/readiness`, {
+      ...(tenantId !== undefined ? { tenantId } : {})
+    });
+  },
+
+  getAudit: async (id: string, tenantId?: string): Promise<readonly AuditEntryDto[]> => {
+    return httpClient<readonly AuditEntryDto[]>(`/api/v1/directory/parties/${id}/audit`, {
+      ...(tenantId !== undefined ? { tenantId } : {})
+    });
+  },
+
+  exportCsv: async (params: { search?: string; includeArchived?: boolean } = {}, tenantId?: string): Promise<string> => {
+    const query = new URLSearchParams();
+    if (params.search) query.set("search", params.search);
+    if (params.includeArchived) query.set("includeArchived", "true");
+    return httpClient<string>(`/api/v1/directory/parties/export?${query.toString()}`, {
+      ...(tenantId !== undefined ? { tenantId } : {})
+    });
+  },
+
+  importRows: async (rows: readonly DirectoryImportRow[], commit: boolean, tenantId?: string): Promise<DirectoryImportResult> => {
+    return httpClient<DirectoryImportResult>("/api/v1/directory/parties/import", {
+      method: "POST",
+      body: JSON.stringify({ rows, commit }),
       ...(tenantId !== undefined ? { tenantId } : {})
     });
   }

@@ -40,6 +40,31 @@ export interface Address {
   readonly isDefault: boolean;
 }
 
+/** Contact persons represent named individuals linked to a party (e.g. procurement manager). */
+export interface ContactPersonDto {
+  readonly id: string;
+  readonly displayName: string;
+  readonly jobTitle?: string | null;
+  readonly department?: string | null;
+  readonly status: string;
+  readonly usages: readonly string[];
+}
+
+/** Alternative names / trade aliases registered for a party. */
+export interface PartyAliasDto {
+  readonly id: string;
+  readonly alias: string;
+  readonly languageCode?: string | null;
+  readonly aliasType: string;
+}
+
+/** Visibility scope entry controlling which legal entity can see the party. */
+export interface PartyVisibilityDto {
+  readonly id: string;
+  readonly scopeType: string;
+  readonly legalEntityId?: string | null;
+}
+
 export interface Party {
   readonly id: string;
   readonly partyType: PartyType;
@@ -58,6 +83,9 @@ export interface Party {
   readonly identifiers: readonly PartyIdentifier[];
   readonly contactPoints: readonly ContactPoint[];
   readonly addresses: readonly Address[];
+  readonly contactPersons?: readonly ContactPersonDto[] | null;
+  readonly aliases?: readonly PartyAliasDto[] | null;
+  readonly visibility?: readonly PartyVisibilityDto[] | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly version: number;
@@ -87,6 +115,44 @@ export interface AddressInput {
   readonly line1: string;
   readonly line2?: string | undefined;
   readonly isDefault?: boolean | undefined;
+}
+
+export interface ContactPersonInput {
+  readonly displayName: string;
+  readonly firstName?: string | undefined;
+  readonly lastName?: string | undefined;
+  readonly jobTitle?: string | undefined;
+  readonly department?: string | undefined;
+  readonly languageCode?: string | undefined;
+}
+
+export interface ContactPersonLinkInput {
+  readonly contactPersonId: string;
+  readonly usage?: string | undefined;
+  readonly isPrimary?: boolean | undefined;
+}
+
+/** Combined request matching the backend AddContactPersonRequest. */
+export interface AddContactPersonRequest {
+  readonly person: ContactPersonInput;
+  readonly link?: ContactPersonLinkInput | undefined;
+}
+
+export interface AliasInput {
+  readonly alias: string;
+  readonly languageCode?: string | undefined;
+  readonly aliasType?: string | undefined;
+}
+
+export interface VisibilityInput {
+  readonly scopeType: "TenantWide" | "SelectedLegalEntities" | "SingleLegalEntity" | "LegalEntity" | "Branch";
+  readonly legalEntityId?: string | undefined;
+}
+
+export interface MergePartyRequest {
+  readonly masterPartyId: string;
+  readonly reason: string;
+  readonly confirmIrreversible: boolean;
 }
 
 export interface CreatePartyInput {
@@ -129,9 +195,66 @@ export interface DuplicateCandidate {
   readonly status: string;
 }
 
+export interface ReadinessCapabilityDto {
+  readonly capability: string;
+  readonly ready: boolean;
+  readonly missing: readonly string[];
+  readonly warnings: readonly string[];
+}
+
 export interface PartyReadiness {
   readonly partyId: string;
   readonly ready: boolean;
   readonly missing: readonly string[];
   readonly warnings: readonly string[];
+  readonly capabilities?: readonly ReadinessCapabilityDto[] | null;
+}
+
+export interface AuditEntryDto {
+  readonly id: string;
+  readonly action: string;
+  readonly entityType: string;
+  readonly entityId: string;
+  readonly reason?: string | null;
+  readonly occurredAt: string;
+  readonly afterJson?: string | null;
+}
+
+export interface DirectoryImportRow {
+  readonly externalReference: string;
+  readonly partyType: PartyType;
+  readonly displayName: string;
+  readonly countryCode?: string | undefined;
+  readonly nameAr?: string | undefined;
+  readonly nameEn?: string | undefined;
+  readonly legalName?: string | undefined;
+  readonly tradeName?: string | undefined;
+  readonly role?: string | undefined;
+  readonly identifierType?: string | undefined;
+  readonly identifierValue?: string | undefined;
+  readonly email?: string | undefined;
+  readonly phone?: string | undefined;
+  readonly addressLine1?: string | undefined;
+  readonly city?: string | undefined;
+}
+
+export interface DirectoryImportRowResult {
+  readonly externalReference: string;
+  readonly action: string;
+  readonly partyId?: string | null;
+  readonly errors: readonly string[];
+  readonly possibleMatches: readonly string[];
+}
+
+export interface DirectoryImportResult {
+  readonly operationId: string;
+  readonly committed: boolean;
+  readonly rows: readonly DirectoryImportRowResult[];
+}
+
+export interface DirectoryMergeResult {
+  readonly masterPartyId: string;
+  readonly sourcePartyId: string;
+  readonly status: string;
+  readonly contributors: readonly string[];
 }
