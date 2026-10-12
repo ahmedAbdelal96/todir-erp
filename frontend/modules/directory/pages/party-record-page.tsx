@@ -90,7 +90,7 @@ function identifierTypeLabel(type: string): string {
   if (type === "CommercialRegister") return "السجل التجاري (CR)";
   if (type === "National" || type === "NationalId") return "الرقم القومي / الهوية";
   if (type === "InternalReference") return "الرقم المرجعي الداخلي";
-  return type;
+  return "معرّف رسمي";
 }
 
 function capabilityLabel(cap: string): string {
@@ -98,7 +98,7 @@ function capabilityLabel(cap: string): string {
   if (cap === "CanPurchase") return "الشراء والتوريد";
   if (cap === "CanInvoice") return "إصدار الفواتير";
   if (cap === "CanPay") return "المدفوعات";
-  return cap;
+  return "جاهزية العملية التجارية";
 }
 
 function actionLabel(action: string): string {
@@ -117,7 +117,52 @@ function actionLabel(action: string): string {
     VisibilitySet: "تعديل نطاق الرؤية",
     Merged: "دمج مع سجل آخر"
   };
-  return map[action] ?? action;
+  return map[action] ?? "تعديل في سجل الطرف التجاري";
+}
+
+import { PartyPicker } from "../components/party-picker.tsx";
+
+function missingRequirementLabel(req: string): string {
+  const normalized = req.trim();
+  const lower = normalized.toLowerCase();
+  if ((lower.includes("customer role") || lower.includes("customer")) && (lower.includes("legal identifier") || lower.includes("tax") || lower.includes("vat"))) {
+    return "تحديد دور العميل وتوثيق المعرّف الرسمي (الرقم الضريبي / السجل)";
+  }
+  if (lower.includes("customer role") || lower.includes("customer")) {
+    return "تفعيل دور العميل في المعاملات";
+  }
+  if (lower.includes("supplier role") || lower.includes("supplier")) {
+    return "تفعيل دور المورد في المعاملات";
+  }
+  if (lower.includes("legal identifier") || lower.includes("tax") || lower.includes("vat") || lower.includes("commercial register")) {
+    return "توثيق الرقم الضريبي أو السجل التجاري الرسمي";
+  }
+  if (lower.includes("shipping address")) {
+    return "تسجيل عنوان الشحن والتوصيل";
+  }
+  if (lower.includes("billing address") || lower.includes("address")) {
+    return "تسجيل عنوان الفوترة الجغرافي";
+  }
+  if (lower.includes("contact") || lower.includes("phone") || lower.includes("email")) {
+    return "تسجيل وسيلة تواصل رئيسية (هاتف أو بريد)";
+  }
+  return "استكمال البيانات المطلوبة لهذه العملية";
+}
+
+function duplicateReasonLabel(reason: string): string {
+  const lower = reason.toLowerCase();
+  if (lower.includes("tax") || lower.includes("vat") || lower.includes("identifier")) return "تطابق في الرقم الضريبي أو السجل الرسمي";
+  if (lower.includes("phone")) return "رقم الهاتف مستخدم في سجل آخر";
+  if (lower.includes("email")) return "البريد الإلكتروني مستخدم في سجل آخر";
+  if (lower.includes("name")) return "تشابه قوي في اسم الطرف التجاري";
+  return "يوجد سجل تجاري قريب من هذا السجل ويحتاج إلى مراجعة";
+}
+
+function duplicateStatusLabel(status: string): string {
+  if (status === "Pending") return "في انتظار المراجعة";
+  if (status === "Dismissed") return "تم تجاهل التنبيه";
+  if (status === "Confirmed") return "تم تأكيد التشابه";
+  return "تنبيه يحتاج إلى مراجعة";
 }
 
 export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps): React.JSX.Element {
@@ -159,6 +204,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
   // Add contact person form state
   const [cpDisplayName, setCpDisplayName] = useState("");
   const [cpJobTitle, setCpJobTitle] = useState("");
+  const [cpUsage, setCpUsage] = useState<string>("General");
 
   // Add alias form state
   const [aliasValue, setAliasValue] = useState("");
@@ -167,6 +213,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
   const { showToast } = useToast();
 
   const { data: party, isLoading, error, refetch } = usePartyRecord(partyId);
+  const { data: masterParty } = usePartyRecord(masterPartyId);
   const { data: readiness } = usePartyReadiness(partyId);
   const { data: duplicates } = usePartyDuplicates(partyId);
   const { data: auditEntries } = usePartyAudit(partyId);
@@ -273,7 +320,8 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
   };
 
   const handleMerge = async () => {
-    if (!masterPartyId.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يجب إدخال معرّف السجل الرئيسي للدمج." }); return; }
+    if (!masterPartyId.trim() || !masterParty) { showToast({ type: "warning", title: "اختيار مطلوب", description: "اختر السجل التجاري الرئيسي من نتائج البحث قبل المتابعة." }); return; }
+    if (masterParty.id === party.id) { showToast({ type: "warning", title: "اختيار غير صالح", description: "اختر سجلاً مختلفاً ليكون السجل الرئيسي." }); return; }
     if (!mergeReason.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يجب إدخال سبب الدمج للتوثيق." }); return; }
     if (!mergeConfirmed) { showToast({ type: "warning", title: "تأكيد مطلوب", description: "يجب تأكيد أن عملية الدمج لا يمكن التراجع عنها." }); return; }
     const req: MergePartyRequest = { masterPartyId, reason: mergeReason, confirmIrreversible: true };
@@ -328,11 +376,14 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
 
   const handleAddContactPerson = async () => {
     if (!cpDisplayName.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يرجى إدخال اسم جهة الاتصال." }); return; }
-    const req: AddContactPersonRequest = { person: { displayName: cpDisplayName, jobTitle: cpJobTitle || undefined } };
+    const req: AddContactPersonRequest = {
+      person: { displayName: cpDisplayName, jobTitle: cpJobTitle || undefined },
+      link: { contactPersonId: "", usage: cpUsage, isPrimary: (party.contactPersons?.length ?? 0) === 0 }
+    };
     try {
       await addContactPerson.mutateAsync({ id: party.id, input: req });
       setAddContactPersonOpen(false);
-      setCpDisplayName(""); setCpJobTitle("");
+      setCpDisplayName(""); setCpJobTitle(""); setCpUsage("General");
       showToast({ type: "success", title: "تمت إضافة جهة الاتصال", description: `تم تسجيل ${cpDisplayName} كجهة اتصال لهذا الطرف التجاري.` });
     } catch (err: unknown) {
       showToast({ type: "error", title: "تعذر الإضافة", description: (err as Error)?.message || "حدث خطأ." });
@@ -386,9 +437,9 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
         value={readiness?.ready ? "جاهز للعمليات" : "بحاجة لاستكمال"}
         description={
           readiness?.ready
-            ? "البيانات الرسمية مكتملة"
+            ? "البيانات الرسمية مكتملة وموثقة"
             : readiness?.missing.length
-            ? `ينقص: ${readiness.missing.join("، ")}`
+            ? `ينقص: ${readiness.missing.map(missingRequirementLabel).join("، ")}`
             : "سجل قيد المراجعة"
         }
         icon={<ShieldCheckIcon size={22} />}
@@ -412,7 +463,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
     <RecordPage
       title={party.displayName}
       recordCode={isOrganization ? "منشأة مسجلة" : "فرد مسجل"}
-      status={isArchived ? "neutral" : isMerged ? "neutral" : "success"}
+      status={isArchived ? "مؤرشف" : isMerged ? "مدمج" : "نشط"}
       breadcrumbs={[
         { label: "دليل العلاقات التجارية", href: "/directory", onClick: onBack },
         { label: party.displayName }
@@ -506,10 +557,10 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                 >
                   <div style={{ flex: 1 }}>
                     <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-status-warning-content, #92400e)", display: "block" }}>
-                      ✓ {d.reason}
+                      ✓ {duplicateReasonLabel(d.reason)}
                     </span>
                     <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                      {d.status === "Pending" ? "في انتظار المراجعة" : d.status === "Dismissed" ? "تم تجاهله" : d.status}
+                      {duplicateStatusLabel(d.status)}
                       {d.confidence > 0.9 ? " · تطابق قوي جداً" : d.confidence > 0.7 ? " · تطابق محتمل" : " · تشابه ملحوظ"}
                     </span>
                   </div>
@@ -518,9 +569,8 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                       size="compact"
                       variant="secondary"
                       onPress={() => {
-                        if (onBack) {
-                          onBack();
-                        }
+                        setMasterPartyId(d.candidatePartyId);
+                        setMergeOpen(true);
                       }}
                     >
                       عرض ومقارنة
@@ -737,7 +787,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                           </span>
                           {!cap.ready && cap.missing.length > 0 && (
                             <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                              ينقص: {cap.missing.join("، ")}
+                              ينقص: {cap.missing.map(missingRequirementLabel).join("، ")}
                             </p>
                           )}
                         </div>
@@ -752,7 +802,9 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.875rem" }}>
                       <StatusBadge status={readiness.ready ? "success" : "warning"} label={readiness.ready ? "جاهز للعمليات" : "بيانات ناقصة"} size="small" />
                       {!readiness.ready && readiness.missing.length > 0 && (
-                        <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>ينقص: {readiness.missing.join("، ")}</span>
+                        <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                          ينقص: {readiness.missing.map(missingRequirementLabel).join("، ")}
+                        </span>
                       )}
                     </div>
                   )}
@@ -778,7 +830,8 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                     <div key={v.id} style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)", fontSize: "0.875rem" }}>
                       {v.scopeType === "TenantWide" ? "مرئي لجميع الجهات القانونية في المؤسسة" :
                        v.scopeType === "SelectedLegalEntities" ? "مرئي لجهات قانونية محددة" :
-                       v.scopeType === "SingleLegalEntity" ? "مرئي لجهة قانونية واحدة فقط" : v.scopeType}
+                       v.scopeType === "SingleLegalEntity" ? "مرئي لجهة قانونية واحدة فقط" :
+                       v.scopeType === "Branch" ? "مرئي لفرع محدد" : "نطاق رؤية مخصص"}
                     </div>
                   ))}
                 </div>
@@ -1042,17 +1095,51 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
           <div style={{ padding: "0.75rem 1rem", borderRadius: "var(--radius-md)", backgroundColor: "var(--color-status-warning-subtle, #fffbeb)", border: "1px solid var(--color-status-warning, #f59e0b)", fontSize: "0.875rem", color: "var(--color-status-warning-content, #92400e)", fontWeight: 600 }}>
             ⚠ تحذير: هذا الإجراء لا يمكن التراجع عنه بعد التأكيد.
           </div>
-          <TextField
-            label="معرّف السجل الرئيسي (الطرف الذي سيُدمج فيه)"
-            placeholder="أدخل معرّف السجل الرئيسي..."
-            value={masterPartyId}
-            onChange={setMasterPartyId}
-          />
+          <div>
+            <PartyPicker
+              label="السجل التجاري الرئيسي (الطرف الباقي المستهدف)"
+              placeholder="ابحث بالاسم، السجل التجاري أو الرقم الضريبي..."
+              value={masterPartyId}
+              onChange={(id) => setMasterPartyId(id)}
+              isRequired
+              enableQuickCreate={false}
+            />
+          </div>
+          {masterParty && masterParty.id !== party.id && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: "0.75rem",
+                padding: "0.875rem",
+                border: "1px solid var(--color-border-default)",
+                borderRadius: "var(--radius-md)",
+                backgroundColor: "var(--color-surface-sunken)"
+              }}
+            >
+              {[
+                { title: "السجل الحالي الذي سيُدمج", record: party },
+                { title: "السجل الرئيسي الذي سيبقى", record: masterParty }
+              ].map(({ title, record }) => (
+                <div key={title} style={{ minWidth: 0 }}>
+                  <strong style={{ display: "block", fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{title}</strong>
+                  <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{record.displayName}</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--color-content-secondary)", overflowWrap: "anywhere" }}>
+                    {record.roles.filter((role) => role.status === "Active").map((role) => role.code === "Customer" ? "عميل" : "مورد").join("، ") || "طرف تجاري عام"}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.25rem" }}>
+                    {record.identifiers.length} معرف رسمي · {record.contactPersons?.length ?? 0} جهة اتصال · {record.addresses.length} عنوان
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <TextField
             label="سبب الدمج (للتوثيق)"
-            placeholder="مثال: سجل مكرر بنفس الرقم الضريبي"
+            placeholder="مثال: سجل مكرر بنفس الرقم الضريبي والسجل التجاري"
             value={mergeReason}
             onChange={setMergeReason}
+            isRequired
           />
           <Checkbox isSelected={mergeConfirmed} onChange={setMergeConfirmed}>
             <span style={{ fontWeight: 600 }}>أفهم وأؤكد أن عملية الدمج لا يمكن التراجع عنها وأن هذا السجل سيُغلق نهائياً.</span>
@@ -1135,8 +1222,15 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
       {/* Add Contact Person Dialog */}
       <Dialog isOpen={addContactPersonOpen} onOpenChange={setAddContactPersonOpen} title="إضافة جهة اتصال مباشرة" description="تسجيل شخص مسؤول يمثل هذا الطرف التجاري في التواصل اليومي." size="medium">
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.5rem" }}>
-          <TextField label="الاسم الكامل *" placeholder="مثال: أحمد محمود" value={cpDisplayName} onChange={setCpDisplayName} isRequired />
+          <TextField label="الاسم الكامل" placeholder="مثال: أحمد محمود" value={cpDisplayName} onChange={setCpDisplayName} isRequired />
           <TextField label="المنصب الوظيفي" placeholder="مثال: مدير المشتريات" value={cpJobTitle} onChange={setCpJobTitle} />
+          <div>
+            <Select label="طبيعة الاستخدام / العلاقة" selectedKey={cpUsage} onSelectionChange={(k) => setCpUsage(String(k ?? "General"))}>
+              <SelectItem id="General" textValue="اتصال عام">اتصال عام</SelectItem>
+              <SelectItem id="Billing" textValue="الفوترة والمطالبات المالية">الفوترة والمطالبات المالية</SelectItem>
+              <SelectItem id="Shipping" textValue="الشحن والخدمات اللوجستية">الشحن والخدمات اللوجستية</SelectItem>
+            </Select>
+          </div>
           <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
             <Button variant="secondary" onPress={() => setAddContactPersonOpen(false)}>إلغاء</Button>
             <Button variant="primary" onPress={handleAddContactPerson} isDisabled={addContactPerson.isPending}>

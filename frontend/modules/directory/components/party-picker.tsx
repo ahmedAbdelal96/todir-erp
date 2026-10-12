@@ -63,10 +63,26 @@ export function PartyPicker({
 
   const parties: readonly Party[] = data?.items ?? [];
 
+  const roleLabel = (party: Party): string => party.roles
+    .filter((role) => role.status === "Active")
+    .map((role) => role.code === "Customer" ? "عميل" : "مورد")
+    .join("، ");
+
+  const businessContext = (party: Party): string => {
+    const identifier = party.identifiers.find((item) => item.isPrimary)?.value ?? party.identifiers[0]?.value;
+    const location = party.addresses.find((address) => address.isDefault)?.city ?? party.addresses[0]?.city;
+    return [
+      party.legalName && party.legalName !== party.displayName ? `الاسم القانوني: ${party.legalName}` : undefined,
+      roleLabel(party) || "طرف تجاري عام",
+      identifier ? `السجل/الرقم الضريبي: ${identifier}` : "بدون رقم رسمي",
+      location ? `الموقع: ${location}` : undefined
+    ].filter(Boolean).join(" · ");
+  };
+
   const options: ComboBoxOption[] = parties.map((p) => ({
     id: p.id,
     label: p.displayName,
-    description: p.legalName && p.legalName !== p.displayName ? p.legalName : undefined,
+    description: businessContext(p),
   }));
 
   const showQuickCreateButton = enableQuickCreate && !isReadOnly && !isLocked;

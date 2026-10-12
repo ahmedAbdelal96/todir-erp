@@ -85,7 +85,7 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <Select
-                  label="نوع الكيان *"
+                  label="نوع الكيان"
                   selectedKey={field.value}
                   onSelectionChange={(key) => {
                     const newType = String(key ?? "Organization") as "Person" | "Organization";
@@ -111,7 +111,7 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <TextField
-                  label={type === "Person" ? "الاسم المعروض بالكامل *" : "الاسم التجاري / المعروض *"}
+                  label={type === "Person" ? "الاسم المعروض بالكامل" : "الاسم التجاري / المعروض"}
                   placeholder={type === "Person" ? "مثال: أحمد محمود إبراهيم" : "مثال: أطلس للتجارة العامة"}
                   isRequired={true}
                   isLocked={isLocked}

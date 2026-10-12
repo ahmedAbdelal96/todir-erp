@@ -123,12 +123,12 @@ export function QuickCreatePartyDialog({
     } catch (err: unknown) {
       const message = (err as Error)?.message || "حدث خطأ أثناء حفظ السجل.";
       if (message.includes("duplicate") || message.includes("409")) {
-        setDuplicateWarning(message);
+        setDuplicateWarning("وجد النظام سجلًا قريبًا بنفس بيانات التعريف. راجع السجلات المقترحة قبل إنشاء سجل جديد.");
       } else {
         showToast({
           type: "error",
           title: "تعذر الحفظ",
-          description: message
+          description: "تعذر حفظ السجل الآن. راجع البيانات وحاول مرة أخرى."
         });
       }
     }
@@ -186,7 +186,7 @@ export function QuickCreatePartyDialog({
         )}
 
         <TextField
-          label="الاسم التجاري / المعروض *"
+          label="الاسم التجاري / المعروض"
           placeholder="مثال: شركة الأفق أو محمد عبد الله"
           value={displayName}
           onChange={setDisplayName}
@@ -322,8 +322,8 @@ export function QuickCreatePartyDialog({
           ) : <span />}
 
           <div style={{ display: "flex", gap: "0.625rem" }}>
-            <Button variant="secondary" onPress={() => handleClose(false)}>
-              إلغاء التعديل
+            <Button variant="secondary" aria-label="إلغاء التعديل" onPress={() => handleClose(false)}>
+              إلغاء
             </Button>
             <Button
               variant="primary"
