@@ -38,6 +38,7 @@ public sealed record ContactPointInput(string Type, string Value, string? Label,
 public sealed record AddressInput(string Usage, string CountryCode, string? City, string? Region, string? PostalCode, string Line1, string? Line2, bool IsDefault = false);
 public sealed record ContactPersonInput(string DisplayName, string? FirstName = null, string? LastName = null, string? JobTitle = null, string? Department = null, string? LanguageCode = null);
 public sealed record ContactPersonLinkInput(Guid ContactPersonId, string Usage = "General", bool IsPrimary = false);
+public sealed record AddContactPersonRequest(ContactPersonInput Person, ContactPersonLinkInput Link);
 public sealed record AliasInput(string Alias, string? LanguageCode = null, string AliasType = "Alternate");
 public sealed record VisibilityInput(string ScopeType, Guid? LegalEntityId = null);
 public sealed record MergePartyRequest(Guid MasterPartyId, string Reason, bool ConfirmIrreversible = false);

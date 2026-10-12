@@ -78,9 +78,9 @@ public static class DirectoryModuleExtensions
             await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
                 ? await Execute(http, access, () => service.ReadinessFrameworkAsync(access.Tenant, partyId, ct))
                 : Results.Unauthorized());
-        group.MapPost("/parties/{partyId:guid}/contact-persons", async (Guid partyId, ContactPersonInput person, ContactPersonLinkInput link, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        group.MapPost("/parties/{partyId:guid}/contact-persons", async (Guid partyId, AddContactPersonRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.contact.manage", ct) is { } access
-                ? await Execute(http, access, () => service.AddContactPersonAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, person, link, Correlation(http), ct))
+                ? await Execute(http, access, () => service.AddContactPersonAsync(access.Tenant, access.ActorId, access.MembershipId, partyId, request.Person, request.Link, Correlation(http), ct))
                 : Results.Unauthorized());
         group.MapPost("/parties/{partyId:guid}/aliases", async (Guid partyId, AliasInput request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.party.edit", ct) is { } access

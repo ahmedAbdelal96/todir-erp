@@ -4,6 +4,10 @@
 -- deliberately provisioned outside source control by the environment secret
 -- manager; this script never embeds credentials.
 
+-- Search indexes in the canonical module baselines depend on PostgreSQL's
+-- approved trigram operator class. Install it before module schemas run.
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'erp_owner') THEN
@@ -48,63 +52,63 @@ ALTER ROLE erp_dispatcher NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT 
 
 -- Platform schemas are owned by the migration role and are never owned by the
 -- API/Worker runtime role. Business module schemas follow the same contract.
-CREATE SCHEMA IF NOT EXISTS platform_tenancy AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_org AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_iam AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_authz AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_modules AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_entitlements AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_messaging AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_audit AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_numbering AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_settings AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_files AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_custom_fields AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_import AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_notifications AUTHORIZATION erp_owner;
-CREATE SCHEMA IF NOT EXISTS platform_scheduling AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION erp_owner;
 CREATE SCHEMA IF NOT EXISTS platform_migration AUTHORIZATION erp_owner;
 
 -- PUBLIC must not discover or create objects in owned schemas.
-REVOKE ALL ON SCHEMA platform_tenancy, platform_org, platform_iam, platform_authz,
-    platform_modules, platform_entitlements, platform_messaging, platform_audit,
-    platform_numbering, platform_settings, platform_files, platform_custom_fields,
-    platform_import, platform_notifications, platform_scheduling, platform_migration FROM PUBLIC;
+REVOKE ALL ON SCHEMA platform, platform, platform, platform,
+    platform, platform, platform, platform,
+    platform, platform, platform, platform,
+    platform, platform, platform, platform_migration FROM PUBLIC;
 
-GRANT USAGE ON SCHEMA platform_tenancy, platform_org, platform_iam, platform_authz,
-    platform_modules, platform_entitlements, platform_messaging, platform_audit,
-    platform_numbering, platform_settings, platform_files, platform_custom_fields,
-    platform_import, platform_notifications, platform_scheduling TO erp_app;
+GRANT USAGE ON SCHEMA platform, platform, platform, platform,
+    platform, platform, platform, platform,
+    platform, platform, platform, platform,
+    platform, platform, platform TO erp_app;
 
 -- New tables created by the owner are runtime-DML accessible by default. Existing
 -- tables are granted explicitly by each owning module migration after creation.
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_tenancy
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_org
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_iam
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_authz
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_modules
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_entitlements
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_messaging
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_audit
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_numbering
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_settings
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_files
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_custom_fields
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_import
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_notifications
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform_scheduling
+ALTER DEFAULT PRIVILEGES FOR ROLE erp_owner IN SCHEMA platform
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO erp_app;

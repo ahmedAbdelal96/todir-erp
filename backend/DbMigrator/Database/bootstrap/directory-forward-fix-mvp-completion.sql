@@ -70,7 +70,7 @@ alter table foundation_directory.duplicate_candidate
     add column if not exists resolution_reason text;
 
 create index if not exists ix_directory_party_identity_search
-    on foundation_directory.party using gin (display_name_normalized gin_trgm_ops);
+    on foundation_directory.party using gin (display_name_normalized public.gin_trgm_ops);
 create index if not exists ix_directory_party_legal_trade_search
     on foundation_directory.party (tenant_id, legal_name, trade_name, name_ar, name_en);
 create index if not exists ix_directory_party_alias_search

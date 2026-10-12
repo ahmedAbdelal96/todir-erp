@@ -6,6 +6,13 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Fixture projects are compiled independently; their generated output must
+         never become source files for the architecture test assembly. -->
+    <Compile Remove="fixtures\**\*.cs" />
+    <EmbeddedResource Remove="fixtures\**\*" />
+    <None Remove="fixtures\**\*" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />

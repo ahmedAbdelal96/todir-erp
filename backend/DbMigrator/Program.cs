@@ -23,19 +23,17 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 var repositoryRoot = Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT") ?? Directory.GetCurrentDirectory();
-var bootstrapDirectory = Path.Combine(repositoryRoot, "ops", "database", "bootstrap");
-var foundationalScripts = new List<string> { "runtime-roles-and-schemas.sql", "tenant-boundary.sql", "organization-schema.sql", "identity-membership-schema.sql" }
-    .Select(name => Path.Combine(bootstrapDirectory, name))
-    .ToArray();
-if (foundationalScripts.Any(script => !File.Exists(script)))
-    throw new FileNotFoundException("A required foundational migration script is missing.");
+var bootstrapDirectory = Path.Combine(repositoryRoot, "backend", "DbMigrator", "Database", "bootstrap");
+var runtimeScript = Path.Combine(bootstrapDirectory, "runtime-roles-and-schemas.sql");
+if (!File.Exists(runtimeScript)) throw new FileNotFoundException("The runtime role migration script is missing.", runtimeScript);
 
 var manifests = DiscoverManifests(repositoryRoot);
 var orderedModules = TopologicalOrder(manifests);
-var scripts = foundationalScripts.Skip(1)
-    .Concat(orderedModules.SelectMany(module => ResolveModuleMigrations(bootstrapDirectory, module)))
-    .Append(Path.Combine(bootstrapDirectory, "scheduling-schema.sql"))
+var scripts = orderedModules.SelectMany(module => ResolveModuleMigrations(bootstrapDirectory, module))
+    .Append(Path.Combine(bootstrapDirectory, "platform-rls-finalization.sql"))
     .ToArray();
+if (scripts.Any(script => !File.Exists(script)))
+    throw new FileNotFoundException("A required migration script is missing from the canonical DbMigrator database directory.");
 
 await using var dataSource = NpgsqlDataSource.Create(connectionString);
 NpgsqlConnection? connection = null;
@@ -59,9 +57,9 @@ if (connection is null)
 }
 
 await using var ownedConnection = connection;
-await using (var runtimeCommand = new NpgsqlCommand(await File.ReadAllTextAsync(foundationalScripts[0]), connection))
+await using (var runtimeCommand = new NpgsqlCommand(await File.ReadAllTextAsync(runtimeScript), connection))
 {
-    Console.WriteLine($"Applying {Path.GetFileName(foundationalScripts[0])}");
+    Console.WriteLine($"Applying {Path.GetFileName(runtimeScript)}");
     await runtimeCommand.ExecuteNonQueryAsync();
 }
 
@@ -90,8 +88,8 @@ await using (var setOwner = new NpgsqlCommand("set role erp_owner", connection))
 await using (var history = new NpgsqlCommand("create table if not exists platform_migration.applied_script (module_id text not null, script_name text not null, checksum text not null, applied_at timestamptz not null, primary key (module_id, script_name)); alter table platform_migration.applied_script add column if not exists module_id text; update platform_migration.applied_script set module_id = case when script_name like '%runtime-roles-and-schemas.sql' then 'runtime' when script_name like '%tenant-boundary.sql' then 'tenancy' when script_name like '%organization-schema.sql' then 'org' when script_name like '%identity-membership-schema.sql' then 'iam' when script_name like '%scheduling-schema.sql' then 'scheduling' when script_name like '%platform-kernel-schema.sql' then 'platform-kernel' else coalesce(nullif(module_id, ''), 'legacy') end where module_id is null or module_id = 'legacy'; alter table platform_migration.applied_script alter column module_id set not null; do $$ declare old_primary_key text; begin select constraint_name into old_primary_key from information_schema.table_constraints where table_schema = 'platform_migration' and table_name = 'applied_script' and constraint_type = 'PRIMARY KEY'; if old_primary_key is not null then execute format('alter table platform_migration.applied_script drop constraint %I', old_primary_key); end if; end $$; alter table platform_migration.applied_script add primary key (module_id, script_name)", connection))
     await history.ExecuteNonQueryAsync();
 
-var runtimeName = Path.GetRelativePath(repositoryRoot, foundationalScripts[0]).Replace('\\', '/');
-var runtimeChecksum = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(foundationalScripts[0]))).ToLowerInvariant();
+var runtimeName = Path.GetRelativePath(repositoryRoot, runtimeScript).Replace('\\', '/');
+var runtimeChecksum = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(runtimeScript))).ToLowerInvariant();
 await using (var runtimeLookup = new NpgsqlCommand("select checksum from platform_migration.applied_script where module_id = $1 and script_name = $2", connection))
 {
     runtimeLookup.Parameters.AddWithValue("runtime"); runtimeLookup.Parameters.AddWithValue(runtimeName);
@@ -133,16 +131,16 @@ foreach (var script in scripts)
 await using (var resetOwner = new NpgsqlCommand("reset role", connection))
     await resetOwner.ExecuteNonQueryAsync();
 
-await using (var identityAccessContextOwnership = new NpgsqlCommand("alter function platform_iam.resolve_login_domain(text) owner to erp_dispatcher", connection))
+await using (var identityAccessContextOwnership = new NpgsqlCommand("alter function platform.resolve_login_domain(text) owner to erp_dispatcher", connection))
     await identityAccessContextOwnership.ExecuteNonQueryAsync();
-await using (var identityTenantResolverOwnership = new NpgsqlCommand("alter function platform_iam.resolve_identity_tenant(uuid) owner to erp_dispatcher", connection))
+await using (var identityTenantResolverOwnership = new NpgsqlCommand("alter function platform.resolve_identity_tenant(uuid) owner to erp_dispatcher", connection))
     await identityTenantResolverOwnership.ExecuteNonQueryAsync();
 
-await using (var dispatcherOwnership = new NpgsqlCommand("alter function platform_messaging.claim_pending_outbox(integer) owner to erp_dispatcher", connection))
+await using (var dispatcherOwnership = new NpgsqlCommand("alter function platform.claim_pending_outbox(integer) owner to erp_dispatcher", connection))
     await dispatcherOwnership.ExecuteNonQueryAsync();
-await using (var dispatcherBacklogOwnership = new NpgsqlCommand("alter function platform_messaging.observe_pending_outbox() owner to erp_dispatcher", connection))
+await using (var dispatcherBacklogOwnership = new NpgsqlCommand("alter function platform.observe_pending_outbox() owner to erp_dispatcher", connection))
     await dispatcherBacklogOwnership.ExecuteNonQueryAsync();
-await using (var supportExpiryOwnership = new NpgsqlCommand("alter function platform_iam.expire_support_access_grants() owner to erp_dispatcher", connection))
+await using (var supportExpiryOwnership = new NpgsqlCommand("alter function platform.expire_support_access_grants() owner to erp_dispatcher", connection))
     await supportExpiryOwnership.ExecuteNonQueryAsync();
 
 if (seedDevelopment)
@@ -165,10 +163,7 @@ return 0;
 static string ModuleIdForScript(string scriptName)
 {
     var file = Path.GetFileName(scriptName);
-    if (file is "tenant-boundary.sql") return "tenancy";
-    if (file is "organization-schema.sql") return "org";
-    if (file is "identity-membership-schema.sql") return "iam";
-    if (file is "scheduling-schema.sql") return "scheduling";
+    if (file is "platform-rls-finalization.sql") return "platform-kernel";
     if (file is "platform-kernel-schema.sql") return "platform-kernel";
     if (file.EndsWith("-schema.sql", StringComparison.Ordinal)) return file[..^"-schema.sql".Length];
     const string forwardFixMarker = "-forward-fix-";
