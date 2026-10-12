@@ -21,7 +21,7 @@ public sealed class NpgsqlEntitlementSnapshotStore(NpgsqlDataSource dataSource) 
             await context.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await using var command = new NpgsqlCommand("select snapshot_version, issued_at, valid_until, key_id, modules::text, features::text, limits::text, signature from platform_entitlements.entitlement_snapshot where tenant_id = $1 order by snapshot_version desc limit 1", connection, transaction);
+        await using var command = new NpgsqlCommand("select snapshot_version, issued_at, valid_until, key_id, modules::text, features::text, limits::text, signature from platform.entitlement_snapshot where tenant_id = $1 order by snapshot_version desc limit 1", connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

@@ -51,7 +51,7 @@ public sealed class NpgsqlTransactionCoordinator(NpgsqlDataSource dataSource) : 
         {
             foreach (var message in messages)
             {
-                await using var command = new NpgsqlCommand("insert into platform_messaging.outbox_message (id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, trace_parent, status) values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, 'Pending')", connection, transaction);
+                await using var command = new NpgsqlCommand("insert into platform.outbox_message (id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, trace_parent, status) values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, 'Pending')", connection, transaction);
                 command.Parameters.AddWithValue(message.MessageId); command.Parameters.AddWithValue(message.MessageType); command.Parameters.AddWithValue(message.Payload); command.Parameters.AddWithValue(message.TenantId.Value); command.Parameters.AddWithValue(message.OccurredAt); command.Parameters.AddWithValue(message.CorrelationId); command.Parameters.AddWithValue(message.CausationId); command.Parameters.AddWithValue(message.SourceModule); command.Parameters.AddWithValue((object?)message.TraceParent ?? DBNull.Value);
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }

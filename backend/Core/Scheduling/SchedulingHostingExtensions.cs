@@ -42,7 +42,7 @@ public static class SchedulingHostingExtensions
                     store.UsePostgres(postgres =>
                     {
                         postgres.ConnectionString = connectionString;
-                        postgres.TablePrefix = "platform_scheduling.qrtz_";
+                        postgres.TablePrefix = "platform.qrtz_";
                     });
                     store.UseClustering();
                 });

@@ -57,7 +57,13 @@ public static class DirectorySeed
             if (party.Index is 1 or 2)
             {
                 var taxId = SeedIds.Child(context.Tenant.Id, "tax-id", party.Index);
-                await context.ExecuteAsync("insert into foundation_directory.party_identifier (tenant_id,id,party_id,identifier_type,country_code,value,normalized_value,authority,valid_from,is_primary,verification_status,created_at) values ($1,$2,$3,'TaxIdentifier','EG','VAT-ATLAS-0001','VAT-ATLAS-0001','Development Country Pack','2026-01-01',true,'Verified',$4) on conflict (tenant_id,id) do update set party_id=excluded.party_id,verification_status='Verified'", cancellationToken, context.Tenant.Id, taxId, party.Id, context.AsOf);
+                var countryPackPrefix = context.Tenant.Id == SeedIds.AtlasTenant ? "ATLAS" : "DELTA";
+                var vatValue = $"VAT-{countryPackPrefix}-0001";
+                await context.ExecuteAsync("insert into foundation_directory.party_identifier (tenant_id,id,party_id,identifier_type,country_code,value,normalized_value,authority,valid_from,is_primary,verification_status,created_at) values ($1,$2,$3,'TaxIdentifier','EG',$4,$4,'Development Country Pack','2026-01-01',true,'Verified',$5) on conflict (tenant_id,id) do update set party_id=excluded.party_id,value=excluded.value,normalized_value=excluded.normalized_value,verification_status='Verified'", cancellationToken, context.Tenant.Id, taxId, party.Id, vatValue, context.AsOf);
+
+                var registrationId = SeedIds.Child(context.Tenant.Id, "commercial-registration-id", party.Index);
+                var registrationValue = $"CR-{countryPackPrefix}-0001";
+                await context.ExecuteAsync("insert into foundation_directory.party_identifier (tenant_id,id,party_id,identifier_type,country_code,value,normalized_value,authority,valid_from,is_primary,verification_status,created_at) values ($1,$2,$3,'CommercialRegistration','EG',$4,$4,'Development Commercial Registry','2026-01-01',false,'Verified',$5) on conflict (tenant_id,id) do update set party_id=excluded.party_id,value=excluded.value,normalized_value=excluded.normalized_value,verification_status='Verified'", cancellationToken, context.Tenant.Id, registrationId, party.Id, registrationValue, context.AsOf);
             }
         }
         await EnsureDirectoryScenariosAsync(context, parties, cancellationToken);

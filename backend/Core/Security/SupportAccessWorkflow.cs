@@ -64,7 +64,7 @@ public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAu
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("insert into platform_iam.support_access_grant (id, tenant_id, support_actor_id, reason, expires_at, status, created_at) values ($1, $2, $3, $4, $5, 'Requested', $6)", connection, transaction);
+        await using var command = new NpgsqlCommand("insert into platform.support_access_grant (id, tenant_id, support_actor_id, reason, expires_at, status, created_at) values ($1, $2, $3, $4, $5, 'Requested', $6)", connection, transaction);
         command.Parameters.AddWithValue(grant.Id); command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(supportActorId); command.Parameters.AddWithValue(grant.Reason); command.Parameters.AddWithValue(expiresAt); command.Parameters.AddWithValue(grant.CreatedAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
         await WriteAuditAsync(grant, supportActorId, "support_access_requested", connection, transaction, cancellationToken);
@@ -78,7 +78,7 @@ public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAu
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("update platform_iam.support_access_grant set approved_by = $3, status = 'Approved' where tenant_id = $1 and id = $2 and status = 'Requested' and expires_at > now() returning id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.support_access_grant set approved_by = $3, status = 'Approved' where tenant_id = $1 and id = $2 and status = 'Requested' and expires_at > now() returning id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at", connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(grantId); command.Parameters.AddWithValue(approvedBy);
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken);
         var grant = await reader.ReadAsync(cancellationToken) ? Read(reader) : null;
@@ -94,12 +94,12 @@ public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAu
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using (var expire = new NpgsqlCommand("update platform_iam.support_access_grant set status = 'Expired' where tenant_id = $1 and id = $2 and expires_at <= now() and status in ('Requested', 'Approved', 'Active')", connection, transaction))
+        await using (var expire = new NpgsqlCommand("update platform.support_access_grant set status = 'Expired' where tenant_id = $1 and id = $2 and expires_at <= now() and status in ('Requested', 'Approved', 'Active')", connection, transaction))
         {
             expire.Parameters.AddWithValue(tenantId.Value); expire.Parameters.AddWithValue(grantId);
             await expire.ExecuteNonQueryAsync(cancellationToken);
         }
-        await using var command = new NpgsqlCommand("update platform_iam.support_access_grant set status = 'Active' where tenant_id = $1 and id = $2 and support_actor_id = $3 and status in ('Approved', 'Active') and expires_at > now() returning id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.support_access_grant set status = 'Active' where tenant_id = $1 and id = $2 and support_actor_id = $3 and status in ('Approved', 'Active') and expires_at > now() returning id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at", connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(grantId); command.Parameters.AddWithValue(supportActorId);
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken);
         var grant = await reader.ReadAsync(cancellationToken) ? Read(reader) : null;
@@ -115,7 +115,7 @@ public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAu
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("update platform_iam.support_access_grant set status = 'Revoked' where tenant_id = $1 and id = $2 and status in ('Requested', 'Approved', 'Active') returning id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.support_access_grant set status = 'Revoked' where tenant_id = $1 and id = $2 and status in ('Requested', 'Approved', 'Active') returning id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at", connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(grantId);
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken);
         var grant = await reader.ReadAsync(cancellationToken) ? Read(reader) : null;
@@ -129,7 +129,7 @@ public sealed class NpgsqlSupportAccessWorkflow(NpgsqlDataSource dataSource, IAu
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand("select id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at from platform_iam.expire_support_access_grants()", connection, transaction);
+        await using var command = new NpgsqlCommand("select id, tenant_id, support_actor_id, reason, approved_by, expires_at, status, created_at from platform.expire_support_access_grants()", connection, transaction);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var expired = new List<SupportAccessGrant>();
         while (await reader.ReadAsync(cancellationToken)) expired.Add(Read(reader));

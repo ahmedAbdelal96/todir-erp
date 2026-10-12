@@ -12,7 +12,7 @@ internal static class DatabaseReadiness
             {
                 await using var dataSource = NpgsqlDataSource.Create(connectionString);
                 await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-                await using var command = new NpgsqlCommand("select to_regclass('platform_tenancy.tenant'), to_regclass('platform_scheduling.qrtz_locks')", connection);
+                await using var command = new NpgsqlCommand("select to_regclass('platform.tenant'), to_regclass('platform.qrtz_locks')", connection);
                 await using var reader = await command.ExecuteReaderAsync(cancellationToken);
                 if (await reader.ReadAsync(cancellationToken) && !reader.IsDBNull(0) && !reader.IsDBNull(1)) return;
             }

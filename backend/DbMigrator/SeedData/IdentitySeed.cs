@@ -34,9 +34,9 @@ public static class IdentitySeed
         if (mfaEnabled)
         {
             var mfaUserId = SeedIds.Identity(context.Tenant.Id, "mfa");
-            await context.ExecuteAsync("update platform_iam.identity set mfa_secret_protected=$1,mfa_enabled=true,version=version+1 where tenant_id=$2 and id=$3 and status='Active'", cancellationToken, protectedMfaSecret, context.Tenant.Id, mfaUserId);
+            await context.ExecuteAsync("update platform.identity set mfa_secret_protected=$1,mfa_enabled=true,version=version+1 where tenant_id=$2 and id=$3 and status='Active'", cancellationToken, protectedMfaSecret, context.Tenant.Id, mfaUserId);
             foreach (var digest in mfaRecoveryDigests!)
-                await context.ExecuteAsync("insert into platform_iam.mfa_recovery_code (identity_id,digest,created_at) values ($1,$2,$3) on conflict (identity_id,digest) do update set consumed_at=null", cancellationToken, mfaUserId, digest, context.AsOf);
+                await context.ExecuteAsync("insert into platform.mfa_recovery_code (identity_id,digest,created_at) values ($1,$2,$3) on conflict (identity_id,digest) do update set consumed_at=null", cancellationToken, mfaUserId, digest, context.AsOf);
         }
 
         return new(users.Count, users.Count(user => user.Status == "Active"), users.Count(user => user.Status == "Suspended"), users.Count(user => user.MustChangePassword), mfaEnabled, users.Where(user => user.IsCanonical).Select(user => user.Email).ToArray());
@@ -57,16 +57,16 @@ public static class IdentitySeed
         {
             var id = SeedIds.Role(context.Tenant.Id, role.Code);
             result[role.Code] = id;
-            await context.ExecuteAsync("insert into platform_authz.role (id,tenant_id,code,name,is_system_template,is_active,version) values ($1,$2,$3,$4,false,true,1) on conflict (id) do update set code=excluded.code,name=excluded.name,is_active=true,version=platform_authz.role.version+1", cancellationToken, id, context.Tenant.Id, role.Code, role.Name);
+            await context.ExecuteAsync("insert into platform.role (id,tenant_id,code,name,is_system_template,is_active,version) values ($1,$2,$3,$4,false,true,1) on conflict (id) do update set code=excluded.code,name=excluded.name,is_active=true,version=platform.role.version+1", cancellationToken, id, context.Tenant.Id, role.Code, role.Name);
             foreach (var permission in role.Permissions.Distinct(StringComparer.Ordinal))
-                await context.ExecuteAsync("insert into platform_authz.role_permission (tenant_id,role_id,permission_code) values ($1,$2,$3) on conflict do nothing", cancellationToken, context.Tenant.Id, id, permission);
+                await context.ExecuteAsync("insert into platform.role_permission (tenant_id,role_id,permission_code) values ($1,$2,$3) on conflict do nothing", cancellationToken, context.Tenant.Id, id, permission);
         }
         return result;
     }
 
     private static async Task InsertIdentitiesAsync(SeedContext context, IReadOnlyList<UserSpec> users, string passwordHash, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("insert into platform_iam.identity (id,tenant_id,email,normalized_email,login_prefix,name,email_verified,password_hash,must_change_password,status,created_at,security_stamp,version) select * from unnest($1::uuid[],$2::uuid[],$3::text[],$4::text[],$5::text[],$6::text[],$7::boolean[],$8::text[],$9::boolean[],$10::text[],$11::timestamptz[],$12::uuid[],$13::bigint[]) on conflict (id) do update set email=excluded.email,normalized_email=excluded.normalized_email,login_prefix=excluded.login_prefix,name=excluded.name,email_verified=true,must_change_password=excluded.must_change_password,status=excluded.status,version=platform_iam.identity.version+1", context.Connection, context.Transaction);
+        await using var command = new NpgsqlCommand("insert into platform.identity (id,tenant_id,email,normalized_email,login_prefix,name,email_verified,password_hash,must_change_password,status,created_at,security_stamp,version) select * from unnest($1::uuid[],$2::uuid[],$3::text[],$4::text[],$5::text[],$6::text[],$7::boolean[],$8::text[],$9::boolean[],$10::text[],$11::timestamptz[],$12::uuid[],$13::bigint[]) on conflict (id) do update set email=excluded.email,normalized_email=excluded.normalized_email,login_prefix=excluded.login_prefix,name=excluded.name,email_verified=true,must_change_password=excluded.must_change_password,status=excluded.status,version=platform.identity.version+1", context.Connection, context.Transaction);
         AddArray(command, NpgsqlDbType.Uuid, users.Select(user => user.IdentityId).ToArray());
         AddArray(command, NpgsqlDbType.Uuid, users.Select(_ => context.Tenant.Id).ToArray());
         AddArray(command, NpgsqlDbType.Text, users.Select(user => user.Email).ToArray());
@@ -85,7 +85,7 @@ public static class IdentitySeed
 
     private static async Task InsertMembershipsAsync(SeedContext context, IReadOnlyList<UserSpec> users, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("insert into platform_iam.membership (id,tenant_id,identity_id,display_name,status,default_legal_entity_id,default_branch_id,locale,timezone,created_at,version) select * from unnest($1::uuid[],$2::uuid[],$3::uuid[],$4::text[],$5::text[],$6::uuid[],$7::uuid[],$8::text[],$9::text[],$10::timestamptz[],$11::bigint[]) on conflict (id) do update set display_name=excluded.display_name,status=excluded.status,default_legal_entity_id=excluded.default_legal_entity_id,default_branch_id=excluded.default_branch_id,locale=excluded.locale,timezone=excluded.timezone,version=platform_iam.membership.version+1", context.Connection, context.Transaction);
+        await using var command = new NpgsqlCommand("insert into platform.membership (id,tenant_id,identity_id,display_name,status,default_legal_entity_id,default_branch_id,locale,timezone,created_at,version) select * from unnest($1::uuid[],$2::uuid[],$3::uuid[],$4::text[],$5::text[],$6::uuid[],$7::uuid[],$8::text[],$9::text[],$10::timestamptz[],$11::bigint[]) on conflict (id) do update set display_name=excluded.display_name,status=excluded.status,default_legal_entity_id=excluded.default_legal_entity_id,default_branch_id=excluded.default_branch_id,locale=excluded.locale,timezone=excluded.timezone,version=platform.membership.version+1", context.Connection, context.Transaction);
         AddArray(command, NpgsqlDbType.Uuid, users.Select(user => user.MembershipId).ToArray());
         AddArray(command, NpgsqlDbType.Uuid, users.Select(_ => context.Tenant.Id).ToArray());
         AddArray(command, NpgsqlDbType.Uuid, users.Select(user => user.IdentityId).ToArray());
@@ -102,7 +102,7 @@ public static class IdentitySeed
 
     private static async Task InsertRoleAssignmentsAsync(SeedContext context, IReadOnlyList<UserSpec> users, Dictionary<string, Guid> roles, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("insert into platform_authz.membership_role_assignment (tenant_id,membership_id,role_id,scope_type,scope_id) select $1,membership_id,role_id,'Tenant',null from unnest($2::uuid[],$3::uuid[]) as rows(membership_id,role_id) on conflict (tenant_id,membership_id,role_id,scope_type,scope_id) do nothing", context.Connection, context.Transaction);
+        await using var command = new NpgsqlCommand("insert into platform.membership_role_assignment (tenant_id,membership_id,role_id,scope_type,scope_id) select $1,membership_id,role_id,'Tenant',null from unnest($2::uuid[],$3::uuid[]) as rows(membership_id,role_id) on conflict (tenant_id,membership_id,role_id,scope_type,scope_id) do nothing", context.Connection, context.Transaction);
         command.Parameters.AddWithValue(context.Tenant.Id);
         AddArray(command, NpgsqlDbType.Uuid, users.Select(user => user.MembershipId).ToArray());
         AddArray(command, NpgsqlDbType.Uuid, users.Select(user => roles[user.RoleCode]).ToArray());

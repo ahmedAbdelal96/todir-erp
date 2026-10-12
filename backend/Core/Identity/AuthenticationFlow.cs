@@ -92,7 +92,7 @@ public sealed class NpgsqlAuthenticationChallengeStore(Npgsql.NpgsqlDataSource d
     public async Task<AuthenticationChallenge> CreateAsync(IdentityId identityId, AuthenticationNextStep nextStep, DateTimeOffset expiresAt, bool mfaVerified = false, CancellationToken cancellationToken = default)
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        await using var command = dataSource.CreateCommand("insert into platform_iam.auth_challenge (id, token_digest, identity_id, next_step, attempts, mfa_verified, expires_at, created_at) values ($1, $2, $3, $4, 0, $5, $6, now())");
+        await using var command = dataSource.CreateCommand("insert into platform.auth_challenge (id, token_digest, identity_id, next_step, attempts, mfa_verified, expires_at, created_at) values ($1, $2, $3, $4, 0, $5, $6, now())");
         command.Parameters.AddWithValue(Guid.CreateVersion7());
         command.Parameters.AddWithValue(Digest(token));
         command.Parameters.AddWithValue(identityId.Value);
@@ -105,7 +105,7 @@ public sealed class NpgsqlAuthenticationChallengeStore(Npgsql.NpgsqlDataSource d
 
     public async Task<AuthenticationChallenge?> FindAsync(string token, CancellationToken cancellationToken = default)
     {
-        await using var command = dataSource.CreateCommand("select identity_id, next_step, expires_at, attempts, mfa_verified from platform_iam.auth_challenge where token_digest = $1 and consumed_at is null and expires_at > now() limit 1");
+        await using var command = dataSource.CreateCommand("select identity_id, next_step, expires_at, attempts, mfa_verified from platform.auth_challenge where token_digest = $1 and consumed_at is null and expires_at > now() limit 1");
         command.Parameters.AddWithValue(Digest(token));
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken);
         return await reader.ReadAsync(cancellationToken)
@@ -115,7 +115,7 @@ public sealed class NpgsqlAuthenticationChallengeStore(Npgsql.NpgsqlDataSource d
 
     public async Task<bool> RegisterFailureAsync(string token, CancellationToken cancellationToken = default)
     {
-        await using var command = dataSource.CreateCommand("with changed as (update platform_iam.auth_challenge set attempts = attempts + 1, consumed_at = case when attempts + 1 >= $2 then now() else consumed_at end where token_digest = $1 and consumed_at is null and expires_at > now() returning attempts) select attempts from changed");
+        await using var command = dataSource.CreateCommand("with changed as (update platform.auth_challenge set attempts = attempts + 1, consumed_at = case when attempts + 1 >= $2 then now() else consumed_at end where token_digest = $1 and consumed_at is null and expires_at > now() returning attempts) select attempts from changed");
         command.Parameters.AddWithValue(Digest(token));
         command.Parameters.AddWithValue(IdentityConventions.AuthenticationChallengeMaxAttempts);
         var attempts = await command.ExecuteScalarAsync(cancellationToken);
@@ -124,7 +124,7 @@ public sealed class NpgsqlAuthenticationChallengeStore(Npgsql.NpgsqlDataSource d
 
     public async Task<bool> ConsumeAsync(string token, IdentityId identityId, AuthenticationNextStep nextStep, CancellationToken cancellationToken = default)
     {
-        await using var command = dataSource.CreateCommand("update platform_iam.auth_challenge set consumed_at = now() where token_digest = $1 and identity_id = $2 and next_step = $3 and consumed_at is null and expires_at > now() and attempts < $4");
+        await using var command = dataSource.CreateCommand("update platform.auth_challenge set consumed_at = now() where token_digest = $1 and identity_id = $2 and next_step = $3 and consumed_at is null and expires_at > now() and attempts < $4");
         command.Parameters.AddWithValue(Digest(token));
         command.Parameters.AddWithValue(identityId.Value);
         command.Parameters.AddWithValue(nextStep.ToString());

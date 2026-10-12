@@ -52,14 +52,14 @@ public sealed class NpgsqlImportJobScheduler(ITransactionCoordinator transaction
         {
             var scheduledAt = DateTimeOffset.UtcNow;
             var job = new ImportChunkJob(batch.Id, batch.TenantId, batch.ImporterId, startRow, rowCount, scheduledAt);
-            await using (var command = new NpgsqlCommand("insert into platform_import.import_batch (id, tenant_id, module_id, importer_id, status, file_id, mapping_json, progress, created_by, created_at) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10) on conflict (tenant_id, id) do nothing", context.Connection, context.Transaction))
+            await using (var command = new NpgsqlCommand("insert into platform.import_batch (id, tenant_id, module_id, importer_id, status, file_id, mapping_json, progress, created_by, created_at) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10) on conflict (tenant_id, id) do nothing", context.Connection, context.Transaction))
             {
                 command.Parameters.AddWithValue(batch.Id); command.Parameters.AddWithValue(batch.TenantId.Value); command.Parameters.AddWithValue(batch.ModuleId); command.Parameters.AddWithValue(batch.ImporterId); command.Parameters.AddWithValue(batch.Status.ToString()); command.Parameters.AddWithValue(batch.FileId); command.Parameters.AddWithValue(batch.Mapping.GetRawText()); command.Parameters.AddWithValue(batch.Progress); command.Parameters.AddWithValue(batch.CreatedBy); command.Parameters.AddWithValue(batch.CreatedAt);
                 await command.ExecuteNonQueryAsync(token);
             }
             DateTimeOffset? persistedAt;
             var isNew = false;
-            await using (var chunk = new NpgsqlCommand("insert into platform_import.import_chunk_job (tenant_id, batch_id, start_row, row_count, scheduled_at) values ($1, $2, $3, $4, $5) on conflict (tenant_id, batch_id, start_row) do nothing returning scheduled_at", context.Connection, context.Transaction))
+            await using (var chunk = new NpgsqlCommand("insert into platform.import_chunk_job (tenant_id, batch_id, start_row, row_count, scheduled_at) values ($1, $2, $3, $4, $5) on conflict (tenant_id, batch_id, start_row) do nothing returning scheduled_at", context.Connection, context.Transaction))
             {
                 chunk.Parameters.AddWithValue(batch.TenantId.Value); chunk.Parameters.AddWithValue(batch.Id); chunk.Parameters.AddWithValue(startRow); chunk.Parameters.AddWithValue(rowCount); chunk.Parameters.AddWithValue(scheduledAt);
                 var insertedAt = await chunk.ExecuteScalarAsync(token);
@@ -69,7 +69,7 @@ public sealed class NpgsqlImportJobScheduler(ITransactionCoordinator transaction
             }
             if (persistedAt is null)
             {
-                await using var existing = new NpgsqlCommand("select scheduled_at, row_count from platform_import.import_chunk_job where tenant_id = $1 and batch_id = $2 and start_row = $3", context.Connection, context.Transaction);
+                await using var existing = new NpgsqlCommand("select scheduled_at, row_count from platform.import_chunk_job where tenant_id = $1 and batch_id = $2 and start_row = $3", context.Connection, context.Transaction);
                 existing.Parameters.AddWithValue(batch.TenantId.Value); existing.Parameters.AddWithValue(batch.Id); existing.Parameters.AddWithValue(startRow);
                 await using var reader = await existing.ExecuteReaderAsync(token);
                 if (!await reader.ReadAsync(token)) throw new InvalidOperationException("import.chunk_schedule_missing");

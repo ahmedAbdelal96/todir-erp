@@ -10,7 +10,7 @@ public sealed class NpgsqlMessageErrorStore(NpgsqlDataSource dataSource) : IMess
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, messageError.TenantId, cancellationToken);
-        const string sql = "insert into platform_messaging.message_error (id, message_id, tenant_id, consumer_endpoint, attempt, error_code, detail, occurred_at, resolved) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
+        const string sql = "insert into platform.message_error (id, message_id, tenant_id, consumer_endpoint, attempt, error_code, detail, occurred_at, resolved) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue(Guid.CreateVersion7());
         command.Parameters.AddWithValue(messageError.MessageId);
@@ -30,7 +30,7 @@ public sealed class NpgsqlMessageErrorStore(NpgsqlDataSource dataSource) : IMess
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("update platform_messaging.message_error set resolved = true where tenant_id = $1 and message_id = $2 and consumer_endpoint = $3 and resolved = false", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.message_error set resolved = true where tenant_id = $1 and message_id = $2 and consumer_endpoint = $3 and resolved = false", connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value);
         command.Parameters.AddWithValue(messageId);
         command.Parameters.AddWithValue(consumerEndpoint);

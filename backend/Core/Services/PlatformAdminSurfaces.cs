@@ -42,7 +42,7 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
         return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
             TenantContextSnapshot snapshot;
-            await using (var tenant = new NpgsqlCommand("select id, slug, display_name, status from platform_tenancy.tenant where id = $1", connection, transaction))
+            await using (var tenant = new NpgsqlCommand("select id, slug, display_name, status from platform.tenant where id = $1", connection, transaction))
             {
                 tenant.Parameters.AddWithValue(tenantId.Value);
                 await using var reader = await tenant.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, token);
@@ -51,7 +51,7 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
             }
 
             var legalEntities = new List<LegalEntitySummary>();
-            await using (var entities = new NpgsqlCommand("select id, code, legal_name, timezone, locale from platform_org.legal_entity where tenant_id = $1 order by code, id", connection, transaction))
+            await using (var entities = new NpgsqlCommand("select id, code, legal_name, timezone, locale from platform.legal_entity where tenant_id = $1 order by code, id", connection, transaction))
             {
                 entities.Parameters.AddWithValue(tenantId.Value);
                 await using var entityReader = await entities.ExecuteReaderAsync(token);
@@ -59,7 +59,7 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
             }
 
             var branches = new List<BranchSummary>();
-            await using (var branchCommand = new NpgsqlCommand("select id, legal_entity_id, code, name, status from platform_org.branch where tenant_id = $1 order by legal_entity_id, code, id", connection, transaction))
+            await using (var branchCommand = new NpgsqlCommand("select id, legal_entity_id, code, name, status from platform.branch where tenant_id = $1 order by legal_entity_id, code, id", connection, transaction))
             {
                 branchCommand.Parameters.AddWithValue(tenantId.Value);
                 await using var branchReader = await branchCommand.ExecuteReaderAsync(token);
@@ -75,7 +75,7 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
         if (branchId is not null && legalEntityId is null) return false;
         return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
-            const string sql = "select case when $2::uuid is null then exists (select 1 from platform_org.legal_entity where tenant_id = $1 and id = $3) else exists (select 1 from platform_org.branch where tenant_id = $1 and id = $2 and legal_entity_id = $3) end";
+            const string sql = "select case when $2::uuid is null then exists (select 1 from platform.legal_entity where tenant_id = $1 and id = $3) else exists (select 1 from platform.branch where tenant_id = $1 and id = $2 and legal_entity_id = $3) end";
             await using var command = new NpgsqlCommand(sql, connection, transaction);
             command.Parameters.AddWithValue(tenantId.Value);
             command.Parameters.AddWithValue((object?)branchId ?? DBNull.Value);
@@ -89,7 +89,7 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
         ValidatePage(offset, limit);
         return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
-            const string sql = "select r.id, r.code, r.name, r.is_system_template, r.is_active, r.version, coalesce(array_agg(p.permission_code order by p.permission_code) filter (where p.permission_code is not null), '{}') from platform_authz.role r left join platform_authz.role_permission p on p.tenant_id = r.tenant_id and p.role_id = r.id where r.tenant_id = $1 group by r.id, r.code, r.name, r.is_system_template, r.is_active, r.version order by r.code, r.id limit $2 offset $3";
+            const string sql = "select r.id, r.code, r.name, r.is_system_template, r.is_active, r.version, coalesce(array_agg(p.permission_code order by p.permission_code) filter (where p.permission_code is not null), '{}') from platform.role r left join platform.role_permission p on p.tenant_id = r.tenant_id and p.role_id = r.id where r.tenant_id = $1 group by r.id, r.code, r.name, r.is_system_template, r.is_active, r.version order by r.code, r.id limit $2 offset $3";
             await using var command = new NpgsqlCommand(sql, connection, transaction);
             command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
             await using var reader = await command.ExecuteReaderAsync(token);
@@ -104,7 +104,7 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
         ValidatePage(offset, limit);
         return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
-            await using var command = new NpgsqlCommand("select id, module_id, scope_type, scope_id, status, manifest_version, version from platform_modules.module_instance where tenant_id = $1 order by module_id, id limit $2 offset $3", connection, transaction);
+            await using var command = new NpgsqlCommand("select id, module_id, scope_type, scope_id, status, manifest_version, version from platform.module_instance where tenant_id = $1 order by module_id, id limit $2 offset $3", connection, transaction);
             command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
             await using var reader = await command.ExecuteReaderAsync(token);
             var result = new List<ModuleInstanceSummary>();
@@ -118,7 +118,7 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
         ValidatePage(offset, limit);
         return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
-            const string sql = "select d.id, d.setting_key, d.data_type, d.scope, d.sensitive, v.value::text, coalesce(v.version, d.version) from platform_settings.setting_definition d left join platform_settings.setting_value v on v.setting_definition_id = d.id and v.tenant_id = $1 order by d.setting_key, v.scope, v.scope_id limit $2 offset $3";
+            const string sql = "select d.id, d.setting_key, d.data_type, d.scope, d.sensitive, v.value::text, coalesce(v.version, d.version) from platform.setting_definition d left join platform.setting_value v on v.setting_definition_id = d.id and v.tenant_id = $1 order by d.setting_key, v.scope, v.scope_id limit $2 offset $3";
             await using var command = new NpgsqlCommand(sql, connection, transaction);
             command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
             await using var reader = await command.ExecuteReaderAsync(token);
@@ -138,7 +138,7 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
         ValidatePage(offset, limit);
         return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
-            await using var command = new NpgsqlCommand("select id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, reason, occurred_at, trace_id from platform_audit.audit_entry where tenant_id = $1 order by occurred_at desc, id desc limit $2 offset $3", connection, transaction);
+            await using var command = new NpgsqlCommand("select id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, reason, occurred_at, trace_id from platform.audit_entry where tenant_id = $1 order by occurred_at desc, id desc limit $2 offset $3", connection, transaction);
             command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
             await using var reader = await command.ExecuteReaderAsync(token);
             var result = new List<AuditSummary>();
@@ -151,7 +151,7 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
     {
         return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
-            await using var command = new NpgsqlCommand("select snapshot_version, issued_at, valid_until, key_id, modules::text, features::text, limits::text from platform_entitlements.entitlement_snapshot where tenant_id = $1 order by snapshot_version desc limit 1", connection, transaction);
+            await using var command = new NpgsqlCommand("select snapshot_version, issued_at, valid_until, key_id, modules::text, features::text, limits::text from platform.entitlement_snapshot where tenant_id = $1 order by snapshot_version desc limit 1", connection, transaction);
             command.Parameters.AddWithValue(tenantId.Value);
             await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, token);
             if (!await reader.ReadAsync(token)) return null;

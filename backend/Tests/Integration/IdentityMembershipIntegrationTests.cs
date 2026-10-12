@@ -21,7 +21,7 @@ public sealed class IdentityMembershipIntegrationTests
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'identity-{tenantId.Value:N}', 'Identity', 'Active', 'identity-{tenantId.Value:N}.local', 'identity-{tenantId.Value:N}.local', now(), 1); insert into platform_iam.identity (id, tenant_id, email, normalized_email, login_prefix, name, email_verified, status, created_at, security_stamp, version) values ('{identityId.Value}', '{tenantId.Value}', 'user@identity-{tenantId.Value:N}.local', 'USER@IDENTITY-{tenantId.Value:N}.LOCAL', 'user', 'Identity User', true, 'Active', now(), '{Guid.CreateVersion7()}', 1); insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{membershipId.Value}', '{tenantId.Value}', '{identityId.Value}', 'Identity User', 'Active', now(), 1); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'identity-{tenantId.Value:N}', 'Identity', 'Active', 'identity-{tenantId.Value:N}.local', 'identity-{tenantId.Value:N}.local', now(), 1); insert into platform.identity (id, tenant_id, email, normalized_email, login_prefix, name, email_verified, status, created_at, security_stamp, version) values ('{identityId.Value}', '{tenantId.Value}', 'user@identity-{tenantId.Value:N}.local', 'USER@IDENTITY-{tenantId.Value:N}.LOCAL', 'user', 'Identity User', true, 'Active', now(), '{Guid.CreateVersion7()}', 1); insert into platform.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{membershipId.Value}', '{tenantId.Value}', '{identityId.Value}', 'Identity User', 'Active', now(), 1); reset app.tenant_id; reset role;");
         try
         {
             await using var dataSource = NpgsqlDataSource.Create(appConnectionString);
@@ -33,7 +33,7 @@ public sealed class IdentityMembershipIntegrationTests
         }
         finally
         {
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; delete from platform_iam.membership where id = '{membershipId.Value}'; delete from platform_iam.identity where id = '{identityId.Value}'; delete from platform_tenancy.tenant where id = '{tenantId.Value}'; reset app.tenant_id; reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; delete from platform.membership where id = '{membershipId.Value}'; delete from platform.identity where id = '{identityId.Value}'; delete from platform.tenant where id = '{tenantId.Value}'; reset app.tenant_id; reset role;");
         }
     }
 

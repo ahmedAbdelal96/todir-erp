@@ -24,7 +24,7 @@ public sealed class SupportAccessIntegrationTests
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'support-{tenantId.Value:N}', 'Support', 'Active', 'support-{tenantId.Value:N}.local', 'support-{tenantId.Value:N}.local', now(), 1); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'support-{tenantId.Value:N}', 'Support', 'Active', 'support-{tenantId.Value:N}.local', 'support-{tenantId.Value:N}.local', now(), 1); reset app.tenant_id; reset role;");
 
         try
         {
@@ -43,12 +43,12 @@ public sealed class SupportAccessIntegrationTests
             Assert.True(await workflow.RevokeAsync(tenantId, grant.Id, supportActorId, supportProof));
             Assert.False(await workflow.CanAccessAsync(tenantId, grant.Id, supportActorId, supportProof));
 
-            Assert.Equal(4L, await ScalarAsync(admin, $"select count(*) from platform_audit.audit_entry where tenant_id = '{tenantId.Value}' and entity_id = '{grant.Id}'"));
-            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform_iam.support_access_grant where tenant_id = '{tenantId.Value}' and id = '{grant.Id}' and status = 'Revoked'"));
+            Assert.Equal(4L, await ScalarAsync(admin, $"select count(*) from platform.audit_entry where tenant_id = '{tenantId.Value}' and entity_id = '{grant.Id}'"));
+            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform.support_access_grant where tenant_id = '{tenantId.Value}' and id = '{grant.Id}' and status = 'Revoked'"));
         }
         finally
         {
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; delete from platform_audit.audit_entry where tenant_id = '{tenantId.Value}'; delete from platform_iam.support_access_grant where tenant_id = '{tenantId.Value}'; delete from platform_tenancy.tenant where id = '{tenantId.Value}'; reset app.tenant_id; reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; delete from platform.audit_entry where tenant_id = '{tenantId.Value}'; delete from platform.support_access_grant where tenant_id = '{tenantId.Value}'; delete from platform.tenant where id = '{tenantId.Value}'; reset app.tenant_id; reset role;");
         }
     }
 

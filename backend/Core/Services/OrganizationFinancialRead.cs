@@ -22,7 +22,7 @@ public sealed class NpgsqlLegalEntityFinancialReadStore(NpgsqlDataSource dataSou
         await using var setting = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
         setting.Parameters.AddWithValue(tenantId.Value.ToString("D"));
         await setting.ExecuteNonQueryAsync(cancellationToken);
-        await using var command = new NpgsqlCommand("select base_currency_code from platform_org.legal_entity where tenant_id=$1 and id=$2", connection);
+        await using var command = new NpgsqlCommand("select base_currency_code from platform.legal_entity where tenant_id=$1 and id=$2", connection);
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(legalEntityId.Value);
         return (string?)await command.ExecuteScalarAsync(cancellationToken);
     }

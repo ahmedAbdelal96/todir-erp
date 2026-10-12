@@ -44,7 +44,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
         var domain = normalizedEmail[(at + 1)..];
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using var route = new NpgsqlCommand("select tenant_id, status from platform_iam.resolve_login_domain($1)", connection, transaction);
+        await using var route = new NpgsqlCommand("select tenant_id, status from platform.resolve_login_domain($1)", connection, transaction);
         route.Parameters.AddWithValue(domain);
         await using var routeReader = await route.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
         if (!await routeReader.ReadAsync(cancellationToken) || !string.Equals(routeReader.GetString(1), "Active", StringComparison.OrdinalIgnoreCase))
@@ -57,7 +57,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
         var tenantId = new TenantId(routeReader.GetGuid(0));
         await routeReader.DisposeAsync();
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("select id, normalized_email, email_verified, status, created_at, last_login_at, security_stamp, password_hash, tenant_id, name, login_prefix, must_change_password, mfa_enabled, failed_login_count, locked_until from platform_iam.identity where normalized_email = $1 for update", connection, transaction);
+        await using var command = new NpgsqlCommand("select id, normalized_email, email_verified, status, created_at, last_login_at, security_stamp, password_hash, tenant_id, name, login_prefix, must_change_password, mfa_enabled, failed_login_count, locked_until from platform.identity where normalized_email = $1 for update", connection, transaction);
         command.Parameters.AddWithValue(normalizedEmail);
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -77,7 +77,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
         {
             if (identity.Status == IdentityStatus.Active && !locked)
             {
-                await using var failure = new NpgsqlCommand("update platform_iam.identity set failed_login_count = least(failed_login_count + 1, $2), locked_until = case when failed_login_count + 1 >= $2 then $3 else locked_until end, version = version + 1 where id = $1", connection, transaction);
+                await using var failure = new NpgsqlCommand("update platform.identity set failed_login_count = least(failed_login_count + 1, $2), locked_until = case when failed_login_count + 1 >= $2 then $3 else locked_until end, version = version + 1 where id = $1", connection, transaction);
                 failure.Parameters.AddWithValue(identity.Id.Value);
                 failure.Parameters.AddWithValue(IdentityConventions.FailedLoginThreshold);
                 failure.Parameters.AddWithValue(now.Add(IdentityConventions.LockoutDuration));
@@ -86,7 +86,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
             await transaction.CommitAsync(cancellationToken);
             return null;
         }
-        await using (var success = new NpgsqlCommand("update platform_iam.identity set failed_login_count = 0, locked_until = null, last_login_at = $2, version = version + 1 where id = $1", connection, transaction))
+        await using (var success = new NpgsqlCommand("update platform.identity set failed_login_count = 0, locked_until = null, last_login_at = $2, version = version + 1 where id = $1", connection, transaction))
         {
             success.Parameters.AddWithValue(identity.Id.Value);
             success.Parameters.AddWithValue(now);
@@ -103,7 +103,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
         var tenantId = await ResolveTenantAsync(connection, transaction, identityId, cancellationToken);
         if (tenantId is null) return null;
         await SetTenantAsync(connection, transaction, tenantId.Value, cancellationToken);
-        await using var command = new NpgsqlCommand("select id, normalized_email, email_verified, status, created_at, last_login_at, security_stamp, password_hash, tenant_id, name, login_prefix, must_change_password, mfa_enabled from platform_iam.identity where id = $1 and status = 'Active' limit 1", connection, transaction);
+        await using var command = new NpgsqlCommand("select id, normalized_email, email_verified, status, created_at, last_login_at, security_stamp, password_hash, tenant_id, name, login_prefix, must_change_password, mfa_enabled from platform.identity where id = $1 and status = 'Active' limit 1", connection, transaction);
         command.Parameters.AddWithValue(identityId.Value);
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
         var identity = await reader.ReadAsync(cancellationToken) ? ReadIdentity(reader) : null;
@@ -120,7 +120,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
         var tenantId = await ResolveTenantAsync(connection, transaction, identityId, cancellationToken);
         if (tenantId is null) return false;
         await SetTenantAsync(connection, transaction, tenantId.Value, cancellationToken);
-        await using var command = new NpgsqlCommand("update platform_iam.identity set password_hash = $1, must_change_password = false, security_stamp = $2, failed_login_count = 0, locked_until = null, version = version + 1 where id = $3 and tenant_id = $4 and status = 'Active' and must_change_password = true", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.identity set password_hash = $1, must_change_password = false, security_stamp = $2, failed_login_count = 0, locked_until = null, version = version + 1 where id = $3 and tenant_id = $4 and status = 'Active' and must_change_password = true", connection, transaction);
         command.Parameters.AddWithValue(IdentityConventions.HashPassword(newPassword));
         command.Parameters.AddWithValue(Guid.CreateVersion7());
         command.Parameters.AddWithValue(identityId.Value);
@@ -139,7 +139,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, identity.TenantId.Value, cancellationToken);
-        await using var command = new NpgsqlCommand("update platform_iam.identity set password_hash = $1, security_stamp = $2, version = version + 1 where id = $3 and tenant_id = $4 and status = 'Active'", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.identity set password_hash = $1, security_stamp = $2, version = version + 1 where id = $3 and tenant_id = $4 and status = 'Active'", connection, transaction);
         command.Parameters.AddWithValue(IdentityConventions.HashPassword(newPassword));
         command.Parameters.AddWithValue(Guid.CreateVersion7());
         command.Parameters.AddWithValue(identityId.Value);
@@ -158,7 +158,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
             tenantCommand.Parameters.AddWithValue(tenantId.Value.ToString("D"));
             await tenantCommand.ExecuteNonQueryAsync(cancellationToken);
         }
-        await using var command = new NpgsqlCommand("select id, tenant_id, identity_id, display_name, status, default_legal_entity_id, default_branch_id, locale, timezone, created_at, version from platform_iam.membership where identity_id = $1 and tenant_id = $2 and status = 'Active' limit 1", connection, transaction);
+        await using var command = new NpgsqlCommand("select id, tenant_id, identity_id, display_name, status, default_legal_entity_id, default_branch_id, locale, timezone, created_at, version from platform.membership where identity_id = $1 and tenant_id = $2 and status = 'Active' limit 1", connection, transaction);
         command.Parameters.AddWithValue(identityId.Value); command.Parameters.AddWithValue(tenantId.Value);
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
         var membership = await reader.ReadAsync(cancellationToken) ? ReadMembership(reader) : null;
@@ -177,7 +177,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
             await tenantCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await using var command = new NpgsqlCommand("select 1 from platform_iam.identity i join platform_iam.membership m on m.identity_id = i.id where i.id = $1 and i.security_stamp = $2 and i.status = 'Active' and m.tenant_id = $3 and m.status = 'Active' limit 1", connection, transaction);
+        await using var command = new NpgsqlCommand("select 1 from platform.identity i join platform.membership m on m.identity_id = i.id where i.id = $1 and i.security_stamp = $2 and i.status = 'Active' and m.tenant_id = $3 and m.status = 'Active' limit 1", connection, transaction);
         command.Parameters.AddWithValue(identityId.Value);
         command.Parameters.AddWithValue(securityStamp);
         command.Parameters.AddWithValue(tenantId.Value);
@@ -193,7 +193,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
         var tenantId = await ResolveTenantAsync(connection, transaction, identityId, cancellationToken);
         if (tenantId is null) return false;
         await SetTenantAsync(connection, transaction, tenantId.Value, cancellationToken);
-        await using var command = new NpgsqlCommand("update platform_iam.identity set security_stamp = $1, version = version + 1 where id = $2 and status = 'Active'", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.identity set security_stamp = $1, version = version + 1 where id = $2 and status = 'Active'", connection, transaction);
         command.Parameters.AddWithValue(Guid.CreateVersion7()); command.Parameters.AddWithValue(identityId.Value);
         var changed = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
         await transaction.CommitAsync(cancellationToken);
@@ -209,7 +209,7 @@ public sealed class NpgsqlIdentityStore(NpgsqlDataSource dataSource) : IIdentity
 
     private static async Task<TenantId?> ResolveTenantAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, IdentityId identityId, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("select tenant_id, status from platform_iam.resolve_identity_tenant($1)", connection, transaction);
+        await using var command = new NpgsqlCommand("select tenant_id, status from platform.resolve_identity_tenant($1)", connection, transaction);
         command.Parameters.AddWithValue(identityId.Value);
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken);
         if (!await reader.ReadAsync(cancellationToken) || !string.Equals(reader.GetString(1), "Active", StringComparison.OrdinalIgnoreCase)) return null;

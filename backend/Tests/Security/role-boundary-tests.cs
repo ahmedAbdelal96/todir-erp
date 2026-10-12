@@ -27,8 +27,8 @@ public sealed class RoleBoundaryTests
             // in this DDL statement; PostgreSQL utility statements do not accept
             // regular query parameters for ALTER ROLE passwords.
             await ExecuteAsync(admin, $"ALTER ROLE erp_app PASSWORD '{appPassword}'");
-            await ExecuteAsync(admin, $"SET ROLE erp_owner; CREATE TABLE platform_tenancy.{tableName} (id integer PRIMARY KEY, value text NOT NULL); RESET ROLE;");
-            await ExecuteAsync(admin, $"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE platform_tenancy.{tableName} TO erp_app;");
+            await ExecuteAsync(admin, $"SET ROLE erp_owner; CREATE TABLE platform.{tableName} (id integer PRIMARY KEY, value text NOT NULL); RESET ROLE;");
+            await ExecuteAsync(admin, $"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE platform.{tableName} TO erp_app;");
 
             var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString)
             {
@@ -39,17 +39,17 @@ public sealed class RoleBoundaryTests
             await using var app = new NpgsqlConnection(appConnectionString);
             await app.OpenAsync();
 
-            Assert.Equal("erp_owner", await ScalarAsync(app, $"SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'platform_tenancy.{tableName}'::regclass"));
+            Assert.Equal("erp_owner", await ScalarAsync(app, $"SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'platform.{tableName}'::regclass"));
             Assert.False((bool)(await ScalarAsync(app, "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"))!);
             Assert.False((bool)(await ScalarAsync(app, "SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user"))!);
 
-            await ExecuteAsync(app, $"INSERT INTO platform_tenancy.{tableName} (id, value) VALUES (1, 'runtime');");
-            Assert.Equal("runtime", await ScalarAsync(app, $"SELECT value FROM platform_tenancy.{tableName} WHERE id = 1"));
-            await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(app, $"ALTER TABLE platform_tenancy.{tableName} ADD COLUMN forbidden integer"));
+            await ExecuteAsync(app, $"INSERT INTO platform.{tableName} (id, value) VALUES (1, 'runtime');");
+            Assert.Equal("runtime", await ScalarAsync(app, $"SELECT value FROM platform.{tableName} WHERE id = 1"));
+            await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(app, $"ALTER TABLE platform.{tableName} ADD COLUMN forbidden integer"));
         }
         finally
         {
-            await ExecuteAsync(admin, $"SET ROLE erp_owner; DROP TABLE IF EXISTS platform_tenancy.{tableName}; RESET ROLE;");
+            await ExecuteAsync(admin, $"SET ROLE erp_owner; DROP TABLE IF EXISTS platform.{tableName}; RESET ROLE;");
         }
     }
 
@@ -62,13 +62,13 @@ public sealed class RoleBoundaryTests
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
 
-        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform_messaging.claim_pending_outbox(integer)', 'EXECUTE')"))!);
-        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform_messaging.observe_pending_outbox()', 'EXECUTE')"))!);
-        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform_iam.expire_support_access_grants()', 'EXECUTE')"))!);
-        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_messaging.outbox_message', 'SELECT')"))!);
-        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_messaging.outbox_message', 'UPDATE')"))!);
-        Assert.False((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_messaging.outbox_message', 'INSERT')"))!);
-        Assert.False((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform_iam.support_access_grant', 'DELETE')"))!);
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform.claim_pending_outbox(integer)', 'EXECUTE')"))!);
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform.observe_pending_outbox()', 'EXECUTE')"))!);
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_function_privilege('erp_dispatcher', 'platform.expire_support_access_grants()', 'EXECUTE')"))!);
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform.outbox_message', 'SELECT')"))!);
+        Assert.True((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform.outbox_message', 'UPDATE')"))!);
+        Assert.False((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform.outbox_message', 'INSERT')"))!);
+        Assert.False((bool)(await ScalarAsync(admin, "SELECT has_table_privilege('erp_dispatcher', 'platform.support_access_grant', 'DELETE')"))!);
     }
 
     [Fact]
@@ -84,8 +84,8 @@ public sealed class RoleBoundaryTests
         await using var app = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString);
         await app.OpenAsync();
 
-        await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(app, "UPDATE platform_audit.audit_entry SET action = action WHERE false"));
-        await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(app, "DELETE FROM platform_audit.audit_entry WHERE false"));
+        await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(app, "UPDATE platform.audit_entry SET action = action WHERE false"));
+        await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(app, "DELETE FROM platform.audit_entry WHERE false"));
     }
 
     private static async Task ExecuteAsync(NpgsqlConnection connection, string commandText, params (string Name, object Value)[] parameters)

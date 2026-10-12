@@ -59,7 +59,7 @@ public sealed class DevelopmentSeedTests
         await using var connection = await dataSource.OpenConnectionAsync();
         foreach (var tenant in PlatformSeed.Tenants)
         {
-            await using var identity = new NpgsqlCommand("select password_hash from platform_iam.identity where tenant_id=$1 and login_prefix='admin'", connection);
+            await using var identity = new NpgsqlCommand("select password_hash from platform.identity where tenant_id=$1 and login_prefix='admin'", connection);
             identity.Parameters.AddWithValue(tenant.Id);
             var hash = (string?)await identity.ExecuteScalarAsync();
             Assert.NotNull(hash);
@@ -81,7 +81,7 @@ public sealed class DevelopmentSeedTests
                 context.Parameters.AddWithValue(tenant.Id.ToString("D"));
                 await context.ExecuteNonQueryAsync();
             }
-            await using var contextCounts = new NpgsqlCommand("select (select count(*) from platform_iam.identity),(select count(*) from foundation_directory.party),(select count(*) from foundation_catalog.product_template)", runtimeConnection);
+            await using var contextCounts = new NpgsqlCommand("select (select count(*) from platform.identity),(select count(*) from foundation_directory.party),(select count(*) from foundation_catalog.product_template)", runtimeConnection);
             await using var reader = await contextCounts.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
             Assert.Equal(tenant.Id == SeedIds.AtlasTenant ? 205 : 105, reader.GetInt64(0));

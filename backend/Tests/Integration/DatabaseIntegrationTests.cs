@@ -16,7 +16,7 @@ public sealed class DatabaseIntegrationTests
         var password = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
         var tenantA = Guid.CreateVersion7();
         var tenantB = Guid.CreateVersion7();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantA}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantA}', 'fuzz-a-{tenantA:N}', 'A', 'Active', 'fuzz-a-{tenantA:N}.local', 'fuzz-a-{tenantA:N}.local', now(), 1); set app.tenant_id = '{tenantB}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantB}', 'fuzz-b-{tenantB:N}', 'B', 'Active', 'fuzz-b-{tenantB:N}.local', 'fuzz-b-{tenantB:N}.local', now(), 1); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantA}'; insert into platform.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantA}', 'fuzz-a-{tenantA:N}', 'A', 'Active', 'fuzz-a-{tenantA:N}.local', 'fuzz-a-{tenantA:N}.local', now(), 1); set app.tenant_id = '{tenantB}'; insert into platform.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantB}', 'fuzz-b-{tenantB:N}', 'B', 'Active', 'fuzz-b-{tenantB:N}.local', 'fuzz-b-{tenantB:N}.local', now(), 1); reset app.tenant_id; reset role;");
         var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString;
         try
         {
@@ -26,14 +26,14 @@ public sealed class DatabaseIntegrationTests
             {
                 await using var transaction = await app.BeginTransactionAsync();
                 await ExecuteAsync(app, $"set local app.tenant_id = '{visible}';", transaction);
-                var count = await ScalarAsync(app, "select count(*) from platform_tenancy.tenant", transaction);
+                var count = await ScalarAsync(app, "select count(*) from platform.tenant", transaction);
                 Assert.Equal(visible == tenantA || visible == tenantB ? 1L : 0L, (long)count!);
                 await transaction.RollbackAsync();
             }
         }
         finally
         {
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantA}'; delete from platform_tenancy.tenant where id = '{tenantA}'; set app.tenant_id = '{tenantB}'; delete from platform_tenancy.tenant where id = '{tenantB}'; reset app.tenant_id; reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantA}'; delete from platform.tenant where id = '{tenantA}'; set app.tenant_id = '{tenantB}'; delete from platform.tenant where id = '{tenantB}'; reset app.tenant_id; reset role;");
         }
     }
 

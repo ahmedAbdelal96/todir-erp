@@ -33,12 +33,12 @@ public sealed class OutboxDispatchWorker(
         if (dataSource is null || publisher is null) return;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using var backlog = new NpgsqlCommand("select pending_count, oldest_age_seconds from platform_messaging.observe_pending_outbox()", connection, transaction);
+        await using var backlog = new NpgsqlCommand("select pending_count, oldest_age_seconds from platform.observe_pending_outbox()", connection, transaction);
         await using (var backlogReader = await backlog.ExecuteReaderAsync(cancellationToken))
         {
             if (await backlogReader.ReadAsync(cancellationToken)) CoreMetrics.SetOutboxBacklog(backlogReader.GetInt64(0), backlogReader.GetDouble(1));
         }
-        await using var command = new NpgsqlCommand("select id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, trace_parent, attempts from platform_messaging.claim_pending_outbox(100)", connection, transaction);
+        await using var command = new NpgsqlCommand("select id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, trace_parent, attempts from platform.claim_pending_outbox(100)", connection, transaction);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var messages = new List<OutboxPublishedMessage>();
         while (await reader.ReadAsync(cancellationToken)) messages.Add(new OutboxPublishedMessage(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), new TenantId(reader.GetGuid(3)), reader.GetFieldValue<DateTimeOffset>(4), reader.GetGuid(5), reader.GetGuid(6), reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetInt32(9)));
@@ -60,7 +60,7 @@ public sealed class OutboxDispatchWorker(
                 await using var tenantContext = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction);
                 tenantContext.Parameters.AddWithValue(message.TenantId.Value.ToString("D"));
                 await tenantContext.ExecuteNonQueryAsync(cancellationToken);
-                await using var mark = new NpgsqlCommand("update platform_messaging.outbox_message set status = 'Published', published_at = now(), last_error = null where id = $1 and status = 'Pending'", connection, transaction);
+                await using var mark = new NpgsqlCommand("update platform.outbox_message set status = 'Published', published_at = now(), last_error = null where id = $1 and status = 'Pending'", connection, transaction);
                 mark.Parameters.AddWithValue(message.MessageId);
                 await mark.ExecuteNonQueryAsync(cancellationToken);
                 CoreMetrics.OutboxPublished.Add(1, new KeyValuePair<string, object?>("source_module", message.SourceModule));
@@ -71,7 +71,7 @@ public sealed class OutboxDispatchWorker(
                 await using var tenantContext = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction);
                 tenantContext.Parameters.AddWithValue(message.TenantId.Value.ToString("D"));
                 await tenantContext.ExecuteNonQueryAsync(cancellationToken);
-                await using var failure = new NpgsqlCommand("update platform_messaging.outbox_message set status = case when $2 then 'Pending' else 'Failed' end, next_attempt_at = $3, last_error = $4 where id = $1 and status = 'Pending'", connection, transaction);
+                await using var failure = new NpgsqlCommand("update platform.outbox_message set status = case when $2 then 'Pending' else 'Failed' end, next_attempt_at = $3, last_error = $4 where id = $1 and status = 'Pending'", connection, transaction);
                 failure.Parameters.AddWithValue(message.MessageId);
                 failure.Parameters.AddWithValue(decision.Retry);
                 failure.Parameters.AddWithValue((object?)decision.NextAttemptAt ?? DBNull.Value);

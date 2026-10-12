@@ -17,7 +17,7 @@ public static class PlatformSeed
         {
             foreach (var tenant in Tenants)
             {
-                await ExecuteAsync(connection, transaction, "insert into platform_tenancy.tenant (id,slug,display_name,status,login_domain,normalized_login_domain,created_at,version) values ($1,$2,$3,'Active',$4,$4,$5,1) on conflict (id) do update set slug=excluded.slug,display_name=excluded.display_name,status='Active',login_domain=excluded.login_domain,normalized_login_domain=excluded.normalized_login_domain,version=platform_tenancy.tenant.version+1", tenant.Id, tenant.Slug, tenant.DisplayName, tenant.LoginDomain, asOf);
+                await ExecuteAsync(connection, transaction, "insert into platform.tenant (id,slug,display_name,status,login_domain,normalized_login_domain,created_at,version) values ($1,$2,$3,'Active',$4,$4,$5,1) on conflict (id) do update set slug=excluded.slug,display_name=excluded.display_name,status='Active',login_domain=excluded.login_domain,normalized_login_domain=excluded.normalized_login_domain,version=platform.tenant.version+1", tenant.Id, tenant.Slug, tenant.DisplayName, tenant.LoginDomain, asOf);
             }
             await transaction.CommitAsync(cancellationToken);
         }
@@ -32,8 +32,8 @@ public static class PlatformSeed
             await using var context = await SeedContext.OpenAsync(connection, tenant, asOf, cancellationToken);
             try
             {
-                await context.ExecuteAsync("insert into platform_org.legal_entity (id,tenant_id,code,legal_name,trade_name,country_code,base_currency_code,timezone,locale,status,created_at,version) values ($1,$2,'MAIN',$3,$4,'EG',$5,'Africa/Cairo','ar-EG','Active',$6,1) on conflict (id) do update set legal_name=excluded.legal_name,trade_name=excluded.trade_name,base_currency_code=excluded.base_currency_code,status='Active',version=platform_org.legal_entity.version+1", cancellationToken, context.EntityId, tenant.Id, tenant.LegalName, tenant.TradeName ?? (object)DBNull.Value, tenant.BaseCurrency, asOf);
-                await context.ExecuteAsync("insert into platform_org.branch (id,tenant_id,legal_entity_id,code,name,timezone_override,status,created_at,version) values ($1,$2,$3,'MAIN',$4,'Africa/Cairo','Active',$5,1) on conflict (id) do update set legal_entity_id=excluded.legal_entity_id,name=excluded.name,status='Active',version=platform_org.branch.version+1", cancellationToken, context.BranchId, tenant.Id, context.EntityId, tenant.TradeName is null ? tenant.DisplayName : $"{tenant.TradeName} — Main Branch", asOf);
+                await context.ExecuteAsync("insert into platform.legal_entity (id,tenant_id,code,legal_name,trade_name,country_code,base_currency_code,timezone,locale,status,created_at,version) values ($1,$2,'MAIN',$3,$4,'EG',$5,'Africa/Cairo','ar-EG','Active',$6,1) on conflict (id) do update set legal_name=excluded.legal_name,trade_name=excluded.trade_name,base_currency_code=excluded.base_currency_code,status='Active',version=platform.legal_entity.version+1", cancellationToken, context.EntityId, tenant.Id, tenant.LegalName, tenant.TradeName ?? (object)DBNull.Value, tenant.BaseCurrency, asOf);
+                await context.ExecuteAsync("insert into platform.branch (id,tenant_id,legal_entity_id,code,name,timezone_override,status,created_at,version) values ($1,$2,$3,'MAIN',$4,'Africa/Cairo','Active',$5,1) on conflict (id) do update set legal_entity_id=excluded.legal_entity_id,name=excluded.name,status='Active',version=platform.branch.version+1", cancellationToken, context.BranchId, tenant.Id, context.EntityId, tenant.TradeName is null ? tenant.DisplayName : $"{tenant.TradeName} — Main Branch", asOf);
                 await context.CommitAsync(cancellationToken);
             }
             catch

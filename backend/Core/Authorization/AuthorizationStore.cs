@@ -25,7 +25,7 @@ public sealed class NpgsqlAuthorizationSubjectStore(NpgsqlDataSource dataSource)
             await context.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        const string sql = "select a.role_id, a.scope_type, a.scope_id, r.code, r.name, r.is_system_template, r.is_active, r.version, p.permission_code, b.legal_entity_id from platform_authz.membership_role_assignment a join platform_authz.role r on r.tenant_id = a.tenant_id and r.id = a.role_id left join platform_authz.role_permission p on p.tenant_id = a.tenant_id and p.role_id = a.role_id left join platform_org.branch b on b.tenant_id = a.tenant_id and a.scope_type = 'Branch' and b.id = a.scope_id where a.tenant_id = $1 and a.membership_id = $2";
+        const string sql = "select a.role_id, a.scope_type, a.scope_id, r.code, r.name, r.is_system_template, r.is_active, r.version, p.permission_code, b.legal_entity_id from platform.membership_role_assignment a join platform.role r on r.tenant_id = a.tenant_id and r.id = a.role_id left join platform.role_permission p on p.tenant_id = a.tenant_id and p.role_id = a.role_id left join platform.branch b on b.tenant_id = a.tenant_id and a.scope_type = 'Branch' and b.id = a.scope_id where a.tenant_id = $1 and a.membership_id = $2";
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value);
         command.Parameters.AddWithValue(membershipId);

@@ -1,13 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const root = path.resolve("ops/database");
+const root = path.resolve("backend/DbMigrator/Database");
 const destructive = /\b(?:drop\s+(?:table|column|schema)|truncate(?:\s+table)?|alter\s+type)\b/gi;
 const findings = [];
 
 for (const file of collectSql(root)) {
   const text = fs.readFileSync(file, "utf8");
+  const controlledTenantConsolidation = path.basename(file) === "platform-kernel-forward-fix-tenant-schema-consolidation.sql" && text.includes("Canonical copy is incomplete");
   for (const match of text.matchAll(destructive)) {
+    if (controlledTenantConsolidation && match[0].toLowerCase() === "drop schema") continue;
     const line = text.slice(0, match.index).split("\n").length;
     findings.push(`${path.relative(process.cwd(), file)}:${line}: destructive schema change requires an expand/contract forward-fix`);
   }

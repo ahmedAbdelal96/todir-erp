@@ -55,7 +55,7 @@ public sealed class NpgsqlMessageReplayService(
         await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
         {
             await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-            await using var command = new NpgsqlCommand("select id, message_type, payload::text, tenant_id, occurred_at, correlation_id, causation_id, source_module, trace_parent, attempts from platform_messaging.outbox_message where id = $1 and tenant_id = $2", connection, transaction);
+            await using var command = new NpgsqlCommand("select id, message_type, payload::text, tenant_id, occurred_at, correlation_id, causation_id, source_module, trace_parent, attempts from platform.outbox_message where id = $1 and tenant_id = $2", connection, transaction);
             command.Parameters.AddWithValue(messageId);
             command.Parameters.AddWithValue(tenantId.Value);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -73,7 +73,7 @@ public sealed class NpgsqlMessageReplayService(
                 reader.GetInt32(9));
             await reader.DisposeAsync();
 
-            await using var unresolved = new NpgsqlCommand("select exists (select 1 from platform_messaging.message_error where message_id = $1 and tenant_id = $2 and consumer_endpoint = $3 and resolved = false)", connection, transaction);
+            await using var unresolved = new NpgsqlCommand("select exists (select 1 from platform.message_error where message_id = $1 and tenant_id = $2 and consumer_endpoint = $3 and resolved = false)", connection, transaction);
             unresolved.Parameters.AddWithValue(messageId);
             unresolved.Parameters.AddWithValue(tenantId.Value);
             unresolved.Parameters.AddWithValue(consumerEndpoint);
@@ -94,7 +94,7 @@ public sealed class NpgsqlMessageReplayService(
         await using var auditConnection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var auditTransaction = await auditConnection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(auditConnection, auditTransaction, tenantId, cancellationToken);
-        await using (var resolve = new NpgsqlCommand("update platform_messaging.message_error set resolved = true where message_id = $1 and tenant_id = $2 and consumer_endpoint = $3 and resolved = false", auditConnection, auditTransaction))
+        await using (var resolve = new NpgsqlCommand("update platform.message_error set resolved = true where message_id = $1 and tenant_id = $2 and consumer_endpoint = $3 and resolved = false", auditConnection, auditTransaction))
         {
             resolve.Parameters.AddWithValue(messageId);
             resolve.Parameters.AddWithValue(tenantId.Value);

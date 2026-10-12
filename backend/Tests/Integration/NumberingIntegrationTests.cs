@@ -19,7 +19,7 @@ public sealed class NumberingIntegrationTests
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenant.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenant.Value}', 'numbering-{tenant.Value:N}', 'Numbering', 'Active', 'numbering-{tenant.Value:N}.local', 'numbering-{tenant.Value:N}.local', now(), 1); insert into platform_numbering.sequence_definition (id, tenant_id, sequence_key, prefix_template, padding, mode, next_value, period_key, version) values ('{sequenceId}', '{tenant.Value}', 'integration', 'INV-', 5, 'Standard', 1, '2026', 1); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenant.Value}'; insert into platform.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenant.Value}', 'numbering-{tenant.Value:N}', 'Numbering', 'Active', 'numbering-{tenant.Value:N}.local', 'numbering-{tenant.Value:N}.local', now(), 1); insert into platform.sequence_definition (id, tenant_id, sequence_key, prefix_template, padding, mode, next_value, period_key, version) values ('{sequenceId}', '{tenant.Value}', 'integration', 'INV-', 5, 'Standard', 1, '2026', 1); reset app.tenant_id; reset role;");
         var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString;
 
         try
@@ -35,7 +35,7 @@ public sealed class NumberingIntegrationTests
         }
         finally
         {
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; delete from platform_numbering.sequence_definition where tenant_id = '{tenant.Value}' and id = '{sequenceId}'; delete from platform_tenancy.tenant where id = '{tenant.Value}'; reset app.tenant_id; reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; delete from platform.sequence_definition where tenant_id = '{tenant.Value}' and id = '{sequenceId}'; delete from platform.tenant where id = '{tenant.Value}'; reset app.tenant_id; reset role;");
         }
     }
 

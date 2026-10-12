@@ -55,7 +55,7 @@ public sealed class NpgsqlInboxStore(NpgsqlDataSource dataSource) : IInboxStore
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("insert into platform_messaging.inbox_message (consumer_endpoint, message_id, tenant_id, received_at, lease_until, attempts) values ($1, $2, $3, now(), now() + $4, 1) on conflict (consumer_endpoint, message_id) do update set received_at = now(), lease_until = now() + $4, attempts = platform_messaging.inbox_message.attempts + 1 where platform_messaging.inbox_message.processed_at is null and (platform_messaging.inbox_message.lease_until is null or platform_messaging.inbox_message.lease_until <= now()) returning 1", connection, transaction);
+        await using var command = new NpgsqlCommand("insert into platform.inbox_message (consumer_endpoint, message_id, tenant_id, received_at, lease_until, attempts) values ($1, $2, $3, now(), now() + $4, 1) on conflict (consumer_endpoint, message_id) do update set received_at = now(), lease_until = now() + $4, attempts = platform.inbox_message.attempts + 1 where platform.inbox_message.processed_at is null and (platform.inbox_message.lease_until is null or platform.inbox_message.lease_until <= now()) returning 1", connection, transaction);
         command.Parameters.AddWithValue(consumerEndpoint); command.Parameters.AddWithValue(messageId); command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(LeaseDuration);
         var inserted = await command.ExecuteScalarAsync(cancellationToken) is not null;
         await transaction.CommitAsync(cancellationToken);
@@ -67,7 +67,7 @@ public sealed class NpgsqlInboxStore(NpgsqlDataSource dataSource) : IInboxStore
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("update platform_messaging.inbox_message set processed_at = now(), lease_until = null where consumer_endpoint = $1 and message_id = $2 and tenant_id = $3 and processed_at is null", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.inbox_message set processed_at = now(), lease_until = null where consumer_endpoint = $1 and message_id = $2 and tenant_id = $3 and processed_at is null", connection, transaction);
         command.Parameters.AddWithValue(consumerEndpoint); command.Parameters.AddWithValue(messageId); command.Parameters.AddWithValue(tenantId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

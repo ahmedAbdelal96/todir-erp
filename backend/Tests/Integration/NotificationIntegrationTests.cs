@@ -20,7 +20,7 @@ public sealed class NotificationIntegrationTests
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'notification-{tenantId.Value:N}', 'Notification', 'Active', 'notification-{tenantId.Value:N}.local', 'notification-{tenantId.Value:N}.local', now(), 1); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'notification-{tenantId.Value:N}', 'Notification', 'Active', 'notification-{tenantId.Value:N}.local', 'notification-{tenantId.Value:N}.local', now(), 1); reset app.tenant_id; reset role;");
 
         try
         {
@@ -31,12 +31,12 @@ public sealed class NotificationIntegrationTests
 
             Assert.True(await dispatcher.DispatchNextAsync(tenantId));
             Assert.Single(provider.Sent);
-            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform_notifications.notification where tenant_id = '{tenantId.Value}' and id = '{notification.Id}' and status = 'Sent'"));
-            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform_notifications.notification_delivery where tenant_id = '{tenantId.Value}' and notification_id = '{notification.Id}' and status = 'Sent'"));
+            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform.notification where tenant_id = '{tenantId.Value}' and id = '{notification.Id}' and status = 'Sent'"));
+            Assert.Equal(1L, await ScalarAsync(admin, $"select count(*) from platform.notification_delivery where tenant_id = '{tenantId.Value}' and notification_id = '{notification.Id}' and status = 'Sent'"));
         }
         finally
         {
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; delete from platform_notifications.notification_delivery where tenant_id = '{tenantId.Value}'; delete from platform_notifications.notification where tenant_id = '{tenantId.Value}'; delete from platform_tenancy.tenant where id = '{tenantId.Value}'; reset app.tenant_id; reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; delete from platform.notification_delivery where tenant_id = '{tenantId.Value}'; delete from platform.notification where tenant_id = '{tenantId.Value}'; delete from platform.tenant where id = '{tenantId.Value}'; reset app.tenant_id; reset role;");
         }
     }
 

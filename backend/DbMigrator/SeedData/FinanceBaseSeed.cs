@@ -4,6 +4,15 @@ public static class FinanceBaseSeed
 {
     public static async Task<SeedFinanceSummary> SeedAsync(SeedContext context, CancellationToken cancellationToken)
     {
+        foreach (var currency in new[]
+        {
+            (Code: "EGP", NumericCode: (short)818, NameAr: "جنيه مصري", NameEn: "Egyptian Pound"),
+            (Code: "USD", NumericCode: (short)840, NameAr: "دولار أمريكي", NameEn: "US Dollar")
+        })
+        {
+            await context.ExecuteAsync("insert into foundation_finbase.currency_reference (code,numeric_code,name_ar,name_en,minor_unit,status,valid_from,valid_to,dataset_version) values ($1,$2,$3,$4,2,'Active','2026-01-01',null,'development-2026-10') on conflict (code) do update set numeric_code=excluded.numeric_code,name_ar=excluded.name_ar,name_en=excluded.name_en,minor_unit=excluded.minor_unit,status='Active',valid_from=excluded.valid_from,valid_to=null,dataset_version=excluded.dataset_version", cancellationToken, currency.Code, currency.NumericCode, currency.NameAr, currency.NameEn);
+        }
+
         var currencies = context.Tenant.Id == SeedIds.AtlasTenant ? new[] { "EGP", "USD" } : new[] { "USD", "EGP" };
         foreach (var currency in currencies)
             await context.ExecuteAsync("insert into foundation_finbase.legal_entity_currency (tenant_id,legal_entity_id,currency_code,enabled,allow_sales,allow_purchase,allow_payment,allow_manual_rate,status,version,created_at,updated_at) values ($1,$2,$3,true,true,true,true,false,'Active',1,$4,$4) on conflict (tenant_id,legal_entity_id,currency_code) do update set enabled=true,status='Active',updated_at=excluded.updated_at,version=foundation_finbase.legal_entity_currency.version+1", cancellationToken, context.Tenant.Id, context.EntityId, currency, context.AsOf);

@@ -27,7 +27,7 @@ public sealed class NpgsqlAuditWriter(NpgsqlDataSource dataSource) : IAuditWrite
 
     public static async Task WriteAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, AuditEntry entry, CancellationToken cancellationToken = default)
     {
-        const string sql = "insert into platform_audit.audit_entry (id, tenant_id, legal_entity_id, branch_id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, before_json, after_json, reason, source, correlation_id, trace_id, occurred_at, metadata_json) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19::jsonb)";
+        const string sql = "insert into platform.audit_entry (id, tenant_id, legal_entity_id, branch_id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, before_json, after_json, reason, source, correlation_id, trace_id, occurred_at, metadata_json) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19::jsonb)";
         await using (var context = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction))
         {
             context.Parameters.AddWithValue(entry.TenantId.Value.ToString("D"));
@@ -68,7 +68,7 @@ public sealed class NpgsqlSequenceAllocator(NpgsqlDataSource dataSource) : ISequ
             context.Parameters.AddWithValue(definition.TenantId.Value.ToString("D"));
             await context.ExecuteNonQueryAsync(cancellationToken);
         }
-        await using var command = new NpgsqlCommand("update platform_numbering.sequence_definition set next_value = next_value + 1, version = version + 1 where tenant_id = $1 and sequence_key = $2 and legal_entity_id is not distinct from $3 and branch_id is not distinct from $4 and scope_key is not distinct from $5 and period_key is not distinct from $6 returning prefix_template, next_value - 1, padding", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.sequence_definition set next_value = next_value + 1, version = version + 1 where tenant_id = $1 and sequence_key = $2 and legal_entity_id is not distinct from $3 and branch_id is not distinct from $4 and scope_key is not distinct from $5 and period_key is not distinct from $6 returning prefix_template, next_value - 1, padding", connection, transaction);
         command.Parameters.AddWithValue(definition.TenantId.Value);
         command.Parameters.AddWithValue(definition.Key);
         command.Parameters.AddWithValue((object?)definition.LegalEntityId ?? DBNull.Value);

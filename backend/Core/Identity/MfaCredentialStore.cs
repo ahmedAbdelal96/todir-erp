@@ -68,14 +68,14 @@ public sealed class NpgsqlMfaCredentialStore(NpgsqlDataSource dataSource) : IMfa
         var tenantId = await ResolveTenantAsync(connection, transaction, identityId, cancellationToken);
         if (tenantId is null) return null;
         await SetTenantAsync(connection, transaction, tenantId.Value, cancellationToken);
-        await using var command = new NpgsqlCommand("select mfa_enabled, mfa_secret_protected from platform_iam.identity where id = $1", connection, transaction);
+        await using var command = new NpgsqlCommand("select mfa_enabled, mfa_secret_protected from platform.identity where id = $1", connection, transaction);
         command.Parameters.AddWithValue(identityId.Value);
         await using var identityReader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken);
         if (!await identityReader.ReadAsync(cancellationToken) || !identityReader.GetBoolean(0)) return null;
         var protectedSecret = identityReader.IsDBNull(1) ? string.Empty : identityReader.GetString(1);
         await identityReader.DisposeAsync();
 
-        await using var recovery = new NpgsqlCommand("select digest from platform_iam.mfa_recovery_code where identity_id = $1 and consumed_at is null order by digest", connection, transaction);
+        await using var recovery = new NpgsqlCommand("select digest from platform.mfa_recovery_code where identity_id = $1 and consumed_at is null order by digest", connection, transaction);
         recovery.Parameters.AddWithValue(identityId.Value);
         var digests = new List<string>();
         await using var reader = await recovery.ExecuteReaderAsync(cancellationToken);
@@ -92,19 +92,19 @@ public sealed class NpgsqlMfaCredentialStore(NpgsqlDataSource dataSource) : IMfa
         var tenantId = await ResolveTenantAsync(connection, transaction, identityId, cancellationToken);
         if (tenantId is null) throw new InvalidOperationException("identity.mfa_enrollment_not_allowed");
         await SetTenantAsync(connection, transaction, tenantId.Value, cancellationToken);
-        await using (var identity = new NpgsqlCommand("update platform_iam.identity set mfa_secret_protected = $1, mfa_enabled = true, version = version + 1 where id = $2 and status = 'Active'", connection, transaction))
+        await using (var identity = new NpgsqlCommand("update platform.identity set mfa_secret_protected = $1, mfa_enabled = true, version = version + 1 where id = $2 and status = 'Active'", connection, transaction))
         {
             identity.Parameters.AddWithValue(protectedSecret); identity.Parameters.AddWithValue(identityId.Value);
             if (await identity.ExecuteNonQueryAsync(cancellationToken) != 1) throw new InvalidOperationException("identity.mfa_enrollment_not_allowed");
         }
-        await using (var delete = new NpgsqlCommand("delete from platform_iam.mfa_recovery_code where identity_id = $1", connection, transaction))
+        await using (var delete = new NpgsqlCommand("delete from platform.mfa_recovery_code where identity_id = $1", connection, transaction))
         {
             delete.Parameters.AddWithValue(identityId.Value);
             await delete.ExecuteNonQueryAsync(cancellationToken);
         }
         foreach (var digest in recoveryCodeDigests.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            await using var insert = new NpgsqlCommand("insert into platform_iam.mfa_recovery_code (identity_id, digest, created_at) values ($1, $2, now())", connection, transaction);
+            await using var insert = new NpgsqlCommand("insert into platform.mfa_recovery_code (identity_id, digest, created_at) values ($1, $2, now())", connection, transaction);
             insert.Parameters.AddWithValue(identityId.Value); insert.Parameters.AddWithValue(digest);
             await insert.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -118,7 +118,7 @@ public sealed class NpgsqlMfaCredentialStore(NpgsqlDataSource dataSource) : IMfa
         var tenantId = await ResolveTenantAsync(connection, transaction, identityId, cancellationToken);
         if (tenantId is null) return false;
         await SetTenantAsync(connection, transaction, tenantId.Value, cancellationToken);
-        await using var command = new NpgsqlCommand("update platform_iam.mfa_recovery_code set consumed_at = now() where identity_id = $1 and digest = $2 and consumed_at is null", connection, transaction);
+        await using var command = new NpgsqlCommand("update platform.mfa_recovery_code set consumed_at = now() where identity_id = $1 and digest = $2 and consumed_at is null", connection, transaction);
         command.Parameters.AddWithValue(identityId.Value); command.Parameters.AddWithValue(digest);
         var changed = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
         await transaction.CommitAsync(cancellationToken);
@@ -127,7 +127,7 @@ public sealed class NpgsqlMfaCredentialStore(NpgsqlDataSource dataSource) : IMfa
 
     private static async Task<TenantId?> ResolveTenantAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, IdentityId identityId, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand("select tenant_id, status from platform_iam.resolve_identity_tenant($1)", connection, transaction);
+        await using var command = new NpgsqlCommand("select tenant_id, status from platform.resolve_identity_tenant($1)", connection, transaction);
         command.Parameters.AddWithValue(identityId.Value);
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken);
         if (!await reader.ReadAsync(cancellationToken) || !string.Equals(reader.GetString(1), "Active", StringComparison.OrdinalIgnoreCase)) return null;

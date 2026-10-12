@@ -18,7 +18,7 @@ public sealed class EntitlementIntegrationTests
         var password = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'entitlement-{tenantId.Value:N}', 'Entitlement', 'Active', 'entitlement-{tenantId.Value:N}.local', 'entitlement-{tenantId.Value:N}.local', now(), 1); insert into platform_entitlements.entitlement_snapshot (tenant_id, snapshot_version, issued_at, valid_until, key_id, modules, features, limits, scopes, signature) values ('{tenantId.Value}', 1, now(), now() + interval '1 hour', 'current', '[\"sample\"]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '{{}}'::jsonb, 'test-signature'); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{password}'; set role erp_owner; set app.tenant_id = '{tenantId.Value}'; insert into platform.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenantId.Value}', 'entitlement-{tenantId.Value:N}', 'Entitlement', 'Active', 'entitlement-{tenantId.Value:N}.local', 'entitlement-{tenantId.Value:N}.local', now(), 1); insert into platform.entitlement_snapshot (tenant_id, snapshot_version, issued_at, valid_until, key_id, modules, features, limits, scopes, signature) values ('{tenantId.Value}', 1, now(), now() + interval '1 hour', 'current', '[\"sample\"]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '{{}}'::jsonb, 'test-signature'); reset app.tenant_id; reset role;");
         var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString;
         await using var dataSource = NpgsqlDataSource.Create(appConnectionString);
         var store = new NpgsqlEntitlementSnapshotStore(dataSource);
@@ -32,7 +32,7 @@ public sealed class EntitlementIntegrationTests
         }
         finally
         {
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; delete from platform_entitlements.entitlement_snapshot where tenant_id = '{tenantId.Value}'; delete from platform_tenancy.tenant where id = '{tenantId.Value}'; reset app.tenant_id; reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenantId.Value}'; delete from platform.entitlement_snapshot where tenant_id = '{tenantId.Value}'; delete from platform.tenant where id = '{tenantId.Value}'; reset app.tenant_id; reset role;");
         }
     }
 

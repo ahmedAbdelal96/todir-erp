@@ -22,7 +22,7 @@ public sealed class AuthenticationIntegrationTests
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
-        await ExecuteAsync(admin, $"alter role erp_app password '{appPassword}'; set role erp_owner; set app.tenant_id = '{tenant.Value}'; insert into platform_tenancy.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenant.Value}', 'auth-{tenant.Value:N}', 'Auth Fixture', 'Active', '{loginDomain}', '{loginDomain}', now(), 1); insert into platform_iam.identity (id, tenant_id, email, normalized_email, login_prefix, name, email_verified, password_hash, status, created_at, security_stamp, version) values ('{identityId.Value}', '{tenant.Value}', 'auth@{loginDomain}', 'AUTH@{loginDomain.ToUpperInvariant()}', 'auth', 'Auth User', true, '{IdentityConventions.HashPassword("correct")}', 'Active', now(), '{Guid.CreateVersion7()}', 1); insert into platform_iam.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{membershipId.Value}', '{tenant.Value}', '{identityId.Value}', 'Auth User', 'Active', now(), 1); reset app.tenant_id; reset role;");
+        await ExecuteAsync(admin, $"alter role erp_app password '{appPassword}'; set role erp_owner; set app.tenant_id = '{tenant.Value}'; insert into platform.tenant (id, slug, display_name, status, login_domain, normalized_login_domain, created_at, version) values ('{tenant.Value}', 'auth-{tenant.Value:N}', 'Auth Fixture', 'Active', '{loginDomain}', '{loginDomain}', now(), 1); insert into platform.identity (id, tenant_id, email, normalized_email, login_prefix, name, email_verified, password_hash, status, created_at, security_stamp, version) values ('{identityId.Value}', '{tenant.Value}', 'auth@{loginDomain}', 'AUTH@{loginDomain.ToUpperInvariant()}', 'auth', 'Auth User', true, '{IdentityConventions.HashPassword("correct")}', 'Active', now(), '{Guid.CreateVersion7()}', 1); insert into platform.membership (id, tenant_id, identity_id, display_name, status, created_at, version) values ('{membershipId.Value}', '{tenant.Value}', '{identityId.Value}', 'Auth User', 'Active', now(), 1); reset app.tenant_id; reset role;");
 
         try
         {
@@ -45,7 +45,7 @@ public sealed class AuthenticationIntegrationTests
         }
         finally
         {
-            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; delete from platform_iam.auth_challenge where identity_id = '{identityId.Value}'; delete from platform_iam.membership where id = '{membershipId.Value}'; delete from platform_iam.identity where id = '{identityId.Value}'; delete from platform_tenancy.tenant where id = '{tenant.Value}'; reset app.tenant_id; reset role;");
+            await ExecuteAsync(admin, $"set role erp_owner; set app.tenant_id = '{tenant.Value}'; delete from platform.auth_challenge where identity_id = '{identityId.Value}'; delete from platform.membership where id = '{membershipId.Value}'; delete from platform.identity where id = '{identityId.Value}'; delete from platform.tenant where id = '{tenant.Value}'; reset app.tenant_id; reset role;");
         }
     }
 

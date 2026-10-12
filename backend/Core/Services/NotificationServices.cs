@@ -57,7 +57,7 @@ public sealed class NpgsqlNotificationStore(NpgsqlDataSource dataSource) : INoti
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, notification.TenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("insert into platform_notifications.notification (id, tenant_id, recipient_ref, template_key, channel, payload, status, attempts, created_at) values ($1, $2, $3, $4, $5, $6::jsonb, 'Pending', 0, $7)", connection, transaction);
+        await using var command = new NpgsqlCommand("insert into platform.notification (id, tenant_id, recipient_ref, template_key, channel, payload, status, attempts, created_at) values ($1, $2, $3, $4, $5, $6::jsonb, 'Pending', 0, $7)", connection, transaction);
         command.Parameters.AddWithValue(notification.Id); command.Parameters.AddWithValue(notification.TenantId.Value); command.Parameters.AddWithValue(notification.RecipientRef); command.Parameters.AddWithValue(notification.TemplateKey); command.Parameters.AddWithValue(notification.Channel.ToString()); command.Parameters.AddWithValue(notification.Payload.GetRawText()); command.Parameters.AddWithValue(notification.CreatedAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -68,7 +68,7 @@ public sealed class NpgsqlNotificationStore(NpgsqlDataSource dataSource) : INoti
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("with candidate as (select id from platform_notifications.notification where tenant_id = $1 and status = 'Pending' order by created_at, id for update skip locked limit 1) update platform_notifications.notification notification set status = 'Sending', attempts = attempts + 1 from candidate where notification.id = candidate.id and notification.tenant_id = $1 returning notification.id, notification.tenant_id, notification.recipient_ref, notification.template_key, notification.channel, notification.payload::text, notification.status, notification.attempts, notification.created_at, notification.sent_at", connection, transaction);
+        await using var command = new NpgsqlCommand("with candidate as (select id from platform.notification where tenant_id = $1 and status = 'Pending' order by created_at, id for update skip locked limit 1) update platform.notification notification set status = 'Sending', attempts = attempts + 1 from candidate where notification.id = candidate.id and notification.tenant_id = $1 returning notification.id, notification.tenant_id, notification.recipient_ref, notification.template_key, notification.channel, notification.payload::text, notification.status, notification.attempts, notification.created_at, notification.sent_at", connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value);
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -92,12 +92,12 @@ public sealed class NpgsqlNotificationStore(NpgsqlDataSource dataSource) : INoti
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, notification.TenantId, cancellationToken);
-        await using (var update = new NpgsqlCommand("update platform_notifications.notification set status = $1, sent_at = case when $1 = 'Sent' then now() else sent_at end where tenant_id = $2 and id = $3", connection, transaction))
+        await using (var update = new NpgsqlCommand("update platform.notification set status = $1, sent_at = case when $1 = 'Sent' then now() else sent_at end where tenant_id = $2 and id = $3", connection, transaction))
         {
             update.Parameters.AddWithValue(status); update.Parameters.AddWithValue(notification.TenantId.Value); update.Parameters.AddWithValue(notification.Id);
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
-        await using (var delivery = new NpgsqlCommand("insert into platform_notifications.notification_delivery (id, tenant_id, notification_id, channel, status, attempt_at, error_code) values ($1, $2, $3, $4, $5, now(), $6)", connection, transaction))
+        await using (var delivery = new NpgsqlCommand("insert into platform.notification_delivery (id, tenant_id, notification_id, channel, status, attempt_at, error_code) values ($1, $2, $3, $4, $5, now(), $6)", connection, transaction))
         {
             delivery.Parameters.AddWithValue(Guid.CreateVersion7()); delivery.Parameters.AddWithValue(notification.TenantId.Value); delivery.Parameters.AddWithValue(notification.Id); delivery.Parameters.AddWithValue(notification.Channel.ToString()); delivery.Parameters.AddWithValue(status); delivery.Parameters.AddWithValue((object?)errorCode ?? DBNull.Value);
             await delivery.ExecuteNonQueryAsync(cancellationToken);
