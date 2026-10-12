@@ -20,6 +20,9 @@ public sealed class SeedContext(NpgsqlConnection connection, NpgsqlTransaction t
         var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            // Baseline SQL leaves row_security=off on the migrator session; seed writes must be checked by RLS.
+            await using (var rowSecurity = new NpgsqlCommand("set local row_security = on", connection, transaction))
+                await rowSecurity.ExecuteNonQueryAsync(cancellationToken);
             await using (var role = new NpgsqlCommand("set local role erp_owner", connection, transaction))
                 await role.ExecuteNonQueryAsync(cancellationToken);
             await using (var context = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction))

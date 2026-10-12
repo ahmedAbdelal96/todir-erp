@@ -1,12 +1,82 @@
 using DbMigrator.SeedData;
 using Core.Identity;
 using Npgsql;
+using System.Diagnostics;
+using System.Security.Cryptography;
 using Xunit;
 
 namespace SeedDataTests;
 
 public sealed class DevelopmentSeedTests
 {
+    [Fact]
+    public async Task DevelopmentSeedRunsTwiceOnFreshDatabaseWithForcedRls()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the fresh-database seed regression test.");
+        var databaseName = $"todir_seed_{Guid.CreateVersion7():N}";
+        var seedPassword = $"Seed-{Convert.ToHexString(RandomNumberGenerator.GetBytes(16))}a1";
+        var runtimePassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+        var adminBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString);
+        var migratorBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = databaseName };
+        var appBuilder = new NpgsqlConnectionStringBuilder(migratorBuilder.ConnectionString)
+        {
+            Username = "erp_app",
+            Password = runtimePassword
+        };
+        var repositoryRoot = FindRepositoryRoot();
+        var databaseCreated = false;
+
+        await using var adminDataSource = NpgsqlDataSource.Create(adminBuilder.ConnectionString);
+        await using var admin = await adminDataSource.OpenConnectionAsync();
+        try
+        {
+            await using (var create = new NpgsqlCommand($"create database \"{databaseName}\"", admin))
+                await create.ExecuteNonQueryAsync();
+            databaseCreated = true;
+
+            var firstRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
+            Assert.True(firstRun.ExitCode == 0, firstRun.Output);
+            Assert.Contains("Development Seed Ready", firstRun.Output, StringComparison.Ordinal);
+
+            await using var acceptanceDataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
+            var firstCounts = await ReadCanonicalCountsAsync(acceptanceDataSource);
+            await AssertForcedRlsAndRoleBoundaryAsync(acceptanceDataSource);
+            await AssertRuntimeTenantIsolationAsync(appBuilder.ConnectionString);
+
+            var secondRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
+            Assert.True(secondRun.ExitCode == 0, secondRun.Output);
+            Assert.Contains("Development Seed Ready", secondRun.Output, StringComparison.Ordinal);
+            var secondCounts = await ReadCanonicalCountsAsync(acceptanceDataSource);
+            Assert.Equal(firstCounts, secondCounts);
+            Assert.Equal(2, firstCounts.Tenants);
+            Assert.Equal(205, firstCounts.AtlasUsers);
+            Assert.Equal(80, firstCounts.AtlasParties);
+            Assert.Equal(100, firstCounts.AtlasProducts);
+            Assert.Equal(105, firstCounts.DeltaUsers);
+            Assert.Equal(55, firstCounts.DeltaParties);
+            Assert.Equal(60, firstCounts.DeltaProducts);
+            Assert.Equal(2, firstCounts.LegalEntities);
+            Assert.Equal(2, firstCounts.ReferenceCurrencies);
+            Assert.Equal(4, firstCounts.EnabledEntityCurrencies);
+            Assert.Equal(2, firstCounts.AtlasVatIdentifiers);
+            Assert.Equal(2, firstCounts.AtlasCommercialRegistrations);
+            Assert.Equal(2, firstCounts.DeltaVatIdentifiers);
+            Assert.Equal(2, firstCounts.DeltaCommercialRegistrations);
+        }
+        finally
+        {
+            if (databaseCreated)
+            {
+                await using var terminate = new NpgsqlCommand("select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()", admin);
+                terminate.Parameters.AddWithValue(databaseName);
+                await terminate.ExecuteNonQueryAsync();
+                await using var drop = new NpgsqlCommand($"drop database if exists \"{databaseName}\"", admin);
+                await drop.ExecuteNonQueryAsync();
+            }
+        }
+    }
+
     [Fact]
     public void ProductionAndUnspecifiedEnvironmentsAreRejected()
     {
@@ -89,4 +159,100 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(tenant.Id == SeedIds.AtlasTenant ? 100 : 60, reader.GetInt64(2));
         }
     }
+
+    private static async Task<(int ExitCode, string Output)> RunMigratorAsync(string repositoryRoot, string connectionString, string seedPassword, string runtimePassword)
+    {
+        var start = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = repositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        start.ArgumentList.Add("run");
+        start.ArgumentList.Add("--project");
+        start.ArgumentList.Add(Path.Combine(repositoryRoot, "backend", "DbMigrator", "DbMigrator.csproj"));
+        start.ArgumentList.Add("--configuration");
+        start.ArgumentList.Add(new DirectoryInfo(AppContext.BaseDirectory).Parent?.Name ?? "Debug");
+        start.ArgumentList.Add("--no-build");
+        start.ArgumentList.Add("--");
+        start.ArgumentList.Add("--seed");
+        start.ArgumentList.Add("development");
+        start.Environment["TODIR_MIGRATOR_CONNECTION"] = connectionString;
+        start.Environment["TODIR_REPOSITORY_ROOT"] = repositoryRoot;
+        start.Environment["TODIR_RUNTIME_PASSWORD"] = runtimePassword;
+        start.Environment["SEED_DEFAULT_PASSWORD"] = seedPassword;
+        start.Environment["DOTNET_ENVIRONMENT"] = "Testing";
+
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start DbMigrator for the fresh-database seed regression test.");
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return (process.ExitCode, $"{await standardOutput}{await standardError}");
+    }
+
+    private static async Task<CanonicalSeedCounts> ReadCanonicalCountsAsync(NpgsqlDataSource dataSource)
+    {
+        const string sql = "select (select count(*) from platform.tenant where id = $1 or id = $2)::int, (select count(*) from platform.identity where tenant_id = $1)::int, (select count(*) from foundation_directory.party where tenant_id = $1)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $1)::int, (select count(*) from platform.identity where tenant_id = $2)::int, (select count(*) from foundation_directory.party where tenant_id = $2)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $2)::int, (select count(*) from platform.legal_entity)::int, (select count(*) from foundation_finbase.currency_reference)::int, (select count(*) from foundation_finbase.payment_term)::int, (select count(*) from foundation_finbase.legal_entity_currency)::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='CommercialRegistration')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='CommercialRegistration')::int";
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(SeedIds.AtlasTenant);
+        command.Parameters.AddWithValue(SeedIds.DeltaTenant);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12), reader.GetInt32(13), reader.GetInt32(14));
+    }
+
+    private static async Task AssertForcedRlsAndRoleBoundaryAsync(NpgsqlDataSource dataSource)
+    {
+        const string sql = "select (select relrowsecurity from pg_class where oid='platform.tenant'::regclass), (select bool_and(relrowsecurity and relforcerowsecurity) from pg_class where oid in ('platform.legal_entity'::regclass,'platform.identity'::regclass,'foundation_directory.party'::regclass,'foundation_catalog.product_template'::regclass,'foundation_finbase.payment_term'::regclass)), (select not rolbypassrls from pg_roles where rolname='erp_app'), (select not rolbypassrls from pg_roles where rolname='erp_owner')";
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.True(reader.GetBoolean(0));
+        Assert.True(reader.GetBoolean(1));
+        Assert.True(reader.GetBoolean(2));
+        Assert.True(reader.GetBoolean(3));
+    }
+
+    private static async Task AssertRuntimeTenantIsolationAsync(string runtimeConnectionString)
+    {
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnectionString);
+        foreach (var tenant in PlatformSeed.Tenants)
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction))
+            {
+                context.Parameters.AddWithValue(tenant.Id.ToString("D"));
+                await context.ExecuteNonQueryAsync();
+            }
+            await using var command = new NpgsqlCommand("select (select count(*) from platform.tenant)::int,(select count(*) from platform.legal_entity)::int,(select count(*) from platform.identity)::int,(select count(*) from foundation_directory.party)::int,(select count(*) from foundation_catalog.product_template)::int", connection, transaction);
+            await using var reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            var expectedUsers = tenant.Id == SeedIds.AtlasTenant ? 205 : 105;
+            var expectedParties = tenant.Id == SeedIds.AtlasTenant ? 80 : 55;
+            var expectedProducts = tenant.Id == SeedIds.AtlasTenant ? 100 : 60;
+            Assert.Equal(1, reader.GetInt32(0));
+            Assert.Equal(1, reader.GetInt32(1));
+            Assert.Equal(expectedUsers, reader.GetInt32(2));
+            Assert.Equal(expectedParties, reader.GetInt32(3));
+            Assert.Equal(expectedProducts, reader.GetInt32(4));
+            await reader.DisposeAsync();
+            await transaction.CommitAsync();
+        }
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "backend", "DbMigrator", "DbMigrator.csproj"))) return directory.FullName;
+        }
+        throw new DirectoryNotFoundException("Could not find backend/DbMigrator from the seed test assembly location.");
+    }
+
+    private sealed record CanonicalSeedCounts(int Tenants, int AtlasUsers, int AtlasParties, int AtlasProducts, int DeltaUsers, int DeltaParties, int DeltaProducts, int LegalEntities, int ReferenceCurrencies, int PaymentTerms, int EnabledEntityCurrencies, int AtlasVatIdentifiers, int AtlasCommercialRegistrations, int DeltaVatIdentifiers, int DeltaCommercialRegistrations);
 }

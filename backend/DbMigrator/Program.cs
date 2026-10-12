@@ -177,6 +177,11 @@ foreach (var script in scripts)
     await record.ExecuteNonQueryAsync();
 }
 
+// Schema baselines are pg_dump-style scripts that set row_security=off. Do not
+// carry that migration-only session setting into development seed transactions.
+await using (var resetRowSecurity = new NpgsqlCommand("reset row_security", connection))
+    await resetRowSecurity.ExecuteNonQueryAsync();
+
 await using (var resetOwner = new NpgsqlCommand("reset role", connection))
     await resetOwner.ExecuteNonQueryAsync();
 
