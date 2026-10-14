@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
@@ -19,6 +20,7 @@ export function CreateUserDialog({
   loginDomain,
   context
 }: CreateUserDialogProps): React.JSX.Element {
+  const { t } = useTranslation("identity");
   const [name, setName] = useState("");
   const [emailPrefix, setEmailPrefix] = useState("");
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
@@ -59,17 +61,17 @@ export function CreateUserDialog({
     const cleanPrefix = emailPrefix.trim().toLowerCase();
 
     if (!cleanName) {
-      setError("يرجى إدخال اسم المستخدم");
+      setError(t("userActions.nameRequired"));
       return;
     }
 
     if (!cleanPrefix) {
-      setError("يرجى إدخال عنوان البريد الإلكتروني للمستخدم");
+      setError(t("userActions.emailRequired"));
       return;
     }
 
     if (!/^[a-zA-Z0-9._-]+$/.test(cleanPrefix)) {
-      setError("يجب أن يحتوي البريد على حروف لاتينية وأرقام ونقاط فقط بدون مسافات أو رموز خاصة");
+      setError(t("userActions.emailPrefixInvalid"));
       return;
     }
 
@@ -84,14 +86,14 @@ export function CreateUserDialog({
       if (err instanceof ApiError) {
         const code = err.problemDetails?.code || ((err.problemDetails as Record<string, unknown> | undefined)?.extensions as Record<string, unknown> | undefined)?.code as string | undefined;
         if (code === "identity.email_prefix_already_used") {
-          setError(`البريد "${cleanPrefix}@${loginDomain}" مستخدم بالفعل لمستخدم آخر.`);
+          setError(t("userActions.emailPrefixUsed", { email: `${cleanPrefix}@${loginDomain}` }));
         } else if (code === "identity.name_invalid") {
-          setError("اسم المستخدم غير صالح.");
+          setError(t("userActions.nameInvalid"));
         } else {
-          setError(err.problemDetails?.title || err.message || "تعذر إنشاء المستخدم.");
+          setError(t("userActions.createFailed"));
         }
       } else {
-        setError("حدث خطأ غير متوقع أثناء إنشاء المستخدم.");
+        setError(t("userActions.unexpectedCreateError"));
       }
     }
   }
@@ -112,17 +114,17 @@ export function CreateUserDialog({
     <Dialog
       isOpen={isOpen}
       onOpenChange={handleClose}
-      title={createdResult ? "تم إنشاء المستخدم بنجاح" : "إضافة مستخدم جديد"}
+      title={createdResult ? t("userActions.createdTitle") : t("userActions.addTitle")}
       description={
         createdResult
-          ? "تم إنشاء الحساب وتوليد كلمة مرور مؤقتة للاستخدام لمرة واحدة."
-          : "أدخل بيانات الموظف لتسجيل حسابه على نطاق الشركة المعتمد."
+          ? t("userActions.createdDescription")
+          : t("userActions.addDescription")
       }
     >
       {createdResult ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", marginTop: "1rem" }}>
           <Alert variant="warning">
-            يرجى تزويد المستخدم ببيانات الدخول المؤقتة هذه بأمان. سيُطلب من المستخدم تعيين كلمة مرور جديدة عند تسجيل دخوله الأول. لن تظهر كلمة المرور هذه مرة أخرى بعد إغلاق النافذة.
+            {t("userActions.temporaryCredentialsWarning")}
           </Alert>
 
           <div
@@ -137,21 +139,21 @@ export function CreateUserDialog({
             }}
           >
             <div>
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>الاسم:</span>
+              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>{t("userActions.nameLabel")}</span>
               <div style={{ fontWeight: 600, color: "var(--color-content-primary, #0f172a)" }}>
                 {createdResult.user.name}
               </div>
             </div>
 
             <div>
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>البريد المستخدم لتسجيل الدخول:</span>
+              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>{t("userActions.loginEmailLabel")}</span>
               <div style={{ fontWeight: 600, color: "var(--color-content-primary, #0f172a)" }}>
                 <bdi dir="ltr">{createdResult.user.email}</bdi>
               </div>
             </div>
 
             <div>
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>كلمة المرور المؤقتة:</span>
+            <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>{t("userActions.temporaryPasswordLabel")}</span>
               <div
                 style={{
                   display: "flex",
@@ -170,7 +172,7 @@ export function CreateUserDialog({
               >
                 <bdi dir="ltr">{createdResult.temporaryPassword}</bdi>
                 <Button variant="secondary" size="compact" onPress={() => void copyTemporaryPassword()}>
-                  {copied ? "تم النسخ ✓" : "نسخ كلمة المرور"}
+                  {copied ? t("userActions.copied") : t("userActions.copyPassword")}
                 </Button>
               </div>
             </div>
@@ -178,7 +180,7 @@ export function CreateUserDialog({
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" }}>
             <Button variant="primary" onPress={() => handleClose(false)}>
-              إتمام وإغلاق
+              {t("userActions.finishClose")}
             </Button>
           </div>
         </div>
@@ -197,14 +199,14 @@ export function CreateUserDialog({
                 color: "var(--color-content-primary, #0f172a)"
               }}
             >
-              الاسم الكامل
+              {t("userActions.fullName")}
             </label>
             <input
               id="user-fullname"
               type="text"
               required
               autoFocus
-              placeholder="مثال: أحمد محمد علي"
+              placeholder={t("userActions.nameExample")}
               value={name}
               onChange={(e) => setName(e.target.value)}
               style={{
@@ -231,7 +233,7 @@ export function CreateUserDialog({
                 color: "var(--color-content-primary, #0f172a)"
               }}
             >
-              البريد المستخدم لتسجيل الدخول
+              {t("userActions.loginEmailLabel")}
             </label>
             <div
               style={{
@@ -247,7 +249,7 @@ export function CreateUserDialog({
                 id="user-email-prefix"
                 type="text"
                 required
-                placeholder="ahmed.ali"
+                placeholder={t("userActions.emailPrefixExample")}
                 value={emailPrefix}
                 onChange={(e) => setEmailPrefix(e.target.value)}
                 style={{
@@ -278,7 +280,7 @@ export function CreateUserDialog({
               </span>
             </div>
             <p style={{ margin: "0.375rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
-              يتم إنشاء بريد تسجيل الدخول تلقائيًا على نطاق الشركة المعتمد.
+              {t("userActions.loginEmailHelp")}
             </p>
           </div>
 
@@ -293,7 +295,7 @@ export function CreateUserDialog({
                   color: "var(--color-content-primary, #0f172a)"
                 }}
               >
-                الأدوار والصلاحيات (اختياري)
+                {t("userActions.rolesOptional")}
               </span>
               <div
                 style={{
@@ -335,10 +337,10 @@ export function CreateUserDialog({
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
             <Button variant="secondary" onPress={() => handleClose(false)}>
-              إلغاء
+              {t("userActions.cancel")}
             </Button>
             <Button type="submit" variant="primary" isLoading={createUserMutation.isPending}>
-              إضافة المستخدم
+              {t("userActions.addUser")}
             </Button>
           </div>
         </form>

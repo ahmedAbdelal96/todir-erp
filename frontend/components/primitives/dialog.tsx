@@ -6,6 +6,7 @@ import {
   type DialogProps as AriaDialogProps
 } from "react-aria-components";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface DialogProps extends Omit<AriaDialogProps, "className"> {
   readonly title?: ReactNode;
@@ -30,6 +31,7 @@ export function Dialog({
   children,
   ...props
 }: DialogProps): React.JSX.Element | null {
+  const { t } = useTranslation("common");
   if (isOpen === false) {
     return null;
   }
@@ -128,7 +130,7 @@ export function Dialog({
                       padding: "0.25rem",
                       color: "var(--color-content-muted)"
                     }}
-                    aria-label="Close dialog"
+                    aria-label={t("components.closeDialog")}
                   >
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                       <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />

@@ -55,3 +55,5 @@ export {
 export { PartyPicker, type PartyPickerProps } from "./components/party-picker.tsx";
 export { QuickCreatePartyDialog, type QuickCreatePartyDialogProps } from "./features/quick-create-party-dialog.tsx";
 export { directoryRoutes } from "./routes.tsx";
+export { ar } from "./i18n/ar.ts";
+export { en } from "./i18n/en.ts";

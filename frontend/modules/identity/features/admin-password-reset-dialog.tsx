@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
@@ -18,6 +19,7 @@ export function AdminPasswordResetDialog({
   user,
   context
 }: AdminPasswordResetDialogProps): React.JSX.Element {
+  const { t } = useTranslation("identity");
   const [error, setError] = useState<string | undefined>();
   const [result, setResult] = useState<ResetPasswordResult | null>(null);
   const [copied, setCopied] = useState(false);
@@ -40,7 +42,7 @@ export function AdminPasswordResetDialog({
       const res = await resetPasswordMutation.mutateAsync(user.id);
       setResult(res);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر إعادة تعيين كلمة المرور.");
+      setError(t("userActions.resetFailed"));
     }
   }
 
@@ -62,17 +64,17 @@ export function AdminPasswordResetDialog({
     <Dialog
       isOpen={isOpen}
       onOpenChange={handleClose}
-      title={result ? "تمت إعادة تعيين كلمة المرور" : "إعادة تعيين كلمة المرور"}
+      title={result ? t("userActions.resetSuccessTitle") : t("userActions.resetPasswordTitle")}
       description={
         result
-          ? `تم توليد كلمة مرور مؤقتة جديدة لحساب ${user.name}.`
-          : `إعادة تعيين كلمة المرور للمستخدم ${user.name}`
+          ? t("userActions.resetSuccessDescription", { name: user.name })
+          : t("userActions.resetDescription", { name: user.name })
       }
     >
       {result ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", marginTop: "1rem" }}>
           <Alert variant="warning">
-            يرجى تزويد المستخدم بكلمة المرور المؤقتة الجديدة هذه بأمان. سيُطلب منه تغييرها عند تسجيل دخوله التالي. لن تظهر كلمة المرور مرة أخرى بعد إغلاق هذه النافذة.
+            {t("userActions.resetTemporaryPasswordWarning")}
           </Alert>
 
           <div
@@ -86,7 +88,7 @@ export function AdminPasswordResetDialog({
               gap: "0.5rem"
             }}
           >
-            <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>كلمة المرور المؤقتة الجديدة:</span>
+            <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>{t("userActions.newTemporaryPassword")}</span>
             <div
               style={{
                 display: "flex",
@@ -104,14 +106,14 @@ export function AdminPasswordResetDialog({
             >
               <bdi dir="ltr">{result.temporaryPassword}</bdi>
               <Button variant="secondary" size="compact" onPress={() => void copyPassword()}>
-                {copied ? "تم النسخ ✓" : "نسخ كلمة المرور"}
+                {copied ? t("userActions.copied") : t("userActions.copyPassword")}
               </Button>
             </div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <Button variant="primary" onPress={() => handleClose(false)}>
-              إتمام وإغلاق
+              {t("userActions.finishClose")}
             </Button>
           </div>
         </div>
@@ -120,23 +122,23 @@ export function AdminPasswordResetDialog({
           {error && <Alert variant="danger">{error}</Alert>}
 
           <p style={{ margin: 0, fontSize: "0.9375rem", color: "var(--color-content-secondary, #334155)", lineHeight: 1.6 }}>
-            هل تريد بالتأكيد إعادة تعيين كلمة المرور لحساب <strong>{user.name}</strong> (<bdi dir="ltr">{user.email}</bdi>)؟
+            <Trans ns="identity" i18nKey="userActions.resetConfirm" values={{ name: user.name, email: user.email }} components={{ strong: <strong />, bdi: <bdi dir="ltr" /> }} />
           </p>
 
           <Alert variant="info">
-            سيتم إنشاء كلمة مرور مؤقتة صالحة للاستخدام لمرة واحدة، وسيتم إلغاء صلاحية أي جلسات نشطة سابقة للمستخدم تلقائيًا.
+            {t("userActions.resetWarning")}
           </Alert>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
             <Button variant="secondary" onPress={() => handleClose(false)}>
-              إلغاء
+              {t("userActions.cancel")}
             </Button>
             <Button
               variant="primary"
               isLoading={resetPasswordMutation.isPending}
               onPress={() => void handleReset()}
             >
-              إعادة تعيين كلمة المرور
+              {t("userActions.resetPasswordTitle")}
             </Button>
           </div>
         </div>

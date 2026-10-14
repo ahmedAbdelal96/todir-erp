@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
@@ -18,6 +19,7 @@ export function LoginDomainChangeDialog({
   currentDomain,
   context
 }: LoginDomainChangeDialogProps): React.JSX.Element {
+  const { t } = useTranslation("identity");
   const [newDomain, setNewDomain] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [success, setSuccess] = useState(false);
@@ -40,18 +42,18 @@ export function LoginDomainChangeDialog({
     const cleanDomain = newDomain.trim().toLowerCase();
 
     if (!cleanDomain) {
-      setError("يرجى إدخال نطاق تسجيل الدخول الجديد.");
+      setError(t("userActions.domainRequired"));
       return;
     }
 
     if (cleanDomain === currentDomain.toLowerCase()) {
-      setError("النطاق الجديد مطابق للنطاق الحالي.");
+      setError(t("userActions.domainUnchanged"));
       return;
     }
 
     const domainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
     if (!domainRegex.test(cleanDomain)) {
-      setError("يرجى إدخال نطاق إنترنت صالح (مثال: company.com).");
+      setError(t("userActions.domainInvalid"));
       return;
     }
 
@@ -62,16 +64,16 @@ export function LoginDomainChangeDialog({
       if (err instanceof ApiError) {
         const code = err.problemDetails?.code || ((err.problemDetails as Record<string, unknown> | undefined)?.extensions as Record<string, unknown> | undefined)?.code as string | undefined;
         if (code === "tenant.login_domain_already_used") {
-          setError(`النطاق "${cleanDomain}" مستخدم بالفعل لشركة أخرى.`);
+          setError(t("userActions.domainAlreadyUsed"));
         } else if (code === "tenant.login_domain_invalid") {
-          setError("صيغة النطاق غير صالحة.");
+          setError(t("userActions.domainFormatInvalid"));
         } else if (err.status === 403) {
-          setError("تتطلب هذه العملية صلاحيات إدارة النطاق والتحقق بخطوتين (MFA).");
+          setError(t("userActions.domainPermissionRequired"));
         } else {
-          setError(err.problemDetails?.title || err.message || "تعذر تغيير نطاق تسجيل الدخول.");
+          setError(t("userActions.domainChangeFailed"));
         }
       } else {
-        setError("حدث خطأ غير متوقع أثناء تغيير النطاق.");
+        setError(t("userActions.domainUnexpectedError"));
       }
     }
   }
@@ -80,18 +82,18 @@ export function LoginDomainChangeDialog({
     <Dialog
       isOpen={isOpen}
       onOpenChange={handleClose}
-      title={success ? "تم تغيير نطاق تسجيل الدخول" : "تغيير نطاق تسجيل الدخول للشركة"}
-      description="تعديل النطاق المعتمد لبريد تسجيل الدخول لجميع مستخدمي الشركة"
+      title={success ? t("userActions.domainChangedTitle") : t("userActions.domainChangeTitle")}
+      description={t("userActions.domainChangeDescription")}
     >
       {success ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", marginTop: "1rem" }}>
           <Alert variant="success">
-            تم تحديث نطاق تسجيل الدخول بنجاح إلى <bdi dir="ltr">@{newDomain.trim().toLowerCase()}</bdi>. تم تحديث عناوين البريد لكافة مستخدمي الشركة تلقائيًا.
+            <Trans ns="identity" i18nKey="userActions.domainChangedDescription" values={{ domain: newDomain.trim().toLowerCase() }} components={{ bdi: <bdi dir="ltr" /> }} />
           </Alert>
 
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <Button variant="primary" onPress={() => handleClose(false)}>
-              إتمام وإغلاق
+              {t("userActions.finishClose")}
             </Button>
           </div>
         </div>
@@ -100,11 +102,11 @@ export function LoginDomainChangeDialog({
           {error && <Alert variant="danger">{error}</Alert>}
 
           <Alert variant="warning">
-            <strong>تنبيه أمني هام:</strong> يؤدي تغيير نطاق تسجيل الدخول إلى تحديث عناوين البريد الإلكتروني لكافة موظفي ومستخدمي الشركة في النظام فورًا. سيتوجب على جميع المستخدمين استخدام العناوين الجديدة التي تنتهي بالنطاق الجديد عند تسجيل الدخول لاحقًا.
+            <strong>{t("userActions.securityWarningTitle")}</strong> {t("userActions.domainChangeWarning")}
           </Alert>
 
           <div>
-            <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>النطاق الحالي:</span>
+            <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>{t("userActions.currentDomain")}</span>
             <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--color-content-primary, #0f172a)", marginTop: "0.25rem" }}>
               <bdi dir="ltr">@{currentDomain || "—"}</bdi>
             </div>
@@ -121,14 +123,14 @@ export function LoginDomainChangeDialog({
                 color: "var(--color-content-primary, #0f172a)"
               }}
             >
-              نطاق تسجيل الدخول الجديد
+              {t("userActions.newDomain")}
             </label>
             <input
               id="new-login-domain"
               type="text"
               required
               autoFocus
-              placeholder="atlasgroup.com"
+              placeholder={t("userActions.domainExample")}
               value={newDomain}
               onChange={(e) => setNewDomain(e.target.value)}
               style={{
@@ -145,20 +147,20 @@ export function LoginDomainChangeDialog({
               }}
             />
             <p style={{ margin: "0.375rem 0 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
-              أدخل اسم النطاق فقط بدون @ أو https (مثال: newdomain.com).
+              {t("userActions.domainHelp")}
             </p>
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
             <Button variant="secondary" onPress={() => handleClose(false)}>
-              إلغاء
+              {t("userActions.cancel")}
             </Button>
             <Button
               type="submit"
               variant="primary"
               isLoading={updateDomainMutation.isPending}
             >
-              تأكيد تغيير النطاق
+              {t("userActions.confirmDomainChange")}
             </Button>
           </div>
         </form>

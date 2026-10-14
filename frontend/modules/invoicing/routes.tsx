@@ -14,7 +14,7 @@ export const invoicingRoutes: ModuleRouteRegistration = {
     id: "invoicing",
     moduleIds: ["invoicing"],
     path: "/invoicing",
-    label: { ar: "فواتير المبيعات", en: "Invoices" },
+    navigationKey: "invoicing",
     permission: "invoicing.invoices.read",
     icon: "invoicing"
   },

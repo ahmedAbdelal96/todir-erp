@@ -1,34 +1,45 @@
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { loginUser, changeInitialPassword, verifyMfa, type AuthNextStep } from "../../core/api/auth-service.ts";
 import { ApiError } from "../../core/api/http-client.ts";
 import { Button } from "../../components/primitives/button.tsx";
 import { Alert } from "../../components/primitives/alert.tsx";
 import { PasswordField } from "../../components/fields/index.ts";
+import { useTranslation } from "react-i18next";
+import { changeLanguage, currentLanguage } from "../../core/i18n/i18n.ts";
 
 export interface AuthViewProps {
-  readonly language?: "ar" | "en";
   readonly onAuthenticated: (email: string) => void;
 }
 
 type AuthStep = "login" | "initial-password" | "mfa";
+type AuthErrorKey =
+  | "invalidCredentials"
+  | "accountSuspended"
+  | "accountLocked"
+  | "invalidChallenge"
+  | "invalidMfaCode"
+  | "mfaAttemptsExceeded"
+  | "passwordTooShort"
+  | "passwordsDoNotMatch"
+  | "defaultError";
 
 interface DevelopmentLoginProfile {
-  readonly label: string;
+  readonly label: "atlasAdmin" | "deltaAdmin";
   readonly email: string;
 }
 
 const developmentLoginPassword = import.meta.env.DEV ? import.meta.env.VITE_DEV_LOGIN_PASSWORD : undefined;
 const developmentLoginProfiles: readonly DevelopmentLoginProfile[] = developmentLoginPassword
   ? [
-      { label: "Atlas — مسؤول النظام", email: "admin@atlas.com" },
-      { label: "Delta — مسؤول النظام", email: "admin@delta.com" }
+      { label: "atlasAdmin", email: "admin@atlas.com" },
+      { label: "deltaAdmin", email: "admin@delta.com" }
     ]
   : [];
 
-export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): React.JSX.Element {
+export function AuthView({ onAuthenticated }: AuthViewProps): React.JSX.Element {
   const [step, setStep] = useState<AuthStep>("login");
   const [challengeToken, setChallengeToken] = useState<string>("");
-  const [error, setError] = useState<string | undefined>();
+  const [error, setError] = useState<AuthErrorKey | undefined>();
   const [submitting, setSubmitting] = useState(false);
 
   // Login form state
@@ -43,77 +54,49 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
   // MFA state
   const [mfaCode, setMfaCode] = useState("");
 
-  const isArabic = language === "ar";
+  const { t } = useTranslation("identity");
+  const { t: commonT } = useTranslation("common");
+  const isArabic = document.documentElement.dir === "rtl";
   const direction = isArabic ? "rtl" : "ltr";
 
-  const t = {
-    brand: "TODIR",
-    loginTitle: isArabic ? "تسجيل الدخول" : "Sign in",
-    loginSubtitle: isArabic ? "أدخل بريدك الإلكتروني وكلمة المرور للوصول إلى حساب شركتك" : "Enter your email and password to access your company workspace",
-    emailLabel: isArabic ? "البريد الإلكتروني" : "Email address",
-    emailPlaceholder: isArabic ? "name@company.com" : "name@company.com",
-    passwordLabel: isArabic ? "كلمة المرور" : "Password",
-    showPassword: isArabic ? "عرض" : "Show",
-    hidePassword: isArabic ? "إخفاء" : "Hide",
-    signInButton: isArabic ? "تسجيل الدخول" : "Sign in",
-    signingIn: isArabic ? "جارٍ تسجيل الدخول..." : "Signing in...",
-    developmentAccountsTitle: isArabic ? "حسابات الاختبار السريعة" : "Quick development accounts",
-    developmentAccountsHint: isArabic ? "متاحة في بيئة التطوير فقط لتسريع الاختبار المحلي." : "Available only in development to speed up local testing.",
-
-    // Initial password strings
-    initPasswordTitle: isArabic ? "تعيين كلمة المرور الجديدة" : "Set New Password",
-    initPasswordSubtitle: isArabic ? "مرحبًا بك! كإجراء أمني عند تسجيل الدخول لأول مرة، يرجى تعيين كلمة مرور جديدة لحسابك." : "Welcome! For security, please set a new password for your account on first sign in.",
-    newPasswordLabel: isArabic ? "كلمة المرور الجديدة" : "New password",
-    confirmPasswordLabel: isArabic ? "تأكيد كلمة المرور الجديدة" : "Confirm new password",
-    passwordRequirements: isArabic ? "12 حرفًا على الأقل، تتضمن حروفًا كبيرة وصغيرة وأرقامًا ورموزًا خاصة." : "At least 12 characters, including uppercase, lowercase, numbers, and symbols.",
-    savePasswordButton: isArabic ? "حفظ كلمة المرور والمتابعة" : "Save password & continue",
-    savingPassword: isArabic ? "جارٍ حفظ كلمة المرور..." : "Saving password...",
-    passwordsDoNotMatch: isArabic ? "كلمة المرور وتأكيدها غير متطابقين." : "Passwords do not match.",
-
-    // MFA strings
-    mfaTitle: isArabic ? "التحقق من هويتك" : "Verify Your Identity",
-    mfaSubtitle: isArabic ? "أدخل رمز التحقق المكون من 6 أرقام من تطبيق المصادقة (Authenticator) على هاتفك للمتابعة." : "Enter the 6-digit verification code from your authenticator app to proceed.",
-    mfaCodeLabel: isArabic ? "رمز التحقق" : "Verification code",
-    mfaCodePlaceholder: "123456",
-    verifyButton: isArabic ? "تحقق والدخول" : "Verify & proceed",
-    verifying: isArabic ? "جارٍ التحقق..." : "Verifying...",
-    backToLogin: isArabic ? "العودة لتسجيل الدخول" : "Back to sign in",
-
-    // Error messages
-    defaultError: isArabic ? "تعذر إكمال العملية. يرجى المحاولة مرة أخرى." : "Operation could not be completed. Please try again.",
-    invalidCredentials: isArabic ? "البريد الإلكتروني أو كلمة المرور غير صحيحة." : "Invalid email or password.",
-    accountSuspended: isArabic ? "تم تعليق هذا الحساب. يرجى التواصل مع إدارة شركتك." : "This account is suspended. Please contact your company administrator.",
-    accountLocked: isArabic ? "تم قفل الحساب مؤقتًا لكثرة المحاولات غير الصحيحة. يرجى المحاولة بعد 15 دقيقة." : "Account temporarily locked due to multiple failed attempts. Please try again after 15 minutes.",
-    invalidChallenge: isArabic ? "انتهت صلاحية جلسة المصادقة. يرجى تسجيل الدخول مجددًا." : "Authentication session expired. Please sign in again.",
-    invalidMfaCode: isArabic ? "رمز التحقق غير صحيح. يرجى التأكد من الرمز والمحاولة مجددًا." : "Invalid verification code. Please check your app and try again.",
-    mfaAttemptsExceeded: isArabic ? "تجاوزت الحد الأقصى لمحاولات التحقق. يرجى تسجيل الدخول مجددًا." : "Maximum verification attempts exceeded. Please sign in again.",
-    passwordTooShort: isArabic ? "يجب ألا تقل كلمة المرور عن 12 حرفًا." : "Password must be at least 12 characters long."
-  };
-
-  function mapAuthError(err: unknown): string {
+  function mapAuthError(err: unknown): AuthErrorKey {
     if (err instanceof ApiError) {
       const code = err.problemDetails?.code || ((err.problemDetails as Record<string, unknown> | undefined)?.extensions as Record<string, unknown> | undefined)?.code as string | undefined;
       switch (code) {
         case "auth.invalid_credentials":
-          return t.invalidCredentials;
+          return "invalidCredentials";
         case "auth.account_suspended":
-          return t.accountSuspended;
+          return "accountSuspended";
         case "auth.account_locked":
-          return t.accountLocked;
+          return "accountLocked";
         case "auth.invalid_challenge":
         case "auth.expired_challenge":
-          return t.invalidChallenge;
+          return "invalidChallenge";
         case "auth.invalid_mfa_code":
-          return t.invalidMfaCode;
+          return "invalidMfaCode";
         case "auth.mfa_attempts_exceeded":
-          return t.mfaAttemptsExceeded;
+          return "mfaAttemptsExceeded";
         case "auth.password_too_short":
-          return t.passwordTooShort;
+          return "passwordTooShort";
         default:
-          return err.problemDetails?.title || err.message || t.defaultError;
+          return "defaultError";
       }
     }
-    return t.defaultError;
+    return "defaultError";
+  }
+
+  function authErrorMessage(key: AuthErrorKey): string {
+    switch (key) {
+      case "invalidCredentials": return t("auth.invalidCredentials");
+      case "accountSuspended": return t("auth.accountSuspended");
+      case "accountLocked": return t("auth.accountLocked");
+      case "invalidChallenge": return t("auth.invalidChallenge");
+      case "invalidMfaCode": return t("auth.invalidMfaCode");
+      case "mfaAttemptsExceeded": return t("auth.mfaAttemptsExceeded");
+      case "passwordTooShort": return t("auth.passwordTooShort");
+      case "passwordsDoNotMatch": return t("auth.passwordsDoNotMatch");
+      case "defaultError": return t("auth.defaultError");
+    }
   }
 
   async function submitLogin(loginEmail: string, loginPassword: string) {
@@ -148,12 +131,12 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
     setError(undefined);
 
     if (newPassword !== confirmPassword) {
-      setError(t.passwordsDoNotMatch);
+      setError("passwordsDoNotMatch");
       return;
     }
 
     if (newPassword.length < 12) {
-      setError(t.passwordTooShort);
+      setError("passwordTooShort");
       return;
     }
 
@@ -202,7 +185,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
         break;
       case "Rejected":
       default:
-        setError(t.defaultError);
+        setError("defaultError");
         break;
     }
   }
@@ -309,9 +292,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
                 color: "#ffffff"
               }}
             >
-              {isArabic
-                ? "نظام تخطيط الموارد المالي والإداري للشركات الرائدة"
-                : "Enterprise Resource Planning for Modern Business"}
+              {t("auth.heroTitle")}
             </h2>
 
             <p
@@ -322,24 +303,22 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
                 color: "rgba(255, 255, 255, 0.75)"
               }}
             >
-              {isArabic
-                ? "إدارة مالية دقيقة، وعزل أمني صارم، وسرعة فائقة لدعم نمو أعمالك بثقة واحترافية."
-                : "Exact financial tracking, strict multi-tenant isolation, and high performance designed for operational confidence."}
+              {t("auth.heroDescription")}
             </p>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "2rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", fontSize: "0.8125rem", color: "rgba(255, 255, 255, 0.85)" }}>
               <span style={{ color: "#34d399" }}>✓</span>
-              <span>{isArabic ? "عزل بيانات المؤسسات وتشفير متكامل" : "Strict Tenant Isolation & Encryption"}</span>
+              <span>{t("auth.featureIsolation")}</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", fontSize: "0.8125rem", color: "rgba(255, 255, 255, 0.85)" }}>
               <span style={{ color: "#34d399" }}>✓</span>
-              <span>{isArabic ? "توافق كامل مع متطلبات السوق العربي والفوترة" : "Arabic-First & Local Compliance"}</span>
+              <span>{t("auth.featureCompliance")}</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", fontSize: "0.8125rem", color: "rgba(255, 255, 255, 0.85)" }}>
               <span style={{ color: "#34d399" }}>✓</span>
-              <span>{isArabic ? "مصادقة متقدمة وحماية متعددة العوامل MFA" : "Progressive MFA & Session Security"}</span>
+              <span>{t("auth.featureMfa")}</span>
             </div>
           </div>
         </div>
@@ -354,6 +333,16 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
             justifyContent: "center"
           }}
         >
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "1rem" }}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="compact"
+              onPress={() => void changeLanguage(currentLanguage() === "ar" ? "en" : "ar")}
+            >
+              {commonT(currentLanguage() === "ar" ? "language.switchToEnglish" : "language.switchToArabic")}
+            </Button>
+          </div>
           <div style={{ marginBottom: "1.75rem" }}>
             <h1
               style={{
@@ -364,10 +353,10 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
               }}
             >
               {step === "login"
-                ? t.loginTitle
+                ? t("auth.loginTitle")
                 : step === "initial-password"
-                ? t.initPasswordTitle
-                : t.mfaTitle}
+                ? t("auth.initPasswordTitle")
+                : t("auth.mfaTitle")}
             </h1>
             <p
               style={{
@@ -378,17 +367,17 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
               }}
             >
               {step === "login"
-                ? t.loginSubtitle
+                ? t("auth.loginSubtitle")
                 : step === "initial-password"
-                ? t.initPasswordSubtitle
-                : t.mfaSubtitle}
+                ? t("auth.initPasswordSubtitle")
+                : t("auth.mfaSubtitle")}
             </p>
           </div>
 
           {/* Global Error Alert */}
           {error && (
             <div style={{ marginBottom: "1.25rem" }}>
-              <Alert variant="danger">{error}</Alert>
+              <Alert variant="danger">{authErrorMessage(error)}</Alert>
             </div>
           )}
 
@@ -406,7 +395,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
                     color: "var(--color-content-primary, #0f172a)"
                   }}
                 >
-                  {t.emailLabel}
+                  {t("auth.emailLabel")}
                 </label>
                 <input
                   id="login-email"
@@ -414,7 +403,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
                   autoComplete="username"
                   autoFocus
                   required
-                  placeholder={t.emailPlaceholder}
+                  placeholder={t("auth.emailPlaceholder")}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   style={{
@@ -434,7 +423,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
 
               <PasswordField
                 id="login-password"
-                label={t.passwordLabel}
+                label={t("auth.passwordLabel")}
                 isRequired
                 autoComplete="current-password"
                 value={password}
@@ -447,7 +436,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
                 isLoading={submitting}
                 style={{ width: "100%", marginTop: "0.5rem" }}
               >
-                {submitting ? t.signingIn : t.signInButton}
+                {submitting ? t("auth.signingIn") : t("auth.signInButton")}
               </Button>
 
               {developmentLoginProfiles.length > 0 && (
@@ -470,7 +459,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
                       color: "var(--color-content-muted, #64748b)"
                     }}
                   >
-                    {t.developmentAccountsTitle}
+                    {t("auth.developmentAccountsTitle")}
                   </legend>
                   {developmentLoginProfiles.map((profile) => (
                     <Button
@@ -482,7 +471,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
                       onPress={() => handleDevelopmentLogin(profile)}
                       style={{ width: "100%", justifyContent: "space-between" }}
                     >
-                      <span>{profile.label}</span>
+                      <span>{t(`auth.${profile.label}`)}</span>
                       <span dir="ltr" style={{ fontSize: "0.75rem" }}>{profile.email}</span>
                     </Button>
                   ))}
@@ -496,19 +485,19 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
           <form onSubmit={(e) => void handleInitialPasswordSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <PasswordField
               id="new-password"
-              label={t.newPasswordLabel}
+              label={t("auth.newPasswordLabel")}
               isRequired
               autoFocus
               autoComplete="new-password"
               minLength={12}
               value={newPassword}
               onChange={setNewPassword}
-              description={t.passwordRequirements}
+              description={t("auth.passwordRequirements")}
             />
 
             <PasswordField
               id="confirm-password"
-              label={t.confirmPasswordLabel}
+              label={t("auth.confirmPasswordLabel")}
               isRequired
               autoComplete="new-password"
               minLength={12}
@@ -522,7 +511,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
               isLoading={submitting}
               style={{ width: "100%", marginTop: "0.5rem" }}
             >
-              {submitting ? t.savingPassword : t.savePasswordButton}
+              {submitting ? t("auth.savingPassword") : t("auth.savePasswordButton")}
             </Button>
           </form>
         )}
@@ -541,7 +530,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
                   color: "var(--color-content-primary, #0f172a)"
                 }}
               >
-                {t.mfaCodeLabel}
+                {t("auth.mfaCodeLabel")}
               </label>
               <input
                 id="mfa-code-input"
@@ -552,7 +541,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
                 autoFocus
                 required
                 maxLength={8}
-                placeholder={t.mfaCodePlaceholder}
+                placeholder={t("auth.mfaCodePlaceholder")}
                 value={mfaCode}
                 onChange={(e) => setMfaCode(e.target.value)}
                 style={{
@@ -578,7 +567,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
               isLoading={submitting}
               style={{ width: "100%", marginTop: "0.5rem" }}
             >
-              {submitting ? t.verifying : t.verifyButton}
+              {submitting ? t("auth.verifying") : t("auth.verifyButton")}
             </Button>
 
             <Button
@@ -587,7 +576,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
               onPress={resetToLogin}
               style={{ width: "100%" }}
             >
-              {t.backToLogin}
+              {t("auth.backToLogin")}
             </Button>
           </form>
         )}

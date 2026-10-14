@@ -2,6 +2,7 @@ import React, { type ReactNode } from "react";
 import { AlertCircleIcon, RefreshIcon } from "./icons.tsx";
 import { Button } from "./button.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface ErrorStateProps {
   readonly title?: string | undefined;
@@ -14,14 +15,15 @@ export interface ErrorStateProps {
 }
 
 export function ErrorState({
-  title = "تعذر تحميل البيانات",
-  message = "حدث خطأ غير متوقع أثناء استرجاع البيانات من الخادم. يرجى المحاولة مرة أخرى.",
+  title,
+  message,
   onRetry,
   isRetrying = false,
   action,
   className,
   style
 }: ErrorStateProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   return (
     <div
       role="alert"
@@ -70,10 +72,10 @@ export function ErrorState({
           fontFamily: "var(--font-sans)"
         }}
       >
-        {title}
+        {title ?? t("components.loadErrorTitle")}
       </h3>
 
-      {message && (
+      {(message ?? t("components.loadErrorMessage")) && (
         <p
           style={{
             margin: "0 0 1.25rem 0",
@@ -96,7 +98,7 @@ export function ErrorState({
             isLoading={isRetrying}
             startIcon={<RefreshIcon size={14} />}
           >
-            إعادة المحاولة
+            {t("components.retry")}
           </Button>
         )}
         {action}

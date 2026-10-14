@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export type ToastType = "success" | "error" | "info" | "warning";
 
@@ -71,13 +72,14 @@ export function ToastContainer({
   readonly toasts: readonly ToastItem[];
   readonly onDismiss: (id: string) => void;
 }): React.JSX.Element {
+  const { t } = useTranslation("common");
   if (toasts.length === 0) return <></>;
 
   return (
     <div
       className="ui-toast-container"
       role="region"
-      aria-label="إشعارات النظام"
+      aria-label={t("components.notifications")}
       style={{
         position: "fixed",
         bottom: "1.5rem",
@@ -105,6 +107,7 @@ function ToastCard({
   readonly toast: ToastItem;
   readonly onDismiss: () => void;
 }): React.JSX.Element {
+  const { t } = useTranslation("common");
   const typeIcons: Record<ToastType, string> = {
     success: "✓",
     error: "✕",
@@ -151,7 +154,7 @@ function ToastCard({
       <button
         type="button"
         onClick={onDismiss}
-        aria-label="إغلاق الإشعار"
+        aria-label={t("components.closeNotification")}
         style={{
           background: "none",
           border: "none",

@@ -2,6 +2,7 @@ import React, { type ReactNode } from "react";
 import { Button } from "../primitives/button.tsx";
 import { CheckIcon } from "../primitives/icons.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface WizardStep {
   readonly id: string;
@@ -34,14 +35,18 @@ export function WizardPage({
   onNext,
   onBack,
   onComplete,
-  nextLabel = "التالي",
-  backLabel = "السابق",
-  completeLabel = "إنهاء / حفظ",
+  nextLabel,
+  backLabel,
+  completeLabel,
   isSubmitting = false,
   isNextDisabled = false,
   children,
   className
 }: WizardPageProps): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const nextText = nextLabel ?? t("actions.continue");
+  const backText = backLabel ?? t("actions.back");
+  const completeText = completeLabel ?? t("actions.save");
   const isFirstStep = currentStepIndex === 0;
   const isLastStep = currentStepIndex === steps.length - 1;
 
@@ -75,7 +80,7 @@ export function WizardPage({
       </header>
 
       {/* Modern Stepper Indicators */}
-      <nav aria-label="خطوات المعالج" style={{ padding: "0.5rem 0" }}>
+      <nav aria-label={t("components.wizardSteps")} style={{ padding: "0.5rem 0" }}>
         <ol
           style={{
             display: "flex",
@@ -213,7 +218,7 @@ export function WizardPage({
           onPress={onBack}
           isDisabled={isFirstStep || isSubmitting}
         >
-          {backLabel}
+          {backText}
         </Button>
 
         {isLastStep ? (
@@ -223,7 +228,7 @@ export function WizardPage({
             isLoading={isSubmitting}
             isDisabled={isNextDisabled}
           >
-            {completeLabel}
+            {completeText}
           </Button>
         ) : (
           <Button
@@ -232,7 +237,7 @@ export function WizardPage({
             isDisabled={isNextDisabled}
             isLoading={isSubmitting}
           >
-            {nextLabel}
+            {nextText}
           </Button>
         )}
       </footer>

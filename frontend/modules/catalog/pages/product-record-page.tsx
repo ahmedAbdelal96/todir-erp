@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { RecordPage } from "../../../components/pages/record-page.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { PropertyGrid, PropertyItem, StatCard } from "../../../components/pages/property-grid.tsx";
@@ -32,6 +33,7 @@ export function ProductRecordPage({
   productId,
   onBack
 }: ProductRecordPageProps): React.JSX.Element {
+  const { t } = useTranslation("catalog");
   const { data, error, isLoading } = useProduct(productId);
   const [editing, setEditing] = useState(false);
 
@@ -44,7 +46,7 @@ export function ProductRecordPage({
   if (isLoading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "360px" }}>
-        <Spinner size="large" aria-label="جارٍ تحميل بيانات المنتج..." />
+        <Spinner size="large" aria-label={t("productRecord.loading")} />
       </div>
     );
   }
@@ -53,10 +55,10 @@ export function ProductRecordPage({
     return (
       <div style={{ padding: "3rem", textAlign: "center" }}>
         <p style={{ color: "var(--color-status-danger, #ef4444)", fontWeight: 600, marginBottom: "1rem" }}>
-          تعذر العثور على بيانات المنتج المطلوب.
+          {t("productRecord.notFound")}
         </p>
         <Button variant="secondary" onPress={onBack}>
-          العودة للكتالوج
+          {t("productRecord.backToCatalog")}
         </Button>
       </div>
     );
@@ -79,32 +81,32 @@ export function ProductRecordPage({
   const kpiCards = (
     <>
       <StatCard
-        title="طبيعة الصنف"
-        value={isService ? "خدمة غير مخزنية" : "بضاعة ومخزون"}
+        title={t("productRecord.nature")}
+        value={isService ? t("productRecord.serviceNonStock") : t("productRecord.goodsInventory")}
         intent="info"
         icon={<CatalogIcon size={20} />}
-        subtitle={isService ? "لا تتطلب تتبع رصيد مستودعي" : "تخضع لحركات وجرد المستودعات"}
+        subtitle={isService ? t("productRecord.noInventoryTracking") : t("productRecord.inventoryMovements")}
       />
       <StatCard
-        title="حالة المنتج"
-        value={isActive ? "نشط ومتاح للبيع" : "مؤرشف"}
+        title={t("productRecord.productStatus")}
+        value={isActive ? t("productRecord.activeForSale") : t("productRecord.archived")}
         intent={isActive ? "success" : "neutral"}
         icon={<CheckCircleIcon size={20} />}
-        subtitle={isActive ? "يمكن إدراجه بالفواتير وأوامر الشراء" : "متوقف عن العمليات الجديدة"}
+        subtitle={isActive ? t("productRecord.availableForTransactions") : t("productRecord.stoppedForNewTransactions")}
       />
       <StatCard
-        title="وحدة القياس الأساسية"
+        title={t("productRecord.baseUnit")}
         value={data.baseUomCode ?? "—"}
         intent="primary"
         icon={<TagIcon size={20} />}
-        subtitle="وحدة التسعير والتداول المعتمدة"
+        subtitle={t("productRecord.tradingUnit")}
       />
       <StatCard
-        title="الباركودات المسجلة"
-        value={data.barcodes.length > 0 ? `${data.barcodes.length} باركود` : "لا يوجد"}
+        title={t("productRecord.barcodes")}
+        value={data.barcodes.length > 0 ? t("productRecord.barcodeCount", { count: data.barcodes.length }) : t("productRecord.none")}
         intent="neutral"
         icon={<TagIcon size={20} />}
-        subtitle="أكواد المسح الضوئي المرتبطة"
+        subtitle={t("productRecord.scanCodes")}
       />
     </>
   );
@@ -116,7 +118,7 @@ export function ProductRecordPage({
       status={isActive ? "success" : "neutral"}
       kpiCards={kpiCards}
       breadcrumbs={[
-        { label: "كتالوج المنتجات والخدمات", href: "/catalog", onClick: onBack },
+        { label: t("productList.pageTitle"), href: "/catalog", onClick: onBack },
         { label: data.displayName }
       ]}
       headerActions={
@@ -126,7 +128,7 @@ export function ProductRecordPage({
             onPress={() => setEditing(true)}
             isDisabled={!isActive}
           >
-            تعديل المنتج
+            {t("productRecord.edit")}
           </Button>
           <Button
             variant={isActive ? "danger" : "secondary"}
@@ -138,10 +140,10 @@ export function ProductRecordPage({
               })
             }
           >
-            {isActive ? "أرشفة الصنف" : "إلغاء الأرشفة"}
+            {isActive ? t("productRecord.archive") : t("productRecord.unarchive")}
           </Button>
           <Button variant="secondary" onPress={onBack}>
-            رجوع
+            {t("productRecord.back")}
           </Button>
         </div>
       }
@@ -153,21 +155,21 @@ export function ProductRecordPage({
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         {/* Basic Identification */}
         <Surface
-          title="بيانات التعريف والتسمية"
-          description="الأسماء التجارية والرموز المميزة للصنف"
+          title={t("productRecord.identity")}
+          description={t("productRecord.identityDescription")}
         >
           <PropertyGrid columns={3}>
             <PropertyItem
-              label="اسم العرض الأساسي"
+              label={t("productRecord.displayName")}
               value={data.displayName}
               icon={<CatalogIcon size={16} />}
             />
             <PropertyItem
-              label="الاسم بالعربية"
+              label={t("productForm.nameAr")}
               value={data.nameAr || "—"}
             />
             <PropertyItem
-              label="الاسم بالإنجليزية"
+              label={t("productForm.nameEn")}
               value={
                 data.nameEn ? (
                   <bdi dir="ltr">{data.nameEn}</bdi>
@@ -177,27 +179,27 @@ export function ProductRecordPage({
               }
             />
             <PropertyItem
-              label="رمز التخزين التعريفي (SKU)"
+              label={t("productRecord.sku")}
               value={data.sku ? <bdi dir="ltr">{data.sku}</bdi> : "—"}
               isCopyable={Boolean(data.sku)}
               rawCopyValue={data.sku ?? undefined}
             />
             <PropertyItem
-              label="نوع الصنف"
+              label={t("productRecord.itemType")}
               value={
                 <StatusBadge
                   intent="info"
-                  label={isService ? "خدمة" : "بضاعة مخزنية"}
+                  label={isService ? t("productForm.service") : t("productRecord.stockGoods")}
                   size="small"
                 />
               }
             />
             <PropertyItem
-              label="حالة الصنف"
+              label={t("productRecord.itemStatus")}
               value={
                 <StatusBadge
                   intent={isActive ? "success" : "neutral"}
-                  label={isActive ? "نشط ومتاح" : "مؤرشف"}
+                  label={isActive ? t("productRecord.active") : t("productRecord.archived")}
                   size="small"
                 />
               }
@@ -207,22 +209,22 @@ export function ProductRecordPage({
 
         {/* Classification & Structure */}
         <Surface
-          title="التصنيف والعلامة التجارية"
-          description="المجموعة السلعية والشركات المصنعة ووحدات القياس"
+          title={t("productRecord.classification")}
+          description={t("productRecord.classificationDescription")}
         >
           <PropertyGrid columns={3}>
             <PropertyItem
-              label="الفئة / التصنيف"
-              value={data.categoryName || "غير مصنف"}
+              label={t("productForm.category")}
+              value={data.categoryName || t("productRecord.uncategorized")}
               icon={<FolderIcon size={16} />}
             />
             <PropertyItem
-              label="العلامة التجارية (Brand)"
-              value={data.brandName || "بدون علامة"}
+              label={t("productForm.brand")}
+              value={data.brandName || t("productForm.noBrand")}
               icon={<BuildingIcon size={16} />}
             />
             <PropertyItem
-              label="وحدة القياس المعتمدة (UoM)"
+              label={t("productRecord.unitOfMeasure")}
               value={data.baseUomCode || "—"}
               icon={<TagIcon size={16} />}
             />
@@ -231,8 +233,8 @@ export function ProductRecordPage({
 
         {/* Barcodes */}
         <Surface
-          title="الباركودات المرتبطة"
-          description="الأكواد المستخدمة في نقاط البيع وماسحات الباركود"
+          title={t("productRecord.linkedBarcodes")}
+          description={t("productRecord.barcodeDescription")}
         >
           {data.barcodes.length > 0 ? (
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", padding: "0.5rem 0" }}>
@@ -260,7 +262,7 @@ export function ProductRecordPage({
             </div>
           ) : (
             <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--color-content-muted)" }}>
-              لم يتم تعيين أي باركود لهذا الصنف حتى الآن.
+              {t("productRecord.noBarcodes")}
             </p>
           )}
         </Surface>

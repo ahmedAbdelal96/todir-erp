@@ -1,0 +1,57 @@
+export const en = {
+  language: { arabic: "Arabic", english: "English", switchToArabic: "Switch to Arabic", switchToEnglish: "Switch to English" },
+  shell: {
+    workspace: "Workspace", legalEntity: "Legal entity", branch: "Branch", emptyWorkspace: "Choose a workspace to begin",
+    updatingContext: "Updating context", signOut: "Sign out", modules: "Modules & services", administrator: "System administrator",
+    couldNotLoadSession: "Could not load the session", couldNotUpdateScope: "Could not update the organization scope"
+  },
+  preferences: {
+    language: "Language", theme: "Theme", alternateTheme: "Alternate", defaultTheme: "Default",
+    density: "Display density", compact: "Compact", comfortable: "Comfortable", profile: "Profile"
+  },
+  actions: {
+    save: "Save", cancel: "Cancel", close: "Close", confirm: "Confirm", retry: "Retry",
+    back: "Back", create: "Create", add: "Add", edit: "Edit", delete: "Delete", search: "Search",
+    filter: "Filter", clear: "Clear", continue: "Continue", refresh: "Refresh", yes: "Yes", no: "No"
+  },
+  states: {
+    loading: "Loading...", saving: "Saving...", empty: "No data to display",
+    error: "The request could not be completed. Try again.", required: "This field is required.",
+    active: "Active", inactive: "Inactive", enabled: "Enabled", disabled: "Disabled"
+  },
+  access: {
+    deniedTitle: "Access denied", deniedDescription: "You do not have permission to access this resource.",
+    errorTitle: "An unexpected error occurred", errorDescription: "The requested data could not be loaded.",
+    shellErrorTitle: "An unexpected application error occurred",
+    shellErrorDescription: "A temporary problem occurred while displaying this page. Try again or return to the home page."
+  },
+  accessibility: { mainNavigation: "Main navigation", closeDialog: "Close dialog" }
+  ,pagination: { navigation: "Pagination navigation", total: "Total records:", perPage: "Per page:", previous: "Previous", next: "Next", page: "Page {{page}}" },
+  components: {
+    loadErrorTitle: "Could not load the data", loadErrorMessage: "An unexpected error occurred while retrieving data from the server. Please try again.",
+    retry: "Retry", loading: "Loading data...", searchPlaceholder: "Search...", searchField: "Search field", clearSearch: "Clear search",
+    activeFilters: "Active filters: {{count}}", resetFilters: "Reset",
+    applyFilters: "Apply", applyingFilters: "Applying...", confirm: "Confirm", cancel: "Cancel", processing: "Processing...",
+    fileChoose: "Choose a file", fileDrop: "or drag and drop a file here", fileSelected: "Selected file: {{name}}", removeFile: "Remove file",
+    fileTooLarge: "The file \"{{name}}\" exceeds the maximum allowed size ({{size}}).", fileBrowse: "Drag and drop a file here, or click to browse",
+    supportedFormats: "Supported formats: {{formats}}", allFileTypes: "All file types are supported", maxFileSize: "Maximum size: {{size}}", deleteFile: "Delete file {{name}}",
+    selectOption: "Select an option...", closeDialog: "Close dialog", closeAlert: "Close alert", progress: "Progress indicator",
+    validationSummary: "Please correct the following errors before continuing:", unsavedChanges: "You have unsaved changes. Are you sure you want to leave this page?",
+    showPassword: "Show password", hidePassword: "Hide password", copyValue: "Copy value", copied: "Copied",
+    wizardSteps: "Wizard steps", breadcrumbNavigation: "Breadcrumb navigation",
+    noRows: "No records found", noRowsFiltered: "No records match the current search or filters", loadingRecords: "Loading records...",
+    createdAt: "Created:", updatedAt: "Last updated:", byActor: "by {{actor}}",
+    statusConfirmed: "Confirmed", statusDraft: "Draft", statusCancelled: "Cancelled", statusUnknown: "Status unavailable",
+    notifications: "Notifications", closeNotification: "Close notification",
+    accountingPosted: "Posted", accountingUnposted: "Not posted", approvalApproved: "Approved",
+    approvalRejected: "Rejected", approvalPending: "Pending approval", complianceValid: "Compliant",
+    settlementPaid: "Paid in full", settlementPartial: "Partially paid", settlementUnpaid: "Unpaid", documentLocked: "Document is locked"
+  }
+  ,grid: {
+    selectAll: "Select all", searchOoo: "Search...", blanks: "Blanks", noMatches: "No matching options",
+    filterOoo: "Filter...", equals: "Equals", notEqual: "Not equal", lessThan: "Less than", greaterThan: "Greater than",
+    lessThanOrEqual: "Less than or equal", greaterThanOrEqual: "Greater than or equal", inRange: "In range",
+    contains: "Contains", notContains: "Does not contain", startsWith: "Begins with", endsWith: "Ends with",
+    noRows: "No records found", page: "Page", of: "of", to: "to", next: "Next", previous: "Previous"
+  }
+} as const;

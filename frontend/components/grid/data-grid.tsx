@@ -2,8 +2,9 @@ import React, { useMemo } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import type { ColDef } from "ag-grid-community";
-import { getDataGridEmptyMessage, getDataGridLoadingMessage, resolveDataGridLocale, type DataGridProps, type DataGridColumn } from "./grid-contract.ts";
+import { resolveDataGridLocale, type DataGridProps, type DataGridColumn } from "./grid-contract.ts";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 // Register the free Community feature set once at the design-system boundary.
 // Business modules consume DataGrid without depending on AG Grid internals.
@@ -14,7 +15,7 @@ export function DataGrid<TRow extends object>({
   staticRows = [],
   density = "comfortable",
   locale,
-  enableRtl = false,
+  enableRtl,
   selectable = "none",
   onSelectionChange,
   loading = false,
@@ -22,9 +23,11 @@ export function DataGrid<TRow extends object>({
   hasActiveFilters = false,
   loadingMessage
 }: DataGridProps<TRow>): React.JSX.Element {
+  const { t, i18n } = useTranslation("common");
   const resolvedLocale = resolveDataGridLocale(locale);
-  const resolvedEmptyMessage = emptyMessage ?? getDataGridEmptyMessage(resolvedLocale, hasActiveFilters);
-  const resolvedLoadingMessage = loadingMessage ?? getDataGridLoadingMessage(resolvedLocale);
+  const resolvedEnableRtl = enableRtl ?? i18n.dir(resolvedLocale) === "rtl";
+  const resolvedEmptyMessage = emptyMessage ?? t(hasActiveFilters ? "components.noRowsFiltered" : "components.noRows", { lng: resolvedLocale });
+  const resolvedLoadingMessage = loadingMessage ?? t("components.loadingRecords", { lng: resolvedLocale });
   const colDefs = useMemo<ColDef<TRow>[]>(() => {
     return columns.map((col: DataGridColumn<TRow>) => {
       const colDef: ColDef<TRow> = {
@@ -71,7 +74,7 @@ export function DataGrid<TRow extends object>({
 
   return (
     <div
-      className={clsx("ui-datagrid", `ui-datagrid--${density}`, { "ag-rtl": enableRtl })}
+      className={clsx("ui-datagrid", `ui-datagrid--${density}`, { "ag-rtl": resolvedEnableRtl })}
       style={{
         height: "480px",
         width: "100%",
@@ -86,7 +89,20 @@ export function DataGrid<TRow extends object>({
         columnDefs={colDefs}
         rowHeight={rowHeight}
         headerHeight={headerHeight}
-        enableRtl={enableRtl}
+        enableRtl={resolvedEnableRtl}
+        localeText={{
+          selectAll: t("grid.selectAll", { lng: resolvedLocale }), searchOoo: t("grid.searchOoo", { lng: resolvedLocale }),
+          blanks: t("grid.blanks", { lng: resolvedLocale }), noMatches: t("grid.noMatches", { lng: resolvedLocale }),
+          filterOoo: t("grid.filterOoo", { lng: resolvedLocale }), equals: t("grid.equals", { lng: resolvedLocale }),
+          notEqual: t("grid.notEqual", { lng: resolvedLocale }), lessThan: t("grid.lessThan", { lng: resolvedLocale }),
+          greaterThan: t("grid.greaterThan", { lng: resolvedLocale }), lessThanOrEqual: t("grid.lessThanOrEqual", { lng: resolvedLocale }),
+          greaterThanOrEqual: t("grid.greaterThanOrEqual", { lng: resolvedLocale }), inRange: t("grid.inRange", { lng: resolvedLocale }),
+          contains: t("grid.contains", { lng: resolvedLocale }), notContains: t("grid.notContains", { lng: resolvedLocale }),
+          startsWith: t("grid.startsWith", { lng: resolvedLocale }), endsWith: t("grid.endsWith", { lng: resolvedLocale }),
+          noRowsToShow: resolvedEmptyMessage, loadingOoo: resolvedLoadingMessage,
+          page: t("grid.page", { lng: resolvedLocale }), of: t("grid.of", { lng: resolvedLocale }), to: t("grid.to", { lng: resolvedLocale }),
+          next: t("grid.next", { lng: resolvedLocale }), previous: t("grid.previous", { lng: resolvedLocale })
+        }}
         autoSizeStrategy={{ type: "fitGridWidth", defaultMinWidth: 80 }}
         onGridReady={(event) => {
           event.api.sizeColumnsToFit();

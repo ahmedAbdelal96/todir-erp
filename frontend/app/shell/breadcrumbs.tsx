@@ -1,6 +1,7 @@
 import React, { type ReactNode } from "react";
 import clsx from "clsx";
 import { Link, useInRouterContext } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 export interface BreadcrumbItem {
   readonly label: ReactNode;
@@ -14,6 +15,7 @@ export interface BreadcrumbsProps {
 }
 
 export function Breadcrumbs({ items, className }: BreadcrumbsProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   const inRouter = useInRouterContext();
   const normalizeHref = (href: string | undefined): string => {
     if (!href) return "/";
@@ -21,7 +23,7 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps): React.JSX.E
   };
 
   return (
-    <nav aria-label="Breadcrumbs" className={clsx("ui-breadcrumbs", className)}>
+    <nav aria-label={t("components.breadcrumbNavigation")} className={clsx("ui-breadcrumbs", className)}>
       <ol
         style={{
           display: "flex",

@@ -1,5 +1,6 @@
 import React, { type ReactNode } from "react";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export type AlertVariant = "info" | "success" | "warning" | "danger";
 
@@ -22,6 +23,7 @@ export function Alert({
   icon,
   className
 }: AlertProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   const defaultIcons: Record<AlertVariant, string> = {
     info: "ℹ️",
     success: "✓",
@@ -82,7 +84,7 @@ export function Alert({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label="إغلاق التنبيه"
+          aria-label={t("components.closeAlert")}
           style={{
             background: "none",
             border: "none",

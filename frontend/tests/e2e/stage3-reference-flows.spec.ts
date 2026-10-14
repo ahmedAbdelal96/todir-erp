@@ -190,7 +190,7 @@ test.describe('Stage 3 Reference Foundation Validation Flows', () => {
     await page.goto('/payments');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByRole('heading', { name: 'المدفوعات والمقبوضات' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'المدفوعات' })).toBeVisible();
     const openBtn = page.getByRole('button', { name: '+ تسجيل دفعة مالية جديدة' });
     await expect(openBtn).toBeVisible();
     await openBtn.click();
@@ -233,17 +233,17 @@ test.describe('Stage 3 Reference Foundation Validation Flows', () => {
 
     // Step 1: Upload
     await expect(page.getByText('اختر ملف البيانات المراد استيراده')).toBeVisible();
-    await page.getByRole('button', { name: 'التالي' }).click();
+    await page.getByRole('button', { name: 'متابعة' }).click();
 
     // Step 2: Mapping
     await expect(page.getByRole('heading', { name: 'ربط أعمدة الملف بحقول النظام' })).toBeVisible();
-    await page.getByRole('button', { name: 'التالي' }).click();
+    await page.getByRole('button', { name: 'متابعة' }).click();
 
     // Step 3: Validation / Dry Run
     await expect(page.getByRole('heading', { name: 'نتائج الفحص والتشغيل التجريبي (Dry Run)' })).toBeVisible();
     await expect(page.getByText('980')).toBeVisible();
     await expect(page.getByText('20')).toBeVisible();
-    await page.getByRole('button', { name: 'التالي' }).click();
+    await page.getByRole('button', { name: 'متابعة' }).click();
 
     // Step 4: Complete & Reconciliation
     await expect(page.getByRole('heading', { name: 'اكتمل تنفيذ عملية الاستيراد الجزئي' })).toBeVisible();

@@ -52,6 +52,12 @@ Before frontend completion, inspect the backend and API contract against the Mod
 
 Every frontend module mission report must include the canonical Module Pack path, documented product/UX scope, acceptance scenarios, MVP and deferred items, backend/API gaps, seed scenarios used for verification, and unresolved gaps.
 
+## 0.2 Localization is a frontend completion requirement
+
+Use the single `i18next` runtime as the source of truth for language. All user-facing copy, including labels, messages, validation, accessibility text, statuses, notifications, and navigation, must come from translation resources through `react-i18next`; hardcoded Arabic or English UI copy in application components, pages, features, forms, and dialogs is not allowed. Put shared/application terminology in `core/i18n`; each implemented module owns `modules/<module>/i18n/ar.ts` and `en.ts`. Keep equivalent Arabic/English key coverage and treat missing keys as defects. Arabic mode must not leak English UI copy and English mode must not leak Arabic UI copy. Preserve business and user-entered data as stored. Language persistence, document `lang`/`dir`, RTL/LTR, dates, numbers, money, and supported component locale must derive from the same runtime localization state. `FRONTEND COMPLETE` is blocked until localization coverage and both-language runtime acceptance are complete.
+
+Run the localization coverage and hardcoded-copy guard in verification. The guard must parse frontend source structurally and check translation resource parity; narrowly document syntax-based exclusions such as tests, stories, API routes, CSS, identifiers, and business data. Never disable the guard broadly or use the other language as silent fallback.
+
 ### Frontend ownership and real Product/UX acceptance
 
 Apply the root Senior Product Architect, Senior Product Designer, Senior Software / Systems Architect, Senior Developer / Engineer, and QA / Integration Owner directive to frontend work, with particular ownership of user workflows, accessible RTL UX, responsive behavior, and browser evidence. Apply this loop to every future frontend task, including defect fixes, UX, copy, routing, accessibility, responsive behavior, API integration, and tests. Do not return partial progress for a solvable in-scope defect: discover, fix, verify, inspect, and repeat. Verify affected runtime behavior in the real browser; a full module completion claim still requires every documented journey and gate.

@@ -1,6 +1,7 @@
 import React from "react";
 import { formatDate } from "../formatting/date-formatter.ts";
 import clsx from "clsx";
+import { currentIntlLocale } from "../../core/i18n/i18n.ts";
 
 export interface LocalDateDisplayProps {
   readonly value: string | Date | null | undefined;
@@ -11,7 +12,7 @@ export interface LocalDateDisplayProps {
 
 export function LocalDateDisplay({
   value,
-  locale = "en-US",
+  locale = currentIntlLocale(),
   dateStyle = "medium",
   className
 }: LocalDateDisplayProps): React.JSX.Element {

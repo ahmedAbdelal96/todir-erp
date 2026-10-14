@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ListPage } from "../../../components/pages/list-page.tsx";
 import { DataGrid, type DataGridColumn } from "../../../components/grid/index.ts";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
@@ -26,6 +27,8 @@ export interface ProductListPageProps {
 }
 
 export function ProductListPage({ onSelectProduct }: ProductListPageProps): React.JSX.Element {
+  const { t } = useTranslation("catalog");
+  const { t: commonT } = useTranslation("common");
   const [search, setSearch] = useState("");
   const [nature, setNature] = useState<"" | "Goods" | "Service">("");
   const [open, setOpen] = useState(false);
@@ -45,7 +48,7 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
   const columns: DataGridColumn<ProductSummary>[] = [
     {
       id: "displayName",
-      header: "المنتج / الخدمة",
+      header: t("productList.productService"),
       width: "1fr",
       cellRenderer: ({ row }) => (
         <button
@@ -78,36 +81,36 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
     },
     {
       id: "nature",
-      header: "النوع",
+      header: t("productList.type"),
       width: 120,
-      cellRenderer: ({ row }) => (row.nature === "Service" ? "خدمة" : "بضاعة")
+      cellRenderer: ({ row }) => (row.nature === "Service" ? t("productList.service") : t("productList.goods"))
     },
     {
       id: "categoryName",
-      header: "الفئة",
+      header: t("productList.category"),
       width: 150,
       cellRenderer: ({ row }) => row.categoryName || "—"
     },
     {
       id: "brandName",
-      header: "العلامة",
+      header: t("productList.brand"),
       width: 150,
       cellRenderer: ({ row }) => row.brandName || "—"
     },
     {
       id: "baseUomCode",
-      header: "الوحدة",
+      header: t("productList.unit"),
       width: 110,
       cellRenderer: ({ row }) => row.baseUomCode || "—"
     },
     {
       id: "status",
-      header: "الحالة",
+      header: t("productList.status"),
       width: 110,
       cellRenderer: ({ row }) => (
         <StatusBadge
           status={row.status === "Active" ? "success" : "neutral"}
-          label={row.status === "Active" ? "نشط" : "مؤرشف"}
+          label={row.status === "Active" ? t("productList.active") : t("productList.archived")}
           size="small"
         />
       )
@@ -116,19 +119,19 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
 
   return (
     <ListPage
-      title="كتالوج المنتجات والخدمات"
-      subtitle="هوية موحدة للمنتجات والخدمات المستخدمة في المبيعات والمشتريات والمخزون"
-      breadcrumbs={[{ label: "Catalog" }, { label: "المنتجات والخدمات" }]}
+      title={t("productList.pageTitle")}
+      subtitle={t("productList.subtitle")}
+      breadcrumbs={[{ label: t("productList.breadcrumbCatalog") }, { label: t("productList.breadcrumbProducts") }]}
       primaryAction={{
-        label: "إضافة منتج أو خدمة",
+        label: t("productList.add"),
         onClick: () => setOpen(true)
       }}
       filterBar={
         <FilterBar
           searchInput={
             <SearchField
-              ariaLabel="البحث في المنتجات"
-              placeholder="بحث بالاسم أو SKU أو باركود..."
+              ariaLabel={t("productList.searchLabel")}
+              placeholder={t("productList.searchPlaceholder")}
               value={search}
               onChange={setSearch}
             />
@@ -141,13 +144,13 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
         >
           <div style={{ minWidth: "160px" }}>
             <Select
-              label="نوع المنتج"
+              label={t("productList.typeFilter")}
               selectedKey={nature}
               onSelectionChange={(k) => setNature(String(k) as typeof nature)}
             >
-              <SelectItem id="" textValue="كل الأنواع">كل الأنواع</SelectItem>
-              <SelectItem id="Goods" textValue="البضائع">البضائع</SelectItem>
-              <SelectItem id="Service" textValue="الخدمات">الخدمات</SelectItem>
+              <SelectItem id="" textValue={t("productList.allTypes")}>{t("productList.allTypes")}</SelectItem>
+              <SelectItem id="Goods" textValue={t("productList.goodsFilter")}>{t("productList.goodsFilter")}</SelectItem>
+              <SelectItem id="Service" textValue={t("productList.servicesFilter")}>{t("productList.servicesFilter")}</SelectItem>
             </Select>
           </div>
         </FilterBar>
@@ -155,22 +158,22 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
     >
       {error ? (
         <ErrorState
-          title="تعذر تحميل كتالوج المنتجات"
-          message="حدث خطأ أثناء جلب قائمة المنتجات والخدمات من الخادم."
+          title={t("productList.loadError")}
+          message={t("productList.loadErrorDescription")}
           onRetry={() => void refetch()}
         />
       ) : !isLoading && products.length === 0 ? (
         <EmptyState
           icon={<CatalogIcon size={28} />}
-          title="لا توجد منتجات أو خدمات حتى الآن"
+          title={t("productList.emptyTitle")}
           description={
             search || nature
-              ? "لم يتم العثور على منتجات تطابق معايير البحث الحالية."
-              : "ابدأ بإضافة أول منتج أو خدمة في كتالوج المؤسسة."
+              ? t("productList.noResults")
+              : t("productList.emptyDescription")
           }
           action={
             <Button variant="primary" onPress={() => setOpen(true)}>
-              إضافة منتج أو خدمة
+              {t("productList.add")}
             </Button>
           }
         />
@@ -178,10 +181,8 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
         <DataGrid<ProductSummary>
           columns={columns}
           staticRows={products}
-          locale="ar"
-          enableRtl={true}
           loading={isLoading}
-          loadingMessage={isLoading ? "جارٍ التحميل..." : undefined}
+          loadingMessage={isLoading ? commonT("states.loading") : undefined}
           onSelectionChange={(rows) => rows[0] && onSelectProduct?.(rows[0])}
         />
       )}
@@ -189,8 +190,8 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
       <Dialog
         isOpen={open}
         onOpenChange={setOpen}
-        title="إضافة منتج أو خدمة"
-        description="أنشئ الهوية ووحدة الأساس بسرعة؛ التفاصيل التجارية مملوكة لموديولات أخرى."
+        title={t("productList.add")}
+        description={t("productList.addDescription")}
         size="large"
       >
         <ProductForm

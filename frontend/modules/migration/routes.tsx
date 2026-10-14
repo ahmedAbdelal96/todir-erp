@@ -14,7 +14,7 @@ export const migrationRoutes: ModuleRouteRegistration = {
     id: "migration",
     moduleIds: ["migration"],
     path: "/migration",
-    label: { ar: "معالج الاستيراد", en: "Import Wizard" },
+    navigationKey: "import",
     permission: "platform.migration.execute",
     icon: "migration"
   },

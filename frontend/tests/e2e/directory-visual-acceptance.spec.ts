@@ -95,22 +95,22 @@ test.describe('Directory visual acceptance corrections', () => {
 
     await page.getByRole('button', { name: 'استيراد سجلات' }).click();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/directory-import-upload-desktop.png', fullPage: true });
-    await page.getByRole('button', { name: 'استخدام بيانات تجريبية جاهزة للمعاينة' }).click();
+    await page.getByRole('button', { name: 'تحميل بيانات تجريبية للمعاينة' }).click();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/directory-import-mapping-desktop.png', fullPage: true });
     await page.getByRole('button', { name: /فحص البيانات/ }).click();
-    await expect(page.getByText('3. التحقق ومراجعة التكرار')).toBeVisible();
+    await expect(page.getByText('٣. الفحص ومراجعة التكرار')).toBeVisible();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/directory-import-duplicate-review-desktop.png', fullPage: true });
-    await page.getByRole('button', { name: 'معاينة التغييرات قبل التنفيذ' }).click();
+    await page.getByRole('button', { name: 'معاينة التغييرات' }).click();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/directory-import-preview-desktop.png', fullPage: true });
-    await page.getByRole('button', { name: 'تأكيد واستيراد السجلات' }).click();
-    await expect(page.getByText('اكتملت عملية استيراد الأطراف التجارية بنجاح')).toBeVisible();
+    await page.getByRole('button', { name: 'تأكيد استيراد السجلات' }).click();
+    await expect(page.getByText('اكتمل استيراد الأطراف')).toBeVisible();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/directory-import-reconciliation-desktop.png', fullPage: true });
 
-    await page.getByRole('button', { name: 'Close dialog' }).click();
+    await page.getByRole('button', { name: 'إغلاق النافذة' }).click();
     await page.getByRole('button', { name: 'شركة أطلس للتوزيع' }).click();
     await page.waitForLoadState('networkidle');
     await expect(page.getByRole('heading', { name: 'شركة أطلس للتوزيع', exact: true })).toBeVisible();
-    await expect(page.getByText('بحاجة لاستكمال')).toBeVisible();
+    await expect(page.getByText('بحاجة لاستكمال', { exact: true }).first()).toBeVisible();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/directory-record-evidence-desktop.png', fullPage: true });
     await page.getByRole('button', { name: 'جهات الاتصال' }).click();
     await expect(page.getByText('مريم حسن')).toBeVisible();
@@ -124,7 +124,7 @@ test.describe('Directory visual acceptance corrections', () => {
     await page.getByRole('button', { name: 'دمج السجل', exact: true }).click();
     await expect(page.getByText('السجل التجاري الرئيسي (الطرف الباقي المستهدف)')).toBeVisible();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/directory-merge-picker-desktop.png', fullPage: true });
-    await page.getByRole('button', { name: 'Close dialog' }).click();
+    await page.getByRole('button', { name: 'إغلاق النافذة' }).click();
     await page.getByRole('button', { name: 'سجل الأنشطة' }).click();
     await expect(page.getByText('تصحيح الاسم التجاري بعد مراجعة العميل')).toBeVisible();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/directory-audit-history-desktop.png', fullPage: true });

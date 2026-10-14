@@ -23,7 +23,7 @@ export const identityRoutes: ModuleRouteRegistration = {
     id: "users",
     moduleIds: ["users", "iam"],
     path: "/users",
-    label: { ar: "المستخدمون", en: "Users" },
+    navigationKey: "users",
     permission: "platform.identity.read",
     icon: "users"
   },

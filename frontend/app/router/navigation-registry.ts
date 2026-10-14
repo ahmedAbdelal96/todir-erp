@@ -9,17 +9,17 @@ import { paymentsRoutes } from "@modules/payments/public.ts";
 import type { ModuleNavigationRegistration } from "./route-contract.ts";
 
 const homeNavigation: ModuleNavigationRegistration = {
-  id: "home", moduleIds: ["home"], path: "/", label: { ar: "الرئيسية", en: "Home" }, icon: "home"
+  id: "home", moduleIds: ["home"], path: "/", navigationKey: "home", icon: "home"
 };
 const domainSettingsNavigation: ModuleNavigationRegistration = {
   id: "domain-settings", moduleIds: ["domain-settings", "tenancy"], path: "/domain-settings",
-  label: { ar: "إعدادات تسجيل الدخول", en: "Login Domain" }, permission: "platform.tenancy.read", icon: "domain-settings"
+  navigationKey: "loginDomain", permission: "platform.tenancy.read", icon: "domain-settings"
 };
 const previewNavigation: ModuleNavigationRegistration = {
-  id: "preview", moduleIds: ["preview"], path: "/preview", label: { ar: "معاينة النظام", en: "System Preview" }, icon: "preview"
+  id: "preview", moduleIds: ["preview"], path: "/preview", navigationKey: "preview", icon: "preview"
 };
 const settingsNavigation: ModuleNavigationRegistration = {
-  id: "settings", moduleIds: ["settings"], path: "/settings", label: { ar: "الإعدادات", en: "Settings" }, permission: "platform.settings.read", icon: "settings"
+  id: "settings", moduleIds: ["settings"], path: "/settings", navigationKey: "settings", permission: "platform.settings.read", icon: "settings"
 };
 
 export const navigationRegistry: readonly ModuleNavigationRegistration[] = [

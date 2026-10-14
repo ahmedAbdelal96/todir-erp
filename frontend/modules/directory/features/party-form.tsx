@@ -1,7 +1,8 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { partyFormSchema, type PartyFormData } from "../validation/party-schema.ts";
+import { createPartyFormSchema, type PartyFormData } from "../validation/party-schema.ts";
 import { FormSection } from "../../../components/forms/form-section.tsx";
 import { FormActions } from "../../../components/forms/form-actions.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
@@ -25,6 +26,8 @@ export function PartyForm({
   isSubmitting = false,
   isLocked = false
 }: PartyFormProps): React.JSX.Element {
+  const { t } = useTranslation("directory");
+  const partyFormSchema = createPartyFormSchema((key) => t(key));
   const {
     handleSubmit,
     watch,
@@ -75,8 +78,8 @@ export function PartyForm({
     >
       {/* 1. الهوية الأساسية للطرف */}
       <FormSection
-        title="الهوية ونوع الكيان"
-        description="حدد ما إذا كان الطرف شركة ومنشأة تجارية أو فرداً مستقلاً، مع تسجيل الاسم المعتمد للتعامل."
+        title={t("partyForm.sectionIdentity")}
+        description={t("partyForm.identityDescription")}
       >
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
           <div>
@@ -85,7 +88,7 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <Select
-                  label="نوع الكيان"
+                  label={t("partyForm.entityType")}
                   selectedKey={field.value}
                   onSelectionChange={(key) => {
                     const newType = String(key ?? "Organization") as "Person" | "Organization";
@@ -98,8 +101,8 @@ export function PartyForm({
                   }}
                   isDisabled={isLocked}
                 >
-                  <SelectItem id="Organization" textValue="منشأة / شركة">منشأة / شركة</SelectItem>
-                  <SelectItem id="Person" textValue="فرد / شخص مستقل">فرد / شخص مستقل</SelectItem>
+                  <SelectItem id="Organization" textValue={t("partyForm.organization")}>{t("partyForm.organization")}</SelectItem>
+                  <SelectItem id="Person" textValue={t("partyForm.person")}>{t("partyForm.person")}</SelectItem>
                 </Select>
               )}
             />
@@ -111,8 +114,8 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <TextField
-                  label={type === "Person" ? "الاسم المعروض بالكامل" : "الاسم التجاري / المعروض"}
-                  placeholder={type === "Person" ? "مثال: أحمد محمود إبراهيم" : "مثال: أطلس للتجارة العامة"}
+                  label={type === "Person" ? t("partyForm.fullDisplayName") : t("partyForm.businessDisplayName")}
+                  placeholder={type === "Person" ? t("partyForm.personExample") : t("partyForm.organizationExample")}
                   isRequired={true}
                   isLocked={isLocked}
                   errorMessage={errors.displayName?.message}
@@ -129,8 +132,8 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <TextField
-                  label="الاسم القانوني المسجل"
-                  placeholder="الاسم الرسمي في الأوراق الحكومية والسجلات"
+                  label={t("partyForm.legalName")}
+                  placeholder={t("partyForm.legalNamePlaceholder")}
                   isLocked={isLocked}
                   errorMessage={errors.legalName?.message}
                   value={field.value ?? ""}
@@ -147,8 +150,8 @@ export function PartyForm({
                 control={control}
                 render={({ field }) => (
                   <TextField
-                    label="الاسم التجاري المعروف"
-                    placeholder="اسم العلامة التجارية أو الشهرة"
+                    label={t("partyForm.tradeName")}
+                    placeholder={t("partyForm.tradeNamePlaceholder")}
                     isLocked={isLocked}
                     errorMessage={errors.tradeName?.message}
                     value={field.value ?? ""}
@@ -167,8 +170,8 @@ export function PartyForm({
                   control={control}
                   render={({ field }) => (
                     <TextField
-                      label="الاسم الأول"
-                      placeholder="الاسم الشخصي"
+                      label={t("partyForm.firstName")}
+                      placeholder={t("partyForm.firstNamePlaceholder")}
                       isLocked={isLocked}
                       errorMessage={errors.firstName?.message}
                       value={field.value ?? ""}
@@ -183,8 +186,8 @@ export function PartyForm({
                   control={control}
                   render={({ field }) => (
                     <TextField
-                      label="اسم الأب / الأوسط"
-                      placeholder="الاسم الثاني"
+                      label={t("partyForm.middleName")}
+                      placeholder={t("partyForm.middleNamePlaceholder")}
                       isLocked={isLocked}
                       errorMessage={errors.middleName?.message}
                       value={field.value ?? ""}
@@ -199,8 +202,8 @@ export function PartyForm({
                   control={control}
                   render={({ field }) => (
                     <TextField
-                      label="اسم العائلة / اللقب"
-                      placeholder="اللقب العائلي"
+                      label={t("partyForm.lastName")}
+                      placeholder={t("partyForm.lastNamePlaceholder")}
                       isLocked={isLocked}
                       errorMessage={errors.lastName?.message}
                       value={field.value ?? ""}
@@ -218,14 +221,14 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <Select
-                  label="دولة التأسيس / الإقامة"
+                  label={t("partyForm.country")}
                   selectedKey={field.value ?? "EG"}
                   onSelectionChange={(key) => field.onChange(String(key ?? "EG"))}
                   isDisabled={isLocked}
                 >
-                  <SelectItem id="EG" textValue="جمهورية مصر العربية (EG)">جمهورية مصر العربية (EG)</SelectItem>
-                  <SelectItem id="SA" textValue="المملكة العربية السعودية (SA)">المملكة العربية السعودية (SA)</SelectItem>
-                  <SelectItem id="AE" textValue="الإمارات العربية المتحدة (AE)">الإمارات العربية المتحدة (AE)</SelectItem>
+                  <SelectItem id="EG" textValue={`${t("partyForm.egypt")} (EG)`}>{t("partyForm.egypt")} (EG)</SelectItem>
+                  <SelectItem id="SA" textValue={`${t("partyForm.saudi")} (SA)`}>{t("partyForm.saudi")} (SA)</SelectItem>
+                  <SelectItem id="AE" textValue={`${t("partyForm.uae")} (AE)`}>{t("partyForm.uae")} (AE)</SelectItem>
                 </Select>
               )}
             />
@@ -237,13 +240,13 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <Select
-                  label="لغة المراسلات الرسمية"
+                  label={t("partyForm.correspondenceLanguage")}
                   selectedKey={field.value ?? "ar"}
                   onSelectionChange={(key) => field.onChange(String(key ?? "ar"))}
                   isDisabled={isLocked}
                 >
-                  <SelectItem id="ar" textValue="العربية (الافتراضية)">العربية (الافتراضية)</SelectItem>
-                  <SelectItem id="en" textValue="الإنجليزية">الإنجليزية</SelectItem>
+                  <SelectItem id="ar" textValue={t("partyForm.arabicDefault")}>{t("partyForm.arabicDefault")}</SelectItem>
+                  <SelectItem id="en" textValue={t("partyForm.english")}>{t("partyForm.english")}</SelectItem>
                 </Select>
               )}
             />
@@ -253,8 +256,8 @@ export function PartyForm({
 
       {/* 2. الأدوار التجارية */}
       <FormSection
-        title="الأدوار والعلاقات التجارية (اختياري)"
-        description="تحديد دور الطرف كعميل أو مورد، أو يمكن تركه بدون أدوار كطرف عام في الدليل."
+        title={t("partyForm.roles")}
+        description={t("partyForm.rolesDescription")}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -263,7 +266,7 @@ export function PartyForm({
               onChange={() => toggleRole("Customer")}
               isLocked={isLocked}
             >
-              <span style={{ fontWeight: 600 }}>عميل (نقدم له مبيعات وخدمات)</span>
+              <span style={{ fontWeight: 600 }}>{t("partyForm.customerRole")}</span>
             </Checkbox>
 
             <Checkbox
@@ -271,7 +274,7 @@ export function PartyForm({
               onChange={() => toggleRole("Supplier")}
               isLocked={isLocked}
             >
-              <span style={{ fontWeight: 600 }}>مورد (نستورد أو نشتري منه بضائع)</span>
+              <span style={{ fontWeight: 600 }}>{t("partyForm.supplierRole")}</span>
             </Checkbox>
           </div>
 
@@ -285,8 +288,8 @@ export function PartyForm({
 
       {/* 3. المعرفات الرسمية والضريبية */}
       <FormSection
-        title="المعرفات والسجلات الحكومية"
-        description="تسجيل الرقم الضريبي أو السجل التجاري لضمان التوثيق وإصدار الفواتير القانونية."
+        title={t("partyForm.identifiers")}
+        description={t("partyForm.identifiersDescription")}
       >
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
           <div>
@@ -295,16 +298,16 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <Select
-                  label="نوع المعرف الرسمي"
+                  label={t("partyForm.identifierType")}
                   selectedKey={field.value || "none"}
                   onSelectionChange={(key) => field.onChange(key === "none" ? "" : String(key ?? ""))}
                   isDisabled={isLocked}
                 >
-                  <SelectItem id="none" textValue="— بدون معرف حالياً —">— بدون معرف حالياً —</SelectItem>
-                  <SelectItem id="TaxId" textValue="الرقم الضريبي (VAT / Tax ID)">الرقم الضريبي (VAT / Tax ID)</SelectItem>
-                  <SelectItem id="CommercialRegister" textValue="السجل التجاري (CR)">السجل التجاري (CR)</SelectItem>
-                  <SelectItem id="NationalId" textValue="الرقم القومي / الهوية الوطنية">الرقم القومي / الهوية الوطنية</SelectItem>
-                  <SelectItem id="InternalReference" textValue="كود مرجعي داخلي">كود مرجعي داخلي</SelectItem>
+                  <SelectItem id="none" textValue={t("partyForm.noIdentifier")}>{t("partyForm.noIdentifier")}</SelectItem>
+                  <SelectItem id="TaxId" textValue={`${t("partyForm.taxId")} (VAT)`}>{t("partyForm.taxId")} (VAT)</SelectItem>
+                  <SelectItem id="CommercialRegister" textValue={`${t("partyForm.commercialRegister")} (CR)`}>{t("partyForm.commercialRegister")} (CR)</SelectItem>
+                  <SelectItem id="NationalId" textValue={t("partyForm.nationalId")}>{t("partyForm.nationalId")}</SelectItem>
+                  <SelectItem id="InternalReference" textValue={t("partyForm.internalReference")}>{t("partyForm.internalReference")}</SelectItem>
                 </Select>
               )}
             />
@@ -316,8 +319,8 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <TextField
-                  label="قيمة ورقم المعرف"
-                  placeholder="مثال: 300123456700003"
+                  label={t("partyForm.identifierValue")}
+                  placeholder={t("partyForm.identifierExample")}
                   isLocked={isLocked}
                   errorMessage={errors.identifierValue?.message}
                   value={field.value ?? ""}
@@ -331,8 +334,8 @@ export function PartyForm({
 
       {/* 4. قنوات الاتصال والتواصل */}
       <FormSection
-        title="قنوات الاتصال المباشرة"
-        description="وسائل التواصل الأساسية لإرسال الفواتير والمطالبات والمراسلات اليومية."
+        title={t("partyForm.contactChannels")}
+        description={t("partyForm.contactDescription")}
       >
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
           <Controller
@@ -340,8 +343,8 @@ export function PartyForm({
             control={control}
             render={({ field }) => (
               <EmailField
-                label="البريد الإلكتروني المعتمد"
-                placeholder="contact@company.com"
+                label={t("partyForm.email")}
+                placeholder={t("partyForm.emailPlaceholder")}
                 value={field.value ?? ""}
                 onChange={field.onChange}
                 isLocked={isLocked}
@@ -355,8 +358,8 @@ export function PartyForm({
             control={control}
             render={({ field }) => (
               <PhoneField
-                label="رقم الهاتف للتواصل"
-                placeholder="+20 100 000 0000"
+                label={t("partyForm.phone")}
+                placeholder={t("partyForm.phonePlaceholder")}
                 value={field.value ?? ""}
                 onChange={field.onChange}
                 isLocked={isLocked}
@@ -369,8 +372,8 @@ export function PartyForm({
 
       {/* 5. المقر والعنوان */}
       <FormSection
-        title="المقر والعنوان الجغرافي"
-        description="العنوان المعتمد لعمليات الشحن والتوصيل والمقر الرئيسي."
+        title={t("partyForm.address")}
+        description={t("partyForm.addressDescription")}
       >
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
           <div style={{ gridColumn: "1 / -1" }}>
@@ -379,8 +382,8 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <TextField
-                  label="العنوان التفصيلي"
-                  placeholder="الشارع، رقم المبنى، الحي أو المنطقة الصناعية"
+                  label={t("partyForm.addressLine")}
+                  placeholder={t("partyForm.addressPlaceholder")}
                   isLocked={isLocked}
                   errorMessage={errors.addressLine1?.message}
                   value={field.value ?? ""}
@@ -396,8 +399,8 @@ export function PartyForm({
               control={control}
               render={({ field }) => (
                 <TextField
-                  label="المدينة / المركز"
-                  placeholder="مثال: القاهرة، الجيزة، الإسكندرية"
+                  label={t("partyForm.city")}
+                  placeholder={t("partyForm.cityExample")}
                   isLocked={isLocked}
                   errorMessage={errors.addressCity?.message}
                   value={field.value ?? ""}
@@ -410,8 +413,8 @@ export function PartyForm({
       </FormSection>
 
       <FormActions
-        submitLabel="حفظ بيانات الطرف التجاري"
-        cancelLabel="إلغاء التعديل"
+        submitLabel={t("partyForm.save")}
+        cancelLabel={t("partyForm.cancel")}
         isSubmitting={isSubmitting}
         isDirty={isDirty}
         isLocked={isLocked}

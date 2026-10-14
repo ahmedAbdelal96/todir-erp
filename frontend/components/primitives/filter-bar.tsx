@@ -1,6 +1,7 @@
 import React, { type ReactNode } from "react";
 import { Button } from "./button.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface FilterBarProps {
   readonly searchInput?: ReactNode | undefined;
@@ -21,6 +22,7 @@ export function FilterBar({
   children,
   className
 }: FilterBarProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   return (
     <div
       className={clsx("ui-filter-bar", className)}
@@ -64,7 +66,7 @@ export function FilterBar({
               color: "var(--color-brand-primary)"
             }}
           >
-            {activeFilterCount} فلتر نشط
+            {t("components.activeFilters", { count: activeFilterCount })}
           </span>
         )}
 
@@ -75,7 +77,7 @@ export function FilterBar({
             onPress={onResetFilters}
             isDisabled={isPending}
           >
-            إعادة تعيين
+            {t("components.resetFilters")}
           </Button>
         )}
 
@@ -86,7 +88,7 @@ export function FilterBar({
             onPress={onApplyFilters}
             isDisabled={isPending}
           >
-            {isPending ? "تطبيق..." : "تطبيق"}
+            {isPending ? t("components.applyingFilters") : t("components.applyFilters")}
           </Button>
         )}
       </div>

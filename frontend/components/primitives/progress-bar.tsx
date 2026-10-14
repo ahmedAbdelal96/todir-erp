@@ -1,5 +1,6 @@
 import React from "react";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface ProgressBarProps {
   readonly value?: number | undefined; // 0 to maxValue, undefined for indeterminate
@@ -22,6 +23,7 @@ export function ProgressBar({
   variant = "primary",
   className
 }: ProgressBarProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   const isActualIndeterminate = isIndeterminate || value === undefined;
   const clampedValue = value !== undefined ? Math.max(0, Math.min(value, maxValue)) : 0;
   const percentage = Math.round((clampedValue / maxValue) * 100);
@@ -63,7 +65,7 @@ export function ProgressBar({
         aria-valuenow={isActualIndeterminate ? undefined : clampedValue}
         aria-valuemin={0}
         aria-valuemax={maxValue}
-        aria-label={label ?? "مؤشر التقدم"}
+        aria-label={label ?? t("components.progress")}
         style={{
           width: "100%",
           height,

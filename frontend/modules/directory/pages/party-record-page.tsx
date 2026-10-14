@@ -1,4 +1,7 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
+import { currentIntlLocale } from "../../../core/i18n/i18n.ts";
 import type { Party, PartyRoleCode, AddressInput, ContactPointInput, IdentifierInput, AddContactPersonRequest, AliasInput, VisibilityInput, MergePartyRequest } from "../types.ts";
 import {
   usePartyRecord,
@@ -79,75 +82,78 @@ function toForm(party: Party): Partial<PartyFormData> {
   };
 }
 
-function addressUsageLabel(usage: string): string {
-  if (usage === "Billing") return "عنوان الفواتير والمطالبات";
-  if (usage === "Shipping") return "عنوان الشحن والتوصيل";
-  if (usage === "Registered") return "العنوان القانوني المسجل";
-  return "العنوان العام";
+type DirectoryTranslator = TFunction<"directory">;
+
+function addressUsageLabel(usage: string, t: DirectoryTranslator): string {
+  if (usage === "Billing") return t("partyRecord.addressUsage.billing");
+  if (usage === "Shipping") return t("partyRecord.addressUsage.shipping");
+  if (usage === "Registered") return t("partyRecord.addressUsage.registered");
+  return t("partyRecord.addressUsage.general");
 }
 
-function identifierTypeLabel(type: string): string {
-  if (type === "TaxId" || type === "Tax") return "الرقم الضريبي (VAT / Tax ID)";
-  if (type === "CommercialRegister") return "السجل التجاري (CR)";
-  if (type === "National" || type === "NationalId") return "الرقم القومي / الهوية";
-  if (type === "InternalReference") return "الرقم المرجعي الداخلي";
-  return "معرّف رسمي";
+function identifierTypeLabel(type: string, t: DirectoryTranslator): string {
+  if (type === "TaxId" || type === "Tax") return t("partyRecord.identifierType.tax");
+  if (type === "CommercialRegister") return t("partyRecord.identifierType.commercialRegister");
+  if (type === "National" || type === "NationalId") return t("partyRecord.identifierType.national");
+  if (type === "InternalReference") return t("partyRecord.identifierType.internalReference");
+  return t("partyRecord.identifierType.official");
 }
 
-function capabilityLabel(cap: string): string {
-  if (cap === "CanSell") return "البيع والفوترة";
-  if (cap === "CanPurchase") return "الشراء والتوريد";
-  if (cap === "CanInvoice") return "إصدار الفواتير";
-  if (cap === "CanPay") return "المدفوعات";
-  return "جاهزية العملية التجارية";
+function capabilityLabel(cap: string, t: DirectoryTranslator): string {
+  if (cap === "CanSell") return t("partyRecord.capability.sell");
+  if (cap === "CanPurchase") return t("partyRecord.capability.purchase");
+  if (cap === "CanInvoice") return t("partyRecord.capability.invoice");
+  if (cap === "CanPay") return t("partyRecord.capability.pay");
+  return t("partyRecord.capability.generic");
 }
 
 import { PartyPicker } from "../components/party-picker.tsx";
 
-function missingRequirementLabel(req: string): string {
+function missingRequirementLabel(req: string, t: DirectoryTranslator): string {
   const normalized = req.trim();
   const lower = normalized.toLowerCase();
   if ((lower.includes("customer role") || lower.includes("customer")) && (lower.includes("legal identifier") || lower.includes("tax") || lower.includes("vat"))) {
-    return "تفعيل دور العميل وإضافة معرّف رسمي (الرقم الضريبي أو السجل)";
+    return t("partyRecord.missingRequirements.customerIdentifier");
   }
   if (lower.includes("customer role") || lower.includes("customer")) {
-    return "تفعيل دور العميل في المعاملات";
+    return t("partyRecord.missingRequirements.customerRole");
   }
   if (lower.includes("supplier role") || lower.includes("supplier")) {
-    return "تفعيل دور المورد في المعاملات";
+    return t("partyRecord.missingRequirements.supplierRole");
   }
   if (lower.includes("legal identifier") || lower.includes("tax") || lower.includes("vat") || lower.includes("commercial register")) {
-    return "إضافة الرقم الضريبي أو السجل التجاري";
+    return t("partyRecord.missingRequirements.identifier");
   }
   if (lower.includes("shipping address")) {
-    return "تسجيل عنوان الشحن والتوصيل";
+    return t("partyRecord.missingRequirements.shippingAddress");
   }
   if (lower.includes("billing address") || lower.includes("address")) {
-    return "تسجيل عنوان الفوترة الجغرافي";
+    return t("partyRecord.missingRequirements.billingAddress");
   }
   if (lower.includes("contact") || lower.includes("phone") || lower.includes("email")) {
-    return "تسجيل وسيلة تواصل رئيسية (هاتف أو بريد)";
+    return t("partyRecord.missingRequirements.contactPoint");
   }
-  return "استكمال البيانات المطلوبة لهذه العملية";
+  return t("partyRecord.missingRequirements.generic");
 }
 
-function duplicateReasonLabel(reason: string): string {
+function duplicateReasonLabel(reason: string, t: DirectoryTranslator): string {
   const lower = reason.toLowerCase();
-  if (lower.includes("tax") || lower.includes("vat") || lower.includes("identifier")) return "تطابق في الرقم الضريبي أو السجل الرسمي";
-  if (lower.includes("phone")) return "رقم الهاتف مستخدم في سجل آخر";
-  if (lower.includes("email")) return "البريد الإلكتروني مستخدم في سجل آخر";
-  if (lower.includes("name")) return "تشابه قوي في اسم الطرف التجاري";
-  return "يوجد سجل تجاري قريب من هذا السجل ويحتاج إلى مراجعة";
+  if (lower.includes("tax") || lower.includes("vat") || lower.includes("identifier")) return t("partyRecord.duplicateReasons.identifier");
+  if (lower.includes("phone")) return t("partyRecord.duplicateReasons.phone");
+  if (lower.includes("email")) return t("partyRecord.duplicateReasons.email");
+  if (lower.includes("name")) return t("partyRecord.duplicateReasons.name");
+  return t("partyRecord.duplicateReasons.generic");
 }
 
-function duplicateStatusLabel(status: string): string {
-  if (status === "Pending") return "في انتظار المراجعة";
-  if (status === "Dismissed") return "تم تجاهل التنبيه";
-  if (status === "Confirmed") return "تم تأكيد التشابه";
-  return "تنبيه يحتاج إلى مراجعة";
+function duplicateStatusLabel(status: string, t: DirectoryTranslator): string {
+  if (status === "Pending") return t("partyRecord.duplicateStatus.pending");
+  if (status === "Dismissed") return t("partyRecord.duplicateStatus.dismissed");
+  if (status === "Confirmed") return t("partyRecord.duplicateStatus.confirmed");
+  return t("partyRecord.duplicateStatus.review");
 }
 
 export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps): React.JSX.Element {
+  const { t } = useTranslation("directory");
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [editing, setEditing] = useState(false);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
@@ -219,7 +225,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
   if (isLoading) {
     return (
       <div style={{ padding: "4rem 2rem", textAlign: "center", color: "var(--color-content-muted)" }}>
-        <p style={{ fontSize: "0.9375rem", fontWeight: 600 }}>جارٍ تحميل بيانات الطرف التجاري...</p>
+        <p style={{ fontSize: "0.9375rem", fontWeight: 600 }}>{t("partyRecord.loading")}</p>
       </div>
     );
   }
@@ -228,16 +234,16 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
     return (
       <div style={{ padding: "3rem 2rem", textAlign: "center" }}>
         <p style={{ color: "var(--color-status-danger)", fontWeight: 600, fontSize: "1rem" }}>
-          تعذر العثور على سجل الطرف المطلوب أو حدث خطأ في الاتصال.
+          {t("partyRecord.loadError")}
         </p>
         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", marginTop: "1rem" }}>
           {onBack && (
             <Button variant="secondary" onPress={onBack}>
-              العودة لدليل الأطراف
+              {t("partyRecord.backToDirectory")}
             </Button>
           )}
           <Button variant="primary" onPress={() => void refetch()}>
-            إعادة المحاولة
+            {t("partyRecord.retry")}
           </Button>
         </div>
       </div>
@@ -262,19 +268,19 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
 
   const handleToggleRole = async (roleCode: PartyRoleCode, currentlyActive: boolean) => {
     if (!canEdit) {
-      showToast({ type: "warning", title: "صلاحية غير كافية", description: "لا تملك صلاحية تعديل بيانات وأدوار الطرف التجاري." });
+      showToast({ type: "warning", title: t("partyRecord.messages.permissionTitle"), description: t("partyRecord.messages.editPermissionRequired") });
       return;
     }
     try {
       if (currentlyActive) {
         await disableRole.mutateAsync({ id: party.id, role: roleCode });
-        showToast({ type: "success", title: "تم تحديث الدور التجاري", description: `تم إيقاف دور ${roleCode === "Customer" ? "العميل" : "المورد"}.` });
+        showToast({ type: "success", title: t("partyRecord.messages.roleUpdated"), description: t("partyRecord.messages.roleDisabled", { role: roleCode === "Customer" ? t("partyList.customer") : t("partyList.supplier") }) });
       } else {
         await addRole.mutateAsync({ id: party.id, role: roleCode, version: party.version });
-        showToast({ type: "success", title: "تم تفعيل الدور التجاري", description: `أصبح الطرف مسجلاً كـ ${roleCode === "Customer" ? "عميل" : "مورد"}.` });
+        showToast({ type: "success", title: t("partyRecord.messages.roleEnabled"), description: t("partyRecord.messages.roleEnabledDescription", { role: roleCode === "Customer" ? t("partyList.customer") : t("partyList.supplier") }) });
       }
     } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر تغيير الدور", description: (err as Error)?.message || "حدث خطأ." });
+      showToast({ type: "error", title: t("partyRecord.messages.roleChangeError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
@@ -282,9 +288,9 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
     try {
       await archive.mutateAsync({ id: party.id, version: party.version });
       setArchiveConfirmOpen(false);
-      showToast({ type: "success", title: "تم أرشفة السجل", description: `تم تحويل سجل ${party.displayName} إلى الأرشيف.` });
+      showToast({ type: "success", title: t("partyRecord.messages.archived"), description: t("partyRecord.messages.archivedDescription", { name: party.displayName }) });
     } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر أرشفة السجل", description: (err as Error)?.message || "حدث خطأ." });
+      showToast({ type: "error", title: t("partyRecord.messages.archiveError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
@@ -292,69 +298,69 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
     try {
       await restore.mutateAsync({ id: party.id, version: party.version });
       setRestoreConfirmOpen(false);
-      showToast({ type: "success", title: "تمت استعادة السجل", description: `أصبح سجل ${party.displayName} نشطاً في الدليل.` });
+      showToast({ type: "success", title: t("partyRecord.messages.restored"), description: t("partyRecord.messages.restoredDescription", { name: party.displayName }) });
     } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر استعادة السجل", description: (err as Error)?.message || "حدث خطأ." });
+      showToast({ type: "error", title: t("partyRecord.messages.restoreError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
   const handleMerge = async () => {
-    if (!masterPartyId.trim() || !masterParty) { showToast({ type: "warning", title: "اختيار مطلوب", description: "اختر السجل التجاري الرئيسي من نتائج البحث قبل المتابعة." }); return; }
-    if (masterParty.id === party.id) { showToast({ type: "warning", title: "اختيار غير صالح", description: "اختر سجلاً مختلفاً ليكون السجل الرئيسي." }); return; }
-    if (!mergeReason.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يجب إدخال سبب الدمج للتوثيق." }); return; }
-    if (!mergeConfirmed) { showToast({ type: "warning", title: "تأكيد مطلوب", description: "يجب تأكيد أن عملية الدمج لا يمكن التراجع عنها." }); return; }
+    if (!masterPartyId.trim() || !masterParty) { showToast({ type: "warning", title: t("partyRecord.messages.selectionRequired"), description: t("partyRecord.messages.selectMaster") }); return; }
+    if (masterParty.id === party.id) { showToast({ type: "warning", title: t("partyRecord.messages.invalidSelection"), description: t("partyRecord.messages.selectDifferentMaster") }); return; }
+    if (!mergeReason.trim()) { showToast({ type: "warning", title: t("partyRecord.messages.missingDetails"), description: t("partyRecord.messages.mergeReasonRequired") }); return; }
+    if (!mergeConfirmed) { showToast({ type: "warning", title: t("partyRecord.messages.confirmationRequired"), description: t("partyRecord.messages.mergeConfirmationRequired") }); return; }
     const req: MergePartyRequest = { masterPartyId, reason: mergeReason, confirmIrreversible: true };
     try {
       await mergeParty.mutateAsync({ sourcePartyId: party.id, input: req });
       setMergeOpen(false);
-      showToast({ type: "success", title: "تم الدمج بنجاح", description: "تم دمج هذا السجل مع السجل الرئيسي. سيتم إعادة توجيه كل الإشارات تلقائياً." });
+      showToast({ type: "success", title: t("partyRecord.messages.mergeSuccess"), description: t("partyRecord.messages.mergeSuccessDescription") });
       onBack?.();
     } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر الدمج", description: (err as Error)?.message || "حدث خطأ أثناء عملية الدمج." });
+      showToast({ type: "error", title: t("partyRecord.messages.mergeError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
   const handleAddAddress = async () => {
-    if (!addrLine1.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يرجى إدخال العنوان التفصيلي." }); return; }
+    if (!addrLine1.trim()) { showToast({ type: "warning", title: t("partyRecord.messages.missingDetails"), description: t("partyRecord.messages.addressRequired") }); return; }
     const input: AddressInput = { usage: addrUsage as AddressInput["usage"], countryCode: addrCountry, city: addrCity || undefined, line1: addrLine1, isDefault: party.addresses.length === 0 };
     try {
       await addAddress.mutateAsync({ id: party.id, input });
       setAddAddressOpen(false);
       setAddrLine1(""); setAddrCity(""); setAddrUsage("General");
-      showToast({ type: "success", title: "تمت إضافة العنوان", description: "تم حفظ العنوان الجديد في سجل الطرف التجاري." });
+      showToast({ type: "success", title: t("partyRecord.messages.addressAdded"), description: t("partyRecord.messages.addressAddedDescription") });
     } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر إضافة العنوان", description: (err as Error)?.message || "حدث خطأ." });
+      showToast({ type: "error", title: t("partyRecord.messages.addressError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
   const handleAddContactPoint = async () => {
-    if (!cpValue.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يرجى إدخال قيمة وسيلة التواصل." }); return; }
+    if (!cpValue.trim()) { showToast({ type: "warning", title: t("partyRecord.messages.missingDetails"), description: t("partyRecord.messages.contactValueRequired") }); return; }
     const input: ContactPointInput = { type: cpType as ContactPointInput["type"], value: cpValue, label: cpLabel || undefined, isPrimary: party.contactPoints.length === 0 };
     try {
       await addContactPoint.mutateAsync({ id: party.id, input });
       setAddContactOpen(false);
       setCpValue(""); setCpLabel(""); setCpType("Email");
-      showToast({ type: "success", title: "تمت إضافة وسيلة التواصل", description: "تم حفظ بيانات التواصل الجديدة." });
+      showToast({ type: "success", title: t("partyRecord.messages.contactAdded"), description: t("partyRecord.messages.contactAddedDescription") });
     } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر الإضافة", description: (err as Error)?.message || "حدث خطأ." });
+      showToast({ type: "error", title: t("partyRecord.messages.genericAddError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
   const handleAddIdentifier = async () => {
-    if (!identType || !identValue.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يرجى تحديد نوع المعرف وإدخال قيمته." }); return; }
+    if (!identType || !identValue.trim()) { showToast({ type: "warning", title: t("partyRecord.messages.missingDetails"), description: t("partyRecord.messages.identifierRequired") }); return; }
     const input: IdentifierInput = { type: identType, value: identValue, isPrimary: party.identifiers.length === 0 };
     try {
       await addIdentifier.mutateAsync({ id: party.id, input });
       setAddIdentifierOpen(false);
       setIdentType(""); setIdentValue("");
-      showToast({ type: "success", title: "تمت إضافة المعرف الرسمي", description: "تم تسجيل المعرف في سجل الطرف التجاري." });
+      showToast({ type: "success", title: t("partyRecord.messages.identifierAdded"), description: t("partyRecord.messages.identifierAddedDescription") });
     } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر الإضافة", description: (err as Error)?.message || "حدث خطأ." });
+      showToast({ type: "error", title: t("partyRecord.messages.genericAddError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
   const handleAddContactPerson = async () => {
-    if (!cpDisplayName.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يرجى إدخال اسم جهة الاتصال." }); return; }
+    if (!cpDisplayName.trim()) { showToast({ type: "warning", title: t("partyRecord.messages.missingDetails"), description: t("partyRecord.messages.contactPersonNameRequired") }); return; }
     const req: AddContactPersonRequest = {
       person: { displayName: cpDisplayName, jobTitle: cpJobTitle || undefined },
       link: { contactPersonId: crypto.randomUUID(), usage: cpUsage, isPrimary: (party.contactPersons?.length ?? 0) === 0 }
@@ -363,22 +369,22 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
       await addContactPerson.mutateAsync({ id: party.id, input: req });
       setAddContactPersonOpen(false);
       setCpDisplayName(""); setCpJobTitle(""); setCpUsage("General");
-      showToast({ type: "success", title: "تمت إضافة جهة الاتصال", description: `تم تسجيل ${cpDisplayName} كجهة اتصال لهذا الطرف التجاري.` });
+      showToast({ type: "success", title: t("partyRecord.messages.contactPersonAdded"), description: t("partyRecord.messages.contactPersonAddedDescription", { name: cpDisplayName }) });
     } catch {
-      showToast({ type: "error", title: "تعذر إضافة جهة الاتصال", description: "تعذر حفظ جهة الاتصال. راجع البيانات ثم حاول مرة أخرى." });
+      showToast({ type: "error", title: t("partyRecord.messages.contactPersonError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
   const handleAddAlias = async () => {
-    if (!aliasValue.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يرجى إدخال الاسم البديل." }); return; }
+    if (!aliasValue.trim()) { showToast({ type: "warning", title: t("partyRecord.messages.missingDetails"), description: t("partyRecord.messages.aliasRequired") }); return; }
     const input: AliasInput = { alias: aliasValue, languageCode: aliasLang, aliasType: "Alternate" };
     try {
       await addAlias.mutateAsync({ id: party.id, input });
       setAddAliasOpen(false);
       setAliasValue("");
-      showToast({ type: "success", title: "تمت إضافة الاسم البديل", description: "تم تسجيل الاسم البديل / التجاري للطرف." });
+      showToast({ type: "success", title: t("partyRecord.messages.aliasAdded"), description: t("partyRecord.messages.aliasAddedDescription") });
     } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر الإضافة", description: (err as Error)?.message || "حدث خطأ." });
+      showToast({ type: "error", title: t("partyRecord.messages.genericAddError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
@@ -387,39 +393,39 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
     try {
       await setVisibility.mutateAsync({ id: party.id, input });
       setVisibilityOpen(false);
-      showToast({ type: "success", title: "تم تحديث نطاق الرؤية", description: "سيظهر هذا السجل وفق الإعداد الجديد." });
+      showToast({ type: "success", title: t("partyRecord.messages.visibilityUpdated"), description: t("partyRecord.messages.visibilityUpdatedDescription") });
     } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر تحديث نطاق الرؤية", description: (err as Error)?.message || "حدث خطأ." });
+      showToast({ type: "error", title: t("partyRecord.messages.visibilityError"), description: t("partyRecord.messages.genericError") });
     }
   };
 
-  const roleLabels = party.roles.filter(r => r.status === "Active").map(r => (r.code === "Customer" ? "عميل" : "مورد"));
+  const roleLabels = party.roles.filter(r => r.status === "Active").map(r => (r.code === "Customer" ? t("partyList.customer") : t("partyList.supplier")));
 
   const kpis = (
     <>
       <StatCard
-        label="طبيعة الكيان"
-        value={isOrganization ? "منشأة تجارية" : "فرد مستقل"}
-        description={isOrganization ? "شركة / مؤسسة مسجلة" : "شخص ذو صفة طبيعية"}
+        label={t("partyRecord.entityNature")}
+        value={isOrganization ? t("partyRecord.organization") : t("partyRecord.individual")}
+        description={isOrganization ? t("partyRecord.organizationDescription") : t("partyRecord.individualDescription")}
         icon={isOrganization ? <BuildingIcon size={22} /> : <UserIcon size={22} />}
       />
 
       <StatCard
-        label="الأدوار التجارية النشطة"
-        value={roleLabels.join(" • ") || "طرف عام"}
-        description={roleLabels.length > 1 ? "علاقة مزدوجة (عميل ومورد)" : "علاقة تجارية مفردة"}
+        label={t("partyRecord.activeRoles")}
+        value={roleLabels.join(" • ") || t("partyRecord.genericParty")}
+        description={roleLabels.length > 1 ? t("partyRecord.dualRole") : t("partyRecord.singleRole")}
         icon={<DirectoryIcon size={22} />}
       />
 
       <StatCard
-        label="جاهزية العمليات"
-        value={readiness?.ready ? "جاهز للعمليات" : "بحاجة لاستكمال"}
+        label={t("partyRecord.readiness")}
+        value={readiness?.ready ? t("partyRecord.ready") : t("partyRecord.incomplete")}
         description={
           readiness?.ready
-            ? "البيانات المطلوبة مكتملة"
+            ? t("partyRecord.requiredDataComplete")
             : readiness?.missing.length
-            ? `ينقص: ${readiness.missing.map(missingRequirementLabel).join("، ")}`
-            : "سجل قيد المراجعة"
+            ? t("partyRecord.missingSummary", { requirements: readiness.missing.map((item) => missingRequirementLabel(item, t)).join("، ") })
+            : t("partyRecord.reviewPending")
         }
         icon={<ShieldCheckIcon size={22} />}
       />
@@ -441,45 +447,45 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
   return (
     <RecordPage
       title={party.displayName}
-      recordCode={isOrganization ? "منشأة مسجلة" : "فرد مسجل"}
-      status={isArchived ? "مؤرشف" : isMerged ? "مدمج" : "نشط"}
+      recordCode={isOrganization ? t("partyRecord.registeredOrganization") : t("partyRecord.registeredIndividual")}
+      status={isArchived ? t("partyList.statusArchived") : isMerged ? t("partyList.statusMerged") : t("partyList.statusActive")}
       breadcrumbs={[
-        { label: "دليل العلاقات التجارية", href: "/directory", onClick: onBack },
+        { label: t("partyList.title"), href: "/directory", onClick: onBack },
         { label: party.displayName }
       ]}
       headerActions={
         <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
           {onBack && (
             <Button variant="secondary" onPress={onBack}>
-              العودة للقائمة
+              {t("partyRecord.backToList")}
             </Button>
           )}
           {!isArchived && !isMerged ? (
             <>
               {canManageVisibility && (
                 <Button variant="secondary" onPress={() => setVisibilityOpen(true)}>
-                  نطاق الرؤية
+                  {t("partyRecord.visibility")}
                 </Button>
               )}
               {canEdit && (
                 <Button variant="primary" onPress={() => setEditing(true)}>
-                  تعديل البيانات
+                  {t("partyRecord.edit")}
                 </Button>
               )}
               {canMerge && (
                 <Button variant="danger" onPress={() => setMergeOpen(true)}>
-                  دمج السجل
+                  {t("partyRecord.merge")}
                 </Button>
               )}
               {canArchive && (
                 <Button variant="danger" onPress={() => setArchiveConfirmOpen(true)}>
-                  أرشفة الطرف
+                  {t("partyRecord.archive")}
                 </Button>
               )}
             </>
           ) : isArchived && canArchive ? (
             <Button variant="primary" onPress={() => setRestoreConfirmOpen(true)}>
-              استعادة من الأرشيف
+              {t("partyRecord.restoreFromArchive")}
             </Button>
           ) : null}
         </div>
@@ -487,9 +493,9 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
       kpiCards={kpis}
       auditInfo={{
         createdAt: party.createdAt
-          ? new Date(party.createdAt).toLocaleDateString("ar-EG", { year: "numeric", month: "long", day: "numeric" })
+          ? new Date(party.createdAt).toLocaleDateString(currentIntlLocale(), { year: "numeric", month: "long", day: "numeric" })
           : undefined,
-        createdBy: "النظام التجاري الموحد"
+        createdBy: t("partyRecord.systemActor")
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -497,26 +503,26 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
         {isArchived && (
           <div style={{ padding: "0.875rem 1.25rem", borderRadius: "var(--radius-md)", backgroundColor: "var(--color-surface-sunken, #f1f5f9)", border: "1px solid var(--color-border-default)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-content-secondary)" }}>هذا السجل مؤرشف حالياً</span>
-              <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>لا يمكن إجراء معاملات مالية أو فواتير جديدة على السجلات المؤرشفة دون استعادتها.</p>
+              <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-content-secondary)" }}>{t("partyRecord.archivedBannerTitle")}</span>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("partyRecord.archivedBannerDescription")}</p>
             </div>
             <Button variant="secondary" size="compact" onPress={() => setRestoreConfirmOpen(true)}>
-              استعادة السجل للعمل
+              {t("partyRecord.restore")}
             </Button>
           </div>
         )}
         {isMerged && (
           <div style={{ padding: "0.875rem 1.25rem", borderRadius: "var(--radius-md)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", border: "1px solid var(--color-status-info, #3b82f6)" }}>
-            <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-status-info-content, #0369a1)" }}>تم دمج هذا السجل مع سجل آخر</span>
-            <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>جميع الإشارات إلى هذا السجل سيتم توجيهها تلقائياً إلى السجل الرئيسي.</p>
+            <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-status-info-content, #0369a1)" }}>{t("partyRecord.mergedBannerTitle")}</span>
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("partyRecord.mergedBannerDescription")}</p>
           </div>
         )}
 
         {/* Duplicate alerts — shown before tabs when present */}
         {duplicates && duplicates.length > 0 && (
           <Surface
-            title="تنبيه: تشابه في السجلات التجارية"
-            description="عثر النظام على سجلات قد تكون متطابقة أو مكررة في الدليل. يرجى مراجعتها واتخاذ الإجراء المناسب."
+            title={t("partyRecord.duplicateTitle")}
+            description={t("partyRecord.duplicateDescription")}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
               {duplicates.map(d => (
@@ -536,11 +542,11 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                 >
                   <div style={{ flex: 1 }}>
                     <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-status-warning-content, #92400e)", display: "block" }}>
-                      ✓ {duplicateReasonLabel(d.reason)}
+                      ✓ {duplicateReasonLabel(d.reason, t)}
                     </span>
                     <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                      {duplicateStatusLabel(d.status)}
-                      {d.confidence > 0.9 ? " · تطابق قوي جداً" : d.confidence > 0.7 ? " · تطابق محتمل" : " · تشابه ملحوظ"}
+                      {duplicateStatusLabel(d.status, t)}
+                      {d.confidence > 0.9 ? ` · ${t("partyRecord.confidence.strong")}` : d.confidence > 0.7 ? ` · ${t("partyRecord.confidence.possible")}` : ` · ${t("partyRecord.confidence.similar")}`}
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0, alignItems: "center" }}>
@@ -552,7 +558,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                         setMergeOpen(true);
                       }}
                     >
-                      عرض ومقارنة
+                      {t("partyRecord.viewAndCompare")}
                     </Button>
                     {canMerge && (
                       <Button
@@ -563,7 +569,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                           setMergeOpen(true);
                         }}
                       >
-                        دمج السجلات
+                        {t("partyRecord.mergeRecords")}
                       </Button>
                     )}
                   </div>
@@ -576,7 +582,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
         {/* Workspace Tabs */}
         <div style={{ borderBottom: "1px solid var(--color-border-default)", display: "flex", gap: 0, overflowX: "auto" }}>
           {(["overview", "contacts", "addresses", "identifiers", "audit"] as Tab[]).map(tab => {
-            const labels: Record<Tab, string> = { overview: "النظرة العامة", contacts: "جهات الاتصال", addresses: "العناوين", identifiers: "المعرفات والسجلات", audit: "سجل الأنشطة" };
+            const labels: Record<Tab, string> = { overview: t("partyRecord.tabs.overview"), contacts: t("partyRecord.tabs.contacts"), addresses: t("partyRecord.tabs.addresses"), identifiers: t("partyRecord.tabs.identifiers"), audit: t("partyRecord.tabs.audit") };
             return (
               <button key={tab} type="button" style={tabStyle(tab)} onClick={() => setActiveTab(tab)}>
                 {labels[tab]}
@@ -589,34 +595,34 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
         {activeTab === "overview" && (
           <>
             {/* Identity */}
-            <Surface title="الهوية والحالة التجارية" description="المعلومات الرسمية والأسماء المعتمدة ولغة المراسلات">
+            <Surface title={t("partyRecord.identityTitle")} description={t("partyRecord.identityDescription")}>
               <PropertyGrid columns={3}>
                 <PropertyItem
-                  label="النوع القانوني"
-                  value={isOrganization ? "منشأة / شركة تجارية" : "شخص / فرد مستقل"}
+                  label={t("partyRecord.legalType")}
+                  value={isOrganization ? t("partyRecord.organizationType") : t("partyRecord.personType")}
                   icon={isOrganization ? <BuildingIcon size={14} /> : <UserIcon size={14} />}
                 />
-                <PropertyItem label="الاسم القانوني المسجل" value={party.legalName || party.displayName} />
-                {isOrganization && <PropertyItem label="الاسم التجاري / الشهرة" value={party.tradeName || party.displayName} />}
-                {party.nameAr && <PropertyItem label="الاسم بالعربية" value={party.nameAr} />}
-                {party.nameEn && <PropertyItem label="الاسم بالإنجليزية" value={<bdi dir="ltr">{party.nameEn}</bdi>} />}
+                <PropertyItem label={t("partyForm.legalName")} value={party.legalName || party.displayName} />
+                {isOrganization && <PropertyItem label={t("partyForm.tradeName")} value={party.tradeName || party.displayName} />}
+                {party.nameAr && <PropertyItem label={t("partyForm.nameAr")} value={party.nameAr} />}
+                {party.nameEn && <PropertyItem label={t("partyForm.nameEn")} value={<bdi dir="ltr">{party.nameEn}</bdi>} />}
                 {!isOrganization && party.firstName && (
-                  <PropertyItem label="الاسم الأول" value={`${party.firstName ?? ""} ${party.middleName ?? ""} ${party.lastName ?? ""}`.trim()} />
+                  <PropertyItem label={t("partyRecord.fullName")} value={`${party.firstName ?? ""} ${party.middleName ?? ""} ${party.lastName ?? ""}`.trim()} />
                 )}
                 <PropertyItem
-                  label="الدولة الأساسية"
-                  value={party.countryCode === "EG" ? "جمهورية مصر العربية" : party.countryCode === "SA" ? "المملكة العربية السعودية" : party.countryCode || "—"}
+                  label={t("partyForm.country")}
+                  value={party.countryCode === "EG" ? t("partyForm.egypt") : party.countryCode === "SA" ? t("partyForm.saudi") : party.countryCode || "—"}
                 />
                 <PropertyItem
-                  label="لغة المراسلات"
-                  value={party.primaryLanguage === "ar" ? "العربية" : "الإنجليزية"}
+                  label={t("partyForm.correspondenceLanguage")}
+                  value={party.primaryLanguage === "ar" ? t("partyRecord.dialogs.arabic") : t("partyRecord.dialogs.english")}
                 />
                 <PropertyItem
-                  label="حالة السجل"
+                  label={t("partyList.recordStatus")}
                   value={
                     <StatusBadge
                       status={isArchived ? "neutral" : isMerged ? "neutral" : "success"}
-                      label={isArchived ? "مؤرشف" : isMerged ? "مدموج" : "نشط"}
+                      label={isArchived ? t("partyList.statusArchived") : isMerged ? t("partyList.statusMerged") : t("partyList.statusActive")}
                       size="small"
                     />
                   }
@@ -627,14 +633,14 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
             {/* Primary Identifiers & Contacts */}
             {party.identifiers.length > 0 && (
               <Surface
-                title="المعرفات الرسمية والتواصل المباشر"
-                description="الرقم الضريبي والسجل التجاري وقنوات التواصل المعتمدة"
+                title={t("partyRecord.identifiersAndContactsTitle")}
+                description={t("partyRecord.identifiersAndContactsDescription")}
               >
                 <PropertyGrid columns={3}>
                   {party.identifiers.map(ident => (
                     <PropertyItem
                       key={ident.id}
-                      label={identifierTypeLabel(ident.type)}
+                      label={identifierTypeLabel(ident.type, t)}
                       value={<bdi style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>{ident.value}</bdi>}
                       icon={<TagIcon size={14} />}
                       badge={
@@ -648,21 +654,21 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                             color: ident.verificationStatus === "Verified" ? "var(--color-status-success-content, #065f46)" : "var(--color-content-muted)"
                           }}
                         >
-                          {ident.verificationStatus === "Verified" ? "تم التحقق ✓" : "قيد المراجعة"}
+                          {ident.verificationStatus === "Verified" ? t("partyRecord.verified") : t("partyRecord.verificationPending")}
                         </span>
                       }
                     />
                   ))}
                   {primaryEmail && (
                     <PropertyItem
-                      label="البريد الإلكتروني المعتمد"
+                      label={t("partyForm.email")}
                       icon={<MailIcon size={14} />}
                       value={<bdi dir="ltr">{primaryEmail}</bdi>}
                     />
                   )}
                   {primaryPhone && (
                     <PropertyItem
-                      label="الهاتف للتواصل"
+                      label={t("partyForm.phone")}
                       icon={<PhoneIcon size={14} />}
                       value={<bdi dir="ltr" style={{ fontFamily: "var(--font-mono)" }}>{primaryPhone}</bdi>}
                     />
@@ -674,12 +680,12 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
             {/* Aliases */}
             {(party.aliases && party.aliases.length > 0 || true) && (
               <Surface
-                title="الأسماء البديلة والتجارية"
-                description="اسماء بديلة أو تجارية إضافية معتمدة لهذا الطرف"
+                title={t("partyRecord.aliasesTitle")}
+                description={t("partyRecord.aliasesDescription")}
                 headerActions={
                   !isArchived && !isMerged && canEdit ? (
                     <Button size="compact" variant="secondary" onPress={() => setAddAliasOpen(true)}>
-                      إضافة اسم بديل
+                      {t("partyRecord.addAlias")}
                     </Button>
                   ) : undefined
                 }
@@ -689,24 +695,24 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                     {party.aliases.map(alias => (
                       <div key={alias.id} style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.5rem 0.75rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
                         <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>{alias.alias}</span>
-                        {alias.languageCode && <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>{alias.languageCode === "ar" ? "عربي" : "إنجليزي"}</span>}
-                        <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginInlineStart: "auto" }}>{alias.aliasType === "Alternate" ? "اسم بديل" : alias.aliasType}</span>
+                        {alias.languageCode && <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>{alias.languageCode === "ar" ? t("partyForm.arabicDefault") : t("partyForm.english")}</span>}
+                        <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginInlineStart: "auto" }}>{alias.aliasType === "Alternate" ? t("partyRecord.alternateName") : t("partyRecord.otherNameType")}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>لا توجد أسماء بديلة مسجلة.</p>
+                  <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>{t("partyRecord.noAliases")}</p>
                 )}
               </Surface>
             )}
 
             {/* Roles */}
-            <Surface title="الأدوار والعلاقات التجارية" description="التحكم في أدوار الطرف في النظام كعميل للمبيعات أو مورد للمشتريات">
+            <Surface title={t("partyRecord.rolesTitle")} description={t("partyRecord.rolesDescription")}>
               <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", alignItems: "center" }}>
                 {(["Customer", "Supplier"] as PartyRoleCode[]).map(roleCode => {
                   const isActive = roleCode === "Customer" ? activeCustomer : activeSupplier;
-                  const roleNameAr = roleCode === "Customer" ? "عميل" : "مورد";
-                  const roleDesc = roleCode === "Customer" ? "إصدار عروض أسعار، فواتير مبيعات وسندات قبض" : "أوامر شراء، فواتير مشتريات وسندات صرف";
+                  const roleName = roleCode === "Customer" ? t("partyList.customer") : t("partyList.supplier");
+                  const roleDesc = roleCode === "Customer" ? t("partyRecord.customerRoleDescription") : t("partyRecord.supplierRoleDescription");
                   return (
                     <div
                       key={roleCode}
@@ -724,7 +730,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                       }}
                     >
                       <div>
-                        <span style={{ fontWeight: 700, fontSize: "0.875rem" }}>دور {roleNameAr}</span>
+                        <span style={{ fontWeight: 700, fontSize: "0.875rem" }}>{t("partyRecord.roleName", { role: roleName })}</span>
                         <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>{roleDesc}</p>
                       </div>
                       <Button
@@ -733,7 +739,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                         isDisabled={isArchived || isMerged || addRole.isPending || disableRole.isPending}
                         onPress={() => handleToggleRole(roleCode, isActive)}
                       >
-                        {isActive ? "إيقاف الدور" : `تفعيل كـ${roleNameAr}`}
+                        {isActive ? t("partyRecord.disableRole") : t("partyRecord.enableRole", { role: roleName })}
                       </Button>
                     </div>
                   );
@@ -743,7 +749,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
 
             {/* Readiness */}
             {readiness && (
-              <Surface title="جاهزية الطرف للعمليات التجارية" description="تقييم مدى اكتمال بيانات هذا الطرف لممارسة كل نوع من العمليات">
+              <Surface title={t("partyRecord.readinessTitle")} description={t("partyRecord.readinessDescription")}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
                   {readiness.capabilities && readiness.capabilities.length > 0 ? (
                     readiness.capabilities.map(cap => (
@@ -762,27 +768,27 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                         <span style={{ fontSize: "1rem" }}>{cap.ready ? "✓" : "○"}</span>
                         <div style={{ flex: 1 }}>
                           <span style={{ fontWeight: 600, fontSize: "0.875rem", color: cap.ready ? "var(--color-status-success-content, #065f46)" : "var(--color-content-secondary)" }}>
-                            {capabilityLabel(cap.capability)}
+                            {capabilityLabel(cap.capability, t)}
                           </span>
                           {!cap.ready && cap.missing.length > 0 && (
                             <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                              ينقص: {cap.missing.map(missingRequirementLabel).join("، ")}
+                              {t("partyRecord.missingSummary", { requirements: cap.missing.map((item) => missingRequirementLabel(item, t)).join("، ") })}
                             </p>
                           )}
                         </div>
                         <StatusBadge
                           status={cap.ready ? "success" : "warning"}
-                          label={cap.ready ? "مكتمل" : "ناقص"}
+                          label={cap.ready ? t("partyRecord.complete") : t("partyRecord.missing")}
                           size="small"
                         />
                       </div>
                     ))
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.875rem" }}>
-                      <StatusBadge status={readiness.ready ? "success" : "warning"} label={readiness.ready ? "جاهز للعمليات" : "بيانات ناقصة"} size="small" />
+                      <StatusBadge status={readiness.ready ? "success" : "warning"} label={readiness.ready ? t("partyRecord.ready") : t("partyRecord.incomplete")} size="small" />
                       {!readiness.ready && readiness.missing.length > 0 && (
                         <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-                          ينقص: {readiness.missing.map(missingRequirementLabel).join("، ")}
+                          {t("partyRecord.missingSummary", { requirements: readiness.missing.map((item) => missingRequirementLabel(item, t)).join("، ") })}
                         </span>
                       )}
                     </div>
@@ -793,12 +799,12 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
 
             {/* Visibility */}
             <Surface
-              title="نطاق الرؤية في المنظومة"
-              description="تحديد الجهات القانونية التي يمكنها رؤية واستخدام هذا السجل"
+              title={t("partyRecord.visibilityTitle")}
+              description={t("partyRecord.visibilityDescription")}
               headerActions={
                 !isArchived && !isMerged && canManageVisibility ? (
                   <Button size="compact" variant="secondary" onPress={() => setVisibilityOpen(true)}>
-                    تعديل النطاق
+                    {t("partyRecord.editVisibility")}
                   </Button>
                 ) : undefined
               }
@@ -807,15 +813,15 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                   {party.visibility.map(v => (
                     <div key={v.id} style={{ padding: "0.5rem 0.75rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)", fontSize: "0.875rem" }}>
-                      {v.scopeType === "TenantWide" ? "مرئي لجميع الجهات القانونية في المؤسسة" :
-                       v.scopeType === "SelectedLegalEntities" ? "مرئي لجهات قانونية محددة" :
-                       v.scopeType === "SingleLegalEntity" ? "مرئي لجهة قانونية واحدة فقط" :
-                       v.scopeType === "Branch" ? "مرئي لفرع محدد" : "نطاق رؤية مخصص"}
+                      {v.scopeType === "TenantWide" ? t("partyRecord.visibilityScopes.tenantWide") :
+                       v.scopeType === "SelectedLegalEntities" ? t("partyRecord.visibilityScopes.selectedEntities") :
+                       v.scopeType === "SingleLegalEntity" ? t("partyRecord.visibilityScopes.singleEntity") :
+                       v.scopeType === "Branch" ? t("partyRecord.visibilityScopes.branch") : t("partyRecord.visibilityScopes.custom")}
                     </div>
                   ))}
                 </div>
               ) : (
-                <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>النطاق الافتراضي: مرئي لجميع الجهات القانونية في المؤسسة.</p>
+                <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>{t("partyRecord.defaultVisibility")}</p>
               )}
             </Surface>
           </>
@@ -825,12 +831,12 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
         {activeTab === "contacts" && (
           <>
             <Surface
-              title="قنوات الاتصال المعتمدة"
-              description="أرقام الهواتف وعناوين البريد الإلكتروني والمواقع الإلكترونية المسجلة لهذا الطرف"
+              title={t("partyRecord.contactChannelsTitle")}
+              description={t("partyRecord.contactChannelsDescription")}
               headerActions={
                 !isArchived && !isMerged && canManageContacts ? (
                   <Button size="compact" variant="primary" onPress={() => setAddContactOpen(true)}>
-                    إضافة وسيلة تواصل
+                    {t("partyRecord.addContactMethod")}
                   </Button>
                 ) : undefined
               }
@@ -840,7 +846,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                   {party.contactPoints.map(cp => (
                     <PropertyItem
                       key={cp.id}
-                      label={cp.label || (cp.type === "Email" ? "البريد الإلكتروني" : cp.type === "Phone" ? "الهاتف" : cp.type === "Website" ? "الموقع الإلكتروني" : "وسيلة تواصل")}
+                      label={cp.label || (cp.type === "Email" ? t("partyForm.email") : cp.type === "Phone" ? t("partyForm.phone") : cp.type === "Website" ? t("partyRecord.website") : t("partyRecord.contactMethod"))}
                       icon={cp.type === "Email" ? <MailIcon size={14} /> : cp.type === "Phone" ? <PhoneIcon size={14} /> : undefined}
                       value={
                         cp.type === "Email" ? (
@@ -851,22 +857,22 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                           <bdi dir="ltr" style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.02em" }}>{cp.value}</bdi>
                         ) : <bdi dir="ltr">{cp.value}</bdi>
                       }
-                      badge={cp.isPrimary ? <span style={{ fontSize: "0.6875rem", fontWeight: 700, padding: "0.125rem 0.375rem", borderRadius: "var(--radius-full)", backgroundColor: "var(--color-brand-subtle)", color: "var(--color-brand-primary)" }}>رئيسي</span> : undefined}
+                      badge={cp.isPrimary ? <span style={{ fontSize: "0.6875rem", fontWeight: 700, padding: "0.125rem 0.375rem", borderRadius: "var(--radius-full)", backgroundColor: "var(--color-brand-subtle)", color: "var(--color-brand-primary)" }}>{t("partyRecord.primary")}</span> : undefined}
                     />
                   ))}
                 </PropertyGrid>
               ) : (
-                <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>لا توجد وسائل تواصل مسجلة.</p>
+                <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>{t("partyRecord.noContactMethods")}</p>
               )}
             </Surface>
 
             <Surface
-              title="جهات الاتصال المباشرة"
-              description="الأشخاص المسؤولون عن التواصل المباشر وإدارة العلاقة التجارية مع هذا الطرف"
+              title={t("partyRecord.contactPersonsTitle")}
+              description={t("partyRecord.contactPersonsDescription")}
               headerActions={
                 !isArchived && !isMerged && canManageContacts ? (
                   <Button size="compact" variant="primary" onPress={() => setAddContactPersonOpen(true)}>
-                    إضافة جهة اتصال
+                    {t("partyRecord.addContactPerson")}
                   </Button>
                 ) : undefined
               }
@@ -882,12 +888,12 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                         <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>{cp.displayName}</span>
                         {cp.jobTitle && <p style={{ margin: "0.125rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>{cp.jobTitle}{cp.department ? ` — ${cp.department}` : ""}</p>}
                       </div>
-                      <StatusBadge status={cp.status === "Active" ? "success" : "neutral"} label={cp.status === "Active" ? "نشط" : "غير نشط"} size="small" />
+                      <StatusBadge status={cp.status === "Active" ? "success" : "neutral"} label={cp.status === "Active" ? t("partyList.statusActive") : t("partyRecord.inactive")} size="small" />
                     </div>
                   ))}
                 </div>
               ) : (
-                <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>لا توجد جهات اتصال شخصية مسجلة لهذا الطرف.</p>
+                <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>{t("partyRecord.noContactPersons")}</p>
               )}
             </Surface>
           </>
@@ -896,12 +902,12 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
         {/* TAB: Addresses */}
         {activeTab === "addresses" && (
           <Surface
-            title="العناوين الجغرافية المسجلة"
-            description="عناوين الفوترة والشحن والمقر الرئيسي المسجلة لهذا الطرف التجاري"
+            title={t("partyRecord.addressesTitle")}
+            description={t("partyRecord.addressesDescription")}
             headerActions={
               !isArchived && !isMerged && canEdit ? (
                 <Button size="compact" variant="primary" onPress={() => setAddAddressOpen(true)}>
-                  إضافة عنوان
+                  {t("partyRecord.addAddress")}
                 </Button>
               ) : undefined
             }
@@ -913,8 +919,8 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                     <MapPinIcon size={18} />
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                        <span style={{ fontWeight: 700, fontSize: "0.875rem" }}>{addressUsageLabel(addr.usage)}</span>
-                        {addr.isDefault && <span style={{ fontSize: "0.6875rem", fontWeight: 700, padding: "0.125rem 0.375rem", borderRadius: "var(--radius-full)", backgroundColor: "var(--color-brand-subtle)", color: "var(--color-brand-primary)" }}>افتراضي</span>}
+                        <span style={{ fontWeight: 700, fontSize: "0.875rem" }}>{addressUsageLabel(addr.usage, t)}</span>
+                        {addr.isDefault && <span style={{ fontSize: "0.6875rem", fontWeight: 700, padding: "0.125rem 0.375rem", borderRadius: "var(--radius-full)", backgroundColor: "var(--color-brand-subtle)", color: "var(--color-brand-primary)" }}>{t("partyRecord.default")}</span>}
                       </div>
                       <p style={{ margin: 0, fontSize: "0.875rem" }}>{addr.line1}</p>
                       {addr.line2 && <p style={{ margin: "0.125rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{addr.line2}</p>}
@@ -926,7 +932,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                 ))}
               </div>
             ) : (
-              <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>لا توجد عناوين جغرافية مسجلة.</p>
+              <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>{t("partyRecord.noAddresses")}</p>
             )}
           </Surface>
         )}
@@ -934,12 +940,12 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
         {/* TAB: Identifiers */}
         {activeTab === "identifiers" && (
           <Surface
-            title="المعرفات والسجلات الرسمية"
-            description="الأرقام الضريبية والسجلات التجارية والمراجع الداخلية الموثقة"
+            title={t("partyRecord.officialIdentifiersTitle")}
+            description={t("partyRecord.officialIdentifiersDescription")}
             headerActions={
               !isArchived && !isMerged && canManageIdentifiers ? (
                 <Button size="compact" variant="primary" onPress={() => setAddIdentifierOpen(true)}>
-                  إضافة معرف
+                  {t("partyRecord.addIdentifier")}
                 </Button>
               ) : undefined
             }
@@ -949,7 +955,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                 {party.identifiers.map(ident => (
                   <PropertyItem
                     key={ident.id}
-                    label={identifierTypeLabel(ident.type)}
+                    label={identifierTypeLabel(ident.type, t)}
                     value={<bdi style={{ fontFamily: "var(--font-mono)", fontWeight: 700 }}>{ident.value}</bdi>}
                     icon={<TagIcon size={14} />}
                     badge={
@@ -963,21 +969,21 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                           color: ident.verificationStatus === "Verified" ? "var(--color-status-success-content, #065f46)" : "var(--color-content-muted)"
                         }}
                       >
-                        {ident.verificationStatus === "Verified" ? "تم التحقق ✓" : "قيد المراجعة"}
+                        {ident.verificationStatus === "Verified" ? t("partyRecord.verified") : t("partyRecord.verificationPending")}
                       </span>
                     }
                   />
                 ))}
               </PropertyGrid>
             ) : (
-              <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>لا توجد معرفات أو سجلات مسجلة لهذا الطرف.</p>
+              <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>{t("partyRecord.noIdentifiers")}</p>
             )}
           </Surface>
         )}
 
         {/* TAB: Audit */}
         {activeTab === "audit" && (
-          <Surface title="سجل الأنشطة والتغييرات" description="تاريخ كامل لجميع العمليات التي أُجريت على هذا السجل">
+          <Surface title={t("partyRecord.auditTitle")} description={t("partyRecord.auditDescription")}>
             {auditEntries && auditEntries.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                 {auditEntries.map((entry, idx) => (
@@ -995,29 +1001,29 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                     <div style={{ flex: 1 }}>
                       <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>{auditActionLabel(entry.action)}</span>
                       <p style={{ margin: "0.125rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{auditEntityLabel(entry.entityType)}</p>
-                      {entry.actorName && <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>بواسطة: {entry.actorName}{auditActorLabel(entry.actorType) ? ` (${auditActorLabel(entry.actorType)})` : ""}</p>}
+                      {entry.actorName && <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("partyRecord.auditBy")} {entry.actorName}{auditActorLabel(entry.actorType) ? ` (${auditActorLabel(entry.actorType)})` : ""}</p>}
                       {(entry.changes?.length ? auditFieldChanges(entry.changes) : auditChanges(entry.afterJson)).map(change => (
                         <p key={`${change.label}:${change.beforeValue ?? ""}:${change.afterValue ?? ""}`} style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-secondary)" }}>
-                          {change.label}{change.beforeValue !== undefined && <> · القيمة السابقة: {change.beforeValue}</>}{change.afterValue !== undefined && <> · القيمة الجديدة: {change.afterValue}</>}
+                          {change.label}{change.beforeValue !== undefined && <> · {t("partyRecord.previousValue")} {change.beforeValue}</>}{change.afterValue !== undefined && <> · {t("partyRecord.newValue")} {change.afterValue}</>}
                         </p>
                       ))}
-                      {entry.reason && <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>السبب: {entry.reason}</p>}
+                      {entry.reason && <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("partyRecord.reason")} {entry.reason}</p>}
                     </div>
                     <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", whiteSpace: "nowrap", flexShrink: 0 }}>
-                      {new Date(entry.occurredAt).toLocaleString("ar-EG", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                      {new Date(entry.occurredAt).toLocaleString(currentIntlLocale(), { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                     </span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>لا توجد سجلات أنشطة متاحة.</p>
+              <p style={{ color: "var(--color-content-muted)", fontSize: "0.875rem" }}>{t("partyRecord.noAuditEntries")}</p>
             )}
           </Surface>
         )}
       </div>
 
       {/* Edit Dialog */}
-      <Dialog isOpen={editing} onOpenChange={setEditing} title="تعديل بيانات الطرف التجاري" description="تعديل بيانات الهوية والأسماء الرسمية مع التزامن الفوري." size="large">
+      <Dialog isOpen={editing} onOpenChange={setEditing} title={t("partyRecord.dialogs.editTitle")} description={t("partyRecord.dialogs.editDescription")} size="large">
         <PartyForm
           initialData={toForm(party)}
           onSubmit={async (formData: PartyFormData) => {
@@ -1048,9 +1054,9 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                 }
               }
               setEditing(false);
-              showToast({ type: "success", title: "تم تحديث البيانات بنجاح", description: `تم حفظ تعديلات ${formData.displayName}.` });
+              showToast({ type: "success", title: t("partyRecord.dialogs.editSaved"), description: t("partyRecord.dialogs.editSavedDescription", { name: formData.displayName }) });
             } catch (err: unknown) {
-              showToast({ type: "error", title: "تعذر حفظ التعديلات", description: (err as Error)?.message || "حدث خطأ." });
+              showToast({ type: "error", title: t("partyRecord.dialogs.editError"), description: t("partyRecord.dialogs.genericError") });
             }
           }}
           onCancel={() => setEditing(false)}
@@ -1059,21 +1065,21 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
       </Dialog>
 
       {/* Archive Confirmation */}
-      <Dialog isOpen={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen} title="تأكيد أرشفة الطرف التجاري" description={`هل أنت متأكد من رغبتك في أرشفة "${party.displayName}"؟ سيتم إيقاف التعاملات الجديدة مع الحفاظ على السجل التاريخي كاملاً.`} size="medium">
+      <Dialog isOpen={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen} title={t("partyRecord.dialogs.archiveTitle")} description={t("partyRecord.dialogs.archiveDescription", { name: party.displayName })} size="medium">
         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", marginTop: "1.5rem" }}>
-          <Button variant="secondary" onPress={() => setArchiveConfirmOpen(false)}>إلغاء</Button>
+          <Button variant="secondary" onPress={() => setArchiveConfirmOpen(false)}>{t("partyRecord.dialogs.cancel")}</Button>
           <Button variant="danger" onPress={handleArchive} isDisabled={archive.isPending}>
-            {archive.isPending ? "جارٍ الأرشفة..." : "تأكيد الأرشفة"}
+            {archive.isPending ? t("partyRecord.dialogs.archiving") : t("partyRecord.dialogs.confirmArchive")}
           </Button>
         </div>
       </Dialog>
 
       {/* Restore Confirmation */}
-      <Dialog isOpen={restoreConfirmOpen} onOpenChange={setRestoreConfirmOpen} title="استعادة الطرف التجاري من الأرشيف" description={`هل ترغب في إعادة تفعيل "${party.displayName}"؟ سيتاح استخدامه في المعاملات والفواتير فوراً.`} size="medium">
+      <Dialog isOpen={restoreConfirmOpen} onOpenChange={setRestoreConfirmOpen} title={t("partyRecord.dialogs.restoreTitle")} description={t("partyRecord.dialogs.restoreDescription", { name: party.displayName })} size="medium">
         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", marginTop: "1.5rem" }}>
-          <Button variant="secondary" onPress={() => setRestoreConfirmOpen(false)}>إلغاء</Button>
+          <Button variant="secondary" onPress={() => setRestoreConfirmOpen(false)}>{t("partyRecord.dialogs.cancel")}</Button>
           <Button variant="primary" onPress={handleRestore} isDisabled={restore.isPending}>
-            {restore.isPending ? "جارٍ الاستعادة..." : "تأكيد الاستعادة"}
+            {restore.isPending ? t("partyRecord.dialogs.restoring") : t("partyRecord.dialogs.confirmRestore")}
           </Button>
         </div>
       </Dialog>
@@ -1082,18 +1088,18 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
       <Dialog
         isOpen={mergeOpen}
         onOpenChange={(open) => { if (!open) { setMergeOpen(false); setMasterPartyId(""); setMergeReason(""); setMergeConfirmed(false); } }}
-        title="دمج هذا السجل مع سجل آخر"
-        description="عملية الدمج لا يمكن التراجع عنها. سيصبح هذا السجل مؤرشفاً ويتم توجيه جميع الإشارات إلى السجل الرئيسي تلقائياً."
+        title={t("partyRecord.dialogs.mergeTitle")}
+        description={t("partyRecord.dialogs.mergeDescription")}
         size="medium"
       >
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.5rem" }}>
           <div style={{ padding: "0.75rem 1rem", borderRadius: "var(--radius-md)", backgroundColor: "var(--color-status-warning-subtle, #fffbeb)", border: "1px solid var(--color-status-warning, #f59e0b)", fontSize: "0.875rem", color: "var(--color-status-warning-content, #92400e)", fontWeight: 600 }}>
-            ⚠ تحذير: هذا الإجراء لا يمكن التراجع عنه بعد التأكيد.
+            {t("partyRecord.dialogs.mergeWarning")}
           </div>
           <div>
             <PartyPicker
-              label="السجل التجاري الرئيسي (الطرف الباقي المستهدف)"
-              placeholder="ابحث بالاسم، السجل التجاري أو الرقم الضريبي..."
+              label={t("partyRecord.dialogs.masterParty")}
+              placeholder={t("partyRecord.dialogs.masterSearch")}
               value={masterPartyId}
               onChange={(id) => setMasterPartyId(id)}
               isRequired
@@ -1113,161 +1119,161 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
               }}
             >
               {[
-                { title: "السجل الحالي الذي سيُدمج", record: party },
-                { title: "السجل الرئيسي الذي سيبقى", record: masterParty }
+                { title: t("partyRecord.dialogs.sourceParty"), record: party },
+                { title: t("partyRecord.dialogs.survivingParty"), record: masterParty }
               ].map(({ title, record }) => (
                 <div key={title} style={{ minWidth: 0 }}>
                   <strong style={{ display: "block", fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{title}</strong>
                   <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{record.displayName}</div>
                   <div style={{ fontSize: "0.75rem", color: "var(--color-content-secondary)", overflowWrap: "anywhere" }}>
-                    {record.roles.filter((role) => role.status === "Active").map((role) => role.code === "Customer" ? "عميل" : "مورد").join("، ") || "طرف تجاري عام"}
+                    {record.roles.filter((role) => role.status === "Active").map((role) => role.code === "Customer" ? t("partyRecord.dialogs.customer") : t("partyRecord.dialogs.supplier")).join("، ") || t("partyRecord.dialogs.genericParty")}
                   </div>
                   <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.25rem" }}>
-                    {record.identifiers.length} معرف رسمي · {record.contactPersons?.length ?? 0} جهة اتصال · {record.addresses.length} عنوان
+                    {record.identifiers.length} {t("partyRecord.dialogs.identifierCount")} · {record.contactPersons?.length ?? 0} {t("partyRecord.dialogs.contactCount")} · {record.addresses.length} {t("partyRecord.dialogs.addressCount")}
                   </div>
                 </div>
               ))}
             </div>
           )}
           <TextField
-            label="سبب الدمج (للتوثيق)"
-            placeholder="مثال: سجل مكرر بنفس الرقم الضريبي والسجل التجاري"
+            label={t("partyRecord.dialogs.mergeReason")}
+            placeholder={t("partyRecord.dialogs.mergeReasonPlaceholder")}
             value={mergeReason}
             onChange={setMergeReason}
             isRequired
           />
           <Checkbox isSelected={mergeConfirmed} onChange={setMergeConfirmed}>
-            <span style={{ fontWeight: 600 }}>أفهم وأؤكد أن عملية الدمج لا يمكن التراجع عنها وأن هذا السجل سيُغلق نهائياً.</span>
+            <span style={{ fontWeight: 600 }}>{t("partyRecord.dialogs.mergeConfirmation")}</span>
           </Checkbox>
           <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-            <Button variant="secondary" onPress={() => setMergeOpen(false)}>إلغاء</Button>
+            <Button variant="secondary" onPress={() => setMergeOpen(false)}>{t("partyRecord.dialogs.cancel")}</Button>
             <Button variant="danger" onPress={handleMerge} isDisabled={mergeParty.isPending || !mergeConfirmed}>
-              {mergeParty.isPending ? "جارٍ الدمج..." : "تأكيد الدمج"}
+              {mergeParty.isPending ? t("partyRecord.dialogs.merging") : t("partyRecord.dialogs.confirmMerge")}
             </Button>
           </div>
         </div>
       </Dialog>
 
       {/* Add Address Dialog */}
-      <Dialog isOpen={addAddressOpen} onOpenChange={setAddAddressOpen} title="إضافة عنوان جغرافي جديد" size="medium">
+      <Dialog isOpen={addAddressOpen} onOpenChange={setAddAddressOpen} title={t("partyRecord.dialogs.addAddressTitle")} size="medium">
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.5rem" }}>
           <div>
-            <Select label="استخدام العنوان" selectedKey={addrUsage} onSelectionChange={(k) => setAddrUsage(String(k ?? "General"))}>
-              <SelectItem id="General" textValue="عنوان عام">عنوان عام</SelectItem>
-              <SelectItem id="Billing" textValue="عنوان الفواتير والمطالبات">عنوان الفواتير والمطالبات</SelectItem>
-              <SelectItem id="Shipping" textValue="عنوان الشحن والتوصيل">عنوان الشحن والتوصيل</SelectItem>
-              <SelectItem id="Registered" textValue="العنوان القانوني المسجل">العنوان القانوني المسجل</SelectItem>
+            <Select label={t("partyRecord.dialogs.addressUsage")} selectedKey={addrUsage} onSelectionChange={(k) => setAddrUsage(String(k ?? "General"))}>
+              <SelectItem id="General" textValue={t("partyRecord.dialogs.generalAddress")}>{t("partyRecord.dialogs.generalAddress")}</SelectItem>
+              <SelectItem id="Billing" textValue={t("partyRecord.dialogs.billingAddress")}>{t("partyRecord.dialogs.billingAddress")}</SelectItem>
+              <SelectItem id="Shipping" textValue={t("partyRecord.dialogs.shippingAddress")}>{t("partyRecord.dialogs.shippingAddress")}</SelectItem>
+              <SelectItem id="Registered" textValue={t("partyRecord.dialogs.registeredAddress")}>{t("partyRecord.dialogs.registeredAddress")}</SelectItem>
             </Select>
           </div>
-          <TextField label="العنوان التفصيلي *" placeholder="الشارع، رقم المبنى، الحي" value={addrLine1} onChange={setAddrLine1} isRequired />
-          <TextField label="المدينة" placeholder="مثال: القاهرة، الرياض" value={addrCity} onChange={setAddrCity} />
+          <TextField label={t("partyRecord.dialogs.detailedAddress")} placeholder={t("partyRecord.dialogs.addressPlaceholder")} value={addrLine1} onChange={setAddrLine1} isRequired />
+          <TextField label={t("partyRecord.dialogs.city")} placeholder={t("partyRecord.dialogs.cityPlaceholder")} value={addrCity} onChange={setAddrCity} />
           <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-            <Button variant="secondary" onPress={() => setAddAddressOpen(false)}>إلغاء</Button>
+            <Button variant="secondary" onPress={() => setAddAddressOpen(false)}>{t("partyRecord.dialogs.cancel")}</Button>
             <Button variant="primary" onPress={handleAddAddress} isDisabled={addAddress.isPending}>
-              {addAddress.isPending ? "جارٍ الحفظ..." : "حفظ العنوان"}
+              {addAddress.isPending ? t("partyRecord.dialogs.saving") : t("partyRecord.dialogs.saveAddress")}
             </Button>
           </div>
         </div>
       </Dialog>
 
       {/* Add Contact Point Dialog */}
-      <Dialog isOpen={addContactOpen} onOpenChange={setAddContactOpen} title="إضافة وسيلة تواصل جديدة" size="medium">
+      <Dialog isOpen={addContactOpen} onOpenChange={setAddContactOpen} title={t("partyRecord.dialogs.addContactTitle")} size="medium">
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.5rem" }}>
           <div>
-            <Select label="نوع وسيلة التواصل" selectedKey={cpType} onSelectionChange={(k) => setCpType(String(k ?? "Email"))}>
-              <SelectItem id="Email" textValue="بريد إلكتروني">بريد إلكتروني</SelectItem>
-              <SelectItem id="Phone" textValue="هاتف">هاتف</SelectItem>
-              <SelectItem id="Website" textValue="موقع إلكتروني">موقع إلكتروني</SelectItem>
-              <SelectItem id="Other" textValue="أخرى">أخرى</SelectItem>
+            <Select label={t("partyRecord.dialogs.contactType")} selectedKey={cpType} onSelectionChange={(k) => setCpType(String(k ?? "Email"))}>
+              <SelectItem id="Email" textValue={t("partyRecord.dialogs.email")}>{t("partyRecord.dialogs.email")}</SelectItem>
+              <SelectItem id="Phone" textValue={t("partyRecord.dialogs.phone")}>{t("partyRecord.dialogs.phone")}</SelectItem>
+              <SelectItem id="Website" textValue={t("partyRecord.dialogs.website")}>{t("partyRecord.dialogs.website")}</SelectItem>
+              <SelectItem id="Other" textValue={t("partyRecord.dialogs.other")}>{t("partyRecord.dialogs.other")}</SelectItem>
             </Select>
           </div>
-          <TextField label="القيمة *" placeholder={cpType === "Email" ? "example@company.com" : cpType === "Phone" ? "+20 100 000 0000" : "https://"} value={cpValue} onChange={setCpValue} isRequired />
-          <TextField label="التسمية / الوصف (اختياري)" placeholder="مثال: البريد الرئيسي، هاتف المبيعات" value={cpLabel} onChange={setCpLabel} />
+          <TextField label={t("partyRecord.dialogs.value")} placeholder={cpType === "Email" ? "example@company.com" : cpType === "Phone" ? "+20 100 000 0000" : "https://"} value={cpValue} onChange={setCpValue} isRequired />
+          <TextField label={t("partyRecord.dialogs.contactLabel")} placeholder={t("partyRecord.dialogs.contactLabelPlaceholder")} value={cpLabel} onChange={setCpLabel} />
           <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-            <Button variant="secondary" onPress={() => setAddContactOpen(false)}>إلغاء</Button>
+            <Button variant="secondary" onPress={() => setAddContactOpen(false)}>{t("partyRecord.dialogs.cancel")}</Button>
             <Button variant="primary" onPress={handleAddContactPoint} isDisabled={addContactPoint.isPending}>
-              {addContactPoint.isPending ? "جارٍ الحفظ..." : "حفظ وسيلة التواصل"}
+              {addContactPoint.isPending ? t("partyRecord.dialogs.saving") : t("partyRecord.dialogs.saveContact")}
             </Button>
           </div>
         </div>
       </Dialog>
 
       {/* Add Identifier Dialog */}
-      <Dialog isOpen={addIdentifierOpen} onOpenChange={setAddIdentifierOpen} title="إضافة معرف رسمي جديد" size="medium">
+      <Dialog isOpen={addIdentifierOpen} onOpenChange={setAddIdentifierOpen} title={t("partyRecord.dialogs.addIdentifierTitle")} size="medium">
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.5rem" }}>
           <div>
-            <Select label="نوع المعرف الرسمي *" selectedKey={identType || "none"} onSelectionChange={(k) => setIdentType(k === "none" ? "" : String(k ?? ""))}>
-              <SelectItem id="none" textValue="— اختر نوع المعرف —">— اختر نوع المعرف —</SelectItem>
-              <SelectItem id="TaxId" textValue="الرقم الضريبي (VAT / Tax ID)">الرقم الضريبي (VAT / Tax ID)</SelectItem>
-              <SelectItem id="CommercialRegister" textValue="السجل التجاري (CR)">السجل التجاري (CR)</SelectItem>
-              <SelectItem id="NationalId" textValue="الرقم القومي / الهوية الوطنية">الرقم القومي / الهوية الوطنية</SelectItem>
-              <SelectItem id="InternalReference" textValue="كود مرجعي داخلي">كود مرجعي داخلي</SelectItem>
+            <Select label={t("partyRecord.dialogs.identifierType")} selectedKey={identType || "none"} onSelectionChange={(k) => setIdentType(k === "none" ? "" : String(k ?? ""))}>
+              <SelectItem id="none" textValue={t("partyRecord.dialogs.chooseIdentifier")}>{t("partyRecord.dialogs.chooseIdentifier")}</SelectItem>
+              <SelectItem id="TaxId" textValue={t("partyRecord.dialogs.taxIdentifier")}>{t("partyRecord.dialogs.taxIdentifier")}</SelectItem>
+              <SelectItem id="CommercialRegister" textValue={t("partyRecord.dialogs.commercialRegister")}>{t("partyRecord.dialogs.commercialRegister")}</SelectItem>
+              <SelectItem id="NationalId" textValue={t("partyRecord.dialogs.nationalId")}>{t("partyRecord.dialogs.nationalId")}</SelectItem>
+              <SelectItem id="InternalReference" textValue={t("partyRecord.dialogs.internalReference")}>{t("partyRecord.dialogs.internalReference")}</SelectItem>
             </Select>
           </div>
-          <TextField label="قيمة المعرف *" placeholder="مثال: 300123456700003" value={identValue} onChange={setIdentValue} isRequired />
+          <TextField label={t("partyRecord.dialogs.identifierValue")} placeholder={t("partyRecord.dialogs.identifierPlaceholder")} value={identValue} onChange={setIdentValue} isRequired />
           <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-            <Button variant="secondary" onPress={() => setAddIdentifierOpen(false)}>إلغاء</Button>
+            <Button variant="secondary" onPress={() => setAddIdentifierOpen(false)}>{t("partyRecord.dialogs.cancel")}</Button>
             <Button variant="primary" onPress={handleAddIdentifier} isDisabled={addIdentifier.isPending}>
-              {addIdentifier.isPending ? "جارٍ الحفظ..." : "حفظ المعرف"}
+              {addIdentifier.isPending ? t("partyRecord.dialogs.saving") : t("partyRecord.dialogs.saveIdentifier")}
             </Button>
           </div>
         </div>
       </Dialog>
 
       {/* Add Contact Person Dialog */}
-      <Dialog isOpen={addContactPersonOpen} onOpenChange={setAddContactPersonOpen} title="إضافة جهة اتصال مباشرة" description="تسجيل شخص مسؤول يمثل هذا الطرف التجاري في التواصل اليومي." size="medium">
+      <Dialog isOpen={addContactPersonOpen} onOpenChange={setAddContactPersonOpen} title={t("partyRecord.dialogs.addContactPersonTitle")} description={t("partyRecord.dialogs.addContactPersonDescription")} size="medium">
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.5rem" }}>
-          <TextField label="الاسم الكامل" placeholder="مثال: أحمد محمود" value={cpDisplayName} onChange={setCpDisplayName} isRequired />
-          <TextField label="المنصب الوظيفي" placeholder="مثال: مدير المشتريات" value={cpJobTitle} onChange={setCpJobTitle} />
+          <TextField label={t("partyRecord.dialogs.fullName")} placeholder={t("partyRecord.dialogs.personNamePlaceholder")} value={cpDisplayName} onChange={setCpDisplayName} isRequired />
+          <TextField label={t("partyRecord.dialogs.jobTitle")} placeholder={t("partyRecord.dialogs.jobTitlePlaceholder")} value={cpJobTitle} onChange={setCpJobTitle} />
           <div>
-            <Select label="طبيعة الاستخدام / العلاقة" selectedKey={cpUsage} onSelectionChange={(k) => setCpUsage(String(k ?? "General"))}>
-              <SelectItem id="General" textValue="اتصال عام">اتصال عام</SelectItem>
-              <SelectItem id="Billing" textValue="الفوترة والمطالبات المالية">الفوترة والمطالبات المالية</SelectItem>
-              <SelectItem id="Shipping" textValue="الشحن والخدمات اللوجستية">الشحن والخدمات اللوجستية</SelectItem>
+            <Select label={t("partyRecord.dialogs.usageRelationship")} selectedKey={cpUsage} onSelectionChange={(k) => setCpUsage(String(k ?? "General"))}>
+              <SelectItem id="General" textValue={t("partyRecord.dialogs.generalContact")}>{t("partyRecord.dialogs.generalContact")}</SelectItem>
+              <SelectItem id="Billing" textValue={t("partyRecord.dialogs.billingContact")}>{t("partyRecord.dialogs.billingContact")}</SelectItem>
+              <SelectItem id="Shipping" textValue={t("partyRecord.dialogs.shippingContact")}>{t("partyRecord.dialogs.shippingContact")}</SelectItem>
             </Select>
           </div>
           <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-            <Button variant="secondary" onPress={() => setAddContactPersonOpen(false)}>إلغاء</Button>
+            <Button variant="secondary" onPress={() => setAddContactPersonOpen(false)}>{t("partyRecord.dialogs.cancel")}</Button>
             <Button variant="primary" onPress={handleAddContactPerson} isDisabled={addContactPerson.isPending}>
-              {addContactPerson.isPending ? "جارٍ الحفظ..." : "حفظ جهة الاتصال"}
+              {addContactPerson.isPending ? t("partyRecord.dialogs.saving") : t("partyRecord.dialogs.saveContactPerson")}
             </Button>
           </div>
         </div>
       </Dialog>
 
       {/* Add Alias Dialog */}
-      <Dialog isOpen={addAliasOpen} onOpenChange={setAddAliasOpen} title="إضافة اسم بديل / تجاري" description="تسجيل اسم بديل أو اسم تجاري إضافي يُعرف به هذا الطرف." size="medium">
+      <Dialog isOpen={addAliasOpen} onOpenChange={setAddAliasOpen} title={t("partyRecord.dialogs.addAliasTitle")} description={t("partyRecord.dialogs.addAliasDescription")} size="medium">
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.5rem" }}>
-          <TextField label="الاسم البديل *" placeholder="مثال: Atlas General Trading" value={aliasValue} onChange={setAliasValue} isRequired />
+          <TextField label={t("partyRecord.dialogs.aliasName")} placeholder={t("partyRecord.dialogs.aliasPlaceholder")} value={aliasValue} onChange={setAliasValue} isRequired />
           <div>
-            <Select label="لغة الاسم البديل" selectedKey={aliasLang} onSelectionChange={(k) => setAliasLang(String(k ?? "ar"))}>
-              <SelectItem id="ar" textValue="العربية">العربية</SelectItem>
-              <SelectItem id="en" textValue="الإنجليزية">الإنجليزية</SelectItem>
+            <Select label={t("partyRecord.dialogs.aliasLanguage")} selectedKey={aliasLang} onSelectionChange={(k) => setAliasLang(String(k ?? "ar"))}>
+              <SelectItem id="ar" textValue={t("partyRecord.dialogs.arabic")}>{t("partyRecord.dialogs.arabic")}</SelectItem>
+              <SelectItem id="en" textValue={t("partyRecord.dialogs.english")}>{t("partyRecord.dialogs.english")}</SelectItem>
             </Select>
           </div>
           <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-            <Button variant="secondary" onPress={() => setAddAliasOpen(false)}>إلغاء</Button>
+            <Button variant="secondary" onPress={() => setAddAliasOpen(false)}>{t("partyRecord.dialogs.cancel")}</Button>
             <Button variant="primary" onPress={handleAddAlias} isDisabled={addAlias.isPending}>
-              {addAlias.isPending ? "جارٍ الحفظ..." : "حفظ الاسم البديل"}
+              {addAlias.isPending ? t("partyRecord.dialogs.saving") : t("partyRecord.dialogs.saveAlias")}
             </Button>
           </div>
         </div>
       </Dialog>
 
       {/* Visibility Dialog */}
-      <Dialog isOpen={visibilityOpen} onOpenChange={setVisibilityOpen} title="تعديل نطاق الرؤية" description="تحديد الجهات القانونية التي يمكنها رؤية واستخدام هذا السجل في العمليات." size="medium">
+      <Dialog isOpen={visibilityOpen} onOpenChange={setVisibilityOpen} title={t("partyRecord.dialogs.visibilityTitle")} description={t("partyRecord.dialogs.visibilityDescription")} size="medium">
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.5rem" }}>
           <div>
-            <Select label="نطاق الرؤية" selectedKey={visibilityScopeType} onSelectionChange={(k) => setVisibilityScopeType(String(k ?? "TenantWide"))}>
-              <SelectItem id="TenantWide" textValue="مرئي لجميع الجهات القانونية في المؤسسة">مرئي لجميع الجهات القانونية في المؤسسة</SelectItem>
-              <SelectItem id="SelectedLegalEntities" textValue="مرئي لجهات قانونية محددة فقط">مرئي لجهات قانونية محددة فقط</SelectItem>
-              <SelectItem id="SingleLegalEntity" textValue="مرئي لجهة قانونية واحدة فقط">مرئي لجهة قانونية واحدة فقط</SelectItem>
+            <Select label={t("partyRecord.dialogs.visibilityScope")} selectedKey={visibilityScopeType} onSelectionChange={(k) => setVisibilityScopeType(String(k ?? "TenantWide"))}>
+              <SelectItem id="TenantWide" textValue={t("partyRecord.dialogs.allEntities")}>{t("partyRecord.dialogs.allEntities")}</SelectItem>
+              <SelectItem id="SelectedLegalEntities" textValue={t("partyRecord.dialogs.selectedEntities")}>{t("partyRecord.dialogs.selectedEntities")}</SelectItem>
+              <SelectItem id="SingleLegalEntity" textValue={t("partyRecord.dialogs.singleEntity")}>{t("partyRecord.dialogs.singleEntity")}</SelectItem>
             </Select>
           </div>
           <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-            <Button variant="secondary" onPress={() => setVisibilityOpen(false)}>إلغاء</Button>
+            <Button variant="secondary" onPress={() => setVisibilityOpen(false)}>{t("partyRecord.dialogs.cancel")}</Button>
             <Button variant="primary" onPress={handleSetVisibility} isDisabled={setVisibility.isPending}>
-              {setVisibility.isPending ? "جارٍ الحفظ..." : "حفظ إعدادات الرؤية"}
+              {setVisibility.isPending ? t("partyRecord.dialogs.saving") : t("partyRecord.dialogs.saveVisibility")}
             </Button>
           </div>
         </div>

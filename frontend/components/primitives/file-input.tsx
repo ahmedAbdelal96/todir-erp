@@ -2,6 +2,8 @@ import React, { useRef, useState, type ChangeEvent, type DragEvent } from "react
 import { Button } from "./button.tsx";
 import { FolderIcon, FileTextIcon, CloseIcon } from "./icons.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
+import { currentIntlLocale } from "../../core/i18n/i18n.ts";
 
 export interface FileInputProps {
   readonly label?: string | undefined;
@@ -30,14 +32,15 @@ export function FileInput({
   errorMessage,
   className
 }: FileInputProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    if (bytes < 1024) return `${bytes.toLocaleString(currentIntlLocale())} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toLocaleString(currentIntlLocale(), { maximumFractionDigits: 1 })} KB`;
+    return `${(bytes / (1024 * 1024)).toLocaleString(currentIntlLocale(), { maximumFractionDigits: 2 })} MB`;
   };
 
   const validateAndAddFiles = (newFiles: FileList | null) => {
@@ -50,7 +53,7 @@ export function FileInput({
       if (!file) continue;
 
       if (maxSizeBytes && file.size > maxSizeBytes) {
-        setLocalError(`حجم الملف "${file.name}" أكبر من الحد الأقصى المسموح (${formatFileSize(maxSizeBytes)}).`);
+        setLocalError(t("components.fileTooLarge", { name: file.name, size: formatFileSize(maxSizeBytes) }));
         return;
       }
       validFiles.push(file);
@@ -114,7 +117,7 @@ export function FileInput({
         disabled={isDisabled}
         onChange={handleInputChange}
         style={{ display: "none" }}
-        aria-label={label ?? "اختيار ملف"}
+        aria-label={label ?? t("components.fileChoose")}
       />
 
       <div
@@ -145,11 +148,11 @@ export function FileInput({
           <FolderIcon size={32} />
         </div>
         <p style={{ margin: "0 0 0.25rem 0", fontWeight: 600, fontSize: "0.875rem", color: "var(--color-content-primary, #0f172a)" }}>
-          اسحب الملف وأفلته هنا، أو انقر للتصفح
+          {t("components.fileBrowse")}
         </p>
         <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
-          {accept ? `الصيغ المدعومة: ${accept}` : "جميع أنواع الملفات مدعومة"}
-          {maxSizeBytes && ` (الحد الأقصى: ${formatFileSize(maxSizeBytes)})`}
+          {accept ? t("components.supportedFormats", { formats: accept }) : t("components.allFileTypes")}
+          {maxSizeBytes && ` (${t("components.maxFileSize", { size: formatFileSize(maxSizeBytes) })})`}
         </span>
       </div>
 
@@ -191,7 +194,7 @@ export function FileInput({
                 size="compact"
                 isDisabled={isDisabled}
                 onPress={() => handleRemoveFile(index)}
-                aria-label={`حذف الملف ${file.name}`}
+                aria-label={t("components.deleteFile", { name: file.name })}
               >
                 <CloseIcon size={14} />
               </Button>

@@ -2,6 +2,7 @@ import React from "react";
 import type { MoneyValue } from "../contracts/domain-values.ts";
 import { formatMoney } from "../formatting/money-formatter.ts";
 import clsx from "clsx";
+import { currentIntlLocale } from "../../core/i18n/i18n.ts";
 
 export interface MoneyDisplayProps {
   readonly value: MoneyValue | null | undefined;
@@ -14,7 +15,7 @@ export interface MoneyDisplayProps {
 
 export function MoneyDisplay({
   value,
-  locale = "en-US",
+  locale = currentIntlLocale(),
   displayCurrencyCode = false,
   coloredSign = false,
   size = "medium",

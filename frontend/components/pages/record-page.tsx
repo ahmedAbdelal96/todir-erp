@@ -2,6 +2,7 @@ import React, { type ReactNode } from "react";
 import { Breadcrumbs, type BreadcrumbItem } from "../../app/shell/breadcrumbs.tsx";
 import { StatusBadge, type StatusVariant } from "../fields/status-badge.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface RecordPageProps {
   readonly title: string;
@@ -35,6 +36,7 @@ export function RecordPage({
   children,
   className
 }: RecordPageProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   return (
     <div
       className={clsx("ui-record-page", className)}
@@ -167,12 +169,12 @@ export function RecordPage({
         >
           {auditInfo.createdAt && (
             <span>
-              تم الإنشاء: <bdi>{auditInfo.createdAt}</bdi> {auditInfo.createdBy ? `بواسطة ${auditInfo.createdBy}` : ""}
+              {t("components.createdAt")} <bdi>{auditInfo.createdAt}</bdi> {auditInfo.createdBy ? t("components.byActor", { actor: auditInfo.createdBy }) : ""}
             </span>
           )}
           {auditInfo.updatedAt && (
             <span>
-              آخر تعديل: <bdi>{auditInfo.updatedAt}</bdi> {auditInfo.updatedBy ? `بواسطة ${auditInfo.updatedBy}` : ""}
+              {t("components.updatedAt")} <bdi>{auditInfo.updatedAt}</bdi> {auditInfo.updatedBy ? t("components.byActor", { actor: auditInfo.updatedBy }) : ""}
             </span>
           )}
         </footer>

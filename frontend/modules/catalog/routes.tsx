@@ -21,7 +21,7 @@ export const catalogRoutes: ModuleRouteRegistration = {
     id: "catalog",
     moduleIds: ["catalog"],
     path: "/catalog",
-    label: { ar: "الكتالوج", en: "Catalog" },
+    navigationKey: "catalog",
     permission: "catalog.product.read",
     icon: "catalog"
   },

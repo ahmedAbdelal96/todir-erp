@@ -1,6 +1,7 @@
 import React, { useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { CheckIcon } from "../primitives/icons.tsx";
+import { useTranslation } from "react-i18next";
 
 export interface PropertyItemProps {
   readonly label: string;
@@ -25,6 +26,7 @@ export function PropertyItem({
   isFullWidth = false,
   className
 }: PropertyItemProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   const [hasCopied, setHasCopied] = useState(false);
 
   const handleCopy = () => {
@@ -67,8 +69,8 @@ export function PropertyItem({
           <button
             type="button"
             onClick={handleCopy}
-            title={hasCopied ? "تم النسخ" : "نسخ القيمة"}
-            aria-label={hasCopied ? "تم النسخ" : "نسخ القيمة"}
+            title={hasCopied ? t("components.copied") : t("components.copyValue")}
+            aria-label={hasCopied ? t("components.copied") : t("components.copyValue")}
             style={{
               background: "transparent",
               border: "none",

@@ -1,4 +1,5 @@
-import { Component, Suspense, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Component, Suspense, type ErrorInfo, type ReactNode, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { UserMenu } from "./user-menu.tsx";
@@ -20,10 +21,10 @@ import {
 } from "../../components/primitives/icons.tsx";
 import { AuthView } from "../auth/index.ts";
 import { requestCsrf, logoutUser } from "../../core/api/auth-service.ts";
+import { changeLanguage, currentDirection, currentLanguage, i18n } from "../../core/i18n/i18n.ts";
 import { resolveNavigation } from "../router/navigation-registry.ts";
 import type { ModuleNavigationRegistration, WorkspaceOutletContext } from "../router/route-contract.ts";
 
-type Language = "ar" | "en";
 type Screen = "loading" | "signed-out" | "authenticated" | "forbidden" | "error";
 type Session = {
   authenticated: boolean;
@@ -69,7 +70,8 @@ function getModuleIcon(id: string): React.JSX.Element {
 
 export function AppShell() {
   const queryClient = useQueryClient();
-  const [language, setLanguage] = useState<Language>("ar");
+  const { t } = useTranslation(["common", "navigation"]);
+  const language = currentLanguage();
   const [screen, setScreen] = useState<Screen>("loading");
   const [companyName, setCompanyName] = useState("شركة الأفق للتجارة");
   const [userEmail, setUserEmail] = useState(() => window.sessionStorage.getItem("erp.session.email") ?? "—");
@@ -84,12 +86,17 @@ export function AppShell() {
   const [theme, setTheme] = useState<string>("default");
   const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
 
-  const direction = language === "ar" ? "rtl" : "ltr";
-  const labels = useMemo(() => language === "ar" ? {
-    title: "مساحة العمل", entity: "الكيان القانوني", branch: "الفرع", language: "English", empty: "اختر مساحة عمل للبدء", loading: "جارٍ التحميل...", progress: "جارٍ تحديث السياق", signOut: "تسجيل الخروج",
-  } : {
-    title: "Workspace", entity: "Legal entity", branch: "Branch", language: "العربية", empty: "Choose a workspace to begin", loading: "Loading...", progress: "Updating context", signOut: "Sign out",
-  }, [language]);
+  const direction = currentDirection();
+  const labels = {
+    title: t("common:shell.workspace"),
+    entity: t("common:shell.legalEntity"),
+    branch: t("common:shell.branch"),
+    language: t(language === "ar" ? "common:language.switchToEnglish" : "common:language.switchToArabic"),
+    empty: t("common:shell.emptyWorkspace"),
+    loading: t("common:states.loading"),
+    progress: t("common:shell.updatingContext"),
+    signOut: t("common:shell.signOut")
+  };
 
   async function loadSession() {
     setScreen("loading");
@@ -107,7 +114,7 @@ export function AppShell() {
       await loadNavigation();
       setScreen("authenticated");
     } catch {
-      setError(language === "ar" ? "تعذر تحميل الجلسة" : "Could not load the session");
+      setError(t("common:shell.couldNotLoadSession"));
       setScreen("error");
     }
   }
@@ -145,7 +152,7 @@ export function AppShell() {
       setBranch(nextBranch);
       await loadNavigation();
     } catch {
-      setContextError(language === "ar" ? "تعذر تحديث النطاق التنظيمي" : "Could not update the organization scope");
+      setContextError(t("common:shell.couldNotUpdateScope"));
     } finally {
       setOperation(undefined);
     }
@@ -160,9 +167,9 @@ export function AppShell() {
   }
 
   if (screen === "loading") return <StatusView direction={direction} message={labels.loading} />;
-  if (screen === "signed-out") return <AuthView language={language} onAuthenticated={(email) => { window.sessionStorage.setItem("erp.session.email", email); setUserEmail(email || "—"); queryClient.clear(); void loadSession(); }} />;
-  if (screen === "forbidden") return <AccessView direction={direction} kind="forbidden" language={language} onRetry={() => void loadSession()} />;
-  if (screen === "error") return <AccessView direction={direction} kind="error" language={language} message={error ?? undefined} onRetry={() => void loadSession()} />;
+  if (screen === "signed-out") return <AuthView onAuthenticated={(email) => { window.sessionStorage.setItem("erp.session.email", email); setUserEmail(email || "—"); queryClient.clear(); void loadSession(); }} />;
+  if (screen === "forbidden") return <AccessView direction={direction} kind="forbidden" onRetry={() => void loadSession()} />;
+  if (screen === "error") return <AccessView direction={direction} kind="error" message={error ?? undefined} onRetry={() => void loadSession()} />;
 
   return (
     <div className="todir-app-shell shell" dir={direction} data-theme={theme} data-density={density}>
@@ -262,7 +269,7 @@ export function AppShell() {
           <button
             type="button"
             className="topbar-lang-btn"
-            onClick={() => setLanguage(language === "ar" ? "en" : "ar")}
+            onClick={() => void changeLanguage(language === "ar" ? "en" : "ar")}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -284,10 +291,9 @@ export function AppShell() {
 
           {/* Consolidated User Menu */}
           <UserMenu
-            userName="مسؤول النظام"
+            userName={t("common:shell.administrator")}
             userEmail={userEmail}
-            language={language}
-            onToggleLanguage={() => setLanguage(language === "ar" ? "en" : "ar")}
+            onToggleLanguage={() => void changeLanguage(language === "ar" ? "en" : "ar")}
             theme={theme}
             onToggleTheme={() => setTheme(theme === "default" ? "sapphire-modern" : "default")}
             density={density}
@@ -300,9 +306,9 @@ export function AppShell() {
       {operation ? <div className="operation-progress" role="status" aria-live="polite">{operation}</div> : null}
 
       <div className="layout">
-        <aside className="sidebar" aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}>
+        <aside className="sidebar" aria-label={t("common:accessibility.mainNavigation")}>
           <div style={{ padding: "0.25rem 0.5rem 0.75rem", fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-content-muted, #94a3b8)" }}>
-            {language === "ar" ? "الوحدات والخدمات" : "Modules & Apps"}
+            {t("common:shell.modules")}
           </div>
           <nav>
             {modules.map(item => (
@@ -315,7 +321,7 @@ export function AppShell() {
                 <span style={{ display: "inline-flex", alignItems: "center" }}>
                   {getModuleIcon(item.icon)}
                 </span>
-                <span>{item.label[language]}</span>
+                <span>{t(`navigation:${item.navigationKey}`)}</span>
               </NavLink>
             ))}
           </nav>
@@ -323,8 +329,8 @@ export function AppShell() {
 
         <main className="content" aria-live="polite">
           {contextError ? <div className="error" role="alert">{contextError}</div> : null}
-          <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>جارٍ التحميل...</div>}>
-            <Outlet context={{ language, density } satisfies WorkspaceOutletContext} />
+          <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>{labels.loading}</div>}>
+            <Outlet context={{ density } satisfies WorkspaceOutletContext} />
           </Suspense>
         </main>
       </div>
@@ -340,17 +346,17 @@ function StatusView({ direction, message }: { direction: string; message: string
   );
 }
 
-function AccessView({ direction, kind, language, message, onRetry }: { direction: string; kind: "forbidden" | "error"; language: Language; message?: string | undefined; onRetry: () => void }) {
-  const isArabic = language === "ar";
-  const title = kind === "forbidden" ? (isArabic ? "غير مصرح لك بالوصول" : "Access Denied") : (isArabic ? "حدث خطأ غير متوقع" : "An error occurred");
-  const fallbackMessage = kind === "forbidden" ? (isArabic ? "لا تملك الصلاحيات الكافية للوصول إلى هذا المورد." : "You do not have permission to access this resource.") : (isArabic ? "تعذر تحميل البيانات المطلوبة." : "Could not load the requested data.");
+function AccessView({ direction, kind, message, onRetry }: { direction: string; kind: "forbidden" | "error"; message?: string | undefined; onRetry: () => void }) {
+  const { t } = useTranslation("common");
+  const title = kind === "forbidden" ? t("access.deniedTitle") : t("access.errorTitle");
+  const fallbackMessage = kind === "forbidden" ? t("access.deniedDescription") : t("access.errorDescription");
   return (
     <div dir={direction} className="status-page">
       <div className="auth-card" style={{ textAlign: "center" }}>
         <h2 style={{ margin: "0 0 0.5rem 0", color: kind === "forbidden" ? "var(--color-status-warning)" : "var(--color-status-danger)" }}>{title}</h2>
         <p style={{ margin: "0 0 1.5rem 0", color: "var(--color-content-muted)" }}>{message || fallbackMessage}</p>
         <button type="button" onClick={onRetry} style={{ padding: "0.5rem 1.25rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", background: "var(--color-surface-subtle)", cursor: "pointer", fontWeight: 600 }}>
-          {isArabic ? "إعادة المحاولة" : "Retry"}
+          {t("actions.retry")}
         </button>
       </div>
     </div>
@@ -375,21 +381,21 @@ export class ShellErrorBoundary extends Component<{ children: ReactNode }, { has
     if (this.state.hasError) {
       return (
         <div style={{ padding: "2rem", textAlign: "center", direction: "rtl", fontFamily: "var(--font-sans)" }}>
-          <h2 style={{ color: "var(--color-status-danger)" }}>حدث خطأ غير متوقع في واجهة النظام</h2>
-          <p style={{ color: "var(--color-content-muted)" }}>حدث خلل مؤقت أثناء عرض الصفحة. يمكنك إعادة المحاولة أو العودة للرئيسية.</p>
+          <h2 style={{ color: "var(--color-status-danger)" }}>{i18n.t("common:access.shellErrorTitle")}</h2>
+          <p style={{ color: "var(--color-content-muted)" }}>{i18n.t("common:access.shellErrorDescription")}</p>
           <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem", flexWrap: "wrap" }}>
             <button
               type="button"
               onClick={() => window.location.reload()}
               style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", cursor: "pointer" }}
             >
-              إعادة المحاولة
+              {i18n.t("common:actions.retry")}
             </button>
             <Link
               to="/"
               style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", background: "var(--color-brand-primary)", color: "white", textDecoration: "none" }}
             >
-              العودة للرئيسية
+              {i18n.t("navigation:routeError.backHome")}
             </Link>
           </div>
         </div>

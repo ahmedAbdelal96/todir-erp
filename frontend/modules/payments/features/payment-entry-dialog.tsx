@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
@@ -24,6 +25,7 @@ export function PaymentEntryDialog({
   defaultPartyName = "شركة الأفق للتجارة والمقاولات",
   onPaymentComplete
 }: PaymentEntryDialogProps): React.JSX.Element {
+  const { t } = useTranslation("payments");
   const [amountValue, setAmountValue] = useState<{ amount: string; currency: CurrencyCode }>({
     amount: "5000.00",
     currency: "SAR"
@@ -45,7 +47,7 @@ export function PaymentEntryDialog({
     e.preventDefault();
     setErrorMessage(null);
     if (!amountValue.amount || amountValue.amount === "0") {
-      setErrorMessage("يجب إدخال مبلغ مالي صالح أكبر من الصفر.");
+      setErrorMessage(t("entry.invalidAmount"));
       return;
     }
     setStep("confirming");
@@ -78,7 +80,7 @@ export function PaymentEntryDialog({
       if (err?.name === "TypeError" || err?.message?.includes("fetch") || err?.status >= 500) {
         setStep("unknown_outcome");
       } else {
-        setErrorMessage(err?.message || "فشلت عملية صرف الدفعة المالية.");
+        setErrorMessage(t("entry.submitFailed"));
         setStep("form");
       }
     }
@@ -105,17 +107,17 @@ export function PaymentEntryDialog({
       }}
       title={
         step === "confirming"
-          ? "تأكيد صرف الدفعة المالية"
+          ? t("entry.confirmTitle")
           : step === "unknown_outcome"
-          ? "تنبيه: حالة التحويل غير مؤكدة"
+          ? t("entry.unknownOutcomeTitle")
           : step === "success"
-          ? "تم تنفيذ الدفعة بنجاح"
-          : "تسجيل دفعة مالية صادرة"
+          ? t("entry.successTitle")
+          : t("entry.title")
       }
       description={
         step === "confirming"
-          ? "يرجى مراجعة تفاصيل العملية المالية قبل الإرسال النهائي."
-          : `صرف مالي لحساب: ${defaultPartyName}`
+          ? t("entry.confirmDescription")
+          : t("entry.description", { name: defaultPartyName })
       }
       size="medium"
     >
@@ -138,57 +140,57 @@ export function PaymentEntryDialog({
       {step === "form" && (
         <form onSubmit={handleOpenConfirmation} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <MoneyField
-            label="المبلغ المالي"
+            label={t("entry.amount")}
             value={amountValue}
             onChange={setAmountValue}
             isRequired
           />
 
           <Select
-            label="طريقة الدفع"
+            label={t("entry.paymentMethod")}
             selectedKey={paymentMethod}
             onSelectionChange={(k) => setPaymentMethod(k as PaymentMethod)}
             options={[
-              { id: "BankTransfer", label: "تحويل بنكي (Bank Transfer)" },
-              { id: "Cash", label: "نقداً / الصندوق (Cash)" },
-              { id: "Check", label: "شيك بنكي (Check)" },
-              { id: "Card", label: "بطاقة دفع إلكتروني (Card)" }
+              { id: "BankTransfer", label: t("entry.bankTransfer") },
+              { id: "Cash", label: t("entry.cash") },
+              { id: "Check", label: t("entry.check") },
+              { id: "Card", label: t("entry.card") }
             ]}
           />
 
           <TextField
-            label="حساب السحب / الصندوق"
+            label={t("entry.sourceAccount")}
             value={sourceAccount}
             onChange={setSourceAccount}
             isRequired
           />
 
           <TextField
-            label="حساب الإيداع / المستفيد"
+            label={t("entry.destinationAccount")}
             value={destinationAccount}
             onChange={setDestinationAccount}
             isRequired
           />
 
           <TextField
-            label="الرقم المرجعي / رمز السند"
+            label={t("entry.referenceNumber")}
             value={referenceNumber}
             onChange={setReferenceNumber}
             isRequired
           />
 
           <TextField
-            label="الملاحظات والبيان"
+            label={t("entry.notes")}
             value={notes}
             onChange={setNotes}
           />
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "1rem" }}>
             <Button variant="secondary" onPress={handleClose}>
-              إلغاء
+              {t("entry.cancel")}
             </Button>
             <Button variant="primary" type="submit">
-              متابعة إلى التأكيد
+              {t("entry.continueToConfirmation")}
             </Button>
           </div>
         </form>
@@ -207,27 +209,27 @@ export function PaymentEntryDialog({
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--color-border-default)", paddingBottom: "0.5rem" }}>
-              <span style={{ color: "var(--color-content-muted)" }}>المستفيد / الطرف:</span>
+              <span style={{ color: "var(--color-content-muted)" }}>{t("entry.payee")}</span>
               <span style={{ fontWeight: 600 }}>{defaultPartyName}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--color-border-default)", paddingBottom: "0.5rem" }}>
-              <span style={{ color: "var(--color-content-muted)" }}>المبلغ الإجمالي:</span>
+              <span style={{ color: "var(--color-content-muted)" }}>{t("entry.totalAmount")}</span>
               <span style={{ fontWeight: 700, fontSize: "1.125rem", color: "var(--color-brand-primary)" }}>
                 <MoneyDisplay value={{ amount: amountValue.amount, currency: amountValue.currency }} />
               </span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--color-border-default)", paddingBottom: "0.5rem" }}>
-              <span style={{ color: "var(--color-content-muted)" }}>حساب السحب:</span>
+              <span style={{ color: "var(--color-content-muted)" }}>{t("entry.sourceAccountLabel")}</span>
               <span>{sourceAccount}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "var(--color-content-muted)" }}>الرقم المرجعي:</span>
+              <span style={{ color: "var(--color-content-muted)" }}>{t("entry.referenceLabel")}</span>
               <span style={{ fontFamily: "var(--font-mono)" }}>{referenceNumber}</span>
             </div>
           </div>
 
           <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-            تنبيه: سيتم إرسال أمر الصرف المالي بصورة نهائية وغير قابلة للتراجع التلقائي.
+            {t("entry.irreversibleWarning")}
           </p>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
@@ -236,14 +238,14 @@ export function PaymentEntryDialog({
               onPress={() => setStep("form")}
               isDisabled={submitPaymentMutation.isPending}
             >
-              تعديل البيانات
+              {t("entry.editDetails")}
             </Button>
             <Button
               variant="primary"
               onPress={handleExecutePayment}
               isDisabled={submitPaymentMutation.isPending}
             >
-              {submitPaymentMutation.isPending ? "جارٍ تنفيذ التحويل..." : "تأكيد وإرسال الدفعة"}
+              {submitPaymentMutation.isPending ? t("entry.submitting") : t("entry.confirmAndSend")}
             </Button>
           </div>
         </div>
@@ -260,14 +262,14 @@ export function PaymentEntryDialog({
               fontSize: "0.875rem"
             }}
           >
-            <strong>انقطع الاتصال أثناء معالجة أمر الدفع:</strong>
+            <strong>{t("entry.connectionInterrupted")}</strong>
             <p style={{ margin: "0.5rem 0 0 0" }}>
-              قد يكون التحويل البنكي قد نُفذ بالفعل لدى مزود الخدمة. تجنباً لتكرار الخصم، لا تضغط على زر الإرسال مرة أخرى. يرجى التحقق من حالة السند من خلال شاشة الحسابات.
+              {t("entry.unknownOutcomeDetails")}
             </p>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
             <Button variant="primary" onPress={handleClose}>
-              إغلاق ومتابعة الحالة
+              {t("entry.closeAndCheckStatus")}
             </Button>
           </div>
         </div>
@@ -276,13 +278,13 @@ export function PaymentEntryDialog({
       {step === "success" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", textAlign: "center", padding: "1rem 0" }}>
           <div style={{ fontSize: "2rem" }}>✓</div>
-          <h3 style={{ margin: 0 }}>تم تسجيل الدفعة بنجاح</h3>
+          <h3 style={{ margin: 0 }}>{t("entry.successMessage")}</h3>
           <p style={{ color: "var(--color-content-muted)", margin: 0 }}>
-            رقم العملية: {lastPaymentResult?.paymentId || referenceNumber}
+            {t("entry.paymentReference")}: {lastPaymentResult?.paymentId || referenceNumber}
           </p>
           <div style={{ marginTop: "1rem" }}>
             <Button variant="primary" onPress={handleClose}>
-              تم
+              {t("entry.done")}
             </Button>
           </div>
         </div>

@@ -13,6 +13,7 @@ import {
   type ListBoxItemProps as AriaListBoxItemProps
 } from "react-aria-components";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export type SelectKey = string | number;
 
@@ -55,7 +56,7 @@ export function Select<T extends object = SelectOption>({
   label,
   description,
   errorMessage,
-  placeholder = "Select an option...",
+  placeholder,
   size = "comfortable",
   isLocked = false,
   lockedReason,
@@ -68,6 +69,8 @@ export function Select<T extends object = SelectOption>({
   defaultSelectedKey,
   ...props
 }: SelectProps<T>): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const selectPlaceholder = placeholder ?? t("components.selectOption");
   const isEffectiveDisabled = isDisabled || isLocked;
 
   return (
@@ -134,7 +137,7 @@ export function Select<T extends object = SelectOption>({
         >
           {({ defaultChildren, isPlaceholder }) =>
             isPlaceholder ? (
-              <span style={{ color: "var(--color-content-muted)" }}>{placeholder}</span>
+              <span style={{ color: "var(--color-content-muted)" }}>{selectPlaceholder}</span>
             ) : (
               defaultChildren
             )

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import type { Party, PartyRoleCode } from "../types.ts";
 import { usePartyList } from "../hooks/party-queries.ts";
 import { ComboBox, type ComboBoxOption } from "../../../components/primitives/combobox.tsx";
@@ -26,7 +27,7 @@ export interface PartyPickerProps {
  * Integrates Quick Create (Section 123 of canonical pack) when party does not exist.
  */
 export function PartyPicker({
-  label = "الطرف التجاري",
+  label,
   description,
   errorMessage,
   value,
@@ -36,9 +37,12 @@ export function PartyPicker({
   isReadOnly,
   isLocked,
   lockedReason,
-  placeholder = "ابحث عن الطرف بالاسم أو الرمز أو الرقم الضريبي...",
+  placeholder,
   enableQuickCreate = true
 }: PartyPickerProps): React.JSX.Element {
+  const { t } = useTranslation("directory");
+  const partyLabel = label ?? t("partyPicker.label");
+  const partyPlaceholder = placeholder ?? t("partyPicker.placeholder");
   const [inputValue, setInputValue] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
@@ -65,7 +69,7 @@ export function PartyPicker({
 
   const roleLabel = (party: Party): string => (party.roles ?? [])
     .filter((role) => role.status === "Active")
-    .map((role) => role.code === "Customer" ? "عميل" : "مورد")
+    .map((role) => role.code === "Customer" ? t("partyPicker.customer") : t("partyPicker.supplier"))
     .join("، ");
 
   const businessContext = (party: Party): string => {
@@ -74,10 +78,10 @@ export function PartyPicker({
     const identifier = identifiers.find((item) => item.isPrimary)?.value ?? identifiers[0]?.value;
     const location = addresses.find((address) => address.isDefault)?.city ?? addresses[0]?.city;
     return [
-      party.legalName && party.legalName !== party.displayName ? `الاسم القانوني: ${party.legalName}` : undefined,
-      roleLabel(party) || "طرف تجاري عام",
-      identifier ? `السجل/الرقم الضريبي: ${identifier}` : "بدون رقم رسمي",
-      location ? `الموقع: ${location}` : undefined
+      party.legalName && party.legalName !== party.displayName ? t("partyPicker.legalName", { name: party.legalName }) : undefined,
+      roleLabel(party) || t("partyPicker.genericParty"),
+      identifier ? t("partyPicker.officialNumber", { number: identifier }) : t("partyPicker.noOfficialNumber"),
+      location ? t("partyPicker.location", { location }) : undefined
     ].filter(Boolean).join(" · ");
   };
 
@@ -92,7 +96,7 @@ export function PartyPicker({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", width: "100%" }}>
       <ComboBox
-        label={label}
+        label={partyLabel}
         description={description}
         errorMessage={errorMessage}
         selectedKey={value ?? null}
@@ -106,7 +110,7 @@ export function PartyPicker({
           }
         }}
         options={options}
-        placeholder={isLoading ? "جارٍ البحث..." : placeholder}
+        placeholder={isLoading ? t("partyPicker.searching") : partyPlaceholder}
         isRequired={isRequired}
         isReadOnly={isReadOnly}
         isLocked={isLocked}
@@ -129,7 +133,7 @@ export function PartyPicker({
               textDecoration: "underline"
             }}
           >
-            + إضافة طرف جديد سريع
+            + {t("partyPicker.quickCreate")}
           </button>
         </div>
       )}

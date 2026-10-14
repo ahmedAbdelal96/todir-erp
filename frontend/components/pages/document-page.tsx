@@ -1,8 +1,10 @@
 import React, { type ReactNode } from "react";
+import type { TFunction } from "i18next";
 import { Breadcrumbs, type BreadcrumbItem } from "../../app/shell/breadcrumbs.tsx";
 import { StatusBadge, type StatusVariant } from "../fields/status-badge.tsx";
 import { LockIcon } from "../primitives/icons.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface DocumentSummaryItem {
   readonly label: string;
@@ -35,34 +37,37 @@ export interface DocumentPageProps {
   readonly className?: string | undefined;
 }
 
-function getLocalizedLifecycle(status: string): { label: string; intent: StatusVariant } {
+function getLocalizedLifecycle(status: string, t: TFunction<"common">): { label: string; intent: StatusVariant } {
   const s = status.toLowerCase();
-  if (s === "posted" || s === "confirmed" || s === "active") return { label: "مؤكد", intent: "success" };
-  if (s === "draft") return { label: "مسودة", intent: "neutral" };
-  if (s === "cancelled" || s === "voided") return { label: "ملغى", intent: "danger" };
-  return { label: status, intent: "neutral" };
+  if (s === "posted" || s === "confirmed" || s === "active") return { label: t("components.statusConfirmed"), intent: "success" };
+  if (s === "draft") return { label: t("components.statusDraft"), intent: "neutral" };
+  if (s === "cancelled" || s === "voided") return { label: t("components.statusCancelled"), intent: "danger" };
+  return { label: t("components.statusUnknown"), intent: "neutral" };
 }
 
-function getLocalizedAccounting(status: string): { label: string; intent: StatusVariant } {
-  if (status === "Posted") return { label: "مرحّل محاسبياً", intent: "success" };
-  return { label: "غير مرحّل", intent: "warning" };
+function getLocalizedAccounting(status: string, t: TFunction<"common">): { label: string; intent: StatusVariant } {
+  if (status === "Posted") return { label: t("components.accountingPosted"), intent: "success" };
+  if (status === "NotPosted") return { label: t("components.accountingUnposted"), intent: "warning" };
+  return { label: t("components.statusUnknown"), intent: "neutral" };
 }
 
-function getLocalizedApproval(status: string): { label: string; intent: StatusVariant } {
-  if (status === "Approved") return { label: "معتمد إدارياً", intent: "success" };
-  if (status === "Rejected") return { label: "مرفوض", intent: "danger" };
-  return { label: "بانتظار الاعتماد", intent: "warning" };
+function getLocalizedApproval(status: string, t: TFunction<"common">): { label: string; intent: StatusVariant } {
+  if (status === "Approved") return { label: t("components.approvalApproved"), intent: "success" };
+  if (status === "Rejected") return { label: t("components.approvalRejected"), intent: "danger" };
+  if (status === "Pending") return { label: t("components.approvalPending"), intent: "warning" };
+  return { label: t("components.statusUnknown"), intent: "neutral" };
 }
 
-function getLocalizedCompliance(status: string): { label: string; intent: StatusVariant } {
-  if (status === "Valid") return { label: "مطابق ضريبياً (ZATCA)", intent: "success" };
-  return { label: `الامتثال: ${status}`, intent: "info" };
+function getLocalizedCompliance(status: string, t: TFunction<"common">): { label: string; intent: StatusVariant } {
+  if (status === "Valid") return { label: t("components.complianceValid"), intent: "success" };
+  return { label: t("components.statusUnknown"), intent: "info" };
 }
 
-function getLocalizedSettlement(status: string): { label: string; intent: StatusVariant } {
-  if (status === "Paid") return { label: "مسدد بالكامل", intent: "success" };
-  if (status === "Partial") return { label: "مسدد جزئياً", intent: "warning" };
-  return { label: "غير مسدد", intent: "neutral" };
+function getLocalizedSettlement(status: string, t: TFunction<"common">): { label: string; intent: StatusVariant } {
+  if (status === "Paid") return { label: t("components.settlementPaid"), intent: "success" };
+  if (status === "Partial") return { label: t("components.settlementPartial"), intent: "warning" };
+  if (status === "Unpaid") return { label: t("components.settlementUnpaid"), intent: "neutral" };
+  return { label: t("components.statusUnknown"), intent: "neutral" };
 }
 
 export function DocumentPage({
@@ -79,6 +84,7 @@ export function DocumentPage({
   children,
   className
 }: DocumentPageProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   return (
     <div
       className={clsx("ui-document-page", className)}
@@ -130,31 +136,31 @@ export function DocumentPage({
               <>
                 {statuses.lifecycle && (
                   (() => {
-                    const { label, intent } = getLocalizedLifecycle(String(statuses.lifecycle));
+                    const { label, intent } = getLocalizedLifecycle(String(statuses.lifecycle), t);
                     return <StatusBadge intent={intent} label={label} size="small" />;
                   })()
                 )}
                 {statuses.approval && (
                   (() => {
-                    const { label, intent } = getLocalizedApproval(String(statuses.approval));
+                    const { label, intent } = getLocalizedApproval(String(statuses.approval), t);
                     return <StatusBadge intent={intent} label={label} size="small" />;
                   })()
                 )}
                 {statuses.accounting && (
                   (() => {
-                    const { label, intent } = getLocalizedAccounting(String(statuses.accounting));
+                    const { label, intent } = getLocalizedAccounting(String(statuses.accounting), t);
                     return <StatusBadge intent={intent} label={label} size="small" />;
                   })()
                 )}
                 {statuses.compliance && (
                   (() => {
-                    const { label, intent } = getLocalizedCompliance(String(statuses.compliance));
+                    const { label, intent } = getLocalizedCompliance(String(statuses.compliance), t);
                     return <StatusBadge intent={intent} label={label} size="small" />;
                   })()
                 )}
                 {statuses.settlement && (
                   (() => {
-                    const { label, intent } = getLocalizedSettlement(String(statuses.settlement));
+                    const { label, intent } = getLocalizedSettlement(String(statuses.settlement), t);
                     return <StatusBadge intent={intent} label={label} size="small" />;
                   })()
                 )}
@@ -174,7 +180,7 @@ export function DocumentPage({
                     }}
                   >
                     <LockIcon size={12} />
-                    <span>{statuses.lockedReason ?? "مستند مقفل"}</span>
+                    <span>{statuses.lockedReason ?? t("components.documentLocked")}</span>
                   </span>
                 )}
               </>

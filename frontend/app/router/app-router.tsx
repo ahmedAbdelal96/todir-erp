@@ -10,37 +10,39 @@ import { identityRoutes } from "@modules/identity/public.ts";
 import { invoicingRoutes } from "@modules/invoicing/public.ts";
 import { migrationRoutes } from "@modules/migration/public.ts";
 import { paymentsRoutes } from "@modules/payments/public.ts";
+import { useTranslation } from "react-i18next";
 
 function SettingsRoute(): React.JSX.Element {
-  return <div style={{ padding: "1.5rem" }}><h1>الإعدادات</h1><p>اختر إعدادًا من الوحدات المتاحة.</p></div>;
+  const { t } = useTranslation("navigation");
+  return <div style={{ padding: "1.5rem" }}><h1>{t("settings")}</h1><p>{t("settingsDescription")}</p></div>;
 }
 
 function NotFoundRoute(): React.JSX.Element {
+  const { t } = useTranslation("navigation");
   return (
     <div style={{ padding: "3rem", textAlign: "center" }}>
-      <h1>الصفحة غير موجودة</h1>
-      <p>تحقق من الرابط أو عد إلى الصفحة الرئيسية.</p>
-      <Link to="/">العودة للرئيسية</Link>
+      <h1>{t("notFound.title")}</h1>
+      <p>{t("notFound.description")}</p>
+      <Link to="/">{t("notFound.backHome")}</Link>
     </div>
   );
 }
 
 function RouteErrorView(): React.JSX.Element {
   const error = useRouteError();
+  const { t } = useTranslation("navigation");
   const status = isRouteErrorResponse(error) ? error.status : undefined;
-  const title = status === 404 ? "الصفحة غير موجودة" : "تعذر فتح الصفحة";
-  const message = status === 404
-    ? "تحقق من الرابط أو عد إلى الصفحة الرئيسية."
-    : "حدث خلل مؤقت أثناء فتح هذه الصفحة. يمكنك إعادة المحاولة أو العودة للرئيسية.";
+  const title = status === 404 ? t("notFound.title") : t("routeError.title");
+  const message = status === 404 ? t("notFound.description") : t("routeError.description");
 
   return (
-    <main dir="rtl" style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: "2rem", background: "var(--color-surface-page)" }}>
+    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: "2rem", background: "var(--color-surface-page)" }}>
       <section role="alert" style={{ maxWidth: "34rem", textAlign: "center", padding: "2rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-lg)", background: "var(--color-surface-card)" }}>
         <h1 style={{ margin: "0 0 0.75rem", color: "var(--color-status-danger)" }}>{title}</h1>
         <p style={{ margin: "0 0 1.5rem", color: "var(--color-content-muted)" }}>{message}</p>
         <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-          <button type="button" onClick={() => window.location.reload()} style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", cursor: "pointer" }}>إعادة المحاولة</button>
-          <Link to="/" style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", background: "var(--color-brand-primary)", color: "white", textDecoration: "none" }}>العودة للرئيسية</Link>
+          <button type="button" onClick={() => window.location.reload()} style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", cursor: "pointer" }}>{t("routeError.retry")}</button>
+          <Link to="/" style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", background: "var(--color-brand-primary)", color: "white", textDecoration: "none" }}>{t("routeError.backHome")}</Link>
         </div>
       </section>
     </main>

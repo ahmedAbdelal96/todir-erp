@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Party, PartyType, PartyRoleCode, CreatePartyInput } from "../types.ts";
 import { useCreateParty, useCreatePartyWithOverride } from "../hooks/party-queries.ts";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
@@ -37,6 +38,7 @@ export function QuickCreatePartyDialog({
   onCreated,
   onOpenFullForm
 }: QuickCreatePartyDialogProps): React.JSX.Element {
+  const { t } = useTranslation("directory");
   const [displayName, setDisplayName] = useState("");
   const [partyType, setPartyType] = useState<PartyType>("Organization");
   const [phone, setPhone] = useState("");
@@ -84,8 +86,8 @@ export function QuickCreatePartyDialog({
     countryCode,
     roles,
     contactPoints: [
-      phone.trim() ? { type: "Phone" as const, value: phone.trim(), label: "الهاتف الرئيسي", isPrimary: true } : null,
-      email.trim() ? { type: "Email" as const, value: email.trim(), label: "البريد الرئيسي", isPrimary: true } : null
+      phone.trim() ? { type: "Phone" as const, value: phone.trim(), label: t("partyList.primaryPhone"), isPrimary: true } : null,
+      email.trim() ? { type: "Email" as const, value: email.trim(), label: t("partyList.primaryEmail"), isPrimary: true } : null
     ].filter((p): p is NonNullable<typeof p> => p !== null),
     identifiers: taxId.trim()
       ? [{
@@ -101,8 +103,8 @@ export function QuickCreatePartyDialog({
     if (!displayName.trim() || displayName.trim().length < 2) {
       showToast({
         type: "warning",
-        title: "بيانات مطلوبة",
-        description: "يرجى إدخال اسم الطرف التجاري (حرفان على الأقل)."
+        title: t("quickCreate.requiredTitle"),
+        description: t("quickCreate.nameRequired")
       });
       return;
     }
@@ -115,20 +117,20 @@ export function QuickCreatePartyDialog({
 
       showToast({
         type: "success",
-        title: "تم إنشاء الطرف التجاري",
-        description: `تم حفظ "${result.displayName}" في الدليل بنجاح.`
+        title: t("quickCreate.createdTitle"),
+        description: t("quickCreate.createdDescription", { name: result.displayName })
       });
       handleClose(false);
       onCreated?.(result);
     } catch (err: unknown) {
-      const message = (err as Error)?.message || "حدث خطأ أثناء حفظ السجل.";
+      const message = (err as Error)?.message || "";
       if (message.includes("duplicate") || message.includes("409")) {
-        setDuplicateWarning("وجد النظام سجلًا قريبًا بنفس بيانات التعريف. راجع السجلات المقترحة قبل إنشاء سجل جديد.");
+        setDuplicateWarning(t("quickCreate.duplicateWarning"));
       } else {
         showToast({
           type: "error",
-          title: "تعذر الحفظ",
-          description: "تعذر حفظ السجل الآن. راجع البيانات وحاول مرة أخرى."
+          title: t("quickCreate.saveErrorTitle"),
+          description: t("quickCreate.saveErrorDescription")
         });
       }
     }
@@ -140,8 +142,8 @@ export function QuickCreatePartyDialog({
     <Dialog
       isOpen={isOpen}
       onOpenChange={handleClose}
-      title="إضافة طرف تجاري جديد"
-      description="تسجيل هوية الطرف بالحد الأدنى من الحقول اللازمة لمتابعة المعاملة الحالية."
+      title={t("quickCreate.title")}
+      description={t("quickCreate.description")}
       size="medium"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "0.25rem" }}>
@@ -158,7 +160,7 @@ export function QuickCreatePartyDialog({
             }}
           >
             <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--color-status-warning-content, #92400e)" }}>
-              تنبيه: احتمال وجود سجل مكرر
+              {t("quickCreate.possibleDuplicate")}
             </span>
             <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-secondary)" }}>
               {duplicateWarning}
@@ -171,7 +173,7 @@ export function QuickCreatePartyDialog({
                   isDisabled={isSubmitting}
                   onPress={() => void handleSubmit(true)}
                 >
-                  المتابعة والإنشاء على أي حال
+                  {t("quickCreate.createAnyway")}
                 </Button>
               )}
               <Button
@@ -179,15 +181,15 @@ export function QuickCreatePartyDialog({
                 variant="secondary"
                 onPress={() => setDuplicateWarning(null)}
               >
-                مراجعة وتعديل البيانات
+                {t("quickCreate.reviewAndEdit")}
               </Button>
             </div>
           </div>
         )}
 
         <TextField
-          label="الاسم التجاري / المعروض"
-          placeholder="مثال: شركة الأفق أو محمد عبد الله"
+          label={t("partyForm.businessDisplayName")}
+          placeholder={t("quickCreate.namePlaceholder")}
           value={displayName}
           onChange={setDisplayName}
           isRequired
@@ -197,30 +199,30 @@ export function QuickCreatePartyDialog({
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 180px" }}>
             <Select
-              label="طبيعة الكيان"
+              label={t("partyList.entityNature")}
               selectedKey={partyType}
               onSelectionChange={(k) => setPartyType(String(k ?? "Organization") as PartyType)}
             >
-              <SelectItem id="Organization" textValue="منشأة / شركة">منشأة / شركة</SelectItem>
-              <SelectItem id="Person" textValue="فرد مستقل">فرد مستقل</SelectItem>
+              <SelectItem id="Organization" textValue={t("partyForm.organization")}>{t("partyForm.organization")}</SelectItem>
+              <SelectItem id="Person" textValue={t("partyForm.person")}>{t("partyForm.person")}</SelectItem>
             </Select>
           </div>
 
           <div style={{ flex: "1 1 180px" }}>
             <Select
-              label="الدولة الأساسية"
+              label={t("quickCreate.country")}
               selectedKey={countryCode}
               onSelectionChange={(k) => setCountryCode(String(k ?? "EG"))}
             >
-              <SelectItem id="EG" textValue="جمهورية مصر العربية (EG)">جمهورية مصر العربية (EG)</SelectItem>
-              <SelectItem id="SA" textValue="المملكة العربية السعودية (SA)">المملكة العربية السعودية (SA)</SelectItem>
-              <SelectItem id="AE" textValue="الإمارات العربية المتحدة (AE)">الإمارات العربية المتحدة (AE)</SelectItem>
+              <SelectItem id="EG" textValue={t("quickCreate.egypt")}>{t("quickCreate.egypt")}</SelectItem>
+              <SelectItem id="SA" textValue={t("quickCreate.saudiArabia")}>{t("quickCreate.saudiArabia")}</SelectItem>
+              <SelectItem id="AE" textValue={t("quickCreate.uae")}>{t("quickCreate.uae")}</SelectItem>
             </Select>
           </div>
         </div>
 
         <TextField
-          label="الهاتف للتواصل"
+          label={t("partyForm.phone")}
           placeholder="+20 100 000 0000"
           value={phone}
           onChange={setPhone}
@@ -244,7 +246,7 @@ export function QuickCreatePartyDialog({
             gap: "0.375rem"
           }}
         >
-          {showAdvanced ? "▲ إخفاء البيانات الإضافية" : "▼ إضافة الرقم الضريبي، البريد، والأدوار"}
+          {showAdvanced ? <>▲ {t("quickCreate.hideAdditional")}</> : <>▼ {t("quickCreate.showAdditional")}</>}
         </button>
 
         {showAdvanced && (
@@ -260,14 +262,14 @@ export function QuickCreatePartyDialog({
             }}
           >
             <TextField
-              label="الرقم الضريبي (VAT / Tax ID)"
+              label={t("partyForm.taxId")}
               placeholder="300123456700003"
               value={taxId}
               onChange={setTaxId}
             />
 
             <TextField
-              label="البريد الإلكتروني المعتمد"
+              label={t("partyForm.email")}
               placeholder="contact@company.com"
               value={email}
               onChange={setEmail}
@@ -275,7 +277,7 @@ export function QuickCreatePartyDialog({
 
             <div>
               <span style={{ fontSize: "0.8125rem", fontWeight: 600, display: "block", marginBottom: "0.5rem" }}>
-                الأدوار التجارية (اختياري)
+                {t("partyForm.roles")}
               </span>
               <div style={{ display: "flex", gap: "1.5rem" }}>
                 <Checkbox
@@ -284,7 +286,7 @@ export function QuickCreatePartyDialog({
                     setRoles(roles.includes("Customer") ? roles.filter(r => r !== "Customer") : [...roles, "Customer"]);
                   }}
                 >
-                  <span style={{ fontSize: "0.8125rem" }}>عميل</span>
+                  <span style={{ fontSize: "0.8125rem" }}>{t("partyList.customer")}</span>
                 </Checkbox>
                 <Checkbox
                   isSelected={roles.includes("Supplier")}
@@ -292,7 +294,7 @@ export function QuickCreatePartyDialog({
                     setRoles(roles.includes("Supplier") ? roles.filter(r => r !== "Supplier") : [...roles, "Supplier"]);
                   }}
                 >
-                  <span style={{ fontSize: "0.8125rem" }}>مورد</span>
+                  <span style={{ fontSize: "0.8125rem" }}>{t("partyList.supplier")}</span>
                 </Checkbox>
               </div>
             </div>
@@ -317,20 +319,20 @@ export function QuickCreatePartyDialog({
                 padding: 0
               }}
             >
-              فتح النموذج التفصيلي الكامل
+              {t("quickCreate.openFullForm")}
             </button>
           ) : <span />}
 
           <div style={{ display: "flex", gap: "0.625rem" }}>
-            <Button variant="secondary" aria-label="إلغاء التعديل" onPress={() => handleClose(false)}>
-              إلغاء
+            <Button variant="secondary" aria-label={t("partyForm.cancel")} onPress={() => handleClose(false)}>
+              {t("actions.cancel")}
             </Button>
             <Button
               variant="primary"
               isDisabled={isSubmitting || !displayName.trim()}
               onPress={() => void handleSubmit(false)}
             >
-              {isSubmitting ? "جارٍ الحفظ..." : "إنشاء ومتابعة"}
+              {isSubmitting ? t("quickCreate.saving") : t("quickCreate.createAndContinue")}
             </Button>
           </div>
         </div>

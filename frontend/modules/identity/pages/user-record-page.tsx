@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { currentIntlLocale } from "../../../core/i18n/i18n.ts";
 import { RecordPage } from "../../../components/pages/record-page.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { PropertyGrid, PropertyItem, StatCard } from "../../../components/pages/property-grid.tsx";
@@ -23,6 +25,7 @@ export function UserRecordPage({
   onBack,
   context
 }: UserRecordPageProps): React.JSX.Element {
+  const { t } = useTranslation("identity");
   const [resetTargetUser, setResetTargetUser] = useState<UserAccountSummary | null>(null);
   const [deactivateTargetUser, setDeactivateTargetUser] = useState<UserAccountSummary | null>(null);
   const [reactivateTargetUser, setReactivateTargetUser] = useState<UserAccountSummary | null>(null);
@@ -32,7 +35,7 @@ export function UserRecordPage({
   if (isLoading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "360px" }}>
-        <Spinner size="large" aria-label="جارٍ تحميل بيانات المستخدم..." />
+        <Spinner size="large" aria-label={t("userRecord.loading")} />
       </div>
     );
   }
@@ -41,10 +44,10 @@ export function UserRecordPage({
     return (
       <div style={{ padding: "3rem", textAlign: "center" }}>
         <p style={{ color: "var(--color-status-danger, #ef4444)", fontWeight: 600, marginBottom: "1rem" }}>
-          تعذر العثور على بيانات المستخدم المطلوب.
+          {t("userRecord.notFound")}
         </p>
         <Button variant="secondary" onPress={onBack}>
-          العودة لقائمة المستخدمين
+          {t("userRecord.backToList")}
         </Button>
       </div>
     );
@@ -55,25 +58,25 @@ export function UserRecordPage({
   const kpiCards = (
     <>
       <StatCard
-        title="حالة الحساب"
-        value={isActive ? "نشط ومفعّل" : "معطّل"}
+        title={t("userRecord.accountStatus")}
+        value={isActive ? t("userRecord.active") : t("userRecord.disabled")}
         intent={isActive ? "success" : "neutral"}
         icon={<CheckCircleIcon size={20} />}
-        subtitle={isActive ? "يمتلك صلاحية الدخول للنظام" : "تم إيقاف صلاحية الدخول مؤقتاً"}
+        subtitle={isActive ? t("userRecord.hasAccess") : t("userRecord.accessStopped")}
       />
       <StatCard
-        title="حالة كلمة المرور"
-        value={user.mustChangePassword ? "مطلوب التغيير" : "محدّثة وآمنة"}
+        title={t("userRecord.passwordStatus")}
+        value={user.mustChangePassword ? t("userRecord.changeRequired") : t("userRecord.currentAndSecure")}
         intent={user.mustChangePassword ? "warning" : "success"}
         icon={<KeyIcon size={20} />}
-        subtitle={user.mustChangePassword ? "يلزم التغيير عند أول تسجيل دخول" : "تم تعيينها والتحقق منها بنجاح"}
+        subtitle={user.mustChangePassword ? t("userRecord.changeOnFirstLogin") : t("userRecord.passwordVerified")}
       />
       <StatCard
-        title="النطاق / بادئة الدخول"
-        value={user.loginPrefix ?? "الافتراضي"}
+        title={t("userRecord.loginScope")}
+        value={user.loginPrefix ?? t("userRecord.default")}
         intent="info"
         icon={<ShieldIcon size={20} />}
-        subtitle="نطاق تسجيل الدخول المحدد للمنشأة"
+        subtitle={t("userRecord.loginScopeDescription")}
       />
     </>
   );
@@ -85,25 +88,25 @@ export function UserRecordPage({
       status={isActive ? "success" : "neutral"}
       kpiCards={kpiCards}
       breadcrumbs={[
-        { label: "إدارة الهوية والمستخدمين", onClick: onBack },
+        { label: t("userRecord.identityManagement"), onClick: onBack },
         { label: user.name }
       ]}
       headerActions={
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <Button variant="secondary" onPress={() => setResetTargetUser(user)}>
-            إعادة تعيين كلمة المرور
+            {t("userRecord.resetPassword")}
           </Button>
           {isActive ? (
             <Button variant="danger" onPress={() => setDeactivateTargetUser(user)}>
-              تعطيل المستخدم
+              {t("userRecord.deactivate")}
             </Button>
           ) : (
             <Button variant="primary" onPress={() => setReactivateTargetUser(user)}>
-              إعادة تفعيل الحساب
+              {t("userRecord.reactivate")}
             </Button>
           )}
           <Button variant="secondary" onPress={onBack}>
-            رجوع
+            {t("userRecord.back")}
           </Button>
         </div>
       }
@@ -114,55 +117,55 @@ export function UserRecordPage({
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         {/* Basic Identity Information */}
         <Surface
-          title="بيانات الحساب والهوية"
-          description="المعلومات الأساسية وبيانات الاعتماد المستخدمة لتسجيل الدخول"
+          title={t("userRecord.accountIdentity")}
+          description={t("userRecord.accountDescription")}
         >
           <PropertyGrid columns={3}>
             <PropertyItem
-              label="الاسم الكامل"
+              label={t("userRecord.fullName")}
               value={user.name}
               icon={<UserIcon size={16} />}
             />
             <PropertyItem
-              label="البريد الإلكتروني الأساسي"
+              label={t("userRecord.primaryEmail")}
               value={<bdi dir="ltr">{user.email}</bdi>}
               isCopyable
               rawCopyValue={user.email}
               icon={<MailIcon size={16} />}
             />
             <PropertyItem
-              label="بادئة الدخول (Login Prefix)"
+              label={t("userRecord.loginPrefix")}
               value={user.loginPrefix || "—"}
             />
             <PropertyItem
-              label="حالة الحساب"
+              label={t("userRecord.status")}
               value={
                 <StatusBadge
                   intent={isActive ? "success" : "neutral"}
-                  label={isActive ? "نشط ومفعّل" : "معطّل"}
+                  label={isActive ? t("userRecord.active") : t("userRecord.disabled")}
                   size="small"
                 />
               }
             />
             <PropertyItem
-              label="إلزامية تغيير كلمة المرور"
+              label={t("userRecord.passwordChange")}
               value={
                 user.mustChangePassword ? (
                   <span style={{ color: "var(--color-status-warning, #d97706)", fontWeight: 600 }}>
-                    مطلوب عند الدخول القادم
+                    {t("userRecord.nextLoginRequired")}
                   </span>
                 ) : (
                   <span style={{ color: "var(--color-status-success, #16a34a)", fontWeight: 600 }}>
-                    غير مطلوب
+                    {t("userRecord.notRequired")}
                   </span>
                 )
               }
             />
             <PropertyItem
-              label="تاريخ الإنشاء في النظام"
+              label={t("userRecord.createdAt")}
               value={
                 user.createdAt
-                  ? new Date(user.createdAt).toLocaleDateString("ar-EG", {
+                  ? new Date(user.createdAt).toLocaleDateString(currentIntlLocale(), {
                       year: "numeric",
                       month: "long",
                       day: "numeric"
@@ -175,17 +178,17 @@ export function UserRecordPage({
 
         {/* Security & Access Settings */}
         <Surface
-          title="الأمان وسياسة الوصول"
-          description="إعدادات الحماية وصلاحيات الحساب وسجلات الدخول"
+          title={t("userRecord.security")}
+          description={t("userRecord.securityDescription")}
         >
           <PropertyGrid columns={2}>
             <PropertyItem
-              label="سياسة التحقق والتوثيق"
-              value="المصادقة القياسية بكلمة المرور المشفرة"
+              label={t("userRecord.authenticationPolicy")}
+              value={t("userRecord.passwordAuth")}
             />
             <PropertyItem
-              label="مستوى الجلسة والنشاط"
-              value={isActive ? "متاح للاتصال عبر بوابة الويب والتطبيقات" : "محظور من الاتصال مؤقتاً"}
+              label={t("userRecord.sessionActivity")}
+              value={isActive ? t("userRecord.webAvailable") : t("userRecord.temporarilyBlocked")}
             />
           </PropertyGrid>
         </Surface>

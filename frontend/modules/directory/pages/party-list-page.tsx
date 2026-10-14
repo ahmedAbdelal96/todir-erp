@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Party, PartyRoleCode } from "../types.ts";
 import { usePartyList, useCreateParty } from "../hooks/party-queries.ts";
 import { partyApi } from "../services/party-api.ts";
@@ -10,6 +11,7 @@ import { SearchField } from "../../../components/primitives/search-field.tsx";
 import { FilterBar } from "../../../components/primitives/filter-bar.tsx";
 import { Select, SelectItem } from "../../../components/primitives/select.tsx";
 import { Pagination } from "../../../components/primitives/pagination.tsx";
+import { currentIntlLocale } from "../../../core/i18n/i18n.ts";
 import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { EmptyState } from "../../../components/primitives/empty-state.tsx";
 import { DirectoryIcon } from "../../../components/primitives/icons.tsx";
@@ -25,7 +27,7 @@ export interface PartyListPageProps {
   readonly onSelectParty?: ((party: Party) => void) | undefined;
 }
 
-function toCreate(data: PartyFormData) {
+function toCreate(data: PartyFormData, primaryEmailLabel: string, primaryPhoneLabel: string) {
   return {
     partyType: data.partyType,
     displayName: data.displayName,
@@ -48,8 +50,8 @@ function toCreate(data: PartyFormData) {
         }]
       : [],
     contactPoints: [
-      data.email ? { type: "Email" as const, value: data.email, label: "البريد الرئيسي", isPrimary: true } : null,
-      data.phone ? { type: "Phone" as const, value: data.phone, label: "الهاتف الرئيسي", isPrimary: true } : null
+      data.email ? { type: "Email" as const, value: data.email, label: primaryEmailLabel, isPrimary: true } : null,
+      data.phone ? { type: "Phone" as const, value: data.phone, label: primaryPhoneLabel, isPrimary: true } : null
     ].filter((item): item is NonNullable<typeof item> => item !== null),
     addresses: data.addressLine1
       ? [{
@@ -63,16 +65,8 @@ function toCreate(data: PartyFormData) {
   };
 }
 
-function partyStatusLabel(status: string): string {
-  if (status === "Active") return "نشط";
-  if (status === "Archived") return "مؤرشف";
-  if (status === "Blocked") return "محظور";
-  if (status === "Merged") return "مدموج";
-  if (status === "Draft") return "مسودة";
-  return "حالة غير متاحة";
-}
-
 export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.Element {
+  const { t } = useTranslation("directory");
   const [search, setSearch] = useState("");
   const [partyType, setPartyType] = useState("");
   const [role, setRole] = useState("");
@@ -96,6 +90,8 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
   });
 
   const create = useCreateParty();
+  const statusKey = ({ Active: "statusActive", Archived: "statusArchived", Blocked: "statusBlocked", Merged: "statusMerged", Draft: "statusDraft" } as const);
+  const partyStatusLabel = (status: string) => t(`partyList.${statusKey[status as keyof typeof statusKey] ?? "statusUnknown"}`);
   const parties = data?.items ?? [];
   const totalCount = data?.totalCount ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -136,14 +132,14 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
       URL.revokeObjectURL(url);
       showToast({
         type: "success",
-        title: "تم تصدير البيانات بنجاح",
-        description: "تم تجهيز ملف CSV وتنزيله."
+        title: t("partyList.exportedTitle"),
+        description: t("partyList.exportedDescription")
       });
     } catch (err: unknown) {
       showToast({
         type: "error",
-        title: "تعذر تصدير السجلات",
-        description: (err as Error)?.message || "حدث خطأ أثناء التصدير."
+        title: t("partyList.exportErrorTitle"),
+        description: t("partyList.exportErrorDescription")
       });
     } finally {
       setIsExporting(false);
@@ -153,7 +149,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
   const columns: DataGridColumn<Party>[] = [
     {
       id: "displayName",
-      header: "الطرف التجاري",
+      header: t("partyList.columnParty"),
       width: "1.5fr",
       minWidth: 200,
       cellRenderer: ({ row }) => (
@@ -185,17 +181,17 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
     },
     {
       id: "partyType",
-      header: "النوع",
+      header: t("partyList.columnType"),
       width: 120,
       cellRenderer: ({ row }) => (
         <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--color-content-secondary)" }}>
-          {row.partyType === "Organization" ? "منشأة / شركة" : "فرد مستقل"}
+          {row.partyType === "Organization" ? t("partyList.organization") : t("partyList.person")}
         </span>
       )
     },
     {
       id: "roles",
-      header: "الأدوار",
+      header: t("partyList.columnRoles"),
       width: 180,
       cellRenderer: ({ row }) => {
         const activeRoles = row.roles.filter(r => r.status === "Active");
@@ -214,7 +210,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
                   color: r.code === "Customer" ? "var(--color-brand-primary, #4f46e5)" : "var(--color-status-info-content, #0369a1)"
                 }}
               >
-                {r.code === "Customer" ? "عميل" : "مورد"}
+                {r.code === "Customer" ? t("partyList.customer") : t("partyList.supplier")}
               </span>
             ))}
           </div>
@@ -223,7 +219,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
     },
     {
       id: "status",
-      header: "الحالة",
+      header: t("partyList.columnStatus"),
       width: 130,
       cellRenderer: ({ row }) => {
         const isArchived = row.status === "Archived";
@@ -239,11 +235,11 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
     },
     {
       id: "updatedAt",
-      header: "آخر تحديث",
+      header: t("partyList.columnUpdated"),
       width: 130,
       cellRenderer: ({ row }) => (
         <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-          {new Date(row.updatedAt).toLocaleDateString("ar-EG")}
+          {new Date(row.updatedAt).toLocaleDateString(currentIntlLocale())}
         </span>
       )
     }
@@ -253,20 +249,20 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
 
   return (
     <ListPage
-      title="دليل العلاقات التجارية"
-      subtitle="إدارة موحدة للعملاء والموردين وجهات الاتصال وسجلات التوثيق الرسمية"
-      breadcrumbs={[{ label: "دليل العلاقات التجارية" }, { label: "العملاء والموردون" }]}
+      title={t("partyList.title")}
+      subtitle={t("partyList.subtitle")}
+      breadcrumbs={[{ label: t("partyList.breadcrumbParties") }, { label: t("partyList.breadcrumbCustomersSuppliers") }]}
       primaryAction={{
-        label: "إضافة طرف تجاري",
+        label: t("partyList.addParty"),
         onClick: () => setIsQuickCreateOpen(true)
       }}
       secondaryActions={
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <Button variant="secondary" size="compact" onPress={() => setIsImportOpen(true)}>
-            استيراد سجلات
+            {t("partyList.import")}
           </Button>
           <Button variant="secondary" size="compact" onPress={handleExportCsv} isDisabled={isExporting}>
-            {isExporting ? "جارٍ التصدير..." : "تصدير CSV"}
+            {isExporting ? t("partyList.exporting") : t("partyList.export")}
           </Button>
         </div>
       }
@@ -274,8 +270,8 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
         <FilterBar
           searchInput={
             <SearchField
-              ariaLabel="البحث في الأطراف والعملاء والموردين"
-              placeholder="ابحث بالاسم، السجل الضريبي، البريد، أو الهاتف..."
+              ariaLabel={t("partyList.searchLabel")}
+              placeholder={t("partyList.searchPlaceholder")}
               value={search}
               onChange={handleSearchChange}
             />
@@ -291,37 +287,37 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
         >
           <div style={{ minWidth: "150px" }}>
             <Select
-              label="طبيعة الكيان"
+              label={t("partyList.entityNature")}
               selectedKey={partyType}
               onSelectionChange={handlePartyTypeChange}
             >
-              <SelectItem id="" textValue="كل الكيانات">كل الكيانات</SelectItem>
-              <SelectItem id="Organization" textValue="منشآت وشركات">منشآت وشركات</SelectItem>
-              <SelectItem id="Person" textValue="أفراد مستقلون">أفراد مستقلون</SelectItem>
+              <SelectItem id="" textValue={t("partyList.allEntities")}>{t("partyList.allEntities")}</SelectItem>
+              <SelectItem id="Organization" textValue={t("partyList.organizations")}>{t("partyList.organizations")}</SelectItem>
+              <SelectItem id="Person" textValue={t("partyList.people")}>{t("partyList.people")}</SelectItem>
             </Select>
           </div>
 
           <div style={{ minWidth: "150px" }}>
             <Select
-              label="الدور التجاري"
+              label={t("partyList.businessRole")}
               selectedKey={role}
               onSelectionChange={handleRoleChange}
             >
-              <SelectItem id="" textValue="كل الأدوار">كل الأدوار</SelectItem>
-              <SelectItem id="Customer" textValue="العملاء فقط">العملاء فقط</SelectItem>
-              <SelectItem id="Supplier" textValue="الموردون فقط">الموردون فقط</SelectItem>
+              <SelectItem id="" textValue={t("partyList.allRoles")}>{t("partyList.allRoles")}</SelectItem>
+              <SelectItem id="Customer" textValue={t("partyList.customersOnly")}>{t("partyList.customersOnly")}</SelectItem>
+              <SelectItem id="Supplier" textValue={t("partyList.suppliersOnly")}>{t("partyList.suppliersOnly")}</SelectItem>
             </Select>
           </div>
 
           <div style={{ minWidth: "140px" }}>
             <Select
-              label="حالة السجل"
+              label={t("partyList.recordStatus")}
               selectedKey={status}
               onSelectionChange={handleStatusChange}
             >
-              <SelectItem id="" textValue="الكل (نشط ومؤرشف)">الكل (نشط ومؤرشف)</SelectItem>
-              <SelectItem id="Active" textValue="النشطة فقط">النشطة فقط</SelectItem>
-              <SelectItem id="Archived" textValue="المؤرشفة">المؤرشفة</SelectItem>
+              <SelectItem id="" textValue={t("partyList.allStatuses")}>{t("partyList.allStatuses")}</SelectItem>
+              <SelectItem id="Active" textValue={t("partyList.activeOnly")}>{t("partyList.activeOnly")}</SelectItem>
+              <SelectItem id="Archived" textValue={t("partyList.archivedOnly")}>{t("partyList.archivedOnly")}</SelectItem>
             </Select>
           </div>
         </FilterBar>
@@ -339,29 +335,28 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
               setPageSize(newSize);
               setPage(1);
             }}
-            language="ar"
           />
         ) : undefined
       }
     >
       {error ? (
         <ErrorState
-          title="تعذر تحميل دليل الأطراف التجارية"
-          message="حدث خطأ أثناء جلب قائمة الأطراف من الخادم. يرجى إعادة المحاولة."
+          title={t("partyList.errorTitle")}
+          message={t("partyList.errorDescription")}
           onRetry={() => void refetch()}
         />
       ) : !isLoading && parties.length === 0 ? (
         <EmptyState
           icon={<DirectoryIcon size={28} />}
-          title="لا توجد أطراف تجارية مسجلة"
+          title={t("partyList.emptyTitle")}
           description={
             activeFilters > 0
-              ? "لم يتم العثور على أطراف تجارية تطابق معايير وفلاتر البحث المحددة."
-              : "ابدأ بتسجيل أول عميل أو مورد لفتح الحسابات والمعاملات التجارية للمؤسسة."
+              ? t("partyList.emptyFiltered")
+              : t("partyList.emptyStart")
           }
           action={
             <Button variant="primary" onPress={() => setIsQuickCreateOpen(true)}>
-              إضافة طرف تجاري جديد
+              {t("partyList.addNewParty")}
             </Button>
           }
         />
@@ -369,12 +364,10 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
         <DataGrid<Party>
           columns={columns}
           staticRows={parties}
-          locale="ar"
           selectable="single"
-          enableRtl={true}
           loading={isLoading}
           hasActiveFilters={activeFilters > 0}
-          loadingMessage={isLoading ? "جارٍ تحميل السجلات..." : undefined}
+          loadingMessage={isLoading ? t("partyList.loading") : undefined}
           onSelectionChange={(rows) => rows[0] && onSelectParty?.(rows[0])}
         />
       )}
@@ -396,19 +389,19 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
       <Dialog
         isOpen={isFullCreateOpen}
         onOpenChange={setIsFullCreateOpen}
-        title="التسجيل المفصل لطرف تجاري"
-        description="تسجيل كامل وموسع للهوية التجارية، الأدوار، المعرفات الضريبية، والعناوين التفصيلية."
+        title={t("partyList.fullCreateTitle")}
+        description={t("partyList.fullCreateDescription")}
         size="large"
       >
         <PartyForm
           onSubmit={async (formData) => {
             try {
-              const created = await create.mutateAsync(toCreate(formData));
+              const created = await create.mutateAsync(toCreate(formData, t("partyList.primaryEmail"), t("partyList.primaryPhone")));
               setIsFullCreateOpen(false);
               showToast({
                 type: "success",
-                title: "تمت إضافة الطرف التجاري بنجاح",
-                description: `تم حفظ ${created.displayName} في الدليل.`
+                title: t("partyList.createSuccessTitle"),
+                description: t("partyList.createSuccessDescription", { name: created.displayName })
               });
               if (onSelectParty) {
                 onSelectParty(created);
@@ -416,8 +409,8 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
             } catch (err: unknown) {
               showToast({
                 type: "error",
-                title: "تعذر حفظ الطرف التجاري",
-                description: (err as Error)?.message || "حدث خطأ أثناء الاتصال بالخادم."
+                title: t("partyList.createErrorTitle"),
+                description: t("partyList.createErrorDescription")
               });
             }
           }}

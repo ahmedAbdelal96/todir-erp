@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { TextField } from "./text-field.tsx";
 import { SearchIcon, CloseIcon } from "./icons.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface SearchFieldProps {
   readonly value?: string | undefined;
@@ -23,13 +24,16 @@ export function SearchField({
   onChange,
   onSearch,
   onClear,
-  placeholder = "البحث...",
+  placeholder,
   debounceMs = 300,
   isPending = false,
   isDisabled = false,
-  ariaLabel = "حقل البحث",
+  ariaLabel,
   className
 }: SearchFieldProps): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const searchPlaceholder = placeholder ?? t("components.searchPlaceholder");
+  const searchAriaLabel = ariaLabel ?? t("components.searchField");
   const [internalValue, setInternalValue] = useState(defaultValue);
   const isControlled = controlledValue !== undefined;
   const currentValue = isControlled ? controlledValue : internalValue;
@@ -89,7 +93,7 @@ export function SearchField({
     <button
       type="button"
       onClick={handleClear}
-      aria-label="مسح البحث"
+      aria-label={t("components.clearSearch")}
       style={{
         background: "none",
         border: "none",
@@ -124,9 +128,9 @@ export function SearchField({
       <TextField
         value={currentValue}
         onChange={handleChange}
-        placeholder={placeholder}
+        placeholder={searchPlaceholder}
         isDisabled={isDisabled}
-        aria-label={ariaLabel}
+        aria-label={searchAriaLabel}
         startAdornment={startAdornment}
         endAdornment={endAdornment}
       />

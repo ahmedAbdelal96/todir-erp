@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { DocumentPage, type DocumentStatusGroup } from "../../../components/pages/document-page.tsx";
 import { DataGrid, type DataGridColumn } from "../../../components/grid/index.ts";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -6,6 +7,7 @@ import { TextField } from "../../../components/primitives/text-field.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { useJournalRecord, usePostJournal, useValidateJournal } from "../hooks/journal-queries.ts";
 import type { JournalLine, JournalEntry } from "../types.ts";
+import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 
 export interface ManualJournalPageProps {
   readonly journalId?: string | undefined;
@@ -16,6 +18,7 @@ export function ManualJournalPage({
   journalId = "jrnl-001",
   onBack
 }: ManualJournalPageProps): React.JSX.Element {
+  const { t } = useTranslation("accounting");
   const { data: initialJournal, isLoading, error } = useJournalRecord(journalId);
   const postJournalMutation = usePostJournal();
   const validateJournalMutation = useValidateJournal();
@@ -29,14 +32,14 @@ export function ManualJournalPage({
   }
 
   if (isLoading) {
-    return <div style={{ padding: "2rem", textAlign: "center" }}>جارٍ تحميل قيد اليومية...</div>;
+    return <div style={{ padding: "2rem", textAlign: "center" }}>{t("journal.loading")}</div>;
   }
 
   if (error || !initialJournal) {
     return (
       <div style={{ padding: "2rem", textAlign: "center" }}>
-        <p>تعذر تحميل بيانات قيد اليومية أو أن القيد غير موجود.</p>
-        {onBack && <Button onPress={onBack}>العودة</Button>}
+        <p>{t("journal.error")}</p>
+        {onBack && <Button onPress={onBack}>{t("journal.back")}</Button>}
       </div>
     );
   }
@@ -78,7 +81,7 @@ export function ManualJournalPage({
   const columns: DataGridColumn<JournalLine>[] = [
     {
       id: "accountCode",
-      header: "رمز الحساب والاسم",
+      header: t("journal.accountCodeName"),
       width: 220,
       cellRenderer: ({ row, value }) => (
         <span style={{ fontWeight: 600 }}>
@@ -88,7 +91,7 @@ export function ManualJournalPage({
     },
     {
       id: "description",
-      header: "البيان / الشرح",
+      header: t("journal.memo"),
       width: "1fr",
       cellRenderer: ({ row }) => (
         <span>{row.description || "—"}</span>
@@ -96,7 +99,7 @@ export function ManualJournalPage({
     },
     {
       id: "debit",
-      header: "مدين (Debit)",
+      header: t("journal.debit"),
       width: 150,
       align: "end",
       cellRenderer: ({ row }) => (
@@ -107,7 +110,7 @@ export function ManualJournalPage({
     },
     {
       id: "credit",
-      header: "دائن (Credit)",
+      header: t("journal.credit"),
       width: 150,
       align: "end",
       cellRenderer: ({ row }) => (
@@ -118,7 +121,7 @@ export function ManualJournalPage({
     },
     {
       id: "costCenter",
-      header: "مركز التكلفة",
+      header: t("journal.costCenter"),
       width: 140,
       cellRenderer: ({ row }) => <span>{row.costCenter ?? "—"}</span>
     }
@@ -128,29 +131,29 @@ export function ManualJournalPage({
     lifecycle: initialJournal.status === "Posted" ? "posted" : "draft",
     accounting: initialJournal.status === "Posted" ? "Posted" : "Unposted",
     isLocked,
-    lockedReason: initialJournal.status === "Posted" ? "القيد مرحل إلى دفتر الأستاذ العام" : initialJournal.isPeriodClosed ? "الفترة المالية مغلقة" : undefined
+    lockedReason: initialJournal.status === "Posted" ? t("journal.postedLocked") : initialJournal.isPeriodClosed ? t("journal.periodClosed") : undefined
   };
 
   return (
     <DocumentPage
-      documentType="قيد يومية يدوي (Manual Journal)"
+      documentType={t("journal.documentType")}
       documentNumber={initialJournal.entryNumber}
       statuses={statuses}
       breadcrumbs={[
-        { label: "المحاسبة العامة", href: "/accounting" },
-        { label: "قيود اليومية", href: "/accounting", onClick: onBack },
+        { label: t("journal.generalLedger"), href: "/accounting" },
+        { label: t("journal.entries"), href: "/accounting", onClick: onBack },
         { label: initialJournal.entryNumber }
       ]}
       headerActions={
         <>
-          {onBack && <Button variant="secondary" onPress={onBack}>العودة</Button>}
+          {onBack && <Button variant="secondary" onPress={onBack}>{t("journal.back")}</Button>}
           {!isLocked && (
             <Button
               variant="primary"
               onPress={handlePost}
               isDisabled={!initialJournal.isBalanced || postJournalMutation.isPending}
             >
-              {postJournalMutation.isPending ? "جارٍ الترحيل..." : "ترحيل القيد"}
+              {postJournalMutation.isPending ? t("journal.postPending") : t("journal.post")}
             </Button>
           )}
         </>
@@ -158,17 +161,17 @@ export function ManualJournalPage({
       metadataSection={
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
           <div>
-            <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>تاريخ القيد</div>
-            <div style={{ fontWeight: 600 }}>{initialJournal.date}</div>
+            <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>{t("journal.entryDate")}</div>
+            <div style={{ fontWeight: 600 }}><LocalDateDisplay value={initialJournal.date} /></div>
           </div>
           <div>
-            <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>الفترة المحاسبية</div>
+            <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>{t("journal.period")}</div>
             <div style={{ fontWeight: 600 }}>{initialJournal.period}</div>
           </div>
           <div>
-            <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>حالة التوازن</div>
+            <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>{t("journal.balanceStatus")}</div>
             <div style={{ fontWeight: 600, color: initialJournal.isBalanced ? "var(--color-status-success)" : "var(--color-status-danger)" }}>
-              {initialJournal.isBalanced ? "✓ القيد متوازن" : "⚠️ القيد غير متوازن"}
+              {initialJournal.isBalanced ? `✓ ${t("journal.balanced")}` : `⚠️ ${t("journal.unbalanced")}`}
             </div>
           </div>
         </div>
@@ -186,7 +189,7 @@ export function ManualJournalPage({
           {!isLocked && (
             <div style={{ padding: "0.5rem 1rem" }}>
               <Button variant="secondary" size="compact" onPress={handleAddLine}>
-                + إضافة سطر محاسبي جديد
+                + {t("journal.addLine")}
               </Button>
             </div>
           )}
@@ -194,22 +197,22 @@ export function ManualJournalPage({
       }
       summaryItems={[
         {
-          label: "إجمالي المدين (Debit)",
+          label: t("journal.totalDebit"),
           value: <MoneyDisplay value={{ amount: initialJournal.debitTotal, currency: "SAR" }} />
         },
         {
-          label: "إجمالي الدائن (Credit)",
+          label: t("journal.totalCredit"),
           value: <MoneyDisplay value={{ amount: initialJournal.creditTotal, currency: "SAR" }} />
         },
         {
-          label: "الفارق المحاسبي",
+          label: t("journal.difference"),
           value: <MoneyDisplay value={{ amount: "0.00", currency: "SAR" }} />,
           isEmphasized: true
         }
       ]}
       notesSection={
         <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)", backgroundColor: "var(--color-surface-subtle)", padding: "1rem", borderRadius: "var(--radius-md)" }}>
-          <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>البيان العام للقيد</div>
+          <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>{t("journal.description")}</div>
           <div>{initialJournal.description}</div>
         </div>
       }

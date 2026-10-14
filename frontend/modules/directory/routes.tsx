@@ -21,7 +21,7 @@ export const directoryRoutes: ModuleRouteRegistration = {
     id: "directory",
     moduleIds: ["directory"],
     path: "/directory",
-    label: { ar: "دليل الأطراف", en: "Directory" },
+    navigationKey: "directory",
     permission: "directory.party.read",
     icon: "directory"
   },

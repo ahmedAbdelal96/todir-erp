@@ -8,7 +8,7 @@ export const finbaseRoutes: ModuleRouteRegistration = {
     id: "finbase",
     moduleIds: ["finbase"],
     path: "/finbase",
-    label: { ar: "الأساس المالي", en: "Financial foundation" },
+    navigationKey: "financeBase",
     permission: "finbase.currency.read",
     icon: "finbase"
   },

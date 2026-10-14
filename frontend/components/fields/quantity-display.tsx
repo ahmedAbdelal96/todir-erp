@@ -2,6 +2,7 @@ import React from "react";
 import type { QuantityValue } from "../contracts/domain-values.ts";
 import { formatQuantity } from "../formatting/quantity-formatter.ts";
 import clsx from "clsx";
+import { currentIntlLocale } from "../../core/i18n/i18n.ts";
 
 export interface QuantityDisplayProps {
   readonly value: QuantityValue | null | undefined;
@@ -13,7 +14,7 @@ export interface QuantityDisplayProps {
 
 export function QuantityDisplay({
   value,
-  locale = "en-US",
+  locale = currentIntlLocale(),
   decimals,
   hideUnit = false,
   className

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Select, SelectItem } from "../../../components/primitives/select.tsx";
@@ -35,6 +36,7 @@ export function DirectoryImportDialog({
   onOpenChange,
   onImportCompleted
 }: DirectoryImportDialogProps): React.JSX.Element {
+  const { t } = useTranslation("directory");
   const [currentStep, setCurrentStep] = useState<ImportStep>("upload");
   const [fileName, setFileName] = useState<string>("parties-import-sample.csv");
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
@@ -43,7 +45,7 @@ export function DirectoryImportDialog({
     externalReference: "المرجع_الخارجي",
     displayName: "اسم_المنشأة",
     partyType: "نوع_الكيان",
-    role: "الدور",
+    role: t("importDialog.roleColumn"),
     identifierValue: "الرقم_الضريبي",
     email: "البريد_الإلكتروني",
     phone: "رقم_الهاتف",
@@ -139,9 +141,9 @@ export function DirectoryImportDialog({
   const buildMappedRows = (): DirectoryImportRow[] => {
     return rawRows.map((r, idx) => {
       const pType = mappings.partyType ? r[mappings.partyType] : "Organization";
-      const partyType: PartyType = (pType === "Person" || pType === "فرد" || pType === "فرد مستقل") ? "Person" : "Organization";
+      const partyType: PartyType = (pType === "Person" || pType === t("importDialog.individual") || pType === "فرد مستقل") ? "Person" : "Organization";
       const roleVal = mappings.role ? r[mappings.role] : "Customer";
-      const role = (roleVal === "Supplier" || roleVal === "مورد") ? "Supplier" : "Customer";
+      const role = (roleVal === "Supplier" || roleVal === t("importDialog.supplier")) ? "Supplier" : "Customer";
       const extRef = mappings.externalReference ? r[mappings.externalReference] : `IMP-${Date.now()}-${idx + 1}`;
       const name = mappings.displayName ? r[mappings.displayName] : `طرف مستورد ${idx + 1}`;
 
@@ -209,8 +211,8 @@ export function DirectoryImportDialog({
     <Dialog
       isOpen={isOpen}
       onOpenChange={handleClose}
-      title="معالج استيراد بيانات الأطراف التجارية"
-      description="استيراد وتحديث الأطراف التجارية وفق الضوابط المعيارية لمنظومة تخطيط الموارد."
+      title={t("importDialog.title")}
+      description={t("importDialog.description")}
       size="large"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", paddingTop: "0.5rem" }}>
@@ -230,22 +232,22 @@ export function DirectoryImportDialog({
           }}
         >
           <span style={{ color: currentStep === "upload" ? "var(--color-brand-primary)" : "var(--color-content-secondary)" }}>
-            1. رفع الملف
+            {t("importDialog.stepUpload")}
           </span>
           <span style={{ color: currentStep === "mapping" ? "var(--color-brand-primary)" : "var(--color-content-secondary)" }}>
-            2. مطابقة الأعمدة
+            {t("importDialog.stepMapping")}
           </span>
           <span style={{ color: currentStep === "validate" ? "var(--color-brand-primary)" : "var(--color-content-secondary)" }}>
-            3. التحقق ومراجعة التكرار
+            {t("importDialog.stepReview")}
           </span>
           <span style={{ color: currentStep === "preview" ? "var(--color-brand-primary)" : "var(--color-content-secondary)" }}>
-            4. معاينة التغييرات
+            {t("importDialog.stepPreview")}
           </span>
           <span style={{ color: currentStep === "import" ? "var(--color-brand-primary)" : "var(--color-content-secondary)" }}>
-            5. تنفيذ الاستيراد
+            {t("importDialog.stepImport")}
           </span>
           <span style={{ color: currentStep === "reconciliation" ? "var(--color-brand-primary)" : "var(--color-content-secondary)" }}>
-            6. المطابقة النهائية
+            {t("importDialog.stepReconcile")}
           </span>
         </div>
 
@@ -282,10 +284,10 @@ export function DirectoryImportDialog({
             >
               <div style={{ fontSize: "2rem" }}>📄</div>
               <p style={{ margin: 0, fontWeight: 700, fontSize: "1rem" }}>
-                اختر ملف البيانات بصيغة CSV للاستيراد
+                {t("importDialog.chooseCsv")}
               </p>
               <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-                يدعم النظام الملفات المرمزة بـ UTF-8 مع مطابقة وتحديث السجلات القائمة آلياً.
+                {t("importDialog.csvHelp")}
               </p>
 
               <label
@@ -301,7 +303,7 @@ export function DirectoryImportDialog({
                   marginTop: "0.5rem"
                 }}
               >
-                تحديد ملف من الجهاز
+                {t("importDialog.browse")}
                 <input
                   type="file"
                   accept=".csv,text/csv"
@@ -313,10 +315,10 @@ export function DirectoryImportDialog({
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "0.5rem" }}>
               <Button variant="secondary" size="compact" onPress={handleDownloadTemplate}>
-                📥 تحميل نموذج CSV القياسي
+                {t("importDialog.downloadTemplate")}
               </Button>
               <Button variant="primary" size="compact" onPress={handleLoadSample}>
-                ⚡ استخدام بيانات تجريبية جاهزة للمعاينة
+                {t("importDialog.sampleData")}
               </Button>
             </div>
           </div>
@@ -326,13 +328,13 @@ export function DirectoryImportDialog({
         {currentStep === "mapping" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div style={{ fontSize: "0.875rem", color: "var(--color-content-secondary)" }}>
-              الملف المحدد: <strong>{fileName}</strong> ({rawRows.length} سجل). يرجى مطابقة أعمدة الملف بحقول النظام:
+              {t("importDialog.selectedFile")} <strong>{fileName}</strong> ({rawRows.length} {t("importDialog.mappingPrompt")}
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
               <div>
                 <Select
-                  label="الاسم التجاري / المعروض *"
+                  label={t("importDialog.displayName")}
                   selectedKey={mappings.displayName}
                   onSelectionChange={(k) => setMappings({ ...mappings, displayName: String(k ?? "") })}
                 >
@@ -342,7 +344,7 @@ export function DirectoryImportDialog({
 
               <div>
                 <Select
-                  label="المرجع الخارجي / الكود"
+                  label={t("importDialog.externalReference")}
                   selectedKey={mappings.externalReference}
                   onSelectionChange={(k) => setMappings({ ...mappings, externalReference: String(k ?? "") })}
                 >
@@ -352,66 +354,66 @@ export function DirectoryImportDialog({
 
               <div>
                 <Select
-                  label="طبيعة الكيان (منشأة / فرد)"
+                  label={t("importDialog.partyType")}
                   selectedKey={mappings.partyType}
                   onSelectionChange={(k) => setMappings({ ...mappings, partyType: String(k ?? "") })}
                 >
-                  <SelectItem id="" textValue="— غير محدد (افتراضي منشأة) —">— غير محدد (افتراضي منشأة) —</SelectItem>
+                  <SelectItem id="" textValue={t("importDialog.defaultOrganization")}>{t("importDialog.defaultOrganization")}</SelectItem>
                   {headers.map(h => <SelectItem key={h} id={h} textValue={h}>{h}</SelectItem>)}
                 </Select>
               </div>
 
               <div>
                 <Select
-                  label="الدور التجاري (عميل / مورد)"
+                  label={t("importDialog.role")}
                   selectedKey={mappings.role}
                   onSelectionChange={(k) => setMappings({ ...mappings, role: String(k ?? "") })}
                 >
-                  <SelectItem id="" textValue="— غير محدد (افتراضي عميل) —">— غير محدد (افتراضي عميل) —</SelectItem>
+                  <SelectItem id="" textValue={t("importDialog.defaultCustomer")}>{t("importDialog.defaultCustomer")}</SelectItem>
                   {headers.map(h => <SelectItem key={h} id={h} textValue={h}>{h}</SelectItem>)}
                 </Select>
               </div>
 
               <div>
                 <Select
-                  label="الرقم الضريبي / السجل"
+                  label={t("importDialog.identifier")}
                   selectedKey={mappings.identifierValue}
                   onSelectionChange={(k) => setMappings({ ...mappings, identifierValue: String(k ?? "") })}
                 >
-                  <SelectItem id="" textValue="— بدون —">— بدون —</SelectItem>
+                  <SelectItem id="" textValue={t("importDialog.none")}>{t("importDialog.none")}</SelectItem>
                   {headers.map(h => <SelectItem key={h} id={h} textValue={h}>{h}</SelectItem>)}
                 </Select>
               </div>
 
               <div>
                 <Select
-                  label="البريد الإلكتروني"
+                  label={t("importDialog.email")}
                   selectedKey={mappings.email}
                   onSelectionChange={(k) => setMappings({ ...mappings, email: String(k ?? "") })}
                 >
-                  <SelectItem id="" textValue="— بدون —">— بدون —</SelectItem>
+                  <SelectItem id="" textValue={t("importDialog.none")}>{t("importDialog.none")}</SelectItem>
                   {headers.map(h => <SelectItem key={h} id={h} textValue={h}>{h}</SelectItem>)}
                 </Select>
               </div>
 
               <div>
                 <Select
-                  label="رقم الهاتف"
+                  label={t("importDialog.phone")}
                   selectedKey={mappings.phone}
                   onSelectionChange={(k) => setMappings({ ...mappings, phone: String(k ?? "") })}
                 >
-                  <SelectItem id="" textValue="— بدون —">— بدون —</SelectItem>
+                  <SelectItem id="" textValue={t("importDialog.none")}>{t("importDialog.none")}</SelectItem>
                   {headers.map(h => <SelectItem key={h} id={h} textValue={h}>{h}</SelectItem>)}
                 </Select>
               </div>
 
               <div>
                 <Select
-                  label="المدينة / الموقع"
+                  label={t("importDialog.city")}
                   selectedKey={mappings.city}
                   onSelectionChange={(k) => setMappings({ ...mappings, city: String(k ?? "") })}
                 >
-                  <SelectItem id="" textValue="— بدون —">— بدون —</SelectItem>
+                  <SelectItem id="" textValue={t("importDialog.none")}>{t("importDialog.none")}</SelectItem>
                   {headers.map(h => <SelectItem key={h} id={h} textValue={h}>{h}</SelectItem>)}
                 </Select>
               </div>
@@ -419,10 +421,10 @@ export function DirectoryImportDialog({
 
             <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", marginTop: "1rem" }}>
               <Button variant="secondary" onPress={() => setCurrentStep("upload")}>
-                السابق
+                {t("importDialog.previous")}
               </Button>
               <Button variant="primary" onPress={handleStartValidation} isDisabled={importParties.isPending}>
-                {importParties.isPending ? "جارٍ الفحص..." : "فحص البيانات والتجربة (Dry-Run)"}
+                {importParties.isPending ? t("importDialog.validating") : t("importDialog.dryRun")}
               </Button>
             </div>
           </div>
@@ -441,31 +443,31 @@ export function DirectoryImportDialog({
             >
               <div style={{ padding: "0.75rem", borderRadius: "var(--radius-md)", backgroundColor: "var(--color-surface-sunken)" }}>
                 <span style={{ fontSize: "1.25rem", fontWeight: 700, display: "block" }}>{validationResult.rows.length}</span>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-content-secondary)" }}>إجمالي السجلات</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--color-content-secondary)" }}>{t("importDialog.totalRecords")}</span>
               </div>
               <div style={{ padding: "0.75rem", borderRadius: "var(--radius-md)", backgroundColor: "var(--color-status-success-subtle)" }}>
                 <span style={{ fontSize: "1.25rem", fontWeight: 700, display: "block", color: "var(--color-status-success-content)" }}>
                 {validationResult.rows.filter(r => r.action === "Create").length}
                 </span>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-status-success-content)" }}>سجلات جديدة</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--color-status-success-content)" }}>{t("importDialog.newRecords")}</span>
               </div>
               <div style={{ padding: "0.75rem", borderRadius: "var(--radius-md)", backgroundColor: "var(--color-brand-subtle, #eff6ff)" }}>
                 <span style={{ fontSize: "1.25rem", fontWeight: 700, display: "block", color: "var(--color-brand-primary)" }}>
                   {validationResult.rows.filter(r => r.action === "Update").length}
                 </span>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-brand-primary)" }}>تحديث سجل قائم</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--color-brand-primary)" }}>{t("importDialog.updatedRecord")}</span>
               </div>
               <div style={{ padding: "0.75rem", borderRadius: "var(--radius-md)", backgroundColor: "var(--color-status-warning-subtle)" }}>
                 <span style={{ fontSize: "1.25rem", fontWeight: 700, display: "block", color: "var(--color-status-warning-content)" }}>
                   {validationResult.rows.filter(r => r.action === "Review").length}
                 </span>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-status-warning-content)" }}>سجلات تحتاج مراجعة</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--color-status-warning-content)" }}>{t("importDialog.reviewRecords")}</span>
               </div>
               <div style={{ padding: "0.75rem", borderRadius: "var(--radius-md)", backgroundColor: "var(--color-status-danger-subtle)" }}>
                 <span style={{ fontSize: "1.25rem", fontWeight: 700, display: "block", color: "var(--color-status-danger-content)" }}>
                   {validationResult.rows.filter(r => r.action === "Error" || r.errors.length > 0).length}
                 </span>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-status-danger-content)" }}>أخطاء في البيانات</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--color-status-danger-content)" }}>{t("importDialog.dataErrors")}</span>
               </div>
             </div>
 
@@ -473,9 +475,9 @@ export function DirectoryImportDialog({
               <table className="directory-import-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", tableLayout: "fixed" }}>
                 <thead>
                   <tr style={{ backgroundColor: "var(--color-surface-sunken)", borderBottom: "1px solid var(--color-border-subtle)" }}>
-                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>المرجع</th>
-                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>الإجراء المتوقع</th>
-                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>حالة المطابقة</th>
+                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{t("importDialog.reference")}</th>
+                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{t("importDialog.expectedAction")}</th>
+                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{t("importDialog.matchStatus")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -485,16 +487,16 @@ export function DirectoryImportDialog({
                       <td style={{ padding: "0.5rem 0.75rem" }}>
                         <StatusBadge
                           status={row.action === "Create" ? "success" : row.action === "Update" ? "info" : "warning"}
-                          label={row.action === "Create" ? "إضافة جديدة" : row.action === "Update" ? "تحديث" : "اشتباه تكرار"}
+                          label={row.action === "Create" ? t("importDialog.create") : row.action === "Update" ? t("importDialog.update") : t("importDialog.duplicateReview")}
                           size="small"
                         />
                       </td>
                       <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-content-muted)" }}>
                         {row.possibleMatches.length > 1
-                          ? `مطابقة محتملة مع ${row.possibleMatches.length} أطراف في المنظومة`
+                          ? t("importDialog.possibleMatches", { value: row.possibleMatches.length })
                           : row.action === "Update"
-                          ? "مطابقة مؤكدة برقم المرجع أو الضريبة"
-                          : "لا توجد سجلات مشابهة سابقة"}
+                          ? t("importDialog.confirmedMatch")
+                          : t("importDialog.noMatches")}
                       </td>
                     </tr>
                   ))}
@@ -504,10 +506,10 @@ export function DirectoryImportDialog({
 
             <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
               <Button variant="secondary" onPress={() => setCurrentStep("mapping")}>
-                السابق
+                {t("importDialog.previous")}
               </Button>
               <Button variant="primary" onPress={() => setCurrentStep("preview")}>
-                معاينة التغييرات قبل التنفيذ
+                {t("importDialog.previewChanges")}
               </Button>
             </div>
           </div>
@@ -517,18 +519,18 @@ export function DirectoryImportDialog({
         {currentStep === "preview" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div style={{ fontSize: "0.875rem", color: "var(--color-content-secondary)" }}>
-              يرجى مراجعة بيانات الأطراف قبل الاعتماد النهائي وإدراجها في قاعدة البيانات:
+              {t("importDialog.reviewBeforeCommit")}
             </div>
 
             <div style={{ maxHeight: "250px", overflowY: "auto", border: "1px solid var(--color-border-subtle)", borderRadius: "var(--radius-md)" }}>
               <table className="directory-import-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", tableLayout: "fixed" }}>
                 <thead>
                   <tr style={{ backgroundColor: "var(--color-surface-sunken)", borderBottom: "1px solid var(--color-border-subtle)" }}>
-                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>المرجع</th>
-                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>اسم الطرف التجاري</th>
-                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>الكيان</th>
-                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>الدور</th>
-                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>المعرف الضريبي</th>
+                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{t("importDialog.reference")}</th>
+                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{t("importDialog.partyName")}</th>
+                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{t("importDialog.entity")}</th>
+                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{t("importDialog.roleColumn")}</th>
+                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>{t("importDialog.taxIdentifier")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -536,8 +538,8 @@ export function DirectoryImportDialog({
                     <tr key={i} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
                       <td style={{ padding: "0.5rem 0.75rem" }}>{r.externalReference}</td>
                       <td style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>{r.displayName}</td>
-                      <td style={{ padding: "0.5rem 0.75rem" }}>{r.partyType === "Organization" ? "منشأة" : "فرد"}</td>
-                      <td style={{ padding: "0.5rem 0.75rem" }}>{r.role === "Customer" ? "عميل" : "مورد"}</td>
+                      <td style={{ padding: "0.5rem 0.75rem" }}>{r.partyType === "Organization" ? t("importDialog.organization") : t("importDialog.individual")}</td>
+                      <td style={{ padding: "0.5rem 0.75rem" }}>{r.role === "Customer" ? t("importDialog.customer") : t("importDialog.supplier")}</td>
                       <td style={{ padding: "0.5rem 0.75rem", fontFamily: "var(--font-mono, monospace)" }}>{r.identifierValue || "—"}</td>
                     </tr>
                   ))}
@@ -547,10 +549,10 @@ export function DirectoryImportDialog({
 
             <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
               <Button variant="secondary" onPress={() => setCurrentStep("validate")}>
-                السابق
+                {t("importDialog.previous")}
               </Button>
               <Button variant="primary" onPress={handleExecuteImport} isDisabled={importParties.isPending}>
-                {importParties.isPending ? "جارٍ تنفيذ الاستيراد..." : "تأكيد واستيراد السجلات"}
+                {importParties.isPending ? t("importDialog.executing") : t("importDialog.confirmImport")}
               </Button>
             </div>
           </div>
@@ -559,8 +561,8 @@ export function DirectoryImportDialog({
         {currentStep === "import" && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem", padding: "2rem 1rem", textAlign: "center" }}>
             <div aria-hidden="true" style={{ fontSize: "2rem" }}>⏳</div>
-            <strong>جارٍ اعتماد السجلات وتسجيل نتيجة كل صف...</strong>
-            <span style={{ color: "var(--color-content-secondary)", fontSize: "0.875rem" }}>لا تغلق هذه النافذة حتى تظهر المطابقة النهائية.</span>
+            <strong>{t("importDialog.processing")}</strong>
+            <span style={{ color: "var(--color-content-secondary)", fontSize: "0.875rem" }}>{t("importDialog.keepOpen")}</span>
           </div>
         )}
 
@@ -570,10 +572,10 @@ export function DirectoryImportDialog({
             <div style={{ fontSize: "2.5rem" }}>✅</div>
             <div>
               <h3 style={{ margin: "0 0 0.5rem", fontSize: "1.125rem", fontWeight: 700 }}>
-                اكتملت عملية استيراد الأطراف التجارية بنجاح
+                {t("importDialog.completed")}
               </h3>
               <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--color-content-secondary)" }}>
-                تم تنفيذ وتوثيق العملية في سجل العمليات مع الحفاظ على سلامة البيانات والتحقق من التكرار.
+                {t("importDialog.reconciliationDescription")}
               </p>
             </div>
 
@@ -591,28 +593,28 @@ export function DirectoryImportDialog({
                 <span style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-status-success-content)" }}>
                   {executionResult.rows.filter(r => r.action === "Created").length}
                 </span>
-                <span style={{ fontSize: "0.8125rem", display: "block", color: "var(--color-content-muted)" }}>أطراف تم إنشاؤها</span>
+                <span style={{ fontSize: "0.8125rem", display: "block", color: "var(--color-content-muted)" }}>{t("importDialog.created")}</span>
               </div>
               <div>
                 <span style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-brand-primary)" }}>
                   {executionResult.rows.filter(r => r.action === "Updated").length}
                 </span>
-                <span style={{ fontSize: "0.8125rem", display: "block", color: "var(--color-content-muted)" }}>أطراف تم تحديثها</span>
+                <span style={{ fontSize: "0.8125rem", display: "block", color: "var(--color-content-muted)" }}>{t("importDialog.updated")}</span>
               </div>
               <div>
                 <span style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-status-warning-content)" }}>
                   {executionResult.rows.filter(r => r.action === "Review" || r.action === "Error").length}
                 </span>
-                <span style={{ fontSize: "0.8125rem", display: "block", color: "var(--color-content-muted)" }}>سجلات للمراجعة</span>
+                <span style={{ fontSize: "0.8125rem", display: "block", color: "var(--color-content-muted)" }}>{t("importDialog.needsReview")}</span>
               </div>
             </div>
 
             <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
               <Button variant="secondary" size="compact" onPress={handleDownloadReport}>
-                📄 تحميل تقرير المطابقة والتنفيذ
+                {t("importDialog.downloadReport")}
               </Button>
               <Button variant="primary" size="compact" onPress={() => handleClose(false)}>
-                إغلاق وتحديث الدليل
+                {t("importDialog.closeRefresh")}
               </Button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import React from "react";
 import { Alert } from "../primitives/alert.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface FormErrorItem {
   readonly field?: string | undefined;
@@ -15,11 +16,13 @@ export interface ValidationSummaryProps {
 }
 
 export function ValidationSummary({
-  title = "يرجى تصحيح الأخطاء التالية قبل المتابعة:",
+  title,
   errors,
   onFieldFocus,
   className
 }: ValidationSummaryProps): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const summaryTitle = title ?? t("components.validationSummary");
   const normalizedErrors: FormErrorItem[] = Array.isArray(errors)
     ? errors
     : Object.entries(errors)
@@ -32,7 +35,7 @@ export function ValidationSummary({
 
   return (
     <div className={clsx("ui-validation-summary", className)}>
-      <Alert variant="danger" title={title}>
+      <Alert variant="danger" title={summaryTitle}>
         <ul style={{ margin: "0.25rem 0 0 0", paddingInlineStart: "1.25rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
           {normalizedErrors.map((err, idx) => (
             <li key={`err-${idx}`}>

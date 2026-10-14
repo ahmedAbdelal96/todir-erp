@@ -2,6 +2,7 @@ import React from "react";
 import { Spinner } from "./spinner.tsx";
 import { Skeleton } from "./skeleton.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface LoadingStateProps {
   readonly message?: string | undefined;
@@ -12,12 +13,14 @@ export interface LoadingStateProps {
 }
 
 export function LoadingState({
-  message = "جارٍ تحميل البيانات...",
+  message,
   variant = "spinner",
   skeletonRows = 5,
   className,
   style
 }: LoadingStateProps): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const displayMessage = message ?? t("components.loading");
   if (variant === "skeleton") {
     return (
       <div
@@ -59,8 +62,8 @@ export function LoadingState({
         ...style
       }}
     >
-      <Spinner size="large" aria-label={message} />
-      {message && (
+      <Spinner size="large" aria-label={displayMessage} />
+      {displayMessage && (
         <p
           style={{
             marginTop: "1rem",
@@ -70,7 +73,7 @@ export function LoadingState({
             color: "var(--color-content-muted, #64748b)"
           }}
         >
-          {message}
+          {displayMessage}
         </p>
       )}
     </div>

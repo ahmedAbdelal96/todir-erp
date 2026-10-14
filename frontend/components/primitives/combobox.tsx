@@ -13,6 +13,7 @@ import {
   type ListBoxItemProps as AriaListBoxItemProps
 } from "react-aria-components";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export type ComboBoxKey = string | number;
 
@@ -59,7 +60,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
   label,
   description,
   errorMessage,
-  placeholder = "Search...",
+  placeholder,
   size = "comfortable",
   isLocked = false,
   lockedReason,
@@ -74,6 +75,8 @@ export function ComboBox<T extends object = ComboBoxOption>({
   onSelectionChange,
   ...props
 }: ComboBoxProps<T>): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const searchPlaceholder = placeholder ?? t("components.searchPlaceholder");
   const isEffectiveDisabled = isDisabled || isLocked;
 
   return (
@@ -129,7 +132,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
         }}
       >
         <AriaInput
-          {...(placeholder !== undefined ? { placeholder } : {})}
+          placeholder={searchPlaceholder}
           style={{
             flex: 1,
             border: "none",

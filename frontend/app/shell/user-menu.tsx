@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import {
   GlobeIcon,
   SunMoonIcon,
@@ -11,7 +12,6 @@ import { Separator } from "../../components/primitives/separator.tsx";
 export interface UserMenuProps {
   readonly userName?: string | undefined;
   readonly userEmail?: string | undefined;
-  readonly language: "ar" | "en";
   readonly onToggleLanguage: () => void;
   readonly theme: string;
   readonly onToggleTheme: () => void;
@@ -23,7 +23,6 @@ export interface UserMenuProps {
 export function UserMenu({
   userName = "مسؤول النظام",
   userEmail = "admin@atlas.com",
-  language,
   onToggleLanguage,
   theme,
   onToggleTheme,
@@ -34,7 +33,8 @@ export function UserMenu({
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const isArabic = language === "ar";
+  const { t, i18n } = useTranslation("common");
+  const isRtl = i18n.dir() === "rtl";
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -142,7 +142,7 @@ export function UserMenu({
                 fontSize: "0.75rem",
                 color: "var(--color-content-muted, #64748b)",
                 marginTop: "0.125rem",
-                textAlign: isArabic ? "right" : "left"
+                textAlign: isRtl ? "right" : "left"
               }}
             >
               {userEmail}
@@ -165,11 +165,9 @@ export function UserMenu({
           >
             <span style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
               <GlobeIcon size={16} />
-              <span>{isArabic ? "اللغة" : "Language"}</span>
+              <span>{t("preferences.language")}</span>
             </span>
-            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-              {isArabic ? "English" : "العربية"}
-            </span>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>{t(i18n.resolvedLanguage === "ar" ? "language.switchToEnglish" : "language.switchToArabic")}</span>
           </button>
 
           <button
@@ -185,10 +183,10 @@ export function UserMenu({
           >
             <span style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
               <SunMoonIcon size={16} />
-              <span>{isArabic ? "المظهر" : "Theme"}</span>
+              <span>{t("preferences.theme")}</span>
             </span>
             <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-              {theme === "default" ? (isArabic ? "البديل" : "Alternate") : (isArabic ? "الافتراضي" : "Default")}
+              {theme === "default" ? t("preferences.alternateTheme") : t("preferences.defaultTheme")}
             </span>
           </button>
 
@@ -205,10 +203,10 @@ export function UserMenu({
           >
             <span style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
               <DensityIcon size={16} />
-              <span>{isArabic ? "كثافة العرض" : "Density"}</span>
+              <span>{t("preferences.density")}</span>
             </span>
             <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-              {density === "comfortable" ? (isArabic ? "مدمج" : "Compact") : (isArabic ? "مريح" : "Comfortable")}
+              {density === "comfortable" ? t("preferences.compact") : t("preferences.comfortable")}
             </span>
           </button>
 
@@ -235,7 +233,7 @@ export function UserMenu({
           >
             <span style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
               <LogOutIcon size={16} />
-              <span>{isArabic ? "تسجيل الخروج" : "Sign out"}</span>
+              <span>{t("shell.signOut")}</span>
             </span>
           </button>
         </div>

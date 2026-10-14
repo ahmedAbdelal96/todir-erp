@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useMemo, useState, useCallback, type ReactNode } from "react";
+import React, { createContext, useContext, useMemo, useState, useCallback, useEffect, type ReactNode } from "react";
 import type { RuntimeContext, BrandProfile, ResolvedTheme } from "./runtime-context.ts";
 import type { TenantContext, UserContext, LocaleContext } from "./tenant-context.ts";
 import type { LegalEntityContext, BranchContext } from "./entity-context.ts";
 import type { UserPreferences } from "./preferences.ts";
 import { CapabilitySet, type CapabilityState, type CapabilityDetail } from "./capabilities.ts";
 import { PermissionSet } from "./permissions.ts";
+import { changeLanguage, currentLanguage, i18n } from "../i18n/i18n.ts";
 
 export interface RuntimeContextActions {
   readonly switchTenant: (tenant: TenantContext) => Promise<void>;
@@ -46,7 +47,7 @@ export function RuntimeProvider({
   const [user] = useState<UserContext>(initialContext.user);
   const [capabilities, setCapabilities] = useState<CapabilitySet>(initialContext.capabilities);
   const [permissions, setPermissions] = useState<PermissionSet>(initialContext.permissions);
-  const [preferences, setPreferences] = useState<UserPreferences>(initialContext.preferences);
+  const [preferences, setPreferences] = useState<UserPreferences>(() => ({ ...initialContext.preferences, language: currentLanguage() }));
   const [brand, setBrand] = useState<BrandProfile>(initialContext.brand);
   const [theme, setTheme] = useState<ResolvedTheme>(initialContext.theme);
 
@@ -55,6 +56,14 @@ export function RuntimeProvider({
     direction: preferences.language === "ar" ? "rtl" : "ltr",
     numeralSystem: preferences.numeralSystem
   }), [preferences.language, preferences.numeralSystem]);
+
+  useEffect(() => {
+    const synchronizeLanguage = (language: string) => {
+      setPreferences((current) => ({ ...current, language: language.startsWith("en") ? "en" : "ar" }));
+    };
+    i18n.on("languageChanged", synchronizeLanguage);
+    return () => { i18n.off("languageChanged", synchronizeLanguage); };
+  }, []);
 
   const switchTenant = useCallback(async (nextTenant: TenantContext) => {
     if (nextTenant.tenantId === tenant.tenantId) {
@@ -81,10 +90,9 @@ export function RuntimeProvider({
   }, []);
 
   const updatePreferences = useCallback((partial: Partial<UserPreferences>) => {
-    setPreferences(current => ({
-      ...current,
-      ...partial
-    }));
+    const { language, ...nonLanguagePreferences } = partial;
+    setPreferences(current => ({ ...current, ...nonLanguagePreferences }));
+    if (language) void changeLanguage(language);
   }, []);
 
   const updateCapabilities = useCallback((caps: Record<string, CapabilityState | CapabilityDetail>) => {

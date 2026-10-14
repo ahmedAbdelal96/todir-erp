@@ -65,12 +65,3 @@ export function resolveDataGridLocale(locale?: "ar" | "en"): "ar" | "en" {
   }
   return "ar";
 }
-
-export function getDataGridEmptyMessage(locale: "ar" | "en", hasActiveFilters = false): string {
-  if (locale === "en") return hasActiveFilters ? "No records match the current search or filters" : "No records found";
-  return hasActiveFilters ? "لا توجد سجلات تطابق معايير البحث الحالية" : "لا توجد سجلات";
-}
-
-export function getDataGridLoadingMessage(locale: "ar" | "en"): string {
-  return locale === "en" ? "Loading records..." : "جارٍ تحميل السجلات...";
-}

@@ -1,10 +1,22 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { partyFormSchema } from "../validation/party-schema.ts";
+import { createPartyFormSchema } from "../validation/party-schema.ts";
 import { normalizeParty, partyApi } from "../services/party-api.ts";
+import "../../../app/localization.ts";
 import { auditActionLabel, auditActorLabel, auditChanges, auditEntityLabel, auditFieldChanges } from "../audit-format.ts";
+import { changeLanguage } from "../../../core/i18n/i18n.ts";
 
 describe("Directory / Party Vertical Slice", () => {
+  const partyFormSchema = createPartyFormSchema((key) => key);
+
+  it("localizes audit labels using the active application language", async () => {
+    await changeLanguage("en");
+    assert.equal(auditActionLabel("party_identity_changed"), "Identity details updated");
+    assert.equal(auditActorLabel("System"), "System");
+    assert.equal(auditEntityLabel("Party"), "Party record");
+    await changeLanguage("ar");
+    assert.equal(auditActionLabel("party_identity_changed"), "تعديل بيانات الهوية");
+  });
   it("validates party schema for organization with valid roles", () => {
     const validData = {
       partyType: "Organization",

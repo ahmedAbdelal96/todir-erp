@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
@@ -18,6 +19,7 @@ export function DeactivateUserDialog({
   user,
   context
 }: DeactivateUserDialogProps): React.JSX.Element {
+  const { t } = useTranslation("identity");
   const [error, setError] = useState<string | undefined>();
   const deactivateMutation = useDeactivateUser(context);
 
@@ -33,7 +35,7 @@ export function DeactivateUserDialog({
       await deactivateMutation.mutateAsync(user.id);
       handleClose(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر تعطيل المستخدم.");
+      setError(t("userActions.deactivateFailed"));
     }
   }
 
@@ -43,30 +45,30 @@ export function DeactivateUserDialog({
     <Dialog
       isOpen={isOpen}
       onOpenChange={handleClose}
-      title="تعطيل المستخدم"
-      description={`تعطيل وصول المستخدم ${user.name} إلى النظام`}
+      title={t("userActions.deactivateTitle")}
+      description={t("userActions.deactivateDescription", { name: user.name })}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", marginTop: "1rem" }}>
         {error && <Alert variant="danger">{error}</Alert>}
 
         <p style={{ margin: 0, fontSize: "0.9375rem", color: "var(--color-content-secondary, #334155)", lineHeight: 1.6 }}>
-          هل تريد بالتأكيد تعطيل حساب <strong>{user.name}</strong> (<bdi dir="ltr">{user.email}</bdi>)؟
+          <Trans ns="identity" i18nKey="userActions.deactivateConfirm" values={{ name: user.name, email: user.email }} components={{ strong: <strong />, bdi: <bdi dir="ltr" /> }} />
         </p>
 
         <Alert variant="warning">
-          لن يتمكن المستخدم من تسجيل الدخول إلى النظام بعد التعطيل، مع بقاء كافة سجلاته وبياناته السابقة محفوظة بالكامل في النظام دون أي حذف.
+          {t("userActions.deactivateWarning")}
         </Alert>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
           <Button variant="secondary" onPress={() => handleClose(false)}>
-            إلغاء
+            {t("userActions.cancel")}
           </Button>
           <Button
             variant="danger"
             isLoading={deactivateMutation.isPending}
             onPress={() => void handleDeactivate()}
           >
-            تعطيل المستخدم
+            {t("userActions.deactivateTitle")}
           </Button>
         </div>
       </div>

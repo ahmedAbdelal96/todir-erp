@@ -1,6 +1,8 @@
 import React from "react";
 import { Button } from "./button.tsx";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
+import { currentIntlLocale } from "../../core/i18n/i18n.ts";
 
 export interface PaginationProps {
   readonly page: number; // 1-indexed
@@ -12,7 +14,6 @@ export interface PaginationProps {
   readonly pageSizeOptions?: readonly number[] | undefined;
   readonly isDisabled?: boolean | undefined;
   readonly size?: "comfortable" | "compact" | undefined;
-  readonly language?: "ar" | "en" | undefined;
   readonly className?: string | undefined;
 }
 
@@ -26,21 +27,16 @@ export function Pagination({
   pageSizeOptions = [10, 20, 50, 100],
   isDisabled = false,
   size = "comfortable",
-  language = "ar",
   className
 }: PaginationProps): React.JSX.Element {
-  const isArabic = language === "ar";
+  const { t } = useTranslation("common");
   const safePage = Math.max(1, Math.min(page, Math.max(1, totalPages)));
   const canGoPrev = safePage > 1 && !isDisabled;
   const canGoNext = safePage < totalPages && !isDisabled;
 
   const labels = {
-    nav: isArabic ? "التنقل بين الصفحات" : "Pagination navigation",
-    total: isArabic ? "إجمالي السجلات:" : "Total records:",
-    perPage: isArabic ? "لكل صفحة:" : "Per page:",
-    prev: isArabic ? "السابق" : "Previous",
-    next: isArabic ? "التالي" : "Next",
-    pageLabel: (p: number) => (isArabic ? `الصفحة ${p}` : `Page ${p}`)
+    nav: t("pagination.navigation"), total: t("pagination.total"), perPage: t("pagination.perPage"),
+    prev: t("pagination.previous"), next: t("pagination.next"), pageLabel: (p: number) => t("pagination.page", { page: p })
   };
 
   // Generate visible page range (e.g. 1 ... 4 5 6 ... 10)
@@ -77,7 +73,7 @@ export function Pagination({
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-content-muted)" }}>
         {totalItems !== undefined && (
           <span>
-            {labels.total} <strong style={{ color: "var(--color-content-primary)" }}><bdi>{totalItems.toLocaleString(isArabic ? "ar-EG" : "en-US")}</bdi></strong>
+            {labels.total} <strong style={{ color: "var(--color-content-primary)" }}><bdi>{totalItems.toLocaleString(currentIntlLocale())}</bdi></strong>
           </span>
         )}
         {onPageSizeChange && (

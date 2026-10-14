@@ -66,7 +66,7 @@ test.describe('App Shell Bootstrap & Localization', () => {
     await page.goto('/');
 
     // Click language switcher button
-    const langButton = page.getByRole('button', { name: 'English' });
+    const langButton = page.getByRole('button', { name: 'التبديل إلى الإنجليزية' });
     await expect(langButton).toBeVisible();
     await langButton.click();
 
@@ -75,8 +75,62 @@ test.describe('App Shell Bootstrap & Localization', () => {
     await expect(page.getByText('Legal entity', { exact: true })).toBeVisible();
     await expect(page.getByText('Branch', { exact: true })).toBeVisible();
 
-    const switchBack = page.getByRole('button', { name: 'العربية' });
+    const html = page.locator('html');
+    await expect(html).toHaveAttribute('lang', 'en');
+    await expect(html).toHaveAttribute('dir', 'ltr');
+
+    const switchBack = page.getByRole('button', { name: 'Switch to Arabic' });
     await expect(switchBack).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Workspace' })).toBeVisible();
+    await expect(html).toHaveAttribute('lang', 'en');
+    await expect(html).toHaveAttribute('dir', 'ltr');
+
+    await page.getByRole('button', { name: 'Switch to Arabic' }).click();
+    await expect(page.getByRole('heading', { name: 'مساحة العمل' })).toBeVisible();
+    await expect(html).toHaveAttribute('lang', 'ar');
+    await expect(html).toHaveAttribute('dir', 'rtl');
+  });
+
+  test('keeps the login surface bilingual and persists its selected language', async ({ page }) => {
+    await page.unroute('**/api/v1/session/context');
+    await page.route('**/api/v1/session/context', route => route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ authenticated: false })
+    }));
+    await page.route('**/api/v1/auth/csrf', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ token: 'csrf-test-token' })
+    }));
+    await page.route('**/api/v1/auth/login', route => route.fulfill({
+      status: 401,
+      contentType: 'application/problem+json',
+      body: JSON.stringify({ title: 'Authentication failed', status: 401, code: 'auth.invalid_credentials' })
+    }));
+    await page.goto('/');
+
+    await expect(page.getByRole('heading', { name: 'تسجيل الدخول' })).toBeVisible();
+    await page.getByRole('button', { name: 'التبديل إلى الإنجليزية' }).click();
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByText('Email address')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+
+    await page.getByLabel('Email address').fill('invalid@example.test');
+    await page.getByRole('textbox', { name: 'Password' }).fill('InvalidPassword2026!');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByText('The email or password is incorrect.')).toBeVisible();
+    await page.getByRole('button', { name: 'Switch to Arabic' }).click();
+    await expect(page.getByText('البريد الإلكتروني أو كلمة المرور غير صحيحة.')).toBeVisible();
+    await page.getByRole('button', { name: 'التبديل إلى الإنجليزية' }).click();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   });
 
   test('should preserve a real browser path on direct navigation', async ({ page }) => {

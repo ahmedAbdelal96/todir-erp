@@ -8,6 +8,7 @@ import {
   type TextFieldProps as AriaTextFieldProps
 } from "react-aria-components";
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 
 export interface PasswordFieldProps
   extends Omit<
@@ -113,6 +114,7 @@ export function PasswordField({
   startAdornment,
   ...props
 }: PasswordFieldProps): React.JSX.Element {
+  const { t } = useTranslation("common");
   const [showPassword, setShowPassword] = useState(false);
   const isEffectivelyReadOnly = isReadOnly || isLocked;
 
@@ -217,8 +219,8 @@ export function PasswordField({
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-            title={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+            aria-label={showPassword ? t("components.hidePassword") : t("components.showPassword")}
+            title={showPassword ? t("components.hidePassword") : t("components.showPassword")}
             style={{
               display: "inline-flex",
               alignItems: "center",

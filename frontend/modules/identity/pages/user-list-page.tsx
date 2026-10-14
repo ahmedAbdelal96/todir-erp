@@ -1,4 +1,6 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { currentIntlLocale } from "../../../core/i18n/i18n.ts";
 import { ListPage } from "../../../components/pages/list-page.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
@@ -24,6 +26,7 @@ export interface UserListPageProps {
 }
 
 export function UserListPage({ onSelectUser, context }: UserListPageProps): React.JSX.Element {
+  const { t } = useTranslation("identity");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
@@ -64,10 +67,10 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
 
   return (
     <ListPage
-      title="المستخدمون"
-      subtitle="إدارة حسابات مستخدمي الشركة وصلاحيات الوصول"
+      title={t("userList.title")}
+      subtitle={t("userList.subtitle")}
       primaryAction={{
-        label: "إضافة مستخدم",
+        label: t("userList.add"),
         onClick: () => setIsCreateOpen(true)
       }}
       pagination={
@@ -89,8 +92,8 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
         <FilterBar
           searchInput={
             <SearchField
-              ariaLabel="البحث عن مستخدم"
-              placeholder="البحث بالاسم أو البريد الإلكتروني..."
+              ariaLabel={t("userList.searchLabel")}
+              placeholder={t("userList.searchPlaceholder")}
               value={searchTerm}
               onChange={setSearchTerm}
             />
@@ -103,38 +106,38 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
         >
           <div style={{ minWidth: "160px" }}>
             <Select
-              label="حالة الحساب"
+              label={t("userList.accountStatus")}
               selectedKey={statusFilter}
               onSelectionChange={(key) => setStatusFilter(String(key))}
             >
-              <SelectItem id="all" textValue="جميع الحسابات">جميع الحسابات</SelectItem>
-              <SelectItem id="active" textValue="الحسابات النشطة">الحسابات النشطة</SelectItem>
-              <SelectItem id="suspended" textValue="الحسابات المعطلة">الحسابات المعطلة</SelectItem>
+              <SelectItem id="all" textValue={t("userList.allAccounts")}>{t("userList.allAccounts")}</SelectItem>
+              <SelectItem id="active" textValue={t("userList.activeAccounts")}>{t("userList.activeAccounts")}</SelectItem>
+              <SelectItem id="suspended" textValue={t("userList.suspendedAccounts")}>{t("userList.suspendedAccounts")}</SelectItem>
             </Select>
           </div>
         </FilterBar>
       }
     >
       {isLoading ? (
-        <LoadingState message="جارٍ تحميل قائمة المستخدمين..." />
+        <LoadingState message={t("userList.loading")} />
       ) : error ? (
         <ErrorState
-          title="تعذر تحميل بيانات المستخدمين"
-          message="حدث خطأ أثناء جلب قائمة المستخدمين من الخادم. يرجى المحاولة مرة أخرى."
+          title={t("userList.loadError")}
+          message={t("userList.loadErrorDescription")}
           onRetry={() => void refetch()}
         />
       ) : filteredUsers.length === 0 ? (
         <EmptyState
           icon={<UsersIcon size={28} />}
-          title="لا يوجد مستخدمون حتى الآن"
+          title={t("userList.emptyTitle")}
           description={
             searchTerm || statusFilter !== "all"
-              ? "لم يتم العثور على مستخدمين يطابقون معايير البحث الحالية."
-              : "ابدأ بإضافة مستخدمي الشركة لتزويدهم بحسابات وصلاحيات الوصول."
+              ? t("userList.filteredEmpty")
+              : t("userList.emptyDescription")
           }
           action={
             <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
-              إضافة مستخدم جديد
+              {t("userList.addNew")}
             </Button>
           }
         />
@@ -147,15 +150,15 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
             overflow: "hidden"
           }}
         >
-          <Table aria-label="قائمة مستخدمي الشركة">
+          <Table aria-label={t("userList.tableLabel")}>
             <TableHeader>
               <TableRow>
-                <TableHead style={{ width: "20%" }}>الاسم</TableHead>
-                <TableHead style={{ width: "25%" }}>البريد المستخدم لتسجيل الدخول</TableHead>
-                <TableHead style={{ width: "12%" }}>الحالة</TableHead>
-                <TableHead style={{ width: "13%" }}>كلمة المرور المؤقتة</TableHead>
-                <TableHead style={{ width: "12%" }}>تاريخ الإنشاء</TableHead>
-                <TableHead style={{ width: "18%", textAlign: "center" }}>الإجراءات</TableHead>
+                <TableHead style={{ width: "20%" }}>{t("userList.name")}</TableHead>
+                <TableHead style={{ width: "25%" }}>{t("userList.loginEmail")}</TableHead>
+                <TableHead style={{ width: "12%" }}>{t("userList.status")}</TableHead>
+                <TableHead style={{ width: "13%" }}>{t("userList.temporaryPassword")}</TableHead>
+                <TableHead style={{ width: "12%" }}>{t("userList.createdAt")}</TableHead>
+                <TableHead style={{ width: "18%", textAlign: "center" }}>{t("userList.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -176,7 +179,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
                     <TableCell>
                       <StatusBadge
                         intent={isActive ? "success" : "neutral"}
-                        label={isActive ? "نشط" : "معطّل"}
+                        label={isActive ? t("userList.active") : t("userList.disabled")}
                         size="small"
                       />
                     </TableCell>
@@ -184,17 +187,17 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
                     <TableCell>
                       {user.mustChangePassword ? (
                         <span style={{ fontSize: "0.75rem", color: "var(--color-status-warning, #f59e0b)", fontWeight: 600 }}>
-                          مطلوب تغييرها
+                          {t("userList.changePasswordRequired")}
                         </span>
                       ) : (
                         <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
-                          مُعيّنة
+                          {t("userList.passwordSet")}
                         </span>
                       )}
                     </TableCell>
 
                     <TableCell style={{ color: "var(--color-content-muted, #64748b)", fontSize: "0.8125rem" }}>
-                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString("ar-EG") : "—"}
+                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString(currentIntlLocale()) : "—"}
                     </TableCell>
 
                     <TableCell>
@@ -205,7 +208,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
                             size="compact"
                             onPress={() => onSelectUser(user)}
                           >
-                            التفاصيل
+                            {t("userList.details")}
                           </Button>
                         )}
                         <Button
@@ -213,7 +216,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
                           size="compact"
                           onPress={() => setResetTargetUser(user)}
                         >
-                          إعادة تعيين كلمة المرور
+                          {t("userList.resetPassword")}
                         </Button>
                         {isActive ? (
                           <Button
@@ -221,7 +224,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
                             size="compact"
                             onPress={() => setDeactivateTargetUser(user)}
                           >
-                            تعطيل
+                            {t("userList.deactivate")}
                           </Button>
                         ) : (
                           <Button
@@ -229,7 +232,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
                             size="compact"
                             onPress={() => setReactivateTargetUser(user)}
                           >
-                            إعادة تفعيل
+                            {t("userList.reactivate")}
                           </Button>
                         )}
                       </div>

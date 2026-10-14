@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../../components/pages/page-header.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -13,17 +14,19 @@ import {
 } from "../../../components/primitives/table.tsx";
 import { MoneyField } from "../../../components/fields/money-field.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
+import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { finbaseApi } from "../services/finbase-api.ts";
 import type { Currency, PaymentScheduleLine } from "../types.ts";
 
 export function FinBasePage(): React.JSX.Element {
+  const { t } = useTranslation("finbase");
   const [currencies, setCurrencies] = useState<readonly Currency[]>([]);
   const [money, setMoney] = useState({ amount: "100.00", currency: "EGP" });
   const [schedule, setSchedule] = useState<readonly PaymentScheduleLine[]>([]);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    void finbaseApi.currencies().then(setCurrencies).catch(() => setError("تعذر تحميل مرجع العملات"));
+    void finbaseApi.currencies().then(setCurrencies).catch(() => setError(t("page.currencyLoadError")));
   }, []);
 
   async function preview() {
@@ -36,24 +39,24 @@ export function FinBasePage(): React.JSX.Element {
         ])
       );
     } catch {
-      setError("تعذر حساب جدول الاستحقاق");
+      setError(t("page.scheduleError"));
     }
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)", padding: "var(--space-6)" }}>
       <PageHeader
-        title="الأساس المالي"
-        description="العملات والسياسات وأسعار الصرف وشروط السداد — بدون خلط مع دفتر الأستاذ."
+        title={t("page.title")}
+        description={t("page.description")}
       />
 
       {error ? (
         <ErrorState
-          title="خطأ في النظام المالي"
+          title={t("page.errorTitle")}
           message={error}
           onRetry={() => {
             setError(undefined);
-            void finbaseApi.currencies().then(setCurrencies).catch(() => setError("تعذر تحميل مرجع العملات"));
+            void finbaseApi.currencies().then(setCurrencies).catch(() => setError(t("page.currencyLoadError")));
           }}
         />
       ) : null}
@@ -61,13 +64,13 @@ export function FinBasePage(): React.JSX.Element {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "var(--space-6)" }}>
         <Surface>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-4)" }}>
-            <h2 style={{ fontSize: "var(--font-size-base)", fontWeight: 600, margin: 0 }}>مرجع العملات</h2>
+            <h2 style={{ fontSize: "var(--font-size-base)", fontWeight: 600, margin: 0 }}>{t("page.currencyReference")}</h2>
             <span style={{ fontSize: "var(--font-size-xs)", color: "var(--color-content-muted)" }}>
-              {currencies.length} عملة نشطة
+              {t("page.activeCurrencyCount", { count: currencies.length })}
             </span>
           </div>
           <p style={{ color: "var(--color-content-secondary)", fontSize: "var(--font-size-sm)", margin: "0 0 var(--space-4) 0" }}>
-            البيانات المضبوطة وفق معيار ISO-4217 المعتمد للعملات النقدية.
+            {t("page.currencyDescription")}
           </p>
           <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
             {currencies.map((currency) => (
@@ -92,16 +95,16 @@ export function FinBasePage(): React.JSX.Element {
         </Surface>
 
         <Surface>
-          <h2 style={{ fontSize: "var(--font-size-base)", fontWeight: 600, margin: "0 0 var(--space-4) 0" }}>معاينة جدول السداد</h2>
+          <h2 style={{ fontSize: "var(--font-size-base)", fontWeight: 600, margin: "0 0 var(--space-4) 0" }}>{t("page.schedulePreview")}</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
-            <MoneyField label="إجمالي المستند" value={money} onChange={setMoney} />
+            <MoneyField label={t("page.documentTotal")} value={money} onChange={setMoney} />
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "var(--font-size-sm)" }}>
-              <span style={{ color: "var(--color-content-secondary)" }}>المعروض:</span>
+              <span style={{ color: "var(--color-content-secondary)" }}>{t("page.displayed")}</span>
               <MoneyDisplay value={money} displayCurrencyCode />
             </div>
             <div>
               <Button variant="primary" type="button" onPress={() => void preview()}>
-                حساب 33.33% ثم الرصيد
+                {t("page.calculateInstallments")}
               </Button>
             </div>
 
@@ -110,21 +113,21 @@ export function FinBasePage(): React.JSX.Element {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>الدفعة</TableHead>
-                      <TableHead align="end">المبلغ</TableHead>
-                      <TableHead>تاريخ الاستحقاق</TableHead>
+                      <TableHead>{t("page.installment")}</TableHead>
+                      <TableHead align="end">{t("page.amount")}</TableHead>
+                      <TableHead>{t("page.dueDate")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {schedule.map((line) => (
                       <TableRow key={line.sequence}>
-                        <TableCell>الدفعة {line.sequence}</TableCell>
+                        <TableCell>{t("page.installmentNumber", { number: line.sequence })}</TableCell>
                         <TableCell align="end">
                           <span dir="ltr" style={{ fontWeight: 600 }}>
                             {line.amount}
                           </span>
                         </TableCell>
-                        <TableCell>{line.dueDate}</TableCell>
+                        <TableCell><LocalDateDisplay value={line.dueDate} /></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

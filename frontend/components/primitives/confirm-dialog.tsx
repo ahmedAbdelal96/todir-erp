@@ -1,6 +1,7 @@
 import React, { type ReactNode } from "react";
 import { Dialog } from "./dialog.tsx";
 import { Button } from "./button.tsx";
+import { useTranslation } from "react-i18next";
 
 export interface ConfirmDialogProps {
   readonly isOpen: boolean;
@@ -20,13 +21,16 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = "تأكيد",
-  cancelLabel = "إلغاء",
+  confirmLabel,
+  cancelLabel,
   variant = "danger",
   onConfirm,
   onCancel,
   isPending = false
 }: ConfirmDialogProps): React.JSX.Element {
+  const { t } = useTranslation("common");
+  const confirmText = confirmLabel ?? t("components.confirm");
+  const cancelText = cancelLabel ?? t("components.cancel");
   const handleCancel = () => {
     if (isPending) return;
     onCancel?.();
@@ -66,14 +70,14 @@ export function ConfirmDialog({
           onPress={handleCancel}
           isDisabled={isPending}
         >
-          {cancelLabel}
+          {cancelText}
         </Button>
         <Button
           variant={variant === "danger" ? "danger" : "primary"}
           onPress={handleConfirm}
           isDisabled={isPending}
         >
-          {isPending ? "جارٍ التنفيذ..." : confirmLabel}
+          {isPending ? t("components.processing") : confirmText}
         </Button>
       </div>
     </Dialog>

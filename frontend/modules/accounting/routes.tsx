@@ -14,7 +14,7 @@ export const accountingRoutes: ModuleRouteRegistration = {
     id: "accounting",
     moduleIds: ["accounting"],
     path: "/accounting",
-    label: { ar: "المحاسبة العامة", en: "Accounting" },
+    navigationKey: "accounting",
     permission: "accounting.journals.read",
     icon: "accounting"
   },

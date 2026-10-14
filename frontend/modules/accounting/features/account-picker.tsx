@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ComboBox } from "../../../components/primitives/combobox.tsx";
 import { useAccountSearch } from "../hooks/journal-queries.ts";
 import type { Account } from "../types.ts";
@@ -12,12 +13,13 @@ export interface AccountPickerProps {
 }
 
 export function AccountPicker({
-  label = "الحساب المالي",
+  label,
   selectedAccountCode,
   onSelectAccount,
   isDisabled = false,
   isRequired = false
 }: AccountPickerProps): React.JSX.Element {
+  const { t } = useTranslation("accounting");
   const [searchTerm, setSearchTerm] = useState("");
   const { data: accounts = [], isLoading } = useAccountSearch(searchTerm || selectedAccountCode || "");
 
@@ -45,8 +47,8 @@ export function AccountPicker({
 
   return (
     <ComboBox
-      label={label}
-      placeholder={isLoading ? "جارٍ البحث..." : "ابحث برمز الحساب أو الاسم..."}
+      label={label ?? t("accountPicker.label")}
+      placeholder={isLoading ? t("accountPicker.searching") : t("accountPicker.placeholder")}
       options={options}
       selectedKey={selectedAccountCode ?? null}
       onSelectionChange={handleSelectionChange}
