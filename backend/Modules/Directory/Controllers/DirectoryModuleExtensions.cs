@@ -76,7 +76,7 @@ public static class DirectoryModuleExtensions
                 : Results.Unauthorized());
         group.MapGet("/parties/{partyId:guid}/readiness", async (Guid partyId, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
-                ? await Execute(http, access, () => service.ReadinessFrameworkAsync(access.Tenant, partyId, ct))
+                ? await Execute(http, access, () => service.ReadinessFrameworkAsync(access.Tenant, partyId, ct), nullAsNotFound: true)
                 : Results.Unauthorized());
         group.MapPost("/parties/{partyId:guid}/contact-persons", async (Guid partyId, AddContactPersonRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.contact.manage", ct) is { } access

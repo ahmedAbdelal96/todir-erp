@@ -144,7 +144,12 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
         await using var command = new NpgsqlCommand("select id,party_type,status,display_name,legal_name,trade_name,name_ar,name_en,first_name,middle_name,last_name,country_code,primary_language,created_at,updated_at,version from foundation_directory.party where tenant_id=$1 and id=$2", connection, transaction);
         Add(command, tenantId.Value, partyId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) { await transaction.RollbackAsync(cancellationToken); return null; }
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            await reader.CloseAsync();
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
         var details = new PartyDetails(reader.GetGuid(0), Enum.Parse<PartyType>(reader.GetString(1)), Enum.Parse<PartyStatus>(reader.GetString(2)), reader.GetString(3), Text(reader, 4), Text(reader, 5), Text(reader, 6), Text(reader, 7), Text(reader, 8), Text(reader, 9), Text(reader, 10), Text(reader, 11), Text(reader, 12), [], [], [], [], reader.GetFieldValue<DateTimeOffset>(13), reader.GetFieldValue<DateTimeOffset>(14), reader.GetInt64(15));
         await reader.CloseAsync();
         var roles = await ReadRolesAsync(connection, transaction, tenantId, partyId, cancellationToken);

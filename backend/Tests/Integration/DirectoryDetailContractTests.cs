@@ -2,9 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Core.Identity;
+using Core.Transactions;
+using Modules.Directory.Repositories;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
+using Shared.Primitives.Identifiers;
 using Xunit;
 
 namespace KernelIntegrationTests;
@@ -101,6 +104,9 @@ public sealed class DirectoryDetailContractTests
             var absentResponse = await atlasClient.GetAsync($"/api/v1/directory/parties/{missingId:D}");
             var absentBody = await absentResponse.Content.ReadAsStringAsync();
             Assert.Equal(HttpStatusCode.NotFound, absentResponse.StatusCode);
+            var absentReadiness = await atlasClient.GetAsync($"/api/v1/directory/parties/{missingId:D}/readiness");
+            var absentReadinessBody = await absentReadiness.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.NotFound, absentReadiness.StatusCode);
 
             using var deltaClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
             await LoginAsync(deltaClient, deltaEmail, password, deltaTenant);
@@ -110,6 +116,28 @@ public sealed class DirectoryDetailContractTests
             Assert.Equal(absentBody, crossTenantBody);
             Assert.DoesNotContain(atlasPartyName, crossTenantBody, StringComparison.Ordinal);
             Assert.DoesNotContain(atlasPartyId.ToString("D"), crossTenantBody, StringComparison.OrdinalIgnoreCase);
+
+            var crossTenantReadiness = await deltaClient.GetAsync($"/api/v1/directory/parties/{atlasPartyId:D}/readiness");
+            var crossTenantReadinessBody = await crossTenantReadiness.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.NotFound, crossTenantReadiness.StatusCode);
+            Assert.Equal(absentReadinessBody, crossTenantReadinessBody);
+            Assert.DoesNotContain(atlasPartyName, crossTenantReadinessBody, StringComparison.Ordinal);
+            Assert.DoesNotContain(atlasPartyId.ToString("D"), crossTenantReadinessBody, StringComparison.OrdinalIgnoreCase);
+
+            var visibleAgain = await atlasClient.GetAsync($"/api/v1/directory/parties/{atlasPartyId:D}");
+            Assert.Equal(HttpStatusCode.OK, visibleAgain.StatusCode);
+            var readinessAgain = await atlasClient.GetAsync($"/api/v1/directory/parties/{atlasPartyId:D}/readiness");
+            Assert.Equal(HttpStatusCode.OK, readinessAgain.StatusCode);
+
+            var singleConnectionSettings = new NpgsqlConnectionStringBuilder(testRuntimeConnectionString) { MaxPoolSize = 1 };
+            await using var dataSource = NpgsqlDataSource.Create(singleConnectionSettings.ConnectionString);
+            var repository = new DirectoryRepository(new NpgsqlTransactionCoordinator(dataSource), dataSource);
+            var atlasTenantId = new TenantId(atlasTenant);
+            var missingParty = await repository.GetAsync(atlasTenantId, missingId, true, CancellationToken.None);
+            Assert.Null(missingParty);
+            var partyAfterMissingRead = await repository.GetAsync(atlasTenantId, atlasPartyId, true, CancellationToken.None);
+            Assert.NotNull(partyAfterMissingRead);
+            Assert.Equal(atlasPartyName, partyAfterMissingRead!.DisplayName);
         }
         finally
         {
