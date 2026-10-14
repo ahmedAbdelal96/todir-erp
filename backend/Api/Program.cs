@@ -13,6 +13,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
 builder.Services.AddObservability(builder.Environment.ApplicationName, builder.Environment.EnvironmentName);
 builder.Services.AddCore(builder.Configuration);
 builder.Services.AddSampleModule();

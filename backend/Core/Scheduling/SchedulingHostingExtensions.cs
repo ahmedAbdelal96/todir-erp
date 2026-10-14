@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Quartz;
 using Core.Security;
+using Core.Hosting;
 
 namespace Core.Scheduling;
 
@@ -9,7 +10,7 @@ public static class SchedulingHostingExtensions
 {
     public static IServiceCollection AddScheduling(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Todir") ?? configuration["TODIR_DATABASE_CONNECTION"];
+        var connectionString = configuration.GetRuntimeConnectionString();
         if (!string.IsNullOrWhiteSpace(connectionString) && int.TryParse(configuration["TODIR_DB_MAX_POOL_SIZE"], out var maxPoolSize) && maxPoolSize > 0)
         {
             var boundedConnection = new Npgsql.NpgsqlConnectionStringBuilder(connectionString) { MaxPoolSize = maxPoolSize };

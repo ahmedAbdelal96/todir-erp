@@ -28,7 +28,7 @@ public static class PlatformHostingExtensions
 {
     public static IServiceCollection AddCore(this IServiceCollection services, IConfiguration configuration, Action<IBusRegistrationConfigurator>? configureConsumers = null)
     {
-        var connectionString = configuration.GetConnectionString("Todir") ?? configuration["TODIR_DATABASE_CONNECTION"];
+        var connectionString = configuration.GetRuntimeConnectionString();
         services.AddRabbitMq(configuration, configureConsumers);
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
