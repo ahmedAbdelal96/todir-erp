@@ -2,6 +2,8 @@
 
 Always read this root file first.
 
+Exactly three active `AGENTS.md` instruction files govern this repository: `/AGENTS.md`, `/backend/AGENTS.md`, and `/frontend/AGENTS.md`. Do not add another scoped instruction file; place shared governance in this root file and area-specific rules in the corresponding backend or frontend manual.
+
 - For backend, database, API, security, messaging, migration, worker, or backend-test work, read `backend/AGENTS.md` before implementation.
 - For frontend, React, TypeScript, UX, UI, copy, routing, frontend-test, Storybook, or Playwright work, read `frontend/AGENTS.md` before implementation.
 - For work spanning both areas, read both scoped files. These scoped files add area rules; this root file always remains mandatory.
@@ -30,13 +32,13 @@ Canonical Module Pack
 
 ## 1.2 Complete ownership of assigned work
 
-These rules apply to every future repository task, including modules, features, defect fixes, refactors, integrations, migrations, security, infrastructure, UX, tests, and documentation. An agent owns the quality of its entire **authorized scope**. Act as a senior product, UX, architecture, engineering, and QA owner for that scope, not as a ticket executor waiting for the user to find each defect. A full-module assignment covers the entire capability chain; an area-only assignment cannot be presented as module completion. Consult the canonical Module Pack whenever work affects a module, and apply the relevant verification to the assigned task. Work through `understand → reconcile documentation and code → plan → implement → run → test → inspect real behavior → compare with requirements → correct → retest` until every required scenario in the assigned scope passes.
+These rules apply to every future repository task, including modules, features, defect fixes, refactors, integrations, migrations, security, infrastructure, UX, tests, and documentation. For every implementation mission, operate as a **Senior Product Architect + Senior Product Designer + Senior Software / Systems Architect + Senior Developer / Engineer + QA / Integration Owner** for the assigned scope. Own the quality of the entire **authorized scope**; do not act as a ticket executor waiting for the user to find each defect. A full-module assignment covers the entire capability chain; an area-only assignment cannot be presented as module completion. Consult the canonical Module Pack whenever work affects a module, and apply the relevant verification to the assigned task. Work through `understand → reconcile documentation and code → plan → implement → run → test → inspect real behavior → compare with requirements → correct → retest` until every required scenario in the assigned scope passes.
 
 Maintain a coverage matrix for each MVP capability: `canonical requirement → business rule → persistence → backend/API → Development Seed → frontend UX → automated test → real runtime proof → PASS/FAIL`. Mark a layer not applicable only with a concrete reason. Existing code, passing tests, and generated screenshots are not proof of an unverified link. A required FAIL remains work to diagnose and fix; do not turn it into a completion claim. Previewing a workflow does not prove its committed outcome, and tenant isolation does not by itself prove legal-entity isolation.
 
 For work outside a full module mission, trace each affected requirement to its implementation and appropriate evidence. Scale checks to the changed behavior; documentation-only work does not require a database or browser run, while runtime user journeys require real-stack verification. This does not reduce any gate required for module completion.
 
-Fix defects found within the assigned layer, including business rules, validation, security, API contracts, seed, UI copy, responsive layout, and integration behavior. Repeat verification after correction. For a defect owned by another layer, identify the precise boundary and evidence; fix it only when the mission authorizes cross-layer work, continue independent work, and report the remaining blocker without compensating with mocks or false business behavior. Return early only for a genuine external blocker, required destructive approval, or a material decision that would change approved product or architecture policy. The user is the final Product Owner, not the agent's primary tester or defect finder.
+Do not return partial progress merely because a solvable in-scope defect was discovered. For an authorized mission, discover → fix → verify → inspect → repeat; close known in-scope defects that can reasonably be corrected before the final report. For a defect owned by another layer, identify the precise boundary and evidence; fix it when the mission authorizes cross-layer work, continue independent work, and report a genuine remaining blocker without compensating with mocks or false business behavior. Incremental reports are appropriate only for a genuine external blocker, required destructive approval, or a materially unresolved locked product/architecture decision. The Senior Agent resolves ordinary implementation, workflow, and UX choices with sound judgment. The user is the final Product Owner, not the agent's primary tester or defect finder.
 
 # 2. Business first
 
@@ -119,7 +121,7 @@ Use this sequence for a new business capability:
 9. Integrated Runtime Verification
 10. Product Acceptance
 
-Only applicable stages that pass may support these statuses: `BACKEND COMPLETE`, `FRONTEND COMPLETE`, `PRODUCT / UX ACCEPTANCE COMPLETE`, `INTEGRATION COMPLETE`, and finally `MODULE COMPLETE`. A passing build, existing API, frontend compilation, or Playwright click-through is never by itself module completion. The agent must finish and self-review all verifiable work before asking for human Product/UX acceptance; that human review is the final approval gate. Do not declare `MODULE COMPLETE` while required MVP coverage fails, evidence is incomplete, or human acceptance is outstanding.
+Only applicable stages that pass may support these statuses: `BACKEND COMPLETE`, `FRONTEND COMPLETE`, `PRODUCT / UX ACCEPTANCE COMPLETE`, and `INTEGRATION COMPLETE`. Frontend completion means `FRONTEND COMPLETE` + integrated Product/UX evidence + ready for human Product acceptance. Only the complete module lifecycle and explicit human Product Owner approval may reach `MODULE COMPLETE`. A passing build, existing API, frontend compilation, or Playwright click-through is never by itself module completion. The agent must finish and self-review all verifiable work before asking for human Product/UX acceptance; that human review is the final approval gate. Do not declare `MODULE COMPLETE` while required MVP coverage fails, evidence is incomplete, or human acceptance is outstanding.
 
 User-visible backend capabilities must provide canonical realistic development seed scenarios before frontend handoff whenever seeded data is necessary to evaluate the product experience.
 
@@ -134,6 +136,10 @@ For a user-visible runtime journey, final acceptance uses the real frontend, rea
 # 10. Git and completion discipline
 
 Work directly on `dev`; `main` is frozen and must not be touched without explicit owner authorization. A normal implementation mission is `discover → design → implement → targeted tests → full local verification → one commit → one push`. Do not make intermediate commits/pushes, create phase branches, or create routine PRs unless explicitly requested. Never rewrite published history or force-push.
+
+### GitHub automation
+
+Place CI workflows, pull-request automation, repository automation, and authorized security/dependency automation under `.github/`; do not put application logic there. Introduce workflows only when toolchain and operational architecture authorize them. Workflow filenames must be short, responsibility-based kebab-case without brand or phase prefixes (for example, `validation.yml`, `security-scan.yml`, or `deploy-staging.yml`); keep the workflow set small. Never create or introduce a file or folder whose basename contains `todir` in any casing.
 
 Do not reopen completed work without a real defect, a new requirement, or an explicit owner decision. Avoid unrelated cleanup. Stop only when destructive owner approval, an unresolved product decision, unavailable required access/infrastructure, or a locked architectural conflict genuinely blocks the assigned mission.
 

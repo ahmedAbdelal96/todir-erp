@@ -1,6 +1,6 @@
 # Frontend Product, UX, and Engineering Operating Manual
 
-Read the repository root `AGENTS.md` first. This file governs all frontend architecture, UX, UI engineering, and module implementation. Together with the root manual, it provides the complete, authoritative operational standard required to discover, design, build, and verify any ERP business module from scratch to `MODULE COMPLETE`.
+Read the repository root `AGENTS.md` first. This file governs all frontend architecture, UX, and UI engineering. Together with the root manual, it provides the operational standard to deliver `FRONTEND COMPLETE`, integrated Product/UX evidence, and a result ready for human Product acceptance. Only the complete module lifecycle plus explicit human Product Owner approval may reach `MODULE COMPLETE`.
 
 Never create a new file or folder whose basename contains `todir` in any casing; technical names describe responsibility rather than product marketing.
 
@@ -17,7 +17,7 @@ frontend/
 ├── components/  # Design system tokens, accessible primitives, fields, forms, grid, page archetypes
 │   ├── fields/      # Domain-aware display & input fields (MoneyDisplay, MoneyField, StatusBadge, etc.)
 │   ├── forms/       # Form structure (FormField, FormSection, FormActions, ValidationSummary)
-│   ├── grid/        # Zero-horizontal-scroll DataGrid, column definitions, and specialized cells
+│   ├── grid/        # Responsive DataGrid, column definitions, and specialized cells
 │   ├── pages/       # Reusable page archetypes (ListPage, RecordPage, DocumentPage, WizardPage, Surface, PropertyGrid)
 │   └── primitives/  # Accessible UI primitives (Button, Dialog, Select, ComboBox, Table, Pagination, Icons, etc.)
 ├── modules/     # Autonomous vertical business slices (directory, catalog, invoicing, accounting, payments, etc.)
@@ -26,7 +26,7 @@ frontend/
 
 ### Module Boundary Rules
 1. `app/` owns composition, shell, topbar, navigation registry, and router. It never contains business domain logic.
-2. `core/` owns cross-application technical infrastructure and never imports from `modules/`.
+2. `core/` owns cross-application technical infrastructure and never imports from `modules/`. Authentication binds exactly one Tenant server-side from the authenticated session; frontend code must not invent or send Tenant identity as a normal API parameter. A workflow that genuinely requires legal-entity context must obtain it from authorized business/session context, never a fake default ID.
 3. `components/` is the single source of truth for all reusable UI primitives, fields, grids, and page archetypes. Modules NEVER build duplicate buttons, custom tables, bespoke pagers, or unstyled card wrappers.
 4. `modules/<module-name>/` is self-contained. Every business module owns its own:
    - `pages/`: Page archetype implementations (`<entity>-list-page.tsx`, `<entity>-record-page.tsx`).
@@ -54,7 +54,7 @@ Every frontend module mission report must include the canonical Module Pack path
 
 ### Frontend ownership and real Product/UX acceptance
 
-Apply this ownership and evidence loop to every future frontend task, including defect fixes, UX, copy, routing, accessibility, responsive behavior, API integration, and tests. Verify affected runtime behavior in the real browser; a full module completion claim still requires every documented journey and gate.
+Apply the root Senior Product Architect, Senior Product Designer, Senior Software / Systems Architect, Senior Developer / Engineer, and QA / Integration Owner directive to frontend work, with particular ownership of user workflows, accessible RTL UX, responsive behavior, and browser evidence. Apply this loop to every future frontend task, including defect fixes, UX, copy, routing, accessibility, responsive behavior, API integration, and tests. Do not return partial progress for a solvable in-scope defect: discover, fix, verify, inspect, and repeat. Verify affected runtime behavior in the real browser; a full module completion claim still requires every documented journey and gate.
 
 Own the full frontend journey in the assigned scope: user tasks and role-specific decisions, workflow design, natural Arabic and RTL, API integration, permissions, loading/empty/error states, accessibility, desktop/mobile behavior, automated tests, real browser execution, screenshot inspection, and correction of Product/UX defects. Use the root coverage matrix to reconcile each MVP journey with the Module Pack, the actual backend contract, canonical seed, and observed runtime behavior. Do not implement only the visible screen or return because one Playwright click-through or screenshot succeeded.
 
@@ -162,11 +162,8 @@ Arabic RTL is not merely setting `dir="rtl"`. It requires strict bidirectional e
    - **Reference Identifiers**: `<bdi>#INV-2026-0045</bdi>`
    - **Currency & Exact Numbers**: Always wrap in `<MoneyDisplay>` or `<bdi>`.
 
-3. **Zero Horizontal Scrolling Mandate**:
-   Horizontal scrolling in tables, cards, or page bodies is a broken user experience.
-   - All `Table` and `DataGrid` instances must occupy 100% of their container width (`table-layout: fixed`, `width: 100%`, `overflow: hidden`).
-   - Columns must distribute proportionally using flex/fractional widths (`1fr`, percentage, or compact min-widths).
-   - Content cells must use `overflow-wrap: anywhere; word-break: break-word` to ensure long names wrap cleanly without triggering horizontal scrollbars.
+3. **Prevent Accidental Horizontal Overflow**:
+   Page-level and incidental horizontal scrolling in tables, cards, or page bodies is a broken user experience. Prefer responsive layouts, useful column prioritization, and readable wrapping. A genuinely wide operational dataset may use a deliberately contained grid-level horizontal navigation pattern when wrapping would make the data unreadable; keep identifying columns frozen, provide responsive alternatives where appropriate, and make the exception an intentional business-driven design choice rather than a layout workaround.
 
 ---
 
@@ -175,13 +172,13 @@ Arabic RTL is not merely setting `dir="rtl"`. It requires strict bidirectional e
 Every screen in TODIR MUST be built using one of the five approved canonical page archetypes located in `frontend/components/pages/`. Never create custom page containers.
 
 ### 4.1. Archetype 1: `ListPage` (Tabular Records & Dynamic Grids)
-* **When to use**: All master list screens (Customers, Products, Invoices, Journals, Users).
+* **When to use**: All master list screens (Directory Parties and roles, Products, Invoices, Journals, Users).
 * **Composition Pipeline**:
   ```text
   ListPage
   ├── PageHeader (Title, Subtitle, Breadcrumbs, Primary Action button)
   ├── FilterBar (SearchField + Select dropdown filters + Active filter badge + Reset action)
-  ├── DataGrid or Table (Zero horizontal scroll, localized cells, compact row height)
+   ├── DataGrid or Table (responsive, localized cells, compact row height; contained navigation only for genuinely wide datasets)
   ├── Pagination (Server-side pager with page size selector)
   └── Contextual EmptyState / LoadingState / ErrorState
   ```
@@ -386,505 +383,136 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 ## 6. End-to-End Blueprint for Building Any New Module
 
-Follow this exact 10-step sequence to implement any new business module (e.g. `purchasing`, `inventory`, `hr`, `crm`):
+Follow this sequence before and during implementation:
 
 ```text
-Step 1: Discover Backend OpenAPI & Business Rules
-  └── Inspect backend controllers, DTOs, and OpenAPI paths in docs/
-Step 2: Scaffold Module Directory Structure
-  └── frontend/modules/<module-name>/{pages,features,components,services,hooks,validation,tests}
-Step 3: Define Domain Types in types.ts
-  └── Model clean entities, summaries, list parameters, and command inputs
-Step 4: Define Zod Schemas in validation/<entity>-schema.ts
-  └── Strict schema validation with clear Arabic error messages
-Step 5: Implement API Service in services/<entity>-api.ts
-  └── Use httpClient with parameterized URLs and standard HTTP methods
-Step 6: Implement TanStack Query Hooks in hooks/<entity>-queries.ts
-  └── Integrate queryKeyFactory for tenant/entity isolated cache management
-Step 7: Implement List Page in pages/<entity>-list-page.tsx
-  └── Compose ListPage, FilterBar, DataGrid/Table, Pagination, StatusBadge
-Step 8: Implement Record / Details Page in pages/<entity>-record-page.tsx
-  └── Compose RecordPage, StatCard KPIs, Surface cards, PropertyGrid
-Step 9: Implement Create / Action Dialog in features/create-<entity>-dialog.tsx
-  └── Accessible Dialog, React Hook Form / Zod, RFC-7807 server error handling
-Step 10: Wire Routes & Public Contract
-  └── Define routes.tsx, export barrel public.ts, register in app-router.tsx
+1. Read the canonical Module Pack and record its scope, MVP, deferred work, and acceptance scenarios.
+2. Understand the real user task and end-to-end workflow, including common exceptions.
+3. Make role, product, terminology, permission, and interaction decisions from that workflow.
+4. Reconcile required capabilities, data, permissions, and errors with backend/API contracts; report and resolve owned gaps.
+5. Plan and implement the frontend journey, then test, inspect in the real browser, correct defects, and repeat verification.
 ```
+
+Do not start product design from OpenAPI, DTOs, controllers, database columns, or existing screens. Once the workflow is understood, inspect those sources to verify integration contracts and constraints. Keep module files inside `frontend/modules/<module-name>/` and follow the module ownership, route, and verification rules above.
 
 ---
 
 ## 7. Production Code Blueprints (Canonical Boilerplates)
 
-### Blueprint A: API Client (`services/<entity>-api.ts`)
+These are responsibility-level patterns, not a generic business model. Before adapting them, use the canonical Module Pack to select the owning module's real concepts, API routes, permissions, and fields. Keep tenant identity bound to the authenticated server session; never accept or send a client-supplied Tenant ID. Include only authorized legal-entity context when the documented workflow requires it.
+
+### Blueprint A: API Client (`services/<resource>-api.ts`)
+
 ```ts
 import { httpClient } from "../../../core/api/http-client.ts";
-import type { Customer, CreateCustomerInput, CustomerListParams, CustomerListResult } from "../types.ts";
+import type { Resource, ResourceListParams, ResourceListResult, CreateResourceInput } from "../types.ts";
 
-export const customerApi = {
-  list: async (params: CustomerListParams = {}, tenantId?: string): Promise<CustomerListResult> => {
+// Set this route from the owning module's documented API contract.
+const resourcePath = "/api/v1/<module-owned-resource>";
+
+export const resourceApi = {
+  list: (params: ResourceListParams = {}): Promise<ResourceListResult> => {
     const query = new URLSearchParams();
     if (params.search) query.set("search", params.search);
-    if (params.status) query.set("status", params.status);
     if (params.page) query.set("page", String(params.page));
     if (params.pageSize) query.set("pageSize", String(params.pageSize));
-
-    return httpClient<CustomerListResult>(`/api/v1/customers?${query.toString()}`, {
-      ...(tenantId ? { tenantId } : {})
-    });
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return httpClient<ResourceListResult>(`${resourcePath}${suffix}`);
   },
-
-  getById: async (id: string, tenantId?: string): Promise<Customer> => {
-    return httpClient<Customer>(`/api/v1/customers/${id}`, {
-      ...(tenantId ? { tenantId } : {})
-    });
-  },
-
-  create: async (input: CreateCustomerInput, tenantId?: string): Promise<Customer> => {
-    return httpClient<Customer>("/api/v1/customers", {
-      method: "POST",
-      body: JSON.stringify(input),
-      ...(tenantId ? { tenantId } : {})
-    });
-  },
-
-  update: async (id: string, input: Partial<CreateCustomerInput> & { version: number }, tenantId?: string): Promise<Customer> => {
-    return httpClient<Customer>(`/api/v1/customers/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(input),
-      ...(tenantId ? { tenantId } : {})
-    });
-  }
+  getById: (id: string): Promise<Resource> =>
+    httpClient<Resource>(`${resourcePath}/${encodeURIComponent(id)}`),
+  create: (input: CreateResourceInput): Promise<Resource> =>
+    httpClient<Resource>(resourcePath, { method: "POST", body: JSON.stringify(input) })
 };
 ```
 
-### Blueprint B: Query & Mutation Hooks (`hooks/<entity>-queries.ts`)
+### Blueprint B: Query & Mutation Hooks (`hooks/<resource>-queries.ts`)
+
 ```ts
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { customerApi } from "../services/customer-api.ts";
-import type { Customer, CreateCustomerInput, CustomerListParams, CustomerListResult } from "../types.ts";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { resourceApi } from "../services/resource-api.ts";
 import { queryKeyFactory } from "../../../core/api/query-keys.ts";
+import { useRuntimeContext } from "../../../core/runtime/runtime-provider.tsx";
+import type { CreateResourceInput, ResourceListParams } from "../types.ts";
 
-export interface UseCustomerContext {
-  readonly tenantId?: string | undefined;
-  readonly entityId?: string | undefined;
-}
-
-const DEFAULT_TENANT = "tenant-default";
-const DEFAULT_ENTITY = "entity-default";
-
-export function useCustomerList(params: CustomerListParams = {}, context: UseCustomerContext = {}) {
-  const tenantId = context.tenantId || DEFAULT_TENANT;
-  const entityId = context.entityId || DEFAULT_ENTITY;
-
-  return useQuery<CustomerListResult>({
-    queryKey: queryKeyFactory.list(tenantId, entityId, "customers", "list", params),
-    queryFn: () => customerApi.list(params, tenantId),
-    staleTime: 30_000
+export function useResourceList(params: ResourceListParams = {}) {
+  const context = useRuntimeContext();
+  return useQuery({
+    // Runtime identity scopes the cache only; httpClient sends no Tenant identity.
+    queryKey: queryKeyFactory.list(context.tenant.tenantId, context.legalEntity.legalEntityId, "<owning-module>", "resource", params),
+    queryFn: () => resourceApi.list(params)
   });
 }
 
-export function useCustomerRecord(id: string, context: UseCustomerContext = {}) {
-  const tenantId = context.tenantId || DEFAULT_TENANT;
-  const entityId = context.entityId || DEFAULT_ENTITY;
-
-  return useQuery<Customer>({
-    queryKey: queryKeyFactory.detail(tenantId, entityId, "customers", "record", id),
-    queryFn: () => customerApi.getById(id, tenantId),
-    enabled: Boolean(id),
-    staleTime: 60_000
-  });
-}
-
-export function useCreateCustomer(context: UseCustomerContext = {}) {
+export function useCreateResource() {
+  const context = useRuntimeContext();
   const queryClient = useQueryClient();
-  const tenantId = context.tenantId || DEFAULT_TENANT;
-  const entityId = context.entityId || DEFAULT_ENTITY;
-
-  return useMutation<Customer, Error, CreateCustomerInput>({
-    mutationFn: (input) => customerApi.create(input, tenantId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: queryKeyFactory.resource(tenantId, entityId, "customers", "list")
-      });
-    }
+  return useMutation({
+    mutationFn: (input: CreateResourceInput) => resourceApi.create(input),
+    onSuccess: () => queryClient.invalidateQueries({
+      queryKey: queryKeyFactory.resource(context.tenant.tenantId, context.legalEntity.legalEntityId, "<owning-module>", "resource")
+    })
   });
 }
 ```
 
-### Blueprint C: Canonical List Page (`pages/<entity>-list-page.tsx`)
+The tenant value above is used only to isolate client cache entries; the authenticated server session binds the request to exactly one Tenant. Never add Tenant identity to request parameters, headers, or bodies. Include legal-entity context in a request only when the owning workflow requires it and the value comes from the authorized runtime context. Never invent a fallback entity or tenant ID.
+
+### Blueprint C: List and Record Pages
+
+Compose the owning module's real resource with the shared page archetypes. Let the Module Pack and business contract determine the columns, filters, detail sections, actions, and fields; do not assume universal tax, compliance, credit, or identity attributes.
+
 ```tsx
-import React, { useState } from "react";
-import { ListPage } from "../../../components/pages/list-page.tsx";
-import { FilterBar } from "../../../components/primitives/filter-bar.tsx";
-import { SearchField } from "../../../components/primitives/search-field.tsx";
-import { Select, SelectItem } from "../../../components/primitives/select.tsx";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../../../components/primitives/table.tsx";
-import { Pagination } from "../../../components/primitives/pagination.tsx";
-import { StatusBadge } from "../../../components/fields/status-badge.tsx";
-import { LoadingState } from "../../../components/primitives/loading-state.tsx";
-import { ErrorState } from "../../../components/primitives/error-state.tsx";
-import { EmptyState } from "../../../components/primitives/empty-state.tsx";
-import { useCustomerList } from "../hooks/customer-queries.ts";
-import { CreateCustomerDialog } from "../features/create-customer-dialog.tsx";
-import type { CustomerSummary } from "../types.ts";
-
-export interface CustomerListPageProps {
-  readonly onSelectCustomer?: (customer: CustomerSummary) => void;
-}
-
-export function CustomerListPage({ onSelectCustomer }: CustomerListPageProps): React.JSX.Element {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-
-  const { data, isLoading, error, refetch } = useCustomerList({
-    search: searchTerm.trim() || undefined,
-    status: statusFilter === "all" ? undefined : statusFilter,
-    page,
-    pageSize
-  });
-
-  const customers = data?.items ?? [];
-  const totalCount = data?.totalCount ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+export function ResourceListPage(): React.JSX.Element {
+  const { data, isLoading, error } = useResourceList();
+  const records = data?.items ?? [];
 
   return (
-    <ListPage
-      title="قائمة العملاء"
-      subtitle="إدارة بيانات العملاء والحسابات التجارية والاتصال"
-      breadcrumbs={[{ label: "الرئيسية", href: "/" }, { label: "العملاء" }]}
-      primaryAction={{
-        label: "إضافة عميل جديد",
-        onClick: () => setIsCreateOpen(true)
-      }}
-      filterBar={
-        <FilterBar
-          searchInput={
-            <SearchField
-              ariaLabel="البحث عن عميل"
-              placeholder="البحث بالاسم أو السجل أو الرقم الضريبي..."
-              value={searchTerm}
-              onChange={setSearchTerm}
-            />
-          }
-          activeFilterCount={(statusFilter !== "all" ? 1 : 0) + (searchTerm ? 1 : 0)}
-          onResetFilters={() => {
-            setSearchTerm("");
-            setStatusFilter("all");
-            setPage(1);
-          }}
-        >
-          <div style={{ minWidth: "160px" }}>
-            <Select
-              label="حالة الحساب"
-              selectedKey={statusFilter}
-              onSelectionChange={(key) => {
-                setStatusFilter(String(key));
-                setPage(1);
-              }}
-            >
-              <SelectItem id="all" textValue="جميع الحالات">جميع الحالات</SelectItem>
-              <SelectItem id="Active" textValue="نشط">نشط</SelectItem>
-              <SelectItem id="Suspended" textValue="معطّل">معطّل</SelectItem>
-            </Select>
-          </div>
-        </FilterBar>
-      }
-      pagination={
-        totalCount > 0 ? (
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            totalItems={totalCount}
-            pageSize={pageSize}
-            onPageChange={setPage}
-            onPageSizeChange={(newSize) => {
-              setPageSize(newSize);
-              setPage(1);
-            }}
-          />
-        ) : undefined
-      }
-    >
-      {isLoading ? (
-        <LoadingState message="جارٍ تحميل قائمة العملاء..." />
-      ) : error ? (
-        <ErrorState
-          title="تعذر تحميل قائمة العملاء"
-          description="حدث خطأ أثناء جلب البيانات من الخادم. يرجى المحاولة مرة أخرى."
-          onRetry={() => void refetch()}
-        />
-      ) : customers.length === 0 ? (
-        <EmptyState
-          title="لا يوجد عملاء مسجلون حتى الآن"
-          description="ابدأ بإضافة أول عميل لتسجيل البيانات التجارية والفواتير."
-          actionLabel="إضافة عميل جديد"
-          onAction={() => setIsCreateOpen(true)}
-        />
-      ) : (
-        <Table aria-label="جدول العملاء" style={{ width: "100%", tableLayout: "fixed" }}>
-          <TableHeader>
-            <TableRow>
-              <TableHead style={{ width: "40%" }}>اسم العميل / المنشأة</TableHead>
-              <TableHead style={{ width: "20%" }}>الرقم الضريبي</TableHead>
-              <TableHead style={{ width: "25%" }}>البريد الإلكتروني</TableHead>
-              <TableHead style={{ width: "15%", textAlign: "center" }}>الحالة</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {customers.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell>
-                  <button
-                    type="button"
-                    onClick={() => onSelectCustomer?.(c)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--color-brand-primary, #4f46e5)",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      padding: 0,
-                      textAlign: "start"
-                    }}
-                  >
-                    {c.displayName}
-                  </button>
-                </TableCell>
-                <TableCell>
-                  <bdi style={{ fontFamily: "var(--font-mono)" }}>{c.taxNumber || "—"}</bdi>
-                </TableCell>
-                <TableCell>
-                  <bdi dir="ltr">{c.email || "—"}</bdi>
-                </TableCell>
-                <TableCell style={{ textAlign: "center" }}>
-                  <StatusBadge
-                    intent={c.status === "Active" ? "success" : "neutral"}
-                    label={c.status === "Active" ? "نشط" : "معطّل"}
-                    size="small"
-                  />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+    <ListPage title="<localized module title>">
+      {isLoading ? <LoadingState /> : error ? <ErrorState /> : (
+        <DataGrid rows={records} columns={columns} />
       )}
-
-      <CreateCustomerDialog
-        isOpen={isCreateOpen}
-        onOpenChange={setIsCreateOpen}
-      />
     </ListPage>
   );
 }
-```
 
-### Blueprint D: Canonical 360 Record Page (`pages/<entity>-record-page.tsx`)
-```tsx
-import React, { useState } from "react";
-import { RecordPage } from "../../../components/pages/record-page.tsx";
-import { Surface } from "../../../components/pages/surface.tsx";
-import { PropertyGrid, PropertyItem, StatCard } from "../../../components/pages/property-grid.tsx";
-import { Button } from "../../../components/primitives/button.tsx";
-import { StatusBadge } from "../../../components/fields/status-badge.tsx";
-import { Spinner } from "../../../components/primitives/spinner.tsx";
-import { BuildingIcon, MailIcon, PhoneIcon, CheckCircleIcon, TagIcon } from "../../../components/primitives/icons.tsx";
-import { useCustomerRecord } from "../hooks/customer-queries.ts";
-
-export interface CustomerRecordPageProps {
-  readonly customerId: string;
-  readonly onBack: () => void;
-}
-
-export function CustomerRecordPage({ customerId, onBack }: CustomerRecordPageProps): React.JSX.Element {
-  const { data: customer, isLoading, error } = useCustomerRecord(customerId);
-  const [editing, setEditing] = useState(false);
-
-  if (isLoading) {
-    return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "360px" }}>
-        <Spinner size="large" aria-label="جارٍ تحميل بيانات العميل..." />
-      </div>
-    );
-  }
-
-  if (error || !customer) {
-    return (
-      <div style={{ padding: "3rem", textAlign: "center" }}>
-        <p style={{ color: "var(--color-status-danger)", fontWeight: 600, marginBottom: "1rem" }}>
-          تعذر العثور على سجل العميل المطلوب.
-        </p>
-        <Button variant="secondary" onPress={onBack}>العودة لقائمة العملاء</Button>
-      </div>
-    );
-  }
-
-  const isActive = customer.status === "Active";
-
-  const kpis = (
-    <>
-      <StatCard
-        title="حالة الحساب"
-        value={isActive ? "نشط ومفعل" : "معطّل مؤقتاً"}
-        intent={isActive ? "success" : "neutral"}
-        icon={<CheckCircleIcon size={20} />}
-        subtitle="حالة التعامل التجاري وإصدار الفواتير"
-      />
-      <StatCard
-        title="الحد الائتماني المعتمد"
-        value={`${customer.creditLimit || "0.00"} ر.س`}
-        intent="primary"
-        icon={<TagIcon size={20} />}
-        subtitle="أقصى رصيد آجل مسموح به"
-      />
-      <StatCard
-        title="حالة الامتثال الضريبي"
-        value={customer.taxNumber ? "مسجل ضريبياً" : "غير مسجل"}
-        intent={customer.taxNumber ? "info" : "neutral"}
-        icon={<BuildingIcon size={20} />}
-        subtitle="مطابق لمتطلبات الفاتورة الإلكترونية"
-      />
-    </>
-  );
-
-  return (
-    <RecordPage
-      title={customer.displayName}
-      recordCode={customer.code ? `#${customer.code}` : undefined}
-      status={isActive ? "success" : "neutral"}
-      kpiCards={kpis}
-      breadcrumbs={[
-        { label: "العملاء", onClick: onBack },
-        { label: customer.displayName }
-      ]}
-      headerActions={
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <Button variant="primary" onPress={() => setEditing(true)}>تعديل البيانات</Button>
-          <Button variant="secondary" onPress={onBack}>رجوع</Button>
-        </div>
-      }
-      auditInfo={{
-        createdAt: customer.createdAt,
-        updatedAt: customer.updatedAt
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        {/* Surface 1: الهوية والبيانات التجارية */}
-        <Surface
-          title="الهوية والبيانات التجارية"
-          description="المعلومات الأساسية والأسماء القانونية والسجلات الرسمية"
-        >
-          <PropertyGrid columns={3}>
-            <PropertyItem
-              label="الاسم التجاري"
-              value={customer.displayName}
-              icon={<BuildingIcon size={16} />}
-            />
-            <PropertyItem
-              label="الاسم القانوني الكامل"
-              value={customer.legalName || "—"}
-            />
-            <PropertyItem
-              label="الرقم الضريبي (VAT)"
-              value={customer.taxNumber ? <bdi style={{ fontFamily: "var(--font-mono)" }}>{customer.taxNumber}</bdi> : "—"}
-              isCopyable={Boolean(customer.taxNumber)}
-              rawCopyValue={customer.taxNumber}
-            />
-            <PropertyItem
-              label="حالة الحساب"
-              value={
-                <StatusBadge
-                  intent={isActive ? "success" : "neutral"}
-                  label={isActive ? "نشط" : "معطّل"}
-                  size="small"
-                />
-              }
-            />
-          </PropertyGrid>
-        </Surface>
-
-        {/* Surface 2: قنوات التواصل والعناوين */}
-        <Surface
-          title="قنوات الاتصال والعناوين"
-          description="البريد الإلكتروني المعتمد وأرقام الهواتف والمقر الجغرافي"
-        >
-          <PropertyGrid columns={2}>
-            <PropertyItem
-              label="البريد الإلكتروني"
-              value={customer.email ? <bdi dir="ltr">{customer.email}</bdi> : "—"}
-              icon={<MailIcon size={16} />}
-              isCopyable={Boolean(customer.email)}
-              rawCopyValue={customer.email}
-            />
-            <PropertyItem
-              label="رقم الهاتف"
-              value={customer.phone ? <bdi dir="ltr" style={{ fontFamily: "var(--font-mono)" }}>{customer.phone}</bdi> : "—"}
-              icon={<PhoneIcon size={16} />}
-            />
-            <PropertyItem
-              label="العنوان الوطني / المقر"
-              value={customer.address || "لم يتم تسجيل عنوان."}
-              isFullWidth={true}
-            />
-          </PropertyGrid>
-        </Surface>
-      </div>
-    </RecordPage>
-  );
+export function ResourceRecordPage({ id }: { readonly id: string }): React.JSX.Element {
+  const { data, isLoading, error } = useResourceRecord(id);
+  if (isLoading) return <LoadingState />;
+  if (error || !data) return <ErrorState />;
+  return <RecordPage title={data.displayName}>
+    {/* Render only fields and actions owned by this module and allowed by permission. */}
+  </RecordPage>;
 }
 ```
 
-### Blueprint E: Routes & Public Contract (`routes.tsx` & `public.ts`)
+Replace illustrative component props with the actual shared component contracts. Keep loading, empty, error, permission, accessibility, Arabic, and RTL behavior explicit.
+
+### Blueprint D: Routes & Public Contract (`routes.tsx` & `public.ts`)
+
 ```tsx
-// routes.tsx
-import { lazy } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import type { ModuleRouteRegistration } from "@app/router/route-contract.ts";
-
-const CustomerListPage = lazy(() => import("./pages/customer-list-page.tsx").then(m => ({ default: m.CustomerListPage })));
-const CustomerRecordPage = lazy(() => import("./pages/customer-record-page.tsx").then(m => ({ default: m.CustomerRecordPage })));
-
-function CustomerListRoute(): React.JSX.Element {
-  const navigate = useNavigate();
-  return <CustomerListPage onSelectCustomer={(c) => navigate(`/customers/${encodeURIComponent(c.id)}`)} />;
-}
-
-function CustomerRecordRoute(): React.JSX.Element {
-  const navigate = useNavigate();
-  const { customerId = "" } = useParams();
-  return <CustomerRecordPage customerId={customerId} onBack={() => navigate("/customers")} />;
-}
-
-export const customerRoutes: ModuleRouteRegistration = {
+export const resourceRoutes: ModuleRouteRegistration = {
   navigation: {
-    id: "customers",
-    moduleIds: ["customers"],
-    path: "/customers",
-    label: { ar: "العملاء", en: "Customers" },
-    permission: "crm.customer.read",
-    icon: "directory"
+    id: "<module-resource>",
+    moduleIds: ["<owning-module>"],
+    path: "/<module-resource>",
+    label: { ar: "<اسم عربي من pack>", en: "<documented English label>" },
+    permission: "<owning-module.permission>",
+    icon: "<approved-icon>"
   },
   routes: [
-    { path: "customers", element: <CustomerListRoute /> },
-    { path: "customers/:customerId", element: <CustomerRecordRoute /> }
+    { path: "<module-resource>", element: <ResourceListRoute /> },
+    { path: "<module-resource>/:id", element: <ResourceRecordRoute /> }
   ]
 };
 ```
 
-```ts
-// public.ts
-export type { Customer, CustomerSummary, CreateCustomerInput } from "./types.ts";
-export { customerApi } from "./services/customer-api.ts";
-export { customerRoutes } from "./routes.tsx";
-```
+Export only the owning module's approved public contracts. Do not create a standalone Customer master or move a fact into a module that does not own it; Directory owns Party identity and relationship roles, while other business facts remain with their documented owning modules.
 
 ---
-
 ## 8. Quality Verification & Completion Gates
 
-Before claiming `FRONTEND COMPLETE` or `MODULE COMPLETE`, you MUST run and pass all 9 local verification gates:
+Before claiming `FRONTEND COMPLETE`, you MUST run and pass all 9 local verification gates:
 
 ```powershell
 # 1. Verify module boundary integrity and forbidden imports
@@ -915,4 +543,4 @@ git diff --check
 git diff -- backend
 ```
 
-A passing build alone is NEVER completion. Full compliance with the UX archetypes, natural Arabic copy, zero horizontal scrolling, RTL bidirectional isolation, and automated tests is mandatory. Reconcile all required documented acceptance scenarios with real browser evidence and fix any frontend-owned failure before claiming `FRONTEND COMPLETE`. Present a fully self-reviewed result for human Product/UX acceptance; human review remains the final approval gate before `MODULE COMPLETE`.
+A passing build alone is NEVER completion. Full compliance with the UX archetypes, natural Arabic copy, prevention of accidental overflow, RTL bidirectional isolation, and automated tests is mandatory. Reconcile all required documented acceptance scenarios with real browser evidence and fix any frontend-owned failure before claiming `FRONTEND COMPLETE`. Deliver `FRONTEND COMPLETE` with integrated Product/UX evidence and ready for human Product acceptance; the human Product Owner's approval remains necessary for `MODULE COMPLETE`.

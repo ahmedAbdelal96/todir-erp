@@ -38,7 +38,7 @@ Before writing code, record answers to these questions in the work plan or appro
 11. What searches, lists, sorts, filters, and projections are required?
 12. What volumes, concurrency, retention, and operational workloads are realistic?
 
-Do not code while ownership, source of truth, transaction semantics, or required business decisions are unclear. Before module work, read the exact current module pack under `docs/modules/`, the Platform Kernel pack, master blueprint, production engineering baseline, relevant ADRs, and actual backend/OpenAPI contracts.
+Ordinary implementation, workflow, and UX-support decisions belong to the Senior Agent and are not a reason to stop or ask the user. Escalate only a materially unresolved locked business, accounting, legal, security, or architecture decision; state the exact gap and continue independent work. Before module work, read the exact current module pack under `docs/modules/`, the Platform Kernel pack, master blueprint, production engineering baseline, relevant ADRs, and actual backend/OpenAPI contracts.
 
 ### Mandatory canonical Module Pack gate
 
@@ -48,7 +48,7 @@ Implement every documented backend capability that is in scope, including missin
 
 ### Backend ownership and evidence loop
 
-Apply this ownership and evidence loop to every future backend task, including defect fixes, migrations, API contracts, security, messaging, integration, and operational changes. Verify the affected behavior with the relevant backend gates; a full module completion claim still requires the complete documented backend scope and gates.
+Apply the root Senior Product Architect, Senior Product Designer, Senior Software / Systems Architect, Senior Developer / Engineer, and QA / Integration Owner directive to backend work, with particular ownership of domain, data, API, security, and runtime correctness. Apply this ownership and evidence loop to every future backend task, including defect fixes, migrations, API contracts, security, messaging, integration, and operational changes. Do not return partial progress for a solvable in-scope defect: discover, fix, verify, inspect, and repeat. Verify the affected behavior with the relevant backend gates; a full module completion claim still requires the complete documented backend scope and gates.
 
 Own the documented backend business scope, not merely the endpoints that today's frontend calls. Reconcile each required workflow against domain rules, lifecycle and invariants, PostgreSQL schema and constraints/indexes, RLS and permissions, repositories, services, APIs/contracts, migrations, Development Seed, integration and audit/event behavior, automated tests, and real runtime results. Use the root coverage matrix to record a PASS/FAIL for every required capability. Diagnose and correct defects in these owned layers, then rerun the affected flow and required gates; do not hand ordinary failures back to the user as a request for the next fix.
 
