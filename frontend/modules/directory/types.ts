@@ -217,7 +217,17 @@ export interface AuditEntryDto {
   readonly entityId: string;
   readonly reason?: string | null;
   readonly occurredAt: string;
+  readonly beforeJson?: string | null;
   readonly afterJson?: string | null;
+  readonly actorType?: string | null;
+  readonly actorName?: string | null;
+  readonly changes?: readonly AuditFieldChange[] | null;
+}
+
+export interface AuditFieldChange {
+  readonly field: string;
+  readonly beforeValue?: unknown;
+  readonly afterValue?: unknown;
 }
 
 export interface DirectoryImportRow {

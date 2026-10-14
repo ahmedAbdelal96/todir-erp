@@ -41,7 +41,7 @@ import { PartyForm } from "../features/party-form.tsx";
 import type { PartyFormData } from "../validation/party-schema.ts";
 import { useToast } from "../../../components/primitives/toast.tsx";
 import { useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
-import { auditActionLabel, auditChanges, auditEntityLabel } from "../audit-format.ts";
+import { auditActionLabel, auditActorLabel, auditChanges, auditEntityLabel, auditFieldChanges } from "../audit-format.ts";
 
 export interface PartyRecordPageProps {
   readonly partyId?: string;
@@ -995,9 +995,10 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                     <div style={{ flex: 1 }}>
                       <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>{auditActionLabel(entry.action)}</span>
                       <p style={{ margin: "0.125rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{auditEntityLabel(entry.entityType)}</p>
-                      {auditChanges(entry.afterJson).map(change => (
-                        <p key={`${change.label}:${change.value}`} style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-secondary)" }}>
-                          {change.label}: {change.value}
+                      {entry.actorName && <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>بواسطة: {entry.actorName}{auditActorLabel(entry.actorType) ? ` (${auditActorLabel(entry.actorType)})` : ""}</p>}
+                      {(entry.changes?.length ? auditFieldChanges(entry.changes) : auditChanges(entry.afterJson)).map(change => (
+                        <p key={`${change.label}:${change.beforeValue ?? ""}:${change.afterValue ?? ""}`} style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-secondary)" }}>
+                          {change.label}{change.beforeValue !== undefined && <> · القيمة السابقة: {change.beforeValue}</>}{change.afterValue !== undefined && <> · القيمة الجديدة: {change.afterValue}</>}
                         </p>
                       ))}
                       {entry.reason && <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>السبب: {entry.reason}</p>}

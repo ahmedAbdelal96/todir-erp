@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { partyFormSchema } from "../validation/party-schema.ts";
 import { normalizeParty, partyApi } from "../services/party-api.ts";
-import { auditActionLabel, auditChanges, auditEntityLabel } from "../audit-format.ts";
+import { auditActionLabel, auditActorLabel, auditChanges, auditEntityLabel, auditFieldChanges } from "../audit-format.ts";
 
 describe("Directory / Party Vertical Slice", () => {
   it("validates party schema for organization with valid roles", () => {
@@ -115,15 +115,23 @@ describe("Directory / Party Vertical Slice", () => {
     assert.equal(auditActionLabel("party_identity_changed"), "تعديل بيانات الهوية");
     assert.equal(auditEntityLabel("party"), "سجل الطرف التجاري");
     assert.deepEqual(auditChanges('{"displayName":"شركة النور للتجارة","partyId":"0192e2b3-0000-7000-8000-000000000000","version":3}'), [
-      { label: "الاسم المعروض", value: "شركة النور للتجارة" }
+      { label: "الاسم المعروض", afterValue: "شركة النور للتجارة" }
+    ]);
+    assert.equal(auditActorLabel("Human"), "مستخدم");
+    assert.equal(auditActorLabel("UnrecognizedBackendActor"), undefined);
+    assert.deepEqual(auditFieldChanges([
+      { field: "displayName", beforeValue: "أحمد قبل التعديل", afterValue: "أحمد بعد التعديل" },
+      { field: "partyId", beforeValue: "internal-id", afterValue: "internal-id" }
+    ]), [
+      { label: "الاسم المعروض", beforeValue: "أحمد قبل التعديل", afterValue: "أحمد بعد التعديل" }
     ]);
   });
 
   it("does not surface malformed audit JSON or raw enum values", () => {
     assert.deepEqual(auditChanges("not-json"), []);
     assert.deepEqual(auditChanges('{"role":"FutureBackendRole","status":"FutureStatus"}'), [
-      { label: "الدور التجاري", value: "غير محدد" },
-      { label: "الحالة", value: "غير محدد" }
+      { label: "الدور التجاري", afterValue: "غير محدد" },
+      { label: "الحالة", afterValue: "غير محدد" }
     ]);
   });
 });
