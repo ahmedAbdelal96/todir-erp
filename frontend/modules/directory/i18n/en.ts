@@ -8,7 +8,7 @@ export const en = {
     addParty: "Add party", addNewParty: "Add a new party", import: "Import records", export: "Export CSV", exporting: "Exporting...",
     exportedTitle: "Data exported", exportedDescription: "The CSV file is ready and has been downloaded.", exportErrorTitle: "Could not export records", exportErrorDescription: "An error occurred while exporting.",
     columnParty: "Party", columnType: "Type", columnRoles: "Roles", columnStatus: "Status", columnUpdated: "Last updated",
-    organization: "Organization / company", person: "Individual", customer: "Customer", supplier: "Supplier",
+    organization: "Company", person: "Individual", customer: "Customer", supplier: "Supplier",
     statusActive: "Active", statusArchived: "Archived", statusBlocked: "Blocked", statusMerged: "Merged", statusDraft: "Draft", statusUnknown: "Status unavailable",
     searchLabel: "Search parties, customers, and suppliers", searchPlaceholder: "Search by name, tax registration, email, or phone...",
     entityNature: "Entity type", allEntities: "All entities", organizations: "Organizations and companies", people: "Individuals",

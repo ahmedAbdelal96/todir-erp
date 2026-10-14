@@ -236,7 +236,8 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
     {
       id: "updatedAt",
       header: t("partyList.columnUpdated"),
-      width: 130,
+      width: 160,
+      minWidth: 160,
       cellRenderer: ({ row }) => (
         <LocalDateDisplay value={row.updatedAt} />
       )

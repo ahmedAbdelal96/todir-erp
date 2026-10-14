@@ -102,6 +102,30 @@ test.describe('Directory visual acceptance corrections', () => {
     await expect(page.getByRole('columnheader', { name: 'Last updated' })).toBeVisible();
     await expect(page.locator('.ui-datagrid')).not.toHaveClass(/ag-rtl/);
     expect((await partyColumn.boundingBox())!.x).toBeLessThan((await updatedColumn.boundingBox())!.x);
+    await expect(page.locator('.ui-datagrid .ag-cell[col-id="partyType"]').first()).toHaveText('Company');
+    const englishTableReadability = await page.locator('.ui-datagrid').evaluate(grid => {
+      const headers = [...grid.querySelectorAll<HTMLElement>('.ag-header-cell')].map(cell => {
+        const label = cell.querySelector<HTMLElement>('.ag-header-cell-text');
+        return {
+          id: cell.getAttribute('col-id'),
+          text: label?.textContent?.trim() ?? '',
+          clipped: Boolean(label && label.scrollWidth > label.clientWidth),
+          width: Math.round(cell.getBoundingClientRect().width)
+        };
+      });
+      const firstPartyType = grid.querySelector<HTMLElement>('.ag-cell[col-id="partyType"]');
+      const firstUpdatedDate = grid.querySelector<HTMLElement>('.ag-cell[col-id="updatedAt"]');
+      return {
+        headers,
+        firstPartyTypeClipped: Boolean(firstPartyType && firstPartyType.scrollWidth > firstPartyType.clientWidth),
+        firstUpdatedDateClipped: Boolean(firstUpdatedDate && firstUpdatedDate.scrollWidth > firstUpdatedDate.clientWidth)
+      };
+    });
+    expect(englishTableReadability.headers.map(header => header.text)).toEqual(['Party', 'Type', 'Roles', 'Status', 'Last updated']);
+    expect(englishTableReadability.headers.every(header => !header.clipped)).toBe(true);
+    expect(englishTableReadability.headers.find(header => header.id === 'updatedAt')?.width).toBeGreaterThanOrEqual(160);
+    expect(englishTableReadability.firstPartyTypeClipped).toBe(false);
+    expect(englishTableReadability.firstUpdatedDateClipped).toBe(false);
     await expect(updatedDate).toHaveAttribute('dir', 'ltr');
     await expect(updatedDate).toHaveAttribute('lang', 'en');
     await page.getByRole('button', { name: 'Switch to Arabic' }).click();
