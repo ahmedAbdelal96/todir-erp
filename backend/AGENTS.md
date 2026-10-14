@@ -48,6 +48,8 @@ Implement every documented backend capability that is in scope, including missin
 
 ### Backend ownership and evidence loop
 
+Apply this ownership and evidence loop to every future backend task, including defect fixes, migrations, API contracts, security, messaging, integration, and operational changes. Verify the affected behavior with the relevant backend gates; a full module completion claim still requires the complete documented backend scope and gates.
+
 Own the documented backend business scope, not merely the endpoints that today's frontend calls. Reconcile each required workflow against domain rules, lifecycle and invariants, PostgreSQL schema and constraints/indexes, RLS and permissions, repositories, services, APIs/contracts, migrations, Development Seed, integration and audit/event behavior, automated tests, and real runtime results. Use the root coverage matrix to record a PASS/FAIL for every required capability. Diagnose and correct defects in these owned layers, then rerun the affected flow and required gates; do not hand ordinary failures back to the user as a request for the next fix.
 
 Make normal engineering choices within the approved business and architecture model. If an API or seed scenario needed by a documented user task is missing, implement it in the backend mission instead of narrowing the documented scope. For product ambiguity, inspect the employee's actual workflow and relevant market patterns when useful, while preserving the Module Pack's locked ownership, financial, security, and lifecycle decisions. Escalate only a material unresolved business or architectural choice; continue independent work meanwhile.

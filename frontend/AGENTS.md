@@ -54,6 +54,8 @@ Every frontend module mission report must include the canonical Module Pack path
 
 ### Frontend ownership and real Product/UX acceptance
 
+Apply this ownership and evidence loop to every future frontend task, including defect fixes, UX, copy, routing, accessibility, responsive behavior, API integration, and tests. Verify affected runtime behavior in the real browser; a full module completion claim still requires every documented journey and gate.
+
 Own the full frontend journey in the assigned scope: user tasks and role-specific decisions, workflow design, natural Arabic and RTL, API integration, permissions, loading/empty/error states, accessibility, desktop/mobile behavior, automated tests, real browser execution, screenshot inspection, and correction of Product/UX defects. Use the root coverage matrix to reconcile each MVP journey with the Module Pack, the actual backend contract, canonical seed, and observed runtime behavior. Do not implement only the visible screen or return because one Playwright click-through or screenshot succeeded.
 
 Design for the employee doing the work and the manager reading the result. Make the common action obvious, remove safe-to-default fields and repeated entry, show trustworthy business state without requiring technical interpretation, and reveal advanced options only when useful. Use established ERP/SaaS patterns as evidence when they improve an underspecified decision, then choose the simplest workflow suitable for this Arabic-market product. Do not mirror DTOs, expose raw backend states, or make users supply internal identifiers.
