@@ -14,7 +14,7 @@ This is a production-grade, Arabic-market-first, multi-tenant ERP SaaS. It is on
 
 Every current and future module implementation is driven by its canonical Module Pack under `docs/modules/`. Before implementation, identify the exact current pack and read its full scope, business purpose, domain model, ownership, workflows, lifecycle, invariants, permissions intent, integrations, edge cases, UX intent, MVP scope, explicitly deferred scope, development seed scenarios, acceptance scenarios, and Definition of Done. The Module Pack defines **WHAT** and **WHY**; the applicable `AGENTS.md` files define **HOW**. Both remain active references throughout implementation.
 
-Existing code, database tables, DTOs, endpoints, screens, or framework patterns are not authority when they conflict with the documented module decision. Do not implement by assumption, silently reduce the documented scope, invent undocumented behavior, or mark work complete because a build, current API, or existing test passes. If the documentation is incomplete or contradictory, record the exact gap and stop the affected decision until it is resolved or explicitly deferred.
+Existing code, database tables, DTOs, endpoints, screens, or framework patterns are not authority when they conflict with the documented module decision. Do not implement by assumption, silently reduce the documented scope, invent undocumented behavior, or mark work complete because a build, current API, or existing test passes. Resolve ordinary implementation and UX choices using the documented business goal and sound judgment. If documentation is materially contradictory or leaves a locked business, accounting, legal, security, or architecture decision unresolved, record the exact gap, stop only the affected decision, and continue independent work until it is resolved or explicitly deferred by the Product Owner.
 
 Every module mission report must name the canonical pack, summarize the documented scope, list the acceptance scenarios, identify MVP versus deferred items, and list unresolved gaps. No module may be reported as `MODULE COMPLETE` until this chain is covered:
 
@@ -28,6 +28,14 @@ Canonical Module Pack
 → Product/UX Acceptance
 ```
 
+## 1.2 Complete ownership of assigned work
+
+An agent assigned a module, feature, or Module Pack owns the quality of its entire **authorized scope**. Act as a senior product, UX, architecture, engineering, and QA owner for that scope, not as a ticket executor waiting for the user to find each defect. A full-module assignment covers the entire capability chain; an area-only assignment cannot be presented as module completion. Keep the Module Pack open as a continuous reference. Work through `understand → reconcile documentation and code → plan → implement → run → test → inspect real behavior → compare with requirements → correct → retest` until every required scenario in the assigned scope passes.
+
+Maintain a coverage matrix for each MVP capability: `canonical requirement → business rule → persistence → backend/API → Development Seed → frontend UX → automated test → real runtime proof → PASS/FAIL`. Mark a layer not applicable only with a concrete reason. Existing code, passing tests, and generated screenshots are not proof of an unverified link. A required FAIL remains work to diagnose and fix; do not turn it into a completion claim. Previewing a workflow does not prove its committed outcome, and tenant isolation does not by itself prove legal-entity isolation.
+
+Fix defects found within the assigned layer, including business rules, validation, security, API contracts, seed, UI copy, responsive layout, and integration behavior. Repeat verification after correction. For a defect owned by another layer, identify the precise boundary and evidence; fix it only when the mission authorizes cross-layer work, continue independent work, and report the remaining blocker without compensating with mocks or false business behavior. Return early only for a genuine external blocker, required destructive approval, or a material decision that would change approved product or architecture policy. The user is the final Product Owner, not the agent's primary tester or defect finder.
+
 # 2. Business first
 
 Do not begin a feature or module from database tables, DTOs, controllers, React screens, or an existing framework pattern. First understand:
@@ -40,6 +48,8 @@ Do not begin a feature or module from database tables, DTOs, controllers, React 
 
 Model real operating conditions, not only the happy path: company size, policies, approvals, reversals, cancellation, partial processing, concurrent users, backdated/future-dated operations, inactive and historical records, auditability, and correction without destroying history. Business correctness is more expensive to repair later than UI layout.
 
+Make ordinary product and implementation decisions within the approved model. Think from the employee's and manager's real task: choose the simplest correct workflow that preserves truthful data, explainability, security, and future scale. When a workflow is underspecified and market practice would materially improve the choice, study relevant ERP/SaaS competitors and authoritative product documentation for terminology, interaction patterns, and user expectations. Record the reasoning where it will remain useful. Do not copy a competitor blindly or substitute market convention for a locked Module Pack decision.
+
 # 3. User simplicity and language boundaries
 
 The product is for ordinary business users. Aim for minimum required fields, an obvious next action, familiar terminology, progressive disclosure, no technical identifiers, and no unnecessary decisions. A user should not need ERP or accounting expertise merely to understand a label.
@@ -51,6 +61,8 @@ DATABASE LANGUAGE != DOMAIN LANGUAGE != API LANGUAGE != USER-FACING LANGUAGE
 ```
 
 `TenantId`, `OrganizationId`, `LegalEntityId`, `PartyId`, `MfaChallengeId`, and `EntityRef` are internal concepts. They must not automatically become labels or input fields. Ask for a business concept only when the user genuinely understands and needs it. The frontend must not expose backend implementation details, SQL errors, stack traces, table names, or ORM terminology.
+
+The product must make data easy to enter and read, reduce duplicate work and unnecessary steps, and let managers act on trustworthy information without technical interpretation or routine spreadsheet exports. Design each role around its job and progressively reveal advanced options. For every workflow, ask whether defaults can safely remove fields, the next action is obvious, the wording is natural to a normal employee, and the flow is faster than the current manual process. Technical correctness with needless friction is not sufficient: employees should want to work in the system.
 
 # 4. Locked repository structure
 
@@ -105,7 +117,7 @@ Use this sequence for a new business capability:
 9. Integrated Runtime Verification
 10. Product Acceptance
 
-Only applicable stages that pass may support these statuses: `BACKEND COMPLETE`, `FRONTEND COMPLETE`, `PRODUCT / UX ACCEPTANCE COMPLETE`, `INTEGRATION COMPLETE`, and finally `MODULE COMPLETE`. A passing build, existing API, frontend compilation, or Playwright click-through is never by itself module completion.
+Only applicable stages that pass may support these statuses: `BACKEND COMPLETE`, `FRONTEND COMPLETE`, `PRODUCT / UX ACCEPTANCE COMPLETE`, `INTEGRATION COMPLETE`, and finally `MODULE COMPLETE`. A passing build, existing API, frontend compilation, or Playwright click-through is never by itself module completion. The agent must finish and self-review all verifiable work before asking for human Product/UX acceptance; that human review is the final approval gate. Do not declare `MODULE COMPLETE` while required MVP coverage fails, evidence is incomplete, or human acceptance is outstanding.
 
 User-visible backend capabilities must provide canonical realistic development seed scenarios before frontend handoff whenever seeded data is necessary to evaluate the product experience.
 
@@ -114,6 +126,8 @@ User-visible backend capabilities must provide canonical realistic development s
 All development and defect discovery happen locally. Use local builds, tests, Docker, PostgreSQL, RabbitMQ, and runtime checks. GitHub is storage/review infrastructure, not the normal test loop; do not push fixes to discover whether they work or wait for remote CI during implementation.
 
 Before changing anything, inspect the repository and current status, read the applicable scoped manual and canonical architecture/module/API/ADR documents, inspect implementation and tests, identify ownership/dependencies/boundaries, then plan. Implement only approved scope, verify it, self-review it, fix clear in-scope defects, and re-verify. Compilation alone is not completion. Never weaken a security or architecture test to make a gate pass.
+
+For a user-visible runtime journey, final acceptance uses the real frontend, real API, real PostgreSQL, and canonical Development Seed; use a disposable local database for mutating acceptance where appropriate. Mocks, Storybook, fixtures, and synthetic screenshots support development but cannot replace this proof. Open and inspect every acceptance screenshot before reporting it. Check actual record counts and business states, Arabic copy, RTL, mobile overflow, empty/loading/error states, permissions, technical leaks, safe destructive actions, and consistency between screenshots and reported results. If evidence exposes a defect, correct it and recapture it. Do not claim a populated, completed, or isolated scenario from evidence that only shows a partial state.
 
 # 10. Git and completion discipline
 
@@ -125,4 +139,4 @@ Do not reopen completed work without a real defect, a new requirement, or an exp
 
 Code comments are English and explain why: business invariants, security, performance, concurrency, transaction, retry, or architectural decisions. Do not narrate obvious mechanics.
 
-Before reporting, review scope, ownership, boundaries, data integrity, tenant/RLS security, permissions, API contracts, query/index behavior, performance, tests, documentation, warnings, stale code, and temporary artifacts. Report changed files, exact PASS/FAIL results, deviations, risks, and decisions still needed. Never claim unmeasured coverage or a passing gate.
+Before reporting, review scope, ownership, boundaries, data integrity, tenant/RLS security, permissions, API contracts, query/index behavior, performance, tests, documentation, warnings, stale code, and temporary artifacts. A module completion report must identify the canonical pack, business journeys, architecture decisions, database/migration and seed results, security and tenant isolation, API contracts, real browser/UX evidence, exact test totals, deferred scope, genuine external limitations, changed files, commit SHA, and remote status. Report exact PASS/FAIL results and decisions still needed. Never claim unmeasured coverage, a passing gate, or completion while an in-scope defect can reasonably be fixed in the current mission.

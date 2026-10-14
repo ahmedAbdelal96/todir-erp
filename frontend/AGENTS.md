@@ -48,9 +48,17 @@ Every frontend module mission must identify and read the exact current Module Pa
 
 Design from the documented business workflow and user task, not from DTOs, database columns, existing endpoints, or an existing screen pattern. Use the pack's business terminology, progressive disclosure, and realistic seeded scenarios. Do not hide a documented journey, invent UI behavior by assumption, silently reduce scope, or treat passing TypeScript, component tests, or Playwright clicks as UX completion.
 
-Before frontend completion, inspect the backend and API contract against the Module Pack. If a documented user journey lacks the backend capability, contract, permission, or data needed for a correct experience, stop that journey and report the exact backend gap and affected acceptance scenario; do not work around business truth in the frontend. Frontend completion requires the documented user journeys and acceptance scenarios to work with canonical development seed data, or each uncovered item to be explicitly recorded as deferred with its reason and impact.
+Before frontend completion, inspect the backend and API contract against the Module Pack. If a documented user journey lacks the backend capability, contract, permission, or data needed for a correct experience, stop that journey and report the exact backend gap and affected acceptance scenario; do not work around business truth in the frontend. Frontend completion requires the documented user journeys and acceptance scenarios to work with canonical development seed data, or each uncovered item to be explicitly deferred by the Product Owner with its reason and impact recorded.
 
 Every frontend module mission report must include the canonical Module Pack path, documented product/UX scope, acceptance scenarios, MVP and deferred items, backend/API gaps, seed scenarios used for verification, and unresolved gaps.
+
+### Frontend ownership and real Product/UX acceptance
+
+Own the full frontend journey in the assigned scope: user tasks and role-specific decisions, workflow design, natural Arabic and RTL, API integration, permissions, loading/empty/error states, accessibility, desktop/mobile behavior, automated tests, real browser execution, screenshot inspection, and correction of Product/UX defects. Use the root coverage matrix to reconcile each MVP journey with the Module Pack, the actual backend contract, canonical seed, and observed runtime behavior. Do not implement only the visible screen or return because one Playwright click-through or screenshot succeeded.
+
+Design for the employee doing the work and the manager reading the result. Make the common action obvious, remove safe-to-default fields and repeated entry, show trustworthy business state without requiring technical interpretation, and reveal advanced options only when useful. Use established ERP/SaaS patterns as evidence when they improve an underspecified decision, then choose the simplest workflow suitable for this Arabic-market product. Do not mirror DTOs, expose raw backend states, or make users supply internal identifiers.
+
+Run final user journeys against the real frontend, real API, real PostgreSQL, and canonical Development Seed; use a disposable database for mutating acceptance when appropriate. Mocks, fixtures, Storybook, and simulated Playwright states do not establish final Product/UX acceptance. Open every captured screenshot and check that it visibly proves the claimed populated state, completed operation, correct Arabic copy, RTL, responsive layout, and absence of technical leaks. Check the underlying response and resulting state where screenshots cannot prove them. A preview is not proof of a committed action; tenant denial is not proof of legal-entity scope. Fix frontend-owned defects and recapture evidence before returning. For a backend-owned gap, state the exact missing capability and affected scenario, continue independent frontend work, and do not fabricate a frontend workaround.
 
 ---
 
@@ -63,6 +71,8 @@ TODIR is an Arabic-first, multi-tenant enterprise ERP SaaS designed for people w
 * **HIGH-DENSITY & SPACE-EFFICIENT**: ERP users need information density without clutter. Use compact spacing, clear typography, and structured grids.
 * **FAST & RESPONSIVE**: Every click provides instant feedback. Loading states use spinners/skeletons, never blank screens.
 * **PREDICTABLE & CONSISTENT**: Every page feels like it belongs to the exact same software suite. A user who learns one list page or record page automatically knows how to use all other 50+ modules.
+
+Product success means employees prefer using the system for daily work because entry is faster, information is easier to read, and the next action is clear. A technically working screen that forces unnecessary data entry, hides the decision-relevant state, or makes the user decode developer language does not meet this standard.
 
 ### The Sacred Boundary
 ```text
@@ -903,4 +913,4 @@ git diff --check
 git diff -- backend
 ```
 
-A passing build alone is NEVER completion. Full compliance with the UX archetypes, natural Arabic copy, zero horizontal scrolling, RTL bidirectional isolation, and automated tests is mandatory.
+A passing build alone is NEVER completion. Full compliance with the UX archetypes, natural Arabic copy, zero horizontal scrolling, RTL bidirectional isolation, and automated tests is mandatory. Reconcile all required documented acceptance scenarios with real browser evidence and fix any frontend-owned failure before claiming `FRONTEND COMPLETE`. Present a fully self-reviewed result for human Product/UX acceptance; human review remains the final approval gate before `MODULE COMPLETE`.
