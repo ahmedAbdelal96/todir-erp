@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Modules.Directory.Entities;
 
 namespace Modules.Directory.DTOs;
@@ -66,7 +67,8 @@ public sealed record DirectoryImportRequest(IReadOnlyList<DirectoryImportRow> Ro
 public sealed record DirectoryImportRowResult(string ExternalReference, string Action, Guid? PartyId, IReadOnlyList<string> Errors, IReadOnlyList<Guid> PossibleMatches);
 public sealed record DirectoryImportResult(Guid OperationId, bool Committed, IReadOnlyList<DirectoryImportRowResult> Rows);
 public sealed record DirectoryMergeResult(Guid MasterPartyId, Guid SourcePartyId, string Status, IReadOnlyList<string> Contributors);
-public sealed record AuditEntryDto(Guid Id, string Action, string EntityType, Guid EntityId, string? Reason, DateTimeOffset OccurredAt, string? AfterJson);
+public sealed record AuditChangeDto(string Field, JsonElement? BeforeValue, JsonElement? AfterValue);
+public sealed record AuditEntryDto(Guid Id, string Action, string EntityType, Guid EntityId, string? Reason, DateTimeOffset OccurredAt, string? BeforeJson, string? AfterJson, Guid? ActorId, string ActorType, string? ActorName, IReadOnlyList<AuditChangeDto> Changes);
 public sealed record ReadinessCapabilityDto(string Capability, bool Ready, IReadOnlyList<string> Missing, IReadOnlyList<string> Warnings);
 
 public sealed record PartyRoleDto(string Code, string Status, long Version);

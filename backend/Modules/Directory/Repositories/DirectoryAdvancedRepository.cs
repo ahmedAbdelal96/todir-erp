@@ -136,7 +136,7 @@ public sealed class DirectoryAdvancedRepository(
         await ExecuteAsync(connection, transaction, "insert into foundation_directory.party_merge_redirect (tenant_id,source_party_id,target_party_id,merged_at,merged_by,reason,conflict_details) values ($1,$2,$3,$4,$5,$6,'{}'::jsonb)", ct, tenantId.Value, sourcePartyId, request.MasterPartyId, now, actorId, request.Reason.Trim());
         await ExecuteAsync(connection, transaction, "update foundation_directory.party set status='Merged',updated_at=$3,updated_by=$4,version=version+1 where tenant_id=$1 and id=$2", ct, tenantId.Value, sourcePartyId, now, actorId);
         await ExecuteAsync(connection, transaction, "update foundation_directory.duplicate_candidate set status='Resolved',resolved_at=$3,resolved_by=$4,resolution_reason=$5 where tenant_id=$1 and (party_id=$2 or candidate_party_id=$2)", ct, tenantId.Value, sourcePartyId, now, actorId, "Merged into master party");
-        await AuditAsync(connection, transaction, tenantId, actorId, membershipId, sourcePartyId, "party_merged", new { sourcePartyId }, new { request.MasterPartyId, request.Reason }, correlationId, now, ct);
+        await AuditAsync(connection, transaction, tenantId, actorId, membershipId, sourcePartyId, "party_merged", new { sourcePartyId }, new { request.MasterPartyId }, correlationId, now, ct, request.Reason.Trim());
         await OutboxAsync(connection, transaction, tenantId, "DirectoryPartyMergedV1", new { sourcePartyId, masterPartyId = request.MasterPartyId }, correlationId, request.MasterPartyId, ct);
         await transaction.CommitAsync(ct);
         foreach (var contributor in mergeContributors) await contributor.ContributeAsync(tenantId.Value, sourcePartyId, request.MasterPartyId, ct);
@@ -165,11 +165,17 @@ public sealed class DirectoryAdvancedRepository(
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await SetTenantAsync(connection, transaction, tenantId, ct);
-        await using var command = new NpgsqlCommand("select id,action,entity_type,entity_id,reason,occurred_at,after_json from platform.audit_entry where tenant_id=$1 and module='directory' and entity_id=$2 order by occurred_at desc", connection, transaction);
+        await using var command = new NpgsqlCommand("select a.id,a.actor_type,a.actor_id,coalesce(m.display_name,i.name),a.action,a.entity_type,a.entity_id,a.reason,a.occurred_at,a.before_json::text,a.after_json::text from platform.audit_entry a left join platform.membership m on m.tenant_id=a.tenant_id and m.id=a.membership_id left join platform.identity i on i.tenant_id=a.tenant_id and i.id=a.actor_id where a.tenant_id=$1 and a.module='directory' and a.entity_id=$2 order by a.occurred_at desc", connection, transaction);
         Add(command, tenantId.Value, partyId);
         var result = new List<AuditEntryDto>();
         await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetGuid(3), Text(reader, 4), reader.GetFieldValue<DateTimeOffset>(5), Text(reader, 6)));
+        while (await reader.ReadAsync(ct))
+        {
+            var beforeJson = Text(reader, 9);
+            var afterJson = Text(reader, 10);
+            var changes = ReadChanges(beforeJson, afterJson);
+            result.Add(new(reader.GetGuid(0), reader.GetString(4), reader.GetString(5), reader.GetGuid(6), Text(reader, 7), reader.GetFieldValue<DateTimeOffset>(8), SafeJson(changes, true), SafeJson(changes, false), GuidNullable(reader, 2), reader.GetString(1), Text(reader, 3), changes));
+        }
         await reader.CloseAsync();
         await transaction.CommitAsync(ct);
         return result;
@@ -311,7 +317,34 @@ public sealed class DirectoryAdvancedRepository(
     }
     private static async Task<int> ExecuteAsync(NpgsqlConnection c, NpgsqlTransaction t, string sql, CancellationToken ct, params object?[] values) { await using var command = new NpgsqlCommand(sql, c, t); Add(command, values); return await command.ExecuteNonQueryAsync(ct); }
     private static async Task SetTenantAsync(NpgsqlConnection c, NpgsqlTransaction t, TenantId tenantId, CancellationToken ct) => await ExecuteAsync(c, t, "select set_config('app.tenant_id',$1,true)", ct, tenantId.Value.ToString("D"));
-    private static async Task AuditAsync(NpgsqlConnection c, NpgsqlTransaction t, TenantId tenantId, Guid actorId, Guid membershipId, Guid entityId, string action, object? before, object? after, Guid correlationId, DateTimeOffset now, CancellationToken ct) => await Core.Services.NpgsqlAuditWriter.WriteAsync(c, t, new Core.Services.AuditEntry(Guid.CreateVersion7(), tenantId, null, null, "Human", actorId, membershipId, "directory", action, "party", entityId, JsonSerializer.Serialize(before), JsonSerializer.Serialize(after), null, "directory-api", correlationId, System.Diagnostics.Activity.Current?.TraceId.ToString(), now, null), ct);
+    private static async Task AuditAsync(NpgsqlConnection c, NpgsqlTransaction t, TenantId tenantId, Guid actorId, Guid membershipId, Guid entityId, string action, object? before, object? after, Guid correlationId, DateTimeOffset now, CancellationToken ct, string? reason = null) => await Core.Services.NpgsqlAuditWriter.WriteAsync(c, t, new Core.Services.AuditEntry(Guid.CreateVersion7(), tenantId, null, null, "Human", actorId, membershipId, "directory", action, "party", entityId, JsonSerializer.Serialize(before), JsonSerializer.Serialize(after), reason, "directory-api", correlationId, System.Diagnostics.Activity.Current?.TraceId.ToString(), now, null), ct);
+
+    private static AuditChangeDto[] ReadChanges(string? beforeJson, string? afterJson)
+    {
+        using var before = ParseAuditObject(beforeJson);
+        using var after = ParseAuditObject(afterJson);
+        if (before is null && after is null) return [];
+        var beforeProperties = before?.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value, StringComparer.Ordinal) ?? new(StringComparer.Ordinal);
+        var afterProperties = after?.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value, StringComparer.Ordinal) ?? new(StringComparer.Ordinal);
+        return beforeProperties.Keys.Union(afterProperties.Keys, StringComparer.Ordinal)
+            .Where(IsSafeAuditField)
+            .Where(field => !beforeProperties.TryGetValue(field, out var oldValue) || !afterProperties.TryGetValue(field, out var newValue) || oldValue.GetRawText() != newValue.GetRawText())
+            .Select(field => new AuditChangeDto(field, SafeValue(beforeProperties, field), SafeValue(afterProperties, field)))
+            .ToArray();
+    }
+
+    private static JsonDocument? ParseAuditObject(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        var document = JsonDocument.Parse(json);
+        return document.RootElement.ValueKind == JsonValueKind.Object ? document : DisposeAndReturnNull(document);
+    }
+
+    private static JsonDocument? DisposeAndReturnNull(JsonDocument document) { document.Dispose(); return null; }
+    private static Guid? GuidNullable(NpgsqlDataReader reader, int index) => reader.IsDBNull(index) ? null : reader.GetGuid(index);
+    private static JsonElement? SafeValue(Dictionary<string, JsonElement> values, string field) => values.TryGetValue(field, out var value) && value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined ? value.Clone() : null;
+    private static string SafeJson(IEnumerable<AuditChangeDto> changes, bool before) => JsonSerializer.Serialize(changes.Where(change => before ? change.BeforeValue.HasValue : change.AfterValue.HasValue).ToDictionary(change => change.Field, change => before ? change.BeforeValue : change.AfterValue, StringComparer.Ordinal));
+    private static bool IsSafeAuditField(string field) => field is "displayName" or "legalName" or "tradeName" or "nameAr" or "nameEn" or "firstName" or "middleName" or "lastName" or "countryCode" or "primaryLanguage" or "partyType" or "role" or "status" or "type" or "usage" or "alias" or "languageCode" or "scopeType" or "isPrimary" or "isDefault";
     private static async Task OutboxAsync(NpgsqlConnection c, NpgsqlTransaction t, TenantId tenantId, string messageType, object payload, Guid correlationId, Guid causationId, CancellationToken ct) => await ExecuteAsync(c, t, "insert into platform.outbox_message (id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,trace_parent,status,next_attempt_at) values ($1,$2,$3::jsonb,$4,$5,$6,$7,'directory',$8,'Pending',$5)", ct, Guid.CreateVersion7(), messageType, JsonSerializer.Serialize(payload), tenantId.Value, DateTimeOffset.UtcNow, correlationId, causationId, System.Diagnostics.Activity.Current?.Id);
     private static void Add(NpgsqlCommand command, params object?[] values) { foreach (var value in values) command.Parameters.AddWithValue(value ?? DBNull.Value); }
     private static string? Null(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

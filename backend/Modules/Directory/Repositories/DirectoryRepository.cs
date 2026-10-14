@@ -52,9 +52,11 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
         await coordinator.ExecuteAsync(tenantId, async (context, ct) =>
         {
             var now = DateTimeOffset.UtcNow;
+            var before = await ReadIdentityAuditSnapshotAsync(context, tenantId, partyId, ct);
             var changed = await ExecuteAsync(context, "update foundation_directory.party set display_name=$3,display_name_normalized=$4,legal_name=$5,trade_name=$6,name_ar=$7,name_en=$8,first_name=$9,middle_name=$10,last_name=$11,country_code=$12,primary_language=$13,updated_by=$14,updated_at=$15,version=version+1 where tenant_id=$1 and id=$2 and version=$16", ct, tenantId.Value, partyId, request.DisplayName.Trim(), DirectoryNormalization.Name(request.DisplayName), Null(request.LegalName), Null(request.TradeName), Null(request.NameAr), Null(request.NameEn), Null(request.FirstName), Null(request.MiddleName), Null(request.LastName), Null(request.CountryCode), Null(request.PrimaryLanguage), actorId, now, request.Version);
             if (changed == 0) throw new DirectoryException("directory.concurrency_conflict", "The party was changed by another request.");
-            await AuditAsync(context, tenantId, actorId, membershipId, partyId, "party_identity_changed", null, new { request.DisplayName }, correlationId, now, ct);
+            var after = new { displayName = request.DisplayName.Trim(), legalName = Null(request.LegalName), tradeName = Null(request.TradeName), nameAr = Null(request.NameAr), nameEn = Null(request.NameEn), firstName = Null(request.FirstName), middleName = Null(request.MiddleName), lastName = Null(request.LastName), countryCode = Null(request.CountryCode), primaryLanguage = Null(request.PrimaryLanguage) };
+            await AuditAsync(context, tenantId, actorId, membershipId, partyId, "party_identity_changed", before, after, correlationId, now, ct);
             context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "DirectoryPartyIdentityChangedV1", JsonSerializer.Serialize(new { partyId }), tenantId, now, correlationId, partyId, "directory", traceParent));
             return true;
         }, cancellationToken);
@@ -184,6 +186,21 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
         if (string.IsNullOrWhiteSpace(request.DisplayName)) throw new DirectoryException("directory.display_name_required", "Display name is required.");
         if (request.DisplayName.Length > 300) throw new DirectoryException("directory.display_name_too_long", "Display name is too long.");
         if (request.PartyType == PartyType.Organization && (!string.IsNullOrWhiteSpace(request.FirstName) || !string.IsNullOrWhiteSpace(request.LastName))) throw new DirectoryException("directory.person_name_for_organization", "Person name fields are not valid for an organization.");
+    }
+
+    private static async Task<object?> ReadIdentityAuditSnapshotAsync(ITransactionContext context, TenantId tenantId, Guid partyId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select display_name,legal_name,trade_name,name_ar,name_en,first_name,middle_name,last_name,country_code,primary_language from foundation_directory.party where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction);
+        Add(command, tenantId.Value, partyId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        return new Dictionary<string, object?>
+        {
+            ["displayName"] = reader.GetString(0), ["legalName"] = Text(reader, 1), ["tradeName"] = Text(reader, 2),
+            ["nameAr"] = Text(reader, 3), ["nameEn"] = Text(reader, 4), ["firstName"] = Text(reader, 5),
+            ["middleName"] = Text(reader, 6), ["lastName"] = Text(reader, 7), ["countryCode"] = Text(reader, 8),
+            ["primaryLanguage"] = Text(reader, 9)
+        };
     }
 
     private static async Task<(Guid PartyId, string Reason, decimal Confidence)?> FindDuplicateAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenantId, CreatePartyRequest request, CancellationToken ct)
