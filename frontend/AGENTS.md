@@ -26,7 +26,7 @@ frontend/
 
 ### Module Boundary Rules
 1. `app/` owns composition, shell, topbar, navigation registry, and router. It never contains business domain logic.
-2. `core/` owns cross-application technical infrastructure and never imports from `modules/`. Authentication binds exactly one Tenant server-side from the authenticated session; frontend code must not invent or send Tenant identity as a normal API parameter. A workflow that genuinely requires legal-entity context must obtain it from authorized business/session context, never a fake default ID.
+2. `core/` owns cross-application technical infrastructure and never imports from `modules/`. Authentication binds exactly one Tenant server-side from the authenticated session; frontend code must not invent or send Tenant identity as a normal API parameter. A workflow that genuinely requires legal-entity context must obtain it from authorized business/session context, never a fake default ID. Query keys must include only authorization and business scopes that materially change the server response; tenant-level resources must not be artificially fragmented by LegalEntityId.
 3. `components/` is the single source of truth for all reusable UI primitives, fields, grids, and page archetypes. Modules NEVER build duplicate buttons, custom tables, bespoke pagers, or unstyled card wrappers.
 4. `modules/<module-name>/` is self-contained. Every business module owns its own:
    - `pages/`: Page archetype implementations (`<entity>-list-page.tsx`, `<entity>-record-page.tsx`).
@@ -82,7 +82,7 @@ DATABASE LANGUAGE != DOMAIN LANGUAGE != API LANGUAGE != USER-FACING LANGUAGE
 ```
 * **NEVER design screens by mirroring backend DTOs**: A DTO is an integration packet, not a UX specification. Do not put one field per DTO property on a screen.
 * **Internal Identifiers are Forbidden in the UI**: `TenantId`, `OrganizationId`, `LegalEntityId`, `PartyId`, GUIDs (`0192e2b3-...`), and `MfaChallengeId` are technical database plumbing. They MUST NEVER be rendered as labels, inputs, or titles. Always display the human-readable business reference code (e.g. `#INV-2026-0045`, `#PRT-001`) or the entity name.
-* **Dates and Timestamps**: Never expose raw ISO strings (`2026-01-01T09:00:00+00:00`). Always format using `LocalDateDisplay` or `.toLocaleDateString("ar-EG", { year: "numeric", month: "long", day: "numeric" })`.
+* **Dates and Timestamps**: Never expose raw ISO strings (`2026-01-01T09:00:00+00:00`). Business modules must use the application locale/timezone and canonical `LocalDateDisplay` / `DateTimeDisplay` components. No module-level hardcoded country locale unless an explicitly country-specific product requirement requires it.
 
 ---
 
@@ -160,7 +160,7 @@ Arabic RTL is not merely setting `dir="rtl"`. It requires strict bidirectional e
    - **SKU / Codes**: `<bdi dir="ltr">{product.sku}</bdi>`
    - **Emails**: `<bdi dir="ltr">{user.email}</bdi>`
    - **Reference Identifiers**: `<bdi>#INV-2026-0045</bdi>`
-   - **Currency & Exact Numbers**: Always wrap in `<MoneyDisplay>` or `<bdi>`.
+   - **Currency & Monetary Amounts**: Money must use `<MoneyDisplay>` / `<CurrencyDisplay>` with the actual business currency context, isolated with `<bdi>` where appropriate. Never hardcode currency symbols or assume a default country currency in generic page standards.
 
 3. **Prevent Accidental Horizontal Overflow**:
    Page-level and incidental horizontal scrolling in tables, cards, or page bodies is a broken user experience. Prefer responsive layouts, useful column prioritization, and readable wrapping. A genuinely wide operational dataset may use a deliberately contained grid-level horizontal navigation pattern when wrapping would make the data unreadable; keep identifying columns frozen, provide responsive alternatives where appropriate, and make the exception an intentional business-driven design choice rather than a layout workaround.
@@ -169,7 +169,7 @@ Arabic RTL is not merely setting `dir="rtl"`. It requires strict bidirectional e
 
 ## 4. Canonical Reusable Page Archetypes (The 5 Core Systems)
 
-Every screen in TODIR MUST be built using one of the five approved canonical page archetypes located in `frontend/components/pages/`. Never create custom page containers.
+Business pages should use the appropriate approved page archetype when applicable (`ListPage`, `RecordPage`, `DocumentPage`, `WizardPage`, `SettingsPage` located in `frontend/components/pages/`). Do not assert that literally every screen must fit one of these five archetypes: authentication, system states, dashboards, and genuinely specialized workflows may use approved application and design-system patterns (`AuthView`, `DashboardPage`, `Surface`, etc.). Any exception must remain intentional, documented, and reusable within design system standards, not bespoke layout chaos.
 
 ### 4.1. Archetype 1: `ListPage` (Tabular Records & Dynamic Grids)
 * **When to use**: All master list screens (Directory Parties and roles, Products, Invoices, Journals, Users).
@@ -195,15 +195,16 @@ Every screen in TODIR MUST be built using one of the five approved canonical pag
   ```text
   RecordPage
   ├── Header: Title, business code in <bdi>, status badge, action buttons (تعديل, تعطيل, رجوع)
-  ├── Top KPI Row: 3 to 4 StatCard components summarizing high-impact metrics
+  ├── Top KPI Row: (Optional) StatCard components summarizing high-impact metrics
   ├── Main Body: Multiple structured Surface cards (Identity, Legal, Contact, Settings)
   │   └── PropertyGrid (2, 3, or 4 columns) with PropertyItem key-value displays
   ├── Tabbed Sub-Views: (Optional) Tabs for related transactions, history, audit
-  └── Formatted Audit Footer: Localized Egyptian/Arabic timestamp and user info
+  └── Formatted Audit Footer: Localized timestamp using application locale/timezone and user info
   ```
 * **StatCard Standard**:
+  KPI/StatCard rows are optional. Never invent 3–4 metrics merely to satisfy a layout. Show KPIs only when they materially help the employee or manager understand state or make a decision.
   - `title`: Metric label (e.g. `"حالة الحساب"`, `"طبيعة الكيان"`, `"الرصيد الافتتاحي"`)
-  - `value`: Main stat (e.g. `"نشط ومفعّل"`, `"منشأة تجارية"`, `"15,000.00 ر.س"`)
+  - `value`: Main stat (e.g. `"نشط ومفعّل"`, `"منشأة تجارية"`, or formatted monetary amount via `<MoneyDisplay>` / `<CurrencyDisplay>` using the actual business currency context)
   - `subtitle`: Contextual explanation
   - `intent`: `"primary" | "success" | "warning" | "danger" | "info" | "neutral"`
   - `icon`: Relevant icon component (`<CheckCircleIcon size={20} />`)
@@ -221,7 +222,7 @@ Every screen in TODIR MUST be built using one of the five approved canonical pag
   DocumentPage
   ├── Header: Document type badge, document number, multi-axis statuses, locked badge
   ├── Metadata Section: Surface card with key document dates, parties, currency, terms
-  ├── Line Items Section: Surface card containing zero-scroll items table
+  ├── Line Items Section: Surface card with responsive-first items grid (intentionally contained grid-level horizontal navigation only when the business dataset genuinely requires it)
   ├── Document Notes Section: Surface card for terms, notes, and payment instructions
   └── Totals & Summary Card: Structured breakdown (Subtotal, Discount, Tax, Grand Total)
   ```
@@ -428,6 +429,8 @@ export const resourceApi = {
 
 ### Blueprint B: Query & Mutation Hooks (`hooks/<resource>-queries.ts`)
 
+Generic TanStack Query examples must not assume every resource is legal-entity-scoped. Query keys must include only authorization and business scopes that materially change the server response. Tenant-level resources (such as Directory parties, users, settings, and platform configuration) must not be artificially fragmented by `LegalEntityId`. Entity-scoped resources (such as invoices, journal entries, and warehouses) must use the authorized runtime legal-entity context. Never invent default scope IDs.
+
 ```ts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { resourceApi } from "../services/resource-api.ts";
@@ -435,28 +438,44 @@ import { queryKeyFactory } from "../../../core/api/query-keys.ts";
 import { useRuntimeContext } from "../../../core/runtime/runtime-provider.tsx";
 import type { CreateResourceInput, ResourceListParams } from "../types.ts";
 
-export function useResourceList(params: ResourceListParams = {}) {
+// 1. Entity-scoped resource hook (e.g. invoices, ledger entries, warehouses):
+export function useEntityScopedResourceList(params: ResourceListParams = {}) {
   const context = useRuntimeContext();
+  const legalEntityId = context.legalEntity.legalEntityId;
   return useQuery({
-    // Runtime identity scopes the cache only; httpClient sends no Tenant identity.
-    queryKey: queryKeyFactory.list(context.tenant.tenantId, context.legalEntity.legalEntityId, "<owning-module>", "resource", params),
+    // Cache key includes legalEntityId only because this resource is partitioned by legal entity.
+    queryKey: queryKeyFactory.list(context.tenant.tenantId, legalEntityId, "<owning-module>", "resource", params),
     queryFn: () => resourceApi.list(params)
   });
 }
 
-export function useCreateResource() {
+// 2. Tenant-level resource hook (e.g. directory parties, IAM users, catalog definitions):
+export function useTenantResourceList(params: ResourceListParams = {}) {
+  const context = useRuntimeContext();
+  return useQuery({
+    // Tenant-level resources are NOT fragmented by LegalEntityId.
+    queryKey: ["todir", "tenant", context.tenant.tenantId, "module", "<owning-module>", "resource", "list", params],
+    queryFn: () => resourceApi.list(params)
+  });
+}
+
+export function useCreateResource(isEntityScoped = false) {
   const context = useRuntimeContext();
   const queryClient = useQueryClient();
+  const legalEntityId = context.legalEntity.legalEntityId;
+
   return useMutation({
     mutationFn: (input: CreateResourceInput) => resourceApi.create(input),
     onSuccess: () => queryClient.invalidateQueries({
-      queryKey: queryKeyFactory.resource(context.tenant.tenantId, context.legalEntity.legalEntityId, "<owning-module>", "resource")
+      queryKey: isEntityScoped
+        ? queryKeyFactory.resource(context.tenant.tenantId, legalEntityId, "<owning-module>", "resource")
+        : ["todir", "tenant", context.tenant.tenantId, "module", "<owning-module>", "resource"]
     })
   });
 }
 ```
 
-The tenant value above is used only to isolate client cache entries; the authenticated server session binds the request to exactly one Tenant. Never add Tenant identity to request parameters, headers, or bodies. Include legal-entity context in a request only when the owning workflow requires it and the value comes from the authorized runtime context. Never invent a fallback entity or tenant ID.
+The tenant value above is used only to isolate client cache entries; the authenticated server session binds the request to exactly one Tenant. Never add Tenant identity to request parameters, headers, or bodies. Include legal-entity context in a query key or API request only when the owning business workflow genuinely requires it and the value comes directly from the authorized runtime legal-entity context. Never invent default scope IDs (e.g. fallback strings or placeholders) to force a key or parameter.
 
 ### Blueprint C: List and Record Pages
 
