@@ -68,6 +68,12 @@ Design for the employee doing the work and the manager reading the result. Make 
 
 Run final user journeys against the real frontend, real API, real PostgreSQL, and canonical Development Seed; use a disposable database for mutating acceptance when appropriate. Mocks, fixtures, Storybook, and simulated Playwright states do not establish final Product/UX acceptance. Open every captured screenshot and check that it visibly proves the claimed populated state, completed operation, correct Arabic copy, RTL, responsive layout, and absence of technical leaks. Check the underlying response and resulting state where screenshots cannot prove them. A preview is not proof of a committed action; tenant denial is not proof of legal-entity scope. Fix frontend-owned defects and recapture evidence before returning. For a backend-owned gap, state the exact missing capability and affected scenario, continue independent frontend work, and do not fabricate a frontend workaround.
 
+### Final visual self-acceptance gate
+
+For every frontend mission that uses browser screenshots as evidence, personally open and inspect every final screenshot after the last relevant change. The screenshot itself is the review artifact; successful capture or automated assertions alone do not establish visual acceptance. Inspect the actual business state, active language and copy, wrong-language leakage, RTL/LTR and mixed-direction text, date/number/money formatting, clipping and ellipsis, overflow, spacing and hierarchy, desktop and mobile behavior, loading/empty/error states, permissions, technical IDs/raw enums/backend messages, misleading labels or statuses, destructive-action safety, and consistency between the evidence and report. Review every category that applies to the captured journey; do not infer it from another screenshot.
+
+If self-review finds a frontend-owned defect, fix it, rerun affected verification, recapture all evidence affected by the fix, and inspect those new screenshots before returning. Evidence must represent the final code and runtime state; do not reuse a screenshot if a later change could affect its journey, language, component, layout, formatting, or data. Every frontend/Product acceptance report that includes browser evidence must state `FINAL VISUAL SELF-REVIEW: PASS` and list the final screenshots opened, languages and viewports inspected, journeys reviewed, and defects found and fixed during self-review. Do not report `FRONTEND COMPLETE` or `PRODUCT REVIEW READY` without completing this gate.
+
 ---
 
 ## 1. Core Product & UX Principles

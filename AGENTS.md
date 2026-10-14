@@ -133,6 +133,23 @@ Before changing anything, inspect the repository and current status, read the ap
 
 For a user-visible runtime journey, final acceptance uses the real frontend, real API, real PostgreSQL, and canonical Development Seed; use a disposable local database for mutating acceptance where appropriate. Mocks, Storybook, fixtures, and synthetic screenshots support development but cannot replace this proof. Open and inspect every acceptance screenshot before reporting it. Check actual record counts and business states, Arabic copy, RTL, mobile overflow, empty/loading/error states, permissions, technical leaks, safe destructive actions, and consistency between screenshots and reported results. If evidence exposes a defect, correct it and recapture it. Do not claim a populated, completed, or isolated scenario from evidence that only shows a partial state.
 
+## 9.1 Final Return Gate — Evidence Must Follow the Last Change
+
+Every final report must be supported by verification performed after the last relevant source, configuration, seed, migration, or UX change. A later change invalidates earlier evidence for every affected behavior. Complete this sequence before returning:
+
+```text
+last relevant change
+→ run the affected system
+→ rerun required verification
+→ capture fresh evidence
+→ inspect the fresh evidence
+→ correct any in-scope defects
+→ repeat the affected sequence if anything changes
+→ final report
+```
+
+Do not return between capturing evidence and inspecting it. Do not reuse evidence captured before a later change that could affect the same journey, language, component, layout, formatting, or data state. The agent owns this final review; Product Owner review is approval of self-reviewed work, not a defect-discovery step. If a final review finds a defect, fix it and repeat all affected verification and evidence steps before reporting.
+
 # 10. Git and completion discipline
 
 Work directly on `dev`; `main` is frozen and must not be touched without explicit owner authorization. A normal implementation mission is `discover → design → implement → targeted tests → full local verification → one commit → one push`. Do not make intermediate commits/pushes, create phase branches, or create routine PRs unless explicitly requested. Never rewrite published history or force-push.
@@ -147,4 +164,4 @@ Do not reopen completed work without a real defect, a new requirement, or an exp
 
 Code comments are English and explain why: business invariants, security, performance, concurrency, transaction, retry, or architectural decisions. Do not narrate obvious mechanics.
 
-Before reporting, review scope, ownership, boundaries, data integrity, tenant/RLS security, permissions, API contracts, query/index behavior, performance, tests, documentation, warnings, stale code, and temporary artifacts. A module completion report must identify the canonical pack, business journeys, architecture decisions, database/migration and seed results, security and tenant isolation, API contracts, real browser/UX evidence, exact test totals, deferred scope, genuine external limitations, changed files, commit SHA, and remote status. Report exact PASS/FAIL results and decisions still needed. Never claim unmeasured coverage, a passing gate, or completion while an in-scope defect can reasonably be fixed in the current mission.
+Before reporting, review scope, ownership, boundaries, data integrity, tenant/RLS security, permissions, API contracts, query/index behavior, performance, tests, documentation, warnings, stale code, and temporary artifacts. Confirm that every reported verification and evidence item follows the last relevant change. A module completion report must identify the canonical pack, business journeys, architecture decisions, database/migration and seed results, security and tenant isolation, API contracts, real browser/UX evidence, exact test totals, deferred scope, genuine external limitations, changed files, commit SHA, and remote status. Report exact PASS/FAIL results and decisions still needed. Never claim unmeasured coverage, a passing gate, or completion while an in-scope defect can reasonably be fixed in the current mission.
