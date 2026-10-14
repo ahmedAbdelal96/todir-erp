@@ -32,7 +32,7 @@ public static class DirectoryModuleExtensions
                 : Results.Unauthorized());
         group.MapGet("/parties/{partyId:guid}", async (Guid partyId, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.party.read", ct) is { } access
-                ? await Execute(http, access, () => service.GetVisibleAsync(access.Tenant, partyId, access.LegalEntityId, ct))
+                ? await Execute(http, access, () => service.GetVisibleAsync(access.Tenant, partyId, access.LegalEntityId, ct), nullAsNotFound: true)
                 : Results.Unauthorized());
         group.MapPost("/parties", async (CreatePartyRequest request, HttpContext http, DirectoryService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await ReadPermission(http, subjects, authorizer, "directory.party.create", ct) is { } access
@@ -120,10 +120,10 @@ public static class DirectoryModuleExtensions
         return new Access(tenant, actorId, membershipId, true, identifierView, duplicateOverride, legalEntityId);
     }
 
-    private static async Task<IResult> Execute<T>(HttpContext http, Access access, Func<Task<T>> action, int successStatus = StatusCodes.Status200OK)
+    private static async Task<IResult> Execute<T>(HttpContext http, Access access, Func<Task<T>> action, int successStatus = StatusCodes.Status200OK, bool nullAsNotFound = false)
     {
         if (!access.Allowed) return Results.Forbid();
-        try { var result = await action(); return successStatus == StatusCodes.Status201Created ? Results.Created(http.Request.Path, result) : Results.Ok(result); }
+        try { var result = await action(); if (nullAsNotFound && result is null) return Results.NotFound(); return successStatus == StatusCodes.Status201Created ? Results.Created(http.Request.Path, result) : Results.Ok(result); }
         catch (DirectoryException ex) { return Results.Problem(statusCode: ex.Code.Contains("concurrency", StringComparison.Ordinal) || ex.Code.Contains("duplicate", StringComparison.Ordinal) ? 409 : 400, title: ex.Message, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); }
         catch (KeyNotFoundException) { return Results.NotFound(); }
     }
