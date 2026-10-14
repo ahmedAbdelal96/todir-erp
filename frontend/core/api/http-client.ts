@@ -21,6 +21,30 @@ export class ApiError extends Error {
   }
 }
 
+let cachedCsrfToken: string | null = null;
+
+export async function fetchCsrfToken(): Promise<string> {
+  if (cachedCsrfToken) return cachedCsrfToken;
+  try {
+    const res = await fetch("/api/v1/auth/csrf", {
+      headers: { "X-Correlation-Id": generateKey() }
+    });
+    if (!res.ok) return "";
+    const data = (await res.json()) as { token?: string };
+    if (data.token) {
+      cachedCsrfToken = data.token;
+      return data.token;
+    }
+  } catch {
+    // ignore
+  }
+  return "";
+}
+
+export function resetCsrfToken(): void {
+  cachedCsrfToken = null;
+}
+
 /**
  * Creates a unique correlation ID or idempotency key.
  */
@@ -67,6 +91,12 @@ export async function httpClient<T>(
   const isMutative = ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
   if (isMutative) {
     requestHeaders["X-Idempotency-Key"] = idempotencyKey ?? generateKey();
+    if (!requestHeaders["X-CSRF-TOKEN"]) {
+      const csrf = await fetchCsrfToken();
+      if (csrf) {
+        requestHeaders["X-CSRF-TOKEN"] = csrf;
+      }
+    }
   }
 
   if (etag) {

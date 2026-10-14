@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import type { ColDef } from "ag-grid-community";
-import type { DataGridProps, DataGridColumn } from "./grid-contract.ts";
+import { getDataGridEmptyMessage, getDataGridLoadingMessage, resolveDataGridLocale, type DataGridProps, type DataGridColumn } from "./grid-contract.ts";
 import clsx from "clsx";
 
 // Register the free Community feature set once at the design-system boundary.
@@ -13,12 +13,18 @@ export function DataGrid<TRow extends object>({
   columns,
   staticRows = [],
   density = "comfortable",
+  locale,
   enableRtl = false,
   selectable = "none",
   onSelectionChange,
-  emptyMessage = "No records found",
-  loadingMessage = "Loading records..."
+  loading = false,
+  emptyMessage,
+  hasActiveFilters = false,
+  loadingMessage
 }: DataGridProps<TRow>): React.JSX.Element {
+  const resolvedLocale = resolveDataGridLocale(locale);
+  const resolvedEmptyMessage = emptyMessage ?? getDataGridEmptyMessage(resolvedLocale, hasActiveFilters);
+  const resolvedLoadingMessage = loadingMessage ?? getDataGridLoadingMessage(resolvedLocale);
   const colDefs = useMemo<ColDef<TRow>[]>(() => {
     return columns.map((col: DataGridColumn<TRow>) => {
       const colDef: ColDef<TRow> = {
@@ -89,6 +95,7 @@ export function DataGrid<TRow extends object>({
           event.api.sizeColumnsToFit();
         }}
         {...(selectable !== "none" ? { rowSelection: selectable === "multi" ? "multiple" : "single" } : {})}
+        loading={loading}
         onRowClicked={(event) => {
           if (event.data && onSelectionChange) {
             onSelectionChange([event.data]);
@@ -100,8 +107,8 @@ export function DataGrid<TRow extends object>({
             onSelectionChange(selectedRows);
           }
         }}
-        overlayNoRowsTemplate={`<span class="ui-datagrid__empty">${emptyMessage}</span>`}
-        overlayLoadingTemplate={`<span class="ui-datagrid__loading">${loadingMessage}</span>`}
+        overlayNoRowsTemplate={`<span class="ui-datagrid__empty">${resolvedEmptyMessage}</span>`}
+        overlayLoadingTemplate={`<span class="ui-datagrid__loading">${resolvedLoadingMessage}</span>`}
         animateRows={false}
       />
     </div>

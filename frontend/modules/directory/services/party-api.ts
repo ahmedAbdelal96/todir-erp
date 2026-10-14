@@ -35,6 +35,23 @@ export interface PartyListResult {
   readonly pageSize?: number | undefined;
 }
 
+/**
+ * List responses intentionally project only search columns. Normalize omitted
+ * related collections at the API boundary so shared pickers can render safely.
+ */
+export function normalizeParty(party: Party): Party {
+  return {
+    ...party,
+    roles: Array.isArray(party.roles) ? party.roles : [],
+    identifiers: Array.isArray(party.identifiers) ? party.identifiers : [],
+    contactPoints: Array.isArray(party.contactPoints) ? party.contactPoints : [],
+    addresses: Array.isArray(party.addresses) ? party.addresses : [],
+    contactPersons: Array.isArray(party.contactPersons) ? party.contactPersons : [],
+    aliases: Array.isArray(party.aliases) ? party.aliases : [],
+    visibility: Array.isArray(party.visibility) ? party.visibility : []
+  };
+}
+
 export const partyApi = {
   list: async (params: PartyListParams = {}, tenantId?: string): Promise<PartyListResult> => {
     const query = new URLSearchParams();
@@ -46,15 +63,17 @@ export const partyApi = {
     if (params.pageSize) query.set("pageSize", String(params.pageSize));
 
     const url = `/api/v1/directory/parties?${query.toString()}`;
-    return httpClient<PartyListResult>(url, {
+    const result = await httpClient<PartyListResult>(url, {
       ...(tenantId !== undefined ? { tenantId } : {})
     });
+    return { ...result, items: result.items.map(normalizeParty) };
   },
 
   getById: async (id: string, tenantId?: string): Promise<Party> => {
-    return httpClient<Party>(`/api/v1/directory/parties/${id}`, {
+    const result = await httpClient<Party>(`/api/v1/directory/parties/${id}`, {
       ...(tenantId !== undefined ? { tenantId } : {})
     });
+    return normalizeParty(result);
   },
 
   create: async (input: CreatePartyInput, tenantId?: string): Promise<Party> => {
@@ -199,6 +218,9 @@ export const partyApi = {
   importRows: async (rows: readonly DirectoryImportRow[], commit: boolean, tenantId?: string): Promise<DirectoryImportResult> => {
     return httpClient<DirectoryImportResult>("/api/v1/directory/parties/import", {
       method: "POST",
+      headers: {
+        "Idempotency-Key": `imp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      },
       body: JSON.stringify({ rows, commit }),
       ...(tenantId !== undefined ? { tenantId } : {})
     });

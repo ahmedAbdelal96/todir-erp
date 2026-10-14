@@ -123,6 +123,7 @@ export function RecordPage({
       )}
 
       <div
+        className="ui-record-page__body"
         style={{
           display: "grid",
           gridTemplateColumns: sidebar ? "1fr 340px" : "1fr",

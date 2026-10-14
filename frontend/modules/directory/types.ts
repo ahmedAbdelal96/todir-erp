@@ -135,7 +135,7 @@ export interface ContactPersonLinkInput {
 /** Combined request matching the backend AddContactPersonRequest. */
 export interface AddContactPersonRequest {
   readonly person: ContactPersonInput;
-  readonly link?: ContactPersonLinkInput | undefined;
+  readonly link: ContactPersonLinkInput;
 }
 
 export interface AliasInput {

@@ -63,14 +63,16 @@ export function PartyPicker({
 
   const parties: readonly Party[] = data?.items ?? [];
 
-  const roleLabel = (party: Party): string => party.roles
+  const roleLabel = (party: Party): string => (party.roles ?? [])
     .filter((role) => role.status === "Active")
     .map((role) => role.code === "Customer" ? "عميل" : "مورد")
     .join("، ");
 
   const businessContext = (party: Party): string => {
-    const identifier = party.identifiers.find((item) => item.isPrimary)?.value ?? party.identifiers[0]?.value;
-    const location = party.addresses.find((address) => address.isDefault)?.city ?? party.addresses[0]?.city;
+    const identifiers = party.identifiers ?? [];
+    const addresses = party.addresses ?? [];
+    const identifier = identifiers.find((item) => item.isPrimary)?.value ?? identifiers[0]?.value;
+    const location = addresses.find((address) => address.isDefault)?.city ?? addresses[0]?.city;
     return [
       party.legalName && party.legalName !== party.displayName ? `الاسم القانوني: ${party.legalName}` : undefined,
       roleLabel(party) || "طرف تجاري عام",

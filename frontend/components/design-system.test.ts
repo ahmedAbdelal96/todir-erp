@@ -10,6 +10,7 @@ import {
   parseDecimalInput
 } from "./formatting/index.ts";
 import { getCurrencyPrecision } from "./contracts/index.ts";
+import { getDataGridEmptyMessage, getDataGridLoadingMessage } from "./grid/grid-contract.ts";
 
 describe("Design System Export & Contract Validation", () => {
   it("exports all formatting contracts with deterministic behavior", () => {
@@ -39,5 +40,14 @@ describe("Design System Export & Contract Validation", () => {
     assert.equal(formatPercentage(null), "—");
     assert.equal(formatDate(null), "—");
     assert.equal(formatDateTime(null), "—");
+  });
+});
+
+describe("DataGrid localized overlay contracts", () => {
+  it("keeps Arabic loading and empty states localized and distinguishes filtered results", () => {
+    assert.equal(getDataGridLoadingMessage("ar"), "جارٍ تحميل السجلات...");
+    assert.equal(getDataGridEmptyMessage("ar"), "لا توجد سجلات");
+    assert.equal(getDataGridEmptyMessage("ar", true), "لا توجد سجلات تطابق معايير البحث الحالية");
+    assert.equal(getDataGridEmptyMessage("en", true), "No records match the current search or filters");
   });
 });

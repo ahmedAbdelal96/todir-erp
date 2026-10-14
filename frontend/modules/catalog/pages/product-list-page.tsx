@@ -178,7 +178,9 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
         <DataGrid<ProductSummary>
           columns={columns}
           staticRows={products}
+          locale="ar"
           enableRtl={true}
+          loading={isLoading}
           loadingMessage={isLoading ? "جارٍ التحميل..." : undefined}
           onSelectionChange={(rows) => rows[0] && onSelectProduct?.(rows[0])}
         />

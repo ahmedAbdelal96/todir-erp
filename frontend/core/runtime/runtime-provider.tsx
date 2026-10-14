@@ -171,6 +171,11 @@ export function usePermissions(): PermissionSet {
   return useRuntimeContext().permissions;
 }
 
+/** Returns permissions when a screen is rendered outside the full runtime shell. */
+export function useOptionalPermissions(): PermissionSet | undefined {
+  return useContext(RuntimeContextState)?.context.permissions;
+}
+
 export function useUserPreferences(): UserPreferences {
   return useRuntimeContext().preferences;
 }

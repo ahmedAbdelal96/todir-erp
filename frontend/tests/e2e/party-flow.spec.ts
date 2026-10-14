@@ -150,7 +150,7 @@ test.describe('Directory / Party Vertical Slice Browser Flow', () => {
     // Verify Create modal workflow
     await page.getByRole('button', { name: 'إضافة طرف تجاري' }).click();
     await expect(page.getByRole('heading', { name: 'إضافة طرف تجاري جديد' })).toBeVisible();
-    await expect(page.getByText('الاسم التجاري / المعروض *')).toBeVisible();
+    await expect(page.getByText('الاسم التجاري / المعروض', { exact: true })).toBeVisible();
 
     // Cancel modal
     await page.getByRole('button', { name: 'إلغاء التعديل' }).click();

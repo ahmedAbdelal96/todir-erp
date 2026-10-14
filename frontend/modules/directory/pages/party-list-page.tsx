@@ -369,8 +369,11 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
         <DataGrid<Party>
           columns={columns}
           staticRows={parties}
+          locale="ar"
           selectable="single"
           enableRtl={true}
+          loading={isLoading}
+          hasActiveFilters={activeFilters > 0}
           loadingMessage={isLoading ? "جارٍ تحميل السجلات..." : undefined}
           onSelectionChange={(rows) => rows[0] && onSelectParty?.(rows[0])}
         />

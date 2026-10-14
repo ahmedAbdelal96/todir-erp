@@ -14,6 +14,7 @@ test.describe('App Shell Bootstrap & Localization', () => {
             { id: 'm1', tenantId: 'tenant-demo', displayName: 'شركة الأفق للتجارة' },
           ],
           context: {
+            displayName: 'الشركة من السياق النشط',
             legalEntities: [
               { id: 'le1', code: 'LE-01', name: 'الكيان الرئيسي' },
             ],
@@ -55,6 +56,7 @@ test.describe('App Shell Bootstrap & Localization', () => {
 
     // Verify brand link and workspace topbar
     await expect(page.getByRole('link', { name: 'TODIR' })).toBeVisible();
+    await expect(page.getByText('الشركة من السياق النشط', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'مساحة العمل' })).toBeVisible();
     await expect(page.getByText('الكيان القانوني', { exact: true })).toBeVisible();
     await expect(page.getByText('الفرع', { exact: true })).toBeVisible();

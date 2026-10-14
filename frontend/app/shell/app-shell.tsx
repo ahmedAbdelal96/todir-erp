@@ -1,4 +1,5 @@
 import { Component, Suspense, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { UserMenu } from "./user-menu.tsx";
 import {
@@ -28,7 +29,7 @@ type Session = {
   authenticated: boolean;
   tenantId: string;
   memberships?: Array<{ id: string; tenantId: string; displayName: string }> | undefined;
-  context: { legalEntities: Array<{ id: string; code: string; name: string }>; branches: Array<{ id: string; legalEntityId: string; code: string; name: string }> };
+  context: { displayName?: string; legalEntities: Array<{ id: string; code: string; name: string }>; branches: Array<{ id: string; legalEntityId: string; code: string; name: string }> };
 };
 
 const fallbackModuleIds = ["home", "users", "domain-settings", "directory", "catalog", "invoicing", "payments", "accounting", "migration", "finbase", "preview", "settings"];
@@ -67,9 +68,11 @@ function getModuleIcon(id: string): React.JSX.Element {
 }
 
 export function AppShell() {
+  const queryClient = useQueryClient();
   const [language, setLanguage] = useState<Language>("ar");
   const [screen, setScreen] = useState<Screen>("loading");
   const [companyName, setCompanyName] = useState("شركة الأفق للتجارة");
+  const [userEmail, setUserEmail] = useState(() => window.sessionStorage.getItem("erp.session.email") ?? "—");
   const [legalEntities, setLegalEntities] = useState<Session["context"]["legalEntities"]>([]);
   const [branches, setBranches] = useState<Session["context"]["branches"]>([]);
   const [legalEntity, setLegalEntity] = useState("");
@@ -92,13 +95,11 @@ export function AppShell() {
     setScreen("loading");
     try {
       const response = await fetch("/api/v1/session/context", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
-      if (response.status === 401) { setScreen("signed-out"); return; }
+      if (response.status === 401) { queryClient.clear(); window.sessionStorage.removeItem("erp.session.email"); setUserEmail("—"); setScreen("signed-out"); return; }
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("session.load_failed");
       const session = await response.json() as Session;
-      if (session.memberships?.[0]?.displayName) {
-        setCompanyName(session.memberships[0].displayName);
-      }
+      setCompanyName(session.context.displayName || session.memberships?.[0]?.displayName || "شركة الأفق للتجارة");
       setLegalEntities(session.context.legalEntities);
       setBranches(session.context.branches);
       setLegalEntity((current) => session.context.legalEntities.some(item => item.id === current) ? current : "");
@@ -152,11 +153,14 @@ export function AppShell() {
 
   async function signOut() {
     await logoutUser();
+    queryClient.clear();
+    window.sessionStorage.removeItem("erp.session.email");
+    setUserEmail("—");
     setScreen("signed-out");
   }
 
   if (screen === "loading") return <StatusView direction={direction} message={labels.loading} />;
-  if (screen === "signed-out") return <AuthView language={language} onAuthenticated={() => void loadSession()} />;
+  if (screen === "signed-out") return <AuthView language={language} onAuthenticated={(email) => { window.sessionStorage.setItem("erp.session.email", email); setUserEmail(email || "—"); queryClient.clear(); void loadSession(); }} />;
   if (screen === "forbidden") return <AccessView direction={direction} kind="forbidden" language={language} onRetry={() => void loadSession()} />;
   if (screen === "error") return <AccessView direction={direction} kind="error" language={language} message={error ?? undefined} onRetry={() => void loadSession()} />;
 
@@ -172,9 +176,10 @@ export function AppShell() {
             <span style={{ fontSize: "1.125rem", fontWeight: 800, letterSpacing: "0.02em", color: "var(--color-content-primary, #0f172a)" }}>TODIR</span>
           </Link>
 
-          <span style={{ color: "var(--color-border-strong, #cbd5e1)" }}>|</span>
+          <span className="brand-divider" style={{ color: "var(--color-border-strong, #cbd5e1)" }}>|</span>
 
           <span
+            className="brand-company"
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -256,6 +261,7 @@ export function AppShell() {
           {/* Clean Language quick toggle */}
           <button
             type="button"
+            className="topbar-lang-btn"
             onClick={() => setLanguage(language === "ar" ? "en" : "ar")}
             style={{
               display: "inline-flex",
@@ -279,7 +285,7 @@ export function AppShell() {
           {/* Consolidated User Menu */}
           <UserMenu
             userName="مسؤول النظام"
-            userEmail="admin@atlas.com"
+            userEmail={userEmail}
             language={language}
             onToggleLanguage={() => setLanguage(language === "ar" ? "en" : "ar")}
             theme={theme}
@@ -370,14 +376,22 @@ export class ShellErrorBoundary extends Component<{ children: ReactNode }, { has
       return (
         <div style={{ padding: "2rem", textAlign: "center", direction: "rtl", fontFamily: "var(--font-sans)" }}>
           <h2 style={{ color: "var(--color-status-danger)" }}>حدث خطأ غير متوقع في واجهة النظام</h2>
-          <p style={{ color: "var(--color-content-muted)" }}>{this.state.error?.message || "يرجى إعادة تحميل الصفحة والمحاولة مرة أخرى."}</p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", cursor: "pointer" }}
-          >
-            إعادة تحميل الصفحة
-          </button>
+          <p style={{ color: "var(--color-content-muted)" }}>حدث خلل مؤقت أثناء عرض الصفحة. يمكنك إعادة المحاولة أو العودة للرئيسية.</p>
+          <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", cursor: "pointer" }}
+            >
+              إعادة المحاولة
+            </button>
+            <Link
+              to="/"
+              style={{ padding: "0.5rem 1rem", borderRadius: "var(--radius-sm)", background: "var(--color-brand-primary)", color: "white", textDecoration: "none" }}
+            >
+              العودة للرئيسية
+            </Link>
+          </div>
         </div>
       );
     }

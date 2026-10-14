@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { loginUser, changeInitialPassword, verifyMfa, type AuthNextStep } from "../../core/api/auth-service.ts";
 import { ApiError } from "../../core/api/http-client.ts";
 import { Button } from "../../components/primitives/button.tsx";
@@ -7,7 +7,7 @@ import { PasswordField } from "../../components/fields/index.ts";
 
 export interface AuthViewProps {
   readonly language?: "ar" | "en";
-  readonly onAuthenticated: () => void;
+  readonly onAuthenticated: (email: string) => void;
 }
 
 type AuthStep = "login" | "initial-password" | "mfa";
@@ -34,6 +34,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
   // Login form state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const authenticatedEmailRef = useRef("");
 
   // Initial password state
   const [newPassword, setNewPassword] = useState("");
@@ -118,6 +119,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
   async function submitLogin(loginEmail: string, loginPassword: string) {
     setError(undefined);
     setSubmitting(true);
+    authenticatedEmailRef.current = loginEmail.trim();
 
     try {
       const result = await loginUser(loginEmail.trim(), loginPassword);
@@ -188,7 +190,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
 
     switch (nextState) {
       case "Authenticated":
-        onAuthenticated();
+        onAuthenticated(authenticatedEmailRef.current);
         break;
       case "ChangePassword":
         setStep("initial-password");
@@ -247,6 +249,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
       >
         {/* Brand Showcase Hero Column */}
         <div
+          className="auth-hero-column"
           style={{
             backgroundColor: "oklch(0.2 0.04 245)",
             color: "#ffffff",
@@ -343,6 +346,7 @@ export function AuthView({ language = "ar", onAuthenticated }: AuthViewProps): R
 
         {/* Form Column */}
         <div
+          className="auth-form-column"
           style={{
             padding: "2.75rem 2.5rem",
             display: "flex",

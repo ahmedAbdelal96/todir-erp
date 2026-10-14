@@ -40,7 +40,8 @@ import {
 import { PartyForm } from "../features/party-form.tsx";
 import type { PartyFormData } from "../validation/party-schema.ts";
 import { useToast } from "../../../components/primitives/toast.tsx";
-import { usePermissions } from "../../../core/runtime/runtime-provider.tsx";
+import { useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
+import { auditActionLabel, auditChanges, auditEntityLabel } from "../audit-format.ts";
 
 export interface PartyRecordPageProps {
   readonly partyId?: string;
@@ -101,32 +102,13 @@ function capabilityLabel(cap: string): string {
   return "جاهزية العملية التجارية";
 }
 
-function actionLabel(action: string): string {
-  const map: Record<string, string> = {
-    Created: "إنشاء السجل",
-    Updated: "تحديث البيانات",
-    Archived: "أرشفة السجل",
-    Restored: "استعادة السجل",
-    RoleAdded: "إضافة دور تجاري",
-    RoleDisabled: "إيقاف دور تجاري",
-    IdentifierAdded: "إضافة معرف رسمي",
-    ContactPointAdded: "إضافة وسيلة تواصل",
-    AddressAdded: "إضافة عنوان",
-    ContactPersonAdded: "إضافة جهة اتصال",
-    AliasAdded: "إضافة اسم بديل",
-    VisibilitySet: "تعديل نطاق الرؤية",
-    Merged: "دمج مع سجل آخر"
-  };
-  return map[action] ?? "تعديل في سجل الطرف التجاري";
-}
-
 import { PartyPicker } from "../components/party-picker.tsx";
 
 function missingRequirementLabel(req: string): string {
   const normalized = req.trim();
   const lower = normalized.toLowerCase();
   if ((lower.includes("customer role") || lower.includes("customer")) && (lower.includes("legal identifier") || lower.includes("tax") || lower.includes("vat"))) {
-    return "تحديد دور العميل وتوثيق المعرّف الرسمي (الرقم الضريبي / السجل)";
+    return "تفعيل دور العميل وإضافة معرّف رسمي (الرقم الضريبي أو السجل)";
   }
   if (lower.includes("customer role") || lower.includes("customer")) {
     return "تفعيل دور العميل في المعاملات";
@@ -135,7 +117,7 @@ function missingRequirementLabel(req: string): string {
     return "تفعيل دور المورد في المعاملات";
   }
   if (lower.includes("legal identifier") || lower.includes("tax") || lower.includes("vat") || lower.includes("commercial register")) {
-    return "توثيق الرقم الضريبي أو السجل التجاري الرسمي";
+    return "إضافة الرقم الضريبي أو السجل التجاري";
   }
   if (lower.includes("shipping address")) {
     return "تسجيل عنوان الشحن والتوصيل";
@@ -231,6 +213,9 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
   const setVisibility = useSetPartyVisibility();
   const mergeParty = useMergeParty();
 
+  // Keep this hook unconditional so the loading/error states cannot change the hook order.
+  const perms = useOptionalPermissions();
+
   if (isLoading) {
     return (
       <div style={{ padding: "4rem 2rem", textAlign: "center", color: "var(--color-content-muted)" }}>
@@ -268,12 +253,6 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
   const activeCustomer = party.roles.some(r => r.code === "Customer" && r.status === "Active");
   const activeSupplier = party.roles.some(r => r.code === "Supplier" && r.status === "Active");
 
-  let perms;
-  try {
-    perms = usePermissions();
-  } catch {
-    perms = null;
-  }
   const canEdit = perms?.hasPermission("directory.party.edit") ?? true;
   const canArchive = perms?.hasPermission("directory.party.archive") ?? true;
   const canMerge = perms?.hasPermission("directory.party.merge") ?? true;
@@ -378,15 +357,15 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
     if (!cpDisplayName.trim()) { showToast({ type: "warning", title: "بيانات ناقصة", description: "يرجى إدخال اسم جهة الاتصال." }); return; }
     const req: AddContactPersonRequest = {
       person: { displayName: cpDisplayName, jobTitle: cpJobTitle || undefined },
-      link: { contactPersonId: "", usage: cpUsage, isPrimary: (party.contactPersons?.length ?? 0) === 0 }
+      link: { contactPersonId: crypto.randomUUID(), usage: cpUsage, isPrimary: (party.contactPersons?.length ?? 0) === 0 }
     };
     try {
       await addContactPerson.mutateAsync({ id: party.id, input: req });
       setAddContactPersonOpen(false);
       setCpDisplayName(""); setCpJobTitle(""); setCpUsage("General");
       showToast({ type: "success", title: "تمت إضافة جهة الاتصال", description: `تم تسجيل ${cpDisplayName} كجهة اتصال لهذا الطرف التجاري.` });
-    } catch (err: unknown) {
-      showToast({ type: "error", title: "تعذر الإضافة", description: (err as Error)?.message || "حدث خطأ." });
+    } catch {
+      showToast({ type: "error", title: "تعذر إضافة جهة الاتصال", description: "تعذر حفظ جهة الاتصال. راجع البيانات ثم حاول مرة أخرى." });
     }
   };
 
@@ -437,7 +416,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
         value={readiness?.ready ? "جاهز للعمليات" : "بحاجة لاستكمال"}
         description={
           readiness?.ready
-            ? "البيانات الرسمية مكتملة وموثقة"
+            ? "البيانات المطلوبة مكتملة"
             : readiness?.missing.length
             ? `ينقص: ${readiness.missing.map(missingRequirementLabel).join("، ")}`
             : "سجل قيد المراجعة"
@@ -1014,11 +993,17 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                   >
                     <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--color-brand-primary, #4f46e5)", marginTop: "0.375rem", flexShrink: 0 }} />
                     <div style={{ flex: 1 }}>
-                      <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>{actionLabel(entry.action)}</span>
-                      {entry.reason && <p style={{ margin: "0.125rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>السبب: {entry.reason}</p>}
+                      <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>{auditActionLabel(entry.action)}</span>
+                      <p style={{ margin: "0.125rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{auditEntityLabel(entry.entityType)}</p>
+                      {auditChanges(entry.afterJson).map(change => (
+                        <p key={`${change.label}:${change.value}`} style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-secondary)" }}>
+                          {change.label}: {change.value}
+                        </p>
+                      ))}
+                      {entry.reason && <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>السبب: {entry.reason}</p>}
                     </div>
                     <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", whiteSpace: "nowrap", flexShrink: 0 }}>
-                      {new Date(entry.occurredAt).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" })}
+                      {new Date(entry.occurredAt).toLocaleString("ar-EG", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                     </span>
                   </div>
                 ))}
@@ -1036,7 +1021,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
           initialData={toForm(party)}
           onSubmit={async (formData: PartyFormData) => {
             try {
-              await update.mutateAsync({
+              let updatedParty = await update.mutateAsync({
                 id: party.id,
                 input: {
                   displayName: formData.displayName,
@@ -1052,6 +1037,15 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                   version: party.version
                 }
               });
+              for (const role of ["Customer", "Supplier"] as const) {
+                const isActive = updatedParty.roles.some((item) => item.code === role && item.status === "Active");
+                const shouldBeActive = formData.roles.includes(role);
+                if (shouldBeActive && !isActive) {
+                  updatedParty = await addRole.mutateAsync({ id: party.id, role, version: updatedParty.version });
+                } else if (!shouldBeActive && isActive) {
+                  updatedParty = await disableRole.mutateAsync({ id: party.id, role });
+                }
+              }
               setEditing(false);
               showToast({ type: "success", title: "تم تحديث البيانات بنجاح", description: `تم حفظ تعديلات ${formData.displayName}.` });
             } catch (err: unknown) {
@@ -1059,7 +1053,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
             }
           }}
           onCancel={() => setEditing(false)}
-          isSubmitting={update.isPending}
+          isSubmitting={update.isPending || addRole.isPending || disableRole.isPending}
         />
       </Dialog>
 
