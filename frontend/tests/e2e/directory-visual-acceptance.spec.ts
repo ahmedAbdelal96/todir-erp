@@ -91,6 +91,20 @@ test.describe('Directory visual acceptance corrections', () => {
   test('captures corrected desktop directory states', async ({ page }) => {
     await page.goto('/directory');
     await page.waitForLoadState('networkidle');
+    const updatedDate = page.locator('.ui-datagrid .ui-local-date-display bdi').first();
+    await expect(updatedDate).toHaveAttribute('dir', 'rtl');
+    await expect(updatedDate).toHaveAttribute('lang', 'ar');
+    await expect(updatedDate).toContainText('أكتوبر');
+    const partyColumn = page.locator('.ui-datagrid .ag-header-cell[col-id="displayName"]');
+    const updatedColumn = page.locator('.ui-datagrid .ag-header-cell[col-id="updatedAt"]');
+    expect((await partyColumn.boundingBox())!.x).toBeGreaterThan((await updatedColumn.boundingBox())!.x);
+    await page.getByRole('button', { name: 'التبديل إلى الإنجليزية' }).click();
+    await expect(page.getByRole('columnheader', { name: 'Last updated' })).toBeVisible();
+    await expect(page.locator('.ui-datagrid')).not.toHaveClass(/ag-rtl/);
+    expect((await partyColumn.boundingBox())!.x).toBeLessThan((await updatedColumn.boundingBox())!.x);
+    await expect(updatedDate).toHaveAttribute('dir', 'ltr');
+    await expect(updatedDate).toHaveAttribute('lang', 'en');
+    await page.getByRole('button', { name: 'Switch to Arabic' }).click();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/directory-list-desktop.png', fullPage: true });
 
     await page.getByRole('button', { name: 'استيراد سجلات' }).click();

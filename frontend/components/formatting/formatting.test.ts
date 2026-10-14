@@ -102,4 +102,10 @@ describe("Formatting & Domain Value Contracts", () => {
     const formattedTime = formatDateTime("2026-05-15T14:30:00Z", { locale: "en-US" });
     assert.ok(formattedTime.includes("2026"));
   });
+
+  it("uses natural Arabic month names for long dates", () => {
+    const formattedDate = formatDate("2026-05-15", { locale: "ar-u-nu-latn", dateStyle: "long" });
+    assert.match(formattedDate, /مايو/);
+    assert.match(formattedDate, /2026/);
+  });
 });

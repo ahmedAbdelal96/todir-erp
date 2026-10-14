@@ -113,6 +113,14 @@ test.describe('App Shell Bootstrap & Localization', () => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { name: 'تسجيل الدخول' })).toBeVisible();
+    const atlasProfile = page.getByRole('button', { name: /Atlas — مسؤول النظام/ });
+    const profileName = atlasProfile.locator('bdi').first();
+    const profileEmail = atlasProfile.locator('bdi').last();
+    await expect(profileName).toHaveAttribute('dir', 'auto');
+    await expect(profileName).toHaveCSS('unicode-bidi', 'isolate');
+    await expect(profileEmail).toHaveAttribute('dir', 'ltr');
+    await expect(profileEmail).toHaveAttribute('lang', 'en');
+    await expect(profileEmail).toHaveCSS('unicode-bidi', 'isolate');
     await page.getByRole('button', { name: 'التبديل إلى الإنجليزية' }).click();
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
     await expect(page.getByText('Email address')).toBeVisible();

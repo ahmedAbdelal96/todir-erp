@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { currentIntlLocale } from "../../../core/i18n/i18n.ts";
+import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { ListPage } from "../../../components/pages/list-page.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
@@ -197,7 +197,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
                     </TableCell>
 
                     <TableCell style={{ color: "var(--color-content-muted, #64748b)", fontSize: "0.8125rem" }}>
-                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString(currentIntlLocale()) : "—"}
+                      {user.createdAt ? <LocalDateDisplay value={user.createdAt} /> : "—"}
                     </TableCell>
 
                     <TableCell>

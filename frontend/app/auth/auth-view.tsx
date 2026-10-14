@@ -6,6 +6,7 @@ import { Alert } from "../../components/primitives/alert.tsx";
 import { PasswordField } from "../../components/fields/index.ts";
 import { useTranslation } from "react-i18next";
 import { changeLanguage, currentLanguage } from "../../core/i18n/i18n.ts";
+import { BidiText } from "../../components/primitives/bidi-text.tsx";
 
 export interface AuthViewProps {
   readonly onAuthenticated: (email: string) => void;
@@ -471,8 +472,8 @@ export function AuthView({ onAuthenticated }: AuthViewProps): React.JSX.Element 
                       onPress={() => handleDevelopmentLogin(profile)}
                       style={{ width: "100%", justifyContent: "space-between" }}
                     >
-                      <span>{t(`auth.${profile.label}`)}</span>
-                      <span dir="ltr" style={{ fontSize: "0.75rem" }}>{profile.email}</span>
+                      <BidiText lang={currentLanguage()} style={{ textAlign: "start" }}>{t(`auth.${profile.label}`)}</BidiText>
+                      <BidiText direction="ltr" lang="en" style={{ fontSize: "0.75rem" }}>{profile.email}</BidiText>
                     </Button>
                   ))}
                 </fieldset>

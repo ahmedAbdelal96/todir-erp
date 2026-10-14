@@ -11,6 +11,7 @@ export * from "./combobox.tsx";
 export * from "./dialog.tsx";
 export * from "./confirm-dialog.tsx";
 export * from "./alert.tsx";
+export * from "./bidi-text.tsx";
 export * from "./popover.tsx";
 export * from "./tooltip.tsx";
 export * from "./menu.tsx";

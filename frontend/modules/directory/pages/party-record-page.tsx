@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { currentIntlLocale } from "../../../core/i18n/i18n.ts";
+import { DateTimeDisplay, LocalDateDisplay } from "../../../components/fields/index.ts";
 import type { Party, PartyRoleCode, AddressInput, ContactPointInput, IdentifierInput, AddContactPersonRequest, AliasInput, VisibilityInput, MergePartyRequest } from "../types.ts";
 import {
   usePartyRecord,
@@ -492,9 +492,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
       }
       kpiCards={kpis}
       auditInfo={{
-        createdAt: party.createdAt
-          ? new Date(party.createdAt).toLocaleDateString(currentIntlLocale(), { year: "numeric", month: "long", day: "numeric" })
-          : undefined,
+        createdAt: party.createdAt ? <LocalDateDisplay value={party.createdAt} dateStyle="long" /> : undefined,
         createdBy: t("partyRecord.systemActor")
       }}
     >
@@ -1010,7 +1008,7 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
                       {entry.reason && <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("partyRecord.reason")} {entry.reason}</p>}
                     </div>
                     <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", whiteSpace: "nowrap", flexShrink: 0 }}>
-                      {new Date(entry.occurredAt).toLocaleString(currentIntlLocale(), { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                      <DateTimeDisplay value={entry.occurredAt} type="datetime" timeStyle="short" />
                     </span>
                   </div>
                 ))}

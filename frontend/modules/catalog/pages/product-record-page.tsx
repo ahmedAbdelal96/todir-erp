@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RecordPage } from "../../../components/pages/record-page.tsx";
+import { DateTimeDisplay, LocalDateDisplay } from "../../../components/fields/index.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { PropertyGrid, PropertyItem, StatCard } from "../../../components/pages/property-grid.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -148,8 +149,8 @@ export function ProductRecordPage({
         </div>
       }
       auditInfo={{
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt
+        createdAt: <LocalDateDisplay value={data.createdAt} dateStyle="long" />,
+        updatedAt: <DateTimeDisplay value={data.updatedAt} type="datetime" />
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>

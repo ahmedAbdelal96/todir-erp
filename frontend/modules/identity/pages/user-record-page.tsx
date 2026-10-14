@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { currentIntlLocale } from "../../../core/i18n/i18n.ts";
+import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { RecordPage } from "../../../components/pages/record-page.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { PropertyGrid, PropertyItem, StatCard } from "../../../components/pages/property-grid.tsx";
@@ -111,7 +111,7 @@ export function UserRecordPage({
         </div>
       }
       auditInfo={{
-        createdAt: user.createdAt
+        createdAt: <LocalDateDisplay value={user.createdAt} dateStyle="long" />
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -165,11 +165,7 @@ export function UserRecordPage({
               label={t("userRecord.createdAt")}
               value={
                 user.createdAt
-                  ? new Date(user.createdAt).toLocaleDateString(currentIntlLocale(), {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric"
-                    })
+                  ? <LocalDateDisplay value={user.createdAt} dateStyle="long" />
                   : "—"
               }
             />

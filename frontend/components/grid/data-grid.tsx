@@ -85,6 +85,7 @@ export function DataGrid<TRow extends object>({
       }}
     >
       <AgGridReact<TRow>
+        key={resolvedEnableRtl ? "rtl" : "ltr"}
         rowData={staticRows as TRow[]}
         columnDefs={colDefs}
         rowHeight={rowHeight}

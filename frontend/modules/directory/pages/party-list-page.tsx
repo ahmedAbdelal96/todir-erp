@@ -11,7 +11,7 @@ import { SearchField } from "../../../components/primitives/search-field.tsx";
 import { FilterBar } from "../../../components/primitives/filter-bar.tsx";
 import { Select, SelectItem } from "../../../components/primitives/select.tsx";
 import { Pagination } from "../../../components/primitives/pagination.tsx";
-import { currentIntlLocale } from "../../../core/i18n/i18n.ts";
+import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { EmptyState } from "../../../components/primitives/empty-state.tsx";
 import { DirectoryIcon } from "../../../components/primitives/icons.tsx";
@@ -238,9 +238,7 @@ export function PartyListPage({ onSelectParty }: PartyListPageProps): React.JSX.
       header: t("partyList.columnUpdated"),
       width: 130,
       cellRenderer: ({ row }) => (
-        <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-          {new Date(row.updatedAt).toLocaleDateString(currentIntlLocale())}
-        </span>
+        <LocalDateDisplay value={row.updatedAt} />
       )
     }
   ];

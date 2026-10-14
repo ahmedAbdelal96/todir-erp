@@ -47,7 +47,7 @@ export function PreviewPage(): React.JSX.Element {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         <h3 style={{ margin: 0, fontSize: "1rem" }}>{t("previewPage.dataGridTitle")}</h3>
-        <DataGrid columns={sampleColumns} staticRows={sampleRows} density={density} enableRtl />
+        <DataGrid columns={sampleColumns} staticRows={sampleRows} density={density} />
       </div>
       <Dialog isOpen={isDialogOpen} onOpenChange={setIsDialogOpen} title={t("previewPage.confirmFinanceTitle")} description={t("previewPage.confirmFinanceDescription")} size="medium">
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1.5rem" }}>

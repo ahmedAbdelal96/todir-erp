@@ -206,6 +206,20 @@ test.describe('Deterministic Visual Regression', () => {
     await page.goto('/preview');
     await page.waitForLoadState('networkidle');
 
+    const grid = page.locator('.ui-datagrid');
+    await expect(grid).toHaveClass(/ag-rtl/);
+    await expect(page.getByRole('columnheader', { name: 'كود الحساب' })).toBeVisible();
+    const codeColumn = grid.locator('.ag-header-cell[col-id="code"]');
+    const balanceColumn = grid.locator('.ag-header-cell[col-id="balance"]');
+    expect((await codeColumn.boundingBox())!.x).toBeGreaterThan((await balanceColumn.boundingBox())!.x);
+    await page.getByRole('button', { name: 'التبديل إلى الإنجليزية' }).click();
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+    await expect(grid).not.toHaveClass(/ag-rtl/);
+    await expect(page.getByRole('columnheader', { name: 'Account code' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Account name' })).toBeVisible();
+    expect((await codeColumn.boundingBox())!.x).toBeLessThan((await balanceColumn.boundingBox())!.x);
+    await page.getByRole('button', { name: 'Switch to Arabic' }).click();
+
     await expect(page).toHaveScreenshot('design-system-preview.png', {
       animations: 'disabled',
       maxDiffPixelRatio: 0.05,
@@ -236,6 +250,15 @@ test.describe('Deterministic Visual Regression', () => {
   test('visual regression: Invoice Document Page', async ({ page }) => {
     await page.goto('/invoicing');
     await page.waitForLoadState('networkidle');
+
+    const issueDate = page.locator('.ui-local-date-display bdi').first();
+    await expect(issueDate).toHaveAttribute('dir', 'rtl');
+    await expect(issueDate).toHaveAttribute('lang', 'ar');
+    await expect(issueDate).toContainText('2026');
+    await page.getByRole('button', { name: 'التبديل إلى الإنجليزية' }).click();
+    await expect(issueDate).toHaveAttribute('dir', 'ltr');
+    await expect(issueDate).toHaveAttribute('lang', 'en');
+    await expect(issueDate).toContainText('Oct');
 
     await expect(page).toHaveScreenshot('invoice-document-rtl.png', {
       animations: 'disabled',

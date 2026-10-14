@@ -3,6 +3,7 @@ import { Breadcrumbs, type BreadcrumbItem } from "../../app/shell/breadcrumbs.ts
 import { StatusBadge, type StatusVariant } from "../fields/status-badge.tsx";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
+import { BidiText } from "../primitives/bidi-text.tsx";
 
 export interface RecordPageProps {
   readonly title: string;
@@ -14,9 +15,9 @@ export interface RecordPageProps {
   readonly tabs?: ReactNode | undefined;
   readonly sidebar?: ReactNode | undefined;
   readonly auditInfo?: {
-    readonly createdAt?: string | undefined;
+    readonly createdAt?: ReactNode | undefined;
     readonly createdBy?: string | undefined;
-    readonly updatedAt?: string | undefined;
+    readonly updatedAt?: ReactNode | undefined;
     readonly updatedBy?: string | undefined;
   } | undefined;
   readonly children: ReactNode;
@@ -169,12 +170,12 @@ export function RecordPage({
         >
           {auditInfo.createdAt && (
             <span>
-              {t("components.createdAt")} <bdi>{auditInfo.createdAt}</bdi> {auditInfo.createdBy ? t("components.byActor", { actor: auditInfo.createdBy }) : ""}
+              {t("components.createdAt")} {typeof auditInfo.createdAt === "string" ? <BidiText>{auditInfo.createdAt}</BidiText> : auditInfo.createdAt} {auditInfo.createdBy ? t("components.byActor", { actor: auditInfo.createdBy }) : ""}
             </span>
           )}
           {auditInfo.updatedAt && (
             <span>
-              {t("components.updatedAt")} <bdi>{auditInfo.updatedAt}</bdi> {auditInfo.updatedBy ? t("components.byActor", { actor: auditInfo.updatedBy }) : ""}
+              {t("components.updatedAt")} {typeof auditInfo.updatedAt === "string" ? <BidiText>{auditInfo.updatedAt}</BidiText> : auditInfo.updatedAt} {auditInfo.updatedBy ? t("components.byActor", { actor: auditInfo.updatedBy }) : ""}
             </span>
           )}
         </footer>
