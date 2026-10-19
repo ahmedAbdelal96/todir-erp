@@ -4,6 +4,8 @@ namespace ArchitectureTests;
 
 public sealed class ProjectGraphValidatorTests
 {
+    private static readonly string[] FinBaseConsumerModules = ["Catalog", "Directory", "Sample"];
+
     [Fact]
     public void ProductionProjectGraphHasNoArchitectureViolations()
     {
@@ -20,6 +22,38 @@ public sealed class ProjectGraphValidatorTests
         var violations = ProjectGraphValidator.FindSharedKernelBusinessConceptViolations(RepositoryRoot);
 
         Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void ExistingConsumerModulesDoNotAccessFinBaseStorageDirectly()
+    {
+        var modulesRoot = Path.Combine(RepositoryRoot, "Modules");
+        var consumerRoots = FinBaseConsumerModules
+            .Select(name => Path.Combine(modulesRoot, name))
+            .Where(Directory.Exists)
+            .ToArray();
+
+        Assert.Equal(3, consumerRoots.Length);
+        foreach (var consumerRoot in consumerRoots)
+        {
+            var sourceFiles = Directory.EnumerateFiles(consumerRoot, "*.cs", SearchOption.AllDirectories)
+                .Where(path => !path.Contains("\\bin\\", StringComparison.OrdinalIgnoreCase)
+                    && !path.Contains("\\obj\\", StringComparison.OrdinalIgnoreCase)
+                    && !path.Contains("\\artifacts\\", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var sourceFile in sourceFiles)
+            {
+                var source = File.ReadAllText(sourceFile);
+                Assert.DoesNotContain("foundation_finbase.", source, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("foundation_finbase\"", source, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        var projects = ProjectGraphValidator.Load(RepositoryRoot, includeFixtures: false);
+        var violations = ProjectGraphValidator.FindViolations(projects);
+        Assert.DoesNotContain(violations, violation => violation.Contains("Modules.Catalog", StringComparison.Ordinal)
+            || violation.Contains("Modules.Directory", StringComparison.Ordinal)
+            || violation.Contains("Modules.Sample", StringComparison.Ordinal));
     }
 
     [Fact]

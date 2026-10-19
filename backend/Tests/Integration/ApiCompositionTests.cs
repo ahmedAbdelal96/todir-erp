@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using System.Text.Json;
 using Xunit;
 
 namespace KernelIntegrationTests;
@@ -40,5 +41,51 @@ public sealed class ApiCompositionTests
         Assert.IsType<NpgsqlTransactionCoordinator>(services.GetRequiredService<ITransactionCoordinator>());
         Assert.IsType<NpgsqlInboxStore>(services.GetRequiredService<IInboxStore>());
         Assert.NotNull(dataSource);
+    }
+
+    [Fact]
+    public async Task DevelopmentOpenApiIncludesFinBaseRoutesAndFinancialAmountsAsStrings()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION to the configured runtime database for the OpenAPI contract gate.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", connectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/openapi/v1.json");
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync());
+        var paths = document.RootElement.GetProperty("paths");
+        Assert.True(paths.TryGetProperty("/api/v1/finbase/currencies", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/finbase/legal-entities/{entityId}/currencies", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/finbase/exchange-rates", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/finbase/legal-entities/{entityId}/exchange-rates/{id}/approve", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/finbase/payment-terms", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/finbase/payment-schedule/preview", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/finbase/conversion/preview", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/finbase/rounding-policies", out _));
+        var numericFinancialFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "amount", "sourceAmount", "targetAmount", "rate", "cashIncrement", "percentage", "fixedAmount", "totalAmount"
+        };
+        var checkedProperties = 0;
+        foreach (var schema in document.RootElement.GetProperty("components").GetProperty("schemas").EnumerateObject())
+        {
+            if (!schema.Value.TryGetProperty("properties", out var properties)) continue;
+            foreach (var property in properties.EnumerateObject())
+            {
+                if (!numericFinancialFields.Contains(property.Name)) continue;
+                var type = property.Value.GetProperty("type");
+                var isString = type.ValueKind == JsonValueKind.String
+                    ? type.GetString() == "string"
+                    : type.ValueKind == JsonValueKind.Array && type.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.String && item.GetString() == "string");
+                Assert.True(isString, $"Financial field {schema.Name}.{property.Name} must be serialized as a decimal string.");
+                checkedProperties++;
+            }
+        }
+        Assert.True(checkedProperties >= 8, $"Expected financial decimal contract fields in OpenAPI, found {checkedProperties}.");
     }
 }

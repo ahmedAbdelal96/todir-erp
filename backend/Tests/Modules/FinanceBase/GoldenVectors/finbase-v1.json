@@ -1,0 +1,22 @@
+{
+  "version": "finbase-golden-v1",
+  "money": [
+    { "amount": "100.125", "currency": "EGP", "expected": "100.125" },
+    { "amount": "0.01", "currency": "JPY", "expected": "0.01" },
+    { "amount": "-12.345", "currency": "KWD", "expected": "-12.345" }
+  ],
+  "rounding": [
+    { "amount": "12.345", "scale": 2, "mode": "HalfUp", "expected": "12.35" },
+    { "amount": "-12.345", "scale": 2, "mode": "HalfEven", "expected": "-12.34" },
+    { "amount": "1.2399", "scale": 3, "mode": "Down", "expected": "1.239" },
+    { "amount": "1.2301", "scale": 2, "mode": "Up", "expected": "1.24" }
+  ],
+  "conversion": [
+    { "amount": "10", "currency": "USD", "target": "EGP", "rate": "50.125", "scale": 2, "mode": "HalfUp", "expected": "501.25" }
+  ],
+  "schedule": [
+    { "total": "100", "firstRatio": "0.3333", "secondRatio": "0.3333", "scale": 2, "expectedFirst": "33.33", "expectedSecond": "33.33", "expectedBalance": "33.34" },
+    { "total": "0.01", "firstRatio": "0.3333", "secondRatio": "0.3333", "scale": 2, "expectedFirst": "0", "expectedSecond": "0", "expectedBalance": "0.01" },
+    { "total": "-100.01", "firstRatio": "0.3", "secondRatio": "0.3", "scale": 2, "expectedFirst": "-30", "expectedSecond": "-30", "expectedBalance": "-40.01" }
+  ]
+}

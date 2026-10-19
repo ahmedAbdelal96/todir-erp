@@ -7,4 +7,7 @@
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="../../../Modules/FinanceBase/FinanceBase.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="GoldenVectors/finbase-v1.json" LogicalName="FinanceBase.Tests.GoldenVectors.finbase-v1.json" />
+  </ItemGroup>
 </Project>

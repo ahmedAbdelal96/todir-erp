@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <ProjectReference Include="../Shared/BuildingBlocks/BuildingBlocks.csproj" />
     <ProjectReference Include="../Core/Core.csproj" />
     <ProjectReference Include="../Modules/Sample/Sample.csproj" />

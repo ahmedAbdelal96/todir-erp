@@ -41,6 +41,8 @@ public sealed class DevelopmentSeedTests
 
             await using var acceptanceDataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
             var firstCounts = await ReadCanonicalCountsAsync(acceptanceDataSource);
+            await AssertCanonicalCurrencyPrecisionAsync(acceptanceDataSource);
+            await AssertFinBaseCanonicalScenariosAsync(acceptanceDataSource);
             await AssertForcedRlsAndRoleBoundaryAsync(acceptanceDataSource);
             await AssertRuntimeTenantIsolationAsync(appBuilder.ConnectionString);
 
@@ -57,8 +59,8 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(55, firstCounts.DeltaParties);
             Assert.Equal(60, firstCounts.DeltaProducts);
             Assert.Equal(4, firstCounts.LegalEntities);
-            Assert.Equal(2, firstCounts.ReferenceCurrencies);
-            Assert.Equal(4, firstCounts.EnabledEntityCurrencies);
+            Assert.Equal(8, firstCounts.EnabledEntityCurrencies);
+            Assert.Equal(11, firstCounts.PaymentTerms);
             Assert.Equal(2, firstCounts.AtlasVatIdentifiers);
             Assert.Equal(2, firstCounts.AtlasCommercialRegistrations);
             Assert.Equal(2, firstCounts.DeltaVatIdentifiers);
@@ -75,6 +77,18 @@ public sealed class DevelopmentSeedTests
                 await drop.ExecuteNonQueryAsync();
             }
         }
+    }
+
+    private static async Task AssertCanonicalCurrencyPrecisionAsync(NpgsqlDataSource dataSource)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand("select code,minor_unit from foundation_finbase.currency_reference where code = any(array['JPY','EGP','KWD']) order by code", connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        var minorUnits = new Dictionary<string, short>(StringComparer.Ordinal);
+        while (await reader.ReadAsync()) minorUnits.Add(reader.GetString(0), reader.GetInt16(1));
+        Assert.Equal(0, minorUnits["JPY"]);
+        Assert.Equal(2, minorUnits["EGP"]);
+        Assert.Equal(3, minorUnits["KWD"]);
     }
 
     [Fact]
@@ -204,9 +218,31 @@ public sealed class DevelopmentSeedTests
         return new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12), reader.GetInt32(13), reader.GetInt32(14));
     }
 
+    private static async Task AssertFinBaseCanonicalScenariosAsync(NpgsqlDataSource dataSource)
+    {
+        const string sql = "select t.slug, count(distinct v.id)::int, count(r.id)::int, count(r.id) filter (where r.allocation_type='Percentage')::int, count(r.id) filter (where r.allocation_type='Balance')::int, (select count(*) from foundation_finbase.financial_rounding_policy_rule p where p.tenant_id=t.id and p.rounding_context='FXBaseAmount')::int from platform.tenant t join foundation_finbase.payment_term term on term.tenant_id=t.id and term.code='INSTALL3' join foundation_finbase.payment_term_version v on v.tenant_id=term.tenant_id and v.payment_term_id=term.id and v.status='Active' join foundation_finbase.payment_term_rule r on r.tenant_id=v.tenant_id and r.version_id=v.id where t.id in ($1,$2) group by t.id,t.slug order by t.slug";
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(SeedIds.AtlasTenant);
+        command.Parameters.AddWithValue(SeedIds.DeltaTenant);
+        await using var reader = await command.ExecuteReaderAsync();
+        var tenants = 0;
+        while (await reader.ReadAsync())
+        {
+            Assert.True(reader.GetString(0) is "atlas-trading" or "delta-supplies");
+            Assert.Equal(1, reader.GetInt32(1));
+            Assert.Equal(3, reader.GetInt32(2));
+            Assert.Equal(2, reader.GetInt32(3));
+            Assert.Equal(1, reader.GetInt32(4));
+            Assert.Equal(1, reader.GetInt32(5));
+            tenants++;
+        }
+        Assert.Equal(2, tenants);
+    }
+
     private static async Task AssertForcedRlsAndRoleBoundaryAsync(NpgsqlDataSource dataSource)
     {
-        const string sql = "select (select relrowsecurity from pg_class where oid='platform.tenant'::regclass), (select bool_and(relrowsecurity and relforcerowsecurity) from pg_class where oid in ('platform.legal_entity'::regclass,'platform.identity'::regclass,'foundation_directory.party'::regclass,'foundation_catalog.product_template'::regclass,'foundation_finbase.payment_term'::regclass)), (select not rolbypassrls from pg_roles where rolname='erp_app'), (select not rolbypassrls from pg_roles where rolname='erp_owner')";
+        const string sql = "select (select relrowsecurity from pg_class where oid='platform.tenant'::regclass), (select bool_and(relrowsecurity and relforcerowsecurity) from pg_class where oid in ('platform.legal_entity'::regclass,'platform.identity'::regclass,'foundation_directory.party'::regclass,'foundation_catalog.product_template'::regclass,'foundation_finbase.payment_term'::regclass,'foundation_finbase.financial_rounding_policy_rule'::regclass)), (select not rolbypassrls from pg_roles where rolname='erp_app'), (select not rolbypassrls from pg_roles where rolname='erp_owner'), has_table_privilege('erp_app','foundation_finbase.currency_reference','SELECT'), has_table_privilege('erp_app','foundation_finbase.currency_reference','INSERT'), has_table_privilege('erp_app','foundation_finbase.currency_reference','UPDATE'), has_table_privilege('erp_app','foundation_finbase.currency_reference','DELETE')";
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync();
@@ -215,6 +251,10 @@ public sealed class DevelopmentSeedTests
         Assert.True(reader.GetBoolean(1));
         Assert.True(reader.GetBoolean(2));
         Assert.True(reader.GetBoolean(3));
+        Assert.True(reader.GetBoolean(4));
+        Assert.False(reader.GetBoolean(5));
+        Assert.False(reader.GetBoolean(6));
+        Assert.False(reader.GetBoolean(7));
     }
 
     private static async Task AssertRuntimeTenantIsolationAsync(string runtimeConnectionString)

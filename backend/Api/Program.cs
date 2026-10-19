@@ -15,6 +15,7 @@ using System.Text.Json.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
 builder.Services.AddObservability(builder.Environment.ApplicationName, builder.Environment.EnvironmentName);
+builder.Services.AddOpenApi("v1");
 builder.Services.AddCore(builder.Configuration);
 builder.Services.AddSampleModule();
 builder.Services.AddDirectoryModule();
@@ -70,6 +71,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+if (app.Environment.IsDevelopment()) app.MapOpenApi();
 if (!app.Environment.IsDevelopment()) app.UseHsts();
 
 // Keep the approved order explicit: correlation, exception handling, security headers, endpoint.

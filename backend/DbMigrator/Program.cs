@@ -195,6 +195,8 @@ await using (var dispatcherOwnership = new NpgsqlCommand("alter function platfor
     await dispatcherOwnership.ExecuteNonQueryAsync();
 await using (var dispatcherBacklogOwnership = new NpgsqlCommand("alter function platform.observe_pending_outbox() owner to erp_dispatcher", connection))
     await dispatcherBacklogOwnership.ExecuteNonQueryAsync();
+await using (var financeRateSourceOwnership = new NpgsqlCommand("alter function foundation_finbase.claim_due_exchange_rate_sources(integer) owner to erp_dispatcher", connection))
+    await financeRateSourceOwnership.ExecuteNonQueryAsync();
 await using (var supportExpiryOwnership = new NpgsqlCommand("alter function platform.expire_support_access_grants() owner to erp_dispatcher", connection))
     await supportExpiryOwnership.ExecuteNonQueryAsync();
 

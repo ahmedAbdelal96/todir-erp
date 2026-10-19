@@ -9,6 +9,12 @@ public interface ILegalEntityFinancialReadStore
     Task<string?> GetBaseCurrencyCodeAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Platform-owned capability indicating that immutable financial facts exist for a legal entity.</summary>
+public interface IFinancialGoLiveGuard
+{
+    Task<bool> HasPostedFinancialFactsAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default);
+}
+
 public sealed class NullLegalEntityFinancialReadStore : ILegalEntityFinancialReadStore
 {
     public Task<string?> GetBaseCurrencyCodeAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
