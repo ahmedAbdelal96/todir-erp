@@ -35,6 +35,17 @@ PRD-001,ورق تصوير أبيض A4,Goods,EA,مواد مكتبية,الروا�
 PRD-002,كابل كهرباء نحاسي 2.5 مم,Goods,EA,أدوات كهربائية,دلتا,6221000100002,SUP-CAB
 SRV-001,خدمة صيانة دورية,Service,HOUR,خدمات عامة,النخبة,,CLI-SRV`;
 
+type ImportRowIntent = "success" | "info" | "warning" | "danger" | "neutral";
+
+function getRowClassificationIntent(classification: string | undefined): ImportRowIntent {
+  const norm = String(classification ?? "").toLowerCase().replace(/[\s_-]/g, "");
+  if (norm === "create") return "success";
+  if (norm === "update") return "info";
+  if (norm === "review" || norm === "potentialduplicate" || norm === "unknowncategory") return "warning";
+  if (norm === "skip") return "neutral";
+  return "danger";
+}
+
 export function CatalogImportDialog({
   isOpen,
   onOpenChange,
@@ -211,13 +222,35 @@ export function CatalogImportDialog({
             <p style={{ color: "var(--color-content-secondary)", fontSize: "0.875rem" }}>
               {t("importDialog.uploadDescription")}
             </p>
-            <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-              <input
-                type="file"
-                accept=".csv"
-                onChange={handleFileUpload}
-                style={{ fontSize: "0.875rem" }}
-              />
+            <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+              <label
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  padding: "0.45rem 1rem",
+                  backgroundColor: "var(--color-surface-elevated, #ffffff)",
+                  border: "1px solid var(--color-border-default)",
+                  color: "var(--color-content-primary)",
+                  borderRadius: "var(--radius-md)",
+                  fontWeight: 600,
+                  fontSize: "0.875rem",
+                  cursor: "pointer"
+                }}
+              >
+                <span>📁 {t("importDialog.chooseFile")}</span>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileUpload}
+                  style={{ display: "none" }}
+                />
+              </label>
+
+              <span style={{ fontSize: "0.8125rem", color: fileName ? "var(--color-content-primary)" : "var(--color-content-muted)" }}>
+                {fileName ? t("importDialog.selectedFile", { file: fileName }) : t("importDialog.noFileChosen")}
+              </span>
+
               <Button
                 variant="secondary"
                 size="compact"
@@ -398,26 +431,48 @@ export function CatalogImportDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {previewSummary.rows.map((row) => (
-                    <TableRow key={row.rowNumber}>
-                      <TableCell>{row.rowNumber}</TableCell>
-                      <TableCell>
-                        <StatusBadge
-                          status={row.classification === "Create" ? "Active" : row.classification === "Update" ? "Draft" : "Archived"}
-                          label={row.classification}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        {row.issues.length === 0 ? (
-                          <span style={{ color: "var(--color-status-success)" }}>✓ {t("importDialog.validRow")}</span>
-                        ) : (
-                          <span style={{ color: "var(--color-status-danger)", fontSize: "0.75rem" }}>
-                            {row.issues.join(", ")}
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {previewSummary.rows.map((row) => {
+                    const rowClassification = row.classification ?? (row as any).action ?? "";
+                    const intent = getRowClassificationIntent(rowClassification);
+                    const norm = String(rowClassification).toLowerCase().replace(/[\s_-]/g, "");
+
+                    const label =
+                      norm === "create"
+                        ? t("importActions.create")
+                        : norm === "update"
+                        ? t("importActions.update")
+                        : norm === "review" || norm === "potentialduplicate"
+                        ? t("importActions.review")
+                        : norm === "duplicatesku"
+                        ? t("importActions.duplicateSku")
+                        : norm === "duplicatebarcode"
+                        ? t("importActions.duplicateBarcode")
+                        : norm === "unknownuom" || norm === "invalidconversion"
+                        ? t("importActions.unknownUom")
+                        : norm === "unknowncategory"
+                        ? t("importActions.unknownCategory")
+                        : norm === "skip"
+                        ? t("importActions.skip")
+                        : t("importActions.error");
+
+                    return (
+                      <TableRow key={row.rowNumber}>
+                        <TableCell>{row.rowNumber}</TableCell>
+                        <TableCell>
+                          <StatusBadge intent={intent} label={label} />
+                        </TableCell>
+                        <TableCell>
+                          {row.issues.length === 0 ? (
+                            <span style={{ color: "var(--color-status-success)" }}>✓ {t("importDialog.validRow")}</span>
+                          ) : (
+                            <span style={{ color: "var(--color-status-danger)", fontSize: "0.75rem" }}>
+                              {row.issues.join(", ")}
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

@@ -148,11 +148,16 @@ export function ProductUomDialog({
         {/* Human-readable conversion explanation */}
         {selectedUom && factorNum > 0 ? (
           <div style={{ padding: "0.75rem", background: "var(--color-surface-subtle)", borderRadius: "var(--radius-sm)", border: "1px dashed var(--color-border-default)", fontSize: "0.875rem", fontWeight: 600 }}>
-            {t("productUomDialog.conversionFormula", {
-              factor: factorNum,
-              targetUnit: selectedUom.nameAr || selectedUom.code,
-              baseUnit: baseUom?.nameAr || product.baseUomCode || ""
-            })}
+            <bdi dir="ltr" style={{ display: "inline-block", unicodeBidi: "isolate" }}>
+              {t("productRecord.conversionRate", {
+                target: selectedUom.code,
+                factor: factorNum,
+                base: product.baseUomCode || baseUom?.code || ""
+              })}
+            </bdi>
+            <span style={{ marginInlineStart: "0.5rem", color: "var(--color-content-secondary)", fontWeight: 400 }}>
+              ({selectedUom.nameAr || selectedUom.code} ← {baseUom?.nameAr || product.baseUomCode})
+            </span>
           </div>
         ) : null}
 

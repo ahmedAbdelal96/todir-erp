@@ -9,6 +9,7 @@ export interface RecordPageProps {
   readonly title: string;
   readonly recordCode?: string | undefined;
   readonly status?: StatusVariant | string | undefined;
+  readonly statusLabel?: ReactNode | undefined;
   readonly breadcrumbs?: readonly BreadcrumbItem[] | undefined;
   readonly headerActions?: ReactNode | undefined;
   readonly kpiCards?: ReactNode | undefined;
@@ -28,6 +29,7 @@ export function RecordPage({
   title,
   recordCode,
   status,
+  statusLabel,
   breadcrumbs,
   headerActions,
   kpiCards,
@@ -80,7 +82,7 @@ export function RecordPage({
                   <bdi>{recordCode}</bdi>
                 </span>
               )}
-              {status && <StatusBadge status={status} size="small" />}
+              {status && <StatusBadge status={status} label={statusLabel} size="small" />}
             </div>
             <h1
               style={{

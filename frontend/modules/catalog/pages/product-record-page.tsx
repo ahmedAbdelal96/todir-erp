@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { RecordPage } from "../../../components/pages/record-page.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
@@ -8,6 +8,7 @@ import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Spinner } from "../../../components/primitives/spinner.tsx";
 import { Tabs, TabList, Tab, TabPanel } from "../../../components/primitives/tabs.tsx";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../components/primitives/table.tsx";
+import { Select, SelectItem } from "../../../components/primitives/select.tsx";
 import { ConfirmDialog } from "../../../components/primitives/confirm-dialog.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
 import {
@@ -39,11 +40,27 @@ export interface ProductRecordPageProps {
   readonly onBack: () => void;
 }
 
+function useIsMobile(breakpoint = 768): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth <= breakpoint : false
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    setIsMobile(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export function ProductRecordPage({
   productId,
   onBack
 }: ProductRecordPageProps): React.JSX.Element {
   const { t } = useTranslation("catalog");
+  const isMobile = useIsMobile();
   const { data: product, error, isLoading, refetch } = useProduct(productId);
 
   const [activeTab, setActiveTab] = useState("overview");
@@ -114,7 +131,7 @@ export function ProductRecordPage({
         value={isService ? t("common.service") : t("common.goods")}
         intent="info"
         icon={<CatalogIcon size={20} />}
-        subtitle={isService ? t("productRecord.noInventoryTracking") : t("productRecord.inventoryMovements")}
+        subtitle={isService ? t("productRecord.natureServiceDescription") : t("productRecord.natureGoodDescription")}
       />
       <StatCard
         title={t("productRecord.productStatus")}
@@ -150,6 +167,7 @@ export function ProductRecordPage({
         title={product.displayName}
         recordCode={product.sku || undefined}
         status={isActive ? "Active" : "Archived"}
+        statusLabel={isActive ? t("common.active") : t("common.archived")}
         kpiCards={kpiCards}
         headerActions={
           <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -173,6 +191,23 @@ export function ProductRecordPage({
         }
       >
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {/* Mobile Tab Selector */}
+          {isMobile && (
+            <div style={{ marginBottom: "0.25rem" }}>
+              <Select
+                aria-label={t("productRecord.tabsAria")}
+                selectedKey={activeTab}
+                onSelectionChange={(k) => setActiveTab(String(k))}
+              >
+                <SelectItem id="overview">{t("productRecord.tabOverview")}</SelectItem>
+                <SelectItem id="variants">{t("productRecord.tabVariants")}</SelectItem>
+                <SelectItem id="unitsAndBarcodes">{t("productRecord.tabUnitsAndBarcodes")}</SelectItem>
+                <SelectItem id="references">{t("productRecord.tabReferences")}</SelectItem>
+                <SelectItem id="audit">{t("productRecord.tabAudit")}</SelectItem>
+              </Select>
+            </div>
+          )}
+
           {/* Tabs Container */}
           <Tabs selectedKey={activeTab} onSelectionChange={(k) => setActiveTab(String(k))}>
             <TabList aria-label={t("productRecord.tabsAria")}>
@@ -363,7 +398,11 @@ export function ProductRecordPage({
                             {product.baseUomCode} ({t("productRecord.baseUnitBadge")})
                           </TableCell>
                           <TableCell>{t("productRecord.baseUnitFactor")}</TableCell>
-                          <TableCell>{t("productRecord.baseReferenceFormula")}</TableCell>
+                          <TableCell>
+                            <bdi dir="ltr" style={{ display: "inline-block", unicodeBidi: "isolate" }}>
+                              {t("productRecord.baseConversionRate", { base: product.baseUomCode || "—" })}
+                            </bdi>
+                          </TableCell>
                           <TableCell>{t("productRecord.allUsage")}</TableCell>
                           <TableCell>
                             <StatusBadge status="Active" label={t("common.active")} />
@@ -376,7 +415,9 @@ export function ProductRecordPage({
                             <TableCell style={{ fontWeight: 600 }}>{uom.uomCode}</TableCell>
                             <TableCell>{uom.factorToBase}</TableCell>
                             <TableCell style={{ fontStyle: "italic", color: "var(--color-brand-primary)" }}>
-                              {t("productRecord.conversionRate", { target: uom.uomCode, factor: uom.factorToBase, base: product.baseUomCode ?? "" })}
+                              <bdi dir="ltr" style={{ display: "inline-block", unicodeBidi: "isolate", fontWeight: 600 }}>
+                                {t("productRecord.conversionRate", { target: uom.uomCode, factor: uom.factorToBase, base: product.baseUomCode ?? "" })}
+                              </bdi>
                             </TableCell>
                             <TableCell>{uom.usageFlags?.join(", ") || t("productRecord.allUsage")}</TableCell>
                             <TableCell>
@@ -475,19 +516,28 @@ export function ProductRecordPage({
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {references.map((ref) => (
-                          <TableRow key={ref.id}>
-                            <TableCell>{ref.referenceType === "Customer" ? t("referenceDialog.typeCustomer") : t("referenceDialog.typeSupplier")}</TableCell>
-                            <TableCell>
-                              <bdi dir="ltr" style={{ fontFamily: "var(--font-mono, monospace)" }}>
-                                {ref.referenceCode}
-                              </bdi>
-                            </TableCell>
-                            <TableCell>
-                              <StatusBadge status={ref.status} label={ref.status === "Active" ? t("common.active") : t("common.archived")} />
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {references.map((ref) => {
+                          const isCust = ref.referenceType === "Customer" || (ref as any).partyType === "Customer";
+                          const isSupp = ref.referenceType === "Supplier" || (ref as any).partyType === "Supplier";
+                          const refLabel = isCust
+                            ? t("referenceDialog.typeCustomer")
+                            : isSupp
+                            ? t("referenceDialog.typeSupplier")
+                            : t("referenceDialog.typeExternal");
+                          return (
+                            <TableRow key={ref.id}>
+                              <TableCell>{refLabel}</TableCell>
+                              <TableCell>
+                                <bdi dir="ltr" style={{ fontFamily: "var(--font-mono, monospace)" }}>
+                                  {ref.referenceCode}
+                                </bdi>
+                              </TableCell>
+                              <TableCell>
+                                <StatusBadge status={ref.status} label={ref.status === "Active" ? t("common.active") : t("common.archived")} />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   )}

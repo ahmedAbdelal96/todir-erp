@@ -46,7 +46,11 @@ export function TabList<T extends object>({ className, children, ...props }: Tab
         gap: "0.5rem",
         borderBottom: "1px solid var(--color-border-default)",
         paddingBottom: "0.25rem",
-        outline: "none"
+        outline: "none",
+        overflowX: "auto",
+        maxWidth: "100%",
+        scrollbarWidth: "none",
+        WebkitOverflowScrolling: "touch"
       }}
     >
       {children}
@@ -68,6 +72,8 @@ export function Tab({ icon, badge, className, children, ...props }: TabProps): R
       style={({ isSelected, isFocused, isDisabled }) => ({
         display: "inline-flex",
         alignItems: "center",
+        flexShrink: 0,
+        whiteSpace: "nowrap",
         gap: "0.5rem",
         padding: "0.5rem 0.75rem",
         fontSize: "0.875rem",

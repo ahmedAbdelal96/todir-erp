@@ -102,8 +102,8 @@ const distPackagingUoms = [
 ];
 
 const distReferences = [
-  { id: 'ref-1', productId: 'dist-001', partyType: 'Customer', referenceCode: 'CUST-REF-WAT', notes: 'كود المنتج في شبكة فروع كارفور' },
-  { id: 'ref-2', productId: 'dist-001', partyType: 'Supplier', referenceCode: 'SUPP-REF-99', notes: 'رمز المصنع الوطني للتعبئة' }
+  { id: 'ref-1', productId: 'dist-001', partyType: 'Customer', referenceType: 'Customer', referenceCode: 'CUST-REF-WAT', notes: 'كود المنتج في شبكة فروع كارفور' },
+  { id: 'ref-2', productId: 'dist-001', partyType: 'Supplier', referenceType: 'Supplier', referenceCode: 'SUPP-REF-99', notes: 'رمز المصنع الوطني للتعبئة' }
 ];
 
 const fshAttributes = [
@@ -137,9 +137,9 @@ const importPreviewSummary = {
   updateCount: 1,
   errorCount: 0,
   rows: [
-    { rowNumber: 1, sku: 'PRD-001', displayName: 'ورق تصوير أبيض A4', baseUomCode: 'EA', action: 'Create', issues: [] },
-    { rowNumber: 2, sku: 'PRD-002', displayName: 'كابل كهرباء نحاسي 2.5 مم', baseUomCode: 'EA', action: 'Create', issues: [] },
-    { rowNumber: 3, sku: 'SRV-001', displayName: 'خدمة صيانة دورية', baseUomCode: 'HOUR', action: 'Update', issues: [] }
+    { rowNumber: 1, sku: 'PRD-001', displayName: 'ورق تصوير أبيض A4', baseUomCode: 'EA', classification: 'Create', action: 'Create', issues: [] },
+    { rowNumber: 2, sku: 'PRD-002', displayName: 'كابل كهرباء نحاسي 2.5 مم', baseUomCode: 'EA', classification: 'Create', action: 'Create', issues: [] },
+    { rowNumber: 3, sku: 'SRV-001', displayName: 'خدمة صيانة دورية', baseUomCode: 'HOUR', classification: 'Update', action: 'Update', issues: [] }
   ]
 };
 

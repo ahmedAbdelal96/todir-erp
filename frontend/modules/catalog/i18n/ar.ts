@@ -1,8 +1,8 @@
 export const ar = {
   title: "الكتالوج",
   common: {
-    goods: "بضاعة مخزنية",
-    service: "خدمة (غير مخزنية)",
+    goods: "بضاعة",
+    service: "خدمة",
     active: "نشط ومتاح",
     archived: "مؤرشف",
     cancel: "إلغاء",
@@ -59,8 +59,10 @@ export const ar = {
     notFound: "تعذر العثور على الصنف المطلوب أو تم حذفه.",
     backToCatalog: "العودة إلى كتالوج الأصناف",
     nature: "طبيعة الصنف",
-    noInventoryTracking: "خدمة غير مخزنية ولا تتطلب أرصدة مستودعية",
-    inventoryMovements: "بضاعة تخضع للجرد وحركات التخزين",
+    natureGoodDescription: "بضاعة أو صنف مادي",
+    natureServiceDescription: "خدمة غير مادية",
+    noInventoryTracking: "خدمة غير مادية",
+    inventoryMovements: "بضاعة أو صنف مادي",
     productStatus: "حالة التداول",
     availableForTransactions: "متاح للإدراج في الفواتير وأوامر الشراء",
     stoppedForNewTransactions: "متوقف عن إنشاء معاملات جديدة",
@@ -110,6 +112,7 @@ export const ar = {
     baseUnitBadge: "وحدة الأساس",
     baseUnitFactor: "1.00",
     conversionRate: "1 {{target}} = {{factor}} {{base}}",
+    baseConversionRate: "1 {{base}} = 1.00 {{base}}",
     baseReferenceFormula: "1 وحدة أساسية مرجعية",
     allUsage: "متاح لكافة العمليات (المبيعات، الشراء، المستودعات، نقاط البيع)",
     barcodesTitle: "الباركودات وأكواد المسح الضوئي",
@@ -176,6 +179,9 @@ export const ar = {
     stepPreview: "3. معاينة البيانات والتحقق",
     stepReconciliation: "4. تقرير المطابقة والنتائج",
     uploadDescription: "قم برفع ملف CSV يحتوي على أصناف المنشأة، أو استخدام النموذج القياسي للتحقق.",
+    chooseFile: "اختيار ملف CSV...",
+    noFileChosen: "لم يتم اختيار ملف بعد",
+    selectedFile: "الملف المختار: {{file}}",
     loadSampleTemplate: "تحميل نموذج بيانات تجريبي",
     csvDataLabel: "محتوى بيانات الملف (CSV):",
     nextMapping: "المتابعة لمطابقة الأعمدة",
@@ -209,6 +215,19 @@ export const ar = {
     updatedProducts: "تم تحديثها",
     skippedProducts: "تم تخطيها",
     errorNoRows: "الملف لا يحتوي على صفوف بيانات صالحة."
+  },
+  importActions: {
+    create: "إنشاء جديد",
+    update: "تحديث بيانات",
+    review: "مراجعة يدوية",
+    duplicateSku: "تكرار رمز SKU",
+    duplicateBarcode: "تكرار الباركود",
+    potentialDuplicate: "احتمال تكرار",
+    unknownUom: "وحدة غير معروفة",
+    unknownCategory: "مجموعة غير معروفة",
+    invalidConversion: "تحويل غير صالح",
+    skip: "تخطي",
+    error: "خطأ في السجل"
   },
   productUomDialog: {
     title: "إضافة وحدة تعبئة وقياس بديلة",
@@ -281,6 +300,7 @@ export const ar = {
     typeLabel: "طبيعة الطرف المرجعي",
     typeCustomer: "كود خاص بالعميل (Customer Item Code)",
     typeSupplier: "كود خاص بالمورد (Supplier Item Code)",
+    typeExternal: "كود مرجعي خارجي (External Reference)",
     codeLabel: "الكود المرجعي الخارجي",
     codePlaceholder: "مثال: CUST-500، SUP-X13",
     codeHint: "مثال: X500-C أو REF-4402",
@@ -292,8 +312,8 @@ export const ar = {
     title: "إدارة نطاق رؤية الصنف وتعدده",
     description: "تحديد ما إذا كان الصنف متاحاً لكافة الشركات التابعة للمنشأة أم مقيداً بشركة معينة.",
     scopeLabel: "نطاق إتاحة وتداول الصنف",
-    scopeTenantWide: "متاح لكافة الشركات والمؤسسات التابعة للمنشأة (Tenant-Wide)",
-    scopeLegalEntity: "مقيد ومخصص للشركة الحالية فقط (Legal Entity Only)",
+    scopeTenantWide: "متاح لكافة الشركات والمؤسسات التابعة للمنشأة",
+    scopeLegalEntity: "مقيد ومخصص للشركة القانونية المحددة فقط",
     selectedEntityLabel: "الشركة القانونية المصرح لها",
     currentEntity: "الشركة المحددة في الجلسة الحالية",
     submit: "حفظ نطاق الرؤية",
@@ -358,7 +378,7 @@ export const ar = {
       base_uom: "يجب تحديد وحدة القياس الأساسية للصنف."
     },
     warning: {
-      goods_without_barcode: "ينصح بتسجيل باركود للبضاعة المخزنية لتسهيل عمليات المسح ونقاط البيع."
+      goods_without_barcode: "ينصح بتسجيل باركود للبضاعة لتسهيل عمليات المسح ونقاط البيع."
     }
   },
   validation: {
