@@ -3,24 +3,23 @@ import { useTranslation } from "react-i18next";
 import { ListPage } from "../../../components/pages/list-page.tsx";
 import { DataGrid, type DataGridColumn } from "../../../components/grid/index.ts";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
-import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { SearchField } from "../../../components/primitives/search-field.tsx";
 import { FilterBar } from "../../../components/primitives/filter-bar.tsx";
 import { Select, SelectItem } from "../../../components/primitives/select.tsx";
 import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { EmptyState } from "../../../components/primitives/empty-state.tsx";
-import { CatalogIcon } from "../../../components/primitives/icons.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
+import { Pagination } from "../../../components/primitives/pagination.tsx";
+import { CatalogIcon, RefreshIcon } from "../../../components/primitives/icons.tsx";
 import {
   useCatalogBrands,
   useCatalogCategories,
-  useCatalogUoms,
-  useCreateProduct,
   useProductList
 } from "../hooks/catalog-queries.ts";
-import { ProductForm } from "../features/product-form.tsx";
-import type { ProductFormData } from "../validation/product-schema.ts";
-import type { ProductSummary } from "../types.ts";
+import { catalogApi } from "../services/catalog-api.ts";
+import { QuickCreateProductDialog } from "../features/quick-create-product-dialog.tsx";
+import { CatalogImportDialog } from "../features/catalog-import-dialog.tsx";
+import type { CatalogStatus, ProductDetails, ProductNature, ProductSummary } from "../types.ts";
 
 export interface ProductListPageProps {
   readonly onSelectProduct?: ((product: ProductSummary) => void) | undefined;
@@ -28,28 +27,55 @@ export interface ProductListPageProps {
 
 export function ProductListPage({ onSelectProduct }: ProductListPageProps): React.JSX.Element {
   const { t } = useTranslation("catalog");
-  const { t: commonT } = useTranslation("common");
   const [search, setSearch] = useState("");
-  const [nature, setNature] = useState<"" | "Goods" | "Service">("");
-  const [open, setOpen] = useState(false);
+  const [nature, setNature] = useState<ProductNature | "">("");
+  const [status, setStatus] = useState<CatalogStatus | "">("");
+  const [categoryId, setCategoryId] = useState("");
+  const [brandId, setBrandId] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+
+  const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const { data, isLoading, error, refetch } = useProductList({
     search: search || undefined,
     nature: nature || undefined,
-    pageSize: 25
+    status: status || undefined,
+    categoryId: categoryId || undefined,
+    brandId: brandId || undefined,
+    page,
+    pageSize
   });
 
   const categories = useCatalogCategories().data ?? [];
   const brands = useCatalogBrands().data ?? [];
-  const uoms = useCatalogUoms().data ?? [];
-  const create = useCreateProduct();
+
   const products = data?.items ?? [];
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  const handleExportCsv = async () => {
+    try {
+      const csvText = await catalogApi.exportCsv();
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `catalog-${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch {
+      // ignore
+    }
+  };
 
   const columns: DataGridColumn<ProductSummary>[] = [
     {
       id: "displayName",
       header: t("productList.productService"),
-      width: "1fr",
+      width: "1.5fr",
       cellRenderer: ({ row }) => (
         <button
           type="button"
@@ -71,8 +97,8 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
     },
     {
       id: "sku",
-      header: "SKU",
-      width: 150,
+      header: t("productList.skuHeader"),
+      width: 140,
       cellRenderer: ({ row }) => (
         <bdi dir="ltr" style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem", color: "var(--color-content-secondary)" }}>
           {row.sku || "—"}
@@ -82,130 +108,227 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
     {
       id: "nature",
       header: t("productList.type"),
-      width: 120,
-      cellRenderer: ({ row }) => (row.nature === "Service" ? t("productList.service") : t("productList.goods"))
+      width: 110,
+      cellRenderer: ({ row }) => (
+        <span
+          style={{
+            display: "inline-block",
+            padding: "0.15rem 0.5rem",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            background: row.nature === "Service" ? "var(--color-surface-subtle)" : "rgba(79, 70, 229, 0.08)",
+            color: row.nature === "Service" ? "var(--color-content-secondary)" : "var(--color-brand-primary)"
+          }}
+        >
+          {row.nature === "Service" ? t("common.service") : t("common.goods")}
+        </span>
+      )
     },
     {
       id: "categoryName",
       header: t("productList.category"),
-      width: 150,
+      width: 130,
       cellRenderer: ({ row }) => row.categoryName || "—"
     },
     {
       id: "brandName",
       header: t("productList.brand"),
-      width: 150,
+      width: 130,
       cellRenderer: ({ row }) => row.brandName || "—"
     },
     {
       id: "baseUomCode",
       header: t("productList.unit"),
-      width: 110,
-      cellRenderer: ({ row }) => row.baseUomCode || "—"
+      width: 90,
+      cellRenderer: ({ row }) => (
+        <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem" }}>
+          {row.baseUomCode || "—"}
+        </span>
+      )
     },
     {
       id: "status",
       header: t("productList.status"),
-      width: 110,
+      width: 100,
       cellRenderer: ({ row }) => (
         <StatusBadge
-          status={row.status === "Active" ? "success" : "neutral"}
-          label={row.status === "Active" ? t("productList.active") : t("productList.archived")}
-          size="small"
+          status={row.status}
+          label={row.status === "Active" ? t("common.active") : t("common.archived")}
         />
       )
     }
   ];
 
-  return (
-    <ListPage
-      title={t("productList.pageTitle")}
-      subtitle={t("productList.subtitle")}
-      breadcrumbs={[{ label: t("productList.breadcrumbCatalog") }, { label: t("productList.breadcrumbProducts") }]}
-      primaryAction={{
-        label: t("productList.add"),
-        onClick: () => setOpen(true)
-      }}
-      filterBar={
-        <FilterBar
-          searchInput={
-            <SearchField
-              ariaLabel={t("productList.searchLabel")}
-              placeholder={t("productList.searchPlaceholder")}
-              value={search}
-              onChange={setSearch}
-            />
-          }
-          activeFilterCount={(nature ? 1 : 0) + (search ? 1 : 0)}
-          onResetFilters={() => {
-            setSearch("");
-            setNature("");
+  const filterBar = (
+    <FilterBar
+      searchInput={
+        <SearchField
+          value={search}
+          onChange={(val) => {
+            setSearch(val);
+            setPage(1);
           }}
-        >
-          <div style={{ minWidth: "160px" }}>
-            <Select
-              label={t("productList.typeFilter")}
-              selectedKey={nature}
-              onSelectionChange={(k) => setNature(String(k) as typeof nature)}
-            >
-              <SelectItem id="" textValue={t("productList.allTypes")}>{t("productList.allTypes")}</SelectItem>
-              <SelectItem id="Goods" textValue={t("productList.goodsFilter")}>{t("productList.goodsFilter")}</SelectItem>
-              <SelectItem id="Service" textValue={t("productList.servicesFilter")}>{t("productList.servicesFilter")}</SelectItem>
-            </Select>
-          </div>
-        </FilterBar>
+          ariaLabel={t("productList.searchLabel")}
+          placeholder={t("productList.searchPlaceholder")}
+        />
       }
+      onResetFilters={() => {
+        setSearch("");
+        setNature("");
+        setStatus("");
+        setCategoryId("");
+        setBrandId("");
+        setPage(1);
+      }}
     >
-      {error ? (
-        <ErrorState
-          title={t("productList.loadError")}
-          message={t("productList.loadErrorDescription")}
-          onRetry={() => void refetch()}
-        />
-      ) : !isLoading && products.length === 0 ? (
-        <EmptyState
-          icon={<CatalogIcon size={28} />}
-          title={t("productList.emptyTitle")}
-          description={
-            search || nature
-              ? t("productList.noResults")
-              : t("productList.emptyDescription")
-          }
-          action={
-            <Button variant="primary" onPress={() => setOpen(true)}>
-              {t("productList.add")}
-            </Button>
-          }
-        />
-      ) : (
-        <DataGrid<ProductSummary>
-          columns={columns}
-          staticRows={products}
-          loading={isLoading}
-          loadingMessage={isLoading ? commonT("states.loading") : undefined}
-          onSelectionChange={(rows) => rows[0] && onSelectProduct?.(rows[0])}
-        />
-      )}
-
-      <Dialog
-        isOpen={open}
-        onOpenChange={setOpen}
-        title={t("productList.add")}
-        description={t("productList.addDescription")}
-        size="large"
+      <Select
+        aria-label={t("productList.typeFilter")}
+        selectedKey={nature}
+        onSelectionChange={(key) => {
+          setNature(String(key) as ProductNature | "");
+          setPage(1);
+        }}
+        placeholder={t("productList.allTypes")}
       >
-        <ProductForm
-          categories={categories}
-          brands={brands}
-          uoms={uoms}
-          onSubmit={async (form: ProductFormData) => {
-            await create.mutateAsync(form);
-            setOpen(false);
-          }}
-          onCancel={() => setOpen(false)}
-          isSubmitting={create.isPending}
-        />
-      </Dialog>
-    </ListPage>
+        <SelectItem id="">{t("productList.allTypes")}</SelectItem>
+        <SelectItem id="Goods">{t("common.goods")}</SelectItem>
+        <SelectItem id="Service">{t("common.service")}</SelectItem>
+      </Select>
+
+      <Select
+        aria-label={t("productList.statusFilter")}
+        selectedKey={status}
+        onSelectionChange={(key) => {
+          setStatus(String(key) as CatalogStatus | "");
+          setPage(1);
+        }}
+        placeholder={t("productList.allStatuses")}
+      >
+        <SelectItem id="">{t("productList.allStatuses")}</SelectItem>
+        <SelectItem id="Active">{t("common.active")}</SelectItem>
+        <SelectItem id="Archived">{t("common.archived")}</SelectItem>
+      </Select>
+
+      <Select
+        aria-label={t("productList.categoryFilter")}
+        selectedKey={categoryId}
+        onSelectionChange={(key) => {
+          setCategoryId(String(key));
+          setPage(1);
+        }}
+        placeholder={t("productList.allCategories")}
+      >
+        <SelectItem id="">{t("productList.allCategories")}</SelectItem>
+        {categories.map((c) => (
+          <SelectItem key={c.id} id={c.id}>
+            {c.name}
+          </SelectItem>
+        ))}
+      </Select>
+
+      <Select
+        aria-label={t("productList.brandFilter")}
+        selectedKey={brandId}
+        onSelectionChange={(key) => {
+          setBrandId(String(key));
+          setPage(1);
+        }}
+        placeholder={t("productList.allBrands")}
+      >
+        <SelectItem id="">{t("productList.allBrands")}</SelectItem>
+        {brands.map((b) => (
+          <SelectItem key={b.id} id={b.id}>
+            {b.name}
+          </SelectItem>
+        ))}
+      </Select>
+    </FilterBar>
+  );
+
+  return (
+    <>
+      <ListPage
+        title={t("productList.pageTitle")}
+        subtitle={t("productList.subtitle")}
+        breadcrumbs={[
+          { label: t("productList.breadcrumbCatalog"), href: "/catalog" },
+          { label: t("productList.breadcrumbProducts") }
+        ]}
+        primaryAction={{
+          label: t("productList.add"),
+          onClick: () => setIsQuickCreateOpen(true)
+        }}
+        secondaryActions={
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <Button variant="secondary" size="compact" onPress={() => setIsImportOpen(true)}>
+              {t("productList.importAction")}
+            </Button>
+            <Button variant="secondary" size="compact" onPress={handleExportCsv}>
+              {t("productList.exportAction")}
+            </Button>
+            <Button variant="ghost" size="compact" onPress={() => void refetch()} aria-label={t("productList.refresh")}>
+              <RefreshIcon size={16} />
+            </Button>
+          </div>
+        }
+        filterBar={filterBar}
+        pagination={
+          totalCount > 0 ? (
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              totalItems={totalCount}
+              pageSize={pageSize}
+            />
+          ) : undefined
+        }
+      >
+        {isLoading ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: "3rem" }}>
+            <span style={{ color: "var(--color-content-secondary)" }}>{t("common.loading")}</span>
+          </div>
+        ) : error ? (
+          <ErrorState
+            title={t("productList.loadError")}
+            message={t("productList.loadErrorDescription")}
+            onRetry={() => void refetch()}
+          />
+        ) : products.length === 0 ? (
+          <EmptyState
+            icon={<CatalogIcon size={40} />}
+            title={search || nature || status || categoryId || brandId ? t("productList.noResults") : t("productList.emptyTitle")}
+            description={t("productList.emptyDescription")}
+            action={
+              <Button variant="primary" size="compact" onPress={() => setIsQuickCreateOpen(true)}>
+                {t("productList.add")}
+              </Button>
+            }
+          />
+        ) : (
+          <DataGrid
+            staticRows={products}
+            columns={columns}
+          />
+        )}
+      </ListPage>
+
+      <QuickCreateProductDialog
+        isOpen={isQuickCreateOpen}
+        onOpenChange={setIsQuickCreateOpen}
+        onCreated={(created: ProductDetails) => {
+          onSelectProduct?.(created);
+        }}
+      />
+
+      <CatalogImportDialog
+        isOpen={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        onImportCompleted={() => {
+          void refetch();
+        }}
+      />
+    </>
   );
 }
