@@ -171,6 +171,7 @@ foreach (var script in scripts)
 
     Console.WriteLine($"Applying {scriptName}");
     await using var command = new NpgsqlCommand(await File.ReadAllTextAsync(script), connection);
+    command.CommandTimeout = 0;
     await command.ExecuteNonQueryAsync();
     await using var record = new NpgsqlCommand("insert into platform_migration.applied_script (module_id, script_name, checksum, applied_at) values ($1, $2, $3, now())", connection);
     record.Parameters.AddWithValue(moduleId); record.Parameters.AddWithValue(scriptName); record.Parameters.AddWithValue(checksum);
@@ -282,6 +283,14 @@ static IReadOnlyList<string> ResolveModuleMigrations(string bootstrapDirectory, 
     return [basePath, .. fixes];
 }
 
-static int MigrationPriority(string fileName) => fileName.EndsWith("-authentication-challenges.sql", StringComparison.Ordinal) ? 0 : fileName.EndsWith("-tenant-bound-identity.sql", StringComparison.Ordinal) ? 1 : 2;
+static int MigrationPriority(string fileName) => fileName switch
+{
+    _ when fileName.EndsWith("-authentication-challenges.sql", StringComparison.Ordinal) => 0,
+    _ when fileName.EndsWith("-tenant-bound-identity.sql", StringComparison.Ordinal) => 1,
+    _ when fileName.Equals("catalog-forward-fix-import.sql", StringComparison.Ordinal) => 2,
+    _ when fileName.Equals("catalog-forward-fix-import-reconciliation.sql", StringComparison.Ordinal) => 3,
+    _ when fileName.Equals("catalog-forward-fix-import-worker.sql", StringComparison.Ordinal) => 4,
+    _ => 5
+};
 
 sealed record ModuleManifest(string Id, IReadOnlyList<string> HardDependencies);

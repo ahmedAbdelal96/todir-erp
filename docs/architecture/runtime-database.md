@@ -12,10 +12,12 @@ P04 establishes the PostgreSQL ownership and runtime permission boundary.
 
 ## Schemas and grants
 
-The bootstrap creates the approved platform schema prefixes, removes `PUBLIC`
-schema access, grants `erp_app` schema `USAGE`, and configures owner default
-privileges for runtime DML. Each module migration remains responsible for
-explicit grants on its existing tables, including stricter audit-table grants.
+The bootstrap and topology forward migration create the single `platform`
+schema for Platform Kernel data, remove `PUBLIC` schema access, grant
+`erp_app` schema `USAGE`, and configure owner default privileges for runtime
+DML. Each foundation/business module owns one layer-prefixed schema and its
+migration remains responsible for explicit grants on its tables, including
+stricter audit-table grants.
 
 The API and Worker never apply production migrations at startup. The dedicated
 migration host runs deployment migrations with `erp_owner`; runtime processes

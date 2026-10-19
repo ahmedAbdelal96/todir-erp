@@ -12,4 +12,4 @@ Application filters remain useful for query intent but are never the security bo
 
 ## Evidence
 
-`ops/database/bootstrap/tenant-boundary.sql`, `ops/database/bootstrap/platform-kernel-schema.sql`, and the database security suite.
+`backend/DbMigrator/Database/bootstrap/platform-kernel-schema.sql` and the database security suite.

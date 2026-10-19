@@ -9,7 +9,7 @@ RUN dotnet publish backend/DbMigrator/DbMigrator.csproj --no-restore -c Release 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
-COPY ops/database/bootstrap /app/ops/database/bootstrap
+COPY backend/DbMigrator/Database/bootstrap /app/backend/DbMigrator/Database/bootstrap
 COPY backend/Core/module.manifest.json /app/backend/Core/module.manifest.json
 COPY backend/Modules/Sample/module.manifest.json /app/backend/Modules/Sample/module.manifest.json
 COPY backend/Modules/Directory/module.manifest.json /app/backend/Modules/Directory/module.manifest.json

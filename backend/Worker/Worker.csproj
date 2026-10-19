@@ -8,5 +8,6 @@
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="../Core/Core.csproj" />
     <ProjectReference Include="../Modules/Sample/Sample.csproj" />
+    <ProjectReference Include="../Modules/Catalog/Catalog.csproj" />
   </ItemGroup>
 </Project>

@@ -5,6 +5,7 @@ const roots = process.argv.slice(2).length > 0 ? process.argv.slice(2) : ["backe
 const manifests = roots.flatMap(root => collect(path.resolve(root)));
 const errors = [];
 const modules = new Map();
+const ownedSchemas = new Map();
 const schema = JSON.parse(fs.readFileSync(path.resolve("docs/platform/module-manifest-schema.json"), "utf8"));
 for (const file of manifests) {
   let manifest;
@@ -16,6 +17,20 @@ for (const file of manifests) {
   if (!/^\d+\.\d+\.\d+$/.test(manifest.version ?? "")) errors.push(`${file}: invalid version`);
   if (!Number.isInteger(manifest.contractsVersion) || manifest.contractsVersion < 1) errors.push(`${file}: invalid contractsVersion`);
   if (!/^L[0-6]$/.test(manifest.layer ?? "")) errors.push(`${file}: invalid layer`);
+  const ownedSchema = manifest.owns?.schema;
+  const expectedSchema = manifest.id === "platform-kernel"
+    ? "platform"
+    : manifest.id === "sample"
+      ? "sample"
+      : manifest.type === "foundation"
+        ? `foundation_${manifest.id}`
+        : manifest.type === "business"
+          ? `business_${manifest.id}`
+          : null;
+  if (!/^[a-z][a-z0-9_]*$/.test(ownedSchema ?? "")) errors.push(`${file}: invalid owned schema name`);
+  if (expectedSchema && ownedSchema !== expectedSchema) errors.push(`${file}: schema '${ownedSchema}' must be '${expectedSchema}' for module '${manifest.id}'`);
+  if (ownedSchema && ownedSchemas.has(ownedSchema)) errors.push(`${file}: schema '${ownedSchema}' is already owned by ${ownedSchemas.get(ownedSchema)}`);
+  else if (ownedSchema) ownedSchemas.set(ownedSchema, manifest.id);
   for (const [pair, firstKey, secondKey] of [["dependencies", "hard", "optionalCapabilities"], ["capabilities", "provides", "consumes"], ["messaging", "publishes", "consumes"]]) {
     if (!manifest[pair] || !Array.isArray(manifest[pair][firstKey]) || !Array.isArray(manifest[pair][secondKey])) errors.push(`${file}: invalid ${pair}`);
   }

@@ -10,7 +10,9 @@ public static class SeedIds
     public static Guid DeltaTenant { get; } = Stable("tenant:delta");
 
     public static Guid TenantEntity(Guid tenantId) => Stable($"{tenantId:D}:legal-entity");
+    public static Guid TenantSecondaryEntity(Guid tenantId) => Stable($"{tenantId:D}:legal-entity:secondary");
     public static Guid TenantBranch(Guid tenantId) => Stable($"{tenantId:D}:branch:main");
+    public static Guid TenantSecondaryBranch(Guid tenantId) => Stable($"{tenantId:D}:branch:secondary");
     public static Guid Role(Guid tenantId, string code) => Stable($"{tenantId:D}:role:{code}");
     public static Guid Identity(Guid tenantId, string prefix) => Stable($"{tenantId:D}:identity:{prefix}");
     public static Guid Membership(Guid tenantId, string prefix) => Stable($"{tenantId:D}:membership:{prefix}");

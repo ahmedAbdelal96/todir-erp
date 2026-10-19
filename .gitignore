@@ -21,6 +21,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+backend/appsettings.Development.json
 
 # Test, coverage, logs, and generated local workspace output
 artifacts/

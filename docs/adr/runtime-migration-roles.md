@@ -12,4 +12,4 @@ API and Worker startup cannot silently change schema. Grants and ownership must 
 
 ## Evidence
 
-`ops/database/bootstrap/runtime-roles-and-schemas.sql`, `backend/DbMigrator/Program.cs`, and role-boundary tests.
+`backend/DbMigrator/Database/bootstrap/runtime-roles-and-schemas.sql`, `backend/DbMigrator/Program.cs`, and role-boundary tests.

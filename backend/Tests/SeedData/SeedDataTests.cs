@@ -56,7 +56,7 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(105, firstCounts.DeltaUsers);
             Assert.Equal(55, firstCounts.DeltaParties);
             Assert.Equal(60, firstCounts.DeltaProducts);
-            Assert.Equal(2, firstCounts.LegalEntities);
+            Assert.Equal(4, firstCounts.LegalEntities);
             Assert.Equal(2, firstCounts.ReferenceCurrencies);
             Assert.Equal(4, firstCounts.EnabledEntityCurrencies);
             Assert.Equal(2, firstCounts.AtlasVatIdentifiers);
@@ -236,7 +236,7 @@ public sealed class DevelopmentSeedTests
             var expectedParties = tenant.Id == SeedIds.AtlasTenant ? 80 : 55;
             var expectedProducts = tenant.Id == SeedIds.AtlasTenant ? 100 : 60;
             Assert.Equal(1, reader.GetInt32(0));
-            Assert.Equal(1, reader.GetInt32(1));
+            Assert.Equal(2, reader.GetInt32(1));
             Assert.Equal(expectedUsers, reader.GetInt32(2));
             Assert.Equal(expectedParties, reader.GetInt32(3));
             Assert.Equal(expectedProducts, reader.GetInt32(4));

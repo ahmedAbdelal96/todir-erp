@@ -25,6 +25,10 @@ corepack pnpm typecheck
 
 The solution includes shared primitives, platform implementation, API, Worker, and dedicated database migrator projects. TypeScript strict typechecking, frontend boundary validation, module-manifest validation, database-policy validation, and API contract validation are executable repository gates.
 
+## Local runtime
+
+Use [the local development runbook](docs/runbooks/local-development.md). Host-specific `appsettings.Development.json` files are intentionally ignored and keep local connection strings and development service credentials out of source control. After the one-time local setup, normal startup does not require passing connection strings on the command line.
+
 ## Repository map
 
 - `backend/Api/`, `backend/Worker/`, `backend/DbMigrator/` — runtime hosts and database migration entry point.

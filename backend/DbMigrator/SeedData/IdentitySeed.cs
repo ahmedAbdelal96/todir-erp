@@ -14,8 +14,8 @@ public static class IdentitySeed
         "directory.party.identifier.view", "directory.party.identifier.manage", "directory.contact.manage", "directory.address.manage",
         "directory.party.merge", "directory.party.visibility.manage", "directory.duplicate.override", "directory.import", "directory.export",
         "directory.audit.view", "directory.party.quick_create", "catalog.product.read", "catalog.product.create", "catalog.product.edit",
-        "catalog.product.archive", "catalog.category.manage", "catalog.brand.manage", "catalog.uom.manage", "catalog.barcode.manage",
-        "catalog.reference.manage", "catalog.audit.view", "finbase.currency.read", "finbase.currency.enable", "finbase.rate.read",
+        "catalog.product.archive", "catalog.product.visibility.manage", "catalog.variant.manage", "catalog.product_uom.manage", "catalog.category.manage", "catalog.brand.manage", "catalog.uom.manage", "catalog.barcode.manage",
+        "catalog.reference.manage", "catalog.attribute.manage", "catalog.import", "catalog.export", "catalog.audit.view", "finbase.currency.read", "finbase.currency.enable", "finbase.rate.read",
         "finbase.rate.manage", "finbase.rate.approve", "finbase.rounding_policy.read", "finbase.rounding_policy.manage", "finbase.payment_term.read",
         "finbase.payment_term.manage", "finbase.financial_policy.manage", "finbase.audit.view"
     ];

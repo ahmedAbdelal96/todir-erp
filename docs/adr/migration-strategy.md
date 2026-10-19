@@ -12,4 +12,4 @@ Clean staging and production deployment do not require manual database edits. Fo
 
 ## Evidence
 
-`backend/DbMigrator/Program.cs`, `ops/database/bootstrap`, migration policy validation, and the CI migration step.
+`backend/DbMigrator/Program.cs`, `backend/DbMigrator/Database/bootstrap`, migration policy validation, and the CI migration step.

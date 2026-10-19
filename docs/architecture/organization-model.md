@@ -1,6 +1,6 @@
 # Organization model
 
-`platform_org` owns legal entities and branches. A legal entity belongs to one
+`platform` owns legal entities and branches. A legal entity belongs to one
 tenant; a branch belongs to one legal entity and carries the tenant key for
 composite-key and RLS enforcement.
 

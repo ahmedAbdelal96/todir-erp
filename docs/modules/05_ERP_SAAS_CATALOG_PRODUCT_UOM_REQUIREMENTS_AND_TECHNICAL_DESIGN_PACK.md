@@ -1529,6 +1529,8 @@ Design must remain healthy around:
 
 مع tenant-scoped indexed queries.
 
+These are target operating scales, not a gate for the current Catalog completion mission. Product Owner decision (2026-10-19): benchmark certification at these volumes is deferred to a future Performance Hardening mission.
+
 ---
 
 # 76. Global SaaS Scale
@@ -2628,6 +2630,8 @@ Tenant A cannot:
 ---
 
 # 155. Performance Tests
+
+The following benchmark datasets are deferred to the future Performance Hardening mission by Product Owner decision (2026-10-19). Current Catalog verification uses canonical Development Seed data and moderate realistic database tests.
 
 Datasets:
 
@@ -4752,11 +4756,11 @@ Entity visibility enforced backend/DB/application.
 
 # 337. C11 Exit Gate
 
-100k+ realistic search dataset.
+Realistic Development Seed search and picker checks at moderate data volume.
 
-p95 documented.
+Tenant isolation, bounded pages, and query behavior are verified on PostgreSQL.
 
-No RLS leaks.
+Product Owner decision (2026-10-19): certification at 100k, 500k, and 1m variants is deferred to a future Performance Hardening mission. Do not generate scale fixtures or run large-scale benchmarks as part of Catalog backend completion. Preserve pagination, tenant-scoped queries, exact identifier lookups, absence of N+1 behavior, and query-plan review as normal performance requirements.
 
 ---
 
@@ -4819,12 +4823,9 @@ No downstream implementation coupling.
 
 # 345. C19 Exit Gate
 
-- load test.
-- query plans.
-- slow queries.
-- security.
-- cross-tenant.
-- concurrency.
+- Moderate Development Seed runtime checks for search, picker, query bounds, and query plans.
+- Security, cross-tenant isolation, and ordinary concurrency checks.
+- 100k/500k/1m scale certification is explicitly deferred by Product Owner to Performance Hardening; it is outside the current Catalog completion gate.
 
 ---
 

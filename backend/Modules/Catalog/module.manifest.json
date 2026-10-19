@@ -7,10 +7,97 @@
   "type": "foundation",
   "purchasable": false,
   "scope": "tenant",
-  "dependencies": { "hard": ["platform-kernel"], "optionalCapabilities": [] },
-  "owns": { "schema": "foundation_catalog", "entities": ["product_template", "product_variant", "product_category", "brand", "uom_dimension", "uom", "product_uom", "product_barcode", "product_alias", "product_translation", "product_reference", "product_visibility", "catalog_search_projection"] },
-  "permissions": ["catalog.product.read", "catalog.product.create", "catalog.product.edit", "catalog.product.archive", "catalog.category.manage", "catalog.brand.manage", "catalog.uom.manage", "catalog.barcode.manage", "catalog.reference.manage", "catalog.audit.view"],
-  "capabilities": { "provides": ["catalog.product", "catalog.product-picker", "catalog.quantity-conversion"], "consumes": [] },
-  "messaging": { "publishes": ["CatalogProductCreatedV1", "CatalogProductChangedV1", "CatalogProductArchivedV1", "CatalogProductRestoredV1", "CatalogProductUomChangedV1", "CatalogProductBarcodeChangedV1"], "consumes": [] },
-  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+  "dependencies": {
+    "hard": [
+      "platform-kernel"
+    ],
+    "optionalCapabilities": []
+  },
+  "owns": {
+    "schema": "foundation_catalog",
+    "entities": [
+      "product_template",
+      "product_variant",
+      "product_category",
+      "brand",
+      "uom_dimension",
+      "uom",
+      "product_uom",
+      "product_barcode",
+      "product_alias",
+      "product_translation",
+      "product_reference",
+      "product_visibility",
+      "catalog_search_projection",
+      "product_attribute",
+      "product_attribute_value",
+      "product_template_attribute",
+      "product_variant_attribute_value",
+      "catalog_import_batch",
+      "catalog_import_row"
+    ]
+  },
+  "permissions": [
+    "catalog.product.read",
+    "catalog.product.create",
+    "catalog.product.edit",
+    "catalog.product.archive",
+    "catalog.product.visibility.manage",
+    "catalog.variant.manage",
+    "catalog.product_uom.manage",
+    "catalog.category.manage",
+    "catalog.brand.manage",
+    "catalog.uom.manage",
+    "catalog.barcode.manage",
+    "catalog.reference.manage",
+    "catalog.attribute.manage",
+    "catalog.import",
+    "catalog.export",
+    "catalog.audit.view"
+  ],
+  "capabilities": {
+    "provides": [
+      "catalog.product",
+      "catalog.product-picker",
+      "catalog.quantity-conversion"
+    ],
+    "consumes": []
+  },
+  "messaging": {
+    "publishes": [
+      "CatalogProductCreatedV1",
+      "CatalogProductChangedV1",
+      "CatalogProductArchivedV1",
+      "CatalogProductRestoredV1",
+      "CatalogProductVariantCreatedV1",
+      "CatalogProductUomChangedV1",
+      "CatalogProductBarcodeChangedV1",
+      "CatalogProductVisibilityChangedV1",
+      "CatalogProductAttributesChangedV1",
+      "CatalogProductAliasAddedV1",
+      "CatalogProductTranslationChangedV1",
+      "CatalogProductReferenceAddedV1",
+      "CatalogAttributeCreatedV1",
+      "CatalogAttributeValueCreatedV1",
+      "CatalogCategoryCreatedV1",
+      "CatalogBrandCreatedV1",
+      "CatalogUomCreatedV1",
+      "CatalogImportRequestedV1"
+    ],
+    "consumes": [
+      "CatalogProductCreatedV1",
+      "CatalogProductChangedV1",
+      "CatalogProductArchivedV1",
+      "CatalogProductRestoredV1",
+      "CatalogProductVariantCreatedV1",
+      "CatalogProductUomChangedV1",
+      "CatalogProductBarcodeChangedV1",
+      "CatalogProductAttributesChangedV1",
+      "CatalogImportRequestedV1"
+    ]
+  },
+  "lifecycle": {
+    "supportsGoLive": true,
+    "deactivationPolicy": "blocked_if_dependents"
+  }
 }

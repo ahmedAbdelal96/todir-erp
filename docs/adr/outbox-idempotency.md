@@ -12,4 +12,4 @@ Broker outages preserve database intent and redelivery cannot create a second in
 
 ## Evidence
 
-`backend/Core/Messaging/InboxStore.cs`, `ops/database/bootstrap/platform-kernel-schema.sql`, and the staging crash-after-commit drill.
+`backend/Core/Messaging/InboxStore.cs`, `backend/DbMigrator/Database/bootstrap/platform-kernel-schema.sql`, and the staging crash-after-commit drill.

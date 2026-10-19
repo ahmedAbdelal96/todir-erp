@@ -12,10 +12,31 @@ public enum BarcodeType { Ean13, Ean8, Upc, Code128, Other }
 public static partial class CatalogNormalization
 {
     public static string Text(string value) => Collapse(value).Normalize(NormalizationForm.FormKC).ToUpperInvariant();
-    public static string Search(string value) => Collapse(value).Normalize(NormalizationForm.FormKC).ToLowerInvariant();
+    public static string Search(string value)
+    {
+        var decomposed = value.Normalize(NormalizationForm.FormKD);
+        var normalized = new StringBuilder(decomposed.Length);
+        foreach (var character in decomposed)
+        {
+            if (char.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark || character == '\u0640') continue;
+            normalized.Append(character switch
+            {
+                '\u0622' or '\u0623' or '\u0625' or '\u0671' => '\u0627',
+                '\u0649' => '\u064A',
+                '\u0660' => '0', '\u0661' => '1', '\u0662' => '2', '\u0663' => '3', '\u0664' => '4',
+                '\u0665' => '5', '\u0666' => '6', '\u0667' => '7', '\u0668' => '8', '\u0669' => '9',
+                '\u06F0' => '0', '\u06F1' => '1', '\u06F2' => '2', '\u06F3' => '3', '\u06F4' => '4',
+                '\u06F5' => '5', '\u06F6' => '6', '\u06F7' => '7', '\u06F8' => '8', '\u06F9' => '9',
+                _ => character
+            });
+        }
+
+        return Collapse(SearchSeparators().Replace(normalized.ToString().Normalize(NormalizationForm.FormKC).ToLowerInvariant(), " "));
+    }
     public static string Barcode(string value) => new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
     private static string Collapse(string value) => Whitespace().Replace(value.Trim(), " ");
     [GeneratedRegex("\\s+")] private static partial Regex Whitespace();
+    [GeneratedRegex("[^\\p{L}\\p{N}]+", RegexOptions.CultureInvariant)] private static partial Regex SearchSeparators();
 }
 
 public sealed class ProductTemplate

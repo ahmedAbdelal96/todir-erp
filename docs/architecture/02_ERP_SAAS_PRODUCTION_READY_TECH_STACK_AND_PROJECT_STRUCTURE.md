@@ -1024,8 +1024,8 @@ Each module owns its own PostgreSQL schema.
 Example:
 
 ```text
-platform_tenancy
-platform_iam
+platform
+platform
 foundation_directory
 foundation_catalog
 

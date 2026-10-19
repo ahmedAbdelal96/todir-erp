@@ -12,6 +12,8 @@ public sealed class CatalogDomainTests
     [Fact]
     public void BarcodeAndSkuNormalizeWithoutReplacingDisplayValues() { Assert.Equal("ABC-123", CatalogNormalization.Text(" abc-123 ")); Assert.Equal("ABC123", IdentifierRules.RequireBarcode(" abc-123 ")); }
     [Fact]
+    public void ArabicSearchNormalizationFoldsAlefDiacriticsAndArabicDigits() { Assert.Equal("المنارة 123", CatalogNormalization.Search("اَلْمَنَارَة ١٢٣")); Assert.Equal("المنارة 123", CatalogNormalization.Search("المنارة 123")); }
+    [Fact]
     public void FractionalQuantityIsRejectedForWholeUnit() { Assert.Throws<CatalogDomainException>(() => QuantityConversion.ToBase(1.5m, 1m, false, 0)); Assert.Equal(12m, QuantityConversion.ToBase(2m, 6m, false, 0)); }
     [Fact]
     public void CategoryCannotBecomeItsOwnAncestor() { var id = Guid.CreateVersion7(); var parent = Guid.CreateVersion7(); var category = new CategoryNode(id, "Root", parent); var parents = new Dictionary<Guid, Guid?> { [parent] = id }; Assert.Throws<CatalogDomainException>(() => category.Move(parent, parents)); }

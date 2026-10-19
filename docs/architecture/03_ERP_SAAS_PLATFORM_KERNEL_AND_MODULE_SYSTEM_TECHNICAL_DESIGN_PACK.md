@@ -587,25 +587,18 @@ PostgreSQL table owners normally bypass RLS.
 
 Therefore runtime application credentials must not own tenant tables.
 
-## Schema prefixes
+## Schema topology
 
 ```text
-platform_tenancy
-platform_org
-platform_iam
-platform_authz
-platform_modules
-platform_entitlements
-platform_messaging
-platform_audit
-platform_numbering
-platform_settings
-platform_files
-platform_custom_fields
-platform_import
-platform_notifications
-platform_scheduling
+platform
+platform_migration
 ```
+
+All Platform Kernel capabilities share the `platform` schema because they are
+owned by one module. Identity, authorization, audit, messaging, settings,
+files, imports, notifications, numbering, and scheduling remain separate code
+responsibilities and table namespaces inside that schema. `platform_migration`
+contains migrator metadata only.
 
 ## Exit Gate P04
 
@@ -637,7 +630,7 @@ Legal Entity and Branch are authorization/business scopes.
 
 ## Tenant table
 
-Schema: `platform_tenancy`
+Schema: `platform`
 
 Conceptual table:
 
@@ -780,7 +773,7 @@ Create organizational scope required by all later modules.
 
 ## `legal_entity`
 
-Owned by `platform_org`.
+Owned by `platform`.
 
 Minimum fields:
 
@@ -979,7 +972,7 @@ Kernel does not manually own one huge hard-coded permission list.
 
 ## Role model
 
-`platform_authz.role`
+`platform.role`
 
 ```text
 id
@@ -1337,7 +1330,7 @@ Activation/deactivation must be explicit workflows, not database toggles.
 
 ## Module state table
 
-`platform_modules.module_instance`
+`platform.module_instance`
 
 Concept:
 
@@ -2935,7 +2928,7 @@ This section defines conceptual ownership and required constraints.
 
 Exact column lengths/index choices are confirmed during implementation migrations.
 
-## 39.1 `platform_tenancy`
+## 39.1 `platform.tenant`
 
 ### `tenant`
 
@@ -2957,7 +2950,7 @@ Unique:
 slug
 ```
 
-## 39.2 `platform_org`
+## 39.2 `platform.organization`
 
 ### `legal_entity`
 
@@ -2999,7 +2992,7 @@ Unique:
 (tenant_id, legal_entity_id, code)
 ```
 
-## 39.3 `platform_iam`
+## 39.3 `platform.identity`
 
 ### `identity`
 
@@ -3027,7 +3020,7 @@ Unique:
 (tenant_id, identity_id)
 ```
 
-## 39.4 `platform_authz`
+## 39.4 `platform.authorization`
 
 ### `role`
 
@@ -3037,7 +3030,7 @@ Unique:
 
 All are tenant scoped and RLS protected.
 
-## 39.5 `platform_modules`
+## 39.5 `platform.modules`
 
 ### `module_instance`
 
@@ -3047,7 +3040,7 @@ All are tenant scoped and RLS protected.
 
 Step records make provisioning resumable.
 
-## 39.6 `platform_entitlements`
+## 39.6 `platform.entitlements`
 
 ### `entitlement_snapshot`
 
@@ -3055,13 +3048,13 @@ Store verified snapshot and hash/signature metadata.
 
 Do not store SaaS payment card/billing logic here.
 
-## 39.7 `platform_audit`
+## 39.7 `platform.audit`
 
 ### `audit_entry`
 
 Append-only.
 
-## 39.8 `platform_numbering`
+## 39.8 `platform.numbering`
 
 ### `sequence_definition`
 
@@ -3069,7 +3062,7 @@ Append-only.
 
 Keep frequently locked counter data separate from slowly-changing format definition.
 
-## 39.9 `platform_settings`
+## 39.9 `platform.settings`
 
 ### `setting_definition`
 
@@ -3079,19 +3072,19 @@ Definitions may originate from code/module manifests.
 
 Tenant/entity/branch/user scoped.
 
-## 39.10 `platform_files`
+## 39.10 `platform.files`
 
 ### `file_record`
 
 ### optional `file_access_audit`
 
-## 39.11 `platform_custom_fields`
+## 39.11 `platform.custom_fields`
 
 ### `custom_field_definition`
 
 Values are not centralized here.
 
-## 39.12 `platform_import`
+## 39.12 `platform.import`
 
 ### `import_batch`
 
@@ -3099,7 +3092,7 @@ Values are not centralized here.
 
 ### `import_checkpoint`
 
-## 39.13 `platform_notifications`
+## 39.13 `platform.notifications`
 
 ### `notification`
 
