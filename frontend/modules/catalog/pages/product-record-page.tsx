@@ -210,13 +210,15 @@ export function ProductRecordPage({
 
           {/* Tabs Container */}
           <Tabs selectedKey={activeTab} onSelectionChange={(k) => setActiveTab(String(k))}>
-            <TabList aria-label={t("productRecord.tabsAria")}>
-              <Tab id="overview">{t("productRecord.tabOverview")}</Tab>
-              <Tab id="variants">{t("productRecord.tabVariants")}</Tab>
-              <Tab id="unitsAndBarcodes">{t("productRecord.tabUnitsAndBarcodes")}</Tab>
-              <Tab id="references">{t("productRecord.tabReferences")}</Tab>
-              <Tab id="audit">{t("productRecord.tabAudit")}</Tab>
-            </TabList>
+            <div style={{ display: isMobile ? "none" : "block" }}>
+              <TabList aria-label={t("productRecord.tabsAria")}>
+                <Tab id="overview">{t("productRecord.tabOverview")}</Tab>
+                <Tab id="variants">{t("productRecord.tabVariants")}</Tab>
+                <Tab id="unitsAndBarcodes">{t("productRecord.tabUnitsAndBarcodes")}</Tab>
+                <Tab id="references">{t("productRecord.tabReferences")}</Tab>
+                <Tab id="audit">{t("productRecord.tabAudit")}</Tab>
+              </TabList>
+            </div>
 
             {/* TAB 1: OVERVIEW */}
             <TabPanel id="overview">

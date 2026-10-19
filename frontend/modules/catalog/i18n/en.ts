@@ -159,7 +159,7 @@ export const en = {
     nameArLabel: "Arabic commercial name",
     nameArPlaceholder: "Name on Arabic invoices",
     nameEnLabel: "English commercial name",
-    nameEnPlaceholder: "Name on English documents",
+    nameEnPlaceholder: "e.g. Mineral Water 500ml",
     categoryLabel: "Category",
     noCategoryPlaceholder: "Select category or leave empty...",
     brandLabel: "Brand",

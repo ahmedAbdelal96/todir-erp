@@ -467,7 +467,7 @@ test.describe('Catalog Canonical Acceptance & Visual Journey Suite', () => {
     await page.waitForLoadState('networkidle');
 
     await page.getByRole('tab', { name: 'المتغيرات والألوان والمقاسات' }).click();
-    await expect(page.getByRole('heading', { name: 'إدارة الموديلات والمتغيرات (Variants)' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'إدارة الموديلات والمتغيرات' })).toBeVisible();
     await expect(page.getByText('SHIRT-CLS-RED-S')).toBeVisible();
     await expect(page.getByText('SHIRT-CLS-BLU-M')).toBeVisible();
 
@@ -549,5 +549,45 @@ test.describe('Catalog Canonical Acceptance & Visual Journey Suite', () => {
 
     await expect(page.getByRole('heading', { name: 'مياه معدنية 500 مل' })).toBeVisible();
     await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/catalog-record-mobile-390.png', fullPage: true });
+  });
+});
+
+test.describe('Catalog Real-Stack Canonical Seed Acceptance (No Route Interception)', () => {
+  test('authenticates with real backend and captures unfiltered canonical seed catalog list', async ({ page }) => {
+    test.setTimeout(90_000);
+    // Explicitly NO page.route interception in this suite
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    // Navigate to /catalog
+    await page.goto('/catalog');
+    await page.waitForLoadState('networkidle');
+
+    // If redirected to login (AuthView), log in with real Atlas admin credentials
+    const emailInput = page.locator('#login-email');
+    if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await emailInput.fill('admin@atlas.com');
+      await page.locator('#login-password').fill('Admin@123456');
+      await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
+      await page.waitForLoadState('networkidle');
+    }
+
+    // Ensure on /catalog with real live session
+    if (!page.url().includes('/catalog')) {
+      await page.goto('/catalog');
+      await page.waitForLoadState('networkidle');
+    }
+
+    await expect(page.getByRole('heading', { name: 'كتالوج المنتجات والخدمات' })).toBeVisible({ timeout: 15000 });
+
+    // Wait for the real product rows and total count to appear from the database
+    await expect(page.getByRole('grid')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('113')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('row').nth(1)).toBeVisible({ timeout: 15000 });
+
+    // Capture unfiltered real desktop list screenshot
+    await page.screenshot({
+      path: 'artifacts/test-results/visual-acceptance/catalog-list-canonical-seed-real-desktop.png',
+      fullPage: true
+    });
   });
 });

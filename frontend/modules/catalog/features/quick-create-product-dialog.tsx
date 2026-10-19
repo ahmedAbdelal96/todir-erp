@@ -195,6 +195,7 @@ export function QuickCreateProductDialog({
                 value={nameEn}
                 onChange={setNameEn}
                 placeholder={t("quickCreate.nameEnPlaceholder")}
+                inputDir="ltr"
               />
             </div>
 

@@ -115,8 +115,8 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
     {
       id: "sku",
       header: t("productList.skuHeader"),
-      width: 160,
-      minWidth: 140,
+      width: 180,
+      minWidth: 160,
       cellRenderer: ({ row }) => (
         <bdi dir="ltr" style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem", color: "var(--color-content-secondary)" }}>
           {row.sku || "—"}
@@ -161,8 +161,8 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
     {
       id: "baseUomCode",
       header: t("productList.unit"),
-      width: 120,
-      minWidth: 100,
+      width: 140,
+      minWidth: 130,
       cellRenderer: ({ row }) => (
         <bdi dir="ltr" style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem" }}>
           {row.baseUomCode || "—"}

@@ -29,6 +29,7 @@ export interface TextFieldProps
   readonly description?: string | undefined;
   readonly errorMessage?: string | undefined;
   readonly placeholder?: string | undefined;
+  readonly inputDir?: "ltr" | "rtl" | undefined;
   readonly startAdornment?: ReactNode | undefined;
   readonly endAdornment?: ReactNode | undefined;
   readonly size?: "comfortable" | "compact" | undefined;
@@ -51,6 +52,7 @@ export function TextField({
   description,
   errorMessage,
   placeholder,
+  inputDir,
   startAdornment,
   endAdornment,
   size = "comfortable",
@@ -130,6 +132,7 @@ export function TextField({
         {startAdornment && <div style={{ marginInlineEnd: "0.5rem", color: "var(--color-content-muted)" }}>{startAdornment}</div>}
         <AriaInput
           {...(placeholder !== undefined ? { placeholder } : {})}
+          dir={inputDir}
           style={{
             flex: 1,
             border: "none",
@@ -139,7 +142,8 @@ export function TextField({
             fontSize: "0.875rem",
             fontFamily: "inherit",
             cursor: isEffectivelyReadOnly ? "not-allowed" : "text",
-            width: "100%"
+            width: "100%",
+            ...(inputDir ? { direction: inputDir, textAlign: inputDir === "ltr" ? "left" : "right" } : {})
           }}
         />
         {endAdornment && <div style={{ marginInlineStart: "0.5rem", color: "var(--color-content-muted)" }}>{endAdornment}</div>}
