@@ -1,0 +1,90 @@
+using System.Globalization;
+
+namespace Shared.Primitives.Financial;
+
+/// <summary>Stable error raised when a shared financial value cannot be created or used.</summary>
+public sealed class FinancialValueException(string code, string message) : Exception(message)
+{
+    public string Code { get; } = code;
+}
+
+/// <summary>Currency-code normalization shared by financial domain consumers.</summary>
+public static class CurrencyCode
+{
+    public static string Normalize(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) throw new FinancialValueException("finbase.currency_invalid", "Currency code is required.");
+        var code = value.Trim().ToUpperInvariant();
+        if (code.Length != 3 || code.Any(character => character is < 'A' or > 'Z')) throw new FinancialValueException("finbase.currency_invalid", "Currency code must be a three-letter ISO code.");
+        return code;
+    }
+}
+
+/// <summary>Exact amount paired with its currency; conversion always requires an explicit context.</summary>
+public readonly record struct Money
+{
+    private Money(decimal amount, string currency) { Amount = amount; Currency = currency; }
+    public decimal Amount { get; }
+    public string Currency { get; }
+
+    public static Money Create(string amount, string currency)
+    {
+        if (!decimal.TryParse(amount, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)) throw new FinancialValueException("finbase.invalid_decimal", "Money amount must be an invariant decimal string.");
+        return new(value, CurrencyCode.Normalize(currency));
+    }
+
+    public Money Add(Money other)
+    {
+        EnsureSameCurrency(other);
+        try { return new Money(checked(Amount + other.Amount), Currency); }
+        catch (OverflowException) { throw new FinancialValueException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
+    }
+
+    public Money Subtract(Money other)
+    {
+        EnsureSameCurrency(other);
+        try { return new Money(checked(Amount - other.Amount), Currency); }
+        catch (OverflowException) { throw new FinancialValueException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
+    }
+
+    public Money Multiply(decimal factor)
+    {
+        try { return new Money(checked(Amount * factor), Currency); }
+        catch (OverflowException) { throw new FinancialValueException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
+    }
+
+    public Money Negate()
+    {
+        try { return new Money(checked(-Amount), Currency); }
+        catch (OverflowException) { throw new FinancialValueException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
+    }
+
+    private void EnsureSameCurrency(Money other)
+    {
+        if (Currency is null || other.Currency is null) throw new FinancialValueException("finbase.currency_invalid", "A money value must have a currency.");
+        if (!string.Equals(Currency, other.Currency, StringComparison.Ordinal)) throw new FinancialValueException("finbase.currency_mismatch", "Money values must use the same currency.");
+    }
+}
+
+/// <summary>High-precision per-unit amount; it is distinct from a payable Money amount.</summary>
+public readonly record struct UnitPrice
+{
+    private UnitPrice(decimal amount, string currency) { Amount = amount; Currency = currency; }
+    public decimal Amount { get; }
+    public string Currency { get; }
+
+    public static UnitPrice Create(string amount, string currency)
+    {
+        if (!decimal.TryParse(amount, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)) throw new FinancialValueException("finbase.invalid_decimal", "Unit price must be an invariant decimal string.");
+        return new(value, CurrencyCode.Normalize(currency));
+    }
+}
+
+/// <summary>Percentage represented canonically as a ratio in the inclusive range zero to one.</summary>
+public readonly record struct Percentage
+{
+    private Percentage(decimal ratio) => Ratio = ratio;
+    public decimal Ratio { get; }
+    public static Percentage FromRatio(decimal ratio) => ratio is >= 0m and <= 1m ? new(ratio) : throw new FinancialValueException("finbase.percentage_invalid", "A percentage ratio must be between zero and one.");
+    public static Percentage FromPercent(decimal percent) => percent is >= 0m and <= 100m ? new(percent / 100m) : throw new FinancialValueException("finbase.percentage_invalid", "A percentage value must be between zero and one hundred.");
+}

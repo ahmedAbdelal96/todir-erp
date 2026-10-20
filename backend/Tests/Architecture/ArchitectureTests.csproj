@@ -6,6 +6,9 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="fixtures/backend/finbase-contract-consumers/FinanceBase.ContractConsumers.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Fixture projects are compiled independently; their generated output must
          never become source files for the architecture test assembly. -->
     <Compile Remove="fixtures\**\*.cs" />

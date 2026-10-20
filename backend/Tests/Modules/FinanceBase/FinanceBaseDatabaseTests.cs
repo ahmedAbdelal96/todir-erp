@@ -8,6 +8,7 @@ using Modules.FinanceBase.Services;
 using Core.Services;
 using Core.Transactions;
 using Shared.Primitives.Identifiers;
+using Shared.Primitives.Financial;
 using Xunit;
 using Xunit.Abstractions;
 

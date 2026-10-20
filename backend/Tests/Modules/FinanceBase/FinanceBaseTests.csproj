@@ -6,6 +6,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="../../../Modules/FinanceBase/FinanceBase.csproj" />
+    <ProjectReference Include="../../../Shared/Primitives/Primitives.csproj" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="GoldenVectors/finbase-v1.json" LogicalName="FinanceBase.Tests.GoldenVectors.finbase-v1.json" />

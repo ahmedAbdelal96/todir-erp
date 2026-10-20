@@ -2,6 +2,7 @@ using Core.Services;
 using Modules.FinanceBase.DTOs;
 using Modules.FinanceBase.Entities;
 using Shared.Primitives.Identifiers;
+using Shared.Primitives.Financial;
 
 namespace Modules.FinanceBase.Services;
 

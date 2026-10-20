@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>FinanceBase.ContractConsumers</AssemblyName>
+    <RootNamespace>FinanceBase.ContractConsumers</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../../../Shared/Contracts/Contracts.csproj" />
+  </ItemGroup>
+</Project>

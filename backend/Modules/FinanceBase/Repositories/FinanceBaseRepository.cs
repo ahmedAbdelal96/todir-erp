@@ -6,6 +6,7 @@ using Modules.FinanceBase.Entities;
 using Modules.FinanceBase.Services;
 using Core.Services;
 using Core.Transactions;
+using Shared.Primitives.Financial;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.FinanceBase.Repositories;

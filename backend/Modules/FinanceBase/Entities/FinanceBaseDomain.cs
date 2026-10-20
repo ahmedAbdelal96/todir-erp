@@ -1,88 +1,11 @@
 using System.Globalization;
+using Shared.Primitives.Financial;
 
 namespace Modules.FinanceBase.Entities;
 
 public sealed class FinanceBaseDomainException(string code, string message) : Exception(message)
 {
     public string Code { get; } = code;
-}
-
-public readonly record struct Money
-{
-    private Money(decimal amount, string currency) { Amount = amount; Currency = currency; }
-    public decimal Amount { get; }
-    public string Currency { get; }
-
-    public static Money Create(string amount, string currency)
-    {
-        if (!decimal.TryParse(amount, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)) throw new FinanceBaseDomainException("finbase.invalid_decimal", "Money amount must be an invariant decimal string.");
-        var code = CurrencyCode.Normalize(currency);
-        return new(value, code);
-    }
-
-    public Money Add(Money other)
-    {
-        EnsureSameCurrency(other);
-        try { return new Money(checked(Amount + other.Amount), Currency); }
-        catch (OverflowException) { throw new FinanceBaseDomainException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
-    }
-
-    public Money Subtract(Money other)
-    {
-        EnsureSameCurrency(other);
-        try { return new Money(checked(Amount - other.Amount), Currency); }
-        catch (OverflowException) { throw new FinanceBaseDomainException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
-    }
-
-    public Money Multiply(decimal factor)
-    {
-        try { return new Money(checked(Amount * factor), Currency); }
-        catch (OverflowException) { throw new FinanceBaseDomainException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
-    }
-
-    public Money Negate()
-    {
-        try { return new Money(checked(-Amount), Currency); }
-        catch (OverflowException) { throw new FinanceBaseDomainException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
-    }
-
-    private void EnsureSameCurrency(Money other)
-    {
-        if (!string.Equals(Currency, other.Currency, StringComparison.Ordinal)) throw new FinanceBaseDomainException("finbase.currency_mismatch", "Money values must use the same currency.");
-        if (Currency is null) throw new FinanceBaseDomainException("finbase.currency_invalid", "A default Money value has no currency.");
-    }
-}
-
-public readonly record struct UnitPrice
-{
-    private UnitPrice(decimal amount, string currency) { Amount = amount; Currency = currency; }
-    public decimal Amount { get; }
-    public string Currency { get; }
-
-    public static UnitPrice Create(string amount, string currency)
-    {
-        if (!decimal.TryParse(amount, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)) throw new FinanceBaseDomainException("finbase.invalid_decimal", "Unit price must be an invariant decimal string.");
-        return new(value, CurrencyCode.Normalize(currency));
-    }
-}
-
-public readonly record struct Percentage
-{
-    private Percentage(decimal ratio) => Ratio = ratio;
-    public decimal Ratio { get; }
-    public static Percentage FromRatio(decimal ratio) => ratio is >= 0m and <= 1m ? new(ratio) : throw new FinanceBaseDomainException("finbase.percentage_invalid", "A percentage ratio must be between zero and one.");
-    public static Percentage FromPercent(decimal percent) => percent is >= 0m and <= 100m ? new(percent / 100m) : throw new FinanceBaseDomainException("finbase.percentage_invalid", "A percentage value must be between zero and one hundred.");
-}
-
-public static class CurrencyCode
-{
-    public static string Normalize(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) throw new FinanceBaseDomainException("finbase.currency_invalid", "Currency code is required.");
-        var code = value.Trim().ToUpperInvariant();
-        if (code.Length != 3 || code.Any(character => character is < 'A' or > 'Z')) throw new FinanceBaseDomainException("finbase.currency_invalid", "Currency code must be a three-letter ISO code.");
-        return code;
-    }
 }
 
 public enum RoundingMode { HalfUp, HalfEven, Down, Up }

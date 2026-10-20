@@ -6,6 +6,7 @@ using Modules.FinanceBase.Services;
 using Modules.FinanceBase.DTOs;
 using Modules.FinanceBase.Entities;
 using Core.Authorization;
+using Shared.Primitives.Financial;
 using Core.Modules;
 using Shared.Primitives.Identifiers;
 
@@ -63,6 +64,7 @@ public static class FinanceBaseModuleExtensions
         try { var result = await action(); return result is null ? Results.NotFound() : status == StatusCodes.Status201Created ? Results.Created("", result) : Results.Ok(result); }
         catch (FinanceBaseException ex) { return Results.Problem(statusCode: ex.Code.Contains("not_found", StringComparison.Ordinal) ? 404 : 400, title: ex.Message, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); }
         catch (FinanceBaseDomainException ex) { return Results.Problem(statusCode: 400, title: ex.Message, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); }
+        catch (FinancialValueException ex) { return Results.Problem(statusCode: 400, title: ex.Message, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); }
     }
     private static Guid Correlation(HttpContext http) => Guid.TryParse(http.Request.Headers["X-Correlation-Id"], out var id) ? id : Guid.CreateVersion7();
     private sealed record Access(TenantId Tenant, Guid ActorId, Guid MembershipId, bool Allowed);

@@ -5,6 +5,7 @@ using Modules.FinanceBase.DTOs;
 using Modules.FinanceBase.Entities;
 using Modules.FinanceBase.Services;
 using Shared.Primitives.Identifiers;
+using Shared.Primitives.Financial;
 using Xunit;
 
 namespace Modules.FinanceBase.Tests;
@@ -16,9 +17,9 @@ public sealed class FinanceBaseDomainTests
     {
         var egp = Money.Create("100.12500000", "EGP");
         Assert.Equal("100.12500000", egp.Amount.ToString("0.00000000", CultureInfo.InvariantCulture));
-        Assert.Throws<FinanceBaseDomainException>(() => egp.Add(Money.Create("1", "USD")));
-        Assert.Equal("finbase.invalid_decimal", Assert.Throws<FinanceBaseDomainException>(() => Money.Create("1,234.56", "EGP")).Code);
-        Assert.Equal("finbase.invalid_decimal", Assert.Throws<FinanceBaseDomainException>(() => Money.Create("1e3", "EGP")).Code);
+        Assert.Throws<FinancialValueException>(() => egp.Add(Money.Create("1", "USD")));
+        Assert.Equal("finbase.invalid_decimal", Assert.Throws<FinancialValueException>(() => Money.Create("1,234.56", "EGP")).Code);
+        Assert.Equal("finbase.invalid_decimal", Assert.Throws<FinancialValueException>(() => Money.Create("1e3", "EGP")).Code);
     }
 
     [Fact]
@@ -28,8 +29,8 @@ public sealed class FinanceBaseDomainTests
         Assert.Equal(7.5m, amount.Subtract(Money.Create("5", "EGP")).Amount);
         Assert.Equal(25m, amount.Multiply(2m).Amount);
         Assert.Equal(-12.5m, amount.Negate().Amount);
-        Assert.Equal("finbase.currency_mismatch", Assert.Throws<FinanceBaseDomainException>(() => amount.Subtract(Money.Create("1", "USD"))).Code);
-        Assert.Equal("finbase.amount_overflow", Assert.Throws<FinanceBaseDomainException>(() => Money.Create(decimal.MaxValue.ToString(CultureInfo.InvariantCulture), "EGP").Multiply(2m)).Code);
+        Assert.Equal("finbase.currency_mismatch", Assert.Throws<FinancialValueException>(() => amount.Subtract(Money.Create("1", "USD"))).Code);
+        Assert.Equal("finbase.amount_overflow", Assert.Throws<FinancialValueException>(() => Money.Create(decimal.MaxValue.ToString(CultureInfo.InvariantCulture), "EGP").Multiply(2m)).Code);
     }
 
     [Fact]
@@ -103,7 +104,7 @@ public sealed class FinanceBaseDomainTests
     {
         Assert.Equal(0.15m, Percentage.FromPercent(15m).Ratio);
         Assert.Equal(0.3333m, Percentage.FromRatio(0.3333m).Ratio);
-        Assert.Throws<FinanceBaseDomainException>(() => Percentage.FromRatio(15m));
+        Assert.Throws<FinancialValueException>(() => Percentage.FromRatio(15m));
     }
 
     [Fact]
