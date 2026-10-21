@@ -64,12 +64,15 @@ builder.Services.AddRateLimiter(options =>
         context.HttpContext.Response.Headers.RetryAfter = "60";
         return ValueTask.CompletedTask;
     };
+    var apiPermitLimit = int.TryParse(builder.Configuration["TODIR_RATE_LIMIT_API_PERMITS"], out var customApiLimit) ? customApiLimit : 120;
+    var authPermitLimit = int.TryParse(builder.Configuration["TODIR_RATE_LIMIT_AUTH_PERMITS"], out var customAuthLimit) ? customAuthLimit : 10;
+
     options.AddPolicy("api", context => RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirst("membership_id")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = apiPermitLimit, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
     options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = authPermitLimit, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
 });
 
 var app = builder.Build();
