@@ -9,6 +9,7 @@ public interface ICatalogCapabilities
     Task<bool> IsActiveCategoryAsync(TenantId tenantId, Guid categoryId, CancellationToken cancellationToken = default);
     Task<bool> IsActiveBrandAsync(TenantId tenantId, Guid brandId, CancellationToken cancellationToken = default);
     Task<CatalogVariantIdentity?> FindVariantAsync(TenantId tenantId, Guid productVariantId, Guid? legalEntityId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Guid, CatalogVariantIdentity>> FindVariantsBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, Guid? legalEntityId, CancellationToken cancellationToken = default);
     Task<CatalogVariantPricingContext?> GetPricingContextAsync(TenantId tenantId, Guid productVariantId, Guid? legalEntityId, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<Guid, CatalogVariantPricingContext>> GetPricingContextsBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, Guid? legalEntityId, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<Guid, Guid>> GetBaseUomsBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, DateTimeOffset effectiveAt, Guid? legalEntityId, CancellationToken cancellationToken = default);

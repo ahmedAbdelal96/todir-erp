@@ -13,6 +13,7 @@ import type {
   PriceListDto,
   PriceResolution,
   PriceVersionDto,
+  PriceVersionContentPageDto,
   PricingImportCommitDto,
   PricingImportPreviewDto,
   PricingImportRequest,
@@ -74,6 +75,7 @@ export const pricingQueryKeys = {
   policy: (entityId: string) => ["pricing", "policy", entityId] as const,
   lists: (entityId: string) => ["pricing", "lists", entityId] as const,
   versions: (listId: string, entityId: string) => ["pricing", "versions", listId, entityId] as const,
+  versionContent: (listId: string, versionId: string, entityId: string, page: number, pageSize: number) => ["pricing", "version-content", listId, versionId, entityId, page, pageSize] as const,
   coverage: (entityId: string, listId: string, date: string) =>
     ["pricing", "coverage", entityId, listId, date] as const,
   resolve: (req: ResolvePriceRequest) =>
@@ -104,6 +106,15 @@ export function usePriceVersions(listId: string, entityId: string) {
     queryFn: () => pricingApi.listPriceVersions(listId, entityId),
     enabled: Boolean(listId && entityId),
     staleTime: 60_000
+  });
+}
+
+export function usePriceVersionContent(listId: string, versionId: string, entityId: string, page: number, pageSize: number) {
+  return useQuery<PriceVersionContentPageDto>({
+    queryKey: pricingQueryKeys.versionContent(listId, versionId, entityId, page, pageSize),
+    queryFn: () => pricingApi.listVersionContent(listId, versionId, entityId, page, pageSize),
+    enabled: Boolean(listId && versionId && entityId),
+    staleTime: 30_000
   });
 }
 

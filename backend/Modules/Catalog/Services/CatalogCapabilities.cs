@@ -19,6 +19,9 @@ public sealed class CatalogCapabilities(CatalogCapabilityRepository repository) 
     public Task<CatalogVariantIdentity?> FindVariantAsync(TenantId tenantId, Guid productVariantId, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => repository.FindVariantAsync(tenantId, productVariantId, legalEntityId, cancellationToken);
 
+    public Task<IReadOnlyDictionary<Guid, CatalogVariantIdentity>> FindVariantsBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.FindVariantsBatchAsync(tenantId, productVariantIds, legalEntityId, cancellationToken);
+
     public Task<CatalogVariantPricingContext?> GetPricingContextAsync(TenantId tenantId, Guid productVariantId, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => repository.GetPricingContextAsync(tenantId, productVariantId, legalEntityId, cancellationToken);
 

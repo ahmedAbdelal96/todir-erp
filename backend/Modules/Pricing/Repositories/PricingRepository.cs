@@ -75,6 +75,31 @@ public sealed class PricingRepository(NpgsqlDataSource dataSource, ITransactionC
         return result;
     }
 
+    public async Task<PriceVersionContentPageDto> ListVersionContentAsync(TenantId tenant, Guid legalEntityId, Guid listId, Guid versionId, int page, int pageSize, CancellationToken cancellationToken)
+    {
+        if (page < 1 || pageSize is < 1 or > 100) throw new PricingException("pricing.page_invalid", "Choose a valid page and a page size between 1 and 100.");
+        await using var scope = await OpenTenantScopeAsync(tenant, cancellationToken);
+        const string content = "select e.id,'Variant'::text product_scope,e.variant_id,null::uuid template_id,null::uuid category_id,null::uuid brand_id,e.uom_id,case when e.party_id is not null then 'SpecificParty' when e.price_group_id is not null then 'PriceGroup' else 'AllParties' end party_scope,e.party_id,e.price_group_id,e.min_quantity,e.max_quantity,'FixedUnitPrice'::text result_kind,e.unit_price,e.valid_from,e.valid_to,e.priority,e.status,true is_direct_entry from foundation_pricing.price_entry e where e.tenant_id=$1 and e.price_list_version_id=$2 union all select r.id,r.product_scope,r.variant_id,r.template_id,r.category_id,r.brand_id,r.uom_id,r.party_scope,r.party_id,r.price_group_id,r.min_quantity,r.max_quantity,r.result_kind,r.result_value,r.valid_from,r.valid_to,r.priority,r.status,false from foundation_pricing.price_rule r where r.tenant_id=$1 and r.price_list_version_id=$2";
+        const string authorized = "select 1 from foundation_pricing.price_list l join foundation_pricing.price_list_version v on v.tenant_id=l.tenant_id and v.price_list_id=l.id where l.tenant_id=$1 and l.legal_entity_id=$2 and l.id=$3 and v.id=$4";
+        await using (var check = new NpgsqlCommand(authorized, scope.Connection, scope.Transaction))
+        {
+            Add(check, tenant.Value, legalEntityId, listId, versionId);
+            if (await check.ExecuteScalarAsync(cancellationToken) is null) throw new PricingException("pricing.version_not_found", "Price-list version was not found for this legal entity.");
+        }
+        await using var count = new NpgsqlCommand($"select count(*) from ({content}) items", scope.Connection, scope.Transaction);
+        Add(count, tenant.Value, versionId);
+        var total = Convert.ToInt32(await count.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand($"select * from ({content}) items order by is_direct_entry desc,product_scope,id limit $3 offset $4", scope.Connection, scope.Transaction);
+        Add(command, tenant.Value, versionId, pageSize, (page - 1) * pageSize);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var items = new List<PriceVersionContentItemDto>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new(reader.GetGuid(0), reader.GetString(1), NullableGuid(reader, 2), NullableGuid(reader, 3), NullableGuid(reader, 4), NullableGuid(reader, 5), NullableGuid(reader, 6), reader.GetString(7), NullableGuid(reader, 8), NullableGuid(reader, 9), reader.GetDecimal(10), reader.IsDBNull(11) ? null : reader.GetDecimal(11), reader.GetString(12), reader.GetDecimal(13).ToString(CultureInfo.InvariantCulture), reader.IsDBNull(14) ? null : DateOnly.FromDateTime(reader.GetDateTime(14)), reader.IsDBNull(15) ? null : DateOnly.FromDateTime(reader.GetDateTime(15)), reader.GetInt32(16), reader.GetString(17), reader.GetBoolean(18)));
+        }
+        return new(items, total, page, pageSize);
+    }
+
     public Task AddEntryAsync(TenantId tenant, Guid legalEntityId, Guid actorId, Guid membershipId, Guid listId, Guid versionId, CreatePriceEntryRequest request, decimal unitPrice, Guid correlationId, CancellationToken cancellationToken)
         => AddVersionContentAsync(tenant, legalEntityId, actorId, membershipId, listId, versionId, "price_entry_created", correlationId, request, async (connection, transaction, token) =>
         {
@@ -261,15 +286,15 @@ public sealed class PricingRepository(NpgsqlDataSource dataSource, ITransactionC
         }, cancellationToken);
     }
 
-    public async Task<string> ExportEntriesCsvAsync(TenantId tenant, Guid legalEntityId, Guid listId, Guid versionId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<PricingExportRowDto>> ListExportRowsAsync(TenantId tenant, Guid legalEntityId, Guid listId, Guid versionId, CancellationToken cancellationToken)
     {
         await using var scope = await OpenTenantScopeAsync(tenant, cancellationToken);
-        await using var command = new NpgsqlCommand("select product_scope,variant_id,template_id,category_id,brand_id,uom_id,party_scope,party_id,price_group_id,min_quantity,max_quantity,valid_from,valid_to,priority,result_kind,result_value from (select 'Variant'::text product_scope,e.variant_id,null::uuid template_id,null::uuid category_id,null::uuid brand_id,e.uom_id,case when e.party_id is not null then 'SpecificParty' when e.price_group_id is not null then 'PriceGroup' else 'AllParties' end party_scope,e.party_id,e.price_group_id,e.min_quantity,e.max_quantity,e.valid_from,e.valid_to,e.priority,'FixedUnitPrice'::text result_kind,e.unit_price result_value from foundation_pricing.price_entry e where e.tenant_id=$1 and e.price_list_version_id=$4 union all select r.product_scope,r.variant_id,r.template_id,r.category_id,r.brand_id,r.uom_id,r.party_scope,r.party_id,r.price_group_id,r.min_quantity,r.max_quantity,r.valid_from,r.valid_to,r.priority,r.result_kind,r.result_value from foundation_pricing.price_rule r where r.tenant_id=$1 and r.price_list_version_id=$4) rules join foundation_pricing.price_list l on l.tenant_id=$1 and l.id=$2 and l.legal_entity_id=$3 join foundation_pricing.price_list_version v on v.tenant_id=$1 and v.id=$4 and v.price_list_id=l.id order by product_scope,variant_id,template_id,category_id,uom_id,party_id,price_group_id limit 10000", scope.Connection, scope.Transaction);
+        const string sql = "select rows.id,rows.product_scope,rows.variant_id,rows.template_id,rows.category_id,rows.brand_id,rows.uom_id,rows.party_scope,rows.min_quantity,rows.max_quantity,rows.valid_from,rows.valid_to,rows.priority,rows.result_kind,rows.result_value,rows.status from (select e.id,'Variant'::text product_scope,e.variant_id,null::uuid template_id,null::uuid category_id,null::uuid brand_id,e.uom_id,case when e.party_id is not null then 'SpecificParty' when e.price_group_id is not null then 'PriceGroup' else 'AllParties' end party_scope,e.min_quantity,e.max_quantity,e.valid_from,e.valid_to,e.priority,'FixedUnitPrice'::text result_kind,e.unit_price result_value,e.status from foundation_pricing.price_entry e where e.tenant_id=$1 and e.price_list_version_id=$4 union all select r.id,r.product_scope,r.variant_id,r.template_id,r.category_id,r.brand_id,r.uom_id,r.party_scope,r.min_quantity,r.max_quantity,r.valid_from,r.valid_to,r.priority,r.result_kind,r.result_value,r.status from foundation_pricing.price_rule r where r.tenant_id=$1 and r.price_list_version_id=$4) rows join foundation_pricing.price_list l on l.tenant_id=$1 and l.id=$2 and l.legal_entity_id=$3 join foundation_pricing.price_list_version v on v.tenant_id=$1 and v.id=$4 and v.price_list_id=l.id order by rows.product_scope,rows.variant_id,rows.template_id,rows.category_id,rows.uom_id,rows.id limit 10000";
+        await using var command = new NpgsqlCommand(sql, scope.Connection, scope.Transaction);
         Add(command, tenant.Value, listId, legalEntityId, versionId);
-        // Product, party, and unit masters remain owned by their respective modules; exports carry stable references.
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken); var output = new System.Text.StringBuilder("ProductScope,VariantId,TemplateId,CategoryId,BrandId,UomId,PartyScope,PartyId,PriceGroupId,MinQty,MaxQty,ValidFrom,ValidTo,Priority,RuleType,Value\n");
-        while (await reader.ReadAsync(cancellationToken)) output.Append(reader.GetString(0)).Append(',').Append(reader.IsDBNull(1) ? "" : reader.GetGuid(1)).Append(',').Append(reader.IsDBNull(2) ? "" : reader.GetGuid(2)).Append(',').Append(reader.IsDBNull(3) ? "" : reader.GetGuid(3)).Append(',').Append(reader.IsDBNull(4) ? "" : reader.GetGuid(4)).Append(',').Append(reader.IsDBNull(5) ? "" : reader.GetGuid(5)).Append(',').Append(reader.GetString(6)).Append(',').Append(reader.IsDBNull(7) ? "" : reader.GetGuid(7)).Append(',').Append(reader.IsDBNull(8) ? "" : reader.GetGuid(8)).Append(',').Append(reader.GetDecimal(9).ToString(CultureInfo.InvariantCulture)).Append(',').Append(reader.IsDBNull(10) ? "" : reader.GetDecimal(10).ToString(CultureInfo.InvariantCulture)).Append(',').Append(reader.IsDBNull(11) ? "" : reader.GetDateTime(11).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append(',').Append(reader.IsDBNull(12) ? "" : reader.GetDateTime(12).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append(',').Append(reader.GetInt32(13).ToString(CultureInfo.InvariantCulture)).Append(',').Append(reader.GetString(14)).Append(',').Append(reader.GetDecimal(15).ToString(CultureInfo.InvariantCulture)).Append('\n');
-        return output.ToString();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken); var result = new List<PricingExportRowDto>();
+        while (await reader.ReadAsync(cancellationToken)) result.Add(new(reader.GetGuid(0), reader.GetString(1), NullableGuid(reader, 2), NullableGuid(reader, 3), NullableGuid(reader, 4), NullableGuid(reader, 5), NullableGuid(reader, 6), reader.GetString(7), reader.GetDecimal(8), reader.IsDBNull(9) ? null : reader.GetDecimal(9), reader.IsDBNull(10) ? null : DateOnly.FromDateTime(reader.GetDateTime(10)), reader.IsDBNull(11) ? null : DateOnly.FromDateTime(reader.GetDateTime(11)), reader.GetInt32(12), reader.GetString(13), reader.GetDecimal(14), reader.GetString(15)));
+        return result;
     }
 
     public async Task<(int Rules, int Entries, int ZeroEntries)> GetCoverageCountsAsync(TenantId tenant, Guid legalEntityId, Guid listId, Guid versionId, CancellationToken cancellationToken)

@@ -11,6 +11,7 @@ import type {
   PriceListLifecycleRequest,
   PriceResolution,
   PriceVersionDto,
+  PriceVersionContentPageDto,
   PricingImportCommitDto,
   PricingImportPreviewDto,
   PricingImportRequest,
@@ -80,6 +81,12 @@ export const pricingApi = {
   listPriceVersions: (listId: string, legalEntityId: string, options?: RequestOptions) =>
     httpClient<readonly PriceVersionDto[]>(
       `${basePath}/price-lists/${encodeURIComponent(listId)}/versions?legalEntityId=${encodeURIComponent(legalEntityId)}`,
+      opts(legalEntityId, options)
+    ),
+
+  listVersionContent: (listId: string, versionId: string, legalEntityId: string, page: number, pageSize: number, options?: RequestOptions) =>
+    httpClient<PriceVersionContentPageDto>(
+      `${basePath}/price-lists/${encodeURIComponent(listId)}/versions/${encodeURIComponent(versionId)}/entries?legalEntityId=${encodeURIComponent(legalEntityId)}&page=${page}&pageSize=${pageSize}`,
       opts(legalEntityId, options)
     ),
 

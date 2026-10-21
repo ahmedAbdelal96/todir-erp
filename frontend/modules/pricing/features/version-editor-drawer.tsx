@@ -6,13 +6,18 @@ import {
   useActivateVersionMutation,
   useScheduleVersionMutation,
   useCreatePriceVersionMutation,
-  usePricingManagePermission
+  usePricingManagePermission,
+  usePriceVersionContent,
+  useLookupProducts,
+  useLookupUoms,
+  useLookupParties
 } from "../hooks/pricing-queries.ts";
 import { pricingApi } from "../services/pricing-api.ts";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
+import { Pagination } from "../../../components/primitives/pagination.tsx";
 import { AddEntryModal } from "./add-entry-modal.tsx";
 import type { PriceListDto, PriceVersionDto } from "../types.ts";
 
@@ -33,6 +38,8 @@ export function VersionEditorDrawer({
   const { data: versions, refetch } = usePriceVersions(priceList?.id ?? "", legalEntityId);
 
   const [selectedVersionId, setSelectedVersionId] = useState<string>();
+  const [entriesPage, setEntriesPage] = useState(1);
+  const [entriesPageSize, setEntriesPageSize] = useState(50);
   const [isAddEntryOpen, setIsAddEntryOpen] = useState(false);
   const [validationResult, setValidationResult] = useState<{ success?: boolean; error?: string; entries?: number; rules?: number }>();
 
@@ -42,8 +49,9 @@ export function VersionEditorDrawer({
   const createVersionMutation = useCreatePriceVersionMutation();
 
   const canManage = usePricingManagePermission();
-
-  if (!priceList) return null;
+  const productsQuery = useLookupProducts(legalEntityId);
+  const uomsQuery = useLookupUoms();
+  const partiesQuery = useLookupParties(legalEntityId);
 
   const currentVersion =
     versions?.find((v) => v.id === selectedVersionId) ||
@@ -54,6 +62,37 @@ export function VersionEditorDrawer({
   const isActive = currentVersion?.status === "Active";
   const isDraft = currentVersion?.status === "Draft";
   const isScheduled = currentVersion?.status === "Scheduled";
+  const contentQuery = usePriceVersionContent(priceList?.id ?? "", currentVersion?.id ?? "", legalEntityId, entriesPage, entriesPageSize);
+
+  if (!priceList) return null;
+
+  const asItems = (value: unknown): readonly { id: string; displayName?: string; name?: string; nameAr?: string; nameEn?: string; sku?: string; code?: string; defaultVariantId?: string }[] => {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object" && "items" in value) return ((value as { items?: readonly { id: string; displayName?: string; name?: string; nameAr?: string; nameEn?: string; sku?: string; code?: string; defaultVariantId?: string }[] }).items ?? []);
+    return [];
+  };
+  const products = asItems(productsQuery.data);
+  const units = asItems(uomsQuery.data);
+  const parties = asItems(partiesQuery.data);
+  const productLabel = (variantId?: string | null, templateId?: string | null): string => {
+    const product = products.find((item) => item.defaultVariantId === variantId || item.id === templateId);
+    const name = product?.displayName ?? product?.nameAr ?? product?.nameEn ?? product?.name;
+    return name ? (product?.sku ? `${product.sku} · ${name}` : name) : t("versions.unknownProduct");
+  };
+  const unitLabel = (unitId?: string | null): string => {
+    const unit = units.find((item) => item.id === unitId);
+    return unit?.code ?? unit?.nameAr ?? unit?.nameEn ?? t("versions.unknownUnit");
+  };
+  const partyLabel = (partyId?: string | null): string => {
+    const party = parties.find((item) => item.id === partyId);
+    return party?.displayName ?? party?.nameAr ?? party?.nameEn ?? party?.name ?? t("versions.specificParty");
+  };
+  const resultValueLabel = (value: string, kind: string, unitId?: string | null): string => {
+    const amount = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(Number(value));
+    if (kind === "PercentageDiscount") return amount + "%";
+    if (kind === "FixedDiscountPerUnit") return `${amount} ${priceList.currencyCode} / ${unitLabel(unitId)}`;
+    return `${amount} ${priceList.currencyCode}`;
+  };
 
   const handleCreateNewDraft = async () => {
     try {
@@ -69,6 +108,7 @@ export function VersionEditorDrawer({
         }
       });
       setSelectedVersionId(res.id);
+      setEntriesPage(1);
       void refetch();
     } catch (err: unknown) {
       setValidationResult({ error: t("versions.createFailed") });
@@ -165,7 +205,7 @@ export function VersionEditorDrawer({
                   <button
                     key={v.id}
                     type="button"
-                    onClick={() => { setSelectedVersionId(v.id); setValidationResult(undefined); }}
+                    onClick={() => { setSelectedVersionId(v.id); setEntriesPage(1); setValidationResult(undefined); }}
                     style={{
                       padding: "4px 10px",
                       borderRadius: "var(--radius-sm)",
@@ -271,9 +311,9 @@ export function VersionEditorDrawer({
 
           {/* Canonical Entries / Rules summary */}
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-            <h4 style={{ margin: 0, fontSize: "var(--font-size-sm)" }}>{t("versions.entriesTitle")}</h4>
-            <div style={{ border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--font-size-xs)" }}>
+            <h4 style={{ margin: 0, fontSize: "var(--font-size-sm)" }}>{t("versions.contentTitle")}</h4>
+            <div role="region" aria-label={t("versions.contentTitle")} tabIndex={0} style={{ border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", overflowX: "auto" }}>
+              <table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse", fontSize: "var(--font-size-xs)" }}>
                 <thead>
                   <tr style={{ backgroundColor: "var(--color-surface-subtle)", textAlign: "start" }}>
                     <th style={{ padding: "8px 12px" }}>{t("versions.table.productHeader")}</th>
@@ -281,18 +321,37 @@ export function VersionEditorDrawer({
                     <th style={{ padding: "8px 12px" }}>{t("versions.table.scopeHeader")}</th>
                     <th style={{ padding: "8px 12px" }}>{t("versions.table.quantityTierHeader")}</th>
                     <th style={{ padding: "8px 12px" }}>{t("versions.table.priceHeader")}</th>
+                    <th style={{ padding: "8px 12px" }}>{t("versions.table.validityHeader")}</th>
                     <th style={{ padding: "8px 12px" }}>{t("versions.table.priorityHeader")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td colSpan={6} style={{ padding: "16px", textAlign: "center", color: "var(--color-content-muted)" }}>
-                      {t("versions.entriesUnavailable")}
-                    </td>
-                  </tr>
+                  {contentQuery.isLoading && <tr><td colSpan={7} style={{ padding: 16, textAlign: "center" }}>{t("versions.contentLoading")}</td></tr>}
+                  {contentQuery.isError && <tr><td colSpan={7} style={{ padding: 16, textAlign: "center" }}>{t("versions.contentFailed")}</td></tr>}
+                  {contentQuery.data?.items.map((item) => {
+                    const partyScope = item.partyScope === "SpecificParty" ? partyLabel(item.partyId) : item.partyScope === "PriceGroup" ? t("versions.priceGroup") : t("versions.allParties");
+                    const productScope = item.productScope === "Variant" ? productLabel(item.variantId) : item.productScope === "Template" ? productLabel(undefined, item.templateId) : t(`versions.productScopes.${item.productScope}`, item.productScope);
+                    const from = item.validFrom ?? currentVersion?.effectiveFrom ?? "—";
+                    const to = item.validTo ?? currentVersion?.effectiveTo ?? "—";
+                    return (
+                      <tr key={item.id}>
+                        <td style={{ padding: "8px 12px", borderTop: "1px solid var(--color-border-subtle)" }}>{productScope}</td>
+                        <td style={{ padding: "8px 12px", borderTop: "1px solid var(--color-border-subtle)" }}>{unitLabel(item.uomId)}</td>
+                        <td style={{ padding: "8px 12px", borderTop: "1px solid var(--color-border-subtle)" }}>{`${partyScope} · ${item.isDirectEntry ? t("versions.directPrice") : t(`versions.resultKinds.${item.resultKind}`, item.resultKind)}`}</td>
+                        <td style={{ padding: "8px 12px", borderTop: "1px solid var(--color-border-subtle)" }}><bdi>{item.minQuantity} – {item.maxQuantity ?? t("versions.noMaximum")}</bdi></td>
+                        <td style={{ padding: "8px 12px", borderTop: "1px solid var(--color-border-subtle)" }}><bdi>{resultValueLabel(item.resultValue, item.resultKind, item.uomId)}</bdi></td>
+                        <td style={{ padding: "8px 12px", borderTop: "1px solid var(--color-border-subtle)" }}><bdi>{from} – {to}</bdi></td>
+                        <td style={{ padding: "8px 12px", borderTop: "1px solid var(--color-border-subtle)" }}>{item.priority} · {t(`versions.status.${item.status}`, item.status)}</td>
+                      </tr>
+                    );
+                  })}
+                  {!contentQuery.isLoading && !contentQuery.isError && contentQuery.data?.totalCount === 0 && <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: "var(--color-content-muted)" }}>{t("versions.emptyEntries")}</td></tr>}
                 </tbody>
               </table>
             </div>
+            {contentQuery.data && contentQuery.data.totalCount > 0 && (
+              <Pagination page={entriesPage} totalPages={Math.max(1, Math.ceil(contentQuery.data.totalCount / entriesPageSize))} totalItems={contentQuery.data.totalCount} pageSize={entriesPageSize} onPageChange={setEntriesPage} onPageSizeChange={(size) => { setEntriesPageSize(size); setEntriesPage(1); }} pageSizeOptions={[10, 20, 50, 100]} size="compact" />
+            )}
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>

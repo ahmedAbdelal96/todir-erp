@@ -35,6 +35,35 @@ export interface PriceVersionDto {
   readonly version: number;
 }
 
+export interface PriceVersionContentItemDto {
+  readonly id: string;
+  readonly productScope: string;
+  readonly variantId?: string | null;
+  readonly templateId?: string | null;
+  readonly categoryId?: string | null;
+  readonly brandId?: string | null;
+  readonly uomId?: string | null;
+  readonly partyScope: string;
+  readonly partyId?: string | null;
+  readonly priceGroupId?: string | null;
+  readonly minQuantity: number;
+  readonly maxQuantity?: number | null;
+  readonly resultKind: string;
+  readonly resultValue: string;
+  readonly validFrom?: string | null;
+  readonly validTo?: string | null;
+  readonly priority: number;
+  readonly status: string;
+  readonly isDirectEntry: boolean;
+}
+
+export interface PriceVersionContentPageDto {
+  readonly items: readonly PriceVersionContentItemDto[];
+  readonly totalCount: number;
+  readonly page: number;
+  readonly pageSize: number;
+}
+
 export interface PriceCoverageDto {
   readonly productCount: number;
   readonly ruleCount: number;

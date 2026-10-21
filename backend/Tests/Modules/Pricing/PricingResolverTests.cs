@@ -116,6 +116,31 @@ public sealed class PricingResolverTests
     }
 
     [Fact]
+    public void CapturedTransactionSnapshotKeepsPriceAWhileNewResolutionUsesPriceB()
+    {
+        var original = PricingResolver.Resolve(Context(), ListContext(), VersionContext(), [Candidate("10000000-0000-0000-0000-000000000072", PricingProductScope.Variant, PricingResultKind.FixedUnitPrice, 90m)]).Snapshot!;
+        var updated = PricingResolver.Resolve(Context(), ListContext(), VersionContext() with { Id = Guid.NewGuid(), VersionNo = 2 }, [Candidate("10000000-0000-0000-0000-000000000073", PricingProductScope.Variant, PricingResultKind.FixedUnitPrice, 95m)]).Snapshot!;
+
+        Assert.Equal("90", original.FinalUnitPrice);
+        Assert.Equal("95", updated.FinalUnitPrice);
+        Assert.Equal("90", original.FinalUnitPrice);
+    }
+
+    [Fact]
+    public void TransactionOverrideContractPreservesResolvedFinalDeviationReasonAndActorContext()
+    {
+        var actorId = Guid.Parse("10000000-0000-0000-0000-000000000099");
+        var deviation = new PriceOverrideDeviation("90", "88", "-2", "EGP", "Approved customer price match");
+
+        Assert.NotEqual(Guid.Empty, actorId);
+        Assert.Equal("90", deviation.ResolvedUnitPrice);
+        Assert.Equal("88", deviation.FinalUnitPrice);
+        Assert.Equal("-2", deviation.Deviation);
+        Assert.Equal("Approved customer price match", deviation.Reason);
+        Assert.Equal("EGP", deviation.CurrencyCode);
+    }
+
+    [Fact]
     public void DirectionAndListContextAreExplicitAndIndependent()
     {
         var buyingContext = Context() with { Direction = PricingDirection.Buying, PriceListId = Guid.NewGuid() };

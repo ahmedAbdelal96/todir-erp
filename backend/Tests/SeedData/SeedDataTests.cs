@@ -41,6 +41,7 @@ public sealed class DevelopmentSeedTests
 
             await using var acceptanceDataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
             var firstCounts = await ReadCanonicalCountsAsync(acceptanceDataSource);
+            await AssertPricingEntityIsolationAsync(acceptanceDataSource);
             await AssertCanonicalCurrencyPrecisionAsync(acceptanceDataSource);
             await AssertFinBaseCanonicalScenariosAsync(acceptanceDataSource);
             await AssertForcedRlsAndRoleBoundaryAsync(acceptanceDataSource);
@@ -65,8 +66,8 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(2, firstCounts.AtlasCommercialRegistrations);
             Assert.Equal(2, firstCounts.DeltaVatIdentifiers);
             Assert.Equal(2, firstCounts.DeltaCommercialRegistrations);
-            Assert.Equal(8, firstCounts.AtlasPriceLists + firstCounts.DeltaPriceLists);
-            Assert.Equal(18, firstCounts.AtlasPriceEntries + firstCounts.DeltaPriceEntries);
+            Assert.Equal(10, firstCounts.AtlasPriceLists + firstCounts.DeltaPriceLists);
+            Assert.Equal(22, firstCounts.AtlasPriceEntries + firstCounts.DeltaPriceEntries);
             Assert.Equal(2, firstCounts.AtlasScheduledVersions + firstCounts.DeltaScheduledVersions);
         }
         finally
@@ -92,6 +93,24 @@ public sealed class DevelopmentSeedTests
         Assert.Equal(0, minorUnits["JPY"]);
         Assert.Equal(2, minorUnits["EGP"]);
         Assert.Equal(3, minorUnits["KWD"]);
+    }
+
+    private static async Task AssertPricingEntityIsolationAsync(NpgsqlDataSource dataSource)
+    {
+        const string sql = "select l.legal_entity_id,e.unit_price from foundation_pricing.price_list l join foundation_pricing.price_list_version v on v.tenant_id=l.tenant_id and v.price_list_id=l.id and v.status='Active' join foundation_pricing.price_entry e on e.tenant_id=v.tenant_id and e.price_list_version_id=v.id where l.tenant_id=$1 and l.code in ('RETAIL','RETAIL-SECONDARY') and e.variant_id=$2 and e.uom_id=$3 and e.party_id is null order by l.code";
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(SeedIds.AtlasTenant);
+        command.Parameters.AddWithValue(SeedIds.Variant(SeedIds.AtlasTenant, 2, "default"));
+        command.Parameters.AddWithValue(SeedIds.Uom(SeedIds.AtlasTenant, "EA"));
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(SeedIds.TenantEntity(SeedIds.AtlasTenant), reader.GetGuid(0));
+        Assert.Equal(1250m, reader.GetDecimal(1));
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(SeedIds.TenantSecondaryEntity(SeedIds.AtlasTenant), reader.GetGuid(0));
+        Assert.Equal(1450m, reader.GetDecimal(1));
+        Assert.False(await reader.ReadAsync());
     }
 
     [Fact]
@@ -187,13 +206,8 @@ public sealed class DevelopmentSeedTests
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        start.ArgumentList.Add("run");
-        start.ArgumentList.Add("--project");
-        start.ArgumentList.Add(Path.Combine(repositoryRoot, "backend", "DbMigrator", "DbMigrator.csproj"));
-        start.ArgumentList.Add("--configuration");
-        start.ArgumentList.Add(new DirectoryInfo(AppContext.BaseDirectory).Parent?.Name ?? "Debug");
-        start.ArgumentList.Add("--no-build");
-        start.ArgumentList.Add("--");
+        var configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent?.Name ?? "Debug";
+        start.ArgumentList.Add(Path.Combine(repositoryRoot, "backend", "DbMigrator", "bin", configuration, "net10.0", "DbMigrator.dll"));
         start.ArgumentList.Add("--seed");
         start.ArgumentList.Add("development");
         start.Environment["TODIR_MIGRATOR_CONNECTION"] = connectionString;
@@ -284,8 +298,8 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(expectedUsers, reader.GetInt32(2));
             Assert.Equal(expectedParties, reader.GetInt32(3));
             Assert.Equal(expectedProducts, reader.GetInt32(4));
-            Assert.Equal(4, reader.GetInt32(5));
-            Assert.Equal(9, reader.GetInt32(6));
+            Assert.Equal(5, reader.GetInt32(5));
+            Assert.Equal(11, reader.GetInt32(6));
             await reader.DisposeAsync();
             await transaction.CommitAsync();
         }

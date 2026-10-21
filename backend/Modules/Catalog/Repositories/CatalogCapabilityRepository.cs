@@ -40,6 +40,19 @@ public sealed class CatalogCapabilityRepository(NpgsqlDataSource dataSource)
         return await reader.ReadAsync(cancellationToken) ? new CatalogVariantIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), Text(reader, 3), reader.GetString(4), reader.GetString(5)) : null;
     }
 
+    public async Task<IReadOnlyDictionary<Guid, CatalogVariantIdentity>> FindVariantsBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, Guid? legalEntityId, CancellationToken cancellationToken = default)
+    {
+        if (productVariantIds.Count is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(productVariantIds), "Catalog identity batches must contain between 1 and 500 variants.");
+        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
+        const string sql = "select v.id,p.id,p.display_name,v.sku,p.product_nature,v.status from foundation_catalog.product_variant v join foundation_catalog.product_template p on p.tenant_id=v.tenant_id and p.id=v.product_template_id where v.tenant_id=$1 and v.id=any($2) and exists(select 1 from foundation_catalog.product_visibility x where x.tenant_id=p.tenant_id and x.template_id=p.id and (x.scope_type='TenantWide' or (x.scope_type='LegalEntity' and $3::uuid is not null and x.legal_entity_id=$3)))";
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(productVariantIds.Distinct().ToArray()); command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new Dictionary<Guid, CatalogVariantIdentity>();
+        while (await reader.ReadAsync(cancellationToken)) result.Add(reader.GetGuid(0), new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), Text(reader, 3), reader.GetString(4), reader.GetString(5)));
+        return result;
+    }
+
     public async Task<CatalogVariantPricingContext?> GetPricingContextAsync(TenantId tenantId, Guid productVariantId, Guid? legalEntityId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);

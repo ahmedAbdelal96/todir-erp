@@ -36,6 +36,7 @@ public sealed class PricingService(PricingRepository repository, ICatalogCapabil
     }
     public Task<PriceVersionDto> CreateVersionAsync(TenantId tenant, Guid legalEntityId, Guid actor, Guid membership, Guid listId, CreatePriceVersionRequest request, Guid correlationId, CancellationToken cancellationToken) => repository.CreateVersionAsync(tenant, legalEntityId, actor, membership, listId, request, correlationId, cancellationToken);
     public Task<IReadOnlyList<PriceVersionDto>> ListVersionsAsync(TenantId tenant, Guid legalEntityId, Guid listId, CancellationToken cancellationToken) => repository.ListVersionsAsync(tenant, legalEntityId, listId, cancellationToken);
+    public Task<PriceVersionContentPageDto> ListVersionContentAsync(TenantId tenant, Guid legalEntityId, Guid listId, Guid versionId, int page, int pageSize, CancellationToken cancellationToken) => repository.ListVersionContentAsync(tenant, legalEntityId, listId, versionId, page, pageSize, cancellationToken);
 
     public async Task AddEntryAsync(TenantId tenant, Guid legalEntityId, Guid actor, Guid membership, Guid listId, Guid versionId, CreatePriceEntryRequest request, Guid correlationId, CancellationToken cancellationToken)
     {
@@ -175,7 +176,31 @@ public sealed class PricingService(PricingRepository repository, ICatalogCapabil
     }
 
     public Task<PricingImportCommitDto> CommitImportAsync(TenantId tenant, Guid actor, Guid membership, Guid batchId, Guid correlationId, CancellationToken cancellationToken) => repository.CommitImportAsync(tenant, actor, membership, batchId, correlationId, cancellationToken);
-    public Task<string> ExportEntriesCsvAsync(TenantId tenant, Guid legalEntityId, Guid listId, Guid versionId, CancellationToken cancellationToken) => repository.ExportEntriesCsvAsync(tenant, legalEntityId, listId, versionId, cancellationToken);
+    public async Task<string> ExportEntriesCsvAsync(TenantId tenant, Guid legalEntityId, Guid listId, Guid versionId, CancellationToken cancellationToken)
+    {
+        var rows = await repository.ListExportRowsAsync(tenant, legalEntityId, listId, versionId, cancellationToken);
+        var variantIds = rows.Where(row => row.VariantId.HasValue).Select(row => row.VariantId!.Value).Distinct().ToArray();
+        var variants = new Dictionary<Guid, CatalogVariantIdentity>();
+        var uoms = new Dictionary<(Guid VariantId, Guid UomId), string>();
+        foreach (var batch in variantIds.Chunk(500))
+        {
+            var identities = await catalog.FindVariantsBatchAsync(tenant, batch, legalEntityId, cancellationToken);
+            foreach (var pair in identities) variants[pair.Key] = pair.Value;
+            var allowed = await catalog.GetAllowedUomsBatchAsync(tenant, batch, DateTimeOffset.UtcNow, legalEntityId, cancellationToken);
+            foreach (var item in allowed.SelectMany(pair => pair.Value.Select(unit => (VariantId: pair.Key, Unit: unit)))) uoms[(item.VariantId, item.Unit.UnitId)] = item.Unit.UnitCode;
+        }
+        static string Csv(string? value) => "\"" + (value ?? string.Empty).Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+        var output = new System.Text.StringBuilder("ProductScope,SKU,Product,Unit,PartyScope,MinQty,MaxQty,ValidFrom,ValidTo,Priority,RuleType,Value,Status\n");
+        foreach (var row in rows)
+        {
+            variants.TryGetValue(row.VariantId ?? Guid.Empty, out var variant);
+            var sku = variant?.Sku ?? string.Empty;
+            var name = variant?.DisplayName ?? (row.ProductScope == "Variant" ? string.Empty : row.ProductScope);
+            var unit = row.VariantId is { } variantId && row.UomId is { } uomId && uoms.TryGetValue((variantId, uomId), out var code) ? code : string.Empty;
+            output.AppendJoin(',', Csv(row.ProductScope), Csv(sku), Csv(name), Csv(unit), Csv(row.PartyScope), Csv(row.MinQuantity.ToString(CultureInfo.InvariantCulture)), Csv(row.MaxQuantity?.ToString(CultureInfo.InvariantCulture)), Csv(row.ValidFrom?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), Csv(row.ValidTo?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), Csv(row.Priority.ToString(CultureInfo.InvariantCulture)), Csv(row.ResultKind), Csv(row.ResultValue.ToString(CultureInfo.InvariantCulture)), Csv(row.Status)).Append('\n');
+        }
+        return output.ToString();
+    }
 
     public async Task<PriceCoverageDto> GetCoverageAsync(TenantId tenant, Guid legalEntityId, Guid listId, DateOnly pricingDate, CancellationToken cancellationToken)
     {

@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 const atlasVariantWithPrice = 'a6315416-cffe-bf52-bcf0-d5e590d3bf94';
 const atlasUomEa = '2b12a81b-ea82-a151-af7f-4c60a017f44d';
@@ -67,7 +68,7 @@ async function loginIfNeeded(page: Page) {
 }
 
 test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
-  test.setTimeout(240_000);
+  test.setTimeout(600_000);
 
   test('Pricing Real-Stack End-to-End Product Journeys and Visual Proofs', async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -130,11 +131,35 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await version1Trigger.click();
     await page.waitForTimeout(500);
     await expect(page.getByText(/الإصدار الحالي نشط ومقفل تاريخياً/i)).toBeVisible();
-    await expect(page.getByText(/لا تتوفر تفاصيل البنود للعرض هنا/i)).toBeVisible();
+    await expect(page.getByText(/AT-0002/).first()).toBeVisible();
+    await expect(page.getByText(/1,250|1250/).first()).toBeVisible();
+    await expect(page.getByText(/قطعة|EA/).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /إضافة بند سعر مباشر/i })).not.toBeVisible();
 
     await page.screenshot({
       path: 'artifacts/test-results/pricing/06-version-editor-active-readonly.png'
     });
+
+    const [exportResponse, download] = await Promise.all([
+      page.waitForResponse(response => response.url().includes('/versions/') && response.url().includes('/export?') && response.request().method() === 'GET'),
+      (async () => {
+        const event = page.waitForEvent('download', { timeout: 30_000 });
+        await page.getByRole('button', { name: /تصدير البنود \(CSV\)|Export Entries \(CSV\)/i }).click();
+        return event;
+      })()
+    ]);
+    expect(exportResponse.status()).toBe(200);
+    expect(exportResponse.headers()['content-type']).toContain('text/csv');
+    expect(download.suggestedFilename()).toBe('pricing_RETAIL_v1.csv');
+    const downloadedPath = await download.path();
+    expect(downloadedPath).not.toBeNull();
+    const csv = await readFile(downloadedPath!, 'utf8');
+    expect(csv).toContain('AT-0002');
+    expect(csv).toContain('EA');
+    expect(csv).toContain('1250');
+    expect(csv).not.toContain('VariantId');
+    expect(csv).not.toContain('PartyId');
+    expect(csv).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
 
     // 07: Version Editor - Scheduled Version (#2)
     const version2Trigger = page.getByRole('button', { name: /إصدار #2/i }).first();
@@ -142,9 +167,36 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await version2Trigger.click();
     await page.waitForTimeout(500);
     await expect(page.getByText(/هذا الإصدار مجدول وسيبدأ سريانه تلقائياً/i)).toBeVisible();
+    await expect(page.getByText(/1,350|1350/).first()).toBeVisible();
     await page.screenshot({
       path: 'artifacts/test-results/pricing/07-scheduled-future-version.png'
     });
+
+    const cutover = await page.evaluate(async ({ entityId, listCode, variantId, uomId, templateId }) => {
+      const listsResponse = await fetch(`/api/v1/pricing/price-lists?legalEntityId=${entityId}`, { credentials: 'same-origin' });
+      const lists = await listsResponse.json() as { code: string; id: string }[];
+      const list = lists.find(item => item.code === listCode);
+      if (!listsResponse.ok || !list) return { status: listsResponse.status, prices: [] as (string | null)[], oldSnapshot: null as string | null };
+      const csrfResponse = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin' });
+      const csrf = await csrfResponse.json() as { token: string };
+      const prices: (string | null)[] = [];
+      let oldSnapshot: string | null = null;
+      for (const pricingDate of ['2026-12-31', '2027-01-01', '2027-01-02']) {
+        const response = await fetch('/api/v1/pricing/resolve', {
+          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Legal-Entity-Id': entityId, 'X-CSRF-TOKEN': csrf.token },
+          body: JSON.stringify({ legalEntityId: entityId, direction: 'Selling', pricingDate, transactionCurrencyCode: 'EGP', priceListId: list.id, partyId: null, productVariantId: variantId, unitOfMeasureId: uomId, quantity: 1, productTemplateId: templateId, categoryPath: [], brandId: null })
+        });
+        const body = await response.text();
+        if (!response.ok) return { status: response.status, error: body, prices, oldSnapshot };
+        const result = JSON.parse(body) as { snapshot?: { finalUnitPrice: string } };
+        prices.push(result.snapshot?.finalUnitPrice ?? null);
+        if (pricingDate === '2026-12-31') oldSnapshot = result.snapshot?.finalUnitPrice ?? null;
+      }
+      return { status: 200, prices, oldSnapshot };
+    }, { entityId: 'aad8a34b-344c-9e5b-8d58-57f182fc6528', listCode: 'RETAIL', variantId: atlasVariantWithPrice, uomId: atlasUomEa, templateId: atlasProductWithPriceId });
+    expect(cutover.status, cutover.error).toBe(200);
+    expect(cutover.prices).toEqual(['1250', '1350', '1350']);
+    expect(cutover.oldSnapshot).toBe('1250');
 
     // Close version drawer
     await page.getByRole('button', { name: /إغلاق النافذة|إلغاء/i }).first().click();
@@ -203,7 +255,24 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await page.waitForLoadState('networkidle');
     await expect(page.getByText(/1,050|1050/i).first()).toBeVisible();
 
-    // 10: Explicit UOM Pricing Proof (Carton -> 25,500 EGP)
+    // 10: Explicit commercial prices for Piece, Pack, and Carton.
+    await selectOption(page, /قائمة الأسعار المحددة/i, /RETAIL|قائمة البيع العامة/i);
+    await selectOption(page, /العميل أو المورد/i, /بدون تحديد عميل/i);
+    await selectOption(page, /وحدة القياس/i, /EA|قطعة/i);
+    await simulateBtn.click();
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText(/1,250|1250/i).first()).toBeVisible();
+    await expect(page.getByText('قطعة (EA)', { exact: true }).last()).toBeVisible();
+    await page.screenshot({ path: 'artifacts/test-results/pricing/10-uom-piece.png' });
+
+    await selectOption(page, /وحدة القياس/i, /PACK|عبوة|باك/i);
+    await simulateBtn.click();
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText(/700/i).first()).toBeVisible();
+    await expect(page.getByText(/تم تطبيق سعر تجاري مستقل لوحدة/i)).toBeVisible();
+    await page.screenshot({ path: 'artifacts/test-results/pricing/10-uom-pack.png' });
+
+    // Explicit carton price must win over base-unit conversion.
     await selectOption(page, /قائمة الأسعار المحددة/i, /RETAIL|قائمة البيع العامة/i);
     await qtyInput.fill('1');
     await selectOption(page, /وحدة القياس/i, /CARTON|كرتونة/i);
@@ -215,6 +284,35 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await page.screenshot({
       path: 'artifacts/test-results/pricing/10-uom-pricing-breakdown.png'
     });
+
+    const batchProof = await page.evaluate(async ({ entityId, secondaryEntityId, variantId, uomId }) => {
+      const [primaryResponse, secondaryResponse] = await Promise.all([
+        fetch(`/api/v1/pricing/price-lists?legalEntityId=${entityId}`, { credentials: 'same-origin' }),
+        fetch(`/api/v1/pricing/price-lists?legalEntityId=${secondaryEntityId}`, { credentials: 'same-origin' })
+      ]);
+      const primaryLists = await primaryResponse.json() as { code: string; id: string }[];
+      const secondaryLists = await secondaryResponse.json() as { code: string; id: string }[];
+      const primary = primaryLists.find(item => item.code === 'RETAIL');
+      const secondary = secondaryLists.find(item => item.code === 'RETAIL-SECONDARY');
+      if (!primaryResponse.ok || !secondaryResponse.ok || !primary || !secondary) return { batchStatus: primaryResponse.status || secondaryResponse.status, count: 0, prices: [] as (string | null)[], sampledSinglePrices: [] as (string | null)[] };
+      const csrfResponse = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin' });
+      const csrf = await csrfResponse.json() as { token: string };
+      const makeRequest = (legalEntityId: string, priceListId: string, quantity: number) => ({ legalEntityId, direction: 'Selling', pricingDate: '2026-01-05', transactionCurrencyCode: 'EGP', priceListId, partyId: null, productVariantId: variantId, unitOfMeasureId: uomId, quantity });
+      const contexts = Array.from({ length: 100 }, (_, index) => index < 50 ? makeRequest(entityId, primary.id, 1) : makeRequest(secondaryEntityId, secondary.id, 1));
+      const batch = await fetch('/api/v1/pricing/resolve-batch', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf.token }, body: JSON.stringify({ items: contexts }) });
+      const results = await batch.json() as { snapshot?: { finalUnitPrice: string } }[];
+      const sampledSinglePrices: (string | null)[] = [];
+      for (const index of [0, 49, 50, 99]) {
+        const single = await fetch('/api/v1/pricing/resolve', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf.token }, body: JSON.stringify(contexts[index]) });
+        const result = await single.json() as { snapshot?: { finalUnitPrice: string } };
+        sampledSinglePrices.push(result.snapshot?.finalUnitPrice ?? null);
+      }
+      return { batchStatus: batch.status, count: results.length, prices: results.map(result => result.snapshot?.finalUnitPrice ?? null), sampledSinglePrices };
+    }, { entityId: 'aad8a34b-344c-9e5b-8d58-57f182fc6528', secondaryEntityId: 'd8eb39bb-b048-7c5d-bacd-e3a923eee21c', variantId: atlasVariantWithPrice, uomId: atlasUomEa });
+    expect(batchProof.batchStatus).toBe(200);
+    expect(batchProof.count).toBe(100);
+    expect(batchProof.prices).toEqual(Array.from({ length: 100 }, (_, index) => index < 50 ? '1250' : '1450'));
+    expect(batchProof.sampledSinglePrices).toEqual(['1250', '1250', '1450', '1450']);
 
     // 11: Real FX Resolution Proof (EXPORT-USD -> EGP Transaction -> 1,250 EGP)
     await selectOption(page, /وحدة القياس/i, /EA|قطعة/i);
@@ -435,6 +533,12 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.locator('h1').first()).toBeVisible();
+    await page.getByRole('button', { name: /^قوائم البيع$|^Selling Lists$/i }).click();
+    await expect(page.getByText('RETAIL-SECONDARY')).toBeVisible();
+    await page.getByRole('button', { name: /عرض الإصدارات والمحرر/i }).first().click();
+    await expect(page.getByText(/1,450|1450/i).first()).toBeVisible();
+    await page.screenshot({ path: 'artifacts/test-results/pricing/17-entity-b-pricing.png' });
+    await page.getByRole('button', { name: /إلغاء/i }).first().click();
     await page.screenshot({
       path: 'artifacts/test-results/pricing/17-legal-entity-switch.png',
       fullPage: false
@@ -444,6 +548,13 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await entitySelect.selectOption({ index: 1 });
     await page.waitForTimeout(1000);
     await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: /^قوائم البيع$|^Selling Lists$/i }).click();
+    await expect(page.getByText('RETAIL').first()).toBeVisible();
+    await page.getByRole('button', { name: /عرض الإصدارات والمحرر/i }).nth(1).click();
+    await page.getByRole('button', { name: /إصدار #1/i }).first().click();
+    await expect(page.getByText(/1,250|1250/i).first()).toBeVisible();
+    await page.screenshot({ path: 'artifacts/test-results/pricing/17-entity-a-pricing-restored.png' });
+    await page.getByRole('button', { name: /إلغاء/i }).first().click();
 
     // ==========================================
     // 18: Real Permission-Limited User Proof (sales@atlas.com)
@@ -477,6 +588,13 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
 
     // Verify Read-Only badge and notice are visible
     await expect(salesPage.getByText(/للقراءة فقط|وضع العرض والقراءة فقط/i).first()).toBeVisible();
+    const permittedRead = await salesPage.evaluate(async () => {
+      const response = await fetch('/api/v1/pricing/price-lists?legalEntityId=aad8a34b-344c-9e5b-8d58-57f182fc6528', { credentials: 'same-origin' });
+      const lists = await response.json() as unknown[];
+      return { status: response.status, count: lists.length };
+    });
+    expect(permittedRead.status).toBe(200);
+    expect(permittedRead.count).toBeGreaterThan(0);
 
     // 18: Real Permission-Limited State Screenshot
     await salesPage.screenshot({
@@ -492,6 +610,8 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
         return { sessionStatus: sessionResponse.status, csrfStatus: csrfResponse.status, writeStatus: null };
       }
       const { token } = await csrfResponse.json() as { token: string };
+      const beforeResponse = await fetch('/api/v1/pricing/price-lists?legalEntityId=aad8a34b-344c-9e5b-8d58-57f182fc6528', { credentials: 'same-origin' });
+      const before = await beforeResponse.json() as { code: string }[];
       const response = await fetch('/api/v1/pricing/price-lists', {
         method: 'POST',
         credentials: 'same-origin',
@@ -509,11 +629,21 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
           currencyPolicy: 'ExactCurrency'
         })
       });
-      return { sessionStatus: sessionResponse.status, csrfStatus: csrfResponse.status, writeStatus: response.status };
+      const afterResponse = await fetch('/api/v1/pricing/price-lists?legalEntityId=aad8a34b-344c-9e5b-8d58-57f182fc6528', { credentials: 'same-origin' });
+      const after = await afterResponse.json() as { code: string }[];
+      return { sessionStatus: sessionResponse.status, csrfStatus: csrfResponse.status, writeStatus: response.status, beforeCount: before.length, afterCount: after.length };
     });
     expect(unauthorizedProof.sessionStatus).toBe(200);
     expect(unauthorizedProof.csrfStatus).toBe(200);
-    expect([401, 403]).toContain(unauthorizedProof.writeStatus);
+    expect(unauthorizedProof.writeStatus).toBe(403);
+    expect(unauthorizedProof.afterCount).toBe(unauthorizedProof.beforeCount);
+
+    const anonymousContext = await page.context().browser()!.newContext();
+    const anonymousPage = await anonymousContext.newPage();
+    await anonymousPage.goto('/pricing');
+    const anonymousStatus = await anonymousPage.evaluate(async () => (await fetch('/api/v1/pricing/price-lists?legalEntityId=aad8a34b-344c-9e5b-8d58-57f182fc6528')).status);
+    expect(anonymousStatus).toBe(401);
+    await anonymousContext.close();
 
     await salesContext.close();
     await context.close();
