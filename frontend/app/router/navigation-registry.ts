@@ -2,6 +2,7 @@ import { accountingRoutes } from "@modules/accounting/public.ts";
 import { catalogRoutes } from "@modules/catalog/public.ts";
 import { directoryRoutes } from "@modules/directory/public.ts";
 import { finbaseRoutes } from "@modules/finbase/public.ts";
+import { pricingRoutes } from "@modules/pricing/public.ts";
 import { identityRoutes } from "@modules/identity/public.ts";
 import { invoicingRoutes } from "@modules/invoicing/public.ts";
 import { migrationRoutes } from "@modules/migration/public.ts";
@@ -33,6 +34,7 @@ export const navigationRegistry: readonly ModuleNavigationRegistration[] = [
   accountingRoutes.navigation,
   migrationRoutes.navigation,
   finbaseRoutes.navigation,
+  pricingRoutes.navigation,
   previewNavigation,
   settingsNavigation
 ];

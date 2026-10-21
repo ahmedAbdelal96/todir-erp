@@ -1,0 +1,270 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { pricingApi } from "../services/pricing-api.ts";
+import { loadSessionContext } from "../../../core/api/auth-service.ts";
+import { useRuntimeContext } from "../../../core/runtime/runtime-provider.tsx";
+import type {
+  CreatePriceEntryRequest,
+  CreatePriceGroupRequest,
+  CreatePriceListAssignmentRequest,
+  CreatePriceListRequest,
+  CreatePriceRuleRequest,
+  CreatePriceVersionRequest,
+  PriceCoverageDto,
+  PriceListDto,
+  PriceResolution,
+  PriceVersionDto,
+  PricingImportCommitDto,
+  PricingImportPreviewDto,
+  PricingImportRequest,
+  PricingPolicyDto,
+  PricingPolicyRequest,
+  ResolvePriceRequest
+} from "../types.ts";
+
+export interface PricingContextScope {
+  readonly tenantId?: string | undefined;
+  readonly legalEntityId?: string | undefined;
+}
+
+export function usePricingScope(explicit?: PricingContextScope): {
+  tenantId: string;
+  legalEntityId: string;
+} {
+  const sessionQuery = useQuery({
+    queryKey: ["session", "context"],
+    queryFn: loadSessionContext,
+    staleTime: 60_000
+  });
+
+  let runtimeEntityId = "";
+  let runtimeTenantId = "";
+
+  try {
+    const runtime = useRuntimeContext();
+    runtimeEntityId = runtime.legalEntity.legalEntityId || "";
+    runtimeTenantId = runtime.tenant.tenantId || "";
+  } catch {
+    // Graceful fallback outside RuntimeProvider
+  }
+
+  const tenantId =
+    explicit?.tenantId ||
+    sessionQuery.data?.tenantId ||
+    runtimeTenantId ||
+    "";
+
+  let legalEntityId =
+    explicit?.legalEntityId ||
+    sessionQuery.data?.context?.legalEntities?.[0]?.id ||
+    runtimeEntityId ||
+    "";
+
+  if (typeof window !== "undefined") {
+    const storedEntity = window.sessionStorage.getItem("todir_active_legal_entity");
+    if (storedEntity && !explicit?.legalEntityId) {
+      legalEntityId = storedEntity;
+    }
+  }
+
+  return { tenantId, legalEntityId };
+}
+
+export const pricingQueryKeys = {
+  all: ["pricing"] as const,
+  policy: (entityId: string) => ["pricing", "policy", entityId] as const,
+  lists: (entityId: string) => ["pricing", "lists", entityId] as const,
+  versions: (listId: string, entityId: string) => ["pricing", "versions", listId, entityId] as const,
+  coverage: (entityId: string, listId: string, date: string) =>
+    ["pricing", "coverage", entityId, listId, date] as const,
+  resolve: (req: ResolvePriceRequest) =>
+    ["pricing", "resolve", req.legalEntityId, req.direction, req.productVariantId, req.unitOfMeasureId, req.quantity, req.pricingDate, req.transactionCurrencyCode, req.partyId, req.priceListId] as const
+};
+
+export function usePricingPolicy(entityId: string) {
+  return useQuery<PricingPolicyDto>({
+    queryKey: pricingQueryKeys.policy(entityId),
+    queryFn: () => pricingApi.getPolicy(entityId),
+    enabled: Boolean(entityId)
+  });
+}
+
+export function usePriceLists(entityId: string) {
+  return useQuery<readonly PriceListDto[]>({
+    queryKey: pricingQueryKeys.lists(entityId),
+    queryFn: () => pricingApi.listPriceLists(entityId),
+    enabled: Boolean(entityId)
+  });
+}
+
+export function usePriceVersions(listId: string, entityId: string) {
+  return useQuery<readonly PriceVersionDto[]>({
+    queryKey: pricingQueryKeys.versions(listId, entityId),
+    queryFn: () => pricingApi.listPriceVersions(listId, entityId),
+    enabled: Boolean(listId && entityId)
+  });
+}
+
+export function usePricingCoverage(entityId: string, priceListId: string, pricingDate: string) {
+  return useQuery<PriceCoverageDto>({
+    queryKey: pricingQueryKeys.coverage(entityId, priceListId, pricingDate),
+    queryFn: () => pricingApi.getCoverage(entityId, priceListId, pricingDate),
+    enabled: Boolean(entityId && priceListId && pricingDate)
+  });
+}
+
+export function useResolvePriceQuery(request: ResolvePriceRequest | null) {
+  return useQuery<PriceResolution>({
+    queryKey: request ? pricingQueryKeys.resolve(request) : ["pricing", "resolve", "none"],
+    queryFn: () => {
+      if (!request) throw new Error("No request");
+      return pricingApi.resolvePrice(request);
+    },
+    enabled: Boolean(request && request.legalEntityId && request.productVariantId && request.unitOfMeasureId)
+  });
+}
+
+// Mutations
+export function useCreatePriceListMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CreatePriceListRequest) => pricingApi.createPriceList(req),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.lists(variables.legalEntityId) });
+    }
+  });
+}
+
+export function useArchivePriceListMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ listId, legalEntityId, expectedVersion }: { listId: string; legalEntityId: string; expectedVersion: number }) =>
+      pricingApi.archivePriceList(listId, legalEntityId, expectedVersion),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.lists(variables.legalEntityId) });
+    }
+  });
+}
+
+export function useCreatePriceVersionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ listId, legalEntityId, request }: { listId: string; legalEntityId: string; request: CreatePriceVersionRequest }) =>
+      pricingApi.createPriceVersion(listId, legalEntityId, request),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.versions(variables.listId, variables.legalEntityId) });
+    }
+  });
+}
+
+export function useAddPriceEntryMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ versionId, listId, legalEntityId, request }: { versionId: string; listId: string; legalEntityId: string; request: CreatePriceEntryRequest }) =>
+      pricingApi.addPriceEntry(versionId, listId, legalEntityId, request),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.versions(variables.listId, variables.legalEntityId) });
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.all });
+    }
+  });
+}
+
+export function useAddPriceRuleMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ versionId, listId, legalEntityId, request }: { versionId: string; listId: string; legalEntityId: string; request: CreatePriceRuleRequest }) =>
+      pricingApi.addPriceRule(versionId, listId, legalEntityId, request),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.versions(variables.listId, variables.legalEntityId) });
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.all });
+    }
+  });
+}
+
+export function useValidateVersionMutation() {
+  return useMutation({
+    mutationFn: ({ versionId, legalEntityId }: { versionId: string; legalEntityId: string }) =>
+      pricingApi.validateVersion(versionId, legalEntityId)
+  });
+}
+
+export function useActivateVersionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ versionId, legalEntityId, listId }: { versionId: string; legalEntityId: string; listId: string }) =>
+      pricingApi.activateVersion(versionId, legalEntityId),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.versions(variables.listId, variables.legalEntityId) });
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.lists(variables.legalEntityId) });
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.all });
+    }
+  });
+}
+
+export function useScheduleVersionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ versionId, legalEntityId, listId }: { versionId: string; legalEntityId: string; listId: string }) =>
+      pricingApi.scheduleVersion(versionId, legalEntityId),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.versions(variables.listId, variables.legalEntityId) });
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.lists(variables.legalEntityId) });
+    }
+  });
+}
+
+export function useUpdatePricingPolicyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ legalEntityId, request }: { legalEntityId: string; request: PricingPolicyRequest }) =>
+      pricingApi.updatePolicy(legalEntityId, request),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.policy(variables.legalEntityId) });
+    }
+  });
+}
+
+export function useCreatePriceGroupMutation() {
+  return useMutation({
+    mutationFn: ({ legalEntityId, request }: { legalEntityId: string; request: CreatePriceGroupRequest }) =>
+      pricingApi.createGroup(legalEntityId, request)
+  });
+}
+
+export function useCreateAssignmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreatePriceListAssignmentRequest) => pricingApi.createAssignment(request),
+    onSuccess: (_, variables) => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.lists(variables.legalEntityId) });
+    }
+  });
+}
+
+export function useSimulatePriceMutation() {
+  return useMutation({
+    mutationFn: (req: ResolvePriceRequest) => pricingApi.simulatePrice(req)
+  });
+}
+
+export function useExplainPriceMutation() {
+  return useMutation({
+    mutationFn: (req: ResolvePriceRequest) => pricingApi.explainPrice(req)
+  });
+}
+
+export function usePreviewImportMutation() {
+  return useMutation({
+    mutationFn: (req: PricingImportRequest) => pricingApi.previewImport(req)
+  });
+}
+
+export function useCommitImportMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ batchId, legalEntityId }: { batchId: string; legalEntityId: string }) =>
+      pricingApi.commitImport(batchId, legalEntityId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.all });
+    }
+  });
+}

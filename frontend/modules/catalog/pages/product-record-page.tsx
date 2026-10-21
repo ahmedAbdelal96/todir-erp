@@ -33,6 +33,7 @@ import { VariantMatrixDialog } from "../features/variant-matrix-dialog.tsx";
 import { ReferenceDialog } from "../features/reference-dialog.tsx";
 import { VisibilityDialog } from "../features/visibility-dialog.tsx";
 import { formatCatalogAuditEvent } from "../audit-format.ts";
+import { ProductSellingPriceCard } from "../../pricing/public.ts";
 import type { ProductDetails, VariantDto } from "../types.ts";
 
 export interface ProductRecordPageProps {
@@ -256,6 +257,13 @@ export function ProductRecordPage({
                     <PropertyItem label={t("productRecord.brand")} value={product.brandName || t("productRecord.noBrand")} />
                   </PropertyGrid>
                 </Surface>
+
+                {/* Centralized Commercial Selling Price (Pricing Module Integration) */}
+                <ProductSellingPriceCard
+                  variantId={product.defaultVariantId ?? product.id}
+                  uomId={product.baseUomCode ?? "EA"}
+                  defaultCurrencyCode="EGP"
+                />
 
                 {/* Readiness Breakdown */}
                 {readiness ? (
