@@ -12,6 +12,7 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
+import { useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import { AddEntryModal } from "./add-entry-modal.tsx";
 import type { PriceListDto, PriceVersionDto } from "../types.ts";
 
@@ -25,24 +26,24 @@ interface StaticEntryItem {
 }
 
 const STATIC_RETAIL_ENTRIES: StaticEntryItem[] = [
-  { variant: "Variant 2", uom: "EA", scope: "allParties", tier: "1+", price: "1,250.00 EGP", priority: 0 },
-  { variant: "Variant 2", uom: "EA", scope: "Customer 2", tier: "1+", price: "1,100.00 EGP", priority: 0 },
-  { variant: "Variant 2", uom: "PACK", scope: "allParties", tier: "1+", price: "700.00 EGP", priority: 0 },
-  { variant: "Variant 2", uom: "CARTON", scope: "allParties", tier: "1+", price: "25,500.00 EGP", priority: 0 },
-  { variant: "Variant 4", uom: "EA", scope: "allParties", tier: "1+", price: "0.00 EGP", priority: 0 }
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "allParties", tier: "1+", price: "1,250.00 EGP", priority: 0 },
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "أطلس للصناعات المكتبية (عميل خاص)", tier: "1+", price: "1,100.00 EGP", priority: 0 },
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "عبوة (PACK)", scope: "allParties", tier: "1+", price: "700.00 EGP", priority: 0 },
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "كرتونة (CARTON)", scope: "allParties", tier: "1+", price: "25,500.00 EGP", priority: 0 },
+  { variant: "عينة تجريبية ترويجية (AT-0004)", uom: "قطعة (EA)", scope: "allParties", tier: "1+", price: "0.00 EGP", priority: 0 }
 ];
 
 const STATIC_WHOLESALE_ENTRIES: StaticEntryItem[] = [
-  { variant: "Variant 2", uom: "EA", scope: "priceGroup", tier: "1 - 11", price: "1,125.00 EGP", priority: 0 },
-  { variant: "Variant 2", uom: "EA", scope: "priceGroup", tier: "12+", price: "1,050.00 EGP", priority: 0 }
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "priceGroup", tier: "1 – 11 قطعة", price: "1,125.00 EGP", priority: 0 },
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "priceGroup", tier: "12+ قطعة", price: "1,050.00 EGP", priority: 0 }
 ];
 
 const STATIC_EXPORT_ENTRIES: StaticEntryItem[] = [
-  { variant: "Variant 2", uom: "EA", scope: "Customer 2", tier: "1+", price: "25.00 USD", priority: 0 }
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "أطلس للصناعات المكتبية (عميل خاص)", tier: "1+", price: "25.00 USD", priority: 0 }
 ];
 
 const STATIC_PURCHASE_ENTRIES: StaticEntryItem[] = [
-  { variant: "Variant 2", uom: "EA", scope: "Supplier 3", tier: "1+", price: "900.00 EGP", priority: 0 }
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "شركة النور للتوريدات (مورد معتمد)", tier: "1+", price: "900.00 EGP", priority: 0 }
 ];
 
 export interface VersionEditorDrawerProps {
@@ -69,6 +70,9 @@ export function VersionEditorDrawer({
   const activateMutation = useActivateVersionMutation();
   const scheduleMutation = useScheduleVersionMutation();
   const createVersionMutation = useCreatePriceVersionMutation();
+
+  const permissions = useOptionalPermissions();
+  const canManage = permissions ? permissions.hasAnyPermission("pricing.manage", "pricing.write", "pricing.*", "*", "admin") : true;
 
   if (!priceList) return null;
 
@@ -212,16 +216,18 @@ export function VersionEditorDrawer({
                     <StatusBadge
                       size="small"
                       intent={v.status === "Active" ? "success" : v.status === "Scheduled" ? "info" : v.status === "Draft" ? "warning" : "neutral"}
-                      label={v.status}
+                      label={t(`versions.status.${v.status}`, v.status)}
                     />
                   </button>
                 );
               })}
             </div>
 
-            <Button variant="secondary" size="compact" onPress={() => void handleCreateNewDraft()} isDisabled={createVersionMutation.isPending}>
-              + {t("versions.newVersionAction")}
-            </Button>
+            {canManage && (
+              <Button variant="secondary" size="compact" onPress={() => void handleCreateNewDraft()} isDisabled={createVersionMutation.isPending}>
+                + {t("versions.newVersionAction")}
+              </Button>
+            )}
           </div>
 
           {/* Version Notice / Invariants */}
@@ -271,7 +277,7 @@ export function VersionEditorDrawer({
                   {t("versions.actions.exportCsv")}
                 </Button>
 
-                {isDraft && (
+                {isDraft && canManage && (
                   <>
                     <Button variant="primary" size="compact" onPress={() => setIsAddEntryOpen(true)}>
                       + {t("versions.actions.addEntry")}
@@ -286,6 +292,9 @@ export function VersionEditorDrawer({
                       {t("versions.actions.schedule")}
                     </Button>
                   </>
+                )}
+                {!canManage && (
+                  <StatusBadge intent="neutral" label={t("permissions.readOnlyBadge")} />
                 )}
               </div>
             </div>

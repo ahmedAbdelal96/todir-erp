@@ -250,5 +250,21 @@ export const pricingApi = {
     httpClient<PriceCoverageDto>(
       `${basePath}/coverage?legalEntityId=${encodeURIComponent(legalEntityId)}&priceListId=${encodeURIComponent(priceListId)}&pricingDate=${encodeURIComponent(pricingDate)}`,
       opts(legalEntityId, options)
+    ),
+
+  // Commercial lookup contracts (Catalog / Directory / FinBase)
+  getLookupProducts: (legalEntityId: string, options?: RequestOptions) =>
+    httpClient<{ items?: readonly any[] } | readonly any[]>(
+      `/api/v1/catalog/products?legalEntityId=${encodeURIComponent(legalEntityId)}`,
+      opts(legalEntityId, options)
+    ),
+
+  getLookupUoms: (options?: RequestOptions) =>
+    httpClient<readonly any[]>(`/api/v1/catalog/uoms`, options),
+
+  getLookupParties: (legalEntityId: string, options?: RequestOptions) =>
+    httpClient<{ items?: readonly any[] } | readonly any[]>(
+      `/api/v1/directory/parties?pageSize=50`,
+      opts(legalEntityId, options)
     )
 };

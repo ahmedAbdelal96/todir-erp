@@ -1,9 +1,13 @@
 export const en = {
   title: "Commercial Pricing & Price Lists",
-  subtitle: "Manage price lists, sales & purchasing terms, discount policies, and quantity tiers as an authoritative, standalone financial baseline.",
+  subtitle: "Manage price lists, sales and purchasing agreements, quantity tiers, and commercial pricing rules as an authoritative central price master.",
   entityLockedBadge: "Legal Entity Locked",
   activeCurrencyPolicyBadge: "FX Conversion Policy Active",
   singleCurrencyPolicyBadge: "Exact Currency Matching",
+  permissions: {
+    readOnlyNotice: "You are in read-only mode. Your account permissions do not allow creating or modifying price lists or activating versions.",
+    readOnlyBadge: "Read-only"
+  },
   actions: {
     newPriceList: "New Price List",
     quickSetPrice: "Quick Set Selling Price",
@@ -202,7 +206,27 @@ export const en = {
     missingPriceTitle: "No valid price found for this product in this context",
     missingPriceDescription: "The pricing engine found no approved selling or buying price matching the specified parameters (Product, UOM, Date, and Currency). A zero price was not assumed to protect commercial integrity.",
     explicitZeroTitle: "Approved Zero Price (0.00)",
-    explicitZeroDescription: "The unit price was resolved as 0.00 under an explicit, approved pricing rule (promotional grant or zero-cost sample)."
+    explicitZeroDescription: "The unit price was resolved as 0.00 under an explicit, approved pricing rule (promotional grant or zero-cost sample).",
+    customerSpecificApplied: "Customer-specific price applied: {{customer}}",
+    quantityTierApplied: "Quantity tier applied ({{tier}}): Volume discount",
+    uomSpecificApplied: "Commercial unit-specific price applied for {{uom}} instead of standard conversion factor",
+    fxAutoConverted: "Automated FX conversion via FinBase from {{from}} to {{to}}",
+    generalListApplied: "Standard approved price applied from price list",
+    noCustomer: "— No specific customer (General to all) —",
+    customerBadge: "Customer-Specific",
+    quantityTierBadge: "Quantity Tier",
+    uomSpecificBadge: "Commercial Unit",
+    fallbackProduct1: "Atlas Pro Smartphone (AT-0002)",
+    fallbackProduct2: "Promotional Demo Sample (AT-0004)",
+    fallbackProduct3: "Unpriced Trial Product (AT-0005)",
+    fallbackProduct4: "Fast Charging Cable (AT-0001)",
+    fallbackUomEa: "Piece (EA)",
+    fallbackUomPack: "Pack (PACK)",
+    fallbackUomCarton: "Carton (CARTON)",
+    fallbackPartyAtlas: "Atlas Office Industries (Special Customer)",
+    fallbackPartyNour: "Al Nour Supplies (Approved Supplier)",
+    generalCustomers: "General (All Customers)",
+    fxDetailNote: "Base list price ({{from}}) converted to transaction currency ({{to}}) under automated FinBase FX policy."
   },
   importExport: {
     title: "Price Entries Import & Export",
@@ -225,6 +249,12 @@ export const en = {
     errorUom: "UOM not allowed for product",
     errorCurrency: "Currency does not match list",
     errorConflict: "Overlapping rule conflict",
+    statusReady: "Ready to commit to draft",
+    statusUnknownSku: "Unknown SKU",
+    statusCurrencyMismatch: "Currency mismatch",
+    statusConflict: "Rule conflict",
+    fallbackDraftVersion: "Draft Version #3 (Effective: 2027-06-01)",
+    commitSuccessSummary: "Successfully committed {{count}} entries to draft version without altering the active version.",
     table: {
       lineHeader: "Line",
       skuHeader: "SKU",

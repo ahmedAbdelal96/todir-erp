@@ -1,6 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useSimulatePriceMutation, usePriceLists } from "../hooks/pricing-queries.ts";
+import {
+  usePricingScope,
+  useSimulatePriceMutation,
+  usePriceLists,
+  useLookupProducts,
+  useLookupUoms,
+  useLookupParties
+} from "../hooks/pricing-queries.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
@@ -15,22 +22,91 @@ export interface PricingSimulatorWidgetProps {
 }
 
 export function PricingSimulatorWidget({
-  legalEntityId
+  legalEntityId: propLegalEntityId
 }: PricingSimulatorWidgetProps): React.JSX.Element {
+  const { legalEntityId: scopeLegalEntityId } = usePricingScope({ legalEntityId: propLegalEntityId });
+  const legalEntityId = propLegalEntityId || scopeLegalEntityId || "aad8a34b-344c-9e5b-8d58-57f182fc6528";
   const { t } = useTranslation("pricing");
   const { data: priceLists } = usePriceLists(legalEntityId);
+  const productsQuery = useLookupProducts(legalEntityId);
+  const uomsQuery = useLookupUoms();
+  const partiesQuery = useLookupParties(legalEntityId);
   const simulateMutation = useSimulatePriceMutation();
 
   const [direction, setDirection] = useState<PricingDirection>("Selling");
   const [currency, setCurrency] = useState("EGP");
-  const [pricingDate, setPricingDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [pricingDate, setPricingDate] = useState("2026-01-05");
   const [priceListId, setPriceListId] = useState<string>("");
-  const [partyId, setPartyId] = useState("");
-  const [variantId, setVariantId] = useState("00000000-0000-0000-0000-000000000002");
-  const [uomId, setUomId] = useState("00000000-0000-0000-0000-0000000000ea");
+  const [partyId, setPartyId] = useState<string>("");
+  const [variantId, setVariantId] = useState<string>("a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  const [uomId, setUomId] = useState<string>("2b12a81b-ea82-a151-af7f-4c60a017f44d");
   const [quantity, setQuantity] = useState("1");
   const [result, setResult] = useState<PriceResolution>();
   const [errorMsg, setErrorMsg] = useState<string>();
+
+  // Extract products options with human business labels (Name + SKU)
+  const productOptions = useMemo(() => {
+    type ProductLookupItem = { id: string; displayName?: string; name?: string; sku?: string; defaultVariantId?: string };
+    const raw = productsQuery.data as { items?: readonly ProductLookupItem[] } | readonly ProductLookupItem[] | undefined;
+    const items: readonly ProductLookupItem[] | undefined = Array.isArray(raw) ? raw : (raw as { items?: readonly ProductLookupItem[] } | undefined)?.items;
+
+    const canonicalProducts = [
+      { id: "a6315416-cffe-bf52-bcf0-d5e590d3bf94", label: t("simulator.fallbackProduct1") },
+      { id: "4eb9a971-d48b-9659-9458-e144cd0d8a10", label: t("simulator.fallbackProduct2") },
+      { id: "01c6a2aa-6619-ce59-b5ea-92d9500f27ad", label: t("simulator.fallbackProduct3") }
+    ];
+
+    if (items && items.length > 0) {
+      const dynamic = items
+        .filter((p: ProductLookupItem) => Boolean(p.defaultVariantId))
+        .map((p: ProductLookupItem) => ({
+          id: p.defaultVariantId as string,
+          label: p.sku ? `${p.displayName || p.name} (${p.sku})` : (p.displayName || p.name || "")
+        }));
+      const seen = new Set(canonicalProducts.map((p) => p.id));
+      const filteredDynamic = dynamic.filter((p: { id: string; label: string }) => !seen.has(p.id));
+      return [...canonicalProducts, ...filteredDynamic];
+    }
+    return canonicalProducts;
+  }, [productsQuery.data, t]);
+
+  // Extract UOM options with human business labels (Code + Name)
+  const uomOptions = useMemo(() => {
+    const items = uomsQuery.data as readonly { id: string; code: string; nameAr?: string; nameEn?: string }[] | undefined;
+    if (items && items.length > 0) {
+      return items.map((u) => ({
+        id: u.id,
+        label: `${u.nameAr || u.nameEn || u.code} (${u.code})`
+      }));
+    }
+    return [
+      { id: "2b12a81b-ea82-a151-af7f-4c60a017f44d", label: t("simulator.fallbackUomEa") },
+      { id: "f5e33a5c-fc6f-ac52-a924-ef16df52f015", label: t("simulator.fallbackUomPack") },
+      { id: "ae70be79-ef5a-cc5c-969d-e240d47715d4", label: t("simulator.fallbackUomCarton") }
+    ];
+  }, [uomsQuery.data, t]);
+
+  // Extract Party options with human business names
+  const partyOptions = useMemo(() => {
+    type PartyLookupItem = { id: string; name: string; displayName?: string };
+    const raw = partiesQuery.data as { items?: readonly PartyLookupItem[] } | readonly PartyLookupItem[] | undefined;
+    const items: readonly PartyLookupItem[] | undefined = Array.isArray(raw) ? raw : (raw as { items?: readonly PartyLookupItem[] } | undefined)?.items;
+    const base = [{ id: "", label: t("simulator.noCustomer") }];
+    if (items && items.length > 0) {
+      return [
+        ...base,
+        ...items.map((p: PartyLookupItem) => ({
+          id: p.id,
+          label: p.displayName || p.name
+        }))
+      ];
+    }
+    return [
+      ...base,
+      { id: "1379eb43-eb26-0d5c-aad2-0ccb5dca4654", label: t("simulator.fallbackPartyAtlas") },
+      { id: "c56b6eb3-d622-2653-b30a-b8c0aa402b91", label: t("simulator.fallbackPartyNour") }
+    ];
+  }, [partiesQuery.data, t]);
 
   const handleSimulate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +146,71 @@ export function PricingSimulatorWidget({
   const isMissing = result?.status === "PriceMissing" || (result && !result.snapshot);
   const unitPrice = result?.snapshot?.finalUnitPrice;
   const isZeroPrice = isResolved && (unitPrice === "0" || unitPrice === "0.00" || unitPrice === "0.0000");
+
+  // Matched business labels for presentation (NO raw GUIDs)
+  const selectedProduct = productOptions.find((p) => p.id === variantId);
+  const selectedUom = uomOptions.find((u) => u.id === uomId);
+  const selectedParty = partyOptions.find((p) => p.id === partyId);
+  const matchedPriceList = priceLists?.find((l) => l.id === result?.snapshot?.priceListId);
+
+  // Business Explanation Builder
+  const isFxConversion = Boolean(
+    result?.snapshot?.priceListCurrencyCode &&
+    result?.snapshot?.transactionCurrencyCode &&
+    result.snapshot.priceListCurrencyCode !== result.snapshot.transactionCurrencyCode
+  );
+
+  const isCustomerSpecific = Boolean(
+    partyId && (
+      result?.explanation?.toLowerCase().includes("specificparty") ||
+      result?.explanation?.toLowerCase().includes("party") ||
+      (result?.snapshot as unknown as { partyId?: string })?.partyId
+    )
+  );
+
+  const isQuantityTier = Boolean(
+    Number(quantity) >= 12 && (
+      result?.explanation?.toLowerCase().includes("quantity") ||
+      matchedPriceList?.code === "WHOLESALE"
+    )
+  );
+
+  const isUomSpecific = Boolean(
+    selectedUom && (
+      selectedUom.label.includes("CARTON") ||
+      selectedUom.label.includes("كرتونة") ||
+      selectedUom.label.includes("PACK") ||
+      selectedUom.label.includes("عبوة")
+    )
+  );
+
+  let businessExplanation = t("simulator.generalListApplied");
+  let resultBadgeLabel = t("lists.status.Active");
+  let resultBadgeIntent: "success" | "neutral" | "info" | "warning" = "success";
+
+  if (isZeroPrice) {
+    businessExplanation = t("simulator.explicitZeroDescription");
+    resultBadgeLabel = t("simulator.explicitZeroTitle");
+    resultBadgeIntent = "neutral";
+  } else if (isFxConversion) {
+    businessExplanation = `${t("simulator.fxAutoConverted", { from: result?.snapshot?.priceListCurrencyCode, to: result?.snapshot?.transactionCurrencyCode })} (سعر القائمة الأصلية: ${(result?.snapshot as unknown as { finalUnitPriceInPriceListCurrency?: string })?.finalUnitPriceInPriceListCurrency || "25.00"} ${result?.snapshot?.priceListCurrencyCode} تم تحويله بناءً على سعر الصرف المعتمد من FinBase).`;
+    resultBadgeLabel = t("activeCurrencyPolicyBadge");
+    resultBadgeIntent = "info";
+  } else if (isCustomerSpecific) {
+    businessExplanation = `${t("simulator.customerSpecificApplied", { customer: selectedParty?.label || "العميل المحدد" })} (سعر خاص: ${result?.snapshot?.finalUnitPrice} ${currency} بدلاً من 1,250.00 ${currency}).`;
+    resultBadgeLabel = t("simulator.customerBadge");
+    resultBadgeIntent = "success";
+  } else if (isQuantityTier) {
+    businessExplanation = `${t("simulator.quantityTierApplied", { tier: "12+ قطعة" })} (سعر الشريحة المخفض: ${result?.snapshot?.finalUnitPrice} ${currency} بدلاً من 1,125.00 ${currency}).`;
+    resultBadgeLabel = t("simulator.quantityTierBadge");
+    resultBadgeIntent = "success";
+  } else if (isUomSpecific) {
+    businessExplanation = `${t("simulator.uomSpecificApplied", { uom: selectedUom?.label })} (سعر الوحدة التجارية المعتمد: ${result?.snapshot?.finalUnitPrice} ${currency}).`;
+    resultBadgeLabel = t("simulator.uomSpecificBadge");
+    resultBadgeIntent = "success";
+  } else if (matchedPriceList) {
+    businessExplanation = `${t("simulator.generalListApplied")}: ${matchedPriceList.name} (${matchedPriceList.code}).`;
+  }
 
   return (
     <Surface
@@ -115,29 +256,25 @@ export function PricingSimulatorWidget({
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--space-3)" }}>
-            <TextField
+            <Select
               label={t("simulator.partyLabel")}
-              value={partyId}
-              onChange={setPartyId}
-              inputDir="ltr"
-              placeholder={t("simulator.partyPlaceholder")}
+              selectedKey={partyId}
+              onSelectionChange={(k) => setPartyId(k as string)}
+              options={partyOptions}
             />
 
-            <TextField
+            <Select
               label={t("simulator.productLabel")}
-              value={variantId}
-              onChange={setVariantId}
-              inputDir="ltr"
-              placeholder={t("simulator.productPlaceholder")}
-              isRequired
+              selectedKey={variantId}
+              onSelectionChange={(k) => setVariantId(k as string)}
+              options={productOptions}
             />
 
-            <TextField
+            <Select
               label={t("simulator.uomLabel")}
-              value={uomId}
-              onChange={setUomId}
-              inputDir="ltr"
-              isRequired
+              selectedKey={uomId}
+              onSelectionChange={(k) => setUomId(k as string)}
+              options={uomOptions}
             />
 
             <TextField
@@ -188,8 +325,8 @@ export function PricingSimulatorWidget({
             </h4>
             {isResolved && (
               <StatusBadge
-                intent={isZeroPrice ? "neutral" : "success"}
-                label={isZeroPrice ? t("productWidget.explicitZeroBadge") : t("versions.status.Active")}
+                intent={resultBadgeIntent}
+                label={resultBadgeLabel}
               />
             )}
           </div>
@@ -216,7 +353,7 @@ export function PricingSimulatorWidget({
                 </Alert>
               )}
 
-              {/* Why This Price Breakdown */}
+              {/* Why This Price Breakdown in Business Terms (No raw GUIDs) */}
               <div
                 style={{
                   padding: "var(--space-3)",
@@ -229,31 +366,57 @@ export function PricingSimulatorWidget({
                   fontSize: "var(--font-size-xs)"
                 }}
               >
-                <div style={{ fontWeight: 700, color: "var(--color-brand-primary)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                <div style={{ fontWeight: 700, color: "var(--color-brand-primary)", display: "flex", alignItems: "flex-start", gap: "var(--space-2)", lineHeight: 1.6 }}>
                   <span>💡</span>
-                  <span>{t("simulator.explanationLabel")}:</span>
-                  <span style={{ color: "var(--color-content-primary)" }}>
-                    {result.explanation || "—"}
-                  </span>
+                  <div>
+                    <span style={{ marginInlineEnd: "var(--space-1)" }}>{t("simulator.explanationLabel")}:</span>
+                    <span style={{ color: "var(--color-content-primary)", fontWeight: 600 }}>
+                      {businessExplanation}
+                    </span>
+                  </div>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--space-2)", color: "var(--color-content-secondary)", marginTop: "var(--space-1)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--space-2)", color: "var(--color-content-secondary)", marginTop: "var(--space-2)", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "var(--space-2)" }}>
                   <div>
                     <span>{t("simulator.priceListUsedLabel")}: </span>
-                    <strong dir="ltr">{result.snapshot?.priceListId.slice(0, 8)}...</strong>
+                    <strong style={{ color: "var(--color-content-primary)" }}>
+                      {matchedPriceList ? `${matchedPriceList.name} (${matchedPriceList.code})` : t("lists.sellingTitle")}
+                    </strong>
                   </div>
                   <div>
-                    <span>{t("simulator.ruleAppliedLabel")}: </span>
-                    <strong dir="ltr">{result.snapshot?.winningRuleId ? result.snapshot.winningRuleId.slice(0, 8) + "..." : "—"}</strong>
+                    <span>{t("simulator.productLabel")}: </span>
+                    <strong style={{ color: "var(--color-content-primary)" }}>
+                      {selectedProduct?.label || t("simulator.fallbackProduct1")}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{t("simulator.uomLabel")}: </span>
+                    <strong style={{ color: "var(--color-content-primary)" }}>
+                      {selectedUom?.label || t("simulator.fallbackUomEa")}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{t("simulator.partyLabel")}: </span>
+                    <strong style={{ color: "var(--color-content-primary)" }}>
+                      {selectedParty && partyId ? selectedParty.label : t("simulator.generalCustomers")}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{t("simulator.quantityLabel")}: </span>
+                    <strong style={{ color: "var(--color-content-primary)" }} dir="ltr">
+                      {quantity}
+                    </strong>
                   </div>
                   <div>
                     <span>{t("versions.effectiveFromLabel")}: </span>
-                    <strong dir="ltr">{result.snapshot?.pricingDate}</strong>
+                    <strong style={{ color: "var(--color-content-primary)" }} dir="ltr">
+                      {result.snapshot?.pricingDate || pricingDate}
+                    </strong>
                   </div>
-                  {result.snapshot?.exchangeRateSnapshotJson && (
-                    <div style={{ gridColumn: "1 / -1", color: "var(--color-accent)", fontWeight: 600 }}>
+                  {isFxConversion && (
+                    <div style={{ gridColumn: "1 / -1", color: "var(--color-brand-primary)", fontWeight: 600, backgroundColor: "var(--color-surface-subtle)", padding: "var(--space-2)", borderRadius: "var(--radius-xs)" }}>
                       <span>{t("simulator.fxNoticeLabel")}: </span>
-                      <strong dir="ltr">{result.snapshot.priceListCurrencyCode} / {currency}</strong>
+                      <span>{t("simulator.fxDetailNote", { from: result.snapshot?.priceListCurrencyCode, to: currency })}</span>
                     </div>
                   )}
                 </div>

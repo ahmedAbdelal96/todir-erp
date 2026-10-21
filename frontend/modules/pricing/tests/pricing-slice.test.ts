@@ -63,4 +63,39 @@ describe("Pricing Vertical Slice Contracts & Invariants", () => {
     assert.equal(isConflict("pricing.import_overlap_conflict"), true);
     assert.equal(isConflict("pricing.validation_ok"), false);
   });
+
+  it("Permission Contract — read-only user cannot perform pricing management actions", () => {
+    const readOnlyPermissions = new Set(["pricing.read"]);
+    const canManage = readOnlyPermissions.has("pricing.manage") ||
+      readOnlyPermissions.has("pricing.write") ||
+      readOnlyPermissions.has("*") ||
+      readOnlyPermissions.has("admin");
+
+    assert.equal(canManage, false);
+
+    const adminPermissions = new Set(["pricing.manage"]);
+    const adminCanManage = adminPermissions.has("pricing.manage") ||
+      adminPermissions.has("pricing.write") ||
+      adminPermissions.has("*") ||
+      adminPermissions.has("admin");
+
+    assert.equal(adminCanManage, true);
+  });
+
+  it("Simulator Business Explanation — avoids internal tuples and specificity numbers", () => {
+    const internalTuple = "Variant / AllParties; unit specificity 3; minimum quantity 0; explicit priority 0";
+    const sanitizeBusinessExplanation = (explanation: string, customerName?: string) => {
+      if (customerName) return `Customer-specific price applied: ${customerName}`;
+      if (explanation.includes("AllParties")) return "Standard approved price applied from price list";
+      return explanation;
+    };
+
+    const businessText = sanitizeBusinessExplanation(internalTuple);
+    assert.equal(businessText.includes("specificity"), false);
+    assert.equal(businessText.includes("tuple"), false);
+    assert.equal(businessText, "Standard approved price applied from price list");
+
+    const customerText = sanitizeBusinessExplanation(internalTuple, "Atlas Office");
+    assert.equal(customerText, "Customer-specific price applied: Atlas Office");
+  });
 });

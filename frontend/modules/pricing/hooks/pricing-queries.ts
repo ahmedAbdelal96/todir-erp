@@ -41,8 +41,8 @@ export function usePricingScope(explicit?: PricingContextScope): {
 
   try {
     const runtime = useRuntimeContext();
-    runtimeEntityId = runtime.legalEntity.legalEntityId || "";
-    runtimeTenantId = runtime.tenant.tenantId || "";
+    runtimeEntityId = (runtime as unknown as { legalEntity?: { legalEntityId?: string } }).legalEntity?.legalEntityId || "";
+    runtimeTenantId = (runtime as unknown as { tenant?: { tenantId?: string } }).tenant?.tenantId || "";
   } catch {
     // Graceful fallback outside RuntimeProvider
   }
@@ -266,5 +266,29 @@ export function useCommitImportMutation() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: pricingQueryKeys.all });
     }
+  });
+}
+
+export function useLookupProducts(legalEntityId: string) {
+  return useQuery({
+    queryKey: ["pricing", "lookup", "products", legalEntityId],
+    queryFn: () => pricingApi.getLookupProducts(legalEntityId),
+    staleTime: 60_000
+  });
+}
+
+export function useLookupUoms() {
+  return useQuery({
+    queryKey: ["pricing", "lookup", "uoms"],
+    queryFn: () => pricingApi.getLookupUoms(),
+    staleTime: 60_000
+  });
+}
+
+export function useLookupParties(legalEntityId: string) {
+  return useQuery({
+    queryKey: ["pricing", "lookup", "parties", legalEntityId],
+    queryFn: () => pricingApi.getLookupParties(legalEntityId),
+    staleTime: 60_000
   });
 }

@@ -4,6 +4,10 @@ export const ar = {
   entityLockedBadge: "مقفل بالمنشأة القانونية",
   activeCurrencyPolicyBadge: "سياسة تحويل العملات نشطة",
   singleCurrencyPolicyBadge: "مطابقة العملة بدقة",
+  permissions: {
+    readOnlyNotice: "أنت في وضع العرض والقراءة فقط. صلاحيات حسابك لا تتيح إنشاء أو تعديل قوائم الأسعار أو اعتماد الإصدارات.",
+    readOnlyBadge: "للقراءة فقط"
+  },
   actions: {
     newPriceList: "إنشاء قائمة أسعار جديدة",
     quickSetPrice: "تحديد سعر بيع سريع",
@@ -202,7 +206,27 @@ export const ar = {
     missingPriceTitle: "لا يوجد سعر معتمد لهذا المنتج في هذا السياق",
     missingPriceDescription: "لم يعثر محرك التسعير على سعر بيع أو شراء معتمد يطابق المتغيرات (المنتج، الوحدة، التاريخ والعملة). لم يتم افتراض سعر 0.00 حماية للأعمال.",
     explicitZeroTitle: "سعر مجاني معتمد (0.00)",
-    explicitZeroDescription: "تم احتساب السعر بقيمة 0.00 وفق قاعدة تسعيرية معتمدة وصريحة (عينة مجانية أو منحة ترويجية)."
+    explicitZeroDescription: "تم احتساب السعر بقيمة 0.00 وفق قاعدة تسعيرية معتمدة وصريحة (عينة مجانية أو منحة ترويجية).",
+    customerSpecificApplied: "تم تطبيق سعر خاص بالعميل: {{customer}}",
+    quantityTierApplied: "تم تطبيق شريحة كميات الجملة ({{tier}}): خصم حجم الطلب",
+    uomSpecificApplied: "تم تطبيق سعر تجاري مخصص لوحدة {{uom}} بدلاً من معامل التحويل القياسي",
+    fxAutoConverted: "تم التحويل التلقائي للعملة عبر FinBase من {{from}} إلى {{to}}",
+    generalListApplied: "تم تطبيق السعر العام المعتمد من القائمة",
+    noCustomer: "— بدون تحديد عميل (عام للجميع) —",
+    customerBadge: "سعر مخصص للعميل",
+    quantityTierBadge: "شريحة كمية",
+    uomSpecificBadge: "سعر وحدة تجاري",
+    fallbackProduct1: "هاتف ذكي أطلس برو (AT-0002)",
+    fallbackProduct2: "عينة تجريبية ترويجية (AT-0004)",
+    fallbackProduct3: "منتج تجريبي غير مسعر (AT-0005)",
+    fallbackProduct4: "كابل شحن سريع (AT-0001)",
+    fallbackUomEa: "قطعة (EA)",
+    fallbackUomPack: "عبوة (PACK)",
+    fallbackUomCarton: "كرتونة (CARTON)",
+    fallbackPartyAtlas: "أطلس للصناعات المكتبية (عميل خاص)",
+    fallbackPartyNour: "شركة النور للتوريدات (مورد معتمد)",
+    generalCustomers: "عام (كافة العملاء)",
+    fxDetailNote: "سعر القائمة الأساسي ({{from}}) تم تحويله إلى عملة المعاملة ({{to}}) بموجب سياسة الربط الآلي عبر FinBase."
   },
   importExport: {
     title: "استيراد وتصدير بنود الأسعار",
@@ -225,6 +249,12 @@ export const ar = {
     errorUom: "وحدة القياس غير مسموحة للمنتج",
     errorCurrency: "العملة لا تطابق عملة القائمة",
     errorConflict: "تعارض في قواعد التسعير",
+    statusReady: "جاهز للاعتماد في المسودة",
+    statusUnknownSku: "رمز صنف غير مسجل",
+    statusCurrencyMismatch: "عدم تطابق العملة",
+    statusConflict: "تعارض في القواعد",
+    fallbackDraftVersion: "إصدار مسودة #3 (بدء: 2027-06-01)",
+    commitSuccessSummary: "تم اعتماد {{count}} بنداً بنجاح في إصدار المسودة دون المساس بالإصدار النشط.",
     table: {
       lineHeader: "السطر",
       skuHeader: "رمز SKU",

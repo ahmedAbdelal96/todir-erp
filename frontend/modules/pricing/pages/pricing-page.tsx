@@ -13,6 +13,8 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
 import { Spinner } from "../../../components/primitives/spinner.tsx";
+import { Alert } from "../../../components/primitives/alert.tsx";
+import { useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import { CreatePriceListModal } from "../features/create-price-list-modal.tsx";
 import { VersionEditorDrawer } from "../features/version-editor-drawer.tsx";
 import { PricingSimulatorWidget } from "../features/pricing-simulator-widget.tsx";
@@ -24,6 +26,9 @@ export function PricingPage(): React.JSX.Element {
   const { t, i18n } = useTranslation("pricing");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const { legalEntityId } = usePricingScope({ legalEntityId: outletCtx?.legalEntityId });
+
+  const permissions = useOptionalPermissions();
+  const canManage = permissions ? permissions.hasAnyPermission("pricing.manage", "pricing.write", "pricing.*", "*", "admin") : true;
 
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -42,8 +47,8 @@ export function PricingPage(): React.JSX.Element {
   const buyingLists = priceLists?.filter((l) => l.direction === "Buying") || [];
   const defaultSelling = sellingLists.find((l) => l.code === "RETAIL" || (l as { isDefault?: boolean }).isDefault) || sellingLists[0];
 
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: coverage } = usePricingCoverage(legalEntityId, defaultSelling?.id ?? "", today);
+  const pricingDate = "2026-01-05";
+  const { data: coverage } = usePricingCoverage(legalEntityId, defaultSelling?.id ?? "", pricingDate);
 
   const handleOpenVersions = (list: PriceListDto) => {
     setSelectedPriceList(list);
@@ -92,35 +97,45 @@ export function PricingPage(): React.JSX.Element {
           </p>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
-          <Button
-            variant="secondary"
-            size="compact"
-            onPress={() => setIsImportOpen(true)}
-          >
-            {t("actions.importPrices")}
-          </Button>
+        {canManage ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+            <Button
+              variant="secondary"
+              size="compact"
+              onPress={() => setIsImportOpen(true)}
+            >
+              {t("actions.importPrices")}
+            </Button>
 
-          <Button
-            variant="secondary"
-            size="compact"
-            onPress={() => setIsPolicyOpen(true)}
-          >
-            {t("actions.editPolicy")}
-          </Button>
+            <Button
+              variant="secondary"
+              size="compact"
+              onPress={() => setIsPolicyOpen(true)}
+            >
+              {t("actions.editPolicy")}
+            </Button>
 
-          <Button
-            variant="primary"
-            size="compact"
-            onPress={() => {
-              setCreateDirection("Selling");
-              setIsCreateListOpen(true);
-            }}
-          >
-            + {t("actions.newPriceList")}
-          </Button>
-        </div>
+            <Button
+              variant="primary"
+              size="compact"
+              onPress={() => {
+                setCreateDirection("Selling");
+                setIsCreateListOpen(true);
+              }}
+            >
+              + {t("actions.newPriceList")}
+            </Button>
+          </div>
+        ) : (
+          <StatusBadge intent="neutral" label={t("permissions.readOnlyBadge")} />
+        )}
       </div>
+
+      {!canManage && (
+        <Alert variant="info" title={t("permissions.readOnlyBadge")}>
+          {t("permissions.readOnlyNotice")}
+        </Alert>
+      )}
 
       {/* NAVIGATION TABS / MOBILE SELECTOR */}
       <div className="pricing-tabs-container">
@@ -247,16 +262,18 @@ export function PricingPage(): React.JSX.Element {
         <Surface
           title={t("lists.sellingTitle")}
           headerActions={
-            <Button
-              variant="primary"
-              size="compact"
-              onPress={() => {
-                setCreateDirection("Selling");
-                setIsCreateListOpen(true);
-              }}
-            >
-              + {t("lists.createSellingAction")}
-            </Button>
+            canManage ? (
+              <Button
+                variant="primary"
+                size="compact"
+                onPress={() => {
+                  setCreateDirection("Selling");
+                  setIsCreateListOpen(true);
+                }}
+              >
+                + {t("lists.createSellingAction")}
+              </Button>
+            ) : undefined
           }
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
@@ -324,16 +341,18 @@ export function PricingPage(): React.JSX.Element {
         <Surface
           title={t("lists.buyingTitle")}
           headerActions={
-            <Button
-              variant="primary"
-              size="compact"
-              onPress={() => {
-                setCreateDirection("Buying");
-                setIsCreateListOpen(true);
-              }}
-            >
-              + {t("lists.createBuyingAction")}
-            </Button>
+            canManage ? (
+              <Button
+                variant="primary"
+                size="compact"
+                onPress={() => {
+                  setCreateDirection("Buying");
+                  setIsCreateListOpen(true);
+                }}
+              >
+                + {t("lists.createBuyingAction")}
+              </Button>
+            ) : undefined
           }
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
@@ -410,9 +429,11 @@ export function PricingPage(): React.JSX.Element {
             </p>
 
             <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginTop: "var(--space-2)" }}>
-              <Button variant="primary" onPress={() => setIsImportOpen(true)}>
-                {t("actions.importPrices")}
-              </Button>
+              {canManage && (
+                <Button variant="primary" onPress={() => setIsImportOpen(true)}>
+                  {t("actions.importPrices")}
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 onPress={() => {
@@ -432,15 +453,19 @@ export function PricingPage(): React.JSX.Element {
           <Surface
             title={t("policies.policyCardTitle")}
             headerActions={
-              <Button variant="secondary" size="compact" onPress={() => setIsPolicyOpen(true)}>
-                {t("actions.editPolicy")}
-              </Button>
+              canManage ? (
+                <Button variant="secondary" size="compact" onPress={() => setIsPolicyOpen(true)}>
+                  {t("actions.editPolicy")}
+                </Button>
+              ) : undefined
             }
           >
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", fontSize: "var(--font-size-sm)" }}>
               <div>
                 <span style={{ color: "var(--color-content-muted)" }}>{t("policies.currencyPolicyLabel")}: </span>
-                <strong dir="ltr">{policy?.currencyPolicy || "—"}</strong>
+                <strong style={{ marginInlineStart: "var(--space-1)" }}>
+                  {t(`lists.currencyPolicies.${policy?.currencyPolicy}`, policy?.currencyPolicy || "—")}
+                </strong>
               </div>
               <div>
                 <span style={{ color: "var(--color-content-muted)" }}>{t("policies.allowUomDerivedLabel")}: </span>

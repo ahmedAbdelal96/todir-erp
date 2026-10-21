@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { usePreviewImportMutation, useCommitImportMutation, usePriceLists, usePriceVersions } from "../hooks/pricing-queries.ts";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
@@ -15,10 +15,10 @@ export interface PricingImportModalProps {
 }
 
 const DEFAULT_SAMPLE_CSV = `SKU,UOM,Price,Currency,MinQty,MaxQty
-SKU-001,EA,1250.00,EGP,1,
-SKU-001,PACK,7000.00,EGP,1,
-SKU-002,EA,25.00,USD,1,
-UNKNOWN-SKU,EA,99.00,EGP,1,`;
+AT-0002,EA,1300.00,EGP,1,
+AT-0002,PACK,7200.00,EGP,1,
+AT-0002,EA,30.00,USD,1,
+UNKNOWN-SKU-999,EA,99.00,EGP,1,`;
 
 export function PricingImportModal({
   isOpen,
@@ -82,7 +82,21 @@ export function PricingImportModal({
   };
 
   const listOptions = (priceLists || []).map((l) => ({ id: l.id, label: `${l.name} (${l.code})` }));
-  const versionOptions = draftVersions.map((v) => ({ id: v.id, label: `إصدار مسودة #${v.versionNumber} (بدء: ${v.effectiveFrom})` }));
+  const versionOptions = draftVersions.length > 0
+    ? draftVersions.map((v) => ({ id: v.id, label: `إصدار مسودة #${v.versionNumber} (بدء: ${v.effectiveFrom})` }))
+    : [{ id: "draft-fallback", label: t("importExport.fallbackDraftVersion") }];
+
+  useEffect(() => {
+    if (!selectedListId && priceLists && priceLists.length > 0) {
+      setSelectedListId(priceLists[0]!.id);
+    }
+  }, [priceLists, selectedListId]);
+
+  useEffect(() => {
+    if (!selectedVersionId && versionOptions.length > 0) {
+      setSelectedVersionId(versionOptions[0]!.id);
+    }
+  }, [versionOptions, selectedVersionId]);
 
   return (
     <Dialog
@@ -98,7 +112,7 @@ export function PricingImportModal({
 
         {commitSuccess !== undefined && (
           <Alert variant="success" title={t("importExport.previewTitle")}>
-            {t("actions.refresh")}
+            {t("importExport.commitSuccessSummary", { count: commitSuccess })}
           </Alert>
         )}
 
@@ -188,7 +202,21 @@ export function PricingImportModal({
                   </thead>
                   <tbody>
                     {preview.rows.map((row) => {
-                      const hasError = Boolean(row.errorCode);
+                      const hasError = Boolean(row.errorCode || row.errorMessage);
+                      const errCode = (row.errorCode || "").toLowerCase();
+                      const errMsg = (row.errorMessage || "").toLowerCase();
+
+                      let statusBadge = <StatusBadge size="small" intent="success" label={t("importExport.statusReady")} />;
+                      if (errCode.includes("sku") || errMsg.includes("sku")) {
+                        statusBadge = <StatusBadge size="small" intent="danger" label={t("importExport.statusUnknownSku")} />;
+                      } else if (errCode.includes("currency") || errMsg.includes("currency")) {
+                        statusBadge = <StatusBadge size="small" intent="warning" label={t("importExport.statusCurrencyMismatch")} />;
+                      } else if (errCode.includes("conflict") || errMsg.includes("conflict")) {
+                        statusBadge = <StatusBadge size="small" intent="danger" label={t("importExport.statusConflict")} />;
+                      } else if (hasError) {
+                        statusBadge = <StatusBadge size="small" intent="danger" label={t("importExport.errorRows")} />;
+                      }
+
                       return (
                         <tr key={row.rowNumber} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
                           <td style={{ padding: "6px 10px" }} dir="ltr">{row.rowNumber}</td>
@@ -197,11 +225,7 @@ export function PricingImportModal({
                           <td style={{ padding: "6px 10px" }} dir="ltr">{row.unitPrice || "—"}</td>
                           <td style={{ padding: "6px 10px" }} dir="ltr">{row.currencyCode || "—"}</td>
                           <td style={{ padding: "6px 10px" }}>
-                            <StatusBadge
-                              size="small"
-                              intent={hasError ? "danger" : "success"}
-                              label={hasError ? t("importExport.errorRows") : t("importExport.validRows")}
-                            />
+                            {statusBadge}
                           </td>
                           <td style={{ padding: "6px 10px", color: hasError ? "var(--color-status-danger)" : "var(--color-content-muted)" }}>
                             {row.errorMessage || "—"}
