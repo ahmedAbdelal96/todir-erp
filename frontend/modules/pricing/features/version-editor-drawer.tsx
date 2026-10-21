@@ -13,44 +13,8 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
-import { useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import { AddEntryModal } from "./add-entry-modal.tsx";
 import type { PriceListDto, PriceVersionDto } from "../types.ts";
-
-interface StaticEntryItem {
-  variant: string;
-  uom: string;
-  scope: string;
-  tier: string;
-  price: string;
-  priority: number;
-}
-
-const STATIC_RETAIL_ENTRIES: StaticEntryItem[] = [
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "allParties", tier: "1+", price: "1,250.00 EGP", priority: 0 },
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "أطلس للصناعات المكتبية (عميل خاص)", tier: "1+", price: "1,100.00 EGP", priority: 0 },
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "عبوة (PACK)", scope: "allParties", tier: "1+", price: "700.00 EGP", priority: 0 },
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "كرتونة (CARTON)", scope: "allParties", tier: "1+", price: "25,500.00 EGP", priority: 0 },
-  { variant: "عينة تجريبية ترويجية (AT-0004)", uom: "قطعة (EA)", scope: "allParties", tier: "1+", price: "0.00 EGP", priority: 0 }
-];
-
-const DRAFT_CONFLICT_ENTRIES: StaticEntryItem[] = [
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "allParties", tier: "1+", price: "1,250.00 EGP", priority: 0 },
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "allParties", tier: "1+", price: "1,150.00 EGP", priority: 0 }
-];
-
-const STATIC_WHOLESALE_ENTRIES: StaticEntryItem[] = [
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "priceGroup", tier: "1 – 11 قطعة", price: "1,125.00 EGP", priority: 0 },
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "priceGroup", tier: "12+ قطعة", price: "1,050.00 EGP", priority: 0 }
-];
-
-const STATIC_EXPORT_ENTRIES: StaticEntryItem[] = [
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "أطلس للصناعات المكتبية (عميل خاص)", tier: "1+", price: "25.00 USD", priority: 0 }
-];
-
-const STATIC_PURCHASE_ENTRIES: StaticEntryItem[] = [
-  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "شركة النور للتوريدات (مورد معتمد)", tier: "1+", price: "900.00 EGP", priority: 0 }
-];
 
 export interface VersionEditorDrawerProps {
   readonly isOpen: boolean;
@@ -95,19 +59,19 @@ export function VersionEditorDrawer({
     try {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
+      const effectiveFrom = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
       const res = await createVersionMutation.mutateAsync({
         listId: priceList.id,
         legalEntityId,
         request: {
-          effectiveFrom: tomorrow.toISOString().slice(0, 10),
+          effectiveFrom,
           expectedListVersion: priceList.version
         }
       });
       setSelectedVersionId(res.id);
       void refetch();
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setValidationResult({ error: errObj.message || "تعذر إنشاء إصدار جديد." });
+      setValidationResult({ error: t("versions.createFailed") });
     }
   };
 
@@ -124,7 +88,7 @@ export function VersionEditorDrawer({
       const errObj = err as { problemDetails?: { code?: string; title?: string }; message?: string };
       const isConflict = String(err).includes("conflict") || errObj?.problemDetails?.code?.includes("conflict");
       setValidationResult({
-        error: isConflict ? t("versions.validationConflictDescription") : errObj.message || "فشل التحقق من الإصدار."
+        error: isConflict ? t("versions.validationConflictDescription") : t("versions.validationFailed")
       });
     }
   };
@@ -140,8 +104,7 @@ export function VersionEditorDrawer({
       setValidationResult({ success: true });
       void refetch();
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setValidationResult({ error: errObj.message || "تعذر تفعيل الإصدار." });
+      setValidationResult({ error: t("versions.activationFailed") });
     }
   };
 
@@ -156,8 +119,7 @@ export function VersionEditorDrawer({
       setValidationResult({ success: true });
       void refetch();
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setValidationResult({ error: errObj.message || "تعذر جدولة الإصدار." });
+      setValidationResult({ error: t("versions.scheduleFailed") });
     }
   };
 
@@ -174,7 +136,7 @@ export function VersionEditorDrawer({
       link.click();
       document.body.removeChild(link);
     } catch {
-      setValidationResult({ error: "تعذر تصدير بيانات القائمة." });
+      setValidationResult({ error: t("versions.exportFailed") });
     }
   };
 
@@ -278,9 +240,11 @@ export function VersionEditorDrawer({
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
-                <Button variant="secondary" size="compact" onPress={() => void handleExportCsv()}>
-                  {t("versions.actions.exportCsv")}
-                </Button>
+                {canManage ? (
+                  <Button variant="secondary" size="compact" onPress={() => void handleExportCsv()}>
+                    {t("versions.actions.exportCsv")}
+                  </Button>
+                ) : null}
 
                 {isDraft && canManage && (
                   <>
@@ -321,68 +285,11 @@ export function VersionEditorDrawer({
                   </tr>
                 </thead>
                 <tbody>
-                  {isDraft && validationResult?.error ? (
-                    DRAFT_CONFLICT_ENTRIES.map((entry, idx) => (
-                      <tr key={idx} style={{ borderBottom: "1px solid var(--color-border-subtle)", backgroundColor: "var(--color-status-danger-subtle, rgba(239, 68, 68, 0.05))" }}>
-                        <td style={{ padding: "8px 12px", fontWeight: 600 }}>{entry.variant}</td>
-                        <td style={{ padding: "8px 12px" }}>{entry.uom}</td>
-                        <td style={{ padding: "8px 12px" }}>{entry.scope === "allParties" ? t("entryModal.allPartiesOption") : entry.scope}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.tier}</td>
-                        <td style={{ padding: "8px 12px", fontWeight: 700, color: "var(--color-status-danger)" }} dir="ltr">{entry.price}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.priority}</td>
-                      </tr>
-                    ))
-                  ) : priceList.code === "RETAIL" ? (
-                    STATIC_RETAIL_ENTRIES.map((entry, idx) => (
-                      <tr key={idx} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
-                        <td style={{ padding: "8px 12px", fontWeight: 600 }}>{entry.variant}</td>
-                        <td style={{ padding: "8px 12px" }}>{entry.uom}</td>
-                        <td style={{ padding: "8px 12px" }}>{entry.scope === "allParties" ? t("entryModal.allPartiesOption") : entry.scope}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.tier}</td>
-                        <td style={{ padding: "8px 12px", fontWeight: 700 }} dir="ltr">{entry.price}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.priority}</td>
-                      </tr>
-                    ))
-                  ) : priceList.code === "WHOLESALE" ? (
-                    STATIC_WHOLESALE_ENTRIES.map((entry, idx) => (
-                      <tr key={idx} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
-                        <td style={{ padding: "8px 12px", fontWeight: 600 }}>{entry.variant}</td>
-                        <td style={{ padding: "8px 12px" }}>{entry.uom}</td>
-                        <td style={{ padding: "8px 12px" }}>{t("entryModal.priceGroupOption")}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.tier}</td>
-                        <td style={{ padding: "8px 12px", fontWeight: 700 }} dir="ltr">{entry.price}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.priority}</td>
-                      </tr>
-                    ))
-                  ) : priceList.code === "EXPORT-USD" ? (
-                    STATIC_EXPORT_ENTRIES.map((entry, idx) => (
-                      <tr key={idx} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
-                        <td style={{ padding: "8px 12px", fontWeight: 600 }}>{entry.variant}</td>
-                        <td style={{ padding: "8px 12px" }}>{entry.uom}</td>
-                        <td style={{ padding: "8px 12px" }}>{entry.scope}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.tier}</td>
-                        <td style={{ padding: "8px 12px", fontWeight: 700 }} dir="ltr">{entry.price}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.priority}</td>
-                      </tr>
-                    ))
-                  ) : priceList.code === "PURCHASE" ? (
-                    STATIC_PURCHASE_ENTRIES.map((entry, idx) => (
-                      <tr key={idx} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
-                        <td style={{ padding: "8px 12px", fontWeight: 600 }}>{entry.variant}</td>
-                        <td style={{ padding: "8px 12px" }}>{entry.uom}</td>
-                        <td style={{ padding: "8px 12px" }}>{entry.scope}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.tier}</td>
-                        <td style={{ padding: "8px 12px", fontWeight: 700 }} dir="ltr">{entry.price}</td>
-                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.priority}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={6} style={{ padding: "16px", textAlign: "center", color: "var(--color-content-muted)" }}>
-                        {t("versions.emptyEntries")}
-                      </td>
-                    </tr>
-                  )}
+                  <tr>
+                    <td colSpan={6} style={{ padding: "16px", textAlign: "center", color: "var(--color-content-muted)" }}>
+                      {t("versions.entriesUnavailable")}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>

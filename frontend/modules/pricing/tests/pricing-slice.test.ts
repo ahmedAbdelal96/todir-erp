@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { PriceResolution, PriceSnapshot } from "../types.ts";
+import { PricingReasonKind, summarizePricingReason } from "../features/pricing-reason.ts";
 
 describe("Pricing Vertical Slice Contracts & Invariants", () => {
   it("F14 / Decimal Safety — preserves price strings as invariant decimals without floating-point conversion", () => {
@@ -97,5 +98,25 @@ describe("Pricing Vertical Slice Contracts & Invariants", () => {
 
     const customerText = sanitizeBusinessExplanation(internalTuple, "Atlas Office");
     assert.equal(customerText, "Customer-specific price applied: Atlas Office");
+  });
+
+  it("Simulator explanation summary — exposes only the resolver's real business facts", () => {
+    assert.deepEqual(
+      summarizePricingReason("Variant / SpecificParty; unit specificity 3; minimum quantity 12; explicit priority 0."),
+      { kind: PricingReasonKind.Customer, minimumQuantity: 12 }
+    );
+    assert.deepEqual(
+      summarizePricingReason("Variant / PriceGroup; unit specificity 3; minimum quantity 1; explicit priority 0."),
+      { kind: PricingReasonKind.PriceGroup, minimumQuantity: 1 }
+    );
+    assert.deepEqual(
+      summarizePricingReason("Variant / AllParties; unit specificity 1; minimum quantity 12; explicit priority 0."),
+      { kind: PricingReasonKind.QuantityTier, minimumQuantity: 12 }
+    );
+    assert.deepEqual(
+      summarizePricingReason("Variant / AllParties; unit specificity 3; minimum quantity 1; explicit priority 0."),
+      { kind: PricingReasonKind.ExactUnit, minimumQuantity: 1 }
+    );
+    assert.deepEqual(summarizePricingReason("No active rule matches."), { kind: PricingReasonKind.Standard, minimumQuantity: null });
   });
 });

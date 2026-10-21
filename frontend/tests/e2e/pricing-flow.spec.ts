@@ -5,7 +5,6 @@ const atlasUomEa = '2b12a81b-ea82-a151-af7f-4c60a017f44d';
 const atlasVariantZeroPrice = '4eb9a971-d48b-9659-9458-e144cd0d8a10';
 const atlasVariantUnpriced = '01c6a2aa-6619-ce59-b5ea-92d9500f27ad';
 const atlasProductWithPriceId = '798fbf84-e5d9-475f-8b91-7d1f62ebed50';
-
 async function selectOption(page: Page, labelRegex: RegExp, optionRegex: RegExp) {
   const trigger = page.getByLabel(labelRegex).first();
   await trigger.click();
@@ -131,7 +130,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await version1Trigger.click();
     await page.waitForTimeout(500);
     await expect(page.getByText(/الإصدار الحالي نشط ومقفل تاريخياً/i)).toBeVisible();
-    await expect(page.getByText('هاتف ذكي أطلس برو (AT-0002)').first()).toBeVisible();
+    await expect(page.getByText(/لا تتوفر تفاصيل البنود للعرض هنا/i)).toBeVisible();
 
     await page.screenshot({
       path: 'artifacts/test-results/pricing/06-version-editor-active-readonly.png'
@@ -147,47 +146,6 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
       path: 'artifacts/test-results/pricing/07-scheduled-future-version.png'
     });
 
-    // 19: Conflict Proof on Draft Version (#3)
-    const version3Trigger = page.getByRole('button', { name: /إصدار #3/i }).first();
-    if (await version3Trigger.isVisible({ timeout: 3000 }).catch(() => false)) {
-      // Insert temporary overlapping rules into Draft Version #3 to prove conflict detection
-      const { execSync } = await import('node:child_process');
-      try {
-        execSync(
-          `docker exec todir-postgres-1 psql -U postgres -d pricing_clean_acceptance_20261021 -c "SET row_security = off; INSERT INTO foundation_pricing.price_entry(tenant_id, id, price_list_version_id, variant_id, uom_id, min_quantity, unit_price, priority, status, version, created_at) VALUES ('c9fea3c8-249d-f150-a53a-84f5a891c82b', gen_random_uuid(), '51a53889-919d-3c54-9aea-973198315cce', 'a6315416-cffe-bf52-bcf0-d5e590d3bf94', '2b12a81b-ea82-a151-af7f-4c60a017f44d', 0, 1250, 0, 'Active', 1, now()), ('c9fea3c8-249d-f150-a53a-84f5a891c82b', gen_random_uuid(), '51a53889-919d-3c54-9aea-973198315cce', 'a6315416-cffe-bf52-bcf0-d5e590d3bf94', '2b12a81b-ea82-a151-af7f-4c60a017f44d', 0, 1150, 0, 'Active', 1, now());"`,
-          { stdio: 'ignore' }
-        );
-      } catch {
-        // Continue if direct insert is unavailable
-      }
-
-      await version3Trigger.click();
-      await page.waitForTimeout(500);
-      const validateBtn = page.getByRole('button', { name: /فحص التعارضات|التحقق من صحة الإصدار/i });
-      if (await validateBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await validateBtn.click();
-        await page.waitForTimeout(1000);
-      }
-
-      await expect(page.getByText(/تعارض في قواعد التسعير/i)).toBeVisible({ timeout: 5000 });
-      await expect(page.getByText(/تم اكتشاف تعارض بين قواعد تسعيرية/i)).toBeVisible({ timeout: 5000 });
-
-      // Screenshot draft version showing configuration conflict and blocked activation
-      await page.screenshot({
-        path: 'artifacts/test-results/pricing/19-conflict-blocking-activation.png'
-      });
-
-      // Clean up test conflict data immediately so the canonical database remains unpolluted
-      try {
-        execSync(
-          `docker exec todir-postgres-1 psql -U postgres -d pricing_clean_acceptance_20261021 -c "SET row_security = off; DELETE FROM foundation_pricing.price_entry WHERE price_list_version_id = '51a53889-919d-3c54-9aea-973198315cce' AND unit_price IN (1250, 1150);"`,
-          { stdio: 'ignore' }
-        );
-      } catch {
-        // Ignore cleanup error if already removed
-      }
-    }
-
     // Close version drawer
     await page.getByRole('button', { name: /إغلاق النافذة|إلغاء/i }).first().click();
 
@@ -198,13 +156,15 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await page.waitForLoadState('networkidle');
     await expect(page.getByRole('heading', { name: /محاكي ومفسر التسعير التجاري/i })).toBeVisible();
 
+    await selectOption(page, /المنتج \/ النموذج/i, /AT-0002\)/i);
+    await selectOption(page, /وحدة القياس/i, /EA|قطعة/i);
+
     const simulateBtn = page.getByRole('button', { name: /محاكاة واحتساب السعر/i });
 
     // 08: Customer-Specific Price Proof (Atlas Office Industries -> 1,100 EGP vs 1,250 standard)
     await selectOption(page, /قائمة الأسعار المحددة/i, /RETAIL|قائمة البيع العامة/i);
     await selectOption(page, /العميل أو المورد/i, /أطلس للصناعات المكتبية/i);
     await page.getByLabel(/عملة العملية التجارية/i).fill('EGP');
-    await page.getByLabel(/تاريخ استحقاق التسعير/i).fill('2026-01-05');
     await simulateBtn.click();
     await page.waitForLoadState('networkidle');
 
@@ -232,7 +192,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByText(/1,050|1050/i).first()).toBeVisible();
-    await expect(page.getByText(/تم تطبيق شريحة كميات الجملة/i)).toBeVisible();
+    await expect(page.getByText(/تم تطبيق السعر المخصص للطلبات بكمية 12 أو أكثر/i)).toBeVisible();
     await page.screenshot({
       path: 'artifacts/test-results/pricing/09-wholesale-quantity-tiers.png'
     });
@@ -251,7 +211,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByText(/25,500|25500/i).first()).toBeVisible();
-    await expect(page.getByText(/تم تطبيق سعر تجاري مخصص لوحدة كرتونة/i)).toBeVisible();
+    await expect(page.getByText(/تم تطبيق سعر تجاري مستقل لوحدة كرتونة/i)).toBeVisible();
     await page.screenshot({
       path: 'artifacts/test-results/pricing/10-uom-pricing-breakdown.png'
     });
@@ -260,6 +220,10 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await selectOption(page, /وحدة القياس/i, /EA|قطعة/i);
     await selectOption(page, /قائمة الأسعار المحددة/i, /EXPORT-USD|بالدولار/i);
     await selectOption(page, /العميل أو المورد/i, /أطلس للصناعات المكتبية/i);
+    // The canonical finance seed rate is dated 2026-01-01; use a nearby
+    // historical business date to verify conversion without pretending that
+    // this stale rate is valid for today's transactions.
+    await page.getByLabel(/تاريخ استحقاق التسعير/i).fill('2026-01-05');
     await simulateBtn.click();
     await page.waitForLoadState('networkidle');
 
@@ -279,7 +243,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     });
 
     // 13: Simulator - Price Missing State
-    await selectOption(page, /المنتج \/ النموذج/i, /غير مسعر|AT-0005/i);
+    await selectOption(page, /المنتج \/ النموذج/i, /AT-0022/i);
     await simulateBtn.click();
     await page.waitForLoadState('networkidle');
 
@@ -289,7 +253,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     });
 
     // 14: Simulator - Explicit Promotional Zero Price
-    await selectOption(page, /المنتج \/ النموذج/i, /عينة|AT-0004/i);
+    await selectOption(page, /المنتج \/ النموذج/i, /AT-0004/i);
     await simulateBtn.click();
     await page.waitForLoadState('networkidle');
 
@@ -323,25 +287,64 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
       await page.waitForTimeout(300);
     }
 
+    await page.locator('textarea').fill('SKU,UOM,Price,Currency,MinQty,MaxQty\nAT-0006,EA,15.00,EGP,1,');
+
     // Click Validate & Preview to advance to Step 2
     const validatePreviewBtn = page.getByRole('button', { name: /فحص وتدقيق البيانات/i });
     await validatePreviewBtn.click();
     await page.waitForLoadState('networkidle');
+    await expect(page.getByText(/تقرير تدقيق ومطابقة الاستيراد/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/الصفوف المطابقة والسليمة:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/جاهز للاعتماد في المسودة/i)).toBeVisible();
 
     // Click Commit to Draft Version
     const commitBtn = page.getByRole('button', { name: /اعتماد واستيراد البنود المطابقة/i });
-    if (await commitBtn.isVisible() && await commitBtn.isEnabled()) {
-      await commitBtn.click();
-      await page.waitForLoadState('networkidle');
-      await expect(page.getByText(/تقرير مطابقة واعتماد الاستيراد/i)).toBeVisible({ timeout: 10000 });
-      await expect(page.getByText(/مكتمل ومثبت في المسودة/i)).toBeVisible({ timeout: 10000 });
-    }
+    await expect(commitBtn).toBeVisible();
+    await expect(commitBtn).toBeEnabled();
+    await commitBtn.click();
+    await expect(page.getByText(/تقرير مطابقة واعتماد الاستيراد/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/البنود المعتمدة في المسودة:\s*1/i)).toBeVisible();
+    await expect(page.getByText(/البنود المستبعدة أو غير المطابقة:\s*0/i)).toBeVisible();
+    await expect(page.getByText(/مكتمل ومثبت في المسودة/i).first()).toBeVisible();
+    await expect(page.getByText(/الإصدار النشط محمي تاريخياً ولم يتأثر/i)).toBeVisible();
 
     // 15: Preview & Reconciliation Audit Screenshot
     await page.screenshot({
       path: 'artifacts/test-results/pricing/15-import-preview-audit.png'
     });
 
+    await page.getByRole('button', { name: /إلغاء/i }).click();
+
+    // 19: Add overlapping entries after import reconciliation so the conflict
+    // does not prevent the preceding valid import from being committed.
+    await page.getByRole('button', { name: /^قوائم البيع$|^Selling Lists$/i }).click();
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: /عرض الإصدارات والمحرر/i }).nth(1).click();
+    await expect(page.getByRole('heading', { name: /إصدارات قائمة الأسعار والمحرر/i })).toBeVisible({ timeout: 5000 });
+    const version3Trigger = page.getByRole('button', { name: /إصدار #3/i }).first();
+    if (await version3Trigger.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await version3Trigger.click();
+      await page.waitForTimeout(500);
+      const validateBtn = page.getByRole('button', { name: /فحص التعارضات|التحقق من صحة الإصدار/i });
+      await expect(validateBtn).toBeVisible({ timeout: 5000 });
+
+      for (const price of ['100', '90']) {
+        await page.getByRole('button', { name: /إضافة بند سعر مباشر/i }).click();
+        await selectOption(page, /المنتج \/ النموذج/i, /AT-0008/i);
+        await selectOption(page, /وحدة القياس/i, /قطعة \(EA\)/i);
+        await page.getByLabel(/سعر الوحدة/i).fill(price);
+        await page.getByRole('button', { name: /إضافة البند للمسودة/i }).click();
+        await expect(page.getByRole('button', { name: /إضافة البند للمسودة/i })).not.toBeVisible({ timeout: 10000 });
+      }
+
+      await validateBtn.click();
+      await expect(page.getByText(/تعارض في قواعد التسعير/i)).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(/تم اكتشاف تعارض بين قواعد تسعيرية تحمل نفس الأولوية والنطاق ولكن بقيم متناقضة/i)).toBeVisible();
+      await expect(page.getByRole('button', { name: /تفعيل الإصدار فوراً/i })).toBeDisabled();
+      await page.screenshot({
+        path: 'artifacts/test-results/pricing/19-conflict-blocking-activation.png'
+      });
+    }
     await page.getByRole('button', { name: /إلغاء/i }).click();
 
     // ==========================================
@@ -386,6 +389,14 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(500);
     await expect(page.locator('h1').first()).toBeVisible();
+    const mobilePricingTabs = page.locator('.pricing-tabs-desktop button');
+    await expect(mobilePricingTabs).toHaveCount(6);
+    for (const tab of await mobilePricingTabs.all()) {
+      const bounds = await tab.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+    }
 
     await page.screenshot({
       path: 'artifacts/test-results/pricing/16-pricing-mobile-390px.png',
@@ -474,18 +485,35 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     });
 
     // Test direct unauthorized command rejection on backend (403 Forbidden)
-    const unauthorizedResponse = await salesPage.request.post('http://127.0.0.1:5080/api/v1/pricing/price-lists', {
-      headers: { 'X-Legal-Entity-Id': 'aad8a34b-344c-9e5b-8d58-57f182fc6528' },
-      data: {
-        legalEntityId: 'aad8a34b-344c-9e5b-8d58-57f182fc6528',
-        code: 'UNAUTH-SALES',
-        name: 'Unauthorized',
-        direction: 'Selling',
-        currencyCode: 'EGP',
-        currencyPolicy: 'ExactCurrency'
+    const unauthorizedProof = await salesPage.evaluate(async () => {
+      const sessionResponse = await fetch('/api/v1/session/context', { credentials: 'same-origin' });
+      const csrfResponse = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin' });
+      if (!sessionResponse.ok || !csrfResponse.ok) {
+        return { sessionStatus: sessionResponse.status, csrfStatus: csrfResponse.status, writeStatus: null };
       }
+      const { token } = await csrfResponse.json() as { token: string };
+      const response = await fetch('/api/v1/pricing/price-lists', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Legal-Entity-Id': 'aad8a34b-344c-9e5b-8d58-57f182fc6528',
+          'X-CSRF-TOKEN': token
+        },
+        body: JSON.stringify({
+          legalEntityId: 'aad8a34b-344c-9e5b-8d58-57f182fc6528',
+          code: 'UNAUTH-SALES',
+          name: 'Unauthorized',
+          direction: 'Selling',
+          currencyCode: 'EGP',
+          currencyPolicy: 'ExactCurrency'
+        })
+      });
+      return { sessionStatus: sessionResponse.status, csrfStatus: csrfResponse.status, writeStatus: response.status };
     });
-    expect([400, 401, 403]).toContain(unauthorizedResponse.status());
+    expect(unauthorizedProof.sessionStatus).toBe(200);
+    expect(unauthorizedProof.csrfStatus).toBe(200);
+    expect([401, 403]).toContain(unauthorizedProof.writeStatus);
 
     await salesContext.close();
     await context.close();

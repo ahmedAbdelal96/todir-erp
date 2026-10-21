@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { usePricingScope, useResolvePriceQuery, usePriceLists, usePriceVersions, useAddPriceEntryMutation, useCreatePriceVersionMutation } from "../hooks/pricing-queries.ts";
+import { usePricingScope, useResolvePriceQuery, usePriceLists, usePriceVersions, useLookupUoms, useAddPriceEntryMutation, useCreatePriceVersionMutation, usePricingManagePermission } from "../hooks/pricing-queries.ts";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
@@ -27,9 +27,13 @@ export function ProductSellingPriceCard({
 }: ProductSellingPriceCardProps): React.JSX.Element {
   const { t } = useTranslation("pricing");
   const { legalEntityId } = usePricingScope({ legalEntityId: explicitEntityId });
+  const canManagePricing = usePricingManagePermission();
 
-  const effectiveUomId = uomId && uomId.length > 20 ? uomId : "2b12a81b-ea82-a151-af7f-4c60a017f44d";
-  const effectivePricingDate = explicitPricingDate || "2026-01-05";
+  const { data: uoms } = useLookupUoms();
+  const defaultUomId = uoms?.find((uom) => uom.code === "EA")?.id ?? "";
+  const effectiveUomId = uomId && uomId.length > 20 ? uomId : defaultUomId;
+  const today = new Date();
+  const effectivePricingDate = explicitPricingDate || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
   const resolveQuery = useResolvePriceQuery({
     legalEntityId,
@@ -48,18 +52,22 @@ export function ProductSellingPriceCard({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newPrice, setNewPrice] = useState("");
   const [errorMsg, setErrorMsg] = useState<string>();
+  const [successMsg, setSuccessMsg] = useState<string>();
 
   const addEntryMutation = useAddPriceEntryMutation();
   const createVersionMutation = useCreatePriceVersionMutation();
 
   const resolution = resolveQuery.data;
   const isResolved = resolution?.status === "Resolved" && resolution.snapshot;
+  const isPriceLoading = resolveQuery.isLoading || !effectiveUomId;
+  const hasPriceLoadError = resolveQuery.isError;
   const unitPrice = resolution?.snapshot?.finalUnitPrice;
   const isZeroPrice = isResolved && (unitPrice === "0" || unitPrice === "0.00" || unitPrice === "0.0000");
 
   const handleOpenModal = () => {
     setNewPrice(isResolved ? unitPrice || "" : "");
     setErrorMsg(undefined);
+    setSuccessMsg(undefined);
     setIsModalOpen(true);
   };
 
@@ -69,12 +77,16 @@ export function ProductSellingPriceCard({
 
     const normalized = normalizeDecimalInput(newPrice);
     if (!normalized || isNaN(Number(normalized)) || Number(normalized) < 0) {
-      setErrorMsg("يرجى إدخال سعر صحيح وموجب.");
+      setErrorMsg(t("productWidget.invalidPrice"));
       return;
     }
 
     if (!defaultSellingList) {
-      setErrorMsg("لم يتم العثور على قائمة البيع الافتراضية للمنشأة.");
+      setErrorMsg(t("productWidget.defaultListMissing"));
+      return;
+    }
+    if (!effectiveUomId) {
+      setErrorMsg(t("productWidget.unitUnavailable"));
       return;
     }
 
@@ -86,7 +98,7 @@ export function ProductSellingPriceCard({
           listId: defaultSellingList.id,
           legalEntityId,
           request: {
-            effectiveFrom: "2027-01-01",
+            effectiveFrom: effectivePricingDate,
             expectedListVersion: defaultSellingList.version
           }
         });
@@ -106,10 +118,10 @@ export function ProductSellingPriceCard({
       });
 
       await resolveQuery.refetch();
+      setSuccessMsg(t("productWidget.savedToDraft", { date: targetVersion.effectiveFrom }));
       setIsModalOpen(false);
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setErrorMsg(errObj.message || "تعذر حفظ السعر في قائمة البيع الافتراضية.");
+      setErrorMsg(t("productWidget.saveFailed"));
     }
   };
 
@@ -117,19 +129,24 @@ export function ProductSellingPriceCard({
     <Surface
       title={t("productWidget.sellingPriceTitle")}
       headerActions={
-        <Button variant="secondary" size="compact" onPress={handleOpenModal}>
+        canManagePricing ? <Button variant="secondary" size="compact" onPress={handleOpenModal} isDisabled={!effectiveUomId || !defaultSellingList}>
           {isResolved ? t("productWidget.updatePriceAction") : t("productWidget.setPriceAction")}
-        </Button>
+        </Button> : null
       }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+        {successMsg ? <Alert variant="info">{successMsg}</Alert> : null}
         <p style={{ margin: 0, fontSize: "var(--font-size-xs)", color: "var(--color-content-secondary)" }}>
           {t("productWidget.sellingPriceSubtitle")}
         </p>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "var(--space-2)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-3)" }}>
-            {isResolved ? (
+            {isPriceLoading ? (
+              <span role="status" style={{ color: "var(--color-content-secondary)" }}>{t("productWidget.loadingPrice")}</span>
+            ) : hasPriceLoadError ? (
+              <span role="alert" style={{ color: "var(--color-status-danger)" }}>{t("productWidget.priceUnavailable")}</span>
+            ) : isResolved ? (
               <>
                 <MoneyDisplay
                   value={{
@@ -155,7 +172,7 @@ export function ProductSellingPriceCard({
           </div>
         </div>
 
-        {!isResolved && (
+        {!isPriceLoading && !hasPriceLoadError && !isResolved && (
           <p style={{ margin: 0, fontSize: "var(--font-size-xs)", color: "var(--color-status-warning)" }}>
             {t("productWidget.priceMissingHelper")}
           </p>

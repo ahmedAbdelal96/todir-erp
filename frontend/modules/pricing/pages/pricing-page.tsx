@@ -47,7 +47,8 @@ export function PricingPage(): React.JSX.Element {
   const buyingLists = priceLists?.filter((l) => l.direction === "Buying") || [];
   const defaultSelling = sellingLists.find((l) => l.code === "RETAIL" || (l as { isDefault?: boolean }).isDefault) || sellingLists[0];
 
-  const pricingDate = "2026-01-05";
+  const now = new Date();
+  const pricingDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const { data: coverage } = usePricingCoverage(
     activeTab === "policies" ? legalEntityId : "",
     activeTab === "policies" ? defaultSelling?.id ?? "" : "",
@@ -146,7 +147,7 @@ export function PricingPage(): React.JSX.Element {
         </div>
 
         {/* Desktop View: Tab Buttons */}
-        <div className="pricing-tabs-desktop" style={{ display: "flex", gap: "var(--space-1)", borderBottom: "1px solid var(--color-border-subtle)", paddingBottom: "var(--space-1)", overflowX: "auto" }}>
+        <div className="pricing-tabs-desktop" style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)", borderBottom: "1px solid var(--color-border-subtle)", paddingBottom: "var(--space-1)", maxWidth: "100%" }}>
           {tabOptions.map((tab) => {
             const isSelected = tab.id === activeTab;
             return (

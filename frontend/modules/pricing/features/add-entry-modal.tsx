@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAddPriceEntryMutation } from "../hooks/pricing-queries.ts";
+import { useAddPriceEntryMutation, useLookupProducts, useLookupUoms, useLookupParties } from "../hooks/pricing-queries.ts";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
@@ -8,6 +8,25 @@ import { Select } from "../../../components/primitives/select.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
 import { normalizeDecimalInput } from "../../../components/formatting/decimal-parser.ts";
 import type { PricingPartyScope } from "../types.ts";
+
+interface LookupItem {
+  readonly id: string;
+  readonly code?: string;
+  readonly displayName?: string;
+  readonly name?: string;
+  readonly nameAr?: string;
+  readonly nameEn?: string;
+  readonly sku?: string;
+  readonly defaultVariantId?: string;
+}
+
+function lookupItems(raw: unknown): readonly LookupItem[] {
+  if (Array.isArray(raw)) return raw as readonly LookupItem[];
+  if (raw && typeof raw === "object" && "items" in raw) {
+    return ((raw as { items?: readonly LookupItem[] }).items ?? []);
+  }
+  return [];
+}
 
 export interface AddEntryModalProps {
   readonly isOpen: boolean;
@@ -26,12 +45,14 @@ export function AddEntryModal({
 }: AddEntryModalProps): React.JSX.Element | null {
   const { t } = useTranslation("pricing");
   const addMutation = useAddPriceEntryMutation();
+  const productsQuery = useLookupProducts(legalEntityId);
+  const uomsQuery = useLookupUoms();
+  const partiesQuery = useLookupParties(legalEntityId);
 
   const [variantId, setVariantId] = useState("");
   const [uomId, setUomId] = useState("");
   const [partyScope, setPartyScope] = useState<PricingPartyScope>("AllParties");
   const [partyId, setPartyId] = useState("");
-  const [priceGroupId, setPriceGroupId] = useState("");
   const [minQuantity, setMinQuantity] = useState("1");
   const [maxQuantity, setMaxQuantity] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
@@ -46,12 +67,20 @@ export function AddEntryModal({
 
     const normalizedPrice = normalizeDecimalInput(unitPrice);
     if (!normalizedPrice || isNaN(Number(normalizedPrice)) || Number(normalizedPrice) < 0) {
-      setErrorMsg("يرجى إدخال سعر وحدة صحيح وموجب.");
+      setErrorMsg(t("entryModal.invalidPrice"));
       return;
     }
 
     if (!variantId.trim() || !uomId.trim()) {
-      setErrorMsg("يرجى تحديد المنتج ووحدة القياس.");
+      setErrorMsg(t("entryModal.productAndUnitRequired"));
+      return;
+    }
+    if (partyScope === "SpecificParty" && !partyId) {
+      setErrorMsg(t("entryModal.partyRequired"));
+      return;
+    }
+    if (partyScope === "PriceGroup") {
+      setErrorMsg(t("entryModal.groupLookupUnavailable"));
       return;
     }
 
@@ -64,7 +93,7 @@ export function AddEntryModal({
           variantId: variantId.trim(),
           uomId: uomId.trim(),
           partyId: partyScope === "SpecificParty" && partyId ? partyId.trim() : null,
-          priceGroupId: partyScope === "PriceGroup" && priceGroupId ? priceGroupId.trim() : null,
+          priceGroupId: null,
           minQuantity: Number(minQuantity) || 1,
           maxQuantity: maxQuantity ? Number(maxQuantity) : null,
           unitPrice: normalizedPrice,
@@ -75,10 +104,20 @@ export function AddEntryModal({
       });
       onClose();
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setErrorMsg(errObj.message || "تعذر إضافة بند السعر.");
+      setErrorMsg(t("entryModal.saveFailed"));
     }
   };
+
+  const products = lookupItems(productsQuery.data)
+    .filter((product) => Boolean(product.defaultVariantId))
+    .map((product) => ({
+      id: product.defaultVariantId as string,
+      label: product.sku ? `${product.displayName || product.name} (${product.sku})` : (product.displayName || product.name || "")
+    }));
+  const parties = lookupItems(partiesQuery.data)
+    .map((party) => ({ id: party.id, label: party.displayName || party.name || "" }));
+  const units = lookupItems(uomsQuery.data)
+    .map((uom) => ({ id: uom.id, label: `${uom.nameAr || uom.nameEn || uom.code || ""} (${uom.code || ""})` }));
 
   const scopeOptions = [
     { id: "AllParties", label: t("entryModal.allPartiesOption") },
@@ -100,21 +139,17 @@ export function AddEntryModal({
           {errorMsg ? <Alert variant="danger">{errorMsg}</Alert> : null}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
-            <TextField
+            <Select
               label={t("entryModal.variantLabel")}
-              value={variantId}
-              onChange={setVariantId}
-              inputDir="ltr"
-              placeholder={t("entryModal.variantPlaceholder")}
-              isRequired
+              selectedKey={variantId}
+              onSelectionChange={(key) => setVariantId(key as string)}
+              options={products}
             />
-            <TextField
+            <Select
               label={t("entryModal.uomLabel")}
-              value={uomId}
-              onChange={setUomId}
-              inputDir="ltr"
-              placeholder={t("entryModal.uomPlaceholder")}
-              isRequired
+              selectedKey={uomId}
+              onSelectionChange={(key) => setUomId(key as string)}
+              options={units}
             />
           </div>
 
@@ -126,25 +161,16 @@ export function AddEntryModal({
           />
 
           {partyScope === "SpecificParty" && (
-            <TextField
+            <Select
               label={t("entryModal.partyLabel") + " *"}
-              value={partyId}
-              onChange={setPartyId}
-              inputDir="ltr"
-              placeholder={t("entryModal.partyPlaceholder")}
-              isRequired
+              selectedKey={partyId}
+              onSelectionChange={(key) => setPartyId(key as string)}
+              options={parties}
             />
           )}
 
           {partyScope === "PriceGroup" && (
-            <TextField
-              label={t("entryModal.groupLabel") + " *"}
-              value={priceGroupId}
-              onChange={setPriceGroupId}
-              inputDir="ltr"
-              placeholder={t("entryModal.groupPlaceholder")}
-              isRequired
-            />
+            <Alert variant="warning">{t("entryModal.groupLookupUnavailable")}</Alert>
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
@@ -202,7 +228,7 @@ export function AddEntryModal({
             <Button variant="secondary" type="button" onPress={onClose}>
               {t("entryModal.cancel")}
             </Button>
-            <Button variant="primary" type="submit" isDisabled={addMutation.isPending || !unitPrice || !variantId}>
+            <Button variant="primary" type="submit" isDisabled={addMutation.isPending || !unitPrice || !variantId || !uomId || (partyScope === "SpecificParty" && !partyId) || partyScope === "PriceGroup"}>
               {addMutation.isPending ? t("entryModal.saving") : t("entryModal.submit")}
             </Button>
           </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { usePreviewImportMutation, useCommitImportMutation, usePriceLists, usePriceVersions } from "../hooks/pricing-queries.ts";
+import { usePreviewImportMutation, useCommitImportMutation, usePriceLists, usePriceVersions, useLookupUoms } from "../hooks/pricing-queries.ts";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
@@ -14,12 +14,6 @@ export interface PricingImportModalProps {
   readonly legalEntityId: string;
 }
 
-const DEFAULT_SAMPLE_CSV = `SKU,UOM,Price,Currency,MinQty,MaxQty
-AT-0002,EA,1300.00,EGP,1,
-AT-0002,PACK,7200.00,EGP,1,
-AT-0002,EA,30.00,USD,1,
-UNKNOWN-SKU-999,EA,99.00,EGP,1,`;
-
 export function PricingImportModal({
   isOpen,
   onClose,
@@ -27,12 +21,13 @@ export function PricingImportModal({
 }: PricingImportModalProps): React.JSX.Element | null {
   const { t } = useTranslation("pricing");
   const { data: priceLists } = usePriceLists(legalEntityId);
+  const { data: uoms } = useLookupUoms();
 
   const [selectedListId, setSelectedListId] = useState<string>("");
   const { data: versions } = usePriceVersions(selectedListId, legalEntityId);
 
   const [selectedVersionId, setSelectedVersionId] = useState<string>("");
-  const [csvContent, setCsvContent] = useState(DEFAULT_SAMPLE_CSV);
+  const [csvContent, setCsvContent] = useState("");
   const [preview, setPreview] = useState<PricingImportPreviewDto>();
   const [commitResult, setCommitResult] = useState<{
     batchId: string;
@@ -50,7 +45,7 @@ export function PricingImportModal({
 
   const handleValidatePreview = async () => {
     if (!selectedListId || !selectedVersionId) {
-      setErrorMsg("يرجى اختيار قائمة الأسعار والإصدار المستهدف (مسودة).");
+      setErrorMsg(t("importExport.selectionRequired"));
       return;
     }
 
@@ -66,8 +61,7 @@ export function PricingImportModal({
       });
       setPreview(data);
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setErrorMsg(errObj.message || "فشلت عملية فحص ومطابقة ملف الاستيراد.");
+      setErrorMsg(t("importExport.previewFailed"));
     }
   };
 
@@ -82,26 +76,34 @@ export function PricingImportModal({
       });
       const selectedVersionObj = draftVersions.find((v) => v.id === selectedVersionId);
       const targetVersionName = selectedVersionObj
-        ? `إصدار مسودة #${selectedVersionObj.versionNumber}`
-        : "إصدار مسودة #3";
+        ? t("versions.versionTag", { number: selectedVersionObj.versionNumber })
+        : t("importExport.targetVersionUnknown");
 
       setCommitResult({
         batchId: res.batchId,
         createdEntries: res.createdEntries,
-        rejectedEntries: preview.rowCount - res.createdEntries,
+      rejectedEntries: preview.errorCount,
         targetVersionName,
         status: res.status
       });
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setErrorMsg(errObj.message || "تعذر اعتماد بنود الاستيراد.");
+      setErrorMsg(t("importExport.commitFailed"));
     }
   };
 
   const listOptions = (priceLists || []).map((l) => ({ id: l.id, label: `${l.name} (${l.code})` }));
-  const versionOptions = draftVersions.length > 0
-    ? draftVersions.map((v) => ({ id: v.id, label: `إصدار مسودة #${v.versionNumber} (بدء: ${v.effectiveFrom})` }))
-    : [{ id: "draft-fallback", label: t("importExport.fallbackDraftVersion") }];
+  const versionOptions = draftVersions.map((v) => ({
+    id: v.id,
+    label: t("importExport.targetVersionOption", { number: v.versionNumber, date: v.effectiveFrom })
+  }));
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCsvContent("");
+    setPreview(undefined);
+    setCommitResult(undefined);
+    setErrorMsg(undefined);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!selectedListId && priceLists && priceLists.length > 0) {
@@ -198,6 +200,9 @@ export function PricingImportModal({
               options={versionOptions}
             />
           </div>
+          {selectedListId && draftVersions.length === 0 ? (
+            <Alert variant="warning">{t("importExport.noDraftAvailable")}</Alert>
+          ) : null}
 
           <div>
             <label style={{ display: "block", fontSize: "var(--font-size-xs)", fontWeight: 600, marginBottom: "var(--space-1)" }}>
@@ -207,6 +212,7 @@ export function PricingImportModal({
               dir="ltr"
               value={csvContent}
               onChange={(e) => setCsvContent(e.target.value)}
+              placeholder={t("importExport.csvPlaceholder")}
               rows={6}
               style={{
                 width: "100%",
@@ -225,7 +231,7 @@ export function PricingImportModal({
               variant="secondary"
               type="button"
               onPress={() => void handleValidatePreview()}
-              isDisabled={previewMutation.isPending || !selectedListId || !selectedVersionId}
+              isDisabled={previewMutation.isPending || !selectedListId || !selectedVersionId || !csvContent.trim()}
             >
               {previewMutation.isPending ? t("importExport.validating") : t("importExport.validateAction")}
             </Button>
@@ -290,7 +296,7 @@ export function PricingImportModal({
                         <tr key={row.rowNumber} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
                           <td style={{ padding: "6px 10px" }} dir="ltr">{row.rowNumber}</td>
                           <td style={{ padding: "6px 10px", fontWeight: 600 }} dir="ltr">{row.sku}</td>
-                          <td style={{ padding: "6px 10px" }} dir="ltr">{row.uomId ? "—" : "—"}</td>
+                            <td style={{ padding: "6px 10px" }} dir="ltr">{uoms?.find((uom) => uom.id === row.uomId)?.code || "—"}</td>
                           <td style={{ padding: "6px 10px" }} dir="ltr">{row.unitPrice || "—"}</td>
                           <td style={{ padding: "6px 10px" }} dir="ltr">{row.currencyCode || "—"}</td>
                           <td style={{ padding: "6px 10px" }}>
@@ -316,7 +322,7 @@ export function PricingImportModal({
               variant="primary"
               type="button"
               onPress={() => void handleCommit()}
-              isDisabled={commitMutation.isPending || preview.rowCount - preview.errorCount === 0}
+              isDisabled={commitMutation.isPending || Boolean(commitResult) || preview.rowCount - preview.errorCount === 0}
             >
               {commitMutation.isPending ? t("importExport.committing") : t("importExport.commitAction")}
             </Button>

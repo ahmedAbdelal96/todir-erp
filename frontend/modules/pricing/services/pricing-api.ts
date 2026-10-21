@@ -255,7 +255,7 @@ export const pricingApi = {
   // Commercial lookup contracts (Catalog / Directory / FinBase)
   getLookupProducts: (legalEntityId: string, options?: RequestOptions) =>
     httpClient<{ items?: readonly any[] } | readonly any[]>(
-      `/api/v1/catalog/products?legalEntityId=${encodeURIComponent(legalEntityId)}`,
+      `/api/v1/catalog/products?legalEntityId=${encodeURIComponent(legalEntityId)}&pageSize=100`,
       opts(legalEntityId, options)
     ),
 

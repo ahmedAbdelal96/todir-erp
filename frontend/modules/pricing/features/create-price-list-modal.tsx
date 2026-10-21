@@ -31,7 +31,10 @@ export function CreatePriceListModal({
   const [currencyCode, setCurrencyCode] = useState("EGP");
   const [currencyPolicy, setCurrencyPolicy] = useState<PricingCurrencyPolicy>("ExactCurrency");
   const [isDefault, setIsDefault] = useState(false);
-  const [effectiveFrom, setEffectiveFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [effectiveFrom, setEffectiveFrom] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  });
   const [errorMsg, setErrorMsg] = useState<string>();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -39,7 +42,7 @@ export function CreatePriceListModal({
     setErrorMsg(undefined);
 
     if (!code.trim() || !name.trim()) {
-      setErrorMsg("يرجى ملء كافة الحقول الإلزامية.");
+      setErrorMsg(t("lists.requiredFields"));
       return;
     }
 
@@ -56,8 +59,7 @@ export function CreatePriceListModal({
       });
       onClose();
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setErrorMsg(errObj.message || "تعذر إنشاء قائمة الأسعار.");
+      setErrorMsg(t("lists.createFailed"));
     }
   };
 

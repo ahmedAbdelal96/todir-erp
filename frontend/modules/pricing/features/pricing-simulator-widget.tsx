@@ -16,6 +16,7 @@ import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
 import type { PricingDirection, PriceResolution } from "../types.ts";
+import { PricingReasonKind, summarizePricingReason } from "./pricing-reason.ts";
 
 export interface PricingSimulatorWidgetProps {
   readonly legalEntityId: string;
@@ -25,7 +26,7 @@ export function PricingSimulatorWidget({
   legalEntityId: propLegalEntityId
 }: PricingSimulatorWidgetProps): React.JSX.Element {
   const { legalEntityId: scopeLegalEntityId } = usePricingScope({ legalEntityId: propLegalEntityId });
-  const legalEntityId = propLegalEntityId || scopeLegalEntityId || "aad8a34b-344c-9e5b-8d58-57f182fc6528";
+  const legalEntityId = propLegalEntityId || scopeLegalEntityId;
   const { t } = useTranslation("pricing");
   const { data: priceLists } = usePriceLists(legalEntityId);
   const productsQuery = useLookupProducts(legalEntityId);
@@ -35,11 +36,14 @@ export function PricingSimulatorWidget({
 
   const [direction, setDirection] = useState<PricingDirection>("Selling");
   const [currency, setCurrency] = useState("EGP");
-  const [pricingDate, setPricingDate] = useState("2026-01-05");
+  const [pricingDate, setPricingDate] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  });
   const [priceListId, setPriceListId] = useState<string>("");
   const [partyId, setPartyId] = useState<string>("");
-  const [variantId, setVariantId] = useState<string>("a6315416-cffe-bf52-bcf0-d5e590d3bf94");
-  const [uomId, setUomId] = useState<string>("2b12a81b-ea82-a151-af7f-4c60a017f44d");
+  const [variantId, setVariantId] = useState<string>("");
+  const [uomId, setUomId] = useState<string>("");
   const [quantity, setQuantity] = useState("1");
   const [result, setResult] = useState<PriceResolution>();
   const [errorMsg, setErrorMsg] = useState<string>();
@@ -50,24 +54,15 @@ export function PricingSimulatorWidget({
     const raw = productsQuery.data as { items?: readonly ProductLookupItem[] } | readonly ProductLookupItem[] | undefined;
     const items: readonly ProductLookupItem[] | undefined = Array.isArray(raw) ? raw : (raw as { items?: readonly ProductLookupItem[] } | undefined)?.items;
 
-    const canonicalProducts = [
-      { id: "a6315416-cffe-bf52-bcf0-d5e590d3bf94", label: t("simulator.fallbackProduct1") },
-      { id: "4eb9a971-d48b-9659-9458-e144cd0d8a10", label: t("simulator.fallbackProduct2") },
-      { id: "01c6a2aa-6619-ce59-b5ea-92d9500f27ad", label: t("simulator.fallbackProduct3") }
-    ];
-
     if (items && items.length > 0) {
-      const dynamic = items
+      return items
         .filter((p: ProductLookupItem) => Boolean(p.defaultVariantId))
         .map((p: ProductLookupItem) => ({
           id: p.defaultVariantId as string,
           label: p.sku ? `${p.displayName || p.name} (${p.sku})` : (p.displayName || p.name || "")
         }));
-      const seen = new Set(canonicalProducts.map((p) => p.id));
-      const filteredDynamic = dynamic.filter((p: { id: string; label: string }) => !seen.has(p.id));
-      return [...canonicalProducts, ...filteredDynamic];
     }
-    return canonicalProducts;
+    return [];
   }, [productsQuery.data, t]);
 
   // Extract UOM options with human business labels (Code + Name)
@@ -79,11 +74,7 @@ export function PricingSimulatorWidget({
         label: `${u.nameAr || u.nameEn || u.code} (${u.code})`
       }));
     }
-    return [
-      { id: "2b12a81b-ea82-a151-af7f-4c60a017f44d", label: t("simulator.fallbackUomEa") },
-      { id: "f5e33a5c-fc6f-ac52-a924-ef16df52f015", label: t("simulator.fallbackUomPack") },
-      { id: "ae70be79-ef5a-cc5c-969d-e240d47715d4", label: t("simulator.fallbackUomCarton") }
-    ];
+    return [];
   }, [uomsQuery.data, t]);
 
   // Extract Party options with human business names
@@ -101,11 +92,7 @@ export function PricingSimulatorWidget({
         }))
       ];
     }
-    return [
-      ...base,
-      { id: "1379eb43-eb26-0d5c-aad2-0ccb5dca4654", label: t("simulator.fallbackPartyAtlas") },
-      { id: "c56b6eb3-d622-2653-b30a-b8c0aa402b91", label: t("simulator.fallbackPartyNour") }
-    ];
+    return base;
   }, [partiesQuery.data, t]);
 
   const handleSimulate = async (e: React.FormEvent) => {
@@ -127,8 +114,7 @@ export function PricingSimulatorWidget({
       });
       setResult(data);
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setErrorMsg(errObj.message || "حدث خطأ أثناء الاتصال بمحرك محاكاة التسعير.");
+      setErrorMsg(t("simulator.simulationFailed"));
     }
   };
 
@@ -160,29 +146,16 @@ export function PricingSimulatorWidget({
     result.snapshot.priceListCurrencyCode !== result.snapshot.transactionCurrencyCode
   );
 
-  const isCustomerSpecific = Boolean(
-    partyId && (
-      result?.explanation?.toLowerCase().includes("specificparty") ||
-      result?.explanation?.toLowerCase().includes("party") ||
-      (result?.snapshot as unknown as { partyId?: string })?.partyId
-    )
-  );
-
-  const isQuantityTier = Boolean(
-    Number(quantity) >= 12 && (
-      result?.explanation?.toLowerCase().includes("quantity") ||
-      matchedPriceList?.code === "WHOLESALE"
-    )
-  );
-
-  const isUomSpecific = Boolean(
-    selectedUom && (
-      selectedUom.label.includes("CARTON") ||
-      selectedUom.label.includes("كرتونة") ||
-      selectedUom.label.includes("PACK") ||
-      selectedUom.label.includes("عبوة")
-    )
-  );
+  // The API's explanation is an internal diagnostic contract. Interpret only its
+  // known business facts and present localized copy; never show the diagnostic itself.
+  const resolutionReason = result?.explanation ?? "";
+  const reasonSummary = summarizePricingReason(resolutionReason);
+  const minimumQuantity = reasonSummary.minimumQuantity ?? 0;
+  const isCustomerSpecific = reasonSummary.kind === PricingReasonKind.Customer && Boolean(selectedParty && partyId);
+  const isPriceGroupSpecific = reasonSummary.kind === PricingReasonKind.PriceGroup;
+  const isQuantityTier = reasonSummary.kind === PricingReasonKind.QuantityTier;
+  const isUomSpecific = reasonSummary.kind === PricingReasonKind.ExactUnit &&
+    Boolean(selectedUom && /\b(PACK|CARTON)\b|عبوة|كرتونة/i.test(selectedUom.label));
 
   let businessExplanation = t("simulator.generalListApplied");
   let resultBadgeLabel = t("lists.status.Active");
@@ -193,19 +166,21 @@ export function PricingSimulatorWidget({
     resultBadgeLabel = t("simulator.explicitZeroTitle");
     resultBadgeIntent = "neutral";
   } else if (isFxConversion) {
-    businessExplanation = `${t("simulator.fxAutoConverted", { from: result?.snapshot?.priceListCurrencyCode, to: result?.snapshot?.transactionCurrencyCode })} (سعر القائمة الأصلية: ${(result?.snapshot as unknown as { finalUnitPriceInPriceListCurrency?: string })?.finalUnitPriceInPriceListCurrency || "25.00"} ${result?.snapshot?.priceListCurrencyCode} تم تحويله بناءً على سعر الصرف المعتمد من FinBase).`;
+    businessExplanation = t("simulator.fxAutoConverted", { from: result?.snapshot?.priceListCurrencyCode, to: result?.snapshot?.transactionCurrencyCode });
     resultBadgeLabel = t("activeCurrencyPolicyBadge");
     resultBadgeIntent = "info";
   } else if (isCustomerSpecific) {
-    businessExplanation = `${t("simulator.customerSpecificApplied", { customer: selectedParty?.label || "العميل المحدد" })} (سعر خاص: ${result?.snapshot?.finalUnitPrice} ${currency} بدلاً من 1,250.00 ${currency}).`;
+    businessExplanation = t("simulator.customerSpecificApplied", { customer: selectedParty?.label });
     resultBadgeLabel = t("simulator.customerBadge");
     resultBadgeIntent = "success";
   } else if (isQuantityTier) {
-    businessExplanation = `${t("simulator.quantityTierApplied", { tier: "12+ قطعة" })} (سعر الشريحة المخفض: ${result?.snapshot?.finalUnitPrice} ${currency} بدلاً من 1,125.00 ${currency}).`;
+    businessExplanation = t("simulator.quantityTierApplied", { tier: minimumQuantity });
     resultBadgeLabel = t("simulator.quantityTierBadge");
     resultBadgeIntent = "success";
   } else if (isUomSpecific) {
-    businessExplanation = `${t("simulator.uomSpecificApplied", { uom: selectedUom?.label })} (سعر الوحدة التجارية المعتمد: ${result?.snapshot?.finalUnitPrice} ${currency}).`;
+    businessExplanation = t("simulator.uomSpecificApplied", { uom: selectedUom?.label });
+  } else if (isPriceGroupSpecific) {
+    businessExplanation = t("simulator.priceGroupApplied");
     resultBadgeLabel = t("simulator.uomSpecificBadge");
     resultBadgeIntent = "success";
   } else if (matchedPriceList) {
@@ -290,7 +265,7 @@ export function PricingSimulatorWidget({
             <Button
               variant="primary"
               type="submit"
-              isDisabled={simulateMutation.isPending || !variantId || !uomId}
+              isDisabled={simulateMutation.isPending || !legalEntityId || !variantId || !uomId}
             >
               {simulateMutation.isPending ? t("simulator.simulating") : t("simulator.simulateButton")}
             </Button>
@@ -386,19 +361,19 @@ export function PricingSimulatorWidget({
                   <div>
                     <span>{t("simulator.productLabel")}: </span>
                     <strong style={{ color: "var(--color-content-primary)" }}>
-                      {selectedProduct?.label || t("simulator.fallbackProduct1")}
+                      {selectedProduct?.label || t("simulator.notAvailable")}
                     </strong>
                   </div>
                   <div>
                     <span>{t("simulator.uomLabel")}: </span>
                     <strong style={{ color: "var(--color-content-primary)" }}>
-                      {selectedUom?.label || t("simulator.fallbackUomEa")}
+                      {selectedUom?.label || t("simulator.notAvailable")}
                     </strong>
                   </div>
                   <div>
                     <span>{t("simulator.partyLabel")}: </span>
                     <strong style={{ color: "var(--color-content-primary)" }}>
-                      {selectedParty && partyId ? selectedParty.label : t("simulator.generalCustomers")}
+                      {isCustomerSpecific && selectedParty && partyId ? selectedParty.label : t("simulator.generalCustomers")}
                     </strong>
                   </div>
                   <div>

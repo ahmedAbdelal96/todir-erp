@@ -49,8 +49,7 @@ export function PricingPolicyModal({
       });
       onClose();
     } catch (err: unknown) {
-      const errObj = err as { message?: string };
-      setErrorMsg(errObj.message || "تعذر تحديث السياسة السعرية للمنشأة.");
+      setErrorMsg(t("policies.saveFailed"));
     }
   };
 
