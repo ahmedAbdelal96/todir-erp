@@ -108,6 +108,10 @@ export const en = {
       Superseded: "Superseded",
       Rejected: "Rejected"
     },
+    sourceTypes: {
+      Provider: "Automated Provider",
+      Manual: "Manual Entry"
+    },
     purposes: {
       Accounting: "Accounting & Financial Statements",
       Commercial: "Commercial & Quotations",
@@ -124,12 +128,14 @@ export const en = {
       errorTitle: "Could not save exchange rate",
       fromCurrencyLabel: "From Currency",
       toCurrencyLabel: "To Currency",
-      directionHint: "Standard Quote Direction",
+      directionHint: "Official Quotation Direction",
+      directionExplanation: "Base Currency (1 Unit) → Quote Currency",
+      formulaHelper: "Enter the value of 1 unit of {{base}} expressed in {{quote}}",
       rateEquation: "1 {{from}} = {{rate}} {{to}}",
       fromFallback: "From Currency",
       toFallback: "To Currency",
-      rateFallback: "Rate",
-      rateLabel: "Exchange Rate (Exact Decimal String)",
+      rateFallback: "Exchange Rate",
+      rateLabel: "Exchange Rate",
       rateDescription: "Enter rate with exact precision (e.g. 50.125000000000)",
       ratePlaceholder: "50.125000000000",
       effectiveDateLabel: "Effective Date",
@@ -194,6 +200,8 @@ export const en = {
       enabled: "Enabled",
       disabled: "Disabled"
     },
+    credentialConfigured: "Credentials Configured",
+    credentialNotRequired: "Not Required",
     modal: {
       title: "Configure Automated Rate Source",
       description: "Connect an external provider for periodic rate updates without exposing vault secrets in the UI.",

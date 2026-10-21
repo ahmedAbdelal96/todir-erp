@@ -79,8 +79,9 @@ export function CreateRateModal({
       });
       onClose();
     } catch (err: unknown) {
-      const errObj = err as { problemDetails?: { extensions?: { code?: string } } };
-      if (errObj?.problemDetails?.extensions?.code === "finbase.rate_override_not_allowed") {
+      const errObj = err as { problemDetails?: { code?: string; extensions?: { code?: string } }; message?: string };
+      const code = errObj?.problemDetails?.code || errObj?.problemDetails?.extensions?.code || "";
+      if (code === "finbase.rate_override_not_allowed" || errObj?.message?.includes("rate_override_not_allowed") || String(err).includes("rate_override_not_allowed")) {
         setErrorMessage(t("rates.createModal.overrideDisallowedError"));
       } else {
         setErrorMessage(t("rates.createModal.submitError"));
@@ -133,15 +134,39 @@ export function CreateRateModal({
           />
         </div>
 
-        <div style={{ padding: "var(--space-2) var(--space-3)", backgroundColor: "var(--color-surface-subtle)", borderRadius: "var(--radius-md)", fontSize: "var(--font-size-xs)" }}>
-          <span style={{ color: "var(--color-content-muted)" }}>{t("rates.createModal.directionHint")}: </span>
-          <span dir="ltr" style={{ fontWeight: 600 }}>
-            {t("rates.createModal.rateEquation", {
-              from: fromCurrency || t("rates.createModal.fromFallback"),
-              rate: rate || t("rates.createModal.rateFallback"),
-              to: toCurrency || t("rates.createModal.toFallback")
-            })}
-          </span>
+        <div style={{ padding: "var(--space-3)", backgroundColor: "var(--color-surface-subtle)", borderRadius: "var(--radius-md)", fontSize: "var(--font-size-xs)", border: "1px solid var(--color-border-subtle)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-2)", gap: "var(--space-2)" }}>
+            <span style={{ fontWeight: 600, color: "var(--color-content-secondary)" }}>
+              {t("rates.createModal.directionHint")}
+            </span>
+            <span style={{ color: "var(--color-content-muted)", fontSize: "11px" }}>
+              {t("rates.createModal.directionExplanation")}
+            </span>
+          </div>
+          <div
+            dir="ltr"
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              direction: "ltr",
+              padding: "var(--space-2)",
+              backgroundColor: "var(--color-surface-raised)",
+              borderRadius: "var(--radius-sm)"
+            }}
+          >
+            <span style={{ fontWeight: 700, fontSize: "var(--font-size-sm)", color: "var(--color-primary-emphasis)", letterSpacing: "0.02em" }}>
+              {t("rates.createModal.rateEquation", {
+                from: fromCurrency || baseCurrencyCode || t("rates.createModal.fromFallback"),
+                rate: rate ? `[${rate}]` : `[${t("rates.createModal.rateFallback")}]`,
+                to: toCurrency || t("rates.createModal.toFallback")
+              })}
+            </span>
+          </div>
+          <div style={{ marginTop: "var(--space-2)", textAlign: "center", color: "var(--color-content-muted)", fontSize: "11px" }}>
+            {t("rates.createModal.formulaHelper", { base: fromCurrency || "USD", quote: toCurrency || "EGP" })}
+          </div>
         </div>
 
         <TextField

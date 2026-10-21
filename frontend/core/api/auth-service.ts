@@ -58,7 +58,9 @@ export async function loginUser(email: string, password: string): Promise<AuthLo
     body: JSON.stringify({ email, password })
   };
 
-  return httpClient<AuthLoginResponse>("/api/v1/auth/login", options);
+  const result = await httpClient<AuthLoginResponse>("/api/v1/auth/login", options);
+  clearCsrfToken();
+  return result;
 }
 
 /**

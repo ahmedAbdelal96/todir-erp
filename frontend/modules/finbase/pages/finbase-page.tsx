@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useOutletContext } from "react-router-dom";
+import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { PageHeader } from "../../../components/pages/page-header.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -46,7 +48,8 @@ export type FinBaseTab =
 
 export function FinBasePage(): React.JSX.Element {
   const { t } = useTranslation("finbase");
-  const { legalEntityId, baseCurrencyCode } = useFinBaseScope();
+  const outlet = useOutletContext<WorkspaceOutletContext | undefined>();
+  const { legalEntityId, baseCurrencyCode } = useFinBaseScope({ legalEntityId: outlet?.legalEntityId });
 
   const [activeTab, setActiveTab] = useState<FinBaseTab>("overview");
   const [includeArchivedTerms, setIncludeArchivedTerms] = useState(false);
@@ -567,7 +570,7 @@ export function FinBasePage(): React.JSX.Element {
                     </div>
 
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--font-size-xs)", color: "var(--color-content-muted)" }}>
-                      <span>{rate.sourceType} {rate.providerReference ? `(${rate.providerReference})` : ""}</span>
+                      <span>{t(`rates.sourceTypes.${rate.sourceType}`, rate.sourceType)} {rate.providerReference ? `(${rate.providerReference})` : ""}</span>
                       {rate.status === "Approved" && (
                         <span>{t("rates.table.immutableLabel")}</span>
                       )}
@@ -619,7 +622,7 @@ export function FinBasePage(): React.JSX.Element {
                       <TableCell>
                         <span dir="ltr">{rate.effectiveDate}</span>
                       </TableCell>
-                      <TableCell>{rate.sourceType}</TableCell>
+                      <TableCell>{t(`rates.sourceTypes.${rate.sourceType}`, rate.sourceType)}</TableCell>
                       <TableCell>
                         <span dir="ltr" style={{ color: "var(--color-content-muted)", fontSize: "var(--font-size-xs)" }}>
                           {rate.providerReference || "—"}
@@ -778,9 +781,17 @@ export function FinBasePage(): React.JSX.Element {
                         <span dir="ltr">{t("rateSources.table.secondsValue", { count: src.syncIntervalSeconds })}</span>
                       </TableCell>
                       <TableCell>
-                        <span dir="ltr" style={{ color: "var(--color-content-muted)", fontSize: "var(--font-size-xs)" }}>
-                          {src.credentialReference || "—"}
-                        </span>
+                        {src.credentialReference ? (
+                          <StatusBadge
+                            intent="info"
+                            label={t("rateSources.credentialConfigured")}
+                            size="small"
+                          />
+                        ) : (
+                          <span style={{ color: "var(--color-content-muted)", fontSize: "var(--font-size-xs)" }}>
+                            {t("rateSources.credentialNotRequired")}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <StatusBadge

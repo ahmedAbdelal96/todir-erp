@@ -20,7 +20,7 @@ import {
   ShieldCheckIcon
 } from "../../components/primitives/icons.tsx";
 import { AuthView } from "../auth/index.ts";
-import { requestCsrf, logoutUser } from "../../core/api/auth-service.ts";
+import { requestCsrf, clearCsrfToken, logoutUser } from "../../core/api/auth-service.ts";
 import { changeLanguage, currentDirection, currentLanguage, i18n } from "../../core/i18n/i18n.ts";
 import { resolveNavigation } from "../router/navigation-registry.ts";
 import type { ModuleNavigationRegistration, WorkspaceOutletContext } from "../router/route-contract.ts";
@@ -109,8 +109,20 @@ export function AppShell() {
       setCompanyName(session.context.displayName || session.memberships?.[0]?.displayName || "شركة الأفق للتجارة");
       setLegalEntities(session.context.legalEntities);
       setBranches(session.context.branches);
-      setLegalEntity((current) => session.context.legalEntities.some(item => item.id === current) ? current : "");
-      setBranch((current) => session.context.branches.some(item => item.id === current) ? current : "");
+      const storedEntityId = typeof window !== "undefined" ? window.sessionStorage.getItem("erp.current.legalEntityId") : null;
+      const defaultEntity = (storedEntityId && session.context.legalEntities.some(item => item.id === storedEntityId) ? storedEntityId : null)
+        || (session.context as { currentLegalEntityId?: string }).currentLegalEntityId
+        || (session.context.legalEntities.some(item => item.id === legalEntity) ? legalEntity : session.context.legalEntities[0]?.id)
+        || "";
+      setLegalEntity(defaultEntity);
+      if (defaultEntity && typeof window !== "undefined") {
+        window.sessionStorage.setItem("erp.current.legalEntityId", defaultEntity);
+      }
+      const defaultBranch = (session.context as { currentBranchId?: string }).currentBranchId
+        || session.context.branches.find(item => (!defaultEntity || item.legalEntityId === defaultEntity) && item.id === branch)?.id
+        || session.context.branches.find(item => !defaultEntity || item.legalEntityId === defaultEntity)?.id
+        || "";
+      setBranch(defaultBranch);
       await loadNavigation();
       setScreen("authenticated");
     } catch {
@@ -143,13 +155,22 @@ export function AppShell() {
     setOperation(labels.progress);
     setContextError(undefined);
     try {
+      clearCsrfToken();
       const csrf = await requestCsrf();
       const response = await fetch("/api/v1/context/organization", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrf, "X-Correlation-Id": crypto.randomUUID() }, body: JSON.stringify({ legalEntityId: nextLegalEntity || null, branchId: nextBranch || null }) });
       if (response.status === 401) { setScreen("signed-out"); return; }
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("context.organization_update_failed");
+      if (typeof window !== "undefined") {
+        if (nextLegalEntity) {
+          window.sessionStorage.setItem("erp.current.legalEntityId", nextLegalEntity);
+        } else {
+          window.sessionStorage.removeItem("erp.current.legalEntityId");
+        }
+      }
       setLegalEntity(nextLegalEntity);
       setBranch(nextBranch);
+      await queryClient.invalidateQueries();
       await loadNavigation();
     } catch {
       setContextError(t("common:shell.couldNotUpdateScope"));
@@ -307,7 +328,7 @@ export function AppShell() {
 
       <div className="layout">
         <aside className="sidebar" aria-label={t("common:accessibility.mainNavigation")}>
-          <div style={{ padding: "0.25rem 0.5rem 0.75rem", fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-content-muted, #94a3b8)" }}>
+          <div className="sidebar-label" style={{ padding: "0.25rem 0.5rem 0.75rem", fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-content-muted, #94a3b8)" }}>
             {t("common:shell.modules")}
           </div>
           <nav>
@@ -330,7 +351,7 @@ export function AppShell() {
         <main className="content" aria-live="polite">
           {contextError ? <div className="error" role="alert">{contextError}</div> : null}
           <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>{labels.loading}</div>}>
-            <Outlet context={{ density } satisfies WorkspaceOutletContext} />
+            <Outlet context={{ density, legalEntityId: legalEntity, branchId: branch } satisfies WorkspaceOutletContext} />
           </Suspense>
         </main>
       </div>

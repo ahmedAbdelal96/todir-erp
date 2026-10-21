@@ -19,8 +19,8 @@ import { queryKeyFactory } from "../../../core/api/query-keys.ts";
 import { useRuntimeContext } from "../../../core/runtime/runtime-provider.tsx";
 
 export interface FinBaseContextScope {
-  readonly tenantId?: string;
-  readonly legalEntityId?: string;
+  readonly tenantId?: string | undefined;
+  readonly legalEntityId?: string | undefined;
 }
 
 export function useFinBaseScope(explicit?: FinBaseContextScope): {
@@ -53,14 +53,33 @@ export function useFinBaseScope(explicit?: FinBaseContextScope): {
     sessionQuery.data?.tenantId ||
     "default-tenant";
 
+  const storedEntityId =
+    typeof window !== "undefined"
+      ? window.sessionStorage.getItem("erp.current.legalEntityId")
+      : null;
+
+  const validStoredEntity =
+    storedEntityId &&
+    sessionQuery.data?.context?.legalEntities?.some(
+      (e) => e.id === storedEntityId
+    )
+      ? storedEntityId
+      : null;
+
   const legalEntityId =
     explicit?.legalEntityId ||
     runtimeEntityId ||
+    validStoredEntity ||
     sessionQuery.data?.context?.legalEntities?.[0]?.id ||
     "";
 
+  const selectedEntity = sessionQuery.data?.context?.legalEntities?.find(
+    (e) => e.id === legalEntityId
+  );
+
   const baseCurrencyCode =
     runtimeBaseCurrency ||
+    (selectedEntity as { baseCurrencyCode?: string } | undefined)?.baseCurrencyCode ||
     "EGP";
 
   return { tenantId, legalEntityId, baseCurrencyCode };

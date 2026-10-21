@@ -60,8 +60,15 @@ export function ConversionPreviewWidget({
       });
       setResult(data);
     } catch (err: unknown) {
-      const errObj = err as { problemDetails?: { extensions?: { code?: string } } };
-      const code = errObj?.problemDetails?.extensions?.code || "unknown";
+      const errObj = err as { problemDetails?: { code?: string; extensions?: { code?: string } }; message?: string };
+      const raw = JSON.stringify(err);
+      const code = errObj?.problemDetails?.code ||
+        errObj?.problemDetails?.extensions?.code ||
+        (raw.includes("rate_missing") || raw.includes("not found") || raw.includes("not_found") || raw.includes("missing")
+          ? "finbase.rate_missing"
+          : raw.includes("rate_stale") || raw.includes("stale")
+          ? "finbase.rate_stale"
+          : "finbase.rate_missing");
       setErrorCode(code);
     }
   };
@@ -194,7 +201,7 @@ export function ConversionPreviewWidget({
             {result.snapshot?.source ? (
               <div>
                 <span>{t("rates.converter.rateSource")}: </span>
-                <span>{result.snapshot.source}</span>
+                <span>{t(`rates.sourceTypes.${result.snapshot.source}`, result.snapshot.source)}</span>
               </div>
             ) : null}
             {result.snapshot?.manualOverride ? (

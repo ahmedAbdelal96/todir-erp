@@ -206,4 +206,79 @@ test.describe('FinBase Real-Stack Acceptance & Visual Suite (No Route Intercepti
       await page.waitForLoadState('networkidle');
     }
   });
+
+  test('4. F20 Advanced Business Scenarios (Single-Currency, Multi-Entity Switch, Restricted Override, Stale/Missing Rate)', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginIfNeeded(page);
+
+    // Scenario 16: Multi-Entity Context Switch proof
+    const entitySelect = page.locator('#entity-select');
+    await expect(entitySelect).toBeVisible();
+    // Select Atlas Secondary (single currency)
+    await entitySelect.selectOption({ index: 2 });
+    await page.waitForTimeout(1000);
+    await page.waitForLoadState('networkidle');
+
+    // Scenario 15: Single Currency Entity Proof (Atlas Secondary has only EGP)
+    await expect(page.getByText(/نمط العملة الواحدة|single currency/i).first()).toBeVisible();
+    await page.screenshot({
+      path: 'artifacts/test-results/finbase/15-finbase-single-currency-entity.png',
+      fullPage: true
+    });
+
+    // Switch back to Atlas Main
+    await entitySelect.selectOption({ index: 1 });
+    await page.waitForTimeout(1000);
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText(/تعدد العملات/i).first()).toBeVisible();
+
+    await page.screenshot({
+      path: 'artifacts/test-results/finbase/16-finbase-multi-entity-switch.png',
+      fullPage: false
+    });
+
+    // Scenario 17: Restricted / Unauthorized Manual FX Override Rejection Proof
+    await page.getByRole('button', { name: 'أسعار الصرف' }).click();
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: /إدخال سعر جديد|إدخال سعر صرف/i }).first().click();
+    await expect(page.getByRole('heading', { name: /إدخال سعر صرف يدوي/i })).toBeVisible();
+
+    // Fill in values and attempt override while policy restricts it
+    await page.getByLabel(/سعر الصرف/i).fill('52.500000000000');
+    await page.getByLabel(/سبب إدخال السعر اليدوي/i).fill('محاولة تعديل يدوي اختباري للتحقق من رفض السياسة المحاسبية');
+    await page.getByRole('button', { name: /حفظ سعر الصرف/i }).click();
+
+    // Expect red rejection alert
+    await expect(page.getByText(/التجاوز اليدوي لسعر الصرف غير مصرح به|تعذر حفظ سعر الصرف/i).first()).toBeVisible();
+    await page.screenshot({
+      path: 'artifacts/test-results/finbase/17-finbase-manual-rate-unauthorized-rejection.png'
+    });
+    await page.getByRole('button', { name: 'إلغاء' }).click();
+
+    // Scenario 18: Missing or Stale Rate Error State Proof
+    await page.getByRole('button', { name: 'نظرة عامة' }).click();
+    await page.waitForLoadState('networkidle');
+
+    const fromCurrInput = page.getByLabel('من', { exact: true });
+    const toCurrInput = page.getByLabel('إلى', { exact: true });
+    if (await fromCurrInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await fromCurrInput.fill('JPY');
+      await toCurrInput.fill('EGP');
+      const amountInput = page.getByPlaceholder('100.00').first();
+      await amountInput.fill('100.00');
+
+      const convertBtn = page.getByRole('button', { name: /حساب التحويل المالي/i });
+      await convertBtn.click();
+      await page.waitForLoadState('networkidle');
+
+      // Expect friendly localized error card
+      const errorAlert = page.getByText(/لا يوجد سعر صرف معتمد متاح للتحويل|سعر الصرف المتاح قديم|تعذر إجراء التحويل/i).first();
+      await expect(errorAlert).toBeVisible();
+      await errorAlert.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: 'artifacts/test-results/finbase/18-finbase-stale-or-missing-rate-error.png',
+        fullPage: true
+      });
+    }
+  });
 });

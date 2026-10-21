@@ -214,7 +214,7 @@ export function PaymentTermDrawer({
                     </div>
                   </div>
 
-                  {ver.description ? (
+                  {ver.description && !ver.description.toLowerCase().startsWith("canonical development") ? (
                     <p style={{ margin: 0, fontSize: "var(--font-size-xs)", color: "var(--color-content-secondary)" }}>
                       {ver.description}
                     </p>

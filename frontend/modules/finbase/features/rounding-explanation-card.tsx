@@ -19,7 +19,7 @@ export interface RoundingExplanationCardProps {
 export function RoundingExplanationCard({
   policies
 }: RoundingExplanationCardProps): React.JSX.Element {
-  const { t } = useTranslation("finbase");
+  const { t, i18n } = useTranslation("finbase");
 
   return (
     <Surface>
@@ -110,7 +110,7 @@ export function RoundingExplanationCard({
                     <TableCell>
                       <span dir="ltr" style={{ fontWeight: 600 }}>{p.code}</span>
                     </TableCell>
-                    <TableCell>{p.nameAr} ({p.nameEn})</TableCell>
+                    <TableCell>{i18n.language === "ar" ? p.nameAr : p.nameEn}</TableCell>
                     <TableCell>
                       <StatusBadge
                         intent="info"

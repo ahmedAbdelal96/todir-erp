@@ -108,6 +108,10 @@ export const ar = {
       Superseded: "مستبدل",
       Rejected: "مرفوض"
     },
+    sourceTypes: {
+      Provider: "مزود آلي",
+      Manual: "إدخال يدوي"
+    },
     purposes: {
       Accounting: "محاسبي وقوائم مالية",
       Commercial: "تجاري وعروض أسعار",
@@ -125,11 +129,13 @@ export const ar = {
       fromCurrencyLabel: "من عملة",
       toCurrencyLabel: "إلى عملة",
       directionHint: "اتجاه الصرف المعتمد",
+      directionExplanation: "عملة الأساس (1 وحدة) ← عملة التسعير المقابلة",
+      formulaHelper: "أدخل قيمة 1 وحدة من {{base}} مقومة بعملة {{quote}}",
       rateEquation: "1 {{from}} = {{rate}} {{to}}",
       fromFallback: "العملة المصدر",
       toFallback: "العملة الهدف",
-      rateFallback: "السعر",
-      rateLabel: "سعر الصرف (سلسلة دقيقة)",
+      rateFallback: "سعر الصرف",
+      rateLabel: "سعر الصرف",
       rateDescription: "أدخل القيمة بدقة متناهية (مثال: 50.125000000000)",
       ratePlaceholder: "50.125000000000",
       effectiveDateLabel: "تاريخ السريان",
@@ -194,6 +200,8 @@ export const ar = {
       enabled: "مفعل",
       disabled: "معطل"
     },
+    credentialConfigured: "بيانات الاعتماد مهيأة",
+    credentialNotRequired: "غير مطلوبة",
     modal: {
       title: "إعداد مصدر سعر صرف آلي",
       description: "تكوين مزود خارجي لتلقي التحديثات الدورية بدون كشف أسرار الاعتماد في واجهة المستخدم.",
