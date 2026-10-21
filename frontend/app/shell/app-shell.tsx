@@ -1,4 +1,4 @@
-import { Component, Suspense, type ErrorInfo, type ReactNode, useEffect, useState } from "react";
+import { Component, Suspense, type ErrorInfo, type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, NavLink, Outlet } from "react-router-dom";
@@ -88,6 +88,7 @@ export function AppShell() {
   const [error, setError] = useState<string | undefined>();
   const [theme, setTheme] = useState<string>("default");
   const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
+  const permCacheRef = useRef<Record<string, boolean>>({});
 
   const direction = currentDirection();
   const labels = {
@@ -104,7 +105,11 @@ export function AppShell() {
   async function loadSession() {
     setScreen("loading");
     try {
-      const response = await fetch("/api/v1/session/context", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
+      let response = await fetch("/api/v1/session/context", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
+      for (let retries = 0; response.status === 429 && retries < 2; retries++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000 * (retries + 1)));
+        response = await fetch("/api/v1/session/context", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
+      }
       if (response.status === 401) { queryClient.clear(); window.sessionStorage.removeItem("erp.session.email"); setUserEmail("—"); setScreen("signed-out"); return; }
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("session.load_failed");
@@ -143,7 +148,11 @@ export function AppShell() {
       const candidates = resolveNavigation(registeredIds);
       const permitted = (await Promise.all(candidates.map(async item => {
         if (!item.permission) return item;
+        if (permCacheRef.current[item.permission] !== undefined) {
+          return permCacheRef.current[item.permission] ? item : null;
+        }
         const permissionResponse = await fetch(`/api/v1/authorization/check?permission=${encodeURIComponent(item.permission)}`, { headers: { "X-Correlation-Id": crypto.randomUUID() } });
+        permCacheRef.current[item.permission] = permissionResponse.ok;
         return permissionResponse.ok ? item : null;
       }))).filter((item): item is ModuleNavigationRegistration => item !== null);
       setModules(permitted);
@@ -183,6 +192,7 @@ export function AppShell() {
   }
 
   async function signOut() {
+    permCacheRef.current = {};
     await logoutUser();
     queryClient.clear();
     window.sessionStorage.removeItem("erp.session.email");

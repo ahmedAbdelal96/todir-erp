@@ -6,7 +6,8 @@ import {
   usePricingScope,
   usePriceLists,
   usePricingPolicy,
-  usePricingCoverage
+  usePricingCoverage,
+  usePricingManagePermission
 } from "../hooks/pricing-queries.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -27,8 +28,7 @@ export function PricingPage(): React.JSX.Element {
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const { legalEntityId } = usePricingScope({ legalEntityId: outletCtx?.legalEntityId });
 
-  const permissions = useOptionalPermissions();
-  const canManage = permissions ? permissions.hasAnyPermission("pricing.manage", "pricing.write", "pricing.*", "*", "admin") : true;
+  const canManage = usePricingManagePermission();
 
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -48,7 +48,11 @@ export function PricingPage(): React.JSX.Element {
   const defaultSelling = sellingLists.find((l) => l.code === "RETAIL" || (l as { isDefault?: boolean }).isDefault) || sellingLists[0];
 
   const pricingDate = "2026-01-05";
-  const { data: coverage } = usePricingCoverage(legalEntityId, defaultSelling?.id ?? "", pricingDate);
+  const { data: coverage } = usePricingCoverage(
+    activeTab === "policies" ? legalEntityId : "",
+    activeTab === "policies" ? defaultSelling?.id ?? "" : "",
+    pricingDate
+  );
 
   const handleOpenVersions = (list: PriceListDto) => {
     setSelectedPriceList(list);
@@ -63,14 +67,6 @@ export function PricingPage(): React.JSX.Element {
     { id: "importExport", label: t("tabs.importExport") },
     { id: "policies", label: t("tabs.policies") }
   ];
-
-  if (listsLoading && !priceLists) {
-    return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "360px" }}>
-        <Spinner size="large" />
-      </div>
-    );
-  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", padding: "var(--space-4)" }}>
@@ -177,7 +173,13 @@ export function PricingPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* TAB 1: OVERVIEW */}
+      {listsLoading && !priceLists ? (
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "360px" }}>
+          <Spinner size="large" />
+        </div>
+      ) : (
+        <>
+          {/* TAB 1: OVERVIEW */}
       {activeTab === "overview" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
           {/* Key Metrics */}
@@ -514,6 +516,8 @@ export function PricingPage(): React.JSX.Element {
             </div>
           </Surface>
         </div>
+      )}
+        </>
       )}
 
       {/* MODALS */}

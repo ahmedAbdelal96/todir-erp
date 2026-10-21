@@ -255,6 +255,13 @@ export const en = {
     statusConflict: "Rule conflict",
     fallbackDraftVersion: "Draft Version #3 (Effective: 2027-06-01)",
     commitSuccessSummary: "Successfully committed {{count}} entries to draft version without altering the active version.",
+    reconciliationTitle: "Import Reconciliation & Settlement Report",
+    reconciliationCommitted: "Entries Committed to Draft",
+    reconciliationRejected: "Entries Rejected / Skipped",
+    reconciliationTargetVersion: "Target Draft Version",
+    reconciliationStatus: "Settlement Status",
+    reconciliationStatusCompleted: "Completed & Recorded in Draft",
+    activeVersionProtected: "Active version remains protected and untouched",
     table: {
       lineHeader: "Line",
       skuHeader: "SKU",

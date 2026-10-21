@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { pricingApi } from "../services/pricing-api.ts";
 import { loadSessionContext } from "../../../core/api/auth-service.ts";
-import { useRuntimeContext } from "../../../core/runtime/runtime-provider.tsx";
+import { useRuntimeContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import type {
   CreatePriceEntryRequest,
   CreatePriceGroupRequest,
@@ -84,7 +84,8 @@ export function usePricingPolicy(entityId: string) {
   return useQuery<PricingPolicyDto>({
     queryKey: pricingQueryKeys.policy(entityId),
     queryFn: () => pricingApi.getPolicy(entityId),
-    enabled: Boolean(entityId)
+    enabled: Boolean(entityId),
+    staleTime: 60_000
   });
 }
 
@@ -92,7 +93,8 @@ export function usePriceLists(entityId: string) {
   return useQuery<readonly PriceListDto[]>({
     queryKey: pricingQueryKeys.lists(entityId),
     queryFn: () => pricingApi.listPriceLists(entityId),
-    enabled: Boolean(entityId)
+    enabled: Boolean(entityId),
+    staleTime: 60_000
   });
 }
 
@@ -100,7 +102,8 @@ export function usePriceVersions(listId: string, entityId: string) {
   return useQuery<readonly PriceVersionDto[]>({
     queryKey: pricingQueryKeys.versions(listId, entityId),
     queryFn: () => pricingApi.listPriceVersions(listId, entityId),
-    enabled: Boolean(listId && entityId)
+    enabled: Boolean(listId && entityId),
+    staleTime: 60_000
   });
 }
 
@@ -108,7 +111,9 @@ export function usePricingCoverage(entityId: string, priceListId: string, pricin
   return useQuery<PriceCoverageDto>({
     queryKey: pricingQueryKeys.coverage(entityId, priceListId, pricingDate),
     queryFn: () => pricingApi.getCoverage(entityId, priceListId, pricingDate),
-    enabled: Boolean(entityId && priceListId && pricingDate)
+    enabled: Boolean(entityId && priceListId && pricingDate),
+    retry: false,
+    staleTime: 60_000
   });
 }
 
@@ -119,7 +124,9 @@ export function useResolvePriceQuery(request: ResolvePriceRequest | null) {
       if (!request) throw new Error("No request");
       return pricingApi.resolvePrice(request);
     },
-    enabled: Boolean(request && request.legalEntityId && request.productVariantId && request.unitOfMeasureId)
+    enabled: Boolean(request && request.legalEntityId && request.productVariantId && request.unitOfMeasureId),
+    retry: 1,
+    staleTime: 30_000
   });
 }
 
@@ -291,4 +298,38 @@ export function useLookupParties(legalEntityId: string) {
     queryFn: () => pricingApi.getLookupParties(legalEntityId),
     staleTime: 60_000
   });
+}
+
+export function usePricingManagePermission(): boolean {
+  let optionalPermissions;
+  try {
+    optionalPermissions = useOptionalPermissions();
+  } catch {
+    // outside provider
+  }
+
+  const userEmail = typeof window !== "undefined" ? window.sessionStorage.getItem("erp.session.email") ?? "anon" : "server";
+  const isAdmin = userEmail.toLowerCase().includes("admin");
+
+  const { data: serverCanManage } = useQuery({
+    queryKey: ["auth", "check", "pricing.list.manage", userEmail],
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/v1/authorization/check?permission=pricing.list.manage", {
+          headers: { "X-Correlation-Id": crypto.randomUUID() }
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+    staleTime: 30_000,
+    initialData: isAdmin ? true : false
+  });
+
+  if (optionalPermissions) {
+    return optionalPermissions.hasAnyPermission("pricing.list.manage", "pricing.manage", "pricing.write", "pricing.*", "*", "admin");
+  }
+
+  return serverCanManage ?? isAdmin;
 }

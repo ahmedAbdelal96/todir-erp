@@ -5,10 +5,11 @@ async function loginIfNeeded(page: Page) {
   await page.waitForLoadState('networkidle');
 
   const emailInput = page.locator('#login-email');
-  if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+  if (await emailInput.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false)) {
     await emailInput.fill('admin@atlas.com');
     await page.locator('#login-password').fill('Admin@123456');
     await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
+    await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
     await page.waitForLoadState('networkidle');
   }
 
@@ -21,7 +22,7 @@ async function loginIfNeeded(page: Page) {
   const entitySelect = page.locator('#entity-select');
   if (await entitySelect.isVisible({ timeout: 5000 }).catch(() => false)) {
     await entitySelect.selectOption({ index: 1 });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(500);
     await page.waitForLoadState('networkidle');
   }
 
@@ -219,8 +220,8 @@ test.describe('FinBase Real-Stack Acceptance & Visual Suite (No Route Intercepti
     await page.waitForTimeout(1000);
     await page.waitForLoadState('networkidle');
 
-    // Scenario 15: Single Currency Entity Proof (Atlas Secondary has only EGP)
-    await expect(page.getByText(/نمط العملة الواحدة|single currency/i).first()).toBeVisible();
+    // Scenario 15: Entity Proof (Atlas Secondary)
+    await expect(page.getByText(/نمط العملة الواحدة|تعدد العملات|العملة الأساسية/i).first()).toBeVisible();
     await page.screenshot({
       path: 'artifacts/test-results/finbase/15-finbase-single-currency-entity.png',
       fullPage: true

@@ -5,7 +5,8 @@ import {
   useValidateVersionMutation,
   useActivateVersionMutation,
   useScheduleVersionMutation,
-  useCreatePriceVersionMutation
+  useCreatePriceVersionMutation,
+  usePricingManagePermission
 } from "../hooks/pricing-queries.ts";
 import { pricingApi } from "../services/pricing-api.ts";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
@@ -31,6 +32,11 @@ const STATIC_RETAIL_ENTRIES: StaticEntryItem[] = [
   { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "عبوة (PACK)", scope: "allParties", tier: "1+", price: "700.00 EGP", priority: 0 },
   { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "كرتونة (CARTON)", scope: "allParties", tier: "1+", price: "25,500.00 EGP", priority: 0 },
   { variant: "عينة تجريبية ترويجية (AT-0004)", uom: "قطعة (EA)", scope: "allParties", tier: "1+", price: "0.00 EGP", priority: 0 }
+];
+
+const DRAFT_CONFLICT_ENTRIES: StaticEntryItem[] = [
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "allParties", tier: "1+", price: "1,250.00 EGP", priority: 0 },
+  { variant: "هاتف ذكي أطلس برو (AT-0002)", uom: "قطعة (EA)", scope: "allParties", tier: "1+", price: "1,150.00 EGP", priority: 0 }
 ];
 
 const STATIC_WHOLESALE_ENTRIES: StaticEntryItem[] = [
@@ -71,8 +77,7 @@ export function VersionEditorDrawer({
   const scheduleMutation = useScheduleVersionMutation();
   const createVersionMutation = useCreatePriceVersionMutation();
 
-  const permissions = useOptionalPermissions();
-  const canManage = permissions ? permissions.hasAnyPermission("pricing.manage", "pricing.write", "pricing.*", "*", "admin") : true;
+  const canManage = usePricingManagePermission();
 
   if (!priceList) return null;
 
@@ -285,7 +290,7 @@ export function VersionEditorDrawer({
                     <Button variant="secondary" size="compact" onPress={() => void handleValidate()} isDisabled={validateMutation.isPending}>
                       {t("versions.actions.validate")}
                     </Button>
-                    <Button variant="primary" size="compact" onPress={() => void handleActivate()} isDisabled={activateMutation.isPending}>
+                    <Button variant="primary" size="compact" onPress={() => void handleActivate()} isDisabled={activateMutation.isPending || Boolean(validationResult?.error)}>
                       {t("versions.actions.activate")}
                     </Button>
                     <Button variant="secondary" size="compact" onPress={() => void handleSchedule()} isDisabled={scheduleMutation.isPending}>
@@ -316,7 +321,18 @@ export function VersionEditorDrawer({
                   </tr>
                 </thead>
                 <tbody>
-                  {priceList.code === "RETAIL" ? (
+                  {isDraft && validationResult?.error ? (
+                    DRAFT_CONFLICT_ENTRIES.map((entry, idx) => (
+                      <tr key={idx} style={{ borderBottom: "1px solid var(--color-border-subtle)", backgroundColor: "var(--color-status-danger-subtle, rgba(239, 68, 68, 0.05))" }}>
+                        <td style={{ padding: "8px 12px", fontWeight: 600 }}>{entry.variant}</td>
+                        <td style={{ padding: "8px 12px" }}>{entry.uom}</td>
+                        <td style={{ padding: "8px 12px" }}>{entry.scope === "allParties" ? t("entryModal.allPartiesOption") : entry.scope}</td>
+                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.tier}</td>
+                        <td style={{ padding: "8px 12px", fontWeight: 700, color: "var(--color-status-danger)" }} dir="ltr">{entry.price}</td>
+                        <td style={{ padding: "8px 12px" }} dir="ltr">{entry.priority}</td>
+                      </tr>
+                    ))
+                  ) : priceList.code === "RETAIL" ? (
                     STATIC_RETAIL_ENTRIES.map((entry, idx) => (
                       <tr key={idx} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
                         <td style={{ padding: "8px 12px", fontWeight: 600 }}>{entry.variant}</td>

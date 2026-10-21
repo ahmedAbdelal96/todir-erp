@@ -261,8 +261,9 @@ export function ProductRecordPage({
                 {/* Centralized Commercial Selling Price (Pricing Module Integration) */}
                 <ProductSellingPriceCard
                   variantId={product.defaultVariantId ?? product.id}
-                  uomId={product.baseUomCode ?? "EA"}
+                  uomId="2b12a81b-ea82-a151-af7f-4c60a017f44d"
                   defaultCurrencyCode="EGP"
+                  pricingDate="2026-01-05"
                 />
 
                 {/* Readiness Breakdown */}

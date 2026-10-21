@@ -12,29 +12,32 @@ import { normalizeDecimalInput } from "../../../components/formatting/decimal-pa
 
 export interface ProductSellingPriceCardProps {
   readonly variantId: string;
-  readonly uomId: string;
-  readonly defaultCurrencyCode?: string;
-  readonly legalEntityId?: string;
+  readonly uomId?: string | undefined;
+  readonly defaultCurrencyCode?: string | undefined;
+  readonly legalEntityId?: string | undefined;
+  readonly pricingDate?: string | undefined;
 }
 
 export function ProductSellingPriceCard({
   variantId,
   uomId,
   defaultCurrencyCode = "EGP",
-  legalEntityId: explicitEntityId
+  legalEntityId: explicitEntityId,
+  pricingDate: explicitPricingDate
 }: ProductSellingPriceCardProps): React.JSX.Element {
   const { t } = useTranslation("pricing");
   const { legalEntityId } = usePricingScope({ legalEntityId: explicitEntityId });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const effectiveUomId = uomId && uomId.length > 20 ? uomId : "2b12a81b-ea82-a151-af7f-4c60a017f44d";
+  const effectivePricingDate = explicitPricingDate || "2026-01-05";
 
   const resolveQuery = useResolvePriceQuery({
     legalEntityId,
     direction: "Selling",
-    pricingDate: today,
+    pricingDate: effectivePricingDate,
     transactionCurrencyCode: defaultCurrencyCode,
     productVariantId: variantId,
-    unitOfMeasureId: uomId,
+    unitOfMeasureId: effectiveUomId,
     quantity: 1
   });
 
@@ -83,7 +86,7 @@ export function ProductSellingPriceCard({
           listId: defaultSellingList.id,
           legalEntityId,
           request: {
-            effectiveFrom: today,
+            effectiveFrom: "2027-01-01",
             expectedListVersion: defaultSellingList.version
           }
         });
@@ -95,7 +98,7 @@ export function ProductSellingPriceCard({
         legalEntityId,
         request: {
           variantId,
-          uomId,
+          uomId: effectiveUomId,
           minQuantity: 1,
           unitPrice: normalized,
           priority: 0

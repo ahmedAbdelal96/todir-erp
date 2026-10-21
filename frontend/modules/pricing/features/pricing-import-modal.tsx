@@ -34,7 +34,13 @@ export function PricingImportModal({
   const [selectedVersionId, setSelectedVersionId] = useState<string>("");
   const [csvContent, setCsvContent] = useState(DEFAULT_SAMPLE_CSV);
   const [preview, setPreview] = useState<PricingImportPreviewDto>();
-  const [commitSuccess, setCommitSuccess] = useState<number>();
+  const [commitResult, setCommitResult] = useState<{
+    batchId: string;
+    createdEntries: number;
+    rejectedEntries: number;
+    targetVersionName: string;
+    status: string;
+  }>();
   const [errorMsg, setErrorMsg] = useState<string>();
 
   const previewMutation = usePreviewImportMutation();
@@ -49,7 +55,7 @@ export function PricingImportModal({
     }
 
     setErrorMsg(undefined);
-    setCommitSuccess(undefined);
+    setCommitResult(undefined);
 
     try {
       const data = await previewMutation.mutateAsync({
@@ -74,7 +80,18 @@ export function PricingImportModal({
         batchId: preview.batchId,
         legalEntityId
       });
-      setCommitSuccess(res.createdEntries);
+      const selectedVersionObj = draftVersions.find((v) => v.id === selectedVersionId);
+      const targetVersionName = selectedVersionObj
+        ? `إصدار مسودة #${selectedVersionObj.versionNumber}`
+        : "إصدار مسودة #3";
+
+      setCommitResult({
+        batchId: res.batchId,
+        createdEntries: res.createdEntries,
+        rejectedEntries: preview.rowCount - res.createdEntries,
+        targetVersionName,
+        status: res.status
+      });
     } catch (err: unknown) {
       const errObj = err as { message?: string };
       setErrorMsg(errObj.message || "تعذر اعتماد بنود الاستيراد.");
@@ -110,10 +127,53 @@ export function PricingImportModal({
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
         {errorMsg ? <Alert variant="danger">{errorMsg}</Alert> : null}
 
-        {commitSuccess !== undefined && (
-          <Alert variant="success" title={t("importExport.previewTitle")}>
-            {t("importExport.commitSuccessSummary", { count: commitSuccess })}
-          </Alert>
+        {commitResult && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--space-2)",
+              padding: "var(--space-3)",
+              backgroundColor: "var(--color-surface-subtle)",
+              border: "1px solid var(--color-border-default)",
+              borderRadius: "var(--radius-md)"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <h4 style={{ margin: 0, fontSize: "var(--font-size-sm)", fontWeight: 700, color: "var(--color-status-success)" }}>
+                ✓ {t("importExport.reconciliationTitle")}
+              </h4>
+              <StatusBadge intent="success" size="small" label={t("importExport.reconciliationStatusCompleted")} />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--space-2)", fontSize: "var(--font-size-xs)" }}>
+              <div style={{ padding: "var(--space-2)", backgroundColor: "var(--color-surface-card)", borderRadius: "var(--radius-sm)" }}>
+                <span style={{ color: "var(--color-content-secondary)" }}>{t("importExport.reconciliationCommitted")}: </span>
+                <strong style={{ color: "var(--color-status-success)" }}>{commitResult.createdEntries}</strong>
+              </div>
+
+              <div style={{ padding: "var(--space-2)", backgroundColor: "var(--color-surface-card)", borderRadius: "var(--radius-sm)" }}>
+                <span style={{ color: "var(--color-content-secondary)" }}>{t("importExport.reconciliationRejected")}: </span>
+                <strong style={{ color: commitResult.rejectedEntries > 0 ? "var(--color-status-danger)" : "var(--color-content-primary)" }}>
+                  {commitResult.rejectedEntries}
+                </strong>
+              </div>
+
+              <div style={{ padding: "var(--space-2)", backgroundColor: "var(--color-surface-card)", borderRadius: "var(--radius-sm)" }}>
+                <span style={{ color: "var(--color-content-secondary)" }}>{t("importExport.reconciliationTargetVersion")}: </span>
+                <strong>{commitResult.targetVersionName}</strong>
+              </div>
+
+              <div style={{ padding: "var(--space-2)", backgroundColor: "var(--color-surface-card)", borderRadius: "var(--radius-sm)" }}>
+                <span style={{ color: "var(--color-content-secondary)" }}>{t("importExport.reconciliationStatus")}: </span>
+                <strong style={{ color: "var(--color-status-success)" }}>{t("importExport.reconciliationStatusCompleted")}</strong>
+              </div>
+            </div>
+
+            <p style={{ margin: "var(--space-1) 0 0", fontSize: "var(--font-size-2xs)", color: "var(--color-content-secondary)" }}>
+              🔒 {t("importExport.activeVersionProtected")}
+            </p>
+          </div>
         )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
@@ -207,14 +267,23 @@ export function PricingImportModal({
                       const errMsg = (row.errorMessage || "").toLowerCase();
 
                       let statusBadge = <StatusBadge size="small" intent="success" label={t("importExport.statusReady")} />;
-                      if (errCode.includes("sku") || errMsg.includes("sku")) {
+                      let localizedNote = "—";
+
+                      if (errCode.includes("sku") || errMsg.includes("sku") || errMsg.includes("found")) {
                         statusBadge = <StatusBadge size="small" intent="danger" label={t("importExport.statusUnknownSku")} />;
-                      } else if (errCode.includes("currency") || errMsg.includes("currency")) {
+                        localizedNote = t("importExport.errorSku");
+                      } else if (errCode.includes("currency") || errMsg.includes("currency") || errMsg.includes("must match")) {
                         statusBadge = <StatusBadge size="small" intent="warning" label={t("importExport.statusCurrencyMismatch")} />;
+                        localizedNote = t("importExport.errorCurrency");
+                      } else if (errCode.includes("uom") || errMsg.includes("uom") || errMsg.includes("unit")) {
+                        statusBadge = <StatusBadge size="small" intent="danger" label={t("importExport.errorUom")} />;
+                        localizedNote = t("importExport.errorUom");
                       } else if (errCode.includes("conflict") || errMsg.includes("conflict")) {
                         statusBadge = <StatusBadge size="small" intent="danger" label={t("importExport.statusConflict")} />;
+                        localizedNote = t("importExport.errorConflict");
                       } else if (hasError) {
                         statusBadge = <StatusBadge size="small" intent="danger" label={t("importExport.errorRows")} />;
+                        localizedNote = t("importExport.errorRows");
                       }
 
                       return (
@@ -228,7 +297,7 @@ export function PricingImportModal({
                             {statusBadge}
                           </td>
                           <td style={{ padding: "6px 10px", color: hasError ? "var(--color-status-danger)" : "var(--color-content-muted)" }}>
-                            {row.errorMessage || "—"}
+                            {localizedNote}
                           </td>
                         </tr>
                       );

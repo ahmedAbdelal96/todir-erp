@@ -103,11 +103,23 @@ export async function httpClient<T>(
     requestHeaders["If-Match"] = etag;
   }
 
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     method,
     headers: requestHeaders,
     ...rest
   });
+
+  const isSafeMethod = ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+  if (response.status === 429 && isSafeMethod) {
+    const retryAfter = response.headers.get("Retry-After");
+    const delay = retryAfter ? Math.min(Number(retryAfter) * 1000, 3000) : 1500;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    response = await fetch(url, {
+      method,
+      headers: requestHeaders,
+      ...rest
+    });
+  }
 
   if (!response.ok) {
     let problemDetails: ApiProblemDetails | undefined;

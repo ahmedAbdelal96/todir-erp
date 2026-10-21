@@ -255,6 +255,13 @@ export const ar = {
     statusConflict: "تعارض في القواعد",
     fallbackDraftVersion: "إصدار مسودة #3 (بدء: 2027-06-01)",
     commitSuccessSummary: "تم اعتماد {{count}} بنداً بنجاح في إصدار المسودة دون المساس بالإصدار النشط.",
+    reconciliationTitle: "تقرير مطابقة واعتماد الاستيراد",
+    reconciliationCommitted: "البنود المعتمدة في المسودة",
+    reconciliationRejected: "البنود المستبعدة أو غير المطابقة",
+    reconciliationTargetVersion: "الإصدار المستهدف",
+    reconciliationStatus: "حالة الاعتماد",
+    reconciliationStatusCompleted: "مكتمل ومثبت في المسودة",
+    activeVersionProtected: "الإصدار النشط محمي تاريخياً ولم يتأثر",
     table: {
       lineHeader: "السطر",
       skuHeader: "رمز SKU",
