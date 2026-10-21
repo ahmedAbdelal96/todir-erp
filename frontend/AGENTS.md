@@ -575,3 +575,19 @@ git diff -- backend
 ```
 
 A passing build alone is NEVER completion. Full compliance with the UX archetypes, natural Arabic copy, prevention of accidental overflow, RTL bidirectional isolation, and automated tests is mandatory. Reconcile all required documented acceptance scenarios with real browser evidence and fix any frontend-owned failure before claiming `FRONTEND COMPLETE`. Deliver `FRONTEND COMPLETE` with integrated Product/UX evidence and ready for human Product acceptance; the human Product Owner's approval remains necessary for `MODULE COMPLETE`.
+
+---
+
+## 11. Fast Execution Mode (Frontend)
+
+Frontend work must strictly adhere to Section 12 of the repository root `AGENTS.md`:
+1. **One-Pass Study:** Read the canonical Module Pack, UX requirements, and directly relevant screens/components once. Form a gap list and start implementation immediately. Do not explore unrelated modules.
+2. **Gap-Driven Execution:** Touch only missing, broken, or unverified frontend scope. Do not redesign working forms, grids, or archetypes.
+3. **Action-Oriented Analysis:** Translate UX needs into component code, queries, forms, or focused tests without prolonged deliberation.
+4. **No Repeated Loops:** If a Playwright spec or component test fails twice, stop. Inspect browser logs, DOM selectors, and code, make a targeted fix, and rerun only the failing test.
+5. **Focused Tests During Dev:** Run only the specific module unit test or targeted Playwright flow during development (e.g. `pnpm --filter frontend test:e2e tests/e2e/finbase-flow.spec.ts`). Never run all 33+ E2E tests on every code edit.
+6. **Full Gates Once at the End:** Execute the complete 9-gate frontend verification suite only after the last frontend change.
+7. **Environment Limits:** Use the running backend API and existing clean database; do not debug machine, browser, or server internals unless truly blocking.
+8. **No Premature Polish:** Ensure business data and workflow correctness before perfecting screenshot aesthetics.
+9. **Pattern Reuse:** Reuse design system primitives (`MoneyDisplay`, `StatusBadge`, `DataGrid`, `ListPage`, `RecordPage`, `Dialog`, `Select`). Never invent bespoke UI controls.
+10. **Silent Execution:** Work silently without progress commentary; report only when complete or blocked by a genuine external decision.

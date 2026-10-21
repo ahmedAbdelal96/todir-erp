@@ -165,3 +165,76 @@ Do not reopen completed work without a real defect, a new requirement, or an exp
 Code comments are English and explain why: business invariants, security, performance, concurrency, transaction, retry, or architectural decisions. Do not narrate obvious mechanics.
 
 Before reporting, review scope, ownership, boundaries, data integrity, tenant/RLS security, permissions, API contracts, query/index behavior, performance, tests, documentation, warnings, stale code, and temporary artifacts. Confirm that every reported verification and evidence item follows the last relevant change. A module completion report must identify the canonical pack, business journeys, architecture decisions, database/migration and seed results, security and tenant isolation, API contracts, real browser/UX evidence, exact test totals, deferred scope, genuine external limitations, changed files, commit SHA, and remote status. Report exact PASS/FAIL results and decisions still needed. Never claim unmeasured coverage, a passing gate, or completion while an in-scope defect can reasonably be fixed in the current mission.
+
+# 12. Fast execution mode
+
+This instruction controls HOW every mission is executed across the entire repository. It does NOT reduce correctness, security, business completeness, or final verification. Its purpose is to prevent over-analysis, repeated reading, repeated test loops, benchmark rabbit holes, and unnecessary repository exploration.
+
+### 12.1 One-pass study
+Read root `AGENTS.md`, the applicable scoped manual (`backend/AGENTS.md` or `frontend/AGENTS.md`), the canonical Module Pack under `docs/modules/`, and directly relevant existing code. ONE focused pass is enough. Do NOT repeatedly reread the full Pack or the same source files unless a concrete failing behavior requires it. Do NOT explore unrelated modules "for completeness". After the first pass, produce internally a short gap list and start implementation immediately.
+
+### 12.2 Gap-driven execution
+Before coding, identify only:
+- what already exists and is correct;
+- what is missing;
+- what is wrong;
+- what must be proven before completion.
+
+Work ONLY on those gaps. Do not rebuild working areas. Do not redesign already-approved architecture. Do not clean unrelated code. Do not refactor for taste.
+
+### 12.3 Analysis must end in action
+Do not spend long periods studying without changing or verifying something. After understanding a requirement, immediately do one of: implement it, test it, or inspect the exact code path that blocks it. Avoid broad speculative analysis.
+
+### 12.4 No repeated command loops
+If the SAME test or command fails twice: STOP rerunning it unchanged. Instead: inspect the exact error, inspect the relevant log, inspect the exact implementation path, make one targeted fix, and rerun the focused test. Do not run the same failing Playwright/test command multiple times hoping behavior changes.
+
+### 12.5 Focused tests during development
+During implementation, run only tests relevant to the code being changed (e.g. changed FinBase component → FinBase unit test only; changed entity-context → entity-context + affected module tests; changed one E2E flow → that exact E2E flow). Do NOT run the full repository test suite after every edit.
+
+### 12.6 Full gates only once at the end
+The full gate belongs strictly after the LAST meaningful change. Only then run the full suite: build, architecture, localization, typecheck, unit tests, API drift, integration/security where applicable, full Playwright, release gates, and git diff checks. If the final gate exposes a defect: fix the defect, rerun only affected checks, and then execute one fresh final gate.
+
+### 12.7 Environment debugging limit
+Do not spend hours investigating Windows, Docker, WSL, antivirus, Code Integrity, ports, SDK installation, or local machine internals unless the environment truly blocks the mission. First prefer: an already-working local service, an existing clean database, the repository's approved commands, and the simplest supported local path. If an environment issue is unrelated to product implementation, do not turn it into a subsystem investigation.
+
+### 12.8 No performance rabbit holes
+Do not create large-scale benchmarks, loaders, synthetic datasets, staging frameworks, or tuning experiments unless the Product Owner explicitly requests a Performance Hardening mission. Normal module implementation requires only: pagination, bounded queries, indexes, no obvious N+1, reasonable query plans, and normal responsive UI behavior. Large-scale certification is separate.
+
+### 12.9 No premature polish
+Order of work:
+```text
+business correctness
+→ persistence/API correctness
+→ integration
+→ core UX
+→ localization/responsiveness
+→ visual polish
+→ final verification
+```
+Do not spend long periods polishing screenshots before the workflow actually works.
+
+### 12.10 Reuse approved patterns
+When TODIR already has an approved implementation pattern, reuse it (repository/service structure, TanStack Query setup, dialogs, tables/cards, localization, error mapping, pagination, entity context, permissions). Do not research or invent a new pattern unless the existing pattern genuinely cannot satisfy the requirement.
+
+### 12.11 Do not implement future modules
+Stay inside the current module. If the Pack mentions future integrations, provide contracts/seams/tests only where required. Do not build future modules to prove readiness.
+
+### 12.12 Autonomous senior decisions
+For ordinary implementation choices, MAKE THE SENIOR DECISION YOURSELF. Do not stop to ask the Product Owner about normal naming, normal UI placement, obvious validation, ordinary component structure, standard API wiring, or routine test organization. Ask only when there is a genuine product/domain decision with multiple materially different business outcomes.
+
+### 12.13 Silent reporting
+Do not send progress narration such as "I am now inspecting...", "I will next review...", "the test is still running...", or "I will verify when it completes...". Continue working silently. Return only when:
+A. The mission is complete; or
+B. There is one genuine external blocker that prevents continuation.
+
+### 12.14 Execution target
+The goal is NOT maximum analysis. The goal is:
+```text
+MINIMUM NECESSARY ANALYSIS + CORRECT IMPLEMENTATION + STRONG FINAL PROOF
+```
+Prefer completing a correct vertical slice over studying every possible future edge case.
+
+### 12.15 Anti-loop self-check
+Before any repeated read/test/tool action ask: *"Will this produce new information?"* If NO, do not run it.
+Before creating any new abstraction/tool/test harness ask: *"Is this required to ship the current mission?"* If NO, do not build it.
+Before touching an already-passed area ask: *"Do I have a concrete regression or requirement gap?"* If NO, leave it alone.

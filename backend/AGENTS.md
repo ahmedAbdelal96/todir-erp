@@ -230,3 +230,17 @@ Backend verification in the final report must run after the last relevant backen
 `FinanceBase` (`foundation_finbase`) owns currencies, money/rounding behavior, legal-entity currency, exchange rates, financial policies, payment terms, payment schedules, and approved legal-entity finance settings. It does not own Chart of Accounts, Fiscal Periods, Ledger posting, Tax, invoice lifecycle, payment lifecycle, or duplicate money/rounding implementations.
 
 `Sample` is a small real runtime-verification module for module registration, API integration, Worker/MassTransit, schema/migrations, Outbox/Inbox, and integration behavior. It is not a business-domain template; do not copy its business semantics into real ERP modules.
+
+## 18. Fast execution mode (backend)
+
+Backend work must strictly adhere to Section 12 of the repository root `AGENTS.md`:
+1. **One-Pass Study:** Read the canonical Module Pack and directly relevant backend code once. Form a gap list and start implementation immediately. Do not explore unrelated modules.
+2. **Gap-Driven Execution:** Touch only missing, broken, or unverified backend scope. Do not redesign working persistence, schemas, or services.
+3. **Action-Oriented Analysis:** Translate findings into code, migrations, seed, or focused tests without long deliberation.
+4. **No Repeated Loops:** If a backend test fails twice, stop. Inspect logs and code, make a targeted fix, and rerun only the failing test.
+5. **Focused Tests During Dev:** Run only the specific module unit or integration test during development. Never run the full backend test suite on every code edit.
+6. **Full Gates Once at the End:** Execute the complete backend gate suite (build, migrations on fresh DB, seed, architecture, integration, API drift, security/RLS) only after the last backend change.
+7. **Environment Limits:** Use an existing clean database and established local tooling; do not debug machine or environment internals unless truly blocking.
+8. **No Performance Rabbit Holes:** Ensure indexes, pagination, bounded queries, and no N+1; do not build synthetic load tests or micro-benchmarks unless explicitly commissioned.
+9. **Pattern Reuse:** Reuse existing DbContext, entity configurations, repository, domain event, Outbox, and validation patterns.
+10. **Silent Execution:** Work silently without progress commentary; report only when complete or blocked by a genuine external decision.
