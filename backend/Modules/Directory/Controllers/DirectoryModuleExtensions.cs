@@ -20,6 +20,8 @@ public static class DirectoryModuleExtensions
         services.AddSingleton<Repositories.DirectoryRepository>();
         services.AddSingleton<Repositories.DirectoryAdvancedRepository>();
         services.AddSingleton<DirectoryService>();
+        services.AddSingleton<Services.DirectoryCapabilities>();
+        services.AddSingleton<Shared.Contracts.Directory.IDirectoryCapabilities>(provider => provider.GetRequiredService<Services.DirectoryCapabilities>());
         return services;
     }
 

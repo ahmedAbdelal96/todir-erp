@@ -65,6 +65,9 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(2, firstCounts.AtlasCommercialRegistrations);
             Assert.Equal(2, firstCounts.DeltaVatIdentifiers);
             Assert.Equal(2, firstCounts.DeltaCommercialRegistrations);
+            Assert.Equal(8, firstCounts.AtlasPriceLists + firstCounts.DeltaPriceLists);
+            Assert.Equal(18, firstCounts.AtlasPriceEntries + firstCounts.DeltaPriceEntries);
+            Assert.Equal(2, firstCounts.AtlasScheduledVersions + firstCounts.DeltaScheduledVersions);
         }
         finally
         {
@@ -208,14 +211,14 @@ public sealed class DevelopmentSeedTests
 
     private static async Task<CanonicalSeedCounts> ReadCanonicalCountsAsync(NpgsqlDataSource dataSource)
     {
-        const string sql = "select (select count(*) from platform.tenant where id = $1 or id = $2)::int, (select count(*) from platform.identity where tenant_id = $1)::int, (select count(*) from foundation_directory.party where tenant_id = $1)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $1)::int, (select count(*) from platform.identity where tenant_id = $2)::int, (select count(*) from foundation_directory.party where tenant_id = $2)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $2)::int, (select count(*) from platform.legal_entity)::int, (select count(*) from foundation_finbase.currency_reference)::int, (select count(*) from foundation_finbase.payment_term)::int, (select count(*) from foundation_finbase.legal_entity_currency)::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='CommercialRegistration')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='CommercialRegistration')::int";
+        const string sql = "select (select count(*) from platform.tenant where id = $1 or id = $2)::int, (select count(*) from platform.identity where tenant_id = $1)::int, (select count(*) from foundation_directory.party where tenant_id = $1)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $1)::int, (select count(*) from platform.identity where tenant_id = $2)::int, (select count(*) from foundation_directory.party where tenant_id = $2)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $2)::int, (select count(*) from platform.legal_entity)::int, (select count(*) from foundation_finbase.currency_reference)::int, (select count(*) from foundation_finbase.payment_term)::int, (select count(*) from foundation_finbase.legal_entity_currency)::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='CommercialRegistration')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='CommercialRegistration')::int, (select count(*) from foundation_pricing.price_list where tenant_id=$1)::int, (select count(*) from foundation_pricing.price_entry where tenant_id=$1)::int, (select count(*) from foundation_pricing.price_list_version where tenant_id=$1 and status='Scheduled')::int, (select count(*) from foundation_pricing.price_list where tenant_id=$2)::int, (select count(*) from foundation_pricing.price_entry where tenant_id=$2)::int, (select count(*) from foundation_pricing.price_list_version where tenant_id=$2 and status='Scheduled')::int";
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(SeedIds.AtlasTenant);
         command.Parameters.AddWithValue(SeedIds.DeltaTenant);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
-        return new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12), reader.GetInt32(13), reader.GetInt32(14));
+        return new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12), reader.GetInt32(13), reader.GetInt32(14), reader.GetInt32(15), reader.GetInt32(16), reader.GetInt32(17), reader.GetInt32(18), reader.GetInt32(19), reader.GetInt32(20));
     }
 
     private static async Task AssertFinBaseCanonicalScenariosAsync(NpgsqlDataSource dataSource)
@@ -242,7 +245,7 @@ public sealed class DevelopmentSeedTests
 
     private static async Task AssertForcedRlsAndRoleBoundaryAsync(NpgsqlDataSource dataSource)
     {
-        const string sql = "select (select relrowsecurity from pg_class where oid='platform.tenant'::regclass), (select bool_and(relrowsecurity and relforcerowsecurity) from pg_class where oid in ('platform.legal_entity'::regclass,'platform.identity'::regclass,'foundation_directory.party'::regclass,'foundation_catalog.product_template'::regclass,'foundation_finbase.payment_term'::regclass,'foundation_finbase.financial_rounding_policy_rule'::regclass)), (select not rolbypassrls from pg_roles where rolname='erp_app'), (select not rolbypassrls from pg_roles where rolname='erp_owner'), has_table_privilege('erp_app','foundation_finbase.currency_reference','SELECT'), has_table_privilege('erp_app','foundation_finbase.currency_reference','INSERT'), has_table_privilege('erp_app','foundation_finbase.currency_reference','UPDATE'), has_table_privilege('erp_app','foundation_finbase.currency_reference','DELETE')";
+        const string sql = "select (select relrowsecurity from pg_class where oid='platform.tenant'::regclass), (select bool_and(relrowsecurity and relforcerowsecurity) from pg_class where oid in ('platform.legal_entity'::regclass,'platform.identity'::regclass,'foundation_directory.party'::regclass,'foundation_catalog.product_template'::regclass,'foundation_finbase.payment_term'::regclass,'foundation_finbase.financial_rounding_policy_rule'::regclass)), (select bool_and(relrowsecurity and relforcerowsecurity) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='foundation_pricing' and c.relkind='r'), (select not rolbypassrls from pg_roles where rolname='erp_app'), (select not rolbypassrls from pg_roles where rolname='erp_owner'), has_table_privilege('erp_app','foundation_finbase.currency_reference','SELECT'), has_table_privilege('erp_app','foundation_finbase.currency_reference','INSERT'), has_table_privilege('erp_app','foundation_finbase.currency_reference','UPDATE'), has_table_privilege('erp_app','foundation_finbase.currency_reference','DELETE')";
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync();
@@ -252,9 +255,10 @@ public sealed class DevelopmentSeedTests
         Assert.True(reader.GetBoolean(2));
         Assert.True(reader.GetBoolean(3));
         Assert.True(reader.GetBoolean(4));
-        Assert.False(reader.GetBoolean(5));
+        Assert.True(reader.GetBoolean(5));
         Assert.False(reader.GetBoolean(6));
         Assert.False(reader.GetBoolean(7));
+        Assert.False(reader.GetBoolean(8));
     }
 
     private static async Task AssertRuntimeTenantIsolationAsync(string runtimeConnectionString)
@@ -269,7 +273,7 @@ public sealed class DevelopmentSeedTests
                 context.Parameters.AddWithValue(tenant.Id.ToString("D"));
                 await context.ExecuteNonQueryAsync();
             }
-            await using var command = new NpgsqlCommand("select (select count(*) from platform.tenant)::int,(select count(*) from platform.legal_entity)::int,(select count(*) from platform.identity)::int,(select count(*) from foundation_directory.party)::int,(select count(*) from foundation_catalog.product_template)::int", connection, transaction);
+            await using var command = new NpgsqlCommand("select (select count(*) from platform.tenant)::int,(select count(*) from platform.legal_entity)::int,(select count(*) from platform.identity)::int,(select count(*) from foundation_directory.party)::int,(select count(*) from foundation_catalog.product_template)::int,(select count(*) from foundation_pricing.price_list)::int,(select count(*) from foundation_pricing.price_entry)::int", connection, transaction);
             await using var reader = await command.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
             var expectedUsers = tenant.Id == SeedIds.AtlasTenant ? 205 : 105;
@@ -280,6 +284,8 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(expectedUsers, reader.GetInt32(2));
             Assert.Equal(expectedParties, reader.GetInt32(3));
             Assert.Equal(expectedProducts, reader.GetInt32(4));
+            Assert.Equal(4, reader.GetInt32(5));
+            Assert.Equal(9, reader.GetInt32(6));
             await reader.DisposeAsync();
             await transaction.CommitAsync();
         }
@@ -294,5 +300,5 @@ public sealed class DevelopmentSeedTests
         throw new DirectoryNotFoundException("Could not find backend/DbMigrator from the seed test assembly location.");
     }
 
-    private sealed record CanonicalSeedCounts(int Tenants, int AtlasUsers, int AtlasParties, int AtlasProducts, int DeltaUsers, int DeltaParties, int DeltaProducts, int LegalEntities, int ReferenceCurrencies, int PaymentTerms, int EnabledEntityCurrencies, int AtlasVatIdentifiers, int AtlasCommercialRegistrations, int DeltaVatIdentifiers, int DeltaCommercialRegistrations);
+    private sealed record CanonicalSeedCounts(int Tenants, int AtlasUsers, int AtlasParties, int AtlasProducts, int DeltaUsers, int DeltaParties, int DeltaProducts, int LegalEntities, int ReferenceCurrencies, int PaymentTerms, int EnabledEntityCurrencies, int AtlasVatIdentifiers, int AtlasCommercialRegistrations, int DeltaVatIdentifiers, int DeltaCommercialRegistrations, int AtlasPriceLists, int AtlasPriceEntries, int AtlasScheduledVersions, int DeltaPriceLists, int DeltaPriceEntries, int DeltaScheduledVersions);
 }

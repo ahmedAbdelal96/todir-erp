@@ -12,6 +12,19 @@ namespace Modules.Directory.Repositories;
 
 public sealed class DirectoryRepository(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource)
 {
+    public async Task<IReadOnlySet<Guid>> FindActivePartiesAsync(TenantId tenantId, IReadOnlyCollection<Guid> partyIds, Guid? legalEntityId, CancellationToken cancellationToken)
+    {
+        if (partyIds.Count == 0) return new HashSet<Guid>();
+        if (partyIds.Count > 500) throw new ArgumentOutOfRangeException(nameof(partyIds));
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var scope = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction)) { scope.Parameters.AddWithValue(tenantId.Value.ToString("D")); await scope.ExecuteNonQueryAsync(cancellationToken); }
+        const string sql = "select p.id from foundation_directory.party p where p.tenant_id=$1 and p.id=any($2) and p.status='Active' and exists(select 1 from foundation_directory.party_visibility v where v.tenant_id=p.tenant_id and v.party_id=p.id and (v.scope_type='TenantWide' or (v.scope_type in ('SelectedLegalEntities','SingleLegalEntity','LegalEntity') and $3::uuid is not null and v.legal_entity_id=$3)))";
+        await using var command = new NpgsqlCommand(sql, connection, transaction); command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(partyIds.Distinct().ToArray()); command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken); var result = new HashSet<Guid>(); while (await reader.ReadAsync(cancellationToken)) result.Add(reader.GetGuid(0));
+        await reader.CloseAsync(); await transaction.CommitAsync(cancellationToken); return result;
+    }
+
     public Task<PartyDetails> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, CreatePartyRequest request, Guid correlationId, string? traceParent, bool allowDuplicate, CancellationToken cancellationToken) => CreateAsync(tenantId, actorId, membershipId, request, correlationId, traceParent, allowDuplicate, null, cancellationToken);
 
     public async Task<PartyDetails> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, CreatePartyRequest request, Guid correlationId, string? traceParent, bool allowDuplicate, string? idempotencyKey, CancellationToken cancellationToken)

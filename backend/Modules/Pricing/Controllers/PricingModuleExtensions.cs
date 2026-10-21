@@ -1,0 +1,91 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Core.Authorization;
+using Core.Modules;
+using Modules.Pricing.DTOs;
+using Modules.Pricing.Entities;
+using Modules.Pricing.Services;
+using Shared.Contracts.Pricing;
+using Shared.Primitives.Identifiers;
+
+namespace Modules.Pricing;
+
+public static class PricingModuleExtensions
+{
+    public static IServiceCollection AddPricingModule(this IServiceCollection services)
+    {
+        services.AddSingleton<IModuleManifestProvider, PricingModuleManifestProvider>();
+        services.AddSingleton<Repositories.PricingRepository>();
+        services.AddSingleton<PricingService>();
+        services.AddSingleton<IPricingCapabilities>(provider => provider.GetRequiredService<PricingService>());
+        return services;
+    }
+
+    public static WebApplication MapPricingModule(this WebApplication app)
+    {
+        var group=app.MapGroup("/api/v1/pricing").RequireAuthorization().RequireRateLimiting("api");
+        group.MapGet("/policy",async(Guid legalEntityId,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.read",legalEntityId,ct) is { } access?await Execute(()=>service.GetPolicyAsync(access.Tenant,legalEntityId,ct)):Results.Unauthorized());
+        group.MapPut("/policy",async(Guid legalEntityId,PricingPolicyRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.list.manage",legalEntityId,ct) is { } access?await Execute(()=>service.UpdatePolicyAsync(access.Tenant,access.ActorId,access.MembershipId,legalEntityId,request,Correlation(http),ct)):Results.Unauthorized());
+        group.MapGet("/price-lists",async(Guid legalEntityId,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.read",legalEntityId,ct) is { } access?await Execute(()=>service.ListAsync(access.Tenant,legalEntityId,ct)):Results.Unauthorized()).Produces<IReadOnlyList<PriceListDto>>();
+        group.MapPost("/price-lists",async(CreatePriceListRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.list.manage",request.LegalEntityId,ct) is { } access?await Execute(()=>service.CreateListAsync(access.Tenant,access.ActorId,access.MembershipId,request,Correlation(http),ct),StatusCodes.Status201Created):Results.Unauthorized()).Produces<PriceListDto>(StatusCodes.Status201Created);
+        group.MapPost("/price-lists/{listId:guid}/versions",async(Guid listId,Guid legalEntityId,CreatePriceVersionRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.version.create",legalEntityId,ct) is { } access?await Execute(()=>service.CreateVersionAsync(access.Tenant,legalEntityId,access.ActorId,access.MembershipId,listId,request,Correlation(http),ct),StatusCodes.Status201Created):Results.Unauthorized()).Produces<PriceVersionDto>(StatusCodes.Status201Created);
+        group.MapGet("/price-lists/{listId:guid}/versions",async(Guid listId,Guid legalEntityId,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.read",legalEntityId,ct) is { } access?await Execute(()=>service.ListVersionsAsync(access.Tenant,legalEntityId,listId,ct)):Results.Unauthorized()).Produces<IReadOnlyList<PriceVersionDto>>();
+        group.MapPost("/versions/{versionId:guid}/entries",async(Guid versionId,Guid listId,Guid legalEntityId,CreatePriceEntryRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.rule.manage",legalEntityId,ct) is { } access?await Execute(async()=>{await service.AddEntryAsync(access.Tenant,legalEntityId,access.ActorId,access.MembershipId,listId,versionId,request,Correlation(http),ct);return new{versionId};},StatusCodes.Status201Created):Results.Unauthorized());
+        group.MapPost("/versions/{versionId:guid}/rules",async(Guid versionId,Guid listId,Guid legalEntityId,CreatePriceRuleRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.rule.manage",legalEntityId,ct) is { } access?await Execute(async()=>{await service.AddRuleAsync(access.Tenant,legalEntityId,access.ActorId,access.MembershipId,listId,versionId,request,Correlation(http),ct);return new{versionId};},StatusCodes.Status201Created):Results.Unauthorized());
+        group.MapPost("/versions/{versionId:guid}/validate",async(Guid versionId,Guid legalEntityId,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.list.manage",legalEntityId,ct) is { } access?await Execute(()=>service.ValidateVersionAsync(access.Tenant,legalEntityId,versionId,ct)):Results.Unauthorized());
+        group.MapPost("/versions/{versionId:guid}/activate",async(Guid versionId,Guid legalEntityId,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.version.activate",legalEntityId,ct) is { } access?await Execute(()=>service.ActivateVersionAsync(access.Tenant,legalEntityId,access.ActorId,access.MembershipId,versionId,Correlation(http),ct)):Results.Unauthorized());
+        group.MapPost("/versions/{versionId:guid}/schedule",async(Guid versionId,Guid legalEntityId,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.version.activate",legalEntityId,ct) is { } access?await Execute(()=>service.ActivateVersionAsync(access.Tenant,legalEntityId,access.ActorId,access.MembershipId,versionId,Correlation(http),ct)):Results.Unauthorized());
+        group.MapPost("/price-lists/{listId:guid}/archive",async(Guid listId,Guid legalEntityId,PriceListLifecycleRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.list.manage",legalEntityId,ct) is { } access?await Execute(async()=>{await service.ArchiveListAsync(access.Tenant,legalEntityId,access.ActorId,access.MembershipId,listId,request.ExpectedVersion,Correlation(http),ct);return new{listId,status="Archived"};}):Results.Unauthorized());
+        group.MapPost("/price-groups",async(Guid legalEntityId,CreatePriceGroupRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.list.manage",legalEntityId,ct) is { } access?await Execute(async()=>new{id=await service.CreateGroupAsync(access.Tenant,access.ActorId,access.MembershipId,request,Correlation(http),ct)},StatusCodes.Status201Created):Results.Unauthorized());
+        group.MapPost("/price-groups/{groupId:guid}/members",async(Guid groupId,Guid legalEntityId,AddPriceGroupMemberRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.list.manage",legalEntityId,ct) is { } access?await Execute(async()=>{await service.AddGroupMemberAsync(access.Tenant,access.ActorId,access.MembershipId,groupId,request,legalEntityId,Correlation(http),ct);return new{groupId};},StatusCodes.Status201Created):Results.Unauthorized());
+        group.MapPost("/assignments",async(CreatePriceListAssignmentRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.list.manage",request.LegalEntityId,ct) is { } access?await Execute(async()=>{await service.AssignListAsync(access.Tenant,access.ActorId,access.MembershipId,request,Correlation(http),ct);return new{request.PriceListId};},StatusCodes.Status201Created):Results.Unauthorized());
+        group.MapPost("/resolve",async(ResolvePriceRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.read",request.LegalEntityId,ct) is { } access?await Execute(()=>service.ResolveAsync(ToContext(access.Tenant,request),ct)):Results.Unauthorized());
+        group.MapPost("/resolve-batch",async(ResolvePriceBatchRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await ResolveBatchAsync(request,http,subjects,authorizer,service,ct));
+        group.MapPost("/imports",async(PricingImportRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.import",request.LegalEntityId,ct) is { } access?await Execute(()=>service.PreviewImportAsync(access.Tenant,access.ActorId,access.MembershipId,request,Correlation(http),ct),StatusCodes.Status201Created):Results.Unauthorized());
+        group.MapPost("/imports/{batchId:guid}/commit",async(Guid batchId,Guid legalEntityId,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.import",legalEntityId,ct) is { } access?await Execute(()=>service.CommitImportAsync(access.Tenant,access.ActorId,access.MembershipId,batchId,Correlation(http),ct)):Results.Unauthorized());
+        group.MapGet("/price-lists/{listId:guid}/versions/{versionId:guid}/export",async(Guid listId,Guid versionId,Guid legalEntityId,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.export",legalEntityId,ct) is { } access?await Execute(async()=>Results.Text(await service.ExportEntriesCsvAsync(access.Tenant,legalEntityId,listId,versionId,ct),"text/csv; charset=utf-8")):Results.Unauthorized());
+        group.MapGet("/coverage",async(Guid legalEntityId,Guid priceListId,DateOnly pricingDate,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.read",legalEntityId,ct) is { } access?await Execute(()=>service.GetCoverageAsync(access.Tenant,legalEntityId,priceListId,pricingDate,ct)):Results.Unauthorized());
+        group.MapPost("/simulate",async(ResolvePriceRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.simulate",request.LegalEntityId,ct) is { } access?await Execute(()=>service.ResolveAsync(ToContext(access.Tenant,request),ct)):Results.Unauthorized());
+        group.MapPost("/explain",async(ResolvePriceRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)=>await Authorized(http,subjects,authorizer,"pricing.read",request.LegalEntityId,ct) is { } access?await Execute(()=>service.ResolveAsync(ToContext(access.Tenant,request),ct)):Results.Unauthorized());
+        return app;
+    }
+
+    private static async Task<IResult> ResolveBatchAsync(ResolvePriceBatchRequest request,HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,PricingService service,CancellationToken ct)
+    {
+        if(request.Items.Count is <1 or >500)return Results.Problem(statusCode:400,title: "A pricing batch must contain between 1 and 500 lines.",extensions:new Dictionary<string,object?>{{"code","pricing.batch_size_invalid"}});
+        if(!TryAccessIdentity(http,out var tenant,out var actor,out var membership))return Results.Unauthorized();
+        var subject=await subjects.LoadAsync(tenant,membership,ct);if(subject is null)return Results.Unauthorized();
+        if(request.Items.Any(item=>!authorizer.Authorize(subject,"pricing.read",PermissionScope.ForLegalEntity(tenant,new LegalEntityId(item.LegalEntityId)))))return Results.Forbid();
+        return await Execute(()=>service.ResolveBatchAsync(request.Items.Select(item=>ToContext(tenant,item)).ToArray(),ct));
+    }
+
+    private static async Task<Access?> Authorized(HttpContext http,IAuthorizationSubjectStore subjects,IPermissionAuthorizer authorizer,string permission,Guid? legalEntity,CancellationToken ct)
+    {
+        if(!TryAccessIdentity(http,out var tenant,out var actor,out var membership))return null;var subject=await subjects.LoadAsync(tenant,membership,ct);if(subject is null)return null;
+        var scope=legalEntity is { } id?PermissionScope.ForLegalEntity(tenant,new LegalEntityId(id)):PermissionScope.ForTenant(tenant);
+        if(!authorizer.Authorize(subject,permission,scope))return null;
+        return new Access(tenant,actor,membership,true);
+    }
+    private static bool TryAccessIdentity(HttpContext http,out TenantId tenant,out Guid actor,out Guid membership)
+    {
+        tenant=default;actor=default;membership=default;
+        if(!Guid.TryParse(http.User.FindFirstValue("tenant_id"),out var tenantId)||!Guid.TryParse(http.User.FindFirstValue("membership_id"),out membership)||!Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier),out actor))return false;
+        tenant=new TenantId(tenantId);return true;
+    }
+    private static async Task<IResult> Execute<T>(Func<Task<T>> action,int status=StatusCodes.Status200OK)
+    {
+        try{var result=await action();return result is IResult response?response:result is null?Results.NotFound():status==StatusCodes.Status201Created?Results.Created("",result):Results.Ok(result);}
+        catch(PricingConfigurationConflictException exception){return Results.Problem(statusCode:409,title:exception.Message,extensions:new Dictionary<string,object?>{{"code",exception.Code},{"ruleIds",exception.RuleIds}});}
+        catch(PricingException exception){var code=exception.Code;var statusCode=code.Contains("not_found",StringComparison.Ordinal)?404:code.Contains("conflict",StringComparison.Ordinal)?409:400;return Results.Problem(statusCode:statusCode,title:exception.Message,extensions:new Dictionary<string,object?>{{"code",code}});}
+    }
+    private static PricingContext ToContext(TenantId tenant,ResolvePriceRequest request)=>new(tenant,new LegalEntityId(request.LegalEntityId),request.Direction,request.PricingDate,request.TransactionCurrencyCode,request.PriceListId,request.PartyId,null,request.ProductVariantId,Guid.Empty,[],null,request.UnitOfMeasureId,request.Quantity);
+    private static Guid Correlation(HttpContext http)=>Guid.TryParse(http.Request.Headers["X-Correlation-Id"],out var id)?id:Guid.CreateVersion7();
+    private sealed record Access(TenantId Tenant,Guid ActorId,Guid MembershipId,bool Allowed);
+}
+
+public sealed class PricingModuleManifestProvider:IModuleManifestProvider
+{
+    public ModuleManifest Manifest{get;}=new("pricing","1.0.0",1,"L1","foundation",false,"tenant",new(["platform-kernel"],["catalog.product","catalog.quantity-conversion","directory.party","finbase.money"]),new("foundation_pricing",["price_list","price_list_version","price_entry","price_rule","price_group","price_group_member","price_list_assignment","pricing_policy","pricing_import_batch","pricing_import_row","pricing_audit"]),["pricing.read","pricing.list.manage","pricing.version.create","pricing.rule.manage","pricing.version.activate","pricing.simulate","pricing.import","pricing.export","pricing.audit.view"],new(["pricing.resolve","pricing.resolve-batch","pricing.snapshot"],["catalog.product","catalog.quantity-conversion","directory.party","finbase.money"]),new(["PriceListVersionActivatedV1"],["CatalogProductChangedV1","CatalogProductUomChangedV1","CatalogProductArchivedV1"]),new(true,"blocked_if_dependents"));
+}

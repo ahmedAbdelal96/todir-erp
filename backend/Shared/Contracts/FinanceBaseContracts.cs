@@ -82,6 +82,8 @@ public sealed record PaymentScheduleLineContract(
     DateOnly DueDate,
     MoneyContract Amount);
 
+public sealed record CommercialPriceConversionContract(string SourceAmount, string SourceCurrencyCode, string TargetAmount, string TargetCurrencyCode, string Rate, ExchangeRateSnapshotContract? ExchangeRate);
+
 /// <summary>Public in-process boundary for resolved financial context and immutable term snapshots.</summary>
 public interface IFinanceBaseCapabilities
 {
@@ -96,6 +98,16 @@ public interface IFinanceBaseCapabilities
     Task<PaymentTermSnapshotContract?> ResolvePaymentTermAsync(
         TenantId tenantId,
         Guid paymentTermId,
+        DateOnly businessDate,
+        CancellationToken cancellationToken = default);
+
+    Task<CommercialPriceConversionContract> ConvertCommercialUnitPriceAsync(
+        TenantId tenantId,
+        LegalEntityId legalEntityId,
+        string amount,
+        string fromCurrencyCode,
+        string toCurrencyCode,
+        FinancialCalculationPurpose purpose,
         DateOnly businessDate,
         CancellationToken cancellationToken = default);
 }

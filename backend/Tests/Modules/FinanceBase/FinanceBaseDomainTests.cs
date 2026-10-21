@@ -320,6 +320,7 @@ public sealed class FinanceBaseDomainTests
     private sealed class TestLegalEntityFinancialReadStore(string baseCurrency) : ILegalEntityFinancialReadStore
     {
         public Task<string?> GetBaseCurrencyCodeAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult<string?>(baseCurrency);
+        public Task<string?> GetTimeZoneAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult<string?>("UTC");
     }
 
     private sealed class TestFinancialGoLiveGuard(bool live) : IFinancialGoLiveGuard

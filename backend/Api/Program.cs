@@ -4,6 +4,7 @@ using Modules.Sample;
 using Modules.Directory;
 using Modules.Catalog;
 using Modules.FinanceBase;
+using Modules.Pricing;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -21,6 +22,7 @@ builder.Services.AddSampleModule();
 builder.Services.AddDirectoryModule();
 builder.Services.AddCatalogModule();
 builder.Services.AddFinanceBaseModule();
+builder.Services.AddPricingModule();
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 var configuredOrigins = (builder.Configuration["TODIR_CORS_ORIGINS"] ?? string.Empty)
@@ -126,6 +128,7 @@ app.MapSampleModule();
 app.MapDirectoryModule();
 app.MapCatalogModule();
 app.MapFinanceBaseModule();
+app.MapPricingModule();
 app.Run();
 
 public partial class Program;

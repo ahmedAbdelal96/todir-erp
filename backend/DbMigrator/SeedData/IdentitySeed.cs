@@ -17,7 +17,8 @@ public static class IdentitySeed
         "catalog.product.archive", "catalog.product.visibility.manage", "catalog.variant.manage", "catalog.product_uom.manage", "catalog.category.manage", "catalog.brand.manage", "catalog.uom.manage", "catalog.barcode.manage",
         "catalog.reference.manage", "catalog.attribute.manage", "catalog.import", "catalog.export", "catalog.audit.view", "finbase.currency.read", "finbase.currency.enable", "finbase.rate.read",
         "finbase.rate.manage", "finbase.rate.approve", "finbase.rounding_policy.read", "finbase.rounding_policy.manage", "finbase.payment_term.read",
-        "finbase.payment_term.manage", "finbase.financial_policy.manage", "finbase.audit.view"
+        "finbase.payment_term.manage", "finbase.financial_policy.manage", "finbase.audit.view",
+        "pricing.read", "pricing.list.manage", "pricing.version.create", "pricing.rule.manage", "pricing.version.activate", "pricing.simulate", "pricing.import", "pricing.export", "pricing.audit.view"
     ];
 
     public static async Task<SeedIdentitySummary> SeedAsync(SeedContext context, string defaultPassword, string? protectedMfaSecret, string[]? mfaRecoveryDigests, CancellationToken cancellationToken)
@@ -47,8 +48,8 @@ public static class IdentitySeed
         var roleDefinitions = new (string Code, string Name, string[] Permissions)[]
         {
             ("administrator", "مدير النظام", Permissions),
-            ("accountant", "محاسب", ["platform.identity.read", "platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read", "finbase.rate.read", "finbase.rounding_policy.read", "finbase.payment_term.read"]),
-            ("sales", "مبيعات", ["platform.organization.read", "directory.party.read", "directory.party.create", "directory.party.edit", "catalog.product.read", "finbase.currency.read", "finbase.payment_term.read"]),
+            ("accountant", "محاسب", ["platform.identity.read", "platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read", "finbase.rate.read", "finbase.rounding_policy.read", "finbase.payment_term.read", "pricing.read"]),
+            ("sales", "مبيعات", ["platform.organization.read", "directory.party.read", "directory.party.create", "directory.party.edit", "catalog.product.read", "finbase.currency.read", "finbase.payment_term.read", "pricing.read", "pricing.simulate"]),
             ("warehouse", "مخازن", ["platform.organization.read", "catalog.product.read", "catalog.product.edit", "catalog.uom.manage"]),
             ("office", "موظف إداري", ["platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read"])
         };

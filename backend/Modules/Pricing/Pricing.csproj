@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Modules.Pricing</AssemblyName>
+    <RootNamespace>Modules.Pricing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Npgsql" />
+    <ProjectReference Include="../../Core/Core.csproj" />
+    <ProjectReference Include="../../Shared/BuildingBlocks/BuildingBlocks.csproj" />
+    <ProjectReference Include="../../Shared/Contracts/Contracts.csproj" />
+    <ProjectReference Include="../../Shared/Primitives/Primitives.csproj" />
+  </ItemGroup>
+</Project>

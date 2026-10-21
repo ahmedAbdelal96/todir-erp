@@ -12,5 +12,6 @@
     <ProjectReference Include="../Modules/Directory/Directory.csproj" />
     <ProjectReference Include="../Modules/FinanceBase/FinanceBase.csproj" />
     <ProjectReference Include="../Modules/Catalog/Catalog.csproj" />
+    <ProjectReference Include="../Modules/Pricing/Pricing.csproj" />
   </ItemGroup>
 </Project>

@@ -19,6 +19,8 @@ public static class FinanceBaseModuleExtensions
         services.AddSingleton<IModuleManifestProvider, FinanceBaseModuleManifestProvider>();
         services.AddSingleton<Repositories.FinanceBaseRepository>();
         services.AddSingleton<FinanceBaseService>();
+        services.AddSingleton<Services.FinanceBaseCapabilities>();
+        services.AddSingleton<Shared.Contracts.FinanceBase.IFinanceBaseCapabilities>(provider => provider.GetRequiredService<Services.FinanceBaseCapabilities>());
         services.AddSingleton<Services.IExchangeRateProviderRegistry, Services.ExchangeRateProviderRegistry>();
         services.AddScoped<Services.IFinanceBaseRateSyncService, Services.FinanceBaseRateSyncService>();
         return services;

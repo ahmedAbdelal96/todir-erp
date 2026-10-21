@@ -5,6 +5,7 @@ using MassTransit;
 using Worker;
 using Modules.Catalog;
 using Modules.FinanceBase;
+using Modules.Pricing;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
@@ -22,7 +23,9 @@ builder.Services.AddCore(builder.Configuration, bus =>
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();
 builder.Services.AddFinanceBaseModule();
+builder.Services.AddPricingModule();
 builder.Services.AddScheduling(builder.Configuration);
 builder.Services.AddHostedService<OutboxDispatchWorker>();
 builder.Services.AddHostedService<FinanceBaseRateSyncWorker>();
+builder.Services.AddHostedService<PricingScheduledActivationWorker>();
 await builder.Build().RunAsync();

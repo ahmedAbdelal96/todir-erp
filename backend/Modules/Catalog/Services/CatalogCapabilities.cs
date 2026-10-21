@@ -10,11 +10,32 @@ public sealed class CatalogCapabilities(CatalogCapabilityRepository repository) 
     public Task<CatalogProductSummary?> GetProductSummaryAsync(TenantId tenantId, Guid productTemplateId, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => repository.GetProductSummaryAsync(tenantId, productTemplateId, legalEntityId, cancellationToken);
 
+    public Task<bool> IsActiveCategoryAsync(TenantId tenantId, Guid categoryId, CancellationToken cancellationToken = default)
+        => repository.IsActiveCategoryAsync(tenantId, categoryId, cancellationToken);
+
+    public Task<bool> IsActiveBrandAsync(TenantId tenantId, Guid brandId, CancellationToken cancellationToken = default)
+        => repository.IsActiveBrandAsync(tenantId, brandId, cancellationToken);
+
     public Task<CatalogVariantIdentity?> FindVariantAsync(TenantId tenantId, Guid productVariantId, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => repository.FindVariantAsync(tenantId, productVariantId, legalEntityId, cancellationToken);
 
+    public Task<CatalogVariantPricingContext?> GetPricingContextAsync(TenantId tenantId, Guid productVariantId, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.GetPricingContextAsync(tenantId, productVariantId, legalEntityId, cancellationToken);
+
+    public Task<IReadOnlyDictionary<Guid, CatalogVariantPricingContext>> GetPricingContextsBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.GetPricingContextsBatchAsync(tenantId, productVariantIds, legalEntityId, cancellationToken);
+
+    public Task<IReadOnlyDictionary<Guid, Guid>> GetBaseUomsBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, DateTimeOffset effectiveAt, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.GetBaseUomsBatchAsync(tenantId, productVariantIds, effectiveAt, legalEntityId, cancellationToken);
+
+    public Task<IReadOnlyDictionary<Guid, IReadOnlyList<CatalogAllowedUom>>> GetAllowedUomsBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, DateTimeOffset effectiveAt, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.GetAllowedUomsBatchAsync(tenantId, productVariantIds, effectiveAt, legalEntityId, cancellationToken);
+
     public Task<CatalogVariantSnapshot?> ResolveVariantAsync(TenantId tenantId, string skuOrBarcode, DateTimeOffset effectiveAt, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => repository.ResolveVariantAsync(tenantId, skuOrBarcode, effectiveAt, legalEntityId, cancellationToken);
+
+    public Task<IReadOnlyDictionary<string, CatalogVariantIdentity>> ResolveVariantsBySkuAsync(TenantId tenantId, IReadOnlyCollection<string> skus, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.ResolveVariantsBySkuAsync(tenantId, skus, legalEntityId, cancellationToken);
 
     public Task<IReadOnlyList<CatalogAllowedUom>> GetAllowedUomsAsync(TenantId tenantId, Guid productVariantId, DateTimeOffset effectiveAt, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => repository.GetAllowedUomsAsync(tenantId, productVariantId, effectiveAt, legalEntityId, cancellationToken);

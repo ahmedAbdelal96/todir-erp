@@ -33,6 +33,8 @@ public static class FinanceBaseSeed
             var rate = entityIndex == 0 ? 50.125m : 50.250m;
             var rateId = SeedIds.Child(context.Tenant.Id, $"exchange-rate:{entityId:N}", 1);
             await context.ExecuteAsync("insert into foundation_finbase.exchange_rate (tenant_id,id,legal_entity_id,from_currency,to_currency,rate,purpose,effective_date,source_type,provider_reference,reason,status,approved_at,approved_by,version,created_at) values ($1,$2,$3,'USD','EGP',$4,'Accounting','2026-01-02','Manual','development-seed','Canonical development manual rate scenario','Approved',$5,$6,1,$5) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, rateId, entityId, rate, context.AsOf, context.AdministratorId);
+            var commercialRateId = SeedIds.Child(context.Tenant.Id, $"exchange-rate-commercial:{entityId:N}", 1);
+            await context.ExecuteAsync("insert into foundation_finbase.exchange_rate (tenant_id,id,legal_entity_id,from_currency,to_currency,rate,purpose,effective_date,source_type,provider_reference,reason,status,approved_at,approved_by,version,created_at) values ($1,$2,$3,'USD','EGP',$4,'Commercial','2026-01-02','Manual','development-seed','Canonical commercial pricing conversion scenario','Approved',$5,$6,1,$5) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, commercialRateId, entityId, rate, context.AsOf, context.AdministratorId);
         }
 
         var terms = context.Tenant.Id == SeedIds.AtlasTenant

@@ -5152,4 +5152,8 @@ Ledger tax posting
 
 ---
 
+## Product Owner Scope Decision — Large-Scale Performance Certification
+
+The Product Owner explicitly defers large-scale Pricing benchmarking and certification to a dedicated Performance Hardening phase. This backend mission must still use bounded batch sizes and candidate reads, suitable indexes, and avoid obvious N+1 access. It must not claim large-scale performance certification. This decision does not defer ordinary functional, security, or correctness verification.
+
 **END OF FILE — 07_ERP_SAAS_PRICING_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md**

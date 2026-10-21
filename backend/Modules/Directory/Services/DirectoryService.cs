@@ -6,6 +6,7 @@ namespace Modules.Directory.Services;
 
 public sealed class DirectoryService(Repositories.DirectoryRepository repository, Repositories.DirectoryAdvancedRepository? advanced = null)
 {
+    public Task<IReadOnlySet<Guid>> FindActivePartiesAsync(TenantId tenantId, IReadOnlyCollection<Guid> partyIds, Guid? legalEntityId, CancellationToken cancellationToken) => repository.FindActivePartiesAsync(tenantId, partyIds, legalEntityId, cancellationToken);
     public Task<PartyDetails> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, CreatePartyRequest request, Guid correlationId, string? traceParent, bool allowDuplicate, CancellationToken cancellationToken) => repository.CreateAsync(tenantId, actorId, membershipId, request, correlationId, traceParent, allowDuplicate, cancellationToken);
     public Task<PartyDetails> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, CreatePartyRequest request, Guid correlationId, string? traceParent, bool allowDuplicate, string? idempotencyKey, CancellationToken cancellationToken) => repository.CreateAsync(tenantId, actorId, membershipId, request, correlationId, traceParent, allowDuplicate, idempotencyKey, cancellationToken);
     public Task<PartyDetails> UpdateAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid partyId, UpdatePartyRequest request, Guid correlationId, string? traceParent, CancellationToken cancellationToken) => repository.UpdateAsync(tenantId, actorId, membershipId, partyId, request, correlationId, traceParent, cancellationToken);

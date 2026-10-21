@@ -109,5 +109,8 @@ public sealed class FinanceBaseContractConsumerTests
 
         public Task<PaymentTermSnapshotContract?> ResolvePaymentTermAsync(TenantId tenantId, Guid paymentTermId, DateOnly businessDate, CancellationToken cancellationToken = default) => Task.FromResult<PaymentTermSnapshotContract?>(
             new(paymentTermId, Guid.Parse("50000000-0000-7000-8000-000000000001"), "NET-30-50", 1, businessDate, null, [new(1, "Percentage", "0.5", null, "Immediate", 0, null, 0), new(2, "Balance", null, null, "DaysAfterDate", 30, null, 0)]));
+
+        public Task<CommercialPriceConversionContract> ConvertCommercialUnitPriceAsync(TenantId tenantId, LegalEntityId legalEntityId, string amount, string fromCurrencyCode, string toCurrencyCode, FinancialCalculationPurpose purpose, DateOnly businessDate, CancellationToken cancellationToken = default)
+            => Task.FromResult(new CommercialPriceConversionContract(amount, fromCurrencyCode, amount, toCurrencyCode, "1", null));
     }
 }

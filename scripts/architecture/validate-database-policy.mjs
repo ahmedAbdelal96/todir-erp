@@ -7,6 +7,7 @@ const files = [
   "backend/DbMigrator/Database/bootstrap/sample-schema.sql",
   "backend/DbMigrator/Database/bootstrap/directory-schema.sql",
   "backend/DbMigrator/Database/bootstrap/catalog-schema.sql",
+  "backend/DbMigrator/Database/bootstrap/pricing-schema.sql",
 ];
 const errors = [];
 for (const relative of files) {
