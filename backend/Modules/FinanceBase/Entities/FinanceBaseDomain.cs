@@ -40,25 +40,9 @@ public static class MoneyRounding
 {
     public static decimal Round(decimal amount, int scale, RoundingMode mode)
     {
-        if (scale is < 0 or > 8) throw new FinanceBaseDomainException("finbase.rounding_scale_invalid", "Rounding scale must be between 0 and 8.");
-        try
-        {
-            var factor = Pow10(scale);
-            var shifted = checked(amount * factor);
-            var rounded = mode switch
-            {
-                RoundingMode.HalfUp => decimal.Round(shifted, 0, MidpointRounding.AwayFromZero),
-                RoundingMode.HalfEven => decimal.Round(shifted, 0, MidpointRounding.ToEven),
-                RoundingMode.Down => decimal.Truncate(shifted),
-                RoundingMode.Up => shifted >= 0 ? decimal.Ceiling(shifted) : decimal.Floor(shifted),
-                _ => throw new FinanceBaseDomainException("finbase.rounding_policy_invalid", "The rounding mode is not supported.")
-            };
-            return rounded / factor;
-        }
-        catch (OverflowException) { throw new FinanceBaseDomainException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
+        try { return FinancialRounding.Round(amount, scale, Enum.Parse<FinancialRoundingModeValue>(mode.ToString(), true)); }
+        catch (FinancialValueException exception) { throw new FinanceBaseDomainException(exception.Code, exception.Message); }
     }
-
-    private static decimal Pow10(int scale) => scale switch { 0 => 1m, 1 => 10m, 2 => 100m, 3 => 1000m, 4 => 10000m, 5 => 100000m, 6 => 1000000m, 7 => 10000000m, 8 => 100000000m, _ => throw new ArgumentOutOfRangeException(nameof(scale)) };
 }
 
 public enum ExchangeRatePurpose { Accounting, Commercial, Contractual, BankActual, Settlement, Tax }

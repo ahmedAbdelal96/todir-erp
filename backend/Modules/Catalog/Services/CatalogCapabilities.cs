@@ -7,6 +7,12 @@ namespace Modules.Catalog.Services;
 /// <summary>Applies Catalog capability rules over tenant-scoped repository reads.</summary>
 public sealed class CatalogCapabilities(CatalogCapabilityRepository repository) : ICatalogCapabilities, IQuantityConversion
 {
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<Guid>>> ResolveProductTemplatesByCodeAsync(TenantId tenantId, IReadOnlyCollection<string> codes, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.ResolveProductTemplatesByCodeAsync(tenantId, codes, legalEntityId, cancellationToken);
+
+    public Task<IReadOnlyDictionary<Guid, CatalogProductTemplateReferences>> GetProductTemplateReferencesBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productTemplateIds, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.GetProductTemplateReferencesBatchAsync(tenantId, productTemplateIds, legalEntityId, cancellationToken);
+
     public Task<CatalogProductSummary?> GetProductSummaryAsync(TenantId tenantId, Guid productTemplateId, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => repository.GetProductSummaryAsync(tenantId, productTemplateId, legalEntityId, cancellationToken);
 
@@ -39,6 +45,12 @@ public sealed class CatalogCapabilities(CatalogCapabilityRepository repository) 
 
     public Task<IReadOnlyDictionary<string, CatalogVariantIdentity>> ResolveVariantsBySkuAsync(TenantId tenantId, IReadOnlyCollection<string> skus, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => repository.ResolveVariantsBySkuAsync(tenantId, skus, legalEntityId, cancellationToken);
+
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<CatalogVariantIdentity>>> ResolveVariantsByExternalReferenceAsync(TenantId tenantId, IReadOnlyCollection<string> references, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.ResolveVariantsByExternalReferenceAsync(tenantId, references, legalEntityId, cancellationToken);
+
+    public Task<IReadOnlyDictionary<Guid, CatalogVariantReferences>> GetVariantReferencesBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        => repository.GetVariantReferencesBatchAsync(tenantId, productVariantIds, legalEntityId, cancellationToken);
 
     public Task<IReadOnlyList<CatalogAllowedUom>> GetAllowedUomsAsync(TenantId tenantId, Guid productVariantId, DateTimeOffset effectiveAt, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => repository.GetAllowedUomsAsync(tenantId, productVariantId, effectiveAt, legalEntityId, cancellationToken);

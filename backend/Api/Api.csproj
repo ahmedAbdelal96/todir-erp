@@ -13,5 +13,6 @@
     <ProjectReference Include="../Modules/FinanceBase/FinanceBase.csproj" />
     <ProjectReference Include="../Modules/Catalog/Catalog.csproj" />
     <ProjectReference Include="../Modules/Pricing/Pricing.csproj" />
+    <ProjectReference Include="../Modules/Tax/Tax.csproj" />
   </ItemGroup>
 </Project>

@@ -83,9 +83,16 @@ public sealed class FinanceBaseContractConsumerTests
     {
         get
         {
-            var directory = new DirectoryInfo(AppContext.BaseDirectory);
-            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Backend.sln"))) directory = directory.Parent;
-            return directory?.FullName ?? throw new InvalidOperationException("Unable to locate repository root.");
+            var configured = Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT");
+            foreach (var start in new[] { configured, Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.Where(path => !string.IsNullOrWhiteSpace(path)))
+            {
+                for (var directory = new DirectoryInfo(Path.GetFullPath(start!)); directory is not null; directory = directory.Parent)
+                {
+                    if (File.Exists(Path.Combine(directory.FullName, "Backend.sln"))) return directory.FullName;
+                    if (File.Exists(Path.Combine(directory.FullName, "backend", "Backend.sln"))) return Path.Combine(directory.FullName, "backend");
+                }
+            }
+            throw new InvalidOperationException("Unable to locate the backend repository root from the configured root, working directory, or test output.");
         }
     }
 

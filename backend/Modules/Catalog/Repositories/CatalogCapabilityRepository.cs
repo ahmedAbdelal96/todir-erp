@@ -8,6 +8,37 @@ namespace Modules.Catalog.Repositories;
 /// <summary>Implements Catalog's repository-independent contract with tenant/entity scoped reads.</summary>
 public sealed class CatalogCapabilityRepository(NpgsqlDataSource dataSource)
 {
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<Guid>>> ResolveProductTemplatesByCodeAsync(TenantId tenantId, IReadOnlyCollection<string> codes, Guid? legalEntityId, CancellationToken cancellationToken = default)
+    {
+        if (codes.Count is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(codes));
+        var inputs = codes.Select(code => (Raw: code.Trim(), Normalized: CatalogNormalization.Text(code))).Where(x => x.Normalized.Length > 0).ToArray();
+        if (inputs.Length == 0) return new Dictionary<string, IReadOnlyList<Guid>>(StringComparer.Ordinal);
+        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
+        const string sql = "select upper(btrim(p.product_template_code)),p.id from foundation_catalog.product_template p where p.tenant_id=$1 and upper(btrim(p.product_template_code))=any($2) and p.status='Active' and exists(select 1 from foundation_catalog.product_visibility x where x.tenant_id=p.tenant_id and x.template_id=p.id and (x.scope_type='TenantWide' or (x.scope_type='LegalEntity' and $3::uuid is not null and x.legal_entity_id=$3))) order by upper(btrim(p.product_template_code)),p.id";
+        await using var command = new NpgsqlCommand(sql, connection); command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(inputs.Select(x => x.Normalized).Distinct(StringComparer.Ordinal).ToArray()); command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
+        var matches = new Dictionary<string, List<Guid>>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var normalized = reader.GetString(0); if (!matches.TryGetValue(normalized, out var ids)) matches[normalized] = ids = [];
+            ids.Add(reader.GetGuid(1));
+        }
+        return inputs.GroupBy(x => x.Raw, StringComparer.Ordinal).ToDictionary(group => group.Key,
+            group => (IReadOnlyList<Guid>)matches.GetValueOrDefault(group.First().Normalized, []), StringComparer.Ordinal);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, CatalogProductTemplateReferences>> GetProductTemplateReferencesBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productTemplateIds, Guid? legalEntityId, CancellationToken cancellationToken = default)
+    {
+        if (productTemplateIds.Count > 500) throw new ArgumentOutOfRangeException(nameof(productTemplateIds));
+        if (productTemplateIds.Count == 0) return new Dictionary<Guid, CatalogProductTemplateReferences>();
+        await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
+        const string sql = "select p.id,p.product_template_code,p.display_name from foundation_catalog.product_template p where p.tenant_id=$1 and p.id=any($2) and exists(select 1 from foundation_catalog.product_visibility x where x.tenant_id=p.tenant_id and x.template_id=p.id and (x.scope_type='TenantWide' or (x.scope_type='LegalEntity' and $3::uuid is not null and x.legal_entity_id=$3)))";
+        await using var command = new NpgsqlCommand(sql, connection); command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(productTemplateIds.Distinct().ToArray()); command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
+        var result = new Dictionary<Guid, CatalogProductTemplateReferences>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) result[reader.GetGuid(0)] = new(reader.GetString(1), reader.GetString(2));
+        return result;
+    }
+
     public async Task<CatalogProductSummary?> GetProductSummaryAsync(TenantId tenantId, Guid productTemplateId, Guid? legalEntityId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenTenantConnectionAsync(tenantId, cancellationToken);
@@ -131,6 +162,29 @@ public sealed class CatalogCapabilityRepository(NpgsqlDataSource dataSource)
             foreach (var input in normalizedInputs.Where(value => value.Normalized == normalizedSku)) result[input.Raw] = identity;
         }
         return result;
+    }
+
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<CatalogVariantIdentity>>> ResolveVariantsByExternalReferenceAsync(TenantId tenantId, IReadOnlyCollection<string> references, Guid? legalEntityId, CancellationToken cancellationToken = default)
+    {
+        if (references.Count is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(references));
+        var requested=references.Select(reference=>reference.Trim()).Where(reference=>reference.Length>0).Distinct(StringComparer.Ordinal).ToArray();
+        if(requested.Length==0)return new Dictionary<string,IReadOnlyList<CatalogVariantIdentity>>(StringComparer.Ordinal);
+        await using var connection=await OpenTenantConnectionAsync(tenantId,cancellationToken);
+        const string sql="select r.reference_code,v.id,p.id,p.display_name,v.sku,p.product_nature,v.status from foundation_catalog.product_reference r join foundation_catalog.product_variant v on v.tenant_id=r.tenant_id and v.id=r.variant_id join foundation_catalog.product_template p on p.tenant_id=v.tenant_id and p.id=v.product_template_id where r.tenant_id=$1 and r.reference_type='External' and r.status='Active' and r.reference_code=any($2) and v.status='Active' and p.status='Active' and exists(select 1 from foundation_catalog.product_visibility x where x.tenant_id=p.tenant_id and x.template_id=p.id and (x.scope_type='TenantWide' or (x.scope_type='LegalEntity' and $3::uuid is not null and x.legal_entity_id=$3))) order by r.reference_code,v.id";
+        await using var command=new NpgsqlCommand(sql,connection);command.Parameters.AddWithValue(tenantId.Value);command.Parameters.AddWithValue(requested);command.Parameters.AddWithValue(legalEntityId??(object)DBNull.Value);
+        var matches=new Dictionary<string,List<CatalogVariantIdentity>>(StringComparer.Ordinal);await using var reader=await command.ExecuteReaderAsync(cancellationToken);
+        while(await reader.ReadAsync(cancellationToken)){var reference=reader.GetString(0);if(!matches.TryGetValue(reference,out var list))matches[reference]=list=[];list.Add(new(reader.GetGuid(1),reader.GetGuid(2),reader.GetString(3),Text(reader,4),reader.GetString(5),reader.GetString(6)));}
+        return matches.ToDictionary(pair=>pair.Key,pair=>(IReadOnlyList<CatalogVariantIdentity>)pair.Value,StringComparer.Ordinal);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, CatalogVariantReferences>> GetVariantReferencesBatchAsync(TenantId tenantId, IReadOnlyCollection<Guid> productVariantIds, Guid? legalEntityId, CancellationToken cancellationToken = default)
+    {
+        if(productVariantIds.Count>500)throw new ArgumentOutOfRangeException(nameof(productVariantIds));
+        if(productVariantIds.Count==0)return new Dictionary<Guid,CatalogVariantReferences>();
+        await using var connection=await OpenTenantConnectionAsync(tenantId,cancellationToken);
+        const string sql="select v.id,v.sku,coalesce(array_agg(r.reference_code order by r.reference_code) filter(where r.id is not null),'{}'::text[]) from foundation_catalog.product_variant v join foundation_catalog.product_template p on p.tenant_id=v.tenant_id and p.id=v.product_template_id left join foundation_catalog.product_reference r on r.tenant_id=v.tenant_id and r.variant_id=v.id and r.reference_type='External' and r.status='Active' where v.tenant_id=$1 and v.id=any($2) and exists(select 1 from foundation_catalog.product_visibility x where x.tenant_id=p.tenant_id and x.template_id=p.id and (x.scope_type='TenantWide' or (x.scope_type='LegalEntity' and $3::uuid is not null and x.legal_entity_id=$3))) group by v.id,v.sku";
+        await using var command=new NpgsqlCommand(sql,connection);command.Parameters.AddWithValue(tenantId.Value);command.Parameters.AddWithValue(productVariantIds.Distinct().ToArray());command.Parameters.AddWithValue(legalEntityId??(object)DBNull.Value);
+        var result=new Dictionary<Guid,CatalogVariantReferences>();await using var reader=await command.ExecuteReaderAsync(cancellationToken);while(await reader.ReadAsync(cancellationToken))result[reader.GetGuid(0)]=new(Text(reader,1),reader.GetFieldValue<string[]>(2));return result;
     }
 
     public async Task<IReadOnlyList<CatalogAllowedUom>> GetAllowedUomsAsync(TenantId tenantId, Guid productVariantId, DateTimeOffset effectiveAt, Guid? legalEntityId, CancellationToken cancellationToken = default)

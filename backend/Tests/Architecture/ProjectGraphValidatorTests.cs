@@ -25,6 +25,23 @@ public sealed class ProjectGraphValidatorTests
     }
 
     [Fact]
+    public void TaxConsumesCatalogProductIdentityOnlyThroughPublicContracts()
+    {
+        var tax = Path.Combine(RepositoryRoot, "Modules", "Tax");
+        foreach (var sourceFile in Directory.EnumerateFiles(tax, "*.cs", SearchOption.AllDirectories))
+        {
+            var source = File.ReadAllText(sourceFile);
+            Assert.DoesNotContain("Modules.Catalog", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("foundation_catalog.", source, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("CatalogDbContext", source, StringComparison.Ordinal);
+        }
+        var taxProject = File.ReadAllText(Path.Combine(tax, "Tax.csproj"));
+        Assert.DoesNotContain("Modules/Catalog/Catalog.csproj", taxProject, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Shared/Contracts/Contracts.csproj", taxProject, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Modules.Tax", File.ReadAllText(Path.Combine(RepositoryRoot, "Modules", "Catalog", "Catalog.csproj")), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExistingConsumerModulesDoNotAccessFinBaseStorageDirectly()
     {
         var modulesRoot = Path.Combine(RepositoryRoot, "Modules");
@@ -169,13 +186,16 @@ public sealed class ProjectGraphValidatorTests
     {
         get
         {
-            var directory = new DirectoryInfo(AppContext.BaseDirectory);
-            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Backend.sln")))
+            var configured = Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT");
+            foreach (var start in new[] { configured, Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.Where(path => !string.IsNullOrWhiteSpace(path)))
             {
-                directory = directory.Parent;
+                for (var directory = new DirectoryInfo(Path.GetFullPath(start!)); directory is not null; directory = directory.Parent)
+                {
+                    if (File.Exists(Path.Combine(directory.FullName, "Backend.sln"))) return directory.FullName;
+                    if (File.Exists(Path.Combine(directory.FullName, "backend", "Backend.sln"))) return Path.Combine(directory.FullName, "backend");
+                }
             }
-
-            return directory?.FullName ?? throw new InvalidOperationException("Unable to locate the TODIR repository root.");
+            throw new InvalidOperationException("Unable to locate the backend repository root from the configured root, working directory, or test output.");
         }
     }
 }

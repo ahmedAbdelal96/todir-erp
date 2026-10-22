@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "tax",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L1",
+  "type": "foundation",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": { "hard": ["platform-kernel"], "optionalCapabilities": ["platform.organization", "directory.party", "catalog.product", "catalog.quantity-conversion", "finbase.money", "pricing.resolve"] },
+  "owns": { "schema": "foundation_tax", "entities": ["tax_capability_state", "tax_registration", "tax_registration_member", "tax_scheme", "tax_type", "tax_jurisdiction", "tax_category", "tax_policy", "party_tax_profile", "product_tax_profile", "tax_rule_set", "tax_rule", "tax_rule_version", "tax_stack_definition", "tax_component_definition", "tax_pack_activation", "tax_audit"] },
+  "permissions": ["tax.read", "tax.registration.read", "tax.registration.manage", "tax.party_profile.read", "tax.party_profile.manage", "tax.product_profile.read", "tax.product_profile.manage", "tax.policy.read", "tax.policy.manage", "tax.rule.read", "tax.rule.manage", "tax.rule.activate", "tax.simulate", "tax.audit.view", "tax.import", "tax.export", "tax.capability.configure"],
+  "capabilities": { "provides": ["tax.resolve", "tax.resolve-batch", "tax.snapshot"], "consumes": ["platform.organization", "directory.party", "catalog.product", "finbase.money", "pricing.resolve"] },
+  "messaging": { "publishes": ["TaxCapabilityChangedV1", "TaxRegistrationChangedV1", "TaxCountryPackActivatedV1", "TaxRuleSetActivatedV1", "ProductTaxProfileChangedV1", "PartyTaxProfileChangedV1"], "consumes": [] },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}

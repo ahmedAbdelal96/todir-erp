@@ -307,11 +307,13 @@ public sealed class DevelopmentSeedTests
 
     private static string FindRepositoryRoot()
     {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        var configured = Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT");
+        foreach (var start in new[] { configured, Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.Where(path => !string.IsNullOrWhiteSpace(path)))
         {
-            if (File.Exists(Path.Combine(directory.FullName, "backend", "DbMigrator", "DbMigrator.csproj"))) return directory.FullName;
+            for (var directory = new DirectoryInfo(Path.GetFullPath(start!)); directory is not null; directory = directory.Parent)
+                if (File.Exists(Path.Combine(directory.FullName, "backend", "DbMigrator", "DbMigrator.csproj"))) return directory.FullName;
         }
-        throw new DirectoryNotFoundException("Could not find backend/DbMigrator from the seed test assembly location.");
+        throw new DirectoryNotFoundException("Could not find the repository root from the configured root, working directory, or seed test output.");
     }
 
     private sealed record CanonicalSeedCounts(int Tenants, int AtlasUsers, int AtlasParties, int AtlasProducts, int DeltaUsers, int DeltaParties, int DeltaProducts, int LegalEntities, int ReferenceCurrencies, int PaymentTerms, int EnabledEntityCurrencies, int AtlasVatIdentifiers, int AtlasCommercialRegistrations, int DeltaVatIdentifiers, int DeltaCommercialRegistrations, int AtlasPriceLists, int AtlasPriceEntries, int AtlasScheduledVersions, int DeltaPriceLists, int DeltaPriceEntries, int DeltaScheduledVersions);

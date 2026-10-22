@@ -72,6 +72,9 @@ public sealed class ApiCompositionTests
         Assert.True(paths.TryGetProperty("/api/v1/pricing/resolve-batch", out _));
         Assert.True(paths.TryGetProperty("/api/v1/pricing/imports", out _));
         Assert.True(paths.TryGetProperty("/api/v1/pricing/coverage", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/tax/legal-entities/{entityId}/capability", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/tax/calculate", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/tax/calculate-batch", out _));
         var numericFinancialFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "amount", "sourceAmount", "targetAmount", "rate", "cashIncrement", "percentage", "fixedAmount", "totalAmount"

@@ -40,7 +40,8 @@ public static class SeedRunner
             var catalog = await RunStageAsync(connection, tenant, context => CatalogSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var finance = await RunStageAsync(connection, tenant, context => FinanceBaseSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var pricing = await RunStageAsync(connection, tenant, context => PricingSeed.SeedAsync(context, cancellationToken), cancellationToken);
-            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing));
+            var tax = await RunStageAsync(connection, tenant, context => TaxSeed.SeedAsync(context, cancellationToken), cancellationToken);
+            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax));
         }
         return new(SeedIds.Version, summaries);
     }
@@ -62,7 +63,7 @@ public static class SeedRunner
     }
 }
 
-public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing);
+public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax);
 public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSummary> Tenants)
 {
     public void Print(TextWriter output)
@@ -78,6 +79,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  Products: {tenant.Catalog.Total}");
             output.WriteLine($"  Finance: {tenant.Finance.EnabledCurrencies} currencies, {tenant.Finance.PaymentTerms} payment terms");
             output.WriteLine($"  Pricing: {tenant.Pricing.PriceLists} lists, {tenant.Pricing.Entries} entries, {tenant.Pricing.ExplicitZeroPrices} explicit zero prices, {tenant.Pricing.ScheduledVersions} scheduled versions");
+            output.WriteLine($"  Tax: {tenant.Tax.CapabilityEntities} legal entities (disabled and enabled), {tenant.Tax.RegisteredDevelopmentFixtures} synthetic registration, {tenant.Tax.UnreviewedCountryPacks} pack awaiting official review, {tenant.Tax.Categories} classifications");
         }
     }
 }

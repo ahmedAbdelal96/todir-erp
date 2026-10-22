@@ -5,7 +5,7 @@ namespace Modules.Catalog.DTOs;
 public sealed record CreateProductRequest(string DisplayName, ProductNature Nature, string? Sku, string? NameAr, string? NameEn, Guid? CategoryId, Guid? BrandId, Guid BaseUomId);
 public sealed record UpdateProductRequest(string DisplayName, string? Sku, string? NameAr, string? NameEn, Guid? CategoryId, Guid? BrandId, long Version);
 public sealed record ProductSummary(Guid Id, Guid DefaultVariantId, string DisplayName, string? NameAr, string? NameEn, ProductNature Nature, string? Sku, string? BaseUomCode, string? CategoryName, string? BrandName, CatalogStatus Status, DateTimeOffset UpdatedAt, long Version);
-public sealed record ProductDetails(Guid Id, Guid DefaultVariantId, string DisplayName, string? NameAr, string? NameEn, ProductNature Nature, string? Sku, string? BaseUomCode, Guid? CategoryId, string? CategoryName, Guid? BrandId, string? BrandName, CatalogStatus Status, IReadOnlyList<BarcodeDto> Barcodes, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, long Version);
+public sealed record ProductDetails(Guid Id, string ProductTemplateCode, Guid DefaultVariantId, string DisplayName, string? NameAr, string? NameEn, ProductNature Nature, string? Sku, string? BaseUomCode, Guid? CategoryId, string? CategoryName, Guid? BrandId, string? BrandName, CatalogStatus Status, IReadOnlyList<BarcodeDto> Barcodes, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, long Version);
 public sealed record PagedProducts(IReadOnlyList<ProductSummary> Items, int TotalCount, int Page, int PageSize);
 public sealed record CreateCategoryRequest(string Name, Guid? ParentId);
 public sealed record CategoryDto(Guid Id, string Name, Guid? ParentId, CatalogStatus Status, long Version);

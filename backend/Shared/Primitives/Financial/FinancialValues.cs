@@ -8,6 +8,32 @@ public sealed class FinancialValueException(string code, string message) : Excep
     public string Code { get; } = code;
 }
 
+public enum FinancialRoundingModeValue { HalfUp, HalfEven, Down, Up }
+
+/// <summary>Exact currency-scale rounding shared by finance policy owners and their consumers.</summary>
+public static class FinancialRounding
+{
+    public static decimal Round(decimal amount, int scale, FinancialRoundingModeValue mode)
+    {
+        if (scale is < 0 or > 8) throw new FinancialValueException("finbase.rounding_scale_invalid", "Rounding scale must be between zero and eight.");
+        try
+        {
+            var factor = scale switch { 0 => 1m, 1 => 10m, 2 => 100m, 3 => 1000m, 4 => 10000m, 5 => 100000m, 6 => 1000000m, 7 => 10000000m, 8 => 100000000m, _ => throw new FinancialValueException("finbase.rounding_scale_invalid", "Rounding scale must be between zero and eight.") };
+            var shifted = checked(amount * factor);
+            var rounded = mode switch
+            {
+                FinancialRoundingModeValue.HalfUp => decimal.Round(shifted, 0, MidpointRounding.AwayFromZero),
+                FinancialRoundingModeValue.HalfEven => decimal.Round(shifted, 0, MidpointRounding.ToEven),
+                FinancialRoundingModeValue.Down => decimal.Truncate(shifted),
+                FinancialRoundingModeValue.Up => shifted >= 0m ? decimal.Ceiling(shifted) : decimal.Floor(shifted),
+                _ => throw new FinancialValueException("finbase.rounding_policy_invalid", "The rounding mode is not supported.")
+            };
+            return rounded / factor;
+        }
+        catch (OverflowException) { throw new FinancialValueException("finbase.amount_overflow", "The financial amount exceeds the supported range."); }
+    }
+}
+
 /// <summary>Currency-code normalization shared by financial domain consumers.</summary>
 public static class CurrencyCode
 {
