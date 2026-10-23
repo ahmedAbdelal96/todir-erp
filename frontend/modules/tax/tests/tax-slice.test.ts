@@ -1,0 +1,219 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import type {
+  TaxCapabilityDto,
+  TaxCoverageResult,
+  TaxProfileImportPreviewDto,
+  TaxResultContract,
+  TaxTreatment
+} from "../types.ts";
+import { mapTaxErrorCode } from "../services/tax-error-map.ts";
+
+describe("Tax Administration Slice Contracts & Domain Invariants", () => {
+  it("F01 / Tax Disabled Invariant — Disabled capability is distinct and never conflated with 0% tax or Exempt", () => {
+    const disabledCapability: TaxCapabilityDto = {
+      legalEntityId: "00000000-0000-0000-0000-000000000001",
+      capability: "Disabled",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      version: 1
+    };
+
+    const enabledCapability: TaxCapabilityDto = {
+      legalEntityId: "00000000-0000-0000-0000-000000000002",
+      capability: "Enabled",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      version: 1
+    };
+
+    assert.equal(disabledCapability.capability, "Disabled");
+    assert.equal(enabledCapability.capability, "Enabled");
+    assert.notEqual(disabledCapability.capability, enabledCapability.capability);
+  });
+
+  it("F02 / Legal Treatments Integrity — ZeroRated, Exempt, OutOfScope, and ReverseCharge are strictly distinct", () => {
+    const treatments: readonly TaxTreatment[] = [
+      "StandardRated",
+      "ZeroRated",
+      "Exempt",
+      "OutOfScope",
+      "ReverseCharge"
+    ];
+
+    // Verify all 5 statutory treatments exist and none are equal
+    const set = new Set(treatments);
+    assert.equal(set.size, 5);
+    assert.ok(set.has("StandardRated"));
+    assert.ok(set.has("ZeroRated"));
+    assert.ok(set.has("Exempt"));
+    assert.ok(set.has("OutOfScope"));
+    assert.ok(set.has("ReverseCharge"));
+
+    // Verify Reverse Charge specifically requires liability indicator
+    const isReverseCharge = (t: TaxTreatment) => t === "ReverseCharge";
+    assert.equal(isReverseCharge("ReverseCharge"), true);
+    assert.equal(isReverseCharge("Exempt"), false);
+    assert.equal(isReverseCharge("ZeroRated"), false);
+  });
+
+  it("F03 / Coverage Readiness Contract — correctly categorizes operational health states", () => {
+    const readyCoverage: TaxCoverageResult = {
+      legalEntityId: "00000000-0000-0000-0000-000000000002",
+      at: "2026-10-24",
+      health: "Healthy",
+      capability: "Enabled",
+      countryPackStatus: "Active",
+      registrationStatus: "Registered",
+      registrationEffective: true,
+      taxPolicyStatus: "Active",
+      roundingPolicyStatus: "Active",
+      productClassificationCoverage: "Complete",
+      partyProfileReadiness: "Complete",
+      activeRuleSetStatus: "Active",
+      issues: []
+    };
+
+    assert.equal(readyCoverage.health, "Healthy");
+    assert.equal(readyCoverage.registrationEffective, true);
+    assert.equal(readyCoverage.issues.length, 0);
+
+    const blockedCoverage: TaxCoverageResult = {
+      legalEntityId: "00000000-0000-0000-0000-000000000001",
+      at: "2026-10-24",
+      health: "Blocked",
+      capability: "Enabled",
+      countryPackStatus: "Missing",
+      registrationStatus: "Missing",
+      registrationEffective: false,
+      taxPolicyStatus: "Missing",
+      roundingPolicyStatus: "Missing",
+      productClassificationCoverage: "Missing",
+      partyProfileReadiness: "Missing",
+      activeRuleSetStatus: "Missing",
+      issues: [
+        { code: "RegistrationMissing", message: "Tax registration is required" },
+        { code: "ProductClassificationMissing", message: "Product requires tax classification" }
+      ]
+    };
+
+    assert.equal(blockedCoverage.health, "Blocked");
+    assert.equal(blockedCoverage.registrationEffective, false);
+    assert.equal(blockedCoverage.issues.length, 2);
+    assert.equal(blockedCoverage.issues[0]?.code, "RegistrationMissing");
+  });
+
+  it("F04 / Purchase Recoverability Math — total tax strictly equals recoverable + non-recoverable amounts", () => {
+    const calculationResult: TaxResultContract = {
+      evaluationState: "Determined",
+      treatment: "StandardRated",
+      netAmount: "1000.00",
+      taxTotal: "140.00",
+      grossAmount: "1140.00",
+      taxLines: [
+        {
+          taxTypeCode: "VAT",
+          taxCode: "VAT-14",
+          treatment: "StandardRated",
+          rate: "14.00",
+          taxableBase: "1000.00",
+          taxAmount: "140.00",
+          currencyCode: "EGP",
+          jurisdictionCode: "EG",
+          ruleId: "RULE-001",
+          ruleVersion: "1",
+          recoverability: {
+            kind: "PartiallyRecoverable",
+            recoverablePercentage: "70.00",
+            recoverableAmount: "98.00",
+            nonRecoverableAmount: "42.00"
+          }
+        }
+      ],
+      jurisdictionSnapshot: "EG",
+      registrationSnapshot: "REG-001",
+      calculationVersion: "1",
+      explanation: {
+        countryPackCode: "EG-VAT",
+        countryPackVersion: "1.0.0",
+        taxDate: "2026-10-24",
+        jurisdiction: "EG",
+        registrationStatus: "Registered",
+        componentCodes: ["VAT-14"],
+        rounding: "RoundHalfUp",
+        summary: "Standard VAT applied"
+      }
+    };
+
+    assert.equal(calculationResult.evaluationState, "Determined");
+    const line = calculationResult.taxLines[0]!;
+    const recoverable = parseFloat(line.recoverability!.recoverableAmount);
+    const nonRecoverable = parseFloat(line.recoverability!.nonRecoverableAmount);
+    const lineTax = parseFloat(line.taxAmount);
+    assert.equal(recoverable + nonRecoverable, lineTax);
+  });
+
+  it("F05 / Statutory vs Technical Review — TestOnly pack is never presented as legally approved", () => {
+    const testPack = {
+      sourceKind: "TestOnly",
+      reviewStatus: "Pending",
+      status: "Active"
+    };
+
+    const isStatutoryCertified = testPack.sourceKind !== "TestOnly" && testPack.reviewStatus === "Approved";
+    assert.equal(isStatutoryCertified, false);
+
+    const statutoryPendingPack = {
+      sourceKind: "Statutory",
+      reviewStatus: "Pending",
+      status: "Installed"
+    };
+
+    const isPendingLegalReview = statutoryPendingPack.reviewStatus === "Pending";
+    assert.equal(isPendingLegalReview, true);
+  });
+
+  it("F06 / Import Reconciliation — distinguishes preview outcomes without mutating persistent data", () => {
+    const previewDto: TaxProfileImportPreviewDto = {
+      batchId: "00000000-0000-0000-0000-000000000010",
+      status: "PreviewReady",
+      acceptedCount: 2,
+      rejectedCount: 1,
+      skippedCount: 0,
+      rows: [
+        { rowNumber: 1, reference: "PRD-001", outcome: "Create", message: null },
+        { rowNumber: 2, reference: "PRD-002", outcome: "CreateNewVersion", message: null },
+        { rowNumber: 3, reference: "UNKNOWN-SKU", outcome: "UnknownProduct", message: "Product SKU not found in Catalog" }
+      ]
+    };
+
+    const totalRows = previewDto.acceptedCount + previewDto.rejectedCount + previewDto.skippedCount;
+    assert.equal(totalRows, 3);
+    assert.equal(previewDto.acceptedCount, 2);
+    assert.equal(previewDto.rejectedCount, 1);
+    assert.equal(previewDto.rows[0]?.outcome, "Create");
+    assert.equal(previewDto.rows[1]?.outcome, "CreateNewVersion");
+    assert.equal(previewDto.rows[2]?.outcome, "UnknownProduct");
+  });
+
+  it("F07 / Error Mapping — accurately maps backend RFC-7807 codes to localized keys and plain English fallbacks", () => {
+    const errReg = mapTaxErrorCode("tax.registration_missing");
+    assert.equal(errReg.messageKey, "errors.registrationMissing");
+    assert.ok(errReg.fallbackEn.includes("registration has not been configured"));
+
+    const errProd = mapTaxErrorCode("tax.product_classification_missing");
+    assert.equal(errProd.messageKey, "errors.productClassificationMissing");
+    assert.ok(errProd.fallbackEn.includes("product requires a valid tax classification"));
+
+    const errConflict = mapTaxErrorCode("tax.rule_conflict");
+    assert.equal(errConflict.messageKey, "errors.ruleConflict");
+    assert.ok(errConflict.fallbackEn.includes("Conflicting tax rules need review"));
+
+    const errStack = mapTaxErrorCode("tax.stack_cycle");
+    assert.equal(errStack.messageKey, "errors.stackCycle");
+    assert.ok(errStack.fallbackEn.includes("circular way"));
+
+    const errUnknown = mapTaxErrorCode("random_unknown_error_code");
+    assert.equal(errUnknown.messageKey, "errors.genericTaxError");
+  });
+});

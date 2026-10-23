@@ -17,6 +17,8 @@ import { ar as paymentsAr } from "../modules/payments/i18n/ar.ts";
 import { en as paymentsEn } from "../modules/payments/i18n/en.ts";
 import { ar as pricingAr } from "../modules/pricing/i18n/ar.ts";
 import { en as pricingEn } from "../modules/pricing/i18n/en.ts";
+import { ar as taxAr } from "../modules/tax/i18n/ar.ts";
+import { en as taxEn } from "../modules/tax/i18n/en.ts";
 
 const resources = {
   ar: {
@@ -28,7 +30,8 @@ const resources = {
     invoicing: invoicingAr,
     migration: migrationAr,
     payments: paymentsAr,
-    pricing: pricingAr
+    pricing: pricingAr,
+    tax: taxAr
   },
   en: {
     accounting: accountingEn,
@@ -39,7 +42,8 @@ const resources = {
     invoicing: invoicingEn,
     migration: migrationEn,
     payments: paymentsEn,
-    pricing: pricingEn
+    pricing: pricingEn,
+    tax: taxEn
   }
 } as const;
 
