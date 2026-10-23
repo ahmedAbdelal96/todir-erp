@@ -7,7 +7,8 @@ import type {
   TaxResultContract,
   TaxTreatment
 } from "../types.ts";
-import { mapTaxErrorCode } from "../services/tax-error-map.ts";
+import { mapTaxErrorCode, mapImportRowOutcome } from "../services/tax-error-map.ts";
+import { deriveOverallReadiness } from "../services/tax-readiness.ts";
 
 describe("Tax Administration Slice Contracts & Domain Invariants", () => {
   it("F01 / Tax Disabled Invariant — Disabled capability is distinct and never conflated with 0% tax or Exempt", () => {
@@ -215,5 +216,94 @@ describe("Tax Administration Slice Contracts & Domain Invariants", () => {
 
     const errUnknown = mapTaxErrorCode("random_unknown_error_code");
     assert.equal(errUnknown.messageKey, "errors.genericTaxError");
+  });
+
+  it("F08 / Overall Readiness Aggregation — strictly derives Blocked, Warning, and Ready hierarchically (Enabled != Ready)", () => {
+    // Case A: Blocked because registration is not effective, even though capability is Enabled
+    const blockedCoverage: TaxCoverageResult = {
+      legalEntityId: "00000000-0000-0000-0000-000000000002",
+      at: "2026-10-24",
+      health: "Green",
+      capability: "Enabled",
+      countryPackStatus: "Active",
+      registrationStatus: "Missing",
+      registrationEffective: false,
+      taxPolicyStatus: "Active",
+      roundingPolicyStatus: "Active",
+      productClassificationCoverage: "Complete",
+      partyProfileReadiness: "Complete",
+      activeRuleSetStatus: "Active",
+      issues: []
+    };
+    assert.equal(deriveOverallReadiness(blockedCoverage), "Blocked");
+
+    // Case A2: Blocked because of explicit blocking issue
+    const issueBlockedCoverage: TaxCoverageResult = {
+      ...blockedCoverage,
+      registrationStatus: "Registered",
+      registrationEffective: true,
+      issues: [{ code: "RegistrationMissing", message: "Tax registration missing" }]
+    };
+    assert.equal(deriveOverallReadiness(issueBlockedCoverage), "Blocked");
+
+    // Case B: Warning / Needs Attention because product classification is incomplete
+    const warningCoverage: TaxCoverageResult = {
+      legalEntityId: "00000000-0000-0000-0000-000000000002",
+      at: "2026-10-24",
+      health: "Warning",
+      capability: "Enabled",
+      countryPackStatus: "Active",
+      registrationStatus: "Registered",
+      registrationEffective: true,
+      taxPolicyStatus: "Active",
+      roundingPolicyStatus: "Active",
+      productClassificationCoverage: "Partial",
+      partyProfileReadiness: "Complete",
+      activeRuleSetStatus: "Active",
+      issues: [{ code: "ProductClassificationWarning", message: "2 products require classification" }]
+    };
+    assert.equal(deriveOverallReadiness(warningCoverage), "Warning");
+
+    // Case C: Ready only when every single mandatory technical readiness condition is satisfied
+    const readyCoverage: TaxCoverageResult = {
+      legalEntityId: "00000000-0000-0000-0000-000000000002",
+      at: "2026-10-24",
+      health: "Green",
+      capability: "Enabled",
+      countryPackStatus: "Available",
+      registrationStatus: "Registered",
+      registrationEffective: true,
+      taxPolicyStatus: "Configured",
+      roundingPolicyStatus: "Active",
+      productClassificationCoverage: "Complete",
+      partyProfileReadiness: "Complete",
+      activeRuleSetStatus: "Active",
+      issues: []
+    };
+    assert.equal(deriveOverallReadiness(readyCoverage), "Ready");
+  });
+
+  it("F09 / Import Row Outcome Localization Mapping — maps outcomes to localized messages without raw backend English leakage", () => {
+    const unknownProduct = mapImportRowOutcome("UnknownProduct", "Product SKU was not found in Catalog master.");
+    assert.equal(unknownProduct.isError, true);
+    assert.equal(unknownProduct.messageKey, "importExport.outcomes.unknownProductMessage");
+    assert.equal(unknownProduct.fallbackAr, "لم يتم العثور على المنتج في الكتالوج.");
+    assert.equal(unknownProduct.fallbackEn, "Product was not found in Catalog.");
+    assert.equal(unknownProduct.technicalDetail, "Product SKU was not found in Catalog master.");
+
+    const unknownParty = mapImportRowOutcome("UnknownParty");
+    assert.equal(unknownParty.isError, true);
+    assert.equal(unknownParty.messageKey, "importExport.outcomes.unknownPartyMessage");
+    assert.equal(unknownParty.fallbackAr, "لم يتم العثور على الطرف التجاري في دليل الأطراف.");
+
+    const createRow = mapImportRowOutcome("Create");
+    assert.equal(createRow.isError, false);
+    assert.equal(createRow.messageKey, "importExport.outcomes.createMessage");
+    assert.equal(createRow.fallbackAr, "صالح للاعتماد والحفظ كملف جديد.");
+
+    const createVersion = mapImportRowOutcome("CreateNewVersion");
+    assert.equal(createVersion.isError, false);
+    assert.equal(createVersion.messageKey, "importExport.outcomes.createNewVersionMessage");
+    assert.equal(createVersion.fallbackAr, "صالح لإنشاء إصدار جديد سارٍ.");
   });
 });

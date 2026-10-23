@@ -106,6 +106,97 @@ const TAX_ERROR_DEFINITIONS: Record<string, { messageKey: string; fallbackEn: st
   }
 };
 
+export interface MappedImportOutcome {
+  readonly outcomeKey: string;
+  readonly messageKey: string;
+  readonly fallbackEn: string;
+  readonly fallbackAr: string;
+  readonly isError: boolean;
+  readonly technicalDetail?: string | undefined;
+}
+
+const IMPORT_OUTCOME_DEFINITIONS: Record<string, { messageKey: string; fallbackEn: string; fallbackAr: string; isError: boolean }> = {
+  UnknownProduct: {
+    messageKey: "importExport.outcomes.unknownProductMessage",
+    fallbackEn: "Product was not found in Catalog.",
+    fallbackAr: "لم يتم العثور على المنتج في الكتالوج.",
+    isError: true
+  },
+  UnknownParty: {
+    messageKey: "importExport.outcomes.unknownPartyMessage",
+    fallbackEn: "Party was not found in Directory.",
+    fallbackAr: "لم يتم العثور على الطرف التجاري في دليل الأطراف.",
+    isError: true
+  },
+  InvalidClassification: {
+    messageKey: "importExport.outcomes.invalidClassificationMessage",
+    fallbackEn: "Tax classification code is invalid.",
+    fallbackAr: "رمز التصنيف الضريبي غير صالح.",
+    isError: true
+  },
+  InvalidRate: {
+    messageKey: "importExport.outcomes.invalidRateMessage",
+    fallbackEn: "Tax rate or rate version is invalid.",
+    fallbackAr: "نسبة الضريبة أو إصدار النسبة غير صالح.",
+    isError: true
+  },
+  Duplicate: {
+    messageKey: "importExport.outcomes.duplicateMessage",
+    fallbackEn: "Duplicate record in import batch.",
+    fallbackAr: "سجل مكرر في ملف الاستيراد.",
+    isError: true
+  },
+  MissingRequiredField: {
+    messageKey: "importExport.outcomes.missingRequiredFieldMessage",
+    fallbackEn: "Mandatory import field is missing.",
+    fallbackAr: "حقل إلزامي مفقود في بيانات الاستيراد.",
+    isError: true
+  },
+  Create: {
+    messageKey: "importExport.outcomes.createMessage",
+    fallbackEn: "Valid for creation and committing.",
+    fallbackAr: "صالح للاعتماد والحفظ كملف جديد.",
+    isError: false
+  },
+  CreateNewVersion: {
+    messageKey: "importExport.outcomes.createNewVersionMessage",
+    fallbackEn: "Valid for creating a new effective version.",
+    fallbackAr: "صالح لإنشاء إصدار جديد سارٍ.",
+    isError: false
+  }
+};
+
+export function mapImportRowOutcome(outcome: string | undefined | null, technicalDetail?: string | null): MappedImportOutcome {
+  const normalized = (outcome ?? "").trim();
+  const matched = IMPORT_OUTCOME_DEFINITIONS[normalized];
+  if (matched) {
+    return {
+      outcomeKey: `importExport.outcomes.${normalized}`,
+      messageKey: matched.messageKey,
+      fallbackEn: matched.fallbackEn,
+      fallbackAr: matched.fallbackAr,
+      isError: matched.isError,
+      technicalDetail: technicalDetail || undefined
+    };
+  }
+
+  const isError =
+    normalized.toLowerCase().includes("unknown") ||
+    normalized.toLowerCase().includes("invalid") ||
+    normalized.toLowerCase().includes("conflict") ||
+    normalized.toLowerCase().includes("error") ||
+    normalized.toLowerCase().includes("fail");
+
+  return {
+    outcomeKey: `importExport.outcomes.${normalized || "Error"}`,
+    messageKey: isError ? "importExport.outcomes.genericErrorMessage" : "importExport.outcomes.genericSuccessMessage",
+    fallbackEn: isError ? "Row validation failed." : "Valid for committing.",
+    fallbackAr: isError ? "فشل التحقق من صحة السطر." : "صالح للاعتماد.",
+    isError,
+    technicalDetail: technicalDetail || undefined
+  };
+}
+
 export function mapTaxErrorCode(code: string | undefined | null, technicalDetail?: string): MappedTaxError {
   const normalized = (code ?? "").trim().toLowerCase();
   const matched = TAX_ERROR_DEFINITIONS[normalized];

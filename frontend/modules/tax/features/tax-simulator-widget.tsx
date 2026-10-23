@@ -17,12 +17,14 @@ export interface TaxSimulatorWidgetProps {
   readonly legalEntityId: string;
   readonly defaultDate: string;
   readonly defaultCurrency?: string | undefined;
+  readonly isTestOnly?: boolean | undefined;
 }
 
 export function TaxSimulatorWidget({
   legalEntityId,
   defaultDate,
-  defaultCurrency = "EGP"
+  defaultCurrency = "EGP",
+  isTestOnly = true
 }: TaxSimulatorWidgetProps): React.JSX.Element {
   const { t } = useTranslation("tax");
 
@@ -223,6 +225,31 @@ export function TaxSimulatorWidget({
       {/* Results view */}
       {result && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          {/* Test Only / Non-Statutory persistent warning banner */}
+          {isTestOnly && (
+            <div
+              role="alert"
+              style={{
+                padding: "0.875rem 1rem",
+                borderRadius: "var(--radius-md)",
+                backgroundColor: "var(--color-status-warning-subtle, #fffbeb)",
+                border: "1px solid var(--color-status-warning-border, #fcd34d)",
+                color: "var(--color-status-warning-text, #92400e)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.25rem"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 700, fontSize: "0.9375rem" }}>
+                <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: "var(--color-status-warning-text, #92400e)" }} />
+                <span>{t("simulator.testOnlyNoticeTitle")}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.8125rem", lineHeight: 1.5 }}>
+                {t("simulator.testOnlyNoticeDescription")}
+              </p>
+            </div>
+          )}
+
           {/* Summary KPI Cards */}
           <div
             style={{
@@ -309,7 +336,7 @@ export function TaxSimulatorWidget({
           )}
 
           {/* Why This Tax Explanation Panel */}
-          <WhyThisTaxPanel result={result} />
+          <WhyThisTaxPanel result={result} isTestOnly={isTestOnly} />
         </div>
       )}
     </div>

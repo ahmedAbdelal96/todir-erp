@@ -5,6 +5,7 @@ const SECONDARY_ENTITY_ID = '00000000-0000-0000-0000-000000000002';
 const REGISTRATION_ID = '00000000-0000-0000-0000-000000000003';
 const PACK_ID = '00000000-0000-0000-0000-000000000004';
 const RULE_SET_ID = '00000000-0000-0000-0000-000000000005';
+const WARNING_ENTITY_ID = '00000000-0000-0000-0000-000000000009';
 
 test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
   test.beforeEach(async ({ page }) => {
@@ -64,6 +65,14 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
                 legalEntityId: SECONDARY_ENTITY_ID,
                 code: 'SECONDARY',
                 name: 'شركة أطلس للتجارة — الكيان الثانوي',
+                countryCode: 'EG',
+                baseCurrencyCode: 'EGP'
+              },
+              {
+                id: WARNING_ENTITY_ID,
+                legalEntityId: WARNING_ENTITY_ID,
+                code: 'WARNING',
+                name: 'شركة أطلس للتجارة — قيد الإعداد',
                 countryCode: 'EG',
                 baseCurrencyCode: 'EGP'
               }
@@ -135,6 +144,19 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
       });
     });
 
+    await page.route(new RegExp(`/api/v1/tax/legal-entities/${WARNING_ENTITY_ID}/capability`), async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          legalEntityId: WARNING_ENTITY_ID,
+          capability: 'Enabled',
+          effectiveFrom: '2026-01-01',
+          effectiveTo: null
+        })
+      });
+    });
+
     // 5. Tax Coverage endpoint
     await page.route(/\/api\/v1\/tax\/coverage/, async (route) => {
       const url = new URL(route.request().url());
@@ -145,18 +167,42 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
-            evaluatedAt: '2026-10-24',
-            ready: false,
             legalEntityId: MAIN_ENTITY_ID,
-            countryCode: 'EG',
-            registration: { status: 'Missing' },
-            countryPack: { status: 'Missing' },
-            productClassification: { status: 'Unclassified' },
-            partyProfile: { status: 'Missing' },
-            policies: { taxPolicyStatus: 'Missing', roundingPolicyStatus: 'Missing' },
-            ruleSet: { status: 'Missing' },
+            at: '2026-10-24',
+            health: 'Blocked',
+            capability: 'Disabled',
+            countryPackStatus: 'Missing',
+            registrationStatus: 'Missing',
+            registrationEffective: false,
+            taxPolicyStatus: 'Missing',
+            roundingPolicyStatus: 'Missing',
+            productClassificationCoverage: 'Missing',
+            partyProfileReadiness: 'Missing',
+            activeRuleSetStatus: 'Missing',
             issues: [
-              { code: 'TaxCapabilityDisabled', message: 'Tax management is not enabled for this legal entity.', severity: 'Blocking' }
+              { code: 'TaxCapabilityDisabled', message: 'Tax management is not enabled for this legal entity.' }
+            ]
+          })
+        });
+      } else if (entity === WARNING_ENTITY_ID) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            legalEntityId: WARNING_ENTITY_ID,
+            at: '2026-10-24',
+            health: 'Warning',
+            capability: 'Enabled',
+            countryPackStatus: 'Available',
+            registrationStatus: 'Registered',
+            registrationEffective: true,
+            taxPolicyStatus: 'Configured',
+            roundingPolicyStatus: 'Active',
+            productClassificationCoverage: 'Partial',
+            partyProfileReadiness: 'Complete',
+            activeRuleSetStatus: 'Active',
+            issues: [
+              { code: 'ProductClassificationMissing', message: '12 products need a tax classification.' }
             ]
           })
         });
@@ -165,39 +211,18 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
-            evaluatedAt: '2026-10-24',
-            ready: true,
             legalEntityId: SECONDARY_ENTITY_ID,
-            countryCode: 'EG',
-            registration: {
-              status: 'Configured',
-              registrationId: REGISTRATION_ID,
-              schemeCode: 'DEVELOPMENT',
-              registrationNumber: 'DEMO-REGISTERED'
-            },
-            countryPack: {
-              status: 'Active',
-              packCode: 'EG-VAT',
-              packVersion: '1.0.0',
-              goldenVectorStatus: 'Passed'
-            },
-            productClassification: {
-              status: 'Classified',
-              categoryCode: 'GENERAL'
-            },
-            partyProfile: {
-              status: 'Configured',
-              categoryCode: 'PARTY-GENERAL'
-            },
-            policies: {
-              taxPolicyStatus: 'Active',
-              roundingPolicyStatus: 'Active'
-            },
-            ruleSet: {
-              status: 'Active',
-              ruleSetId: RULE_SET_ID,
-              version: 1
-            },
+            at: '2026-10-24',
+            health: 'Green',
+            capability: 'Enabled',
+            countryPackStatus: 'Available',
+            registrationStatus: 'Registered',
+            registrationEffective: true,
+            taxPolicyStatus: 'Configured',
+            roundingPolicyStatus: 'Active',
+            productClassificationCoverage: 'Complete',
+            partyProfileReadiness: 'Complete',
+            activeRuleSetStatus: 'Active',
             issues: []
           })
         });
@@ -550,7 +575,18 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
     });
 
     // ==========================================
-    // FLOW B: Tax Overview & Readiness (Atlas Secondary)
+    // FLOW B: Tax Overview & Readiness
+    // Case B: Needs Attention (Atlas Setup Entity)
+    // ==========================================
+    await entitySelect.selectOption({ value: WARNING_ENTITY_ID });
+    await page.waitForTimeout(500);
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByText(/جاهزية محرك الضرائب|Tax Engine Readiness/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/يتطلب الانتباه|Needs Attention/i).first()).toBeVisible({ timeout: 5000 });
+
+    // ==========================================
+    // Case C: Ready (Atlas Secondary)
     // ==========================================
     // Switch to Atlas Secondary entity in top bar
     await entitySelect.selectOption({ value: SECONDARY_ENTITY_ID });
@@ -559,6 +595,7 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
 
     // Verify Overview & Readiness section
     await expect(page.getByText(/جاهزية محرك الضرائب|Tax Engine Readiness/i)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/جاهز ومكتمل|Ready/i).first()).toBeVisible({ timeout: 5000 });
     await expect(page.getByText(/التسجيل الضريبي|Tax Registration/i)).toBeVisible();
     await expect(page.getByText(/حزمة الدولة|Country Pack/i).first()).toBeVisible();
     await expect(page.getByText(/تصنيف المنتجات|Product Classification/i)).toBeVisible();
@@ -683,6 +720,14 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
     // Verify simulation result returned by real backend engine
     await expect(page.getByText(/لماذا تم احتساب هذه الضريبة؟|Why This Tax/i)).toBeVisible({ timeout: 10000 });
 
+    // Verify Test Only persistent warning banner (Requirement 2 & 8)
+    await expect(page.getByText(/تكوين ضريبي اختباري \/ تجريبي|Test \/ Development Tax Configuration/i).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/غير معتمد كمرجعية تشريعية رسمية|not approved statutory guidance/i).first()).toBeVisible({ timeout: 5000 });
+
+    // Verify Why This Tax non-statutory test citation labeling (Requirement 3 & 8)
+    await expect(page.getByText(/مرجع قاعدة اختبار تجريبية|Test Fixture Rule Reference/i).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/بيانات اختبار فقط|Test Data Only/i).first()).toBeVisible({ timeout: 5000 });
+
     // 09: Tax Simulator Result
     await page.screenshot({
       path: 'artifacts/test-results/tax/09-tax-simulator-result.png',
@@ -715,6 +760,9 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
 
     // Verify preview results & uncommitted warning notice
     await expect(page.getByText(/هذه الصفوف لم تُحفظ بعد في النظام|لم يتم اعتماد هذه السجلات|These rows have NOT yet been committed/i)).toBeVisible({ timeout: 10000 });
+
+    // Verify localized Arabic row outcome without raw backend English message (Requirement 5 & 9)
+    await expect(page.getByText('لم يتم العثور على المنتج في الكتالوج.')).toBeVisible({ timeout: 5000 });
 
     // 11: Import Preview Reconciliation
     await page.screenshot({

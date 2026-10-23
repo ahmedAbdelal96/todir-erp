@@ -265,6 +265,9 @@ export const ar = {
     status: {
       installed: "مثبتة",
       active: "نشطة",
+      available: "متاحة",
+      missing: "مفقودة",
+      incompatible: "غير متوافقة",
       scheduled: "مجدولة",
       superseded: "مستبدلة",
       retired: "متقاعدة"
@@ -303,10 +306,13 @@ export const ar = {
     taxCode: "مكون الضريبة",
     rate: "النسبة",
     taxableBase: "الوعاء الضريبي",
-    taxAmount: "مبلغ الضريبة"
+    taxAmount: "مبلغ الضريبة",
+    testOnlyNoticeTitle: "تكوين ضريبي اختباري / تجريبي",
+    testOnlyNoticeDescription: "تكوين ضريبي اختباري / تجريبي — غير معتمد كمرجعية تشريعية رسمية. لا يمثل نصوص القانون المعتمدة لأغراض الإنتاج الفعلي."
   },
   whyThisTax: {
     title: "لماذا تم احتساب هذه الضريبة؟ — التفسير القانوني والحسابي",
+    testOnlyNotice: "تكوين ضريبي اختباري / تجريبي — غير معتمد كمرجعية تشريعية رسمية",
     taxDate: "تاريخ الواقعة المنشئة للضريبة",
     jurisdiction: "الاختصاص القضائي",
     registrationStatus: "سياق التسجيل الضريبي",
@@ -315,6 +321,8 @@ export const ar = {
     rounding: "استراتيجية التقريب",
     components: "مكونات الضريبة المطبقة",
     legalBasis: "السند القانوني / الاستشهاد التشريعي",
+    testFixtureLegalBasis: "مرجع قاعدة اختبار تجريبية (بيانات اختبار — غير معتمدة تشريعياً)",
+    testDataOnlyTag: "بيانات اختبار فقط",
     ruleIdLabel: "معرف القاعدة",
     ruleSetVersionLabel: "إصدار مجموعة القواعد",
     calculationVersionLabel: "إصدار الحساب",
@@ -380,7 +388,17 @@ export const ar = {
       UnknownParty: "طرف غير معروف",
       Conflict: "تعارض في التكوين",
       InvalidCategory: "فئة ضريبية غير صالحة",
-      InvalidScheme: "نظام ضريبي غير صالح"
+      InvalidScheme: "نظام ضريبي غير صالح",
+      createMessage: "صالح للاعتماد والحفظ كملف جديد.",
+      createNewVersionMessage: "صالح لإنشاء إصدار جديد سارٍ.",
+      unknownProductMessage: "لم يتم العثور على المنتج في الكتالوج.",
+      unknownPartyMessage: "لم يتم العثور على الطرف التجاري في دليل الأطراف.",
+      invalidClassificationMessage: "رمز التصنيف الضريبي غير صالح.",
+      invalidRateMessage: "نسبة الضريبة أو إصدار النسبة غير صالح.",
+      duplicateMessage: "سجل مكرر في ملف الاستيراد.",
+      missingRequiredFieldMessage: "حقل إلزامي مفقود في بيانات الاستيراد.",
+      genericErrorMessage: "فشل التحقق من صحة السطر.",
+      genericSuccessMessage: "صالح للاعتماد."
     }
   },
   errors: {

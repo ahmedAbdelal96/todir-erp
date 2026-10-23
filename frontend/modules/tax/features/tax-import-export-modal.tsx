@@ -7,7 +7,7 @@ import { TextArea } from "../../../components/primitives/text-area.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { TaxDataTable, type TaxTableColumn } from "../components/tax-data-table.tsx";
 import { taxApi } from "../services/tax-api.ts";
-import { extractTaxError } from "../services/tax-error-map.ts";
+import { extractTaxError, mapImportRowOutcome } from "../services/tax-error-map.ts";
 import type {
   TaxImportRowRequest,
   TaxImportRowResult,
@@ -28,7 +28,7 @@ export function TaxImportExportModal({
   legalEntityId,
   defaultEffectiveDate
 }: TaxImportExportModalProps): React.JSX.Element | null {
-  const { t } = useTranslation("tax");
+  const { t, i18n } = useTranslation("tax");
 
   const [activeTab, setActiveTab] = useState<"import" | "export">("import");
   const [profileKind, setProfileKind] = useState<"Product" | "Party">("Product");
@@ -176,14 +176,11 @@ export function TaxImportExportModal({
       key: "outcome",
       header: t("importExport.outcome"),
       render: (item) => {
-        const isError =
-          item.outcome.includes("Unknown") ||
-          item.outcome.includes("Invalid") ||
-          item.outcome.includes("Conflict");
+        const mapped = mapImportRowOutcome(item.outcome, item.message);
         return (
           <StatusBadge
-            label={t(`importExport.outcomes.${item.outcome}`, { defaultValue: item.outcome })}
-            intent={isError ? "danger" : "success"}
+            label={t(mapped.outcomeKey, { defaultValue: item.outcome })}
+            intent={mapped.isError ? "danger" : "success"}
           />
         );
       }
@@ -191,11 +188,31 @@ export function TaxImportExportModal({
     {
       key: "message",
       header: t("importExport.message"),
-      render: (item) => (
-        <span style={{ fontSize: "0.8125rem", color: item.message ? "var(--color-status-danger-text)" : "var(--color-content-muted)" }}>
-          {item.message || t("importExport.readyToCommit")}
-        </span>
-      )
+      render: (item) => {
+        const mapped = mapImportRowOutcome(item.outcome, item.message);
+        const isAr = (i18n.language ?? "ar").startsWith("ar");
+        const localizedMessage = t(mapped.messageKey, {
+          defaultValue: isAr ? mapped.fallbackAr : mapped.fallbackEn
+        });
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem" }}>
+            <span
+              style={{
+                fontSize: "0.8125rem",
+                color: mapped.isError ? "var(--color-status-danger-text)" : "var(--color-content-muted)",
+                fontWeight: mapped.isError ? 500 : 400
+              }}
+            >
+              {localizedMessage}
+            </span>
+            {item.message && item.message !== localizedMessage && (
+              <span style={{ fontSize: "0.6875rem", fontFamily: "var(--font-mono, monospace)", color: "var(--color-content-muted)" }}>
+                {item.message}
+              </span>
+            )}
+          </div>
+        );
+      }
     }
   ];
 

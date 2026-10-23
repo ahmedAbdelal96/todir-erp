@@ -265,6 +265,9 @@ export const en = {
     status: {
       installed: "Installed",
       active: "Active",
+      available: "Available",
+      missing: "Missing",
+      incompatible: "Incompatible",
       scheduled: "Scheduled",
       superseded: "Superseded",
       retired: "Retired"
@@ -303,10 +306,13 @@ export const en = {
     taxCode: "Tax Component",
     rate: "Rate",
     taxableBase: "Taxable Base",
-    taxAmount: "Tax Amount"
+    taxAmount: "Tax Amount",
+    testOnlyNoticeTitle: "Test / Development Tax Configuration",
+    testOnlyNoticeDescription: "Test / development tax configuration — not approved statutory guidance. Not certified as official legislation for production statutory use."
   },
   whyThisTax: {
     title: "Why This Tax? — Legal & Calculation Explanation",
+    testOnlyNotice: "Test / development tax configuration — not approved statutory guidance",
     taxDate: "Tax Point Date",
     jurisdiction: "Jurisdiction",
     registrationStatus: "Registration Context",
@@ -315,6 +321,8 @@ export const en = {
     rounding: "Rounding Strategy",
     components: "Applied Components",
     legalBasis: "Legal Basis / Citation",
+    testFixtureLegalBasis: "Test Fixture Rule Reference (Test Data — Non-Statutory)",
+    testDataOnlyTag: "Test Data Only",
     ruleIdLabel: "Rule ID",
     ruleSetVersionLabel: "Rule Set Version",
     calculationVersionLabel: "Calculation Version",
@@ -380,7 +388,17 @@ export const en = {
       UnknownParty: "Unknown Party",
       Conflict: "Configuration Conflict",
       InvalidCategory: "Invalid Category",
-      InvalidScheme: "Invalid Scheme"
+      InvalidScheme: "Invalid Scheme",
+      createMessage: "Valid for creation and committing.",
+      createNewVersionMessage: "Valid for creating a new effective version.",
+      unknownProductMessage: "Product was not found in Catalog.",
+      unknownPartyMessage: "Party was not found in Directory.",
+      invalidClassificationMessage: "Tax classification code is invalid.",
+      invalidRateMessage: "Tax rate or rate version is invalid.",
+      duplicateMessage: "Duplicate record in import batch.",
+      missingRequiredFieldMessage: "Mandatory import field is missing.",
+      genericErrorMessage: "Row validation failed.",
+      genericSuccessMessage: "Valid for committing."
     }
   },
   errors: {

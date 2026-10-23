@@ -20,6 +20,7 @@ import {
   useTaxCountryPacks
 } from "../hooks/tax-queries.ts";
 import { TaxStatusBadge } from "../components/tax-status-badge.tsx";
+import { deriveOverallReadiness } from "../services/tax-readiness.ts";
 import { TaxTreatmentDisplay } from "../components/tax-treatment-display.tsx";
 import { CountryPackStatusBadge } from "../components/country-pack-status-badge.tsx";
 import { TaxCapabilityModal } from "../features/tax-capability-modal.tsx";
@@ -122,7 +123,8 @@ export function TaxPage(): React.JSX.Element {
     {
       key: "schemeCode",
       header: t("registrations.scheme"),
-      render: (item) => <span style={{ fontWeight: 600 }}>{item.schemeCode}</span>
+      width: "160px",
+      render: (item) => <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{item.schemeCode}</span>
     },
     {
       key: "countryCode",
@@ -139,12 +141,19 @@ export function TaxPage(): React.JSX.Element {
     {
       key: "registrationNumber",
       header: t("registrations.registrationNumber"),
-      render: (item) => item.registrationNumber ? <code>{item.registrationNumber}</code> : <span style={{ color: "var(--color-content-muted)" }}>{t("registrations.notAssigned")}</span>
+      width: "160px",
+      render: (item) =>
+        item.registrationNumber ? (
+          <code style={{ whiteSpace: "nowrap" }}>{item.registrationNumber}</code>
+        ) : (
+          <span style={{ color: "var(--color-content-muted)" }}>{t("registrations.notAssigned")}</span>
+        )
     },
     {
       key: "effectiveFrom",
       header: t("registrations.effectiveFrom"),
-      render: (item) => <span>{item.effectiveFrom}</span>
+      width: "120px",
+      render: (item) => <span style={{ whiteSpace: "nowrap" }}>{item.effectiveFrom}</span>
     },
     {
       key: "version",
@@ -594,7 +603,7 @@ export function TaxPage(): React.JSX.Element {
                           <h2 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 600 }}>
                             {t("overview.readinessTitle")}
                           </h2>
-                          <TaxStatusBadge status={coverage?.health || "Ready"} type="health" />
+                          <TaxStatusBadge status={deriveOverallReadiness(coverage)} type="health" />
                         </div>
                         <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-content-muted)" }}>
                           {t("overview.readinessSubtitle")}
@@ -960,6 +969,11 @@ export function TaxPage(): React.JSX.Element {
               legalEntityId={legalEntityId}
               defaultDate={today}
               defaultCurrency={refData?.policies?.[0]?.policyCode === "DEVELOPMENT" ? "EGP" : "EGP"}
+              isTestOnly={
+                !countryPacks ||
+                countryPacks.length === 0 ||
+                countryPacks.some((p) => p.sourceKind === "TestOnly" || p.reviewStatus !== "Approved")
+              }
             />
           )}
         </>

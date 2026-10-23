@@ -5,9 +5,10 @@ import { Button } from "../../../components/primitives/button.tsx";
 
 export interface WhyThisTaxPanelProps {
   readonly result: TaxResultContract;
+  readonly isTestOnly?: boolean;
 }
 
-export function WhyThisTaxPanel({ result }: WhyThisTaxPanelProps): React.JSX.Element {
+export function WhyThisTaxPanel({ result, isTestOnly = true }: WhyThisTaxPanelProps): React.JSX.Element {
   const { t } = useTranslation("tax");
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const explanation: TaxExplanationContract = result.explanation;
@@ -44,9 +45,30 @@ export function WhyThisTaxPanel({ result }: WhyThisTaxPanelProps): React.JSX.Ele
         </span>
       </div>
 
+      {isTestOnly && (
+        <div
+          role="note"
+          style={{
+            padding: "0.5rem 0.75rem",
+            borderRadius: "var(--radius-sm)",
+            backgroundColor: "var(--color-status-warning-subtle, #fffbeb)",
+            border: "1px solid var(--color-status-warning-border, #fcd34d)",
+            color: "var(--color-status-warning-text, #92400e)",
+            fontSize: "0.8125rem",
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem"
+          }}
+        >
+          <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "var(--color-status-warning-text, #92400e)" }} />
+          <span>{t("whyThisTax.testOnlyNotice")}</span>
+        </div>
+      )}
+
       {explanation.summary && (
         <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--color-content-secondary)", lineHeight: 1.5 }}>
-          {explanation.summary}
+          {isTestOnly ? `[${t("whyThisTax.testDataOnlyTag")}] ${explanation.summary}` : explanation.summary}
         </p>
       )}
 
@@ -104,14 +126,33 @@ export function WhyThisTaxPanel({ result }: WhyThisTaxPanelProps): React.JSX.Ele
         <div
           style={{
             fontSize: "0.8125rem",
-            padding: "0.5rem 0.75rem",
+            padding: "0.625rem 0.75rem",
             borderRadius: "var(--radius-sm)",
             backgroundColor: "var(--color-status-warning-subtle, #fffbeb)",
-            color: "var(--color-status-warning-text, #92400e)"
+            color: "var(--color-status-warning-text, #92400e)",
+            border: isTestOnly ? "1px dashed var(--color-status-warning-border, #fcd34d)" : undefined
           }}
         >
-          <strong>{t("whyThisTax.legalBasis")}: </strong>
-          {explanation.legalReasonText || explanation.legalReasonCode}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.25rem", flexWrap: "wrap", gap: "0.5rem" }}>
+            <strong>
+              {isTestOnly ? t("whyThisTax.testFixtureLegalBasis") : t("whyThisTax.legalBasis")}:
+            </strong>
+            {isTestOnly && (
+              <span
+                style={{
+                  fontSize: "0.6875rem",
+                  padding: "0.125rem 0.375rem",
+                  borderRadius: "var(--radius-sm)",
+                  backgroundColor: "var(--color-status-warning-border, #fcd34d)",
+                  color: "var(--color-status-warning-text, #92400e)",
+                  fontWeight: 700
+                }}
+              >
+                {t("whyThisTax.testDataOnlyTag")}
+              </span>
+            )}
+          </div>
+          <div>{explanation.legalReasonText || explanation.legalReasonCode}</div>
         </div>
       )}
 

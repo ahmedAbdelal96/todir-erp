@@ -38,7 +38,13 @@ export function CountryPackStatusBadge({
   }
 
   const technicalIntent: StatusIntent =
-    technicalStatus === "Active" ? "success" : technicalStatus === "Installed" ? "info" : "neutral";
+    technicalStatus === "Active" || technicalStatus === "Available"
+      ? "success"
+      : technicalStatus === "Installed"
+      ? "info"
+      : technicalStatus === "Incompatible" || technicalStatus === "Missing"
+      ? "danger"
+      : "neutral";
 
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>

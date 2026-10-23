@@ -25,7 +25,7 @@ export function TaxStatusBadge({ status, type = "health" }: TaxStatusBadgeProps)
       break;
 
     case "health":
-      if (status === "Healthy" || status === "Ready") {
+      if (status === "Healthy" || status === "Ready" || status === "Green") {
         intent = "success";
         labelKey = "health.healthy";
       } else if (status === "Warning" || status === "NeedsAttention") {
