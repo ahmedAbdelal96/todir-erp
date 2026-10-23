@@ -10,7 +10,7 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Tax.Repositories;
 
-public sealed class TaxProfileRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, IDirectoryCapabilities directory, ICatalogCapabilities catalog, ITaxCountryPackRegistry countryPacks)
+public sealed class TaxProfileRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, IDirectoryCapabilities directory, ICatalogCapabilities catalog)
 {
     public async Task<TaxProfileDto> CreatePartyAsync(Guid tenant, Guid actor, Guid correlation, TaxPartyProfileRequest request, CancellationToken ct, Guid? previousId = null)
     {
@@ -70,28 +70,20 @@ public sealed class TaxProfileRepository(NpgsqlDataSource dataSource, ITransacti
         async Task<string?> Text(string sql, params object[] values)
         {
             await using var command = new NpgsqlCommand(sql, connection, transaction);
-            for (var index = 0; index < values.Length; index++) command.Parameters.AddWithValue($"${index + 1}", values[index] ?? DBNull.Value);
+            foreach (var value in values) command.Parameters.AddWithValue(value ?? DBNull.Value);
             return await command.ExecuteScalarAsync(ct) as string;
         }
         async Task<bool> Exists(string sql, params object[] values)
         {
             await using var command = new NpgsqlCommand(sql, connection, transaction);
-            for (var index = 0; index < values.Length; index++) command.Parameters.AddWithValue($"${index + 1}", values[index] ?? DBNull.Value);
+            foreach (var value in values) command.Parameters.AddWithValue(value ?? DBNull.Value);
             return (bool)(await command.ExecuteScalarAsync(ct) ?? false);
         }
         var entity = request.LegalEntityId;
         var at = request.At;
         var scheme = (object?)request.SchemeCode ?? DBNull.Value;
         var capability = await Text("select capability from foundation_tax.tax_capability_state where tenant_id=$1 and legal_entity_id=$2 and effective_from<=$3 and (effective_to is null or effective_to>$3) order by effective_from desc limit 1", tenant, entity, at) ?? "Missing";
-        var packStatus = await Text("select case when review_status<>'Approved' then 'Incompatible' else 'Available' end from foundation_tax.tax_pack_activation where tenant_id=$1 and country_code=$2 and effective_from<=$3 and (effective_to is null or effective_to>$3) order by effective_from desc limit 1", tenant, request.CountryCode, at) ?? "Missing";
-        var runtimePack = countryPacks.Find(request.CountryCode, NodaTime.LocalDate.FromDateTime(at.ToDateTime(TimeOnly.MinValue)));
-        if (packStatus == "Available")
-        {
-            var package = runtimePack?.ValidationPackage;
-            var validation = runtimePack is null ? null : package?.Validate(TaxCalculator.CalculationVersion, runtimePack.Manifest.RuleSetReferences.ToHashSet(StringComparer.Ordinal));
-            var packDate = NodaTime.LocalDate.FromDateTime(at.ToDateTime(TimeOnly.MinValue));
-            if (runtimePack is null || runtimePack.Manifest.CountryCode != request.CountryCode || runtimePack.Manifest.PackId != runtimePack.PackCode || runtimePack.Manifest.PackVersion != runtimePack.Version || runtimePack.Manifest.EffectiveFrom > packDate || runtimePack.Manifest.EffectiveTo is { } effectiveTo && packDate >= effectiveTo || validation?.Valid != true) packStatus = "Incompatible";
-        }
+        var packStatus = await Text("select case when validation_status='Valid' and (source_kind='TestOnly' or review_status='Approved') then 'Available' else 'Incompatible' end from foundation_tax.tax_pack_activation where tenant_id=$1 and country_code=$2 and status in ('Active','Superseded') and effective_from<=$3 and (effective_to is null or effective_to>$3) order by effective_from desc,activated_at desc nulls last limit 1", tenant, request.CountryCode, at) ?? "Missing";
         var registration = await Text("select status from foundation_tax.tax_registration r join foundation_tax.tax_registration_member m on m.tenant_id=r.tenant_id and m.registration_id=r.id where r.tenant_id=$1 and m.legal_entity_id=$2 and r.country_code=$3 and ($4::text is null or r.scheme_code=$4) and r.effective_from<=$5 and (r.effective_to is null or r.effective_to>$5) and r.status<>'Deregistered' and m.effective_from<=$5 and (m.effective_to is null or m.effective_to>$5) and m.membership_status='Active' order by r.effective_from desc limit 1", tenant, entity, request.CountryCode, scheme, at);
         var registrationOutOfPeriod = registration is null && await Exists("select exists(select 1 from foundation_tax.tax_registration r join foundation_tax.tax_registration_member m on m.tenant_id=r.tenant_id and m.registration_id=r.id where r.tenant_id=$1 and m.legal_entity_id=$2 and r.country_code=$3 and ($4::text is null or r.scheme_code=$4) and r.status<>'Deregistered' and m.membership_status='Active')", tenant, entity, request.CountryCode, scheme);
         var policy = await Text("select rounding_strategy from foundation_tax.tax_policy where tenant_id=$1 and legal_entity_id=$2", tenant, entity) ?? "Missing";

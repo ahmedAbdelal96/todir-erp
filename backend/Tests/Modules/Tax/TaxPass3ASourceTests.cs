@@ -9,6 +9,7 @@ public sealed class TaxPass3ASourceTests
     {
         var routes = Read("backend/Modules/Tax/Controllers/TaxModuleExtensions.cs");
         var repository = Read("backend/Modules/Tax/Repositories/TaxProfileRepository.cs");
+        var countryPackRepository = Read("backend/Modules/Tax/Repositories/TaxCountryPackRepository.cs");
         var coverageService = Read("backend/Modules/Tax/Services/TaxCoverageService.cs");
         Assert.Contains("/coverage", routes, StringComparison.Ordinal);
         Assert.Contains("new(legalEntityId, at, countryCode", routes, StringComparison.Ordinal);
@@ -18,8 +19,9 @@ public sealed class TaxPass3ASourceTests
         Assert.Contains("RuleSetMissing", coverageService, StringComparison.Ordinal);
         Assert.Contains("MissingRule", coverageService, StringComparison.Ordinal);
         Assert.Contains("RuleConflict", coverageService, StringComparison.Ordinal);
-        Assert.Contains("ValidationPackage", repository, StringComparison.Ordinal);
-        Assert.Contains("TaxCalculator.CalculationVersion", repository, StringComparison.Ordinal);
+        Assert.Contains("tax_pack_activation", repository, StringComparison.Ordinal);
+        Assert.Contains("validation_status='Valid'", repository, StringComparison.Ordinal);
+        Assert.Contains("TaxCalculator.CalculationVersion", countryPackRepository, StringComparison.Ordinal);
     }
 
     [Fact]

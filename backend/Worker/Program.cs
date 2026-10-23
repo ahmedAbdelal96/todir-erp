@@ -4,6 +4,7 @@ using Modules.Sample;
 using MassTransit;
 using Worker;
 using Modules.Catalog;
+using Modules.Directory;
 using Modules.FinanceBase;
 using Modules.Pricing;
 
@@ -22,6 +23,7 @@ builder.Services.AddCore(builder.Configuration, bus =>
 });
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();
+builder.Services.AddDirectoryModule();
 builder.Services.AddFinanceBaseModule();
 builder.Services.AddPricingModule();
 builder.Services.AddScheduling(builder.Configuration);

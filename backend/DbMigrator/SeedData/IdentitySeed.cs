@@ -18,7 +18,11 @@ public static class IdentitySeed
         "catalog.reference.manage", "catalog.attribute.manage", "catalog.import", "catalog.export", "catalog.audit.view", "finbase.currency.read", "finbase.currency.enable", "finbase.rate.read",
         "finbase.rate.manage", "finbase.rate.approve", "finbase.rounding_policy.read", "finbase.rounding_policy.manage", "finbase.payment_term.read",
         "finbase.payment_term.manage", "finbase.financial_policy.manage", "finbase.audit.view",
-        "pricing.read", "pricing.list.manage", "pricing.version.create", "pricing.rule.manage", "pricing.version.activate", "pricing.simulate", "pricing.import", "pricing.export", "pricing.audit.view"
+        "pricing.read", "pricing.list.manage", "pricing.version.create", "pricing.rule.manage", "pricing.version.activate", "pricing.simulate", "pricing.import", "pricing.export", "pricing.audit.view",
+        "tax.read", "tax.registration.read", "tax.registration.manage", "tax.party_profile.read", "tax.party_profile.manage",
+        "tax.product_profile.read", "tax.product_profile.manage", "tax.policy.read", "tax.policy.manage", "tax.rule.read",
+        "tax.rule.manage", "tax.rule.activate", "tax.simulate", "tax.audit.view", "tax.import", "tax.export", "tax.capability.configure",
+        "tax.country_pack.read", "tax.country_pack.manage", "tax.country_pack.activate"
     ];
 
     public static async Task<SeedIdentitySummary> SeedAsync(SeedContext context, string defaultPassword, string? protectedMfaSecret, string[]? mfaRecoveryDigests, CancellationToken cancellationToken)

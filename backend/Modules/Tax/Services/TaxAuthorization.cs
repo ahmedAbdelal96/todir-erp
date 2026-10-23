@@ -20,4 +20,16 @@ public static class TaxAuthorization
         return subject is null ? null : new(tenant, actorId, membershipId,
             authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(legalEntityId))));
     }
+
+    public static async Task<TaxAccess?> ResolveTenantAsync(ClaimsPrincipal user, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer,
+        string permission, CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out var tenantId)
+            || !Guid.TryParse(user.FindFirstValue("membership_id"), out var membershipId)
+            || !Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return null;
+        var tenant = new TenantId(tenantId);
+        var subject = await subjects.LoadAsync(tenant, membershipId, cancellationToken);
+        return subject is null ? null : new(tenant, actorId, membershipId,
+            authorizer.Authorize(subject, permission, PermissionScope.ForTenant(tenant)));
+    }
 }

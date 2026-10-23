@@ -23,6 +23,8 @@ public static class TaxModuleExtensions
         services.AddSingleton<Repositories.TaxRegistrationRepository>();
         services.AddSingleton<Repositories.TaxProfileRepository>();
         services.AddSingleton<Repositories.TaxProfileImportRepository>();
+        services.AddSingleton<Repositories.TaxCountryPackRepository>();
+        services.AddSingleton<TaxCountryPackService>();
         services.AddSingleton<ITaxCountryPackRegistry, TaxCountryPackRegistry>();
         services.AddSingleton<TaxService>();
         services.AddSingleton<ITaxCapabilities>(provider => provider.GetRequiredService<TaxService>());
@@ -32,6 +34,51 @@ public static class TaxModuleExtensions
     public static WebApplication MapTaxModule(this WebApplication app)
     {
         var group = app.MapGroup("/api/v1/tax").RequireAuthorization().RequireRateLimiting("api").WithTags("Tax");
+        group.MapGet("/country-packs", async (HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxCountryPackService service, CancellationToken ct) =>
+        {
+            var access = await PackAuthorized(http, subjects, authorizer, "tax.country_pack.read", ct);
+            return access is { Allowed: true } ? Results.Ok(await service.ListAsync(access.Tenant.Value, ct)) : await PackForbiddenOrUnauthorized(http, subjects, authorizer, "tax.country_pack.read", ct);
+        });
+        group.MapGet("/country-packs/{id:guid}", async (Guid id, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxCountryPackService service, CancellationToken ct) =>
+        {
+            var access = await PackAuthorized(http, subjects, authorizer, "tax.country_pack.read", ct);
+            return access is { Allowed: true } ? await Execute(() => service.GetAsync(access.Tenant.Value, id, ct)) : await PackForbiddenOrUnauthorized(http, subjects, authorizer, "tax.country_pack.read", ct);
+        });
+        group.MapPost("/country-packs", async (InstallTaxCountryPackRequest request, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxCountryPackService service, CancellationToken ct) =>
+        {
+            var access = await PackAuthorized(http, subjects, authorizer, "tax.country_pack.manage", ct);
+            return access is { Allowed: true } ? await Execute(() => service.InstallAsync(access.Tenant.Value, access.ActorId, Correlation(http), request, ct)) : await PackForbiddenOrUnauthorized(http, subjects, authorizer, "tax.country_pack.manage", ct);
+        });
+        group.MapPost("/country-packs/{id:guid}/validate", async (Guid id, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxCountryPackService service, CancellationToken ct) =>
+        {
+            var access = await PackAuthorized(http, subjects, authorizer, "tax.country_pack.manage", ct);
+            return access is { Allowed: true } ? await Execute(() => service.ValidateAsync(access.Tenant.Value, access.ActorId, Correlation(http), id, ct)) : await PackForbiddenOrUnauthorized(http, subjects, authorizer, "tax.country_pack.manage", ct);
+        });
+        group.MapPost("/country-packs/{id:guid}/schedule", async (Guid id, TaxCountryPackActionRequest request, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxCountryPackService service, CancellationToken ct) =>
+        {
+            var access = await PackAuthorized(http, subjects, authorizer, "tax.country_pack.manage", ct);
+            return access is { Allowed: true } ? await Execute(() => service.ScheduleAsync(access.Tenant.Value, access.ActorId, Correlation(http), id, request.EffectiveFrom, ct)) : await PackForbiddenOrUnauthorized(http, subjects, authorizer, "tax.country_pack.manage", ct);
+        });
+        group.MapPost("/country-packs/{id:guid}/activate", async (Guid id, TaxCountryPackActionRequest request, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxCountryPackService service, CancellationToken ct) =>
+        {
+            var access = await PackAuthorized(http, subjects, authorizer, "tax.country_pack.activate", ct);
+            return access is { Allowed: true } ? await Execute(() => service.ActivateAsync(access.Tenant.Value, access.ActorId, Correlation(http), id, request.EffectiveFrom, ct)) : await PackForbiddenOrUnauthorized(http, subjects, authorizer, "tax.country_pack.activate", ct);
+        });
+        group.MapPost("/country-packs/{id:guid}/retire", async (Guid id, TaxCountryPackActionRequest request, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxCountryPackService service, CancellationToken ct) =>
+        {
+            var access = await PackAuthorized(http, subjects, authorizer, "tax.country_pack.activate", ct);
+            return access is { Allowed: true } ? await Execute(() => service.RetireAsync(access.Tenant.Value, access.ActorId, Correlation(http), id, request.Reason, ct)) : await PackForbiddenOrUnauthorized(http, subjects, authorizer, "tax.country_pack.activate", ct);
+        });
+        group.MapPost("/country-packs/{id:guid}/rollback-for-future", async (Guid id, TaxCountryPackActionRequest request, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxCountryPackService service, CancellationToken ct) =>
+        {
+            var access = await PackAuthorized(http, subjects, authorizer, "tax.country_pack.activate", ct);
+            return access is { Allowed: true } && request.EffectiveFrom is { } effectiveFrom ? await Execute(() => service.RollbackForFutureAsync(access.Tenant.Value, access.ActorId, Correlation(http), id, effectiveFrom, ct)) : access is null ? Results.Unauthorized() : Results.BadRequest();
+        });
+        group.MapPost("/draft-impact", async (TaxDraftImpactRequest request, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxCountryPackService service, CancellationToken ct) =>
+        {
+            var access = await Authorized(http, subjects, authorizer, "tax.read", request.LegalEntityId, ct);
+            return access is { Allowed: true } ? await Execute(() => service.GetDraftImpactAsync(access.Tenant.Value, request, ct)) : await ForbiddenOrUnauthorized(http, subjects, authorizer, "tax.read", request.LegalEntityId, ct);
+        });
         group.MapGet("/coverage", async (Guid legalEntityId, DateOnly at, string countryCode, string? schemeCode, Guid? productTemplateId, Guid? productVariantId, Guid? partyId, string? direction, string? documentKind, string? transactionType, string? jurisdictionCode, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, Repositories.TaxProfileRepository repository, CancellationToken ct) =>
         {
             var access = await Authorized(http, subjects, authorizer, "tax.read", legalEntityId, ct);
@@ -79,7 +126,8 @@ public static class TaxModuleExtensions
             if (string.Equals(kind, "Party", StringComparison.OrdinalIgnoreCase))
             {
                 var registrationReader = await Authorized(http, subjects, authorizer, "tax.registration.read", legalEntityId, ct);
-                if (registrationReader is not { Allowed: true }) return await ForbiddenOrUnauthorized(http, subjects, authorizer, "tax.registration.read", legalEntityId, ct);
+                if (registrationReader is null) return Results.Unauthorized();
+                return await Execute(() => repository.ExportAsync(access.Tenant.Value, legalEntityId, kind, at, ct, registrationReader.Allowed));
             }
             return await Execute(() => repository.ExportAsync(access.Tenant.Value, legalEntityId, kind, at, ct));
         });
@@ -244,9 +292,15 @@ public static class TaxModuleExtensions
     private static TaxContextContract ToContract(TenantId tenant, TaxCalculationRequest request) => new(tenant,new(request.LegalEntityId),request.Direction,request.DocumentKind,request.TransactionType,request.DocumentDate,request.TaxDate,request.SupplyDate,request.PostingDate,request.PartyId,request.PartyCountryCode,request.PlaceOfSupplyCountryCode,request.JurisdictionCode,request.ProductTemplateId,request.ProductVariantId,request.Quantity,request.UnitOfMeasureId,request.PriceMode,request.CommercialAmount,request.DiscountAmount,request.TaxableCharges,request.TransactionCurrency,request.BaseCurrency,request.RegistrationId,request.TaxSchemeCode,request.DocumentSemantics,request.Dimensions);
     private static Task<TaxAccess?> Authorized(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid entityId, CancellationToken ct)
         => TaxAuthorization.ResolveAsync(http.User, subjects, authorizer, permission, entityId, ct);
+    private static Task<TaxAccess?> PackAuthorized(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, CancellationToken ct)
+        => TaxAuthorization.ResolveTenantAsync(http.User, subjects, authorizer, permission, ct);
     private static async Task<IResult> ForbiddenOrUnauthorized(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid entityId, CancellationToken ct)
     {
         var access = await Authorized(http,subjects,authorizer,permission,entityId,ct); return access is null ? Results.Unauthorized() : Results.Forbid();
+    }
+    private static async Task<IResult> PackForbiddenOrUnauthorized(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, CancellationToken ct)
+    {
+        var access = await PackAuthorized(http, subjects, authorizer, permission, ct); return access is null ? Results.Unauthorized() : Results.Forbid();
     }
     private static async Task<IResult> Execute<T>(Func<Task<T>> action)
     {
@@ -260,5 +314,5 @@ public static class TaxModuleExtensions
 
 public sealed class TaxModuleManifestProvider : IModuleManifestProvider
 {
-    public ModuleManifest Manifest { get; } = new("tax","1.0.0",1,"L1","foundation",false,"tenant",new(["platform-kernel"],["platform.organization","directory.party","catalog.product","catalog.quantity-conversion","finbase.money","pricing.resolve"]),new("foundation_tax",["tax_capability_state","tax_registration","tax_registration_member","tax_scheme","tax_type","tax_jurisdiction","tax_category","tax_policy","party_tax_profile","product_tax_profile","tax_rule_set","tax_rule","tax_rule_version","tax_stack_definition","tax_component_definition","tax_pack_activation","tax_audit","tax_import_batch","tax_import_row","tax_snapshot"]),["tax.read","tax.registration.read","tax.registration.manage","tax.party_profile.read","tax.party_profile.manage","tax.product_profile.read","tax.product_profile.manage","tax.policy.read","tax.policy.manage","tax.rule.read","tax.rule.manage","tax.rule.activate","tax.simulate","tax.audit.view","tax.import","tax.export","tax.capability.configure"],new(["tax.resolve","tax.resolve-batch","tax.snapshot"],["platform.organization","directory.party","catalog.product","finbase.money","pricing.resolve"]),new(["TaxCapabilityChangedV1","TaxRegistrationChangedV1","TaxCountryPackActivatedV1","TaxRuleSetActivatedV1","ProductTaxProfileChangedV1","PartyTaxProfileChangedV1"],[]),new(true,"blocked_if_dependents"));
+    public ModuleManifest Manifest { get; } = new("tax","1.0.0",1,"L1","foundation",false,"tenant",new(["platform-kernel"],["platform.organization","directory.party","catalog.product","catalog.quantity-conversion","finbase.money","pricing.resolve"]),new("foundation_tax",["tax_capability_state","tax_registration","tax_registration_member","tax_scheme","tax_type","tax_jurisdiction","tax_category","tax_policy","party_tax_profile","product_tax_profile","tax_rule_set","tax_rule","tax_rule_version","tax_stack_definition","tax_component_definition","tax_pack_activation","tax_audit","tax_import_batch","tax_import_row","tax_snapshot"]),["tax.read","tax.registration.read","tax.registration.manage","tax.party_profile.read","tax.party_profile.manage","tax.product_profile.read","tax.product_profile.manage","tax.policy.read","tax.policy.manage","tax.rule.read","tax.rule.manage","tax.rule.activate","tax.simulate","tax.audit.view","tax.import","tax.export","tax.capability.configure","tax.country_pack.read","tax.country_pack.manage","tax.country_pack.activate"],new(["tax.resolve","tax.resolve-batch","tax.snapshot"],["platform.organization","directory.party","catalog.product","finbase.money","pricing.resolve"]),new(["TaxCapabilityChangedV1","TaxRegistrationChangedV1","TaxCountryPackActivatedV1","TaxRuleSetActivatedV1","ProductTaxProfileChangedV1","PartyTaxProfileChangedV1"],[]),new(true,"blocked_if_dependents"));
 }

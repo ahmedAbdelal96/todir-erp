@@ -57,3 +57,60 @@ public sealed record TaxProfileImportCommitRequest(Guid BatchId);
 public sealed record TaxProfileImportCommitDto(Guid BatchId, string Status, IReadOnlyList<TaxImportRowResult> Rows, int InputRows, int AcceptedCount, int RejectedCount, int SkippedCount, int CreatedCount, int VersionedCount, string TransactionPolicy);
 public sealed record TaxProfileExportRequest(string Kind, Guid LegalEntityId, DateOnly? At = null);
 public sealed record TaxProfileExportDto(string FileName, string ContentType, string Content);
+
+public sealed record TaxCountryPackCapabilitiesDto(bool Vat, bool Excise, bool Withholding, bool TaxGrouping, bool EInvoice);
+public sealed record InstallTaxCountryPackRequest(
+    string CountryCode,
+    string PackCode,
+    string PackVersion,
+    string EngineContractVersion,
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveTo,
+    string SourceKind,
+    string SourceAuthority,
+    string SourceTitle,
+    string SourceReference,
+    IReadOnlyList<string> RuleSetReferences,
+    TaxCountryPackCapabilitiesDto Capabilities,
+    int GoldenVectorCount,
+    string GoldenVectorStatus);
+public sealed record TaxCountryPackDto(
+    Guid Id,
+    string PackId,
+    string CountryCode,
+    string PackCode,
+    string PackVersion,
+    string EngineContractVersion,
+    string Status,
+    string ReviewStatus,
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveTo,
+    string SourceKind,
+    string SourceAuthority,
+    string SourceTitle,
+    string SourceReference,
+    TaxCountryPackCapabilitiesDto Capabilities,
+    IReadOnlyList<string> RuleSetReferences,
+    int GoldenVectorCount,
+    string GoldenVectorStatus,
+    string ValidationStatus,
+    IReadOnlyList<TaxCountryPackValidationIssueDto> ValidationIssues,
+    DateTimeOffset InstalledAt,
+    Guid? InstalledBy,
+    DateTimeOffset? ValidatedAt,
+    Guid? ValidatedBy,
+    DateTimeOffset? ScheduledAt,
+    Guid? ScheduledBy,
+    DateOnly? ScheduledEffectiveFrom,
+    DateTimeOffset? ActivatedAt,
+    Guid? ActivatedBy,
+    DateTimeOffset? SupersededAt,
+    Guid? SupersededBy,
+    DateTimeOffset? RetiredAt,
+    Guid? RetiredBy,
+    string? RetirementReason);
+public sealed record TaxCountryPackValidationDto(Guid PackId, bool Valid, IReadOnlyList<TaxCountryPackValidationIssueDto> Issues);
+public sealed record TaxCountryPackValidationIssueDto(string Code, string Message, string? ItemReference = null);
+public sealed record TaxCountryPackActionRequest(DateOnly? EffectiveFrom = null, string? Reason = null);
+public sealed record TaxDraftImpactRequest(Guid LegalEntityId, DateOnly TaxDate, string CountryCode, string? SchemeCode, string? PreviousPackVersion, int? PreviousRuleSetVersion, string? PreviousTaxFingerprint);
+public sealed record TaxDraftImpactResult(bool TaxRecalculationRequired, string Decision, string? Reason, string? CurrentPackVersion, int? CurrentRuleSetVersion, string? CurrentTaxFingerprint);

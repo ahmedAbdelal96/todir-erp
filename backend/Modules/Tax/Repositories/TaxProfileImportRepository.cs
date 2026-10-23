@@ -269,7 +269,7 @@ public sealed class TaxProfileImportRepository(
         var result=(reader.GetString(0),reader.GetGuid(1)); await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
     }
 
-    public async Task<TaxProfileExportDto> ExportAsync(Guid tenant, Guid entity, string kind, DateOnly? at, CancellationToken ct)
+    public async Task<TaxProfileExportDto> ExportAsync(Guid tenant, Guid entity, string kind, DateOnly? at, CancellationToken ct, bool includeRegistrationNumber = true)
     {
         var party = string.Equals(kind, "Party", StringComparison.OrdinalIgnoreCase);
         if (!party && !string.Equals(kind, "Product", StringComparison.OrdinalIgnoreCase)) throw new TaxException("tax.export_kind_invalid", "Choose Product or Party Tax Profiles.");
@@ -310,7 +310,7 @@ public sealed class TaxProfileImportRepository(
             foreach (var row in rows)
             {
                 if (!references.TryGetValue(row.Party,out var reference)) continue;
-                output.AppendJoin(',', Csv(reference), Csv(row.RegCountry), Csv(row.Registration), Csv(row.Treatment), Csv(row.Category), Csv(row.Scheme), Csv(entity.ToString("D")), Csv(row.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), Csv(row.To?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), Csv(row.Version.ToString(CultureInfo.InvariantCulture))).AppendLine();
+                output.AppendJoin(',', Csv(reference), Csv(row.RegCountry), Csv(includeRegistrationNumber ? row.Registration : null), Csv(row.Treatment), Csv(row.Category), Csv(row.Scheme), Csv(entity.ToString("D")), Csv(row.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), Csv(row.To?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), Csv(row.Version.ToString(CultureInfo.InvariantCulture))).AppendLine();
             }
         }
         return new($"tax-{(party ? "party" : "product")}-profiles.csv", "text/csv; charset=utf-8", output.ToString());
