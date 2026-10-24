@@ -33,7 +33,7 @@ public sealed class LedgerDomainTests
     [Fact]
     public void CanonicalBusinessPayloadsDoNotExposeLedgerDebitCreditEscapeHatch()
     {
-        foreach (var payload in typeof(AccountingFactTypes).Assembly.GetTypes().Where(type => type.Namespace == "Shared.Contracts.Ledger" && type.Name.EndsWith("Payload", StringComparison.Ordinal)))
+        foreach (var payload in typeof(AccountingFactTypes).Assembly.GetTypes().Where(type => type.Namespace == "Shared.Contracts.Ledger" && type.Name.EndsWith("Payload", StringComparison.Ordinal) && type != typeof(ExplicitLedgerPostingPayload) && type != typeof(LedgerPostingLinePayload)))
         {
             Assert.DoesNotContain(payload.GetProperties(), property => property.Name is "Debit" or "Credit" or "DebitLines" or "CreditLines");
         }

@@ -40,8 +40,8 @@ public static class LedgerSeed
                 await context.ExecuteAsync("insert into finance_ledger.account (tenant_id,legal_entity_id,id,category_id,code,name_ar,name_en,account_type,subtype,normal_balance,parent_account_id,allow_direct_posting,currency_policy,status,version,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,case when $8 in ('Liability','Revenue','Equity') then 'Credit' else 'Debit' end,$10,$11,'BaseOnly','Active',1,$12,$12) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, account.Item1, account.Item7, account.Item2, account.Item3, account.Item4, account.Item5, account.Item6, account.Item8, account.Item9, context.AsOf);
             accountCount += accounts.Length;
 
-            foreach (var journal in new[] { ("SALES", "المبيعات", "Sales", "Sales"), ("GENERAL", "عام", "General", "General") })
-                await context.ExecuteAsync("insert into finance_ledger.journal (tenant_id,legal_entity_id,id,code,name_ar,name_en,journal_type,status,version,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,'Active',1,$8,$8) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, SeedIds.Child(context.Tenant.Id, $"ledger-journal:{suffix}", journal.Item1 == "SALES" ? 1 : 2), journal.Item1, journal.Item2, journal.Item3, journal.Item4, context.AsOf);
+            foreach (var journal in new[] { ("SALES", "المبيعات", "Sales", "Sales", 1), ("GENERAL", "عام", "General", "General", 2), ("OPENING", "الأرصدة الافتتاحية", "Opening balances", "Opening", 3) })
+                await context.ExecuteAsync("insert into finance_ledger.journal (tenant_id,legal_entity_id,id,code,name_ar,name_en,journal_type,status,version,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,'Active',1,$8,$8) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, SeedIds.Child(context.Tenant.Id, $"ledger-journal:{suffix}", journal.Item5), journal.Item1, journal.Item2, journal.Item3, journal.Item4, context.AsOf);
 
             var fiscalYearId = SeedIds.Child(context.Tenant.Id, $"ledger-year:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.fiscal_year (tenant_id,legal_entity_id,id,code,start_date,end_date,status,version,created_at,updated_at) values ($1,$2,$3,'FY2026','2026-01-01','2026-12-31','Open',1,$4,$4) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, fiscalYearId, context.AsOf);
@@ -66,8 +66,18 @@ public static class LedgerSeed
             await context.ExecuteAsync("insert into finance_ledger.posting_rule_version (tenant_id,legal_entity_id,id,posting_rule_id,version_number,effective_from,status) values ($1,$2,$3,$4,1,'2026-01-01','Active') on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, ruleVersionId, ruleId);
             foreach (var leg in new[] { (1, "Receivable", "GrossAmount", "Debit"), (2, "SalesRevenue", "NetAmount", "Credit"), (3, "OutputTax", "TaxAmount", "Credit") })
                 await context.ExecuteAsync("insert into finance_ledger.posting_rule_leg (tenant_id,legal_entity_id,id,posting_rule_version_id,sequence_no,semantic_role,amount_expression,direction) values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, SeedIds.Child(context.Tenant.Id, $"ledger-rule-leg:{suffix}", leg.Item1), ruleVersionId, leg.Item1, leg.Item2, leg.Item3, leg.Item4);
+
+            await AddSimpleRuleAsync(context, entityId, suffix, 2, "ManualGeneralJournalPosted", "MANUAL_GENERAL_JOURNAL_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 3, "OpeningBalancePosted", "OPENING_BALANCE_V1", cancellationToken);
         }
         return new SeedLedgerSummary(entities.Length, accountCount, periodCount, true);
+    }
+
+    private static async Task AddSimpleRuleAsync(SeedContext context, Guid entityId, string suffix, int index, string factType, string code, CancellationToken cancellationToken)
+    {
+        var ruleId = SeedIds.Child(context.Tenant.Id, $"ledger-rule:{suffix}", index); var versionId = SeedIds.Child(context.Tenant.Id, $"ledger-rule-version:{suffix}", index);
+        await context.ExecuteAsync("insert into finance_ledger.posting_rule (tenant_id,legal_entity_id,id,fact_type,fact_version,code,status,version,created_at) values ($1,$2,$3,$4,1,$5,'Active',1,$6) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, ruleId, factType, code, context.AsOf);
+        await context.ExecuteAsync("insert into finance_ledger.posting_rule_version (tenant_id,legal_entity_id,id,posting_rule_id,version_number,effective_from,status) values ($1,$2,$3,$4,1,'2026-01-01','Active') on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, versionId, ruleId);
     }
 
     private static async Task<Guid> AddRoleAsync(SeedContext context, Guid entityId, string suffix, int index, string code, string nameAr, string nameEn, CancellationToken cancellationToken)

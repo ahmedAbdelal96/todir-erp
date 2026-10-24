@@ -7,7 +7,7 @@ namespace Modules.Ledger.Tests;
 public sealed class LedgerSecurityIntegrationTests
 {
     private static readonly string[] TenantTables = ["account", "journal", "accounting_period", "accounting_fact", "account_mapping", "journal_entry", "journal_entry_line"];
-    private static readonly string[] AllLedgerTables = ["account_category", "account", "journal", "fiscal_year", "accounting_period", "financial_lock", "accounting_configuration_version", "accounting_fact", "posting_rule", "posting_rule_version", "posting_rule_leg", "account_role", "account_mapping", "account_mapping_version", "journal_entry", "journal_entry_line"];
+    private static readonly string[] AllLedgerTables = ["account_category", "account", "journal", "fiscal_year", "accounting_period", "financial_lock", "accounting_configuration_version", "accounting_fact", "posting_rule", "posting_rule_version", "posting_rule_leg", "account_role", "account_mapping", "account_mapping_version", "journal_entry", "journal_entry_line", "journal_entry_reversal", "dimension_definition", "dimension_value", "dimension_policy", "journal_line_dimension", "general_journal_draft", "general_journal_draft_line", "general_journal_draft_line_dimension", "opening_balance_batch", "opening_balance_line", "account_period_balance"];
 
     [Fact]
     public async Task RuntimeRoleHasNoRlsBypassAndEveryLedgerTableIsForcedRls()

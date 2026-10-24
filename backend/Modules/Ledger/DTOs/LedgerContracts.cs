@@ -14,3 +14,24 @@ public sealed record CreateFinancialLockRequest(FinancialLockType LockType, Date
 public sealed record FinancialLockDto(Guid Id, Guid LegalEntityId, FinancialLockType LockType, DateOnly StartDate, DateOnly? EndDate, string Status, string Reason, long Version);
 public sealed record EntryLineDto(int Sequence, Guid AccountId, decimal Debit, decimal Credit, string CurrencyCode, decimal Amount, string Role, string? Description);
 public sealed record JournalEntryDto(Guid Id, Guid JournalId, Guid? FactId, string EntryNumber, DateOnly PostingDate, DateOnly PeriodDate, string Status, string CurrencyCode, IReadOnlyList<EntryLineDto> Lines);
+public sealed record ReverseEntryRequest(DateOnly ReversalDate, string Reason, DateOnly? AutoReversalDate = null);
+public sealed record DimensionDefinitionRequest(string Code, string NameAr, string NameEn, string ValueOwnerModule = "ledger");
+public sealed record DimensionValueRequest(Guid DefinitionId, string Code, string NameAr, string NameEn, string? ExternalOwnerModule = null, Guid? ExternalReferenceId = null);
+public sealed record DimensionPolicyRequest(Guid DefinitionId, string ScopeType, string ScopeReference, string Requirement);
+public enum GeneralJournalDraftStatus { Draft, Submitted, Approved, Posted }
+public sealed record GeneralJournalLineRequest(Guid AccountId, decimal Debit, decimal Credit, string TransactionCurrencyCode, decimal TransactionDebit, decimal TransactionCredit, decimal BaseDebit, decimal BaseCredit, decimal ExchangeRate = 1m, IReadOnlyList<Guid>? DimensionValueIds = null, string? Description = null);
+public sealed record CreateGeneralJournalDraftRequest(Guid JournalId, DateOnly PostingDate, string Description, string BaseCurrencyCode, string IdempotencyKey, IReadOnlyList<GeneralJournalLineRequest> Lines);
+public sealed record GeneralJournalDraftDto(Guid Id, Guid LegalEntityId, Guid JournalId, DateOnly PostingDate, string Description, string BaseCurrencyCode, GeneralJournalDraftStatus Status, IReadOnlyList<GeneralJournalLineRequest> Lines);
+public sealed record OpeningBalanceLineRequest(Guid AccountId, decimal Debit, decimal Credit, string CurrencyCode, decimal BaseDebit, decimal BaseCredit, decimal ExchangeRate = 1m, string? LegacyAccountCode = null, string? LegacyReference = null);
+public sealed record CreateOpeningBalanceBatchRequest(string BatchIdentity, string FileHash, string? LegacySystem, DateOnly GoLiveDate, IReadOnlyList<OpeningBalanceLineRequest> Lines);
+public sealed record OpeningBalancePreviewDto(Guid BatchId, bool Balanced, decimal TotalDebit, decimal TotalCredit, IReadOnlyList<string> ValidationErrors, IReadOnlyList<OpeningBalanceLineRequest> Lines);
+public sealed record TrialBalanceRowDto(Guid AccountId, string AccountCode, string AccountName, decimal Debit, decimal Credit, decimal Balance, string CurrencyCode);
+public sealed record GeneralLedgerRowDto(Guid EntryId, Guid LineId, string EntryNumber, DateOnly PostingDate, Guid AccountId, string AccountCode, string AccountName, decimal Debit, decimal Credit, decimal BaseDebit, decimal BaseCredit, string CurrencyCode, string SourceModule, string SourceReference, int Sequence);
+public sealed record GeneralLedgerPageDto(IReadOnlyList<GeneralLedgerRowDto> Items, string? NextCursor);
+public sealed record AccountBalanceDto(Guid AccountId, decimal Debit, decimal Credit, decimal Balance, string CurrencyCode, DateOnly? From, DateOnly? To);
+public sealed record EntryExplanationDimensionDto(string Code, Guid ValueId, string ValueCode);
+public sealed record EntryExplanationLineDto(Guid LineId, int Sequence, string AccountRole, Guid AccountId, string AccountCode, string AccountName, Guid? MappingId, long? MappingVersion, Guid? MappingVersionId, decimal Debit, decimal Credit, string CurrencyCode, decimal TransactionDebit, decimal TransactionCredit, decimal BaseDebit, decimal BaseCredit, decimal? ExchangeRate, string WhyThisAccount, IReadOnlyList<EntryExplanationDimensionDto> Dimensions);
+public sealed record EntryExplanationDto(Guid EntryId, string EntryNumber, Guid JournalId, Guid? FactId, DateOnly PostingDate, string AccountingPeriod, string FactType, int FactVersion, Guid PostingRuleVersionId, Guid AccountingConfigurationVersionId, string BaseCurrencyCode, string SourceModule, string SourceReference, IReadOnlyList<EntryExplanationLineDto> Lines);
+public sealed record ProjectionReconciliationDifferenceDto(Guid AccountId, Guid PeriodId, Guid? FiscalYearId, string CurrencyCode, decimal CanonicalDebit, decimal ProjectionDebit, decimal DebitDifference, decimal CanonicalCredit, decimal ProjectionCredit, decimal CreditDifference, decimal CanonicalBalance, decimal ProjectionBalance, decimal BalanceDifference, string Status);
+public sealed record ProjectionReconciliationResultDto(bool Healthy, IReadOnlyList<ProjectionReconciliationDifferenceDto> Differences);
+public sealed record ProjectionRebuildResult(int RowsRebuilt, bool Reconciled);

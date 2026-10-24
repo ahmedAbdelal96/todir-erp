@@ -1,4 +1,5 @@
 using Npgsql;
+using Shared.Contracts.Ledger;
 using Shared.Primitives.Identifiers;
 
 namespace Core.Transactions;
@@ -14,6 +15,12 @@ public interface ITransactionContext : IAsyncDisposable
 public interface ITransactionCoordinator
 {
     Task<T> ExecuteAsync<T>(TenantId tenantId, Func<ITransactionContext, CancellationToken, Task<T>> action, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Stable cross-module seam for Ledger work inside a caller-owned transaction.</summary>
+public interface ITransactionalLedgerPostingCapability
+{
+    Task<LedgerPostingResult> PostExplicitAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, ExplicitLedgerPostingPayload payload, CancellationToken cancellationToken = default);
 }
 
 public sealed record OutboxMessage(Guid MessageId, string MessageType, string Payload, TenantId TenantId, DateTimeOffset OccurredAt, Guid CorrelationId, Guid CausationId, string SourceModule, string? TraceParent = null);

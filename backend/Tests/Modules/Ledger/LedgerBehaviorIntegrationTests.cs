@@ -214,8 +214,8 @@ public sealed class LedgerBehaviorIntegrationTests
         {
             await using var cleanupSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection("TODIR_P04_ADMIN_CONNECTION"));
             await using var cleanup = await cleanupSource.OpenConnectionAsync();
-            await using var deleteVersions = new NpgsqlCommand("delete from finance_ledger.account_mapping_version where tenant_id=$1 and id = any($2)", cleanup); deleteVersions.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); deleteVersions.Parameters.AddWithValue(versionIds.ToArray()); await deleteVersions.ExecuteNonQueryAsync();
-            await using var deleteMappings = new NpgsqlCommand("delete from finance_ledger.account_mapping where tenant_id=$1 and id = any($2)", cleanup); deleteMappings.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); deleteMappings.Parameters.AddWithValue(mappingIds.ToArray()); await deleteMappings.ExecuteNonQueryAsync();
+            await using var retireVersions = new NpgsqlCommand("update finance_ledger.account_mapping_version set status='Retired' where tenant_id=$1 and id = any($2)", cleanup); retireVersions.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); retireVersions.Parameters.AddWithValue(versionIds.ToArray()); await retireVersions.ExecuteNonQueryAsync();
+            await using var archiveMappings = new NpgsqlCommand("update finance_ledger.account_mapping set status='Archived' where tenant_id=$1 and id = any($2)", cleanup); archiveMappings.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); archiveMappings.Parameters.AddWithValue(mappingIds.ToArray()); await archiveMappings.ExecuteNonQueryAsync();
         }
     }
 

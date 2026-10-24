@@ -46,7 +46,9 @@ public sealed record CustomerInvoicePostedPayload(
     string CurrencyCode,
     string ReceivablePartyGroup,
     string RevenueCategory,
-    IReadOnlyList<InvoiceTaxComponent> Taxes) : IAccountingFactPayload;
+    IReadOnlyList<InvoiceTaxComponent> Taxes,
+    decimal? ExchangeRate = null,
+    string? ExchangeRateReference = null) : IAccountingFactPayload;
 
 public sealed record CustomerCreditNotePostedPayload(decimal NetAmount, decimal TaxAmount, decimal GrossAmount, string CurrencyCode, string ReceivablePartyGroup, string RevenueCategory, IReadOnlyList<InvoiceTaxComponent> Taxes) : IAccountingFactPayload;
 public sealed record VendorBillPostedPayload(decimal NetAmount, decimal TaxAmount, decimal GrossAmount, string CurrencyCode, string PayablePartyGroup, string ExpenseCategory, IReadOnlyList<InvoiceTaxComponent> Taxes) : IAccountingFactPayload;
@@ -59,6 +61,32 @@ public sealed record TaxAdjustmentPayload(decimal Amount, string CurrencyCode, s
 public sealed record FxDifferencePayload(decimal Amount, string CurrencyCode, string DifferenceRole) : IAccountingFactPayload;
 public sealed record OpeningBalancePostedPayload(decimal Amount, string CurrencyCode, string SemanticRole) : IAccountingFactPayload;
 public sealed record ManualGeneralJournalPostedPayload(string Description, string CurrencyCode, IReadOnlyList<string> SemanticRoles) : IAccountingFactPayload;
+
+public sealed record LedgerDimensionAssignment(string Code, Guid ValueId, string ValueCode);
+
+/// <summary>Ledger-owned line instruction used only by Ledger-owned workflows (manual and opening postings).</summary>
+public sealed record LedgerPostingLinePayload(
+    Guid AccountId,
+    decimal Debit,
+    decimal Credit,
+    string TransactionCurrencyCode,
+    decimal TransactionDebit,
+    decimal TransactionCredit,
+    decimal BaseDebit,
+    decimal BaseCredit,
+    decimal ExchangeRate,
+    IReadOnlyList<LedgerDimensionAssignment> Dimensions,
+    string? Description,
+    string? LegacyReference);
+
+public sealed record ExplicitLedgerPostingPayload(
+    Guid JournalId,
+    string Description,
+    string BaseCurrencyCode,
+    IReadOnlyList<LedgerPostingLinePayload> Lines,
+    string? LegacySystem = null,
+    string? LegacyBatchId = null,
+    string? MigrationFileHash = null) : IAccountingFactPayload;
 
 public sealed record AccountingFactEnvelope<TPayload>(
     Guid FactId,
@@ -79,6 +107,8 @@ public sealed record AccountDeterminationExplanation(
     string AccountRole,
     string MappingReference,
     long MappingVersion,
+    Guid MappingId,
+    Guid MappingVersionId,
     string SelectedAccountCode,
     Guid SelectedAccountId,
     Guid LegalEntityId,
@@ -104,14 +134,15 @@ public static class AccountingFactFingerprint
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 
-    private static string Canonicalize(JsonNode node)
+    private static string Canonicalize(JsonNode? node)
     {
+        if (node is null) return "null";
         if (node is JsonObject obj)
         {
-            var values = obj.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{JsonSerializer.Serialize(pair.Key)}:{Canonicalize(pair.Value!)}");
+            var values = obj.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{JsonSerializer.Serialize(pair.Key)}:{Canonicalize(pair.Value)}");
             return $"{{{string.Join(',', values)}}}";
         }
-        if (node is JsonArray array) return $"[{string.Join(',', array.Select(item => Canonicalize(item!)))}]";
+        if (node is JsonArray array) return $"[{string.Join(',', array.Select(Canonicalize))}]";
         return node.ToJsonString(Options);
     }
 }
@@ -124,5 +155,16 @@ public interface ILedgerPostingEngine
 
     Task<LedgerPostingResult> PostAsync(
         AccountingFactEnvelope<IAccountingFactPayload> fact,
+        CancellationToken cancellationToken = default);
+
+    Task<LedgerPostingResult> ReverseAsync(
+        TenantId tenantId,
+        LegalEntityId legalEntityId,
+        Guid originalEntryId,
+        DateOnly reversalDate,
+        DateOnly? autoReversalDate,
+        string reason,
+        Guid actorId,
+        Guid correlationId,
         CancellationToken cancellationToken = default);
 }
