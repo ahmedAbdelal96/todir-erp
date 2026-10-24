@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "ledger",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L1",
+  "type": "foundation",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": { "hard": ["platform-kernel", "finbase"], "optionalCapabilities": [] },
+  "owns": { "schema": "finance_ledger", "entities": ["account_category", "account", "journal", "fiscal_year", "accounting_period", "financial_lock", "accounting_fact", "posting_rule", "posting_rule_version", "posting_rule_leg", "account_role", "account_mapping", "account_mapping_version", "accounting_configuration_version", "journal_entry", "journal_entry_line"] },
+  "permissions": ["ledger.account.read", "ledger.account.manage", "ledger.journal.read", "ledger.journal.manage", "ledger.period.read", "ledger.period.manage", "ledger.period.soft_close", "ledger.period.close", "ledger.period.reopen", "ledger.lock.read", "ledger.lock.manage", "ledger.mapping.read", "ledger.mapping.manage", "ledger.entry.read"],
+  "capabilities": { "provides": ["ledger.chart-of-accounts", "ledger.posting-engine"], "consumes": ["finbase.money"] },
+  "messaging": { "publishes": ["JournalEntryPostedV1"], "consumes": [] },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}

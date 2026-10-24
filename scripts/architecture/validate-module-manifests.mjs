@@ -22,6 +22,8 @@ for (const file of manifests) {
     ? "platform"
     : manifest.id === "sample"
       ? "sample"
+      : manifest.id === "ledger"
+        ? "finance_ledger"
       : manifest.type === "foundation"
         ? `foundation_${manifest.id}`
         : manifest.type === "business"

@@ -6,6 +6,7 @@ using Modules.Catalog;
 using Modules.FinanceBase;
 using Modules.Pricing;
 using Modules.Tax;
+using Modules.Ledger;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -25,6 +26,7 @@ builder.Services.AddCatalogModule();
 builder.Services.AddFinanceBaseModule();
 builder.Services.AddPricingModule();
 builder.Services.AddTaxModule();
+builder.Services.AddLedgerModule();
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 var configuredOrigins = (builder.Configuration["TODIR_CORS_ORIGINS"] ?? string.Empty)
@@ -135,6 +137,7 @@ app.MapCatalogModule();
 app.MapFinanceBaseModule();
 app.MapPricingModule();
 app.MapTaxModule();
+app.MapLedgerModule();
 app.Run();
 
 public partial class Program;
