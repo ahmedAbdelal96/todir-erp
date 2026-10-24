@@ -123,25 +123,25 @@ export function TaxPage(): React.JSX.Element {
     {
       key: "schemeCode",
       header: t("registrations.scheme"),
-      width: "160px",
+      width: "120px",
       render: (item) => <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{item.schemeCode}</span>
     },
     {
       key: "countryCode",
       header: t("registrations.country"),
-      width: "80px",
+      width: "60px",
       render: (item) => <span>{item.countryCode}</span>
     },
     {
       key: "status",
       header: t("registrations.status"),
-      width: "140px",
+      width: "115px",
       render: (item) => <TaxStatusBadge status={item.status} type="registration" />
     },
     {
       key: "registrationNumber",
       header: t("registrations.registrationNumber"),
-      width: "160px",
+      width: "140px",
       render: (item) =>
         item.registrationNumber ? (
           <code style={{ whiteSpace: "nowrap" }}>{item.registrationNumber}</code>
@@ -152,21 +152,21 @@ export function TaxPage(): React.JSX.Element {
     {
       key: "effectiveFrom",
       header: t("registrations.effectiveFrom"),
-      width: "120px",
+      width: "100px",
       render: (item) => <span style={{ whiteSpace: "nowrap" }}>{item.effectiveFrom}</span>
     },
     {
       key: "version",
       header: t("registrations.version"),
-      width: "90px",
+      width: "70px",
       render: (item) => <span>{t("registrations.versionTag", { version: item.version })}</span>
     },
     {
       key: "actions",
       header: "",
-      width: "360px",
+      width: "280px",
       render: (item) => (
-        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", gap: "0.375rem", justifyContent: "flex-end", flexWrap: "wrap" }}>
           <Button
             variant="ghost"
             size="compact"
@@ -370,9 +370,9 @@ export function TaxPage(): React.JSX.Element {
     {
       key: "actions",
       header: "",
-      width: "360px",
+      width: "280px",
       render: (item) => (
-        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", gap: "0.375rem", justifyContent: "flex-end", flexWrap: "wrap" }}>
           {item.status === "Draft" && permissions.canManageRules && (
             <>
               <Button
@@ -450,9 +450,9 @@ export function TaxPage(): React.JSX.Element {
     {
       key: "actions",
       header: "",
-      width: "360px",
+      width: "280px",
       render: (item) => (
-        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", gap: "0.375rem", justifyContent: "flex-end", flexWrap: "wrap" }}>
           {permissions.canManageCountryPacks && (
             <Button
               variant="ghost"
@@ -486,7 +486,7 @@ export function TaxPage(): React.JSX.Element {
   ];
 
   return (
-    <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "1400px", margin: "0 auto" }}>
+    <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "1400px", margin: "0 auto", width: "100%", minWidth: 0, boxSizing: "border-box" }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
         <div>
@@ -642,16 +642,22 @@ export function TaxPage(): React.JSX.Element {
 
                     <Surface variant="card">
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", textTransform: "uppercase" }}>
-                          {t("overview.countryPackStatus")}
-                        </span>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.25rem" }}>
+                          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", textTransform: "uppercase" }}>
+                            {t("overview.countryPackStatus")}
+                          </span>
+                          <StatusBadge
+                            status={coverage?.countryPackStatus || "Installed"}
+                            intent={coverage?.countryPackStatus === "Available" || coverage?.countryPackStatus === "Active" ? "success" : "neutral"}
+                            label={t(`countryPack.status.${(coverage?.countryPackStatus || "installed").toLowerCase()}` as any, { defaultValue: coverage?.countryPackStatus || "Installed" })}
+                          />
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.375rem" }}>
                           <span style={{ fontWeight: 600, fontSize: "1rem" }}>{coverage?.countryPackStatus || "—"}</span>
-                          <CountryPackStatusBadge
-                            countryCode={countryCode}
-                            sourceKind="TestOnly"
-                            reviewStatus="Pending"
-                            technicalStatus={coverage?.countryPackStatus || "Installed"}
+                          <StatusBadge
+                            status="TestOnly"
+                            intent="neutral"
+                            label={t("countryPack.testOnlyWarning")}
                           />
                         </div>
                       </div>

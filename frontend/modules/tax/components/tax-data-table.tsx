@@ -28,7 +28,15 @@ export function TaxDataTable<T>({
   rowKey
 }: TaxDataTableProps<T>): React.JSX.Element {
   return (
-    <Table density="comfortable" isBordered>
+    <div
+      style={{
+        width: "100%",
+        maxWidth: "100%",
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch"
+      }}
+    >
+      <Table density="comfortable" isBordered>
       <TableHeader>
         <TableRow>
           {columns.map((col) => (
@@ -58,5 +66,6 @@ export function TaxDataTable<T>({
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }

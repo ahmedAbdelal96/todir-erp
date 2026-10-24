@@ -600,6 +600,7 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
     await expect(page.getByText(/حزمة الدولة|Country Pack/i).first()).toBeVisible();
     await expect(page.getByText(/تصنيف المنتجات|Product Classification/i)).toBeVisible();
     await expect(page.getByText(/مجموعة القواعد النشطة|Active Rule Set/i)).toBeVisible();
+    await expect(page.getByText('تجريبية فقط — غير تشريعية').first()).toBeVisible({ timeout: 5000 });
 
     // 02: Overview Readiness (Arabic RTL)
     await page.screenshot({
@@ -613,6 +614,7 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
       await langToggle.click();
       await page.waitForTimeout(500);
       await expect(page.getByRole('heading', { name: /Tax Administration/i })).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText('Test Only / Non-Statutory').first()).toBeVisible({ timeout: 5000 });
 
       // 03: Overview Readiness (English LTR)
       await page.screenshot({
@@ -634,12 +636,22 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
 
     await expect(page.getByText(/التسجيلات الرسمية لدى الهيئات الضريبية|Official tax authority registrations/i)).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('DEMO-REGISTERED')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /\+ تسجيل ضريبي جديد|\+ New Registration/i })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('button', { name: /إلغاء التسجيل|Deregister/i }).first()).toBeVisible({ timeout: 5000 });
 
     // 04: Tax Registrations Table
     await page.screenshot({
       path: 'artifacts/test-results/tax/04-tax-registrations-table.png',
       fullPage: true
     });
+
+    // Responsive check at narrower common laptop viewport (1280px)
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForTimeout(300);
+    await expect(page.getByRole('button', { name: /\+ تسجيل ضريبي جديد|\+ New Registration/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /إلغاء التسجيل|Deregister/i }).first()).toBeVisible();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForTimeout(300);
 
     // Open History Modal
     const historyBtn = page.getByRole('button', { name: /سجل الإصدارات|History/i }).first();

@@ -21,7 +21,7 @@ export function Table({
       className="ui-table-container"
       style={{
         width: "100%",
-        overflow: "hidden",
+        overflowX: "auto",
         border: isBordered ? "1px solid var(--color-border-default)" : "none",
         borderRadius: "var(--radius-lg, 0.75rem)",
         backgroundColor: "var(--color-surface-card)"
