@@ -205,10 +205,13 @@ export function TaxImportExportModal({
             >
               {localizedMessage}
             </span>
-            {item.message && item.message !== localizedMessage && (
-              <span style={{ fontSize: "0.6875rem", fontFamily: "var(--font-mono, monospace)", color: "var(--color-content-muted)" }}>
-                {item.message}
-              </span>
+            {mapped.technicalDetail && (
+              <details style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                <summary style={{ cursor: "pointer", textAlign: "start" }}>{t("importExport.technicalDetails")}</summary>
+                <code dir="ltr" style={{ display: "block", marginBlockStart: "0.25rem", fontFamily: "var(--font-mono, monospace)", overflowWrap: "anywhere" }}>
+                  {mapped.technicalDetail}
+                </code>
+              </details>
             )}
           </div>
         );

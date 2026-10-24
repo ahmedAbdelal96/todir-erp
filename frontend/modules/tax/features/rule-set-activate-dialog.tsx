@@ -5,6 +5,7 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { useTransitionRuleSetMutation } from "../hooks/tax-queries.ts";
 import { extractTaxError } from "../services/tax-error-map.ts";
 import type { TaxRuleSetDto } from "../types.ts";
+import { TaxStatusBadge } from "../components/tax-status-badge.tsx";
 
 export interface RuleSetActivateDialogProps {
   readonly isOpen: boolean;
@@ -102,7 +103,7 @@ export function RuleSetActivateDialog({
           </div>
           <div>
             <span style={{ color: "var(--color-content-muted)", display: "block" }}>{t("rules.status")}</span>
-            <strong>{ruleSet.status}</strong>
+            <TaxStatusBadge status={ruleSet.status} type="ruleSet" />
           </div>
         </div>
 

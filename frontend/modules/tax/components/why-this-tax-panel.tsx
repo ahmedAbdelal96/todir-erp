@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TaxExplanationContract, TaxResultContract } from "../types.ts";
 import { Button } from "../../../components/primitives/button.tsx";
+import { TaxStatusBadge } from "./tax-status-badge.tsx";
 
 export interface WhyThisTaxPanelProps {
   readonly result: TaxResultContract;
@@ -95,7 +96,7 @@ export function WhyThisTaxPanel({ result, isTestOnly = true }: WhyThisTaxPanelPr
         </div>
         <div>
           <span style={{ color: "var(--color-content-muted)", display: "block" }}>{t("whyThisTax.registrationStatus")}</span>
-          <span style={{ fontWeight: 600 }}>{explanation.registrationStatus}</span>
+          <TaxStatusBadge status={explanation.registrationStatus} type="registration" />
         </div>
         <div>
           <span style={{ color: "var(--color-content-muted)", display: "block" }}>{t("whyThisTax.partyTreatment")}</span>

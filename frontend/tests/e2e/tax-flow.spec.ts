@@ -775,10 +775,21 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
 
     // Verify localized Arabic row outcome without raw backend English message (Requirement 5 & 9)
     await expect(page.getByText('لم يتم العثور على المنتج في الكتالوج.')).toBeVisible({ timeout: 5000 });
+    const technicalDetail = page.getByText('Product SKU was not found in Catalog master.', { exact: true });
+    await expect(technicalDetail).toBeHidden();
+    const technicalDetailsDisclosure = page.getByText('التفاصيل التقنية', { exact: true });
+    await expect(technicalDetailsDisclosure).toBeVisible();
+    await technicalDetailsDisclosure.click();
+    await expect(technicalDetail).toBeVisible();
 
     // 11: Import Preview Reconciliation
     await page.screenshot({
       path: 'artifacts/test-results/tax/11-tax-import-preview-reconciliation.png',
+      fullPage: false
+    });
+
+    await page.screenshot({
+      path: 'artifacts/test-results/tax/11b-tax-import-technical-details-expanded.png',
       fullPage: false
     });
 

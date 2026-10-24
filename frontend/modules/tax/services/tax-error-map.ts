@@ -128,6 +128,48 @@ const IMPORT_OUTCOME_DEFINITIONS: Record<string, { messageKey: string; fallbackE
     fallbackAr: "لم يتم العثور على الطرف التجاري في دليل الأطراف.",
     isError: true
   },
+  AmbiguousReference: {
+    messageKey: "importExport.outcomes.ambiguousReferenceMessage",
+    fallbackEn: "The business reference matches more than one record.",
+    fallbackAr: "المرجع التجاري يطابق أكثر من سجل.",
+    isError: true
+  },
+  InvalidTaxCategory: {
+    messageKey: "importExport.outcomes.invalidTaxCategoryMessage",
+    fallbackEn: "The tax category is not valid for this profile.",
+    fallbackAr: "الفئة الضريبية غير صالحة لهذا الملف.",
+    isError: true
+  },
+  InvalidScheme: {
+    messageKey: "importExport.outcomes.invalidSchemeMessage",
+    fallbackEn: "The tax scheme is not valid for this profile.",
+    fallbackAr: "النظام الضريبي غير صالح لهذا الملف.",
+    isError: true
+  },
+  EffectiveDateOverlap: {
+    messageKey: "importExport.outcomes.effectiveDateOverlapMessage",
+    fallbackEn: "The effective date overlaps an existing profile version.",
+    fallbackAr: "تاريخ السريان يتداخل مع إصدار قائم للملف.",
+    isError: true
+  },
+  DuplicateInput: {
+    messageKey: "importExport.outcomes.duplicateInputMessage",
+    fallbackEn: "The import contains duplicate input data.",
+    fallbackAr: "تحتوي بيانات الاستيراد على تكرار.",
+    isError: true
+  },
+  LockedStatutoryContent: {
+    messageKey: "importExport.outcomes.lockedStatutoryContentMessage",
+    fallbackEn: "Statutory content is locked and cannot be changed by import.",
+    fallbackAr: "المحتوى التشريعي مقفل ولا يمكن تغييره بالاستيراد.",
+    isError: true
+  },
+  Conflict: {
+    messageKey: "importExport.outcomes.conflictMessage",
+    fallbackEn: "The imported profile conflicts with existing tax configuration.",
+    fallbackAr: "الملف المستورد يتعارض مع التكوين الضريبي القائم.",
+    isError: true
+  },
   InvalidClassification: {
     messageKey: "importExport.outcomes.invalidClassificationMessage",
     fallbackEn: "Tax classification code is invalid.",
@@ -166,6 +208,16 @@ const IMPORT_OUTCOME_DEFINITIONS: Record<string, { messageKey: string; fallbackE
   }
 };
 
+const UNSAFE_TECHNICAL_DETAIL = /(?:password|passwd|secret|token|api[\s_-]*key|connection\s*string|server\s*=|host\s*=|user\s*id\s*=|uid\s*=|pwd\s*=|npgsql|sql(?:exception|command|state)|select\s+.+\s+from|insert\s+into|update\s+.+\s+set|delete\s+from|https?:\/\/|(?:[a-z]:\\|\/(?:home|users|var|tmp|workspace|app)\/)|^\s*at\s+.+\()/i;
+
+export function sanitizeTechnicalDetail(detail: string | null | undefined): string | undefined {
+  const normalized = detail?.trim();
+  if (!normalized || normalized.length > 240 || UNSAFE_TECHNICAL_DETAIL.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
+}
+
 export function mapImportRowOutcome(outcome: string | undefined | null, technicalDetail?: string | null): MappedImportOutcome {
   const normalized = (outcome ?? "").trim();
   const matched = IMPORT_OUTCOME_DEFINITIONS[normalized];
@@ -176,7 +228,7 @@ export function mapImportRowOutcome(outcome: string | undefined | null, technica
       fallbackEn: matched.fallbackEn,
       fallbackAr: matched.fallbackAr,
       isError: matched.isError,
-      technicalDetail: technicalDetail || undefined
+      technicalDetail: sanitizeTechnicalDetail(technicalDetail)
     };
   }
 
@@ -193,7 +245,7 @@ export function mapImportRowOutcome(outcome: string | undefined | null, technica
     fallbackEn: isError ? "Row validation failed." : "Valid for committing.",
     fallbackAr: isError ? "فشل التحقق من صحة السطر." : "صالح للاعتماد.",
     isError,
-    technicalDetail: technicalDetail || undefined
+    technicalDetail: sanitizeTechnicalDetail(technicalDetail)
   };
 }
 

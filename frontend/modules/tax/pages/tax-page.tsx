@@ -630,7 +630,11 @@ export function TaxPage(): React.JSX.Element {
                           {t("overview.registrationStatus")}
                         </span>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <span style={{ fontWeight: 600, fontSize: "1rem" }}>{coverage?.registrationStatus || "—"}</span>
+                          {coverage?.registrationStatus ? (
+                            <TaxStatusBadge status={coverage.registrationStatus} type="registration" />
+                          ) : (
+                            <span style={{ fontWeight: 600, fontSize: "1rem" }}>—</span>
+                          )}
                           <StatusBadge
                             status={coverage?.registrationEffective ? "Effective" : "Inactive"}
                             intent={coverage?.registrationEffective ? "success" : "danger"}
@@ -646,14 +650,10 @@ export function TaxPage(): React.JSX.Element {
                           <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", textTransform: "uppercase" }}>
                             {t("overview.countryPackStatus")}
                           </span>
-                          <StatusBadge
-                            status={coverage?.countryPackStatus || "Installed"}
-                            intent={coverage?.countryPackStatus === "Available" || coverage?.countryPackStatus === "Active" ? "success" : "neutral"}
-                            label={t(`countryPack.status.${(coverage?.countryPackStatus || "installed").toLowerCase()}` as any, { defaultValue: coverage?.countryPackStatus || "Installed" })}
-                          />
+                          <TaxStatusBadge status={coverage?.countryPackStatus || "Installed"} type="countryPack" />
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.375rem" }}>
-                          <span style={{ fontWeight: 600, fontSize: "1rem" }}>{coverage?.countryPackStatus || "—"}</span>
+                          <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("countryPack.technicalStatus")}</span>
                           <StatusBadge
                             status="TestOnly"
                             intent="neutral"
@@ -669,7 +669,11 @@ export function TaxPage(): React.JSX.Element {
                           {t("overview.productCoverage")}
                         </span>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <span style={{ fontWeight: 600, fontSize: "1rem" }}>{coverage?.productClassificationCoverage || "—"}</span>
+                          {coverage?.productClassificationCoverage ? (
+                            <TaxStatusBadge status={coverage.productClassificationCoverage} type="coverage" />
+                          ) : (
+                            <span style={{ fontWeight: 600, fontSize: "1rem" }}>—</span>
+                          )}
                           <StatusBadge
                             status={coverage?.productClassificationCoverage === "Complete" ? "Complete" : "Pending"}
                             intent={coverage?.productClassificationCoverage === "Complete" ? "success" : "warning"}
@@ -685,7 +689,11 @@ export function TaxPage(): React.JSX.Element {
                           {t("overview.activeRuleSet")}
                         </span>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <span style={{ fontWeight: 600, fontSize: "1rem" }}>{coverage?.activeRuleSetStatus || "—"}</span>
+                          {coverage?.activeRuleSetStatus ? (
+                            <TaxStatusBadge status={coverage.activeRuleSetStatus} type="ruleSet" />
+                          ) : (
+                            <span style={{ fontWeight: 600, fontSize: "1rem" }}>—</span>
+                          )}
                           <StatusBadge
                             status={coverage?.activeRuleSetStatus === "Active" ? "Active" : "None"}
                             intent={coverage?.activeRuleSetStatus === "Active" ? "success" : "warning"}

@@ -5,6 +5,7 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
 import { CountryPackStatusBadge } from "../components/country-pack-status-badge.tsx";
+import { TaxStatusBadge } from "../components/tax-status-badge.tsx";
 import { useCountryPackActionMutation } from "../hooks/tax-queries.ts";
 import { extractTaxError } from "../services/tax-error-map.ts";
 import type { TaxCountryPackDto } from "../types.ts";
@@ -156,7 +157,7 @@ export function CountryPackActionDialog({
           </div>
           <div>
             <span style={{ color: "var(--color-content-muted)", display: "block" }}>{t("countryPack.technicalStatus")}</span>
-            <strong>{pack.status}</strong>
+            <TaxStatusBadge status={pack.status} type="countryPack" />
           </div>
           <div>
             <span style={{ color: "var(--color-content-muted)", display: "block" }}>{t("countryPack.statutoryReview")}</span>

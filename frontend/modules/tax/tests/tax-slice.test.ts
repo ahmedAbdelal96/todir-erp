@@ -7,7 +7,8 @@ import type {
   TaxResultContract,
   TaxTreatment
 } from "../types.ts";
-import { mapTaxErrorCode, mapImportRowOutcome } from "../services/tax-error-map.ts";
+import { mapTaxErrorCode, mapImportRowOutcome, sanitizeTechnicalDetail } from "../services/tax-error-map.ts";
+import { getTaxStatusPresentation } from "../components/tax-status-presentation.ts";
 import { deriveOverallReadiness } from "../services/tax-readiness.ts";
 
 describe("Tax Administration Slice Contracts & Domain Invariants", () => {
@@ -291,6 +292,10 @@ describe("Tax Administration Slice Contracts & Domain Invariants", () => {
     assert.equal(unknownProduct.fallbackEn, "Product was not found in Catalog.");
     assert.equal(unknownProduct.technicalDetail, "Product SKU was not found in Catalog master.");
 
+    assert.equal(sanitizeTechnicalDetail("SELECT * FROM tax_profiles"), undefined);
+    assert.equal(sanitizeTechnicalDetail("C:\\app\\secrets\\connection.txt"), undefined);
+    assert.equal(sanitizeTechnicalDetail("Catalog reference PRD-001 was not found."), "Catalog reference PRD-001 was not found.");
+
     const unknownParty = mapImportRowOutcome("UnknownParty");
     assert.equal(unknownParty.isError, true);
     assert.equal(unknownParty.messageKey, "importExport.outcomes.unknownPartyMessage");
@@ -305,5 +310,39 @@ describe("Tax Administration Slice Contracts & Domain Invariants", () => {
     assert.equal(createVersion.isError, false);
     assert.equal(createVersion.messageKey, "importExport.outcomes.createNewVersionMessage");
     assert.equal(createVersion.fallbackAr, "صالح لإنشاء إصدار جديد سارٍ.");
+
+    for (const outcome of [
+      "AmbiguousReference",
+      "InvalidTaxCategory",
+      "InvalidScheme",
+      "EffectiveDateOverlap",
+      "DuplicateInput",
+      "LockedStatutoryContent",
+      "Conflict"
+    ]) {
+      assert.equal(mapImportRowOutcome(outcome).isError, true);
+      assert.notEqual(mapImportRowOutcome(outcome).messageKey, "importExport.outcomes.genericErrorMessage");
+    }
+
+    assert.equal(mapImportRowOutcome("UnknownProduct", "password=super-secret").technicalDetail, undefined);
+  });
+
+  it("F10 / Tax status presentation — maps human states centrally without exposing machine labels", () => {
+    assert.deepEqual(getTaxStatusPresentation("Registered", "registration"), {
+      intent: "success",
+      labelKey: "registrationStatus.registered"
+    });
+    assert.deepEqual(getTaxStatusPresentation("Available", "countryPack"), {
+      intent: "success",
+      labelKey: "countryPack.status.available"
+    });
+    assert.deepEqual(getTaxStatusPresentation("Complete", "coverage"), {
+      intent: "success",
+      labelKey: "status.complete"
+    });
+    assert.deepEqual(getTaxStatusPresentation("Active", "ruleSet"), {
+      intent: "success",
+      labelKey: "ruleSetStatus.active"
+    });
   });
 });

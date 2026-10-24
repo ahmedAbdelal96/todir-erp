@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { StatusBadge, type StatusIntent } from "../../../components/fields/status-badge.tsx";
+import { getTaxStatusPresentation } from "./tax-status-badge.tsx";
 
 export interface CountryPackStatusBadgeProps {
   readonly countryCode: string;
@@ -37,22 +38,15 @@ export function CountryPackStatusBadge({
     reviewLabel = t("countryPack.statutoryApproved");
   }
 
-  const technicalIntent: StatusIntent =
-    technicalStatus === "Active" || technicalStatus === "Available"
-      ? "success"
-      : technicalStatus === "Installed"
-      ? "info"
-      : technicalStatus === "Incompatible" || technicalStatus === "Missing"
-      ? "danger"
-      : "neutral";
+  const technicalPresentation = getTaxStatusPresentation(technicalStatus, "countryPack");
 
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
       {/* Technical lifecycle badge */}
       <StatusBadge
         status={technicalStatus}
-        intent={technicalIntent}
-        label={t(`countryPack.status.${technicalStatus.toLowerCase()}` as any, { defaultValue: technicalStatus })}
+        intent={technicalPresentation.intent}
+        label={t(technicalPresentation.labelKey as any, { defaultValue: technicalStatus })}
       />
 
       {/* Statutory / legal review distinction */}
