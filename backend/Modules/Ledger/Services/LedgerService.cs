@@ -6,7 +6,7 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Ledger.Services;
 
-public sealed class LedgerService(LedgerRepository repository, LedgerOperationsRepository operations) : ILedgerPostingEngine
+public sealed class LedgerService(LedgerRepository repository, LedgerOperationsRepository operations, LedgerSetupRepository setup, LedgerUxRepository ux, LedgerPreviewService preview) : ILedgerPostingEngine
 {
     public Task<IReadOnlyList<AccountDto>> ListAccountsAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct) => repository.ListAccountsAsync(tenant, entity, ct);
     public Task<AccountDto> CreateAccountAsync(TenantId tenant, LegalEntityId entity, CreateAccountRequest request, CancellationToken ct) => repository.CreateAccountAsync(tenant, entity, request, ct);
@@ -18,6 +18,7 @@ public sealed class LedgerService(LedgerRepository repository, LedgerOperationsR
     public Task<IReadOnlyList<PeriodDto>> ListPeriodsAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct) => repository.ListPeriodsAsync(tenant, entity, ct);
     public Task<PeriodDto> CreatePeriodAsync(TenantId tenant, LegalEntityId entity, CreatePeriodRequest request, CancellationToken ct) => repository.CreatePeriodAsync(tenant, entity, request, ct);
     public Task<bool> SetPeriodStatusAsync(TenantId tenant, LegalEntityId entity, Guid id, PeriodStatus status, CancellationToken ct) => repository.SetPeriodStatusAsync(tenant, entity, id, status, ct);
+    public Task<bool> SetPeriodStatusAsync(TenantId tenant, LegalEntityId entity, Guid id, PeriodStatus status, Guid actor, Guid correlation, CancellationToken ct) => repository.SetPeriodStatusAsync(tenant, entity, id, status, actor, correlation, ct);
     public Task<FinancialLockDto> CreateLockAsync(TenantId tenant, LegalEntityId entity, CreateFinancialLockRequest request, CancellationToken ct) => repository.CreateLockAsync(tenant, entity, request, ct);
     public Task<IReadOnlyList<FinancialLockDto>> ListLocksAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct) => repository.ListLocksAsync(tenant, entity, ct);
     public Task<IReadOnlyList<JournalEntryDto>> ListEntriesAsync(TenantId tenant, LegalEntityId entity, int limit, CancellationToken ct) => repository.ListEntriesAsync(tenant, entity, limit, ct);
@@ -43,4 +44,12 @@ public sealed class LedgerService(LedgerRepository repository, LedgerOperationsR
     public Task<ProjectionRebuildResult> RebuildBalancesAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct) => operations.RebuildBalancesAsync(tenant, entity, ct);
     public Task<ProjectionReconciliationResultDto> ReconcileBalancesAsync(TenantId tenant, LegalEntityId entity, Guid? fiscalYearId, Guid? periodId, CancellationToken ct) => operations.ReconcileBalancesAsync(tenant, entity, fiscalYearId, periodId, ct);
     public Task<EntryExplanationDto> ExplainEntryAsync(TenantId tenant, LegalEntityId entity, Guid entryId, CancellationToken ct) => operations.ExplainEntryAsync(tenant, entity, entryId, ct);
+    public Task<ManagedLedgerSetupDto> InitializeManagedLedgerAsync(TenantId tenant, LegalEntityId entity, ManagedLedgerSetupRequest request, Guid actor, Guid correlation, CancellationToken ct) => setup.InitializeAsync(tenant, entity, request, actor, correlation, ct);
+    public Task<LedgerReadinessDto> GetReadinessAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct) => setup.GetReadinessAsync(tenant, entity, ct);
+    public Task<LedgerModeDto> GetModeAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct) => setup.GetModeAsync(tenant, entity, ct);
+    public Task<LedgerModeDto> ChangeModeAsync(TenantId tenant, LegalEntityId entity, LedgerMode mode, Guid actor, Guid correlation, CancellationToken ct) => setup.ChangeModeAsync(tenant, entity, mode, actor, correlation, ct);
+    public Task<AccountSearchPageDto> SearchAccountsAsync(TenantId tenant, LegalEntityId entity, string? query, string? cursor, int limit, CancellationToken ct) => ux.SearchAccountsAsync(tenant, entity, query, cursor, limit, ct);
+    public Task<AccountWorkspaceDto> GetAccountWorkspaceAsync(TenantId tenant, LegalEntityId entity, Guid accountId, CancellationToken ct) => ux.GetAccountWorkspaceAsync(tenant, entity, accountId, ct);
+    public Task<PeriodCloseCheckDto> GetPeriodCloseReadinessAsync(TenantId tenant, LegalEntityId entity, Guid periodId, CancellationToken ct) => ux.GetPeriodCloseReadinessAsync(tenant, entity, periodId, ct);
+    public Task<PostingPreviewDto> PreviewExplicitAsync(TenantId tenant, LegalEntityId entity, PostingPreviewRequest request, Guid actor, Guid correlation, CancellationToken ct) => preview.PreviewExplicitAsync(tenant, entity, request, actor, correlation, ct);
 }

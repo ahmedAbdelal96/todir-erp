@@ -35,3 +35,19 @@ public sealed record EntryExplanationDto(Guid EntryId, string EntryNumber, Guid 
 public sealed record ProjectionReconciliationDifferenceDto(Guid AccountId, Guid PeriodId, Guid? FiscalYearId, string CurrencyCode, decimal CanonicalDebit, decimal ProjectionDebit, decimal DebitDifference, decimal CanonicalCredit, decimal ProjectionCredit, decimal CreditDifference, decimal CanonicalBalance, decimal ProjectionBalance, decimal BalanceDifference, string Status);
 public sealed record ProjectionReconciliationResultDto(bool Healthy, IReadOnlyList<ProjectionReconciliationDifferenceDto> Differences);
 public sealed record ProjectionRebuildResult(int RowsRebuilt, bool Reconciled);
+
+public enum LedgerMode { Managed, Full }
+public enum LedgerReadinessState { Ready, Warning, Blocked }
+public sealed record LedgerReadinessReason(string Code, string Message, string? Capability = null);
+public sealed record LedgerCapabilityReadiness(string Capability, LedgerReadinessState State, IReadOnlyList<LedgerReadinessReason> Reasons);
+public sealed record LedgerReadinessDto(Guid LegalEntityId, LedgerMode Mode, LedgerReadinessState State, IReadOnlyList<LedgerCapabilityReadiness> Capabilities, long Version);
+public sealed record ManagedLedgerSetupRequest(string TemplateCode = "development-core", LedgerMode Mode = LedgerMode.Managed, DateOnly? FiscalYearStart = null, DateOnly? FiscalYearEnd = null);
+public sealed record ManagedLedgerSetupDto(Guid LegalEntityId, LedgerMode Mode, bool Initialized, Guid ConfigurationVersionId, int AccountsCreated, int JournalsCreated, int RolesCreated, int MappingsCreated, int PeriodsCreated, LedgerReadinessDto Readiness);
+public sealed record LedgerModeDto(Guid LegalEntityId, LedgerMode Mode, long Version);
+public sealed record AccountSearchPageDto(IReadOnlyList<AccountDto> Items, string? NextCursor);
+public sealed record AccountWorkspaceDto(AccountDto Account, IReadOnlyList<GeneralLedgerRowDto> RecentActivity, AccountBalanceDto Balance, IReadOnlyList<EntryExplanationDimensionDto> Dimensions, IReadOnlyList<LedgerReadinessReason> Configuration, IReadOnlyList<AuditSummaryDto> Audit);
+public sealed record AuditSummaryDto(string Action, Guid EntityId, Guid? ActorId, DateTimeOffset OccurredAt, string? Reason);
+public sealed record PeriodCloseCheckDto(Guid PeriodId, bool Ready, IReadOnlyList<LedgerReadinessReason> Checks, IReadOnlyList<LedgerReadinessReason> Warnings, IReadOnlyList<LedgerReadinessReason> Blockers);
+public sealed record PostingPreviewRequest(DateOnly PostingDate, Guid JournalId, string Description, string BaseCurrencyCode, IReadOnlyList<GeneralJournalLineRequest> Lines);
+public sealed record PostingPreviewLineDto(int Sequence, Guid AccountId, decimal Debit, decimal Credit, decimal BaseDebit, decimal BaseCredit, string CurrencyCode, decimal TransactionDebit, decimal TransactionCredit, decimal? ExchangeRate, string AccountRole, Guid? MappingId, long? MappingVersion, Guid? MappingVersionId, string? Description, IReadOnlyList<EntryExplanationDimensionDto> Dimensions);
+public sealed record PostingPreviewDto(Guid JournalId, DateOnly PostingDate, Guid PostingRuleVersionId, Guid AccountingConfigurationVersionId, string BaseCurrencyCode, IReadOnlyList<PostingPreviewLineDto> Lines, decimal TotalDebit, decimal TotalCredit, IReadOnlyList<LedgerReadinessReason> Warnings);

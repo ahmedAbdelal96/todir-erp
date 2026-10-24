@@ -75,6 +75,17 @@ public sealed class ApiCompositionTests
         Assert.True(paths.TryGetProperty("/api/v1/tax/legal-entities/{entityId}/capability", out _));
         Assert.True(paths.TryGetProperty("/api/v1/tax/calculate", out _));
         Assert.True(paths.TryGetProperty("/api/v1/tax/calculate-batch", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/managed-setup", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/readiness", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/mode", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/accounts/search", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/accounts/{accountId}/workspace", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/periods/{periodId}/close-readiness", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/posting-preview", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/periods/{periodId}/reopen", out _));
+        Assert.False(paths.TryGetProperty("/api/v1/ledger/facts", out _));
+        Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/facts", out _));
+        Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/entries/{entryId}", out _));
         var numericFinancialFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "amount", "sourceAmount", "targetAmount", "rate", "cashIncrement", "percentage", "fixedAmount", "totalAmount"

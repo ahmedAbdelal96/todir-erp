@@ -54,6 +54,13 @@ public static class LedgerSeed
 
             var configId = SeedIds.Child(context.Tenant.Id, $"ledger-config:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.accounting_configuration_version (tenant_id,legal_entity_id,id,version_number,effective_from,status,snapshot_hash,created_at) values ($1,$2,$3,1,'2026-01-01','Active','development-ledger-v1',$4) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, configId, context.AsOf);
+            var entityConfigurationId = SeedIds.Child(context.Tenant.Id, $"ledger-entity-configuration:{suffix}", 1);
+            await context.ExecuteAsync("insert into finance_ledger.ledger_entity_configuration (tenant_id,legal_entity_id,id,mode,setup_template_code,active_configuration_version_id,initialized_at,version) values ($1,$2,$3,'Managed','development-core',$4,$5,1) on conflict (tenant_id,legal_entity_id) do nothing", cancellationToken, context.Tenant.Id, entityId, entityConfigurationId, configId, context.AsOf);
+            foreach (var producer in new[] { ("sales", "CustomerInvoicePosted"), ("sales", "CustomerCreditNotePosted"), ("payments", "PaymentReceived"), ("payments", "PaymentMade"), ("inventory", "InventoryReceiptValued"), ("inventory", "InventoryIssueValued"), ("inventory", "InventoryCostAdjustment"), ("payroll", "PayrollPosted"), ("tax", "TaxAdjustment") })
+            {
+                var producerId = SeedIds.Child(context.Tenant.Id, $"ledger-producer:{suffix}:{producer.Item1}:{producer.Item2}", 1);
+                await context.ExecuteAsync("insert into finance_ledger.fact_producer_registration (tenant_id,legal_entity_id,id,producer_module,fact_type,fact_version,status,registered_at) values ($1,$2,$3,$4,$5,1,'Active',$6) on conflict (tenant_id,legal_entity_id,producer_module,fact_type,fact_version) do nothing", cancellationToken, context.Tenant.Id, entityId, producerId, producer.Item1, producer.Item2, context.AsOf);
+            }
             var roleReceivable = await AddRoleAsync(context, entityId, suffix, 1, "Receivable", "حساب العملاء", "Receivables", cancellationToken);
             var roleRevenue = await AddRoleAsync(context, entityId, suffix, 2, "SalesRevenue", "إيرادات المبيعات", "Sales revenue", cancellationToken);
             var roleTax = await AddRoleAsync(context, entityId, suffix, 3, "OutputTax", "ضريبة المخرجات", "Output tax", cancellationToken);

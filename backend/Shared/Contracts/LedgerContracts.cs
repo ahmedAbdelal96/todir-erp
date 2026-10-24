@@ -34,6 +34,22 @@ public static class AccountingFactTypes
     };
 }
 
+public static class LedgerEventTypes
+{
+    public const string JournalEntryPostedV1 = "JournalEntryPostedV1";
+    public const string JournalEntryReversedV1 = "JournalEntryReversedV1";
+    public const string PeriodClosedV1 = "PeriodClosedV1";
+    public const string PeriodReopenedV1 = "PeriodReopenedV1";
+    public const string AccountingConfigurationActivatedV1 = "AccountingConfigurationActivatedV1";
+    public const string LedgerConfigurationChanged = "LedgerConfigurationChanged";
+}
+
+public sealed record JournalEntryPostedEvent(Guid FactId, Guid JournalEntryId, Guid LegalEntityId, string FactType, int FactVersion, string EntryNumber);
+public sealed record JournalEntryReversedEvent(Guid OriginalEntryId, Guid ReversalEntryId, Guid LegalEntityId, string Reason);
+public sealed record PeriodStatusChangedEvent(Guid PeriodId, Guid FiscalYearId, Guid LegalEntityId, string PreviousStatus, string NewStatus);
+public sealed record AccountingConfigurationActivatedEvent(Guid ConfigurationVersionId, Guid LegalEntityId, LedgerModeValue Mode, string TemplateCode);
+public enum LedgerModeValue { Managed, Full }
+
 public interface IAccountingFactPayload;
 
 public sealed record InvoiceTaxComponent(string Code, decimal Rate, decimal Amount, string AccountRole) : IAccountingFactPayload;
