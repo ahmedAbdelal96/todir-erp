@@ -1,22 +1,20 @@
-import { lazy } from "react";
-import { useNavigate } from "react-router-dom";
-import type { ModuleRouteRegistration } from "@app/router/route-contract.ts";
-
-const ManualJournalPage = lazy(() => import("./pages/manual-journal-page.tsx").then(module => ({ default: module.ManualJournalPage })));
-
-function AccountingRoute(): React.JSX.Element {
-  const navigate = useNavigate();
-  return <ManualJournalPage onBack={() => navigate("/")} />;
-}
+import React from "react";
+import type { ModuleRouteRegistration } from "../../app/router/route-contract.ts";
+import { AccountingPage } from "./pages/accounting-page.tsx";
 
 export const accountingRoutes: ModuleRouteRegistration = {
   navigation: {
     id: "accounting",
-    moduleIds: ["accounting"],
+    moduleIds: ["accounting", "ledger"],
     path: "/accounting",
     navigationKey: "accounting",
-    permission: "accounting.journals.read",
+    permission: "ledger.account.read",
     icon: "accounting"
   },
-  routes: [{ path: "accounting", element: <AccountingRoute /> }]
+  routes: [
+    {
+      path: "accounting",
+      element: <AccountingPage />
+    }
+  ]
 };
