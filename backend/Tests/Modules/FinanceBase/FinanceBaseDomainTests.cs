@@ -259,6 +259,19 @@ public sealed class FinanceBaseDomainTests
     }
 
     [Fact]
+    public void PercentageScheduleAssignsDeterministicRoundingResidualToFinalInstallment()
+    {
+        var schedule = PaymentScheduleCalculator.Calculate(100.01m, new DateOnly(2026, 1, 1),
+        [
+            new(1, PaymentAllocation.Percentage, 0.30m, null, DueDateBasis.Immediate, 0, null, 0),
+            new(2, PaymentAllocation.Percentage, 0.40m, null, DueDateBasis.DaysAfterDate, 30, null, 0),
+            new(3, PaymentAllocation.Percentage, 0.30m, null, DueDateBasis.DaysAfterDate, 60, null, 0)
+        ], 2);
+        Assert.Equal([30.00m, 40.00m, 30.01m], schedule.Select(line => line.Amount));
+        Assert.Equal(100.01m, schedule.Sum(line => line.Amount));
+    }
+
+    [Fact]
     public void PaymentScheduleAcceptsResolvedPaymentAllocationRoundingContext()
     {
         var rules = new[]

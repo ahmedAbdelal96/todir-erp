@@ -21,6 +21,7 @@ public static class AccountingFactTypes
     public const string PayrollPosted = "PayrollPosted";
     public const string TaxAdjustment = "TaxAdjustment";
     public const string SettlementFxDifference = "SettlementFxDifference";
+    public const string SettlementWriteOff = "SettlementWriteOff";
     public const string UnrealizedFxRevaluation = "UnrealizedFxRevaluation";
     public const string OpeningBalancePosted = "OpeningBalancePosted";
     public const string ManualGeneralJournalPosted = "ManualGeneralJournalPosted";
@@ -29,7 +30,7 @@ public static class AccountingFactTypes
     {
         CustomerInvoicePosted, CustomerCreditNotePosted, VendorBillPosted, VendorCreditNotePosted,
         PaymentReceived, PaymentMade, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment,
-        ExpenseRecognized, PayrollPosted, TaxAdjustment, SettlementFxDifference, UnrealizedFxRevaluation,
+        ExpenseRecognized, PayrollPosted, TaxAdjustment, SettlementFxDifference, SettlementWriteOff, UnrealizedFxRevaluation,
         OpeningBalancePosted, ManualGeneralJournalPosted
     };
 }
@@ -75,6 +76,16 @@ public sealed record ExpenseRecognizedPayload(decimal Amount, string CurrencyCod
 public sealed record PayrollPostedPayload(decimal GrossAmount, decimal PayableAmount, string CurrencyCode) : IAccountingFactPayload;
 public sealed record TaxAdjustmentPayload(decimal Amount, string CurrencyCode, string TaxCode, string AdjustmentRole) : IAccountingFactPayload;
 public sealed record FxDifferencePayload(decimal Amount, string CurrencyCode, string DifferenceRole) : IAccountingFactPayload;
+public sealed record SettlementFxDifferencePayload(decimal Amount, string BaseCurrencyCode, string ControlAccountRole, string DifferenceRole, Guid ApplicationId) : IAccountingFactPayload;
+public sealed record SettlementWriteOffPayload(Guid WriteOffId, Guid PartyId, Guid OpenItemId, string Direction, string TransactionAmount,
+    string TransactionCurrencyCode, decimal BaseAmount, string BaseCurrencyCode, string ReasonCode, string ReasonText) : IAccountingFactPayload;
+
+public sealed record LedgerControlBalanceSnapshot(Guid AccountId, string ControlRole, decimal SignedBaseBalance, string BaseCurrencyCode, Guid ConfigurationVersionId);
+
+public interface ILedgerControlBalanceRead
+{
+    Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default);
+}
 public sealed record OpeningBalancePostedPayload(decimal Amount, string CurrencyCode, string SemanticRole) : IAccountingFactPayload;
 public sealed record ManualGeneralJournalPostedPayload(string Description, string CurrencyCode, IReadOnlyList<string> SemanticRoles) : IAccountingFactPayload;
 
@@ -142,6 +153,13 @@ public sealed record LedgerPostingResult(
 public static class AccountingFactFingerprint
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+
+    public static string Compute(IAccountingFactPayload payload)
+    {
+        var node = JsonSerializer.SerializeToNode(payload, payload.GetType(), Options) ?? throw new InvalidOperationException("Accounting fact payload cannot be serialized.");
+        var canonical = Canonicalize(node);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
 
     public static string Compute<TPayload>(TPayload payload) where TPayload : IAccountingFactPayload
     {

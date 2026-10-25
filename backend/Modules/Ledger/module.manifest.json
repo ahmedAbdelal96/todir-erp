@@ -2,15 +2,102 @@
   "$schema": "../../../docs/platform/module-manifest-schema.json",
   "id": "ledger",
   "version": "1.0.0",
-  "contractsVersion": 1,
+  "contractsVersion": 4,
   "layer": "L1",
   "type": "foundation",
   "purchasable": false,
   "scope": "tenant",
-  "dependencies": { "hard": ["platform-kernel", "finbase"], "optionalCapabilities": [] },
-  "owns": { "schema": "finance_ledger", "entities": ["account_category", "account", "journal", "fiscal_year", "accounting_period", "financial_lock", "accounting_fact", "posting_rule", "posting_rule_version", "posting_rule_leg", "account_role", "account_mapping", "account_mapping_version", "accounting_configuration_version", "journal_entry", "journal_entry_line", "account_period_balance", "ledger_entity_configuration", "fact_producer_registration"] },
-  "permissions": ["ledger.account.read", "ledger.account.manage", "ledger.journal.read", "ledger.journal.manage", "ledger.period.read", "ledger.period.manage", "ledger.period.soft_close", "ledger.period.close", "ledger.period.reopen", "ledger.lock.read", "ledger.lock.manage", "ledger.mapping.read", "ledger.mapping.manage", "ledger.mapping.activate", "ledger.entry.read", "ledger.entry.reverse", "ledger.entry.explain", "ledger.general_journal.create", "ledger.general_journal.edit", "ledger.general_journal.submit", "ledger.general_journal.approve", "ledger.general_journal.post", "ledger.dimension.read", "ledger.dimension.manage", "ledger.opening.read", "ledger.opening.manage", "ledger.opening.post", "ledger.reports.read", "ledger.audit.view", "ledger.configuration.read", "ledger.configuration.manage"],
-  "capabilities": { "provides": ["ledger.chart-of-accounts", "ledger.posting-engine", "ledger.reports", "ledger.managed-setup"], "consumes": ["finbase.money", "finbase.exchange-rate"] },
-  "messaging": { "publishes": ["JournalEntryPostedV1", "JournalEntryReversedV1", "PeriodClosedV1", "PeriodReopenedV1", "AccountingConfigurationActivatedV1", "LedgerConfigurationChanged"], "consumes": [] },
-  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+  "dependencies": {
+    "hard": [
+      "platform-kernel",
+      "finbase"
+    ],
+    "optionalCapabilities": []
+  },
+  "owns": {
+    "schema": "finance_ledger",
+    "entities": [
+      "account_category",
+      "account",
+      "journal",
+      "fiscal_year",
+      "accounting_period",
+      "financial_lock",
+      "accounting_fact",
+      "posting_rule",
+      "posting_rule_version",
+      "posting_rule_leg",
+      "account_role",
+      "account_mapping",
+      "account_mapping_version",
+      "accounting_configuration_version",
+      "journal_entry",
+      "journal_entry_line",
+      "account_period_balance",
+      "ledger_entity_configuration",
+      "fact_producer_registration"
+    ]
+  },
+  "permissions": [
+    "ledger.account.read",
+    "ledger.account.manage",
+    "ledger.journal.read",
+    "ledger.journal.manage",
+    "ledger.period.read",
+    "ledger.period.manage",
+    "ledger.period.soft_close",
+    "ledger.period.close",
+    "ledger.period.reopen",
+    "ledger.lock.read",
+    "ledger.lock.manage",
+    "ledger.mapping.read",
+    "ledger.mapping.manage",
+    "ledger.mapping.activate",
+    "ledger.entry.read",
+    "ledger.entry.reverse",
+    "ledger.entry.explain",
+    "ledger.general_journal.create",
+    "ledger.general_journal.edit",
+    "ledger.general_journal.submit",
+    "ledger.general_journal.approve",
+    "ledger.general_journal.post",
+    "ledger.dimension.read",
+    "ledger.dimension.manage",
+    "ledger.opening.read",
+    "ledger.opening.manage",
+    "ledger.opening.post",
+    "ledger.reports.read",
+    "ledger.audit.view",
+    "ledger.configuration.read",
+    "ledger.configuration.manage"
+  ],
+  "capabilities": {
+    "provides": [
+      "ledger.chart-of-accounts",
+      "ledger.posting-engine",
+      "ledger.reports",
+      "ledger.managed-setup",
+      "ledger.semantic-settlement-facts",
+      "ledger.control-balance-read"
+    ],
+    "consumes": [
+      "finbase.money",
+      "finbase.exchange-rate"
+    ]
+  },
+  "messaging": {
+    "publishes": [
+      "JournalEntryPostedV1",
+      "JournalEntryReversedV1",
+      "PeriodClosedV1",
+      "PeriodReopenedV1",
+      "AccountingConfigurationActivatedV1",
+      "LedgerConfigurationChanged"
+    ],
+    "consumes": []
+  },
+  "lifecycle": {
+    "supportsGoLive": true,
+    "deactivationPolicy": "blocked_if_dependents"
+  }
 }

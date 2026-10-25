@@ -16,9 +16,56 @@ public sealed class LedgerRepository(
     NpgsqlDataSource dataSource,
     ITransactionCoordinator transactions,
     ILegalEntityFinancialReadStore financialRead,
-    TimeProvider clock) : ILedgerPostingEngine
+    TimeProvider clock) : ILedgerPostingEngine, ILedgerControlBalanceRead
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default)
+    {
+        if (controlRole is not ("Receivable" or "Payable") || configurationVersionId == Guid.Empty)
+            throw new LedgerDomainException("ledger.control_balance_query_invalid", "A valid control role and accounting configuration are required.");
+        await using var connection = await OpenAsync(tenantId, cancellationToken);
+        const string sql = """
+            with config as (
+              select id,effective_from from finance_ledger.accounting_configuration_version
+              where tenant_id=$1 and legal_entity_id=$2 and id=$3
+            ), aliases as (
+              select case when $4='Receivable' then array['Receivable','AccountsReceivableControl']::text[] else array['Payable','AccountsPayableControl']::text[] end as codes
+            ), candidates as (
+              select v.target_account_id,(r.code=$4) as exact_role,v.specificity_rank
+              from finance_ledger.account_role r
+              join finance_ledger.account_mapping m on m.tenant_id=r.tenant_id and m.legal_entity_id=r.legal_entity_id and m.role_id=r.id
+              join finance_ledger.account_mapping_version v on v.tenant_id=m.tenant_id and v.legal_entity_id=m.legal_entity_id and v.mapping_id=m.id
+              join finance_ledger.account a on a.tenant_id=v.tenant_id and a.legal_entity_id=v.legal_entity_id and a.id=v.target_account_id
+              cross join config c cross join aliases x
+              where r.tenant_id=$1 and r.legal_entity_id=$2 and r.code=any(x.codes) and r.status='Active'
+                and m.status='Active' and v.status='Active' and a.status='Active' and v.effective_from<=c.effective_from and (v.effective_to is null or v.effective_to>=c.effective_from)
+            ), selected as (
+              select target_account_id from candidates
+              where exact_role=(select coalesce(bool_or(exact_role),false) from candidates)
+                and specificity_rank=(select max(specificity_rank) from candidates where exact_role=(select coalesce(bool_or(exact_role),false) from candidates))
+            )
+            select (select count(*) from selected),(select target_account_id from selected limit 1),
+              coalesce((select sum(l.base_debit-l.base_credit) from finance_ledger.journal_entry e
+                join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id
+                where e.tenant_id=$1 and e.legal_entity_id=$2 and e.accounting_configuration_version_id=$3 and e.posting_date<=$5
+                  and l.account_id=any(array(select target_account_id from selected))),0)
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(legalEntityId.Value); command.Parameters.AddWithValue(configurationVersionId);
+        command.Parameters.AddWithValue(controlRole); command.Parameters.AddWithValue(asOfDate);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) throw new LedgerDomainException("ledger.control_mapping_missing", "No control account mapping exists for this historical accounting configuration.");
+        var matches = reader.GetInt64(0);
+        if (matches == 0) throw new LedgerDomainException("ledger.control_mapping_missing", "No control account mapping exists for this historical accounting configuration.");
+        if (matches != 1) throw new LedgerDomainException("ledger.control_mapping_conflict", "More than one control account mapping matches this accounting configuration.");
+        var accountId = reader.GetGuid(1);
+        var signedBalance = reader.GetDecimal(2);
+        if (controlRole == "Payable") signedBalance = -signedBalance;
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(tenantId, legalEntityId, cancellationToken)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "The legal entity financial context is unavailable.");
+        return new(accountId, controlRole, signedBalance, baseCurrency, configurationVersionId);
+    }
 
     public async Task<IReadOnlyList<AccountDto>> ListAccountsAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct)
     {
@@ -261,6 +308,85 @@ public sealed class LedgerRepository(
         var dimensionRules = await LoadDimensionRulesAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, payload.Lines.Select(line => line.AccountId).Distinct().ToArray(), payload.JournalId, fact.FactType, cancellationToken);
         var sequence = 1; foreach (var line in payload.Lines) { if (line.Debit < 0 || line.Credit < 0 || line.Debit > 0 && line.Credit > 0 || line.BaseDebit < 0 || line.BaseCredit < 0 || line.BaseDebit > 0 && line.BaseCredit > 0) throw new LedgerDomainException("ledger.fact_invalid", "Journal lines contain invalid amounts."); var lineId = Guid.CreateVersion7(); var amount = line.TransactionDebit > 0 ? line.TransactionDebit : line.TransactionCredit; var snapshot = new NpgsqlParameter { Value = JsonSerializer.Serialize(new { rate = line.ExchangeRate, from = line.TransactionCurrencyCode, to = payload.BaseCurrencyCode }, JsonOptions), NpgsqlDbType = NpgsqlDbType.Jsonb }; await ExecuteAsync(context, "insert into finance_ledger.journal_entry_line (tenant_id,legal_entity_id,id,journal_entry_id,sequence_no,account_id,debit,credit,currency_code,amount,exchange_rate,semantic_role,description,account_role,transaction_debit,transaction_credit,base_debit,base_credit,exchange_rate_snapshot,line_reference) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)", cancellationToken, fact.TenantId.Value, fact.LegalEntityId.Value, lineId, entryId, sequence++, line.AccountId, line.BaseDebit, line.BaseCredit, line.TransactionCurrencyCode, amount, line.ExchangeRate, fact.FactType, line.Description ?? payload.Description, line.Description ?? fact.FactType, line.TransactionDebit, line.TransactionCredit, line.BaseDebit, line.BaseCredit, snapshot, line.LegacyReference); await ValidateAndPersistDimensionsAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, lineId, line.Dimensions, dimensionRules.GetValueOrDefault(line.AccountId, []), cancellationToken); }
         await ExecuteAsync(context, "update finance_ledger.accounting_fact set status='Posted',posted_entry_id=$3,posted_at=$4 where tenant_id=$1 and id=$2", cancellationToken, fact.TenantId.Value, fact.FactId, entryId, now); await RefreshAccountPeriodBalancesAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, entryId, cancellationToken); context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), LedgerEventTypes.JournalEntryPostedV1, JsonSerializer.Serialize(new { fact.FactId, entryId, entryNumber, fact.FactType }, JsonOptions), fact.TenantId, now, fact.CorrelationId, fact.FactId, "ledger")); return new LedgerPostingResult(fact.FactId, entryId, entryNumber, "Posted", false);
+    }
+
+    public async Task<LedgerPostingResult> PostSettlementFxDifferenceInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementFxDifferencePayload payload, CancellationToken ct)
+    {
+        if (fact.FactType != AccountingFactTypes.SettlementFxDifference || fact.SourceModule != "subledger" || payload.Amount <= 0m
+            || payload.DifferenceRole is not ("FXGain" or "FXLoss") || payload.ControlAccountRole is not ("Receivable" or "Payable") || payload.ApplicationId == Guid.Empty)
+            throw new LedgerDomainException("ledger.fact_invalid", "The settlement FX fact has invalid semantic details.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct)) throw new LedgerDomainException("ledger.fact_producer_unregistered", "The producer is not registered for this accounting fact type and version.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        if (!string.Equals(baseCurrency, payload.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)) throw new LedgerDomainException("ledger.currency_mismatch", "Settlement FX differences must be stated in the legal entity base currency.");
+        var journalId = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='FX' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The foreign-exchange journal is not configured.");
+        var controlId = await ResolveSemanticAccountIdAsync(context, fact, payload.ControlAccountRole, ct);
+        var differenceId = await ResolveSemanticAccountIdAsync(context, fact, payload.DifferenceRole, ct);
+        var amount = payload.Amount;
+        var lines = payload.DifferenceRole == "FXLoss"
+            ? new[]
+            {
+                new LedgerPostingLinePayload(differenceId, amount, 0m, baseCurrency, amount, 0m, amount, 0m, 1m, [], "Settlement FX loss", null),
+                new LedgerPostingLinePayload(controlId, 0m, amount, baseCurrency, 0m, amount, 0m, amount, 1m, [], "Subledger control settlement", null)
+            }
+            : new[]
+            {
+                new LedgerPostingLinePayload(controlId, amount, 0m, baseCurrency, amount, 0m, amount, 0m, 1m, [], "Subledger control settlement", null),
+                new LedgerPostingLinePayload(differenceId, 0m, amount, baseCurrency, 0m, amount, 0m, amount, 1m, [], "Settlement FX gain", null)
+            };
+        var payloadForPosting = new ExplicitLedgerPostingPayload(journalId, $"Settlement FX difference for application {payload.ApplicationId:N}", baseCurrency, lines);
+        return await PostExplicitInTransactionAsync(context, fact, payloadForPosting, ct);
+    }
+
+    public async Task<LedgerPostingResult> PostSettlementWriteOffInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementWriteOffPayload payload, CancellationToken ct)
+    {
+        if (fact.FactType != AccountingFactTypes.SettlementWriteOff || fact.SourceModule != "subledger" || payload.WriteOffId == Guid.Empty
+            || payload.PartyId == Guid.Empty || payload.OpenItemId == Guid.Empty || payload.Direction is not ("Receivable" or "Payable")
+            || payload.BaseAmount <= 0m || string.IsNullOrWhiteSpace(payload.ReasonCode) || string.IsNullOrWhiteSpace(payload.ReasonText))
+            throw new LedgerDomainException("ledger.fact_invalid", "The settlement write-off fact has invalid semantic details.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct)) throw new LedgerDomainException("ledger.fact_producer_unregistered", "The producer is not registered for this accounting fact type and version.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        if (!string.Equals(baseCurrency, payload.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)) throw new LedgerDomainException("ledger.currency_mismatch", "Write-off carrying amounts must use the legal entity base currency.");
+        var journalId = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='ADJUSTMENT' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The adjustment journal is not configured.");
+        var controlRole = payload.Direction == "Receivable" ? "Receivable" : "Payable";
+        var offsetRole = payload.Direction == "Receivable" ? "BadDebtExpense" : "WriteOffIncome";
+        var controlId = await ResolveSemanticAccountIdAsync(context, fact, controlRole, ct);
+        var offsetId = await ResolveSemanticAccountIdAsync(context, fact, offsetRole, ct);
+        var amount = payload.BaseAmount;
+        var lines = payload.Direction == "Receivable"
+            ? new[]
+            {
+                new LedgerPostingLinePayload(offsetId, amount, 0m, baseCurrency, amount, 0m, amount, 0m, 1m, [], $"AR write-off {payload.ReasonCode}", payload.OpenItemId.ToString("D")),
+                new LedgerPostingLinePayload(controlId, 0m, amount, baseCurrency, 0m, amount, 0m, amount, 1m, [], "Subledger receivable control", payload.OpenItemId.ToString("D"))
+            }
+            : new[]
+            {
+                new LedgerPostingLinePayload(controlId, amount, 0m, baseCurrency, amount, 0m, amount, 0m, 1m, [], "Subledger payable control", payload.OpenItemId.ToString("D")),
+                new LedgerPostingLinePayload(offsetId, 0m, amount, baseCurrency, 0m, amount, 0m, amount, 1m, [], $"AP write-off {payload.ReasonCode}", payload.OpenItemId.ToString("D"))
+            };
+        var posting = new ExplicitLedgerPostingPayload(journalId, $"Settlement write-off {payload.WriteOffId:N}: {payload.ReasonText}", baseCurrency, lines);
+        return await PostExplicitInTransactionAsync(context, fact, posting, ct);
+    }
+
+    private static async Task<Guid> ResolveSemanticAccountIdAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, string role, CancellationToken ct)
+    {
+        var aliases = role switch
+        {
+            "Receivable" => new[] { "Receivable", "AccountsReceivableControl" },
+            "Payable" => new[] { "Payable", "AccountsPayableControl" },
+            _ => new[] { role }
+        };
+        await using var command = new NpgsqlCommand("with candidates as (select v.target_account_id,v.specificity_rank,(r.code=$3) as exact_role,count(*) over(partition by (r.code=$3),v.specificity_rank) as rank_count from finance_ledger.account_role r join finance_ledger.account_mapping m on m.tenant_id=r.tenant_id and m.legal_entity_id=r.legal_entity_id and m.role_id=r.id join finance_ledger.account_mapping_version v on v.tenant_id=m.tenant_id and v.legal_entity_id=m.legal_entity_id and v.mapping_id=m.id join finance_ledger.account a on a.tenant_id=v.tenant_id and a.legal_entity_id=v.legal_entity_id and a.id=v.target_account_id where r.tenant_id=$1 and r.legal_entity_id=$2 and r.code=any($4) and r.status='Active' and m.status='Active' and v.status='Active' and a.status='Active' and a.allow_direct_posting=true and v.effective_from <= $5 and (v.effective_to is null or v.effective_to >= $5)), best_role as (select coalesce(bool_or(exact_role),false) as exact_role from candidates) select target_account_id,rank_count from candidates where exact_role=(select exact_role from best_role) and specificity_rank=(select max(specificity_rank) from candidates where exact_role=(select exact_role from best_role))", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(fact.TenantId.Value); command.Parameters.AddWithValue(fact.LegalEntityId.Value); command.Parameters.AddWithValue(role); command.Parameters.AddWithValue(aliases); command.Parameters.AddWithValue(fact.PostingDate);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var matches = new List<(Guid AccountId, int Count)>();
+        while (await reader.ReadAsync(ct)) matches.Add((reader.GetGuid(0), reader.GetInt32(1)));
+        if (matches.Count == 0) throw new LedgerDomainException("ledger.account_mapping_missing", $"No active account mapping exists for semantic role {role}.");
+        if (matches.Any(match => match.Count > 1) || matches.Select(match => match.AccountId).Distinct().Count() != 1) throw new LedgerDomainException("ledger.account_mapping_conflict", $"More than one account mapping matches semantic role {role}.");
+        return matches[0].AccountId;
     }
 
     private async Task<LedgerPostingResult> PostExplicitLinesAsync(AccountingFactEnvelope<IAccountingFactPayload> fact, ExplicitLedgerPostingPayload payload, CancellationToken cancellationToken)

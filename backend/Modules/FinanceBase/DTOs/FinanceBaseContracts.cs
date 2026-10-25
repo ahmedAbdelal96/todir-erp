@@ -1,4 +1,5 @@
 using Modules.FinanceBase.Entities;
+using Shared.Contracts.FinanceBase;
 
 namespace Modules.FinanceBase.DTOs;
 
@@ -27,4 +28,4 @@ public sealed record PaymentTermRuleRequest(int Sequence, PaymentAllocation Allo
 public sealed record PaymentTermDto(Guid Id, string Code, string DisplayNameAr, string DisplayNameEn, int VersionNumber, DateOnly EffectiveFrom, IReadOnlyList<PaymentTermRuleRequest> Rules);
 public sealed record PaymentScheduleRequest(string TotalAmount, DateOnly BasisDate, int Scale, IReadOnlyList<PaymentTermRuleRequest> Rules);
 public sealed record PaymentScheduleLineDto(int Sequence, string Amount, DateOnly DueDate, PaymentAllocation Allocation);
-public sealed class FinanceBaseException(string code, string message) : Exception(message) { public string Code { get; } = code; }
+public sealed class FinanceBaseException(string code, string message) : FinanceBaseCapabilityException(code, message) { }

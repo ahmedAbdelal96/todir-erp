@@ -39,6 +39,8 @@ public sealed class LedgerSetupRepository(
         ("500000", "المصروفات", "Expenses", "Expense", "Other", false, null),
         ("510000", "تكلفة المبيعات", "Cost of Goods Sold", "Expense", "COGS", true, "500000"),
         ("520000", "مصروف الرواتب", "Payroll Expense", "Expense", "Payroll", true, "500000"),
+        ("530000", "ديون معدومة", "Bad Debt Expense", "Expense", "BadDebt", true, "500000"),
+        ("420000", "إيرادات تسوية الديون", "Write-Off Income", "Revenue", "WriteOff", true, "400000"),
         ("999000", "أرباح فروق العملة", "FX Gain", "Revenue", "FXGain", true, null),
         ("999100", "خسائر فروق العملة", "FX Loss", "Expense", "FXLoss", true, null),
         ("999900", "فروق التقريب", "Rounding Difference", "Expense", "Rounding", true, null)
@@ -56,6 +58,8 @@ public sealed class LedgerSetupRepository(
         ("COGS", "تكلفة المبيعات", "Cost of Goods Sold", "510000"),
         ("PayrollExpense", "مصروف الرواتب", "Payroll Expense", "520000"),
         ("PayrollPayable", "التزام الرواتب", "Payroll Payable", "230000"),
+        ("BadDebtExpense", "مصروف الديون المعدومة", "Bad Debt Expense", "530000"),
+        ("WriteOffIncome", "إيراد شطب الالتزام", "Write-Off Income", "420000"),
         ("RetainedEarnings", "الأرباح المحتجزة", "Retained Earnings", "310000"),
         ("FXGain", "أرباح فروق العملة", "FX Gain", "999000"),
         ("FXLoss", "خسائر فروق العملة", "FX Loss", "999100"),
@@ -86,7 +90,7 @@ public sealed class LedgerSetupRepository(
                 accounts[account.Code] = id;
                 accountCount++;
             }
-            foreach (var journal in new[] { ("SALES", "المبيعات", "Sales", "Sales"), ("GENERAL", "عام", "General", "General"), ("OPENING", "افتتاحي", "Opening", "Opening") })
+            foreach (var journal in new[] { ("SALES", "المبيعات", "Sales", "Sales"), ("GENERAL", "عام", "General", "General"), ("OPENING", "افتتاحي", "Opening", "Opening"), ("FX", "فروق العملة", "Foreign exchange", "Fx"), ("ADJUSTMENT", "تسويات", "Adjustments", "General") })
             {
                 await EnsureJournalAsync(context, tenant, entity, journal, token);
                 journalCount++;
@@ -113,6 +117,9 @@ public sealed class LedgerSetupRepository(
             }
             foreach (var producer in Producers)
                 await EnsureProducerRegistrationAsync(context, tenant, entity, producer, token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.SettlementFxDifference, "SETTLEMENT_FX_DIFFERENCE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.SettlementWriteOff, "SETTLEMENT_WRITE_OFF_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.OpeningBalancePosted, "OPENING_BALANCE_V1", token);
 
             var configWasCreated = existing is null;
             await ExecuteAsync(context, "insert into finance_ledger.ledger_entity_configuration (tenant_id,legal_entity_id,id,mode,setup_template_code,active_configuration_version_id,initialized_at,version) values ($1,$2,$3,$4,$5,$6,$7,1) on conflict (tenant_id,legal_entity_id) do update set mode=excluded.mode,setup_template_code=excluded.setup_template_code,active_configuration_version_id=excluded.active_configuration_version_id,version=finance_ledger.ledger_entity_configuration.version+1", token, tenant.Value, entity.Value, existing?.Id ?? Guid.CreateVersion7(), mode.ToString(), request.TemplateCode.Trim(), configurationId, clock.GetUtcNow());
@@ -234,12 +241,34 @@ public sealed class LedgerSetupRepository(
 
     private static async Task EnsureMappingVersionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid mappingId, Guid accountId, CancellationToken ct) => await ExecuteAsync(context, "insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,version_number,effective_from,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,1,current_date,0,$5,'Active') on conflict (tenant_id,mapping_id,version_number) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), mappingId, accountId);
 
+    private async Task EnsureSimplePostingRuleAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, string factType, string code, CancellationToken ct)
+    {
+        await ExecuteAsync(context, "insert into finance_ledger.posting_rule(tenant_id,legal_entity_id,id,fact_type,fact_version,code,status,version,created_at) values($1,$2,$3,$4,1,$5,'Active',1,$6) on conflict(tenant_id,legal_entity_id,fact_type,fact_version,code) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), factType, code, clock.GetUtcNow());
+        var ruleId = await ScalarGuidAsync(context, "select id from finance_ledger.posting_rule where tenant_id=$1 and legal_entity_id=$2 and fact_type=$3 and fact_version=1 and code=$4", ct, tenant.Value, entity.Value, factType, code)
+            ?? throw new LedgerDomainException("ledger.posting_rule_missing", "A managed posting rule could not be created.");
+        await ExecuteAsync(context, "insert into finance_ledger.posting_rule_version(tenant_id,legal_entity_id,id,posting_rule_id,version_number,effective_from,status) values($1,$2,$3,$4,1,current_date,'Active') on conflict(tenant_id,posting_rule_id,version_number) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), ruleId);
+        var versionId = await ScalarGuidAsync(context, "select id from finance_ledger.posting_rule_version where tenant_id=$1 and legal_entity_id=$2 and posting_rule_id=$3 and version_number=1", ct, tenant.Value, entity.Value, ruleId)
+            ?? throw new LedgerDomainException("ledger.posting_rule_missing", "A managed posting rule version could not be created.");
+        var legs = factType switch
+        {
+            AccountingFactTypes.SettlementWriteOff => new[] { ("Receivable", "BaseAmount", "Credit"), ("BadDebtExpense", "BaseAmount", "Debit"), ("Payable", "BaseAmount", "Debit"), ("WriteOffIncome", "BaseAmount", "Credit") },
+            AccountingFactTypes.SettlementFxDifference => new[] { ("Receivable", "BaseAmount", "Debit"), ("FXGain", "BaseAmount", "Credit"), ("FXLoss", "BaseAmount", "Debit") },
+            _ => new[] { ("OpeningBalance", "BaseAmount", "Debit"), ("OpeningBalance", "BaseAmount", "Credit") }
+        };
+        for (var i = 0; i < legs.Length; i++)
+        {
+            var leg = legs[i];
+            await ExecuteAsync(context, "insert into finance_ledger.posting_rule_leg(tenant_id,legal_entity_id,id,posting_rule_version_id,sequence_no,semantic_role,amount_expression,direction) values($1,$2,$3,$4,$5,$6,$7,$8) on conflict(tenant_id,posting_rule_version_id,sequence_no) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), versionId, i + 1, leg.Item1, leg.Item2, leg.Item3);
+        }
+    }
+
     private static readonly (string Module, string FactType)[] Producers =
     [
         ("sales", AccountingFactTypes.CustomerInvoicePosted), ("sales", AccountingFactTypes.CustomerCreditNotePosted),
         ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade),
         ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment),
-        ("payroll", AccountingFactTypes.PayrollPosted), ("tax", AccountingFactTypes.TaxAdjustment)
+        ("payroll", AccountingFactTypes.PayrollPosted), ("tax", AccountingFactTypes.TaxAdjustment),
+        ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff)
     ];
 
     private async Task EnsureProducerRegistrationAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, (string Module, string FactType) producer, CancellationToken ct) => await ExecuteAsync(context, "insert into finance_ledger.fact_producer_registration (tenant_id,legal_entity_id,id,producer_module,fact_type,fact_version,status,registered_at) values ($1,$2,$3,$4,$5,1,'Active',$6) on conflict (tenant_id,legal_entity_id,producer_module,fact_type,fact_version) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), producer.Module, producer.FactType, clock.GetUtcNow());

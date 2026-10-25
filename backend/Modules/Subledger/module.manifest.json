@@ -2,15 +2,90 @@
   "$schema": "../../../docs/platform/module-manifest-schema.json",
   "id": "subledger",
   "version": "1.0.0",
-  "contractsVersion": 1,
+  "contractsVersion": 5,
   "layer": "L2",
   "type": "module",
   "purchasable": false,
   "scope": "tenant",
-  "dependencies": { "hard": ["platform-kernel", "ledger", "directory", "finbase"], "optionalCapabilities": [] },
-  "owns": { "schema": "finance_subledger", "entities": ["party_financial_profile", "party_open_item", "application_batch", "open_item_application", "application_reversal"] },
-  "permissions": ["subledger.read", "subledger.profile.manage", "subledger.application.create", "subledger.application.reverse"],
-  "capabilities": { "provides": ["subledger.open-items", "subledger.application", "subledger.party-financial-profile", "subledger.settlement-state"], "consumes": ["directory.party", "finbase.money", "finbase.payment-terms"] },
-  "messaging": { "publishes": [], "consumes": [] },
-  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+  "dependencies": {
+    "hard": [
+      "platform-kernel",
+      "ledger",
+      "directory",
+      "finbase"
+    ],
+    "optionalCapabilities": []
+  },
+  "owns": {
+    "schema": "finance_subledger",
+    "entities": [
+      "party_financial_profile",
+      "party_open_item",
+      "application_batch",
+      "open_item_application",
+      "application_reversal",
+      "write_off_policy",
+      "write_off_request",
+      "write_off",
+      "write_off_request_audit",
+      "control_reconciliation_run",
+      "control_reconciliation_detail",
+      "opening_batch",
+      "opening_batch_item"
+    ]
+  },
+  "permissions": [
+    "subledger.read",
+    "subledger.profile.read",
+    "subledger.profile.manage",
+    "subledger.credit_limit.read",
+    "subledger.credit_limit.manage",
+    "subledger.application.create",
+    "subledger.application.reverse",
+    "subledger.application.cross_currency",
+    "subledger.advance.create",
+    "subledger.credit-note.create",
+    "subledger.aging.read",
+    "subledger.statement.read",
+    "subledger.reconciliation.read",
+    "subledger.reconciliation.run",
+    "subledger.writeoff.policy.manage",
+    "subledger.writeoff.create",
+    "subledger.writeoff.approve",
+    "subledger.fx.manual-rate",
+    "subledger.opening.manage",
+    "subledger.opening.post",
+    "subledger.opening.finalize"
+  ],
+  "capabilities": {
+    "provides": [
+      "subledger.open-items",
+      "subledger.application",
+      "subledger.party-financial-profile",
+      "subledger.settlement-state",
+      "subledger.party-exposure",
+      "subledger.aging",
+      "subledger.statement",
+      "subledger.write-off",
+      "subledger.control-reconciliation",
+      "subledger.opening-migration"
+    ],
+    "consumes": [
+      "directory.party",
+      "finbase.money",
+      "finbase.exchange-rate",
+      "finbase.payment-terms",
+      "finbase.payment-schedule-calculation",
+      "ledger.semantic-settlement-facts",
+      "ledger.control-balance-read"
+    ]
+  },
+  "messaging": {
+    "publishes": [],
+    "consumes": []
+  },
+  "lifecycle": {
+    "supportsGoLive": true,
+    "deactivationPolicy": "blocked_if_dependents"
+  }
 }

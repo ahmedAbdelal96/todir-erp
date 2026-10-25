@@ -1,5 +1,8 @@
 using Modules.Subledger.Entities;
+using Modules.Subledger.Services;
+using Core.Authorization;
 using Shared.Contracts.Subledger;
+using Shared.Primitives.Identifiers;
 using Xunit;
 
 namespace Subledger.Tests;
@@ -40,5 +43,15 @@ public sealed class SubledgerDomainTests
 
         Assert.DoesNotContain("SourceType", propertyNames);
         Assert.DoesNotContain("SourceModule", propertyNames);
+    }
+
+    [Fact]
+    public async Task WriteOffPolicyRequiresTheDedicatedPermission()
+    {
+        var service = new SubledgerService(null!, null!, null!, null!, new NullAuthorizationSubjectStore(), new PermissionAuthorizer(), TimeProvider.System);
+        var exception = await Assert.ThrowsAsync<SubledgerException>(() => service.UpdateWriteOffPolicyAsync(
+            new TenantId(Guid.CreateVersion7()), Guid.CreateVersion7(),
+            new WriteOffPolicyCommand(new LegalEntityId(Guid.CreateVersion7()), SubledgerDirectionContract.Receivable, "EGP", "100", "10", 0)));
+        Assert.Equal("subledger.permission_denied", exception.Code);
     }
 }

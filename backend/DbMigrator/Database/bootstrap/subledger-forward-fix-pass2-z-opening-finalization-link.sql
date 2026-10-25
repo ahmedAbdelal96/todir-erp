@@ -1,0 +1,1 @@
+GRANT UPDATE (created_open_item_id) ON finance_subledger.opening_batch_item TO erp_app;

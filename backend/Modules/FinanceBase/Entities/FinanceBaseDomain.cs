@@ -144,11 +144,14 @@ public static class PaymentScheduleCalculator
         foreach (var rule in rules) ValidateRuleShape(rule);
         var ordered = rules.OrderBy(x => x.Sequence).ToArray(); var remaining = total; var result = new List<PaymentScheduleLine>();
         if (ordered.Any(x => x.Allocation == PaymentAllocation.Balance) && ordered[^1].Allocation != PaymentAllocation.Balance) throw new FinanceBaseDomainException("finbase.payment_term_invalid", "The Balance rule must be the final schedule line.");
+        var finalPercentageAbsorbsRoundingResidual = ordered[^1].Allocation == PaymentAllocation.Percentage
+            && ordered.All(x => x.Allocation == PaymentAllocation.Percentage)
+            && percentageRules.Sum(x => x.Percentage!.Value) == 1m;
         foreach (var rule in ordered)
         {
             try
             {
-                var amount = rule.Allocation switch { PaymentAllocation.Percentage => MoneyRounding.Round(checked(total * rule.Percentage!.Value), scale, allocationRoundingMode), PaymentAllocation.Fixed => rule.FixedAmount ?? throw new FinanceBaseDomainException("finbase.payment_term_invalid", "Fixed amount is required."), PaymentAllocation.Balance => remaining, _ => throw new FinanceBaseDomainException("finbase.payment_term_invalid", "Payment allocation is not supported.") };
+                var amount = rule.Allocation switch { PaymentAllocation.Percentage when finalPercentageAbsorbsRoundingResidual && rule.Sequence == ordered[^1].Sequence => remaining, PaymentAllocation.Percentage => MoneyRounding.Round(checked(total * rule.Percentage!.Value), scale, allocationRoundingMode), PaymentAllocation.Fixed => rule.FixedAmount ?? throw new FinanceBaseDomainException("finbase.payment_term_invalid", "Fixed amount is required."), PaymentAllocation.Balance => remaining, _ => throw new FinanceBaseDomainException("finbase.payment_term_invalid", "Payment allocation is not supported.") };
                 var exceedsRemainder = total switch { > 0m => amount < 0m || amount > remaining, < 0m => amount > 0m || amount < remaining, _ => amount != 0m };
                 if (rule.Allocation != PaymentAllocation.Balance && exceedsRemainder) throw new FinanceBaseDomainException("finbase.payment_term_invalid", "Payment term lines cannot exceed or reverse the document total.");
                 if (rule.Allocation != PaymentAllocation.Balance) remaining = checked(remaining - amount);

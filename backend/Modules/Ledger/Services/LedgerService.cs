@@ -6,8 +6,9 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Ledger.Services;
 
-public sealed class LedgerService(LedgerRepository repository, LedgerOperationsRepository operations, LedgerSetupRepository setup, LedgerUxRepository ux, LedgerPreviewService preview) : ILedgerPostingEngine
+public sealed class LedgerService(LedgerRepository repository, LedgerOperationsRepository operations, LedgerSetupRepository setup, LedgerUxRepository ux, LedgerPreviewService preview) : ILedgerPostingEngine, ILedgerControlBalanceRead
 {
+    public Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default) => repository.GetControlBalanceAsync(tenantId, legalEntityId, controlRole, configurationVersionId, asOfDate, cancellationToken);
     public Task<IReadOnlyList<AccountDto>> ListAccountsAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct) => repository.ListAccountsAsync(tenant, entity, ct);
     public Task<AccountDto> CreateAccountAsync(TenantId tenant, LegalEntityId entity, CreateAccountRequest request, CancellationToken ct) => repository.CreateAccountAsync(tenant, entity, request, ct);
     public Task<bool> ArchiveAccountAsync(TenantId tenant, LegalEntityId entity, Guid id, CancellationToken ct) => repository.ArchiveAccountAsync(tenant, entity, id, ct);

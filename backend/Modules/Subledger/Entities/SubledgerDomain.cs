@@ -5,7 +5,7 @@ public enum OpenItemPolarity { Debit, Credit }
 public enum OpenItemStatus { Open, PartiallySettled, Settled }
 public enum ApplicationOperation { Apply, Reverse }
 
-public sealed class SubledgerException(string code, string message) : Exception(message)
+public sealed class SubledgerException(string code, string message, Exception? innerException = null) : Exception(message, innerException)
 {
     public string Code { get; } = code;
 }

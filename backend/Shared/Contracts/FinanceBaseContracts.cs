@@ -2,6 +2,11 @@ using Shared.Primitives.Identifiers;
 
 namespace Shared.Contracts.FinanceBase;
 
+public class FinanceBaseCapabilityException(string code, string message) : Exception(message)
+{
+    public string Code { get; } = code;
+}
+
 public enum FinancialCalculationPurpose { Accounting, Sales, Purchase, Tax, Reporting }
 public enum FinancialRoundingContext { MoneySettlement, LineNetAmount, DocumentSubtotal, DocumentTotal, FxBaseAmount, PaymentScheduleLine, PaymentAllocation, CashRounding }
 public enum FinancialRoundingMode { HalfUp, HalfEven, Down, Up }
@@ -82,6 +87,12 @@ public sealed record PaymentScheduleLineContract(
     DateOnly DueDate,
     MoneyContract Amount);
 
+public sealed record PaymentTermScheduleSnapshotContract(
+    PaymentTermSnapshotContract PaymentTerm,
+    IReadOnlyList<PaymentScheduleLineContract> Lines,
+    FinancialRoundingPolicySnapshotContract RoundingPolicy,
+    DateTimeOffset CapturedAt);
+
 public sealed record CommercialPriceConversionContract(string SourceAmount, string SourceCurrencyCode, string TargetAmount, string TargetCurrencyCode, string Rate, ExchangeRateSnapshotContract? ExchangeRate);
 
 /// <summary>Public in-process boundary for resolved financial context and immutable term snapshots.</summary>
@@ -99,6 +110,15 @@ public interface IFinanceBaseCapabilities
         TenantId tenantId,
         Guid paymentTermId,
         DateOnly businessDate,
+        CancellationToken cancellationToken = default);
+
+    Task<PaymentTermScheduleSnapshotContract?> CalculatePaymentScheduleAsync(
+        TenantId tenantId,
+        LegalEntityId legalEntityId,
+        Guid paymentTermId,
+        string transactionCurrencyCode,
+        string totalAmount,
+        DateOnly basisDate,
         CancellationToken cancellationToken = default);
 
     Task<CommercialPriceConversionContract> ConvertCommercialUnitPriceAsync(

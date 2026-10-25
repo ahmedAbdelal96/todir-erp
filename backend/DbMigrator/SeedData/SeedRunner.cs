@@ -42,7 +42,8 @@ public static class SeedRunner
             var pricing = await RunStageAsync(connection, tenant, context => PricingSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var tax = await RunStageAsync(connection, tenant, context => TaxSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var ledger = await RunStageAsync(connection, tenant, context => LedgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
-            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger));
+            var subledger = await RunStageAsync(connection, tenant, context => SubledgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
+            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger));
         }
         return new(SeedIds.Version, summaries);
     }
@@ -64,7 +65,7 @@ public static class SeedRunner
     }
 }
 
-public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger);
+public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger);
 public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSummary> Tenants)
 {
     public void Print(TextWriter output)
@@ -82,6 +83,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  Pricing: {tenant.Pricing.PriceLists} lists, {tenant.Pricing.Entries} entries, {tenant.Pricing.ExplicitZeroPrices} explicit zero prices, {tenant.Pricing.ScheduledVersions} scheduled versions");
             output.WriteLine($"  Tax: {tenant.Tax.CapabilityEntities} legal entities (disabled and enabled), {tenant.Tax.RegisteredDevelopmentFixtures} synthetic registration, {tenant.Tax.UnreviewedCountryPacks} pack awaiting official review, {tenant.Tax.Categories} classifications");
             output.WriteLine($"  Ledger: {tenant.Ledger.LegalEntities} legal entities, {tenant.Ledger.Accounts} accounts, {tenant.Ledger.Periods} periods, invoice rule {(tenant.Ledger.HasInvoiceRule ? "ready" : "missing")}");
+            output.WriteLine($"  Subledger: {tenant.Subledger.OpenItems} open items, {tenant.Subledger.Installments} installments, {tenant.Subledger.FinancialProfiles} financial profiles");
         }
     }
 }

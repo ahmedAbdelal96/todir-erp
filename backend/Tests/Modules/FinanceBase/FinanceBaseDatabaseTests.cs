@@ -47,6 +47,31 @@ public sealed class FinanceBaseDatabaseTests
     }
 
     [Fact]
+    public async Task PaymentTermScheduleCapabilityReturnsImmutableFinBaseScheduleWithExactTotal()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_FINBASE_ADMIN_CONNECTION");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_FINBASE_RUNTIME_CONNECTION");
+        if (string.IsNullOrWhiteSpace(adminConnectionString) || string.IsNullOrWhiteSpace(runtimeConnectionString)) return;
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        await using var find = new NpgsqlCommand("select pt.id,ten.id,e.id,e.base_currency_code from platform.tenant ten join platform.legal_entity e on e.tenant_id=ten.id join foundation_finbase.payment_term pt on pt.tenant_id=ten.id and pt.code='INSTALL3' and pt.status='Active' where ten.slug='atlas-trading' order by e.code limit 1", admin);
+        await using var reader = await find.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return;
+        var termId = reader.GetGuid(0); var tenant = new TenantId(reader.GetGuid(1)); var entity = new LegalEntityId(reader.GetGuid(2)); var currency = reader.GetString(3).Trim();
+        await reader.CloseAsync();
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnectionString);
+        var repository = new FinanceBaseRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System);
+        var capabilities = new FinanceBaseCapabilities(repository, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System);
+        var first = await capabilities.CalculatePaymentScheduleAsync(tenant, entity, termId, currency, "100.01", new DateOnly(2026, 10, 25));
+        var replay = await capabilities.CalculatePaymentScheduleAsync(tenant, entity, termId, currency, "100.01", new DateOnly(2026, 10, 25));
+        Assert.NotNull(first);
+        Assert.Equal(3, first.Lines.Count);
+        Assert.Equal(100.01m, first.Lines.Sum(line => decimal.Parse(line.Amount.Amount, CultureInfo.InvariantCulture)));
+        Assert.Equal(first.PaymentTerm.VersionId, replay!.PaymentTerm.VersionId);
+        Assert.Equal(first.Lines, replay.Lines);
+    }
+
+    [Fact]
     public async Task RuntimeRoleCannotReadAnotherTenantFinBaseRows()
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_FINBASE_ADMIN_CONNECTION");

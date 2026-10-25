@@ -51,6 +51,31 @@ public sealed class LedgerAtomicityIntegrationTests
     }
 
     [Fact]
+    public async Task ExplicitFactReplayRejectsChangedPostingPayload()
+    {
+        await using var dataSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection());
+        var fixture = await CreateFixtureAsync(dataSource);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        await coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
+        {
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, ct);
+            return 0;
+        });
+
+        var changedPayload = fixture.Payload with { Description = "Changed payload under the same source identity" };
+        var conflict = await Assert.ThrowsAsync<LedgerDomainException>(() => coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
+        {
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, changedPayload, ct);
+            return 0;
+        }));
+
+        Assert.Equal("ledger.fact_duplicate_conflict", conflict.Code);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await LedgerTestSupport.SetTenantAsync(connection, LedgerTestSupport.AtlasTenant);
+        Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from finance_ledger.journal_entry where tenant_id=$1 and fact_id=$2", LedgerTestSupport.AtlasTenant.Value, fixture.Fact.FactId));
+    }
+
+    [Fact]
     public async Task ValidationFailureRollsBackBeforeAnyAccountingRowsCommit()
     {
         await using var dataSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection());

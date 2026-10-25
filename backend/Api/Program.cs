@@ -139,6 +139,7 @@ app.MapCatalogModule();
 app.MapFinanceBaseModule();
 app.MapPricingModule();
 app.MapTaxModule();
+app.MapSubledgerModule();
 app.MapLedgerModule();
 app.Run();
 

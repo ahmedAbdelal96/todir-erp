@@ -5,9 +5,11 @@ using Modules.Subledger.Repositories;
 using Shared.Contracts.Directory;
 using Shared.Contracts.FinanceBase;
 using Shared.Contracts.Subledger;
+using Shared.Contracts.Ledger;
 using Shared.Primitives.Financial;
 using Shared.Primitives.Identifiers;
 using Core.Services;
+using Core.Authorization;
 
 namespace Modules.Subledger.Services;
 
@@ -16,7 +18,10 @@ public sealed class SubledgerService(
     IDirectoryCapabilities directory,
     IFinanceBaseCapabilities financeBase,
     ILegalEntityFinancialReadStore legalEntities,
-    TimeProvider clock) : ISubledgerCapabilities
+    IAuthorizationSubjectStore authorizationSubjects,
+    IPermissionAuthorizer permissionAuthorizer,
+    TimeProvider clock,
+    ILedgerControlBalanceRead? ledgerControlRead = null) : ISubledgerCapabilities
 {
     public async Task<PartyFinancialProfileResult?> GetFinancialProfileAsync(TenantId tenantId, LegalEntityId entityId, Guid partyId, CancellationToken cancellationToken = default)
     {
@@ -26,9 +31,10 @@ public sealed class SubledgerService(
         return await repository.GetProfileAsync(tenantId, entityId, partyId, cancellationToken);
     }
 
-    public async Task<PartyFinancialProfileResult> UpdateFinancialProfileAsync(TenantId tenantId, PartyFinancialProfileCommand command, CancellationToken cancellationToken = default)
+    public async Task<PartyFinancialProfileResult> UpdateFinancialProfileAsync(TenantId tenantId, Guid membershipId, PartyFinancialProfileCommand command, CancellationToken cancellationToken = default)
     {
         ValidateIdentity(tenantId, command.LegalEntityId, command.PartyId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.profile.manage", command.LegalEntityId, cancellationToken);
         if (command.ExpectedVersion < 0) throw new SubledgerException("subledger.profile_version_invalid", "The profile version is invalid.");
         await EnsureEntityAsync(tenantId, command.LegalEntityId, cancellationToken);
         await EnsurePartyAsync(tenantId, command.LegalEntityId, command.PartyId, cancellationToken);
@@ -36,6 +42,11 @@ public sealed class SubledgerService(
         if (limit is < 0m) throw new SubledgerException("subledger.credit_limit_invalid", "Credit limit must be zero or greater.");
         var creditCurrency = command.CreditLimitCurrency is null ? null : NormalizeCurrency(command.CreditLimitCurrency);
         if ((limit is null) != (creditCurrency is null)) throw new SubledgerException("subledger.credit_limit_invalid", "Credit limit amount and currency must be provided together.");
+        var currentProfile = await repository.GetProfileAsync(tenantId, command.LegalEntityId, command.PartyId, cancellationToken);
+        var currentLimit = ParseOptionalAmount(currentProfile?.CreditLimitAmount);
+        var currentLimitCurrency = currentProfile?.CreditLimitCurrency is null ? null : NormalizeCurrency(currentProfile.CreditLimitCurrency);
+        if (currentLimit != limit || currentLimitCurrency != creditCurrency)
+            await RequirePermissionAsync(tenantId, membershipId, "subledger.credit_limit.manage", command.LegalEntityId, cancellationToken);
         if (limit is { } configuredLimit) EnsurePrecision(configuredLimit);
         if (creditCurrency is not null) await EnsureCurrencyEnabledAsync(tenantId, command.LegalEntityId, creditCurrency, DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), cancellationToken);
         ValidatePolicyCode(command.ReceivablePolicyCode);
@@ -52,6 +63,12 @@ public sealed class SubledgerService(
     public Task<IReadOnlyList<Guid>> CreatePayableOpenItemsAsync(TenantId tenantId, CreateOpenItemsCommand command, CancellationToken cancellationToken = default) =>
         CreateSourceItemsAsync(tenantId, command, SubledgerDirection.Payable, OpenItemPolarity.Credit, "Bill", cancellationToken);
 
+    public Task<IReadOnlyList<Guid>> CreateScheduledReceivableOpenItemsAsync(TenantId tenantId, CreateScheduledOpenItemsCommand command, CancellationToken cancellationToken = default) =>
+        CreateScheduledOpenItemsAsync(tenantId, command, SubledgerDirection.Receivable, OpenItemPolarity.Debit, "Invoice", cancellationToken);
+
+    public Task<IReadOnlyList<Guid>> CreateScheduledPayableOpenItemsAsync(TenantId tenantId, CreateScheduledOpenItemsCommand command, CancellationToken cancellationToken = default) =>
+        CreateScheduledOpenItemsAsync(tenantId, command, SubledgerDirection.Payable, OpenItemPolarity.Credit, "Bill", cancellationToken);
+
     public async Task<Guid> RegisterPaymentCreditAsync(TenantId tenantId, RegisterPaymentCreditCommand command, CancellationToken cancellationToken = default)
     {
         ValidateIdentity(tenantId, command.LegalEntityId, command.PartyId);
@@ -66,31 +83,271 @@ public sealed class SubledgerService(
         return ids[0];
     }
 
-    public async Task<SubledgerApplicationResult> ApplyAsync(TenantId tenantId, ApplyOpenItemsCommand command, CancellationToken cancellationToken = default)
+    public Task<Guid> RegisterAdvanceAsync(TenantId tenantId, Guid membershipId, RegisterPartyCreditCommand command, CancellationToken cancellationToken = default) =>
+        RegisterTrustedCreditAsync(tenantId, membershipId, command, "Advance", cancellationToken);
+
+    public Task<Guid> RegisterCreditNoteAsync(TenantId tenantId, Guid membershipId, RegisterPartyCreditCommand command, CancellationToken cancellationToken = default) =>
+        RegisterTrustedCreditAsync(tenantId, membershipId, command, "CreditNote", cancellationToken);
+
+    private async Task<Guid> RegisterTrustedCreditAsync(TenantId tenantId, Guid membershipId, RegisterPartyCreditCommand command, string sourceType, CancellationToken cancellationToken)
     {
         ValidateIdentity(tenantId, command.LegalEntityId, command.PartyId);
+        await RequirePermissionAsync(tenantId, membershipId, sourceType == "Advance" ? "subledger.advance.create" : "subledger.credit-note.create", command.LegalEntityId, cancellationToken);
+        EnsureActor(command.ActorId, command.CorrelationId);
+        var direction = MapDirection(command.Direction);
+        var credit = command.Credit with { DueDate = command.Credit.PostingDate };
+        var baseCurrency = await EnsureEntityAsync(tenantId, command.LegalEntityId, cancellationToken);
+        await EnsurePartyAsync(tenantId, command.LegalEntityId, command.PartyId, cancellationToken);
+        await EnsureCurrencyEnabledAsync(tenantId, command.LegalEntityId, NormalizeCurrency(credit.TransactionCurrency), credit.PostingDate, cancellationToken);
+        var normalized = ValidateSnapshot(credit, direction, baseCurrency);
+        var ids = await repository.CreateOpenItemsAsync(tenantId, command.LegalEntityId, command.PartyId, direction, SubledgerRules.PaymentPolarity(direction), sourceType, [normalized], cancellationToken);
+        return ids[0];
+    }
+
+    public async Task<SubledgerApplicationResult> ApplyAsync(TenantId tenantId, Guid membershipId, ApplyOpenItemsCommand command, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, command.LegalEntityId, command.PartyId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.application.create", command.LegalEntityId, cancellationToken);
         EnsureActor(command.ActorId, command.CorrelationId);
         if (command.Lines is null || command.Lines.Count is < 1 or > 200) throw new SubledgerException("subledger.application_lines_invalid", "An application must contain between one and 200 lines.");
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey) || command.IdempotencyKey.Trim().Length > 200) throw new SubledgerException("subledger.idempotency_key_invalid", "A valid idempotency key is required.");
-        var amounts = command.Lines.Select(line => ParseAmount(line.Amount)).ToArray();
-        foreach (var amount in amounts) { SubledgerRules.ValidatePositiveAmount(amount); EnsurePrecision(amount); }
+        var debitAmounts = command.Lines.Select(line => ParseAmount(line.Amount)).ToArray();
+        var creditAmounts = command.Lines.Select((line, index) => string.IsNullOrWhiteSpace(line.CreditAmount) ? debitAmounts[index] : ParseAmount(line.CreditAmount)).ToArray();
+        for (var index = 0; index < debitAmounts.Length; index++)
+        {
+            SubledgerRules.ValidatePositiveAmount(debitAmounts[index]); SubledgerRules.ValidatePositiveAmount(creditAmounts[index]);
+            EnsurePrecision(debitAmounts[index]); EnsurePrecision(creditAmounts[index]);
+        }
         var baseCurrency = await EnsureEntityAsync(tenantId, command.LegalEntityId, cancellationToken);
-        var financialContext = await financeBase.ResolveCalculationContextAsync(tenantId, command.LegalEntityId, baseCurrency, FinancialCalculationPurpose.Accounting, command.SettlementDate, cancellationToken)
+        var financialContext = await ResolveFinancialContextAsync(tenantId, command.LegalEntityId, baseCurrency, FinancialCalculationPurpose.Accounting, command.SettlementDate, cancellationToken)
             ?? throw new SubledgerException("subledger.financial_policy_unavailable", "The legal entity financial rounding policy is unavailable.");
         var rule = financialContext.RoundingPolicy.ContextRules.SingleOrDefault(item => item.Context == FinancialRoundingContext.PaymentAllocation)
             ?? throw new SubledgerException("subledger.financial_policy_unavailable", "The financial policy has no application rounding rule.");
         if (!Enum.TryParse<FinancialRoundingModeValue>(rule.Mode.ToString(), out var mode)) throw new SubledgerException("subledger.financial_policy_unavailable", "The application rounding rule is not supported.");
-        return await repository.ApplyAsync(tenantId, command, amounts, financialContext.RoundingPolicy.MoneyScale, mode, cancellationToken);
+        var baseRule = financialContext.RoundingPolicy.ContextRules.SingleOrDefault(item => item.Context == FinancialRoundingContext.FxBaseAmount)
+            ?? throw new SubledgerException("subledger.financial_policy_unavailable", "The financial policy has no base-currency settlement rounding rule.");
+        if (!Enum.TryParse<FinancialRoundingModeValue>(baseRule.Mode.ToString(), out var baseMode)) throw new SubledgerException("subledger.financial_policy_unavailable", "The base-currency settlement rounding rule is unsupported.");
+        var itemIds = command.Lines.SelectMany(line => new[] { line.DebitItemId, line.CreditItemId }).Distinct().ToArray();
+        var itemCurrencies = await repository.GetApplicationCurrenciesAsync(tenantId, command.LegalEntityId, itemIds, cancellationToken);
+        if (itemCurrencies.Count != itemIds.Length) throw new SubledgerException("subledger.open_item_not_found", "One or more open items were not found in this legal entity.");
+        if (command.Lines.Any(line => itemCurrencies[line.DebitItemId].TransactionCurrency != itemCurrencies[line.CreditItemId].TransactionCurrency))
+            await RequirePermissionAsync(tenantId, membershipId, "subledger.application.cross_currency", command.LegalEntityId, cancellationToken);
+        var currencyCodes = itemCurrencies.Values.Select(item => item.TransactionCurrency).Distinct(StringComparer.Ordinal).ToArray();
+        var contexts = new Dictionary<string, FinancialCalculationContextSnapshotContract>(StringComparer.Ordinal);
+        foreach (var currency in currencyCodes)
+            contexts[currency] = await ResolveFinancialContextAsync(tenantId, command.LegalEntityId, currency, FinancialCalculationPurpose.Accounting, command.SettlementDate, cancellationToken)
+                ?? throw new SubledgerException("subledger.currency_not_allowed", "A settlement currency is not enabled for this legal entity.");
+        decimal Rate(string currency)
+        {
+            var context = contexts[currency];
+            if (string.Equals(currency, baseCurrency, StringComparison.Ordinal)) return 1m;
+            if (context.ExchangeRate is null || !decimal.TryParse(context.ExchangeRate.Rate, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var resolvedRate) || resolvedRate <= 0m)
+                throw new SubledgerException("subledger.fx_rate_missing", "An approved settlement exchange rate is unavailable.");
+            return resolvedRate;
+        }
+        var resolvedLines = new List<ResolvedApplicationLineContract>(command.Lines.Count);
+        if (currencyCodes.Any(currency => contexts[currency].ExchangeRate?.ManualOverride == true))
+            await RequirePermissionAsync(tenantId, membershipId, "subledger.fx.manual-rate", command.LegalEntityId, cancellationToken);
+        for (var index = 0; index < command.Lines.Count; index++)
+        {
+            var line = command.Lines[index];
+            var debitCurrency = itemCurrencies[line.DebitItemId].TransactionCurrency;
+            var creditCurrency = itemCurrencies[line.CreditItemId].TransactionCurrency;
+            if (debitCurrency == creditCurrency && debitAmounts[index] != creditAmounts[index])
+                throw new SubledgerException("subledger.same_currency_amount_mismatch", "Same-currency applications must use equal transaction amounts.");
+            var debitBase = FinancialRounding.Round(debitAmounts[index] * Rate(debitCurrency), financialContext.RoundingPolicy.MoneyScale, baseMode);
+            var creditBase = FinancialRounding.Round(creditAmounts[index] * Rate(creditCurrency), financialContext.RoundingPolicy.MoneyScale, baseMode);
+            if (debitBase != creditBase) throw new SubledgerException("subledger.fx_equivalent_mismatch", "The applied amounts do not reconcile to the same settlement value in the legal entity base currency.");
+            resolvedLines.Add(new(line.DebitItemId, line.CreditItemId, debitAmounts[index].ToString(CultureInfo.InvariantCulture), creditAmounts[index].ToString(CultureInfo.InvariantCulture),
+                JsonSerializer.Serialize(contexts[debitCurrency]), JsonSerializer.Serialize(contexts[creditCurrency]), debitBase.ToString(CultureInfo.InvariantCulture)));
+        }
+        return await repository.ApplyAsync(tenantId, command, resolvedLines, financialContext.RoundingPolicy.MoneyScale, mode, cancellationToken);
     }
 
-    public async Task<SubledgerApplicationResult> ReverseAsync(TenantId tenantId, ReverseApplicationCommand command, CancellationToken cancellationToken = default)
+    public async Task<SubledgerApplicationResult> ReverseAsync(TenantId tenantId, Guid membershipId, ReverseApplicationCommand command, CancellationToken cancellationToken = default)
     {
         ValidateIdentity(tenantId, command.LegalEntityId, command.ApplicationId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.application.reverse", command.LegalEntityId, cancellationToken);
         EnsureActor(command.ActorId, command.CorrelationId);
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey) || command.IdempotencyKey.Trim().Length > 200) throw new SubledgerException("subledger.idempotency_key_invalid", "A valid idempotency key is required.");
         if (string.IsNullOrWhiteSpace(command.Reason) || command.Reason.Trim().Length > 1000) throw new SubledgerException("subledger.reversal_reason_required", "A reason is required to reverse an application.");
         _ = await EnsureEntityAsync(tenantId, command.LegalEntityId, cancellationToken);
         return await repository.ReverseAsync(tenantId, command, cancellationToken);
+    }
+
+    public async Task<WriteOffPolicyResult> UpdateWriteOffPolicyAsync(TenantId tenantId, Guid membershipId, WriteOffPolicyCommand command, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, command.LegalEntityId, Guid.NewGuid());
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.writeoff.policy.manage", command.LegalEntityId, cancellationToken);
+        _ = MapDirection(command.Direction);
+        if (command.ExpectedVersion < 0) throw new SubledgerException("subledger.writeoff_policy_version_invalid", "The write-off policy version is invalid.");
+        var currency = NormalizeCurrency(command.CurrencyCode);
+        var maximum = ParseAmount(command.MaximumAmount);
+        var threshold = ParseAmount(command.ApprovalThreshold);
+        EnsurePrecision(maximum); EnsurePrecision(threshold);
+        if (maximum <= 0m || threshold < 0m || threshold > maximum)
+            throw new SubledgerException("subledger.writeoff_policy_invalid", "The maximum must be positive and the approval threshold must be between zero and the maximum.");
+        await EnsureEntityAsync(tenantId, command.LegalEntityId, cancellationToken);
+        await EnsureCurrencyEnabledAsync(tenantId, command.LegalEntityId, currency, DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), cancellationToken);
+        return await repository.SaveWriteOffPolicyAsync(tenantId, command, maximum, threshold, currency, cancellationToken);
+    }
+
+    public async Task<Guid> CreateWriteOffRequestAsync(TenantId tenantId, Guid membershipId, CreateWriteOffCommand command, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, command.LegalEntityId, command.OpenItemId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.writeoff.create", command.LegalEntityId, cancellationToken);
+        EnsureActor(command.ActorId, command.CorrelationId);
+        if (command.EffectiveDate == DateOnly.MinValue) throw new SubledgerException("subledger.effective_date_required", "An effective date is required.");
+        if (string.IsNullOrWhiteSpace(command.IdempotencyKey) || command.IdempotencyKey.Trim().Length > 200) throw new SubledgerException("subledger.idempotency_key_invalid", "A valid idempotency key is required.");
+        if (string.IsNullOrWhiteSpace(command.ReasonCode) || command.ReasonCode.Trim().Length > 80 || string.IsNullOrWhiteSpace(command.ReasonText) || command.ReasonText.Trim().Length > 1000)
+            throw new SubledgerException("subledger.writeoff_reason_required", "A reason code and explanation are required.");
+        var amount = ParseAmount(command.Amount); SubledgerRules.ValidatePositiveAmount(amount); EnsurePrecision(amount);
+        _ = await EnsureEntityAsync(tenantId, command.LegalEntityId, cancellationToken);
+        var itemContext = await repository.GetOpenItemWriteOffContextAsync(tenantId, command.LegalEntityId, command.OpenItemId, cancellationToken)
+            ?? throw new SubledgerException("subledger.open_item_not_found", "The open item was not found in this legal entity.");
+        await EnsurePartyAsync(tenantId, command.LegalEntityId, itemContext.PartyId, cancellationToken);
+        var currency = NormalizeCurrency(itemContext.Currency);
+        var financial = await ResolveFinancialContextAsync(tenantId, command.LegalEntityId, currency, FinancialCalculationPurpose.Accounting, command.EffectiveDate, cancellationToken)
+            ?? throw new SubledgerException("subledger.financial_policy_unavailable", "The legal entity financial rounding policy is unavailable.");
+        var rule = financial.RoundingPolicy.ContextRules.SingleOrDefault(item => item.Context == FinancialRoundingContext.FxBaseAmount)
+            ?? throw new SubledgerException("subledger.financial_policy_unavailable", "The financial policy has no carrying-value rounding rule.");
+        if (!Enum.TryParse<FinancialRoundingModeValue>(rule.Mode.ToString(), out var mode)) throw new SubledgerException("subledger.financial_policy_unavailable", "The carrying-value rounding rule is unsupported.");
+        var scale = financial.RoundingPolicy.MoneyScale;
+        return await repository.CreateWriteOffRequestAsync(tenantId, command, amount, currency, checked((short)scale), mode.ToString(), cancellationToken);
+    }
+
+    public async Task<WriteOffResult> ApproveWriteOffAsync(TenantId tenantId, Guid membershipId, ApproveWriteOffCommand command, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, command.LegalEntityId, command.RequestId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.writeoff.approve", command.LegalEntityId, cancellationToken);
+        EnsureActor(command.ActorId, command.CorrelationId);
+        _ = await EnsureEntityAsync(tenantId, command.LegalEntityId, cancellationToken);
+        return await repository.ApproveWriteOffAsync(tenantId, command, cancellationToken);
+    }
+
+    public async Task<ReconciliationResult> ReconcileControlBalancesAsync(TenantId tenantId, Guid membershipId, ReconciliationQuery query, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, query.LegalEntityId, actorId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.reconciliation.run", query.LegalEntityId, cancellationToken);
+        EnsureActor(actorId, correlationId);
+        if (query.AsOfDate == DateOnly.MinValue) throw new SubledgerException("subledger.as_of_date_required", "An as-of date is required.");
+        var baseCurrency = await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
+        if (ledgerControlRead is null) throw new SubledgerException("subledger.ledger_capability_unavailable", "The Ledger control-balance read capability is unavailable.");
+        var sources = await repository.GetReconciliationSourceContextsAsync(tenantId, query.LegalEntityId, query.AsOfDate, cancellationToken);
+        var details = new List<ReconciliationDetail>(sources.Count);
+        foreach (var source in sources)
+        {
+            Guid? accountId = null;
+            var ledgerBalance = 0m;
+            var configurationId = Guid.Empty;
+            var resolved = source.ControlRole == source.Direction.ToString()
+                && source.BaseCurrencyCode == baseCurrency
+                && source.ControlConfigurationReference.StartsWith("configuration:", StringComparison.Ordinal)
+                && Guid.TryParse(source.ControlConfigurationReference["configuration:".Length..], out configurationId);
+            if (resolved)
+            {
+                try
+                {
+                    var snapshot = await ledgerControlRead.GetControlBalanceAsync(tenantId, query.LegalEntityId, source.ControlRole, configurationId, query.AsOfDate, cancellationToken);
+                    if (snapshot.BaseCurrencyCode == baseCurrency)
+                    {
+                        accountId = snapshot.AccountId;
+                        ledgerBalance = snapshot.SignedBaseBalance;
+                    }
+                    else resolved = false;
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception) { resolved = false; }
+            }
+            var variance = source.SubledgerBaseBalance - ledgerBalance;
+            details.Add(new(Guid.CreateVersion7(), source.Direction, source.ControlRole, source.ControlAccountReference, source.ControlConfigurationReference,
+                accountId, source.SubledgerBaseBalance.ToString(CultureInfo.InvariantCulture), ledgerBalance.ToString(CultureInfo.InvariantCulture),
+                variance.ToString(CultureInfo.InvariantCulture), resolved));
+        }
+        return await repository.SaveReconciliationRunAsync(tenantId, query.LegalEntityId, query.AsOfDate, baseCurrency, details, actorId, correlationId, clock.GetUtcNow(), cancellationToken);
+    }
+
+    public async Task<Guid> CreateOpeningSubledgerBatchAsync(TenantId tenantId, Guid membershipId, CreateOpeningSubledgerBatchCommand command, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, command.LegalEntityId, command.ActorId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.opening.manage", command.LegalEntityId, cancellationToken);
+        EnsureActor(command.ActorId, command.CorrelationId);
+        if (string.IsNullOrWhiteSpace(command.BatchIdentity) || command.BatchIdentity.Trim().Length > 120
+            || string.IsNullOrWhiteSpace(command.IdempotencyKey) || command.IdempotencyKey.Trim().Length > 200
+            || string.IsNullOrWhiteSpace(command.ControlConfigurationReference) || command.ControlConfigurationReference.Trim().Length > 240
+            || command.GoLiveDate == DateOnly.MinValue)
+            throw new SubledgerException("subledger.opening_batch_invalid", "Opening batch identity, effective date, accounting context, and idempotency key are required.");
+        var baseCurrency = await EnsureEntityAsync(tenantId, command.LegalEntityId, cancellationToken);
+        if (NormalizeCurrency(command.BaseCurrencyCode) != baseCurrency) throw new SubledgerException("subledger.base_currency_mismatch", "Opening balances must use the legal entity base currency.");
+        if (!TryConfigurationReference(command.ControlConfigurationReference, out _)) throw new SubledgerException("subledger.opening_configuration_invalid", "The opening batch must reference a valid Ledger accounting configuration.");
+        return await repository.CreateOpeningSubledgerBatchAsync(tenantId, command, baseCurrency, cancellationToken);
+    }
+
+    public async Task AddOpeningSubledgerLinesAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid batchId, IReadOnlyList<OpeningSubledgerLineCommand> lines, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, legalEntityId, batchId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.opening.manage", legalEntityId, cancellationToken);
+        if (lines is null || lines.Count is < 1 or > 500) throw new SubledgerException("subledger.opening_line_count_invalid", "Add between 1 and 500 opening rows at a time.");
+        var batch = await repository.GetOpeningSubledgerBatchAsync(tenantId, legalEntityId, batchId, cancellationToken)
+            ?? throw new SubledgerException("subledger.opening_batch_not_found", "The opening batch was not found in this legal entity.");
+        if (batch.Status != "Draft") throw new SubledgerException("subledger.opening_batch_immutable", "Finalized opening batches cannot be changed.");
+        if (lines.Select(line => line.RowKey.Trim()).Distinct(StringComparer.Ordinal).Count() != lines.Count)
+            throw new SubledgerException("subledger.opening_row_key_duplicate", "Opening row keys must be unique within the batch.");
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line.RowKey) || line.RowKey.Trim().Length > 120 || line.PartyId == Guid.Empty
+                || string.IsNullOrWhiteSpace(line.SourceReference) || line.SourceReference.Trim().Length > 240
+                || line.DocumentDate == DateOnly.MinValue || line.DueDate == DateOnly.MinValue || line.DocumentDate > batch.GoLiveDate)
+                throw new SubledgerException("subledger.opening_line_invalid", "Opening rows require a stable key, party, source reference, and valid dates.");
+            _ = MapDirection(line.Direction);
+            if (!Enum.IsDefined(line.Polarity) || !Enum.IsDefined(line.Direction) || line.ControlAccountRole != line.Direction.ToString()
+                || line.Polarity is not (SubledgerPolarityContract.Debit or SubledgerPolarityContract.Credit))
+                throw new SubledgerException("subledger.opening_direction_invalid", "The opening row control role or polarity is invalid.");
+            await EnsurePartyAsync(tenantId, legalEntityId, line.PartyId, cancellationToken);
+            var currency = NormalizeCurrency(line.TransactionCurrency);
+            if (NormalizeCurrency(line.BaseCurrency) != batch.BaseCurrencyCode || line.ControlConfigurationReference != batch.ControlConfigurationReference)
+                throw new SubledgerException("subledger.opening_context_mismatch", "Every opening row must use the batch base currency and Ledger configuration.");
+            var amount = ParseAmount(line.TransactionAmount); var baseAmount = ParseAmount(line.BaseAmount);
+            SubledgerRules.ValidatePositiveAmount(amount); EnsurePrecision(amount); if (baseAmount < 0m) throw new SubledgerException("subledger.amount_invalid", "The carrying amount cannot be negative."); EnsurePrecision(baseAmount);
+            await EnsureCurrencyEnabledAsync(tenantId, legalEntityId, currency, batch.GoLiveDate, cancellationToken);
+            if (currency == batch.BaseCurrencyCode && amount != baseAmount)
+                throw new SubledgerException("subledger.opening_base_amount_mismatch", "Base-currency opening items must have equal transaction and carrying amounts.");
+            if (currency != batch.BaseCurrencyCode && string.IsNullOrWhiteSpace(line.HistoricFxSnapshot))
+                throw new SubledgerException("subledger.opening_fx_snapshot_required", "Foreign-currency opening items require the historic conversion evidence.");
+            if (!string.IsNullOrWhiteSpace(line.HistoricFxSnapshot))
+            {
+                try { using var _ = JsonDocument.Parse(line.HistoricFxSnapshot); }
+                catch (JsonException exception) { throw new SubledgerException("subledger.fx_snapshot_invalid", "The opening FX evidence must be valid JSON.", exception); }
+            }
+        }
+        await repository.AddOpeningSubledgerLinesAsync(tenantId, legalEntityId, batchId, lines, cancellationToken);
+    }
+
+    public async Task<OpeningSubledgerBatchResult> FinalizeOpeningSubledgerBatchAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid batchId, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, legalEntityId, batchId); EnsureActor(actorId, correlationId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.opening.finalize", legalEntityId, cancellationToken);
+        var batch = await repository.GetOpeningSubledgerBatchAsync(tenantId, legalEntityId, batchId, cancellationToken)
+            ?? throw new SubledgerException("subledger.opening_batch_not_found", "The opening batch was not found in this legal entity.");
+        if (batch.Status == "Finalized") return await repository.FinalizeOpeningSubledgerBatchAsync(tenantId, legalEntityId, batchId, actorId, correlationId, cancellationToken);
+        var lines = await repository.GetOpeningSubledgerLinesAsync(tenantId, legalEntityId, batchId, cancellationToken);
+        if (lines.Count == 0) throw new SubledgerException("subledger.opening_batch_empty", "An opening batch must contain at least one outstanding item or credit.");
+        if (ledgerControlRead is null || !TryConfigurationReference(batch.ControlConfigurationReference, out var configurationId))
+            throw new SubledgerException("subledger.ledger_capability_unavailable", "The Ledger control-balance capability or configuration is unavailable.");
+        foreach (var direction in Enum.GetValues<SubledgerDirectionContract>())
+        {
+            var directionLines = lines.Select(row => row.Command).Where(line => line.Direction == direction).ToArray();
+            var subledgerTotal = directionLines.Sum(line =>
+            {
+                var amount = ParseAmount(line.BaseAmount);
+                var normalPolarity = direction == SubledgerDirectionContract.Receivable ? SubledgerPolarityContract.Debit : SubledgerPolarityContract.Credit;
+                return line.Polarity == normalPolarity ? amount : -amount;
+            });
+            var ledgerBalance = await ledgerControlRead.GetControlBalanceAsync(tenantId, legalEntityId, direction.ToString(), configurationId, batch.GoLiveDate, cancellationToken);
+            if (ledgerBalance.BaseCurrencyCode != batch.BaseCurrencyCode || ledgerBalance.SignedBaseBalance != subledgerTotal)
+                throw new SubledgerException("subledger.opening_reconciliation_mismatch", $"The {direction} opening total does not match its Ledger control balance.");
+        }
+        return await repository.FinalizeOpeningSubledgerBatchAsync(tenantId, legalEntityId, batchId, actorId, correlationId, cancellationToken);
     }
 
     public async Task<OpenItemPage> ListOpenItemsAsync(TenantId tenantId, OpenItemListQuery query, CancellationToken cancellationToken = default)
@@ -102,6 +359,65 @@ public sealed class SubledgerService(
         await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
         await EnsurePartyAsync(tenantId, query.LegalEntityId, query.PartyId, cancellationToken);
         return await repository.ListAsync(tenantId, query, cancellationToken);
+    }
+
+    public async Task<PartyBalanceResult> GetPartyBalanceAsync(TenantId tenantId, PartyBalanceQuery query, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, query.LegalEntityId, query.PartyId);
+        _ = MapDirection(query.Direction);
+        if (query.AsOfDate == DateOnly.MinValue) throw new SubledgerException("subledger.as_of_date_required", "An as-of date is required.");
+        var baseCurrency = await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
+        await EnsurePartyAsync(tenantId, query.LegalEntityId, query.PartyId, cancellationToken);
+        var balance = await repository.GetPartyBalanceAsync(tenantId, query, cancellationToken);
+        if (balance.CreditLimitAmount is null || balance.CreditLimitCurrency is null) return balance;
+        var currencies = balance.Currencies.Select(item => item.CurrencyCode).Append(balance.CreditLimitCurrency).Distinct(StringComparer.Ordinal).ToArray();
+        var contexts = new Dictionary<string, FinancialCalculationContextSnapshotContract>(StringComparer.Ordinal);
+        foreach (var currency in currencies)
+        {
+            if (currency == baseCurrency) continue;
+            var context = await ResolveFinancialContextAsync(tenantId, query.LegalEntityId, currency, FinancialCalculationPurpose.Reporting, query.AsOfDate, cancellationToken);
+            if (context?.ExchangeRate is null) return balance with { AvailableCreditAmount = null };
+            contexts[currency] = context;
+        }
+        decimal ToBase(string currency, decimal amount)
+        {
+            if (currency == baseCurrency) return amount;
+            var rate = ParseAmount(contexts[currency].ExchangeRate!.Rate);
+            return amount * rate;
+        }
+        var netExposureBase = balance.Currencies.Sum(item => ToBase(item.CurrencyCode, ParseAmount(item.NetBalance)));
+        var creditLimit = ParseAmount(balance.CreditLimitAmount);
+        var limitBase = ToBase(balance.CreditLimitCurrency, creditLimit);
+        var limitRate = balance.CreditLimitCurrency == baseCurrency ? 1m : ParseAmount(contexts[balance.CreditLimitCurrency].ExchangeRate!.Rate);
+        var rounding = await ResolveFinancialContextAsync(tenantId, query.LegalEntityId, baseCurrency, FinancialCalculationPurpose.Reporting, query.AsOfDate, cancellationToken);
+        var roundingRule = rounding?.RoundingPolicy.ContextRules.SingleOrDefault(rule => rule.Context == FinancialRoundingContext.FxBaseAmount);
+        if (rounding is null || roundingRule is null || !Enum.TryParse<FinancialRoundingModeValue>(roundingRule.Mode.ToString(), out var mode))
+            return balance with { AvailableCreditAmount = null };
+        var availableBase = FinancialRounding.Round(limitBase - netExposureBase, rounding.RoundingPolicy.MoneyScale, mode);
+        var availableCredit = FinancialRounding.Round(availableBase / limitRate, rounding.RoundingPolicy.MoneyScale, mode);
+        return balance with { AvailableCreditAmount = availableCredit.ToString(CultureInfo.InvariantCulture) };
+    }
+
+    public async Task<IReadOnlyList<AgingBucketResult>> GetAgingAsync(TenantId tenantId, Guid membershipId, AgingQuery query, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, query.LegalEntityId, query.PartyId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.aging.read", query.LegalEntityId, cancellationToken);
+        _ = MapDirection(query.Direction);
+        if (query.AsOfDate == DateOnly.MinValue) throw new SubledgerException("subledger.as_of_date_required", "An as-of date is required.");
+        await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
+        await EnsurePartyAsync(tenantId, query.LegalEntityId, query.PartyId, cancellationToken);
+        return await repository.GetAgingAsync(tenantId, query, cancellationToken);
+    }
+
+    public async Task<PartyStatementResult> GetStatementAsync(TenantId tenantId, Guid membershipId, PartyStatementQuery query, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, query.LegalEntityId, query.PartyId);
+        await RequirePermissionAsync(tenantId, membershipId, "subledger.statement.read", query.LegalEntityId, cancellationToken);
+        _ = MapDirection(query.Direction);
+        if (query.FromDate == DateOnly.MinValue || query.ToDate < query.FromDate) throw new SubledgerException("subledger.statement_range_invalid", "A valid statement date range is required.");
+        await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
+        await EnsurePartyAsync(tenantId, query.LegalEntityId, query.PartyId, cancellationToken);
+        return await repository.GetStatementAsync(tenantId, query, cancellationToken);
     }
 
     private async Task<IReadOnlyList<Guid>> CreateSourceItemsAsync(TenantId tenantId, CreateOpenItemsCommand command, SubledgerDirection direction, OpenItemPolarity polarity, string requiredSourceType, CancellationToken cancellationToken)
@@ -118,6 +434,49 @@ public sealed class SubledgerService(
         var snapshots = new List<OpenItemSnapshotContract>(command.Items.Count);
         foreach (var item in command.Items) snapshots.Add(ValidateSnapshot(item, direction, baseCurrency));
         return await repository.CreateOpenItemsAsync(tenantId, command.LegalEntityId, command.PartyId, direction, polarity, requiredSourceType, snapshots, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<Guid>> CreateScheduledOpenItemsAsync(TenantId tenantId, CreateScheduledOpenItemsCommand command, SubledgerDirection direction, OpenItemPolarity polarity, string sourceType, CancellationToken ct)
+    {
+        ValidateIdentity(tenantId, command.LegalEntityId, command.PartyId);
+        EnsureActor(command.ActorId, command.CorrelationId);
+        if (command.PaymentTermId == Guid.Empty) throw new SubledgerException("subledger.payment_term_not_found", "A payment term is required for an installment schedule.");
+        var source = command.Source;
+        if (source.SourceScheduleReference is not null) throw new SubledgerException("subledger.source_schedule_invalid", "The source must describe the whole document before installments are generated.");
+        var baseCurrency = await EnsureEntityAsync(tenantId, command.LegalEntityId, ct);
+        await EnsurePartyAsync(tenantId, command.LegalEntityId, command.PartyId, ct);
+        var transactionCurrency = NormalizeCurrency(source.TransactionCurrency);
+        if (!string.Equals(NormalizeCurrency(source.BaseCurrency), baseCurrency, StringComparison.Ordinal)) throw new SubledgerException("subledger.base_currency_mismatch", "The source base currency must match the legal entity.");
+        await EnsureCurrencyEnabledAsync(tenantId, command.LegalEntityId, transactionCurrency, source.PostingDate, ct);
+        var total = ParseAmount(source.OriginalTransactionAmount);
+        var baseTotal = ParseAmount(source.OriginalBaseAmount);
+        var schedule = await financeBase.CalculatePaymentScheduleAsync(tenantId, command.LegalEntityId, command.PaymentTermId, transactionCurrency, total.ToString(CultureInfo.InvariantCulture), source.DocumentDate, ct)
+            ?? throw new SubledgerException("subledger.payment_term_not_found", "The payment term is not active for the document date.");
+        if (schedule.Lines.Count is < 1 or > 200 || schedule.Lines.Any(line => ParseAmount(line.Amount.Amount) <= 0m) || schedule.Lines.Sum(line => ParseAmount(line.Amount.Amount)) != total)
+            throw new SubledgerException("subledger.payment_schedule_invalid", "The payment term must produce positive installments that exactly equal the source total.");
+        var baseRule = schedule.RoundingPolicy.ContextRules.SingleOrDefault(rule => rule.Context == FinancialRoundingContext.FxBaseAmount)
+            ?? throw new SubledgerException("subledger.financial_policy_unavailable", "The financial policy has no FX carrying-value rounding rule.");
+        if (!Enum.TryParse<FinancialRoundingModeValue>(baseRule.Mode.ToString(), out var baseMode)) throw new SubledgerException("subledger.financial_policy_unavailable", "The FX carrying-value rounding rule is unsupported.");
+        var normalized = new List<OpenItemSnapshotContract>(schedule.Lines.Count);
+        var allocatedBase = 0m;
+        for (var index = 0; index < schedule.Lines.Count; index++)
+        {
+            var line = schedule.Lines[index];
+            var amount = ParseAmount(line.Amount.Amount);
+            var baseAmount = index == schedule.Lines.Count - 1 ? baseTotal - allocatedBase : FinancialRounding.Round(baseTotal * amount / total, schedule.RoundingPolicy.MoneyScale, baseMode);
+            allocatedBase += baseAmount;
+            var termEvidence = JsonSerializer.Serialize(new { PaymentTerm = schedule.PaymentTerm, schedule.RoundingPolicy, Schedule = schedule.Lines, SelectedSequence = line.Sequence });
+            normalized.Add(ValidateSnapshot(source with
+            {
+                SourceScheduleReference = line.Sequence.ToString("D4", CultureInfo.InvariantCulture),
+                DueDate = line.DueDate,
+                OriginalTransactionAmount = amount.ToString(CultureInfo.InvariantCulture),
+                OriginalBaseAmount = baseAmount.ToString(CultureInfo.InvariantCulture),
+                PaymentTermSnapshot = termEvidence
+            }, direction, baseCurrency));
+        }
+        if (allocatedBase != baseTotal) throw new SubledgerException("subledger.payment_schedule_mismatch", "Installment carrying values do not reconcile to the source base amount.");
+        return await repository.CreateOpenItemsAsync(tenantId, command.LegalEntityId, command.PartyId, direction, polarity, sourceType, normalized, ct);
     }
 
     private static OpenItemSnapshotContract ValidateSnapshot(OpenItemSnapshotContract item, SubledgerDirection direction, string entityBase)
@@ -140,6 +499,12 @@ public sealed class SubledgerService(
             if (fxSnapshot.Length > 4000) throw new SubledgerException("subledger.fx_snapshot_invalid", "The historical currency snapshot is too large.");
             try { using var _ = JsonDocument.Parse(fxSnapshot); }
             catch (JsonException) { throw new SubledgerException("subledger.fx_snapshot_invalid", "The historical currency snapshot must contain valid JSON."); }
+        }
+        if (item.PaymentTermSnapshot is { } termSnapshot)
+        {
+            if (termSnapshot.Length > 8000) throw new SubledgerException("subledger.payment_term_snapshot_invalid", "The payment-term snapshot is too large.");
+            try { using var _ = JsonDocument.Parse(termSnapshot); }
+            catch (JsonException) { throw new SubledgerException("subledger.payment_term_snapshot_invalid", "The payment-term snapshot must contain valid JSON."); }
         }
         return item with
         {
@@ -179,6 +544,28 @@ public sealed class SubledgerService(
             throw new SubledgerException("subledger.payment_term_not_found", "The referenced payment term is unavailable.");
     }
 
+    private async Task RequirePermissionAsync(TenantId tenant, Guid membershipId, string permission, LegalEntityId entity, CancellationToken ct)
+    {
+        if (membershipId == Guid.Empty) throw new SubledgerException("subledger.authorization_required", "An authorized membership is required for this operation.");
+        var subject = await authorizationSubjects.LoadAsync(tenant, membershipId, ct);
+        if (subject is null || !permissionAuthorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, entity)))
+            throw new SubledgerException("subledger.permission_denied", "You do not have permission to perform this financial operation.");
+    }
+
+    private async Task<FinancialCalculationContextSnapshotContract?> ResolveFinancialContextAsync(TenantId tenant, LegalEntityId entity, string currency,
+        FinancialCalculationPurpose purpose, DateOnly businessDate, CancellationToken ct)
+    {
+        try { return await financeBase.ResolveCalculationContextAsync(tenant, entity, currency, purpose, businessDate, ct); }
+        catch (FinanceBaseCapabilityException exception)
+        {
+            var code = exception.Code.Contains("rate_stale", StringComparison.Ordinal) ? "subledger.fx_rate_stale"
+                : exception.Code.Contains("rate", StringComparison.Ordinal) ? "subledger.fx_rate_missing"
+                : exception.Code.Contains("currency", StringComparison.Ordinal) ? "subledger.currency_not_allowed"
+                : "subledger.financial_policy_unavailable";
+            throw new SubledgerException(code, exception.Message);
+        }
+    }
+
     private static decimal? ParseOptionalAmount(string? amount) => string.IsNullOrWhiteSpace(amount) ? null : ParseAmount(amount);
     private static decimal ParseAmount(string text) => decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value) ? value : throw new SubledgerException("subledger.amount_invalid", "Financial amounts must be invariant decimal values.");
     private static void EnsurePrecision(decimal value) { if (decimal.Round(value, 6, MidpointRounding.ToEven) != value) throw new SubledgerException("subledger.amount_precision_invalid", "Amounts may contain at most six decimal places."); }
@@ -205,5 +592,11 @@ public sealed class SubledgerService(
     private static void EnsureActor(Guid actorId, Guid correlationId)
     {
         if (actorId == Guid.Empty || correlationId == Guid.Empty) throw new SubledgerException("subledger.audit_context_required", "Actor and correlation context are required.");
+    }
+    private static bool TryConfigurationReference(string reference, out Guid configurationId)
+    {
+        configurationId = Guid.Empty;
+        return reference.StartsWith("configuration:", StringComparison.Ordinal)
+            && Guid.TryParse(reference["configuration:".Length..], out configurationId);
     }
 }

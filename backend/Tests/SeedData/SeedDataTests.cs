@@ -16,7 +16,10 @@ public sealed class DevelopmentSeedTests
             ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the fresh-database seed regression test.");
         var databaseName = $"todir_seed_{Guid.CreateVersion7():N}";
         var seedPassword = $"Seed-{Convert.ToHexString(RandomNumberGenerator.GetBytes(16))}a1";
-        var runtimePassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+        var repositoryRoot = FindRepositoryRoot();
+        // PostgreSQL roles are cluster-wide. Keep the local runtime credential stable
+        // while the test creates and drops its disposable database.
+        var runtimePassword = GetRuntimePassword(repositoryRoot);
         var adminBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString);
         var migratorBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = databaseName };
         var appBuilder = new NpgsqlConnectionStringBuilder(migratorBuilder.ConnectionString)
@@ -24,7 +27,6 @@ public sealed class DevelopmentSeedTests
             Username = "erp_app",
             Password = runtimePassword
         };
-        var repositoryRoot = FindRepositoryRoot();
         var databaseCreated = false;
 
         await using var adminDataSource = NpgsqlDataSource.Create(adminBuilder.ConnectionString);
@@ -38,7 +40,7 @@ public sealed class DevelopmentSeedTests
             var firstRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
             Assert.True(firstRun.ExitCode == 0, firstRun.Output);
             Assert.Contains("Development Seed Ready", firstRun.Output, StringComparison.Ordinal);
-            Assert.Contains("Ledger: 2 legal entities, 12 accounts, 24 periods, invoice rule ready", firstRun.Output, StringComparison.Ordinal);
+            Assert.Contains("Ledger: 2 legal entities, 24 accounts, 24 periods, invoice rule ready", firstRun.Output, StringComparison.Ordinal);
 
             await using var acceptanceDataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
             var firstCounts = await ReadCanonicalCountsAsync(acceptanceDataSource);
@@ -51,7 +53,7 @@ public sealed class DevelopmentSeedTests
             var secondRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
             Assert.True(secondRun.ExitCode == 0, secondRun.Output);
             Assert.Contains("Development Seed Ready", secondRun.Output, StringComparison.Ordinal);
-            Assert.Contains("Ledger: 2 legal entities, 12 accounts, 24 periods, invoice rule ready", secondRun.Output, StringComparison.Ordinal);
+            Assert.Contains("Ledger: 2 legal entities, 24 accounts, 24 periods, invoice rule ready", secondRun.Output, StringComparison.Ordinal);
             var secondCounts = await ReadCanonicalCountsAsync(acceptanceDataSource);
             Assert.Equal(firstCounts, secondCounts);
             Assert.Equal(2, firstCounts.Tenants);
@@ -71,6 +73,10 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(10, firstCounts.AtlasPriceLists + firstCounts.DeltaPriceLists);
             Assert.Equal(22, firstCounts.AtlasPriceEntries + firstCounts.DeltaPriceEntries);
             Assert.Equal(2, firstCounts.AtlasScheduledVersions + firstCounts.DeltaScheduledVersions);
+            Assert.Equal(11, firstCounts.AtlasOpenItems);
+            Assert.Equal(3, firstCounts.AtlasInstallments);
+            Assert.Equal(11, firstCounts.DeltaOpenItems);
+            Assert.Equal(3, firstCounts.DeltaInstallments);
         }
         finally
         {
@@ -227,14 +233,14 @@ public sealed class DevelopmentSeedTests
 
     private static async Task<CanonicalSeedCounts> ReadCanonicalCountsAsync(NpgsqlDataSource dataSource)
     {
-        const string sql = "select (select count(*) from platform.tenant where id = $1 or id = $2)::int, (select count(*) from platform.identity where tenant_id = $1)::int, (select count(*) from foundation_directory.party where tenant_id = $1)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $1)::int, (select count(*) from platform.identity where tenant_id = $2)::int, (select count(*) from foundation_directory.party where tenant_id = $2)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $2)::int, (select count(*) from platform.legal_entity)::int, (select count(*) from foundation_finbase.currency_reference)::int, (select count(*) from foundation_finbase.payment_term)::int, (select count(*) from foundation_finbase.legal_entity_currency)::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='CommercialRegistration')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='CommercialRegistration')::int, (select count(*) from foundation_pricing.price_list where tenant_id=$1)::int, (select count(*) from foundation_pricing.price_entry where tenant_id=$1)::int, (select count(*) from foundation_pricing.price_list_version where tenant_id=$1 and status='Scheduled')::int, (select count(*) from foundation_pricing.price_list where tenant_id=$2)::int, (select count(*) from foundation_pricing.price_entry where tenant_id=$2)::int, (select count(*) from foundation_pricing.price_list_version where tenant_id=$2 and status='Scheduled')::int";
+        const string sql = "select (select count(*) from platform.tenant where id = $1 or id = $2)::int, (select count(*) from platform.identity where tenant_id = $1)::int, (select count(*) from foundation_directory.party where tenant_id = $1)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $1)::int, (select count(*) from platform.identity where tenant_id = $2)::int, (select count(*) from foundation_directory.party where tenant_id = $2)::int, (select count(*) from foundation_catalog.product_template where tenant_id = $2)::int, (select count(*) from platform.legal_entity)::int, (select count(*) from foundation_finbase.currency_reference)::int, (select count(*) from foundation_finbase.payment_term)::int, (select count(*) from foundation_finbase.legal_entity_currency)::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$1 and identifier_type='CommercialRegistration')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='TaxIdentifier')::int, (select count(*) from foundation_directory.party_identifier where tenant_id=$2 and identifier_type='CommercialRegistration')::int, (select count(*) from foundation_pricing.price_list where tenant_id=$1)::int, (select count(*) from foundation_pricing.price_entry where tenant_id=$1)::int, (select count(*) from foundation_pricing.price_list_version where tenant_id=$1 and status='Scheduled')::int, (select count(*) from foundation_pricing.price_list where tenant_id=$2)::int, (select count(*) from foundation_pricing.price_entry where tenant_id=$2)::int, (select count(*) from foundation_pricing.price_list_version where tenant_id=$2 and status='Scheduled')::int, (select count(*) from finance_subledger.party_open_item where tenant_id=$1)::int, (select count(*) from finance_subledger.party_open_item where tenant_id=$1 and source_schedule_reference is not null)::int, (select count(*) from finance_subledger.party_open_item where tenant_id=$2)::int, (select count(*) from finance_subledger.party_open_item where tenant_id=$2 and source_schedule_reference is not null)::int";
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(SeedIds.AtlasTenant);
         command.Parameters.AddWithValue(SeedIds.DeltaTenant);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
-        return new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12), reader.GetInt32(13), reader.GetInt32(14), reader.GetInt32(15), reader.GetInt32(16), reader.GetInt32(17), reader.GetInt32(18), reader.GetInt32(19), reader.GetInt32(20));
+        return new(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12), reader.GetInt32(13), reader.GetInt32(14), reader.GetInt32(15), reader.GetInt32(16), reader.GetInt32(17), reader.GetInt32(18), reader.GetInt32(19), reader.GetInt32(20), reader.GetInt32(21), reader.GetInt32(22), reader.GetInt32(23), reader.GetInt32(24));
     }
 
     private static async Task AssertFinBaseCanonicalScenariosAsync(NpgsqlDataSource dataSource)
@@ -318,5 +324,25 @@ public sealed class DevelopmentSeedTests
         throw new DirectoryNotFoundException("Could not find the repository root from the configured root, working directory, or seed test output.");
     }
 
-    private sealed record CanonicalSeedCounts(int Tenants, int AtlasUsers, int AtlasParties, int AtlasProducts, int DeltaUsers, int DeltaParties, int DeltaProducts, int LegalEntities, int ReferenceCurrencies, int PaymentTerms, int EnabledEntityCurrencies, int AtlasVatIdentifiers, int AtlasCommercialRegistrations, int DeltaVatIdentifiers, int DeltaCommercialRegistrations, int AtlasPriceLists, int AtlasPriceEntries, int AtlasScheduledVersions, int DeltaPriceLists, int DeltaPriceEntries, int DeltaScheduledVersions);
+    private static string GetRuntimePassword(string repositoryRoot)
+    {
+        var configured = Environment.GetEnvironmentVariable("TODIR_RUNTIME_PASSWORD");
+        if (!string.IsNullOrWhiteSpace(configured)) return configured;
+
+        var developmentSettings = Path.Combine(repositoryRoot, "backend", "appsettings.Development.json");
+        if (File.Exists(developmentSettings))
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(developmentSettings));
+            if (document.RootElement.TryGetProperty("TODIR_DATABASE_CONNECTION", out var connection)
+                && connection.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var password = new NpgsqlConnectionStringBuilder(connection.GetString()).Password;
+                if (!string.IsNullOrWhiteSpace(password)) return password;
+            }
+        }
+
+        return Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+    }
+
+    private sealed record CanonicalSeedCounts(int Tenants, int AtlasUsers, int AtlasParties, int AtlasProducts, int DeltaUsers, int DeltaParties, int DeltaProducts, int LegalEntities, int ReferenceCurrencies, int PaymentTerms, int EnabledEntityCurrencies, int AtlasVatIdentifiers, int AtlasCommercialRegistrations, int DeltaVatIdentifiers, int DeltaCommercialRegistrations, int AtlasPriceLists, int AtlasPriceEntries, int AtlasScheduledVersions, int DeltaPriceLists, int DeltaPriceEntries, int DeltaScheduledVersions, int AtlasOpenItems, int AtlasInstallments, int DeltaOpenItems, int DeltaInstallments);
 }
