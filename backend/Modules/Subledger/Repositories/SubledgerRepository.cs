@@ -609,28 +609,60 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await SetTenantAsync(connection, transaction, tenant, ct);
         const string sql = """
-            with item_balance as (
+            with party_items as materialized (
               select i.id,i.transaction_currency,i.polarity,i.due_date,i.row_version,
-                i.original_transaction_amount - coalesce(applied.amount,0) + coalesce(reversed.amount,0) - coalesce(written_off.amount,0) as remaining
+                i.original_transaction_amount as original_amount
               from finance_subledger.party_open_item i
-              left join lateral (
-                select sum(case when a.debit_item_id=i.id then a.debit_applied_amount else a.credit_applied_amount end) as amount
-                from finance_subledger.open_item_application a
-                where a.tenant_id=i.tenant_id and a.legal_entity_id=i.legal_entity_id
-                  and (a.debit_item_id=i.id or a.credit_item_id=i.id) and a.application_date <= $4
-              ) applied on true
-              left join lateral (
-                select sum(case when a.debit_item_id=i.id then a.debit_applied_amount else a.credit_applied_amount end) as amount
-                from finance_subledger.application_reversal r
-                join finance_subledger.open_item_application a on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
-                where r.tenant_id=i.tenant_id and r.legal_entity_id=i.legal_entity_id
-                  and (a.debit_item_id=i.id or a.credit_item_id=i.id) and r.effective_date <= $4
-              ) reversed on true
-              left join lateral (
-                select sum(w.amount) as amount from finance_subledger.write_off w
-                where w.tenant_id=i.tenant_id and w.legal_entity_id=i.legal_entity_id and w.open_item_id=i.id and w.effective_date <= $4
-              ) written_off on true
               where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$5 and i.posting_date <= $4
+            ), application_effects as (
+              select item_id,sum(amount) as amount from (
+                select a.debit_item_id as item_id,a.debit_applied_amount as amount
+                from finance_subledger.application_batch b
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=b.tenant_id and a.legal_entity_id=b.legal_entity_id and a.batch_id=b.id
+                join party_items i on i.id=a.debit_item_id
+                where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$5 and a.application_date <= $4
+                union all
+                select a.credit_item_id as item_id,a.credit_applied_amount as amount
+                from finance_subledger.application_batch b
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=b.tenant_id and a.legal_entity_id=b.legal_entity_id and a.batch_id=b.id
+                join party_items i on i.id=a.credit_item_id
+                where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$5 and a.application_date <= $4
+              ) lines group by item_id
+            ), reversal_effects as (
+              select item_id,sum(amount) as amount from (
+                select a.debit_item_id as item_id,a.debit_applied_amount as amount
+                from finance_subledger.application_reversal r
+                join finance_subledger.application_batch rb
+                  on rb.tenant_id=r.tenant_id and rb.legal_entity_id=r.legal_entity_id and rb.id=r.reversal_batch_id
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
+                join party_items i on i.id=a.debit_item_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and rb.party_id=$3 and rb.direction=$5 and r.effective_date <= $4
+                union all
+                select a.credit_item_id as item_id,a.credit_applied_amount as amount
+                from finance_subledger.application_reversal r
+                join finance_subledger.application_batch rb
+                  on rb.tenant_id=r.tenant_id and rb.legal_entity_id=r.legal_entity_id and rb.id=r.reversal_batch_id
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
+                join party_items i on i.id=a.credit_item_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and rb.party_id=$3 and rb.direction=$5 and r.effective_date <= $4
+              ) lines group by item_id
+            ), write_off_effects as (
+              select w.open_item_id as item_id,sum(w.amount) as amount
+              from finance_subledger.write_off w
+              join party_items i on i.id=w.open_item_id
+              where w.tenant_id=$1 and w.legal_entity_id=$2 and w.effective_date <= $4
+              group by w.open_item_id
+            ), item_balance as (
+              select i.transaction_currency,i.polarity,i.due_date,i.row_version,
+                i.original_amount - coalesce(a.amount,0) + coalesce(r.amount,0) - coalesce(w.amount,0) as remaining
+              from party_items i
+              left join application_effects a on a.item_id=i.id
+              left join reversal_effects r on r.item_id=i.id
+              left join write_off_effects w on w.item_id=i.id
             )
             select transaction_currency,
               coalesce(sum(case when polarity=$6 then remaining else 0 end),0),
@@ -677,28 +709,60 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await SetTenantAsync(connection, transaction, tenant, ct);
         const string sql = """
-            with remaining as (
+            with party_items as materialized (
               select i.id,i.transaction_currency,i.due_date,
-                i.original_transaction_amount - coalesce(applied.amount,0) + coalesce(reversed.amount,0) - coalesce(written_off.amount,0) as amount
+                i.original_transaction_amount as original_amount
               from finance_subledger.party_open_item i
-              left join lateral (
-                select sum(case when a.debit_item_id=i.id then a.debit_applied_amount else a.credit_applied_amount end) as amount
-                from finance_subledger.open_item_application a
-                where a.tenant_id=i.tenant_id and a.legal_entity_id=i.legal_entity_id
-                  and (a.debit_item_id=i.id or a.credit_item_id=i.id) and a.application_date <= $4
-              ) applied on true
-              left join lateral (
-                select sum(case when a.debit_item_id=i.id then a.debit_applied_amount else a.credit_applied_amount end) as amount
-                from finance_subledger.application_reversal r
-                join finance_subledger.open_item_application a on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
-                where r.tenant_id=i.tenant_id and r.legal_entity_id=i.legal_entity_id
-                  and (a.debit_item_id=i.id or a.credit_item_id=i.id) and r.effective_date <= $4
-              ) reversed on true
-              left join lateral (
-                select sum(w.amount) as amount from finance_subledger.write_off w
-                where w.tenant_id=i.tenant_id and w.legal_entity_id=i.legal_entity_id and w.open_item_id=i.id and w.effective_date <= $4
-              ) written_off on true
               where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$5 and i.polarity=$6 and i.posting_date <= $4
+            ), application_effects as (
+              select item_id,sum(amount) as amount from (
+                select a.debit_item_id as item_id,a.debit_applied_amount as amount
+                from finance_subledger.application_batch b
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=b.tenant_id and a.legal_entity_id=b.legal_entity_id and a.batch_id=b.id
+                join party_items i on i.id=a.debit_item_id
+                where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$5 and a.application_date <= $4
+                union all
+                select a.credit_item_id as item_id,a.credit_applied_amount as amount
+                from finance_subledger.application_batch b
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=b.tenant_id and a.legal_entity_id=b.legal_entity_id and a.batch_id=b.id
+                join party_items i on i.id=a.credit_item_id
+                where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$5 and a.application_date <= $4
+              ) lines group by item_id
+            ), reversal_effects as (
+              select item_id,sum(amount) as amount from (
+                select a.debit_item_id as item_id,a.debit_applied_amount as amount
+                from finance_subledger.application_reversal r
+                join finance_subledger.application_batch rb
+                  on rb.tenant_id=r.tenant_id and rb.legal_entity_id=r.legal_entity_id and rb.id=r.reversal_batch_id
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
+                join party_items i on i.id=a.debit_item_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and rb.party_id=$3 and rb.direction=$5 and r.effective_date <= $4
+                union all
+                select a.credit_item_id as item_id,a.credit_applied_amount as amount
+                from finance_subledger.application_reversal r
+                join finance_subledger.application_batch rb
+                  on rb.tenant_id=r.tenant_id and rb.legal_entity_id=r.legal_entity_id and rb.id=r.reversal_batch_id
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
+                join party_items i on i.id=a.credit_item_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and rb.party_id=$3 and rb.direction=$5 and r.effective_date <= $4
+              ) lines group by item_id
+            ), write_off_effects as (
+              select w.open_item_id as item_id,sum(w.amount) as amount
+              from finance_subledger.write_off w
+              join party_items i on i.id=w.open_item_id
+              where w.tenant_id=$1 and w.legal_entity_id=$2 and w.effective_date <= $4
+              group by w.open_item_id
+            ), remaining as (
+              select i.id,i.transaction_currency,i.due_date,
+                i.original_amount - coalesce(a.amount,0) + coalesce(r.amount,0) - coalesce(w.amount,0) as amount
+              from party_items i
+              left join application_effects a on a.item_id=i.id
+              left join reversal_effects r on r.item_id=i.id
+              left join write_off_effects w on w.item_id=i.id
             )
             select transaction_currency,
               coalesce(sum(amount) filter(where due_date >= $4),0),
@@ -722,29 +786,60 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await SetTenantAsync(connection, transaction, tenant, ct);
         const string sql = """
-            with opening as (
-              select i.transaction_currency,
-                sum(case when i.polarity=$6 then i.original_transaction_amount - coalesce(applied.amount,0) + coalesce(reversed.amount,0) - coalesce(written_off.amount,0)
-                         else -(i.original_transaction_amount - coalesce(applied.amount,0) + coalesce(reversed.amount,0) - coalesce(written_off.amount,0)) end) as balance
+            with party_items as materialized (
+              select i.id,i.transaction_currency,i.polarity,i.original_transaction_amount
               from finance_subledger.party_open_item i
-              left join lateral (
-                select sum(case when a.debit_item_id=i.id then a.debit_applied_amount else a.credit_applied_amount end) as amount
-                from finance_subledger.open_item_application a
-                where a.tenant_id=i.tenant_id and a.legal_entity_id=i.legal_entity_id
-                  and (a.debit_item_id=i.id or a.credit_item_id=i.id) and a.application_date < $5
-              ) applied on true
-              left join lateral (
-                select sum(case when a.debit_item_id=i.id then a.debit_applied_amount else a.credit_applied_amount end) as amount
-                from finance_subledger.application_reversal r
-                join finance_subledger.open_item_application a on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
-                where r.tenant_id=i.tenant_id and r.legal_entity_id=i.legal_entity_id
-                  and (a.debit_item_id=i.id or a.credit_item_id=i.id) and r.effective_date < $5
-              ) reversed on true
-              left join lateral (
-                select sum(w.amount) as amount from finance_subledger.write_off w
-                where w.tenant_id=i.tenant_id and w.legal_entity_id=i.legal_entity_id and w.open_item_id=i.id and w.effective_date < $5
-              ) written_off on true
               where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$4 and i.posting_date < $5
+            ), application_effects as (
+              select item_id,sum(amount) as amount from (
+                select a.debit_item_id as item_id,a.debit_applied_amount as amount
+                from finance_subledger.application_batch b
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=b.tenant_id and a.legal_entity_id=b.legal_entity_id and a.batch_id=b.id
+                join party_items i on i.id=a.debit_item_id
+                where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$4 and a.application_date < $5
+                union all
+                select a.credit_item_id as item_id,a.credit_applied_amount as amount
+                from finance_subledger.application_batch b
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=b.tenant_id and a.legal_entity_id=b.legal_entity_id and a.batch_id=b.id
+                join party_items i on i.id=a.credit_item_id
+                where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$4 and a.application_date < $5
+              ) lines group by item_id
+            ), reversal_effects as (
+              select item_id,sum(amount) as amount from (
+                select a.debit_item_id as item_id,a.debit_applied_amount as amount
+                from finance_subledger.application_reversal r
+                join finance_subledger.application_batch rb
+                  on rb.tenant_id=r.tenant_id and rb.legal_entity_id=r.legal_entity_id and rb.id=r.reversal_batch_id
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
+                join party_items i on i.id=a.debit_item_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and rb.party_id=$3 and rb.direction=$4 and r.effective_date < $5
+                union all
+                select a.credit_item_id as item_id,a.credit_applied_amount as amount
+                from finance_subledger.application_reversal r
+                join finance_subledger.application_batch rb
+                  on rb.tenant_id=r.tenant_id and rb.legal_entity_id=r.legal_entity_id and rb.id=r.reversal_batch_id
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
+                join party_items i on i.id=a.credit_item_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and rb.party_id=$3 and rb.direction=$4 and r.effective_date < $5
+              ) lines group by item_id
+            ), write_off_effects as (
+              select w.open_item_id as item_id,sum(w.amount) as amount
+              from finance_subledger.write_off w
+              join party_items i on i.id=w.open_item_id
+              where w.tenant_id=$1 and w.legal_entity_id=$2 and w.effective_date < $5
+              group by w.open_item_id
+            ), opening as (
+              select i.transaction_currency,
+                sum(case when i.polarity=$6 then i.original_transaction_amount - coalesce(a.amount,0) + coalesce(r.amount,0) - coalesce(w.amount,0)
+                         else -(i.original_transaction_amount - coalesce(a.amount,0) + coalesce(r.amount,0) - coalesce(w.amount,0)) end) as balance
+              from party_items i
+              left join application_effects a on a.item_id=i.id
+              left join reversal_effects r on r.item_id=i.id
+              left join write_off_effects w on w.item_id=i.id
               group by i.transaction_currency
             ), events as (
               select posting_date as effective_date,posting_date,10::bigint as source_sequence,id,source_type,source_reference,

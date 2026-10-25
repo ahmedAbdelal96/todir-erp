@@ -1,5 +1,29 @@
 -- Disposable performance database only. Creates one million closed items,
 -- one hundred thousand open hot-party items, and five million applications.
+DO $guard$
+BEGIN
+    IF current_database() NOT LIKE 'subledger_pass3_perf_%' THEN
+        RAISE EXCEPTION 'Scale data may only be loaded into a dedicated Subledger performance database';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolsuper) THEN
+        RAISE EXCEPTION 'Scale data generation requires the dedicated performance database administrator';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM finance_subledger.party_open_item
+        WHERE source_reference LIKE 'S3-INV-%' OR source_reference LIKE 'S3-PAY-%' OR source_reference LIKE 'S3-HOT-%'
+    ) OR EXISTS (
+        SELECT 1 FROM finance_subledger.application_batch
+        WHERE idempotency_key LIKE 's3-performance-%'
+    ) THEN
+        RAISE EXCEPTION 'Scale dataset already exists; use a clean disposable performance database';
+    END IF;
+END
+$guard$;
+
+-- The fixture is generated directly in a disposable performance database. Disable
+-- only trigger-based FK checks while bulk loading, then verify every generated
+-- application reference before collecting plans or latency measurements.
+SET session_replication_role = replica;
 SET row_security = off;
 
 DO $dataset$
@@ -115,6 +139,51 @@ BEGIN
     CROSS JOIN generate_series(1, closed_count) AS n;
 END
 $dataset$;
+
+SET session_replication_role = origin;
+
+DO $verify$
+DECLARE
+    generated_items bigint;
+    generated_batches bigint;
+    generated_applications bigint;
+    invalid_applications bigint;
+BEGIN
+    SELECT count(*) INTO generated_items
+    FROM finance_subledger.party_open_item
+    WHERE source_reference LIKE 'S3-INV-%' OR source_reference LIKE 'S3-PAY-%' OR source_reference LIKE 'S3-HOT-%';
+
+    SELECT count(*) INTO generated_batches
+    FROM finance_subledger.application_batch
+    WHERE idempotency_key LIKE 's3-performance-%';
+
+    SELECT count(*), count(*) FILTER (WHERE debit.id IS NULL OR credit.id IS NULL
+        OR debit.tenant_id <> application.tenant_id OR credit.tenant_id <> application.tenant_id
+        OR debit.legal_entity_id <> application.legal_entity_id OR credit.legal_entity_id <> application.legal_entity_id
+        OR debit.party_id <> batch.party_id OR credit.party_id <> batch.party_id
+        OR debit.direction <> batch.direction OR credit.direction <> batch.direction)
+    INTO generated_applications, invalid_applications
+    FROM finance_subledger.open_item_application AS application
+    JOIN finance_subledger.application_batch AS batch
+      ON batch.tenant_id = application.tenant_id
+     AND batch.legal_entity_id = application.legal_entity_id
+     AND batch.id = application.batch_id
+     AND batch.idempotency_key LIKE 's3-performance-%'
+    LEFT JOIN finance_subledger.party_open_item AS debit
+      ON debit.tenant_id = application.tenant_id
+     AND debit.legal_entity_id = application.legal_entity_id
+     AND debit.id = application.debit_item_id
+    LEFT JOIN finance_subledger.party_open_item AS credit
+      ON credit.tenant_id = application.tenant_id
+     AND credit.legal_entity_id = application.legal_entity_id
+     AND credit.id = application.credit_item_id;
+
+    IF generated_items <> 1100000 OR generated_batches <> 50000 OR generated_applications <> 5000000 OR invalid_applications <> 0 THEN
+        RAISE EXCEPTION 'Scale data validation failed: items %, batches %, applications %, invalid application references %',
+            generated_items, generated_batches, generated_applications, invalid_applications;
+    END IF;
+END
+$verify$;
 
 ANALYZE finance_subledger.party_open_item;
 ANALYZE finance_subledger.application_batch;
