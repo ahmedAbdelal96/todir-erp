@@ -126,6 +126,10 @@ ALTER TABLE finance_subledger.write_off ENABLE ROW LEVEL SECURITY;
 ALTER TABLE finance_subledger.write_off FORCE ROW LEVEL SECURITY;
 ALTER TABLE finance_subledger.write_off_request_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE finance_subledger.write_off_request_audit FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON finance_subledger.write_off_policy;
+DROP POLICY IF EXISTS tenant_isolation ON finance_subledger.write_off_request;
+DROP POLICY IF EXISTS tenant_isolation ON finance_subledger.write_off;
+DROP POLICY IF EXISTS tenant_isolation ON finance_subledger.write_off_request_audit;
 CREATE POLICY tenant_isolation ON finance_subledger.write_off_policy
     USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
     WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);

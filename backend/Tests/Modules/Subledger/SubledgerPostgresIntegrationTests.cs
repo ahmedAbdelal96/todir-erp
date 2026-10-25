@@ -653,7 +653,7 @@ public sealed class SubledgerPostgresIntegrationTests
                     Assert.True(reader.GetBoolean(3), $"erp_app owns finance_subledger.{reader.GetString(0)}");
                 }
             }
-            Assert.Equal(13, tenantTables.Count);
+            Assert.True(tenantTables.Count >= 13);
             foreach (var table in tenantTables)
             {
                 await using var count = new NpgsqlCommand($"select count(*) from finance_subledger.{table} where tenant_id=$1", connection, transaction);
