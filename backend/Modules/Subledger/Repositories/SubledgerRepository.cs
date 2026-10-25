@@ -592,13 +592,85 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         var opposite = source.Polarity == SubledgerPolarityContract.Debit ? "Credit" : "Debit";
         var matchReference = string.IsNullOrWhiteSpace(reference) ? source.SourceDisplayNumber ?? source.SourceReference : reference.Trim();
         var candidates = new List<AutoApplyCandidateContext>();
-        await using (var loadCandidates = new NpgsqlCommand($"select {string.Join(',', columns.Split(',').Select(column => "i." + column))},i.control_configuration_reference from finance_subledger.party_open_item i where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$4 and i.polarity=$5 and i.is_open and i.id<>$6 and i.transaction_currency=$7 and i.control_account_role=$8 and i.control_account_reference=$9 and i.control_configuration_reference=$10 and i.base_currency=$11 order by ($14::boolean and (regexp_replace(upper(coalesce(i.source_display_number,'')), '[^[:alnum:]]', '', 'g')=regexp_replace(upper($12), '[^[:alnum:]]', '', 'g') or regexp_replace(upper(i.source_reference), '[^[:alnum:]]', '', 'g')=regexp_replace(upper($12), '[^[:alnum:]]', '', 'g'))) desc,(case when $15::boolean then i.document_date else i.due_date end),i.document_date,i.id limit $13", connection, transaction))
+        var candidateIds = new HashSet<Guid>();
+        // SuggestApplicationsAsync can return at most 50 lines, so loading more candidates cannot affect its result.
+        var boundedCandidateLimit = Math.Clamp(candidateLimit, 0, 50);
+        var exactReference = NormalizeMatchReference(matchReference);
+        const string exactDisplaySql = """
+            select __COLUMNS__
+            from finance_subledger.party_open_item i
+            where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$4 and i.polarity=$5
+              and i.is_open and i.id<>$6 and i.transaction_currency=$7 and i.control_account_role=$8
+              and i.control_account_reference=$9 and i.control_configuration_reference=$10 and i.base_currency=$11
+              and i.source_display_number_normalized=$12
+            limit $13
+            """;
+        const string exactSourceSql = """
+            select __COLUMNS__
+            from finance_subledger.party_open_item i
+            where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$4 and i.polarity=$5
+              and i.is_open and i.id<>$6 and i.transaction_currency=$7 and i.control_account_role=$8
+              and i.control_account_reference=$9 and i.control_configuration_reference=$10 and i.base_currency=$11
+              and i.source_reference_normalized=$12
+            limit $13
+            """;
+        var fallbackOrder = oldestDocumentFirst ? "i.document_date,i.id" : "i.due_date,i.document_date,i.id";
+        var fallbackSql = $"""
+            select __COLUMNS__
+            from finance_subledger.party_open_item i
+            where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$4 and i.polarity=$5
+              and i.is_open and i.id<>$6 and i.transaction_currency=$7 and i.control_account_role=$8
+              and i.control_account_reference=$9 and i.control_configuration_reference=$10 and i.base_currency=$11
+            order by {fallbackOrder} limit $13
+            """;
+
+        async Task LoadCandidatesAsync(string sql, int limit, string? normalizedExactReference)
         {
+            var sqlWithColumns = sql.Replace("__COLUMNS__", string.Join(',', columns.Split(',').Select(column => "i." + column)) + ",i.control_configuration_reference", StringComparison.Ordinal);
+            await using var loadCandidates = new NpgsqlCommand(sqlWithColumns, connection, transaction);
             Add(loadCandidates, tenant.Value, entity.Value, source.PartyId, source.Direction.ToString(), opposite, source.Id, source.TransactionCurrency,
-                source.ControlAccountRole, source.ControlAccountReference, sourceConfiguration, source.BaseCurrency, matchReference, Math.Clamp(candidateLimit, 0, 500), prioritizeReference, oldestDocumentFirst);
+                source.ControlAccountRole, source.ControlAccountReference, sourceConfiguration, source.BaseCurrency,
+                normalizedExactReference ?? string.Empty, limit);
             await using var reader = await loadCandidates.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct)) candidates.Add(new(ReadItem(reader), reader.GetString(24)));
+            while (await reader.ReadAsync(ct))
+            {
+                var item = ReadItem(reader);
+                if (candidateIds.Add(item.Id)) candidates.Add(new(item, reader.GetString(24)));
+            }
         }
+
+        if (prioritizeReference && exactReference.Length > 0 && boundedCandidateLimit > 0)
+        {
+            await LoadCandidatesAsync(exactDisplaySql, boundedCandidateLimit, exactReference);
+            if (candidates.Count < boundedCandidateLimit)
+                await LoadCandidatesAsync(exactSourceSql, boundedCandidateLimit - candidates.Count, exactReference);
+            if (candidates.Count == 0)
+            {
+                const string normalizedDisplaySql = """
+                    select __COLUMNS__ from finance_subledger.party_open_item i
+                    where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$4 and i.polarity=$5
+                      and i.is_open and i.id<>$6 and i.transaction_currency=$7 and i.control_account_role=$8
+                      and i.control_account_reference=$9 and i.control_configuration_reference=$10 and i.base_currency=$11
+                      and i.source_display_number_normalized=$12
+                    limit $13
+                    """;
+                const string normalizedSourceSql = """
+                    select __COLUMNS__ from finance_subledger.party_open_item i
+                    where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$4 and i.polarity=$5
+                      and i.is_open and i.id<>$6 and i.transaction_currency=$7 and i.control_account_role=$8
+                      and i.control_account_reference=$9 and i.control_configuration_reference=$10 and i.base_currency=$11
+                      and i.source_reference_normalized=$12
+                    limit $13
+                    """;
+                await LoadCandidatesAsync(normalizedDisplaySql, boundedCandidateLimit, exactReference);
+                if (candidates.Count < boundedCandidateLimit)
+                    await LoadCandidatesAsync(normalizedSourceSql, boundedCandidateLimit - candidates.Count, exactReference);
+            }
+        }
+        var exactCandidatesCoverSource = prioritizeReference && candidates.Sum(candidate => ParseAmount(candidate.Item.OpenTransactionAmount)) >= ParseAmount(source.OpenTransactionAmount);
+        if (!exactCandidatesCoverSource && candidates.Count < boundedCandidateLimit)
+            await LoadCandidatesAsync(fallbackSql, Math.Min(1000, boundedCandidateLimit + candidates.Count), null);
+        if (candidates.Count > boundedCandidateLimit) candidates.RemoveRange(boundedCandidateLimit, candidates.Count - boundedCandidateLimit);
         await transaction.CommitAsync(ct);
         return new(source, sourceConfiguration, candidates);
     }
@@ -608,7 +680,40 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await SetTenantAsync(connection, transaction, tenant, ct);
-        const string sql = """
+        const string currentStateSql = """
+            select not exists (
+                select 1 from finance_subledger.application_batch b
+                where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$5 and b.application_date > $4
+            ) and not exists (
+                select 1 from finance_subledger.write_off w
+                where w.tenant_id=$1 and w.legal_entity_id=$2 and w.party_id=$3 and w.direction=$5 and w.effective_date > $4
+            ) and not exists (
+                select 1
+                from finance_subledger.application_reversal r
+                join finance_subledger.application_batch b
+                  on b.tenant_id=r.tenant_id and b.legal_entity_id=r.legal_entity_id and b.id=r.reversal_batch_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and b.party_id=$3 and b.direction=$5 and r.effective_date > $4
+            )
+            """;
+        var useCurrentState = false;
+        if (query.AsOfDate == DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime))
+        {
+            await using var currentState = new NpgsqlCommand(currentStateSql, connection, transaction);
+            Add(currentState, tenant.Value, query.LegalEntityId.Value, query.PartyId, query.AsOfDate, query.Direction.ToString());
+            useCurrentState = await currentState.ExecuteScalarAsync(ct) is true;
+        }
+
+        const string currentSql = """
+            select i.transaction_currency,
+              coalesce(sum(case when i.polarity=$6 then i.open_transaction_amount else 0 end),0),
+              coalesce(sum(case when i.polarity<>$6 then i.open_transaction_amount else 0 end),0),
+              coalesce(sum(case when i.polarity=$6 and i.due_date<$4 then i.open_transaction_amount else 0 end),0),
+              coalesce(sum(i.row_version),0)
+            from finance_subledger.party_open_item i
+            where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$5 and i.posting_date <= $4
+            group by i.transaction_currency order by i.transaction_currency
+            """;
+        const string historicalSql = """
             with party_items as materialized (
               select i.id,i.transaction_currency,i.polarity,i.due_date,i.row_version,
                 i.original_transaction_amount as original_amount
@@ -672,7 +777,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             from item_balance
             group by transaction_currency order by transaction_currency
             """;
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(useCurrentState ? currentSql : historicalSql, connection, transaction);
         Add(command, tenant.Value, query.LegalEntityId.Value, query.PartyId, query.AsOfDate, query.Direction.ToString(),
             query.Direction == SubledgerDirectionContract.Receivable ? "Debit" : "Credit");
         var currencies = new List<PartyCurrencyBalance>(); long version = 0;
@@ -708,7 +813,43 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await SetTenantAsync(connection, transaction, tenant, ct);
-        const string sql = """
+        const string currentStateSql = """
+            select not exists (
+                select 1 from finance_subledger.application_batch b
+                where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$5 and b.application_date>$4
+            ) and not exists (
+                select 1 from finance_subledger.write_off w
+                where w.tenant_id=$1 and w.legal_entity_id=$2 and w.party_id=$3 and w.direction=$5 and w.effective_date>$4
+            ) and not exists (
+                select 1
+                from finance_subledger.application_reversal r
+                join finance_subledger.application_batch b
+                  on b.tenant_id=r.tenant_id and b.legal_entity_id=r.legal_entity_id and b.id=r.reversal_batch_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and b.party_id=$3 and b.direction=$5 and r.effective_date>$4
+            )
+            """;
+        var useCurrentState = false;
+        if (query.AsOfDate == DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime))
+        {
+            await using var currentState = new NpgsqlCommand(currentStateSql, connection, transaction);
+            Add(currentState, tenant.Value, query.LegalEntityId.Value, query.PartyId, query.AsOfDate, query.Direction.ToString());
+            useCurrentState = await currentState.ExecuteScalarAsync(ct) is true;
+        }
+
+        const string currentSql = """
+            select i.transaction_currency,
+              coalesce(sum(i.open_transaction_amount) filter(where i.due_date >= $4),0),
+              coalesce(sum(i.open_transaction_amount) filter(where i.due_date < $4 and i.due_date >= $4-30),0),
+              coalesce(sum(i.open_transaction_amount) filter(where i.due_date < $4-30 and i.due_date >= $4-60),0),
+              coalesce(sum(i.open_transaction_amount) filter(where i.due_date < $4-60 and i.due_date >= $4-90),0),
+              coalesce(sum(i.open_transaction_amount) filter(where i.due_date < $4-90),0)
+            from finance_subledger.party_open_item i
+            where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$5 and i.polarity=$6
+              and i.posting_date<=$4 and i.is_open and i.open_transaction_amount>0
+              and ($7::text is null or i.transaction_currency=$7)
+            group by i.transaction_currency order by i.transaction_currency
+            """;
+        const string historicalSql = """
             with party_items as materialized (
               select i.id,i.transaction_currency,i.due_date,
                 i.original_transaction_amount as original_amount
@@ -772,7 +913,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
               coalesce(sum(amount) filter(where due_date < $4-90),0)
             from remaining where amount > 0 and ($7::text is null or transaction_currency=$7) group by transaction_currency order by transaction_currency
             """;
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(useCurrentState ? currentSql : historicalSql, connection, transaction);
         Add(command, tenant.Value, query.LegalEntityId.Value, query.PartyId, query.AsOfDate, query.Direction.ToString(),
             query.Direction == SubledgerDirectionContract.Receivable ? "Debit" : "Credit", Db(query.CurrencyCode));
         var result = new List<AgingBucketResult>(); await using var reader = await command.ExecuteReaderAsync(ct);
@@ -1198,6 +1339,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
     private static string Hash<T>(T value) => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions))).ToLowerInvariant();
     private static decimal ParseAmount(string text) => decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value) ? value : throw new SubledgerException("subledger.amount_invalid", "Financial amounts must be invariant decimal values.");
     private static string NormalizeCurrency(string value) => value.Trim().ToUpperInvariant() is { Length: 3 } currency && currency.All(char.IsAsciiLetter) ? currency : throw new SubledgerException("subledger.currency_invalid", "A valid three-letter currency code is required.");
+    private static string NormalizeMatchReference(string value) => string.Concat(value.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit));
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static object Db(object? value) => value ?? DBNull.Value;
     private static Guid? ParseCursor(string? value) => Guid.TryParse(value, out var id) ? id : null;

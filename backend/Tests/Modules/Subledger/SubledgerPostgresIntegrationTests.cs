@@ -48,6 +48,94 @@ public sealed class SubledgerPostgresIntegrationTests
     }
 
     [Fact]
+    public async Task CurrentExposureUsesCommittedOpenAmountsAndFallsBackForFutureDatedApplications()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_LEDGER_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_SUBLEDGER_TEST_CONNECTION to a migrated development database and runtime-equivalent erp_app connection.");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var repository = new SubledgerRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), TimeProvider.System);
+        var partyId = Guid.CreateVersion7();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var suffix = Guid.NewGuid().ToString("N");
+        var invoice = Snapshot($"SUBLEDGER-CURRENT-INVOICE-{suffix}", 100m) with { DocumentDate = today, PostingDate = today, DueDate = today.AddDays(30) };
+        var payment = Snapshot($"SUBLEDGER-CURRENT-PAYMENT-{suffix}", 100m) with { DocumentDate = today, PostingDate = today, DueDate = today };
+        var debitId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [invoice], default)).Single();
+        var creditId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment", [payment], default)).Single();
+
+        async Task<PartyBalanceResult> CurrentBalance() => await repository.GetPartyBalanceAsync(Tenant,
+            new(Entity, partyId, SubledgerDirectionContract.Receivable, today), default);
+        async Task<IReadOnlyList<AgingBucketResult>> CurrentAging() => await repository.GetAgingAsync(Tenant,
+            new(Entity, partyId, SubledgerDirectionContract.Receivable, today, null), default);
+        static decimal Amount(PartyBalanceResult result, bool credits) => decimal.Parse(
+            credits ? result.Currencies.Single(row => row.CurrencyCode == "EGP").AvailableCredits : result.Currencies.Single(row => row.CurrencyCode == "EGP").AmountDue,
+            System.Globalization.CultureInfo.InvariantCulture);
+        static decimal AgingAmount(IReadOnlyList<AgingBucketResult> result) => result.Where(row => row.CurrencyCode == "EGP")
+            .Sum(row => decimal.Parse(row.Current, System.Globalization.CultureInfo.InvariantCulture)
+                + decimal.Parse(row.Days1To30, System.Globalization.CultureInfo.InvariantCulture)
+                + decimal.Parse(row.Days31To60, System.Globalization.CultureInfo.InvariantCulture)
+                + decimal.Parse(row.Days61To90, System.Globalization.CultureInfo.InvariantCulture)
+                + decimal.Parse(row.Days91Plus, System.Globalization.CultureInfo.InvariantCulture));
+
+        var beforeApply = await CurrentBalance();
+        Assert.Equal(100m, Amount(beforeApply, credits: false));
+        Assert.Equal(100m, Amount(beforeApply, credits: true));
+        Assert.Equal(100m, AgingAmount(await CurrentAging()));
+
+        var application = await repository.ApplyAsync(Tenant,
+            new(Entity, partyId, SubledgerDirectionContract.Receivable, $"current-apply-{suffix}", today, today,
+                [new(debitId, creditId, "30")], Guid.CreateVersion7(), Guid.CreateVersion7()), [30m], 2,
+            Shared.Primitives.Financial.FinancialRoundingModeValue.HalfUp, default);
+        var afterApply = await CurrentBalance();
+        Assert.Equal(70m, Amount(afterApply, credits: false));
+        Assert.Equal(70m, Amount(afterApply, credits: true));
+        Assert.Equal(70m, AgingAmount(await CurrentAging()));
+
+        await repository.ReverseAsync(Tenant,
+            new(Entity, application.ApplicationIds.Single(), $"current-reverse-{suffix}", today, "Current exposure projection proof", Guid.CreateVersion7(), Guid.CreateVersion7()), default);
+        var afterReversal = await CurrentBalance();
+        Assert.Equal(100m, Amount(afterReversal, credits: false));
+        Assert.Equal(100m, Amount(afterReversal, credits: true));
+        Assert.Equal(100m, AgingAmount(await CurrentAging()));
+
+        var futureReversalApplication = await repository.ApplyAsync(Tenant,
+            new(Entity, partyId, SubledgerDirectionContract.Receivable, $"future-reversal-apply-{suffix}", today, today,
+                [new(debitId, creditId, "10")], Guid.CreateVersion7(), Guid.CreateVersion7()), [10m], 2,
+            Shared.Primitives.Financial.FinancialRoundingModeValue.HalfUp, default);
+        await repository.ReverseAsync(Tenant,
+            new(Entity, futureReversalApplication.ApplicationIds.Single(), $"future-reversal-{suffix}", today.AddDays(1), "Future-dated reversal projection proof", Guid.CreateVersion7(), Guid.CreateVersion7()), default);
+        Assert.Equal(90m, Amount(await CurrentBalance(), credits: false));
+        Assert.Equal(90m, Amount(await CurrentBalance(), credits: true));
+        Assert.Equal(90m, AgingAmount(await CurrentAging()));
+
+        var advance = Snapshot($"SUBLEDGER-CURRENT-ADVANCE-{suffix}", 25m) with
+        {
+            DocumentDate = today, PostingDate = today, DueDate = today, SourceDisplayNumber = $"ADV-{suffix}"
+        };
+        await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Advance", [advance], default);
+        Assert.Equal(115m, Amount(await CurrentBalance(), credits: true));
+
+        var futureDebit = Snapshot($"SUBLEDGER-FUTURE-INVOICE-{suffix}", 40m) with { DocumentDate = today, PostingDate = today, DueDate = today.AddDays(30) };
+        var futureCredit = Snapshot($"SUBLEDGER-FUTURE-PAYMENT-{suffix}", 40m) with { DocumentDate = today, PostingDate = today, DueDate = today };
+        var futureDebitId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [futureDebit], default)).Single();
+        var futureCreditId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment", [futureCredit], default)).Single();
+        await repository.ApplyAsync(Tenant,
+            new(Entity, partyId, SubledgerDirectionContract.Receivable, $"future-apply-{suffix}", today.AddDays(1), today.AddDays(1),
+                [new(futureDebitId, futureCreditId, "10")], Guid.CreateVersion7(), Guid.CreateVersion7()), [10m], 2,
+            Shared.Primitives.Financial.FinancialRoundingModeValue.HalfUp, default);
+
+        var asOfToday = await CurrentBalance();
+        Assert.Equal(130m, Amount(asOfToday, credits: false));
+        Assert.Equal(155m, Amount(asOfToday, credits: true));
+        Assert.Equal(130m, AgingAmount(await CurrentAging()));
+    }
+
+    [Fact]
     public async Task AvailableCreditUsesAConsistentBaseValueForMixedCurrencyExposure()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
@@ -417,6 +505,13 @@ public sealed class SubledgerPostgresIntegrationTests
         Assert.Equal("subledger.writeoff_sod_violation", selfApproval.Code);
 
         var before = await repository.GetPartyBalanceAsync(Tenant, new(Entity, partyId, SubledgerDirectionContract.Receivable, new(2026, 10, 25)), default);
+        var beforeCurrentAging = await repository.GetAgingAsync(Tenant, new(Entity, partyId, SubledgerDirectionContract.Receivable, new(2026, 10, 26), "USD"), default);
+        static decimal TotalAging(IReadOnlyList<AgingBucketResult> rows) => rows.Sum(row =>
+            decimal.Parse(row.Current, System.Globalization.CultureInfo.InvariantCulture)
+            + decimal.Parse(row.Days1To30, System.Globalization.CultureInfo.InvariantCulture)
+            + decimal.Parse(row.Days31To60, System.Globalization.CultureInfo.InvariantCulture)
+            + decimal.Parse(row.Days61To90, System.Globalization.CultureInfo.InvariantCulture)
+            + decimal.Parse(row.Days91Plus, System.Globalization.CultureInfo.InvariantCulture));
         var approvedBy = Guid.CreateVersion7();
         var approval = await repository.ApproveWriteOffAsync(Tenant, new(Entity, requestId, approvedBy, Guid.CreateVersion7()), default);
         Assert.Equal(1m, decimal.Parse(approval.Amount, System.Globalization.CultureInfo.InvariantCulture));
@@ -429,6 +524,8 @@ public sealed class SubledgerPostgresIntegrationTests
 
         var historical = await repository.GetPartyBalanceAsync(Tenant, new(Entity, partyId, SubledgerDirectionContract.Receivable, new(2026, 10, 25)), default);
         var current = await repository.GetPartyBalanceAsync(Tenant, new(Entity, partyId, SubledgerDirectionContract.Receivable, new(2026, 10, 26)), default);
+        var currentAging = await repository.GetAgingAsync(Tenant, new(Entity, partyId, SubledgerDirectionContract.Receivable, new(2026, 10, 26), "USD"), default);
+        Assert.Equal(-1m, TotalAging(currentAging) - TotalAging(beforeCurrentAging));
         Assert.Equal(decimal.Parse(before.Currencies.Single(row => row.CurrencyCode == "USD").AmountDue, System.Globalization.CultureInfo.InvariantCulture),
             decimal.Parse(historical.Currencies.Single(row => row.CurrencyCode == "USD").AmountDue, System.Globalization.CultureInfo.InvariantCulture));
         var statement = await repository.GetStatementAsync(Tenant, new(Entity, partyId, SubledgerDirectionContract.Receivable, new(2026, 10, 25), new(2026, 10, 26)), default);
@@ -770,6 +867,199 @@ public sealed class SubledgerPostgresIntegrationTests
         Assert.Equal(0, deadlocks);
         Assert.Empty(unexpected);
         Assert.Equal(0, negativeRemaining);
+    }
+
+    [Fact]
+    [Trait("Category", "Performance")]
+    public async Task InteractiveApplicationBatchShapesReportLatencyAndThroughput()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_LEDGER_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_SUBLEDGER_TEST_CONNECTION to a migrated development database and runtime-equivalent erp_app connection.");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var repository = new SubledgerRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), TimeProvider.System);
+        var partyId = Guid.CreateVersion7();
+        var membershipId = Guid.Parse("10000000-0000-7000-8000-000000000001");
+        var service = new SubledgerService(repository, new ActivePartyDirectory(), new InstallmentFinanceBase(), new FixedEntityCurrency(),
+            new AllPermissionSubjectStore(Tenant, membershipId), new PermissionAuthorizer(), TimeProvider.System);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        OpenItemSnapshotContract Item(string name, decimal amount, int dueOffset = 30) =>
+            Snapshot($"SUBLEDGER-APP-PERF-{name}-{Guid.NewGuid():N}", amount) with
+            {
+                DocumentDate = today, PostingDate = today, DueDate = today.AddDays(dueOffset)
+            };
+
+        var singleDebits = await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", Enumerable.Range(0, 40).Select(i => Item($"1-1-D-{i}", 10m)).ToArray(), default);
+        var singleCredits = await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment", Enumerable.Range(0, 40).Select(i => Item($"1-1-C-{i}", 10m, 0)).ToArray(), default);
+        var singleCommands = Enumerable.Range(0, 40).Select(i => new ApplyOpenItemsCommand(Entity, partyId, SubledgerDirectionContract.Receivable,
+            $"small-1-1-{Guid.NewGuid():N}", today, today, [new(singleDebits[i], singleCredits[i], "10", ExpectedDebitVersion: 1, ExpectedCreditVersion: 1)],
+            Guid.CreateVersion7(), Guid.CreateVersion7())).ToArray();
+
+        var splitCredits = await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment", Enumerable.Range(0, 24).Select(i => Item($"1-3-C-{i}", 30m, 0)).ToArray(), default);
+        var splitDebits = await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", Enumerable.Range(0, 72).Select(i => Item($"1-3-D-{i}", 10m)).ToArray(), default);
+        var splitCommands = Enumerable.Range(0, 24).Select(i => new ApplyOpenItemsCommand(Entity, partyId, SubledgerDirectionContract.Receivable,
+            $"small-1-3-{Guid.NewGuid():N}", today, today,
+            Enumerable.Range(0, 3).Select(target => new ApplicationLineCommand(splitDebits[i * 3 + target], splitCredits[i], "10", ExpectedDebitVersion: 1, ExpectedCreditVersion: 1)).ToArray(),
+            Guid.CreateVersion7(), Guid.CreateVersion7())).ToArray();
+
+        var manyCredits = await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment", Enumerable.Range(0, 48).Select(i => Item($"many-C-{i}", 10m, 0)).ToArray(), default);
+        var manyDebits = await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", Enumerable.Range(0, 48).Select(i => Item($"many-D-{i}", 10m)).ToArray(), default);
+        var manyCommands = Enumerable.Range(0, 24).Select(i => new ApplyOpenItemsCommand(Entity, partyId, SubledgerDirectionContract.Receivable,
+            $"small-many-many-{Guid.NewGuid():N}", today, today,
+            [
+                new(manyDebits[i * 2], manyCredits[i * 2], "5", ExpectedDebitVersion: 1, ExpectedCreditVersion: 1),
+                new(manyDebits[i * 2], manyCredits[i * 2 + 1], "5", ExpectedDebitVersion: 1, ExpectedCreditVersion: 1),
+                new(manyDebits[i * 2 + 1], manyCredits[i * 2], "5", ExpectedDebitVersion: 1, ExpectedCreditVersion: 1),
+                new(manyDebits[i * 2 + 1], manyCredits[i * 2 + 1], "5", ExpectedDebitVersion: 1, ExpectedCreditVersion: 1)
+            ], Guid.CreateVersion7(), Guid.CreateVersion7())).ToArray();
+
+        async Task Measure(string scenario, ApplyOpenItemsCommand[] commands)
+        {
+            var warmupStarted = Stopwatch.GetTimestamp();
+            await Parallel.ForEachAsync(Enumerable.Range(0, 8), new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (index, token) =>
+                await service.ApplyAsync(Tenant, membershipId, commands[index], token));
+            var warmupElapsed = Stopwatch.GetElapsedTime(warmupStarted).TotalMilliseconds;
+            var measuredCommands = commands.Skip(8).ToArray();
+            var durations = new double[measuredCommands.Length];
+            var errors = new string?[measuredCommands.Length];
+            var started = Stopwatch.GetTimestamp();
+            await Parallel.ForEachAsync(Enumerable.Range(0, measuredCommands.Length), new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (index, token) =>
+            {
+                var operationStarted = Stopwatch.GetTimestamp();
+                try { await service.ApplyAsync(Tenant, membershipId, measuredCommands[index], token); }
+                catch (Exception exception) { errors[index] = exception is Modules.Subledger.Entities.SubledgerException subledger ? subledger.Code : exception.GetType().Name; }
+                durations[index] = Stopwatch.GetElapsedTime(operationStarted).TotalMilliseconds;
+            });
+            var elapsed = Stopwatch.GetElapsedTime(started).TotalSeconds;
+            var ordered = durations.Order().ToArray();
+            var errorSummary = string.Join(',', errors.Where(error => error is not null));
+            output.WriteLine($"SUBLEDGER_APPLICATION scenario={scenario} concurrency=8 warmupOperations=8 warmupElapsed={warmupElapsed:F2}ms operations={measuredCommands.Length} p50={Percentile(ordered, 0.50):F2}ms p95={Percentile(ordered, 0.95):F2}ms p99={Percentile(ordered, 0.99):F2} throughput={measuredCommands.Length / elapsed:F2}/s conflicts={errors.Count(error => error == "subledger.item_changed")} errors={errors.Count(error => error is not null)} other={errorSummary}");
+            Assert.All(errors, error => Assert.Null(error));
+        }
+
+        await Measure("1-source-1-target", singleCommands);
+        await Measure("1-source-3-targets", splitCommands);
+        await Measure("many-to-many-2x2-4-lines", manyCommands);
+    }
+
+    [Fact]
+    [Trait("Category", "Performance")]
+    public async Task AutoApplySuggestionLatencyStaysBoundedForLargeParties()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_LEDGER_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_SUBLEDGER_TEST_CONNECTION to a migrated development database and runtime-equivalent erp_app connection.");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var repository = new SubledgerRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), TimeProvider.System);
+        var hotPartyId = Guid.Parse("81e634ac-715c-6ada-adb8-ffce63272361");
+        var membershipId = Guid.Parse("10000000-0000-7000-8000-000000000001");
+        var service = new SubledgerService(repository, new ActivePartyDirectory(), new InstallmentFinanceBase(), new FixedEntityCurrency(),
+            new AllPermissionSubjectStore(Tenant, membershipId), new PermissionAuthorizer(), TimeProvider.System);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var suffix = Guid.NewGuid().ToString("N");
+        async Task<Guid> CreateSource(string label, decimal amount)
+        {
+            var source = Snapshot($"SUBLEDGER-AUTO-PERF-{label}-{suffix}", amount) with
+            {
+                DocumentDate = today,
+                PostingDate = today,
+                DueDate = today,
+                ControlAccountReference = "role:Receivable",
+                ControlConfigurationReference = "configuration:performance-v1"
+            };
+            return (await repository.CreateOpenItemsAsync(Tenant, Entity, hotPartyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+                Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment", [source], default)).Single();
+        }
+
+        var exactSourceId = await CreateSource("exact", 100m);
+        var oldestSourceId = await CreateSource("oldest", 5_000m);
+        var largePartySourceId = await CreateSource("large", 5_000m);
+        var dataset = await ReadScaleCountsAsync(dataSource, hotPartyId);
+
+        async Task Measure(string scenario, Guid sourceId, string policy, string? reference, int expectedSuggestions)
+        {
+            var query = new AutoApplySuggestionQuery(Entity, sourceId, reference, policy, 50);
+            var warmupDurations = new double[8];
+            var warmupCounts = new int[8];
+            await Parallel.ForEachAsync(Enumerable.Range(0, warmupDurations.Length), new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (index, token) =>
+            {
+                var started = Stopwatch.GetTimestamp();
+                var result = await service.SuggestApplicationsAsync(Tenant, membershipId, query, token);
+                warmupDurations[index] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                warmupCounts[index] = result.Suggestions.Count;
+            });
+            Assert.All(warmupCounts, count => Assert.Equal(expectedSuggestions, count));
+            var durations = new double[32];
+            var suggestions = new int[32];
+            await Parallel.ForEachAsync(Enumerable.Range(0, durations.Length), new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (index, token) =>
+            {
+                var started = Stopwatch.GetTimestamp();
+                var result = await service.SuggestApplicationsAsync(Tenant, membershipId, query, token);
+                durations[index] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                suggestions[index] = result.Suggestions.Count;
+            });
+            var ordered = durations.Order().ToArray();
+            output.WriteLine($"SUBLEDGER_AUTO_APPLY scenario={scenario} partyItems={dataset.Items} partyOpenItems={dataset.HotPartyOpenItems} warmupRequests=8 warmupP95={Percentile(warmupDurations.Order().ToArray(), 0.95):F2}ms requests={durations.Length} concurrency=8 candidateLimit=50 suggestionsReturned={suggestions[0]} maxSuggestions=50 p50={Percentile(ordered, 0.50):F2}ms p95={Percentile(ordered, 0.95):F2}ms p99={Percentile(ordered, 0.99):F2} errors=0");
+            Assert.All(suggestions, count => Assert.Equal(expectedSuggestions, count));
+        }
+
+        await Measure("exact-reference", exactSourceId, "ReferenceMatchFirst", "HOT-1", 1);
+        await Measure("oldest-due-fallback", oldestSourceId, "AutoOldestDue", null, 50);
+        await Measure("large-party-mismatch-fallback", largePartySourceId, "ReferenceMatchFirst", $"NO-MATCH-{suffix}", 50);
+    }
+
+    [Fact]
+    [Trait("Category", "Performance")]
+    public async Task AgingLatencySeparatesCurrentHistoricalAndNormalPartyWork()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_LEDGER_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_SUBLEDGER_TEST_CONNECTION to a migrated development database and runtime-equivalent erp_app connection.");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var repository = new SubledgerRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), TimeProvider.System);
+        var hotPartyId = Guid.Parse("81e634ac-715c-6ada-adb8-ffce63272361");
+        var normalPartyId = Guid.Parse("05e91cb0-a5af-fd5e-929a-5dd9ba9fd5d6");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var dataset = await ReadScaleCountsAsync(dataSource, hotPartyId);
+
+        async Task Measure(string scenario, Guid partyId, DateOnly asOfDate, int expectedRows)
+        {
+            var query = new AgingQuery(Entity, partyId, SubledgerDirectionContract.Receivable, asOfDate, null);
+            var warmupTimes = new double[8];
+            var warmupRows = new int[8];
+            await Parallel.ForEachAsync(Enumerable.Range(0, warmupTimes.Length), new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (index, token) =>
+            {
+                var started = Stopwatch.GetTimestamp();
+                var result = await repository.GetAgingAsync(Tenant, query, token);
+                warmupTimes[index] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                warmupRows[index] = result.Count;
+            });
+            Assert.All(warmupRows, rows => Assert.Equal(expectedRows, rows));
+
+            var durations = new double[32];
+            var rowCounts = new int[durations.Length];
+            await Parallel.ForEachAsync(Enumerable.Range(0, durations.Length), new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (index, token) =>
+            {
+                var started = Stopwatch.GetTimestamp();
+                var result = await repository.GetAgingAsync(Tenant, query, token);
+                durations[index] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                rowCounts[index] = result.Count;
+            });
+            var ordered = durations.Order().ToArray();
+            var partySize = partyId == hotPartyId ? dataset.HotPartyOpenItems.ToString(System.Globalization.CultureInfo.InvariantCulture) : "seeded-normal";
+            output.WriteLine($"SUBLEDGER_AGING scenario={scenario} classification={(asOfDate == today ? "interactive-current-projection" : "historical-report")} partyItems={partySize} warmupRequests=8 warmupP95={Percentile(warmupTimes.Order().ToArray(), 0.95):F2}ms requests={durations.Length} concurrency=8 resultRows={rowCounts[0]} p50={Percentile(ordered, 0.50):F2}ms p95={Percentile(ordered, 0.95):F2}ms p99={Percentile(ordered, 0.99):F2} errors=0");
+            Assert.All(rowCounts, rows => Assert.Equal(expectedRows, rows));
+        }
+
+        await Measure("current-hot-party", hotPartyId, today, 3);
+        await Measure("historical-hot-party", hotPartyId, today.AddDays(-1), 3);
+        await Measure("current-normal-party", normalPartyId, today, 2);
     }
 
     [Fact]

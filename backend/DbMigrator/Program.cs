@@ -412,6 +412,8 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("catalog-forward-fix-import.sql", StringComparison.Ordinal) => 2,
     _ when fileName.Equals("catalog-forward-fix-import-reconciliation.sql", StringComparison.Ordinal) => 3,
     _ when fileName.Equals("catalog-forward-fix-import-worker.sql", StringComparison.Ordinal) => 4,
+    // This index references write_off, which is introduced by the later-named Subledger pass-2 migration.
+    _ when fileName.Equals("subledger-forward-fix-exposure-current-read.sql", StringComparison.Ordinal) => 6,
     _ => 5
 };
 
