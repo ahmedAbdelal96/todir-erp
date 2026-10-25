@@ -14,7 +14,9 @@ public sealed record PartyFinancialProfileCommand(
     string? CreditLimitCurrency,
     string? ReceivablePolicyCode,
     string? PayablePolicyCode,
-    long ExpectedVersion);
+    long ExpectedVersion,
+    Guid ActorId = default,
+    Guid CorrelationId = default);
 
 public sealed record PartyFinancialProfileResult(
     Guid Id,
@@ -78,7 +80,7 @@ public sealed record RegisterPartyCreditCommand(
     Guid ActorId,
     Guid CorrelationId);
 
-public sealed record ApplicationLineCommand(Guid DebitItemId, Guid CreditItemId, string Amount, string? CreditAmount = null);
+public sealed record ApplicationLineCommand(Guid DebitItemId, Guid CreditItemId, string Amount, string? CreditAmount = null, long? ExpectedDebitVersion = null, long? ExpectedCreditVersion = null);
 public sealed record ResolvedApplicationLineContract(Guid DebitItemId, Guid CreditItemId, string DebitAmount, string CreditAmount, string? DebitFxSnapshot, string? CreditFxSnapshot, string SettlementBaseAmount);
 
 public sealed record ApplyOpenItemsCommand(
@@ -102,17 +104,25 @@ public sealed record ReverseApplicationCommand(
     Guid CorrelationId);
 
 public sealed record SubledgerApplicationResult(Guid BatchId, bool AlreadyApplied, IReadOnlyList<Guid> ApplicationIds);
-public sealed record OpenItemListQuery(LegalEntityId LegalEntityId, Guid PartyId, SubledgerDirectionContract? Direction, bool OpenOnly, int Limit, string? Cursor);
+public sealed record OpenItemListQuery(LegalEntityId LegalEntityId, Guid PartyId, SubledgerDirectionContract? Direction, bool OpenOnly, int Limit, string? Cursor,
+    string? Search = null, DateOnly? DueFrom = null, DateOnly? DueTo = null, string? CurrencyCode = null, bool OverdueOnly = false, DateOnly? AsOfDate = null, string? Status = null);
 public sealed record OpenItemPage(IReadOnlyList<PartyOpenItemResult> Items, string? NextCursor);
+public sealed record AutoApplySuggestionQuery(LegalEntityId LegalEntityId, Guid SourceOpenItemId, string? Reference, string Policy, int MaximumLines = 50);
+public sealed record AutoApplySuggestionLine(Guid DebitItemId, Guid CreditItemId, string DebitAmount, string CreditAmount, long ExpectedDebitVersion, long ExpectedCreditVersion, string ReasonCode, string ConfidenceClass, string CurrencyCode, string DebitRemaining, string CreditRemaining);
+public sealed record AutoApplySuggestionResult(Guid SourceOpenItemId, string SourceAvailable, string CurrencyCode, IReadOnlyList<AutoApplySuggestionLine> Suggestions, string RemainingSource, bool CrossCurrencyExcluded);
+public sealed record ApplicationPreviewLine(Guid DebitItemId, Guid CreditItemId, string DebitAppliedAmount, string CreditAppliedAmount, long ExpectedDebitVersion, long ExpectedCreditVersion, string DebitRemainingAmount, string CreditRemainingAmount, string FxImpactBase, string BaseCurrencyCode);
+public sealed record ApplicationPreviewResult(Guid PartyId, Guid LegalEntityId, SubledgerDirectionContract Direction, IReadOnlyList<ApplicationPreviewLine> Lines, string TotalDebitApplied, string TotalCreditApplied, string TotalFxImpactBase);
+public sealed record AutoApplyCandidateContext(PartyOpenItemResult Item, string ControlConfigurationReference);
+public sealed record AutoApplyContext(PartyOpenItemResult Source, string SourceControlConfigurationReference, IReadOnlyList<AutoApplyCandidateContext> Candidates);
 public sealed record PartyBalanceQuery(LegalEntityId LegalEntityId, Guid PartyId, SubledgerDirectionContract Direction, DateOnly AsOfDate);
 public sealed record PartyCurrencyBalance(string CurrencyCode, string AmountDue, string AvailableCredits, string NetBalance, string OverdueExposure = "0");
 public sealed record PartyBalanceResult(Guid PartyId, Guid LegalEntityId, SubledgerDirectionContract Direction, DateOnly AsOfDate, IReadOnlyList<PartyCurrencyBalance> Currencies, string? CreditLimitAmount, string? CreditLimitCurrency, string? AvailableCreditAmount, long ExposureVersion, DateTimeOffset AsOfInstant = default);
-public sealed record AgingQuery(LegalEntityId LegalEntityId, Guid PartyId, SubledgerDirectionContract Direction, DateOnly AsOfDate);
+public sealed record AgingQuery(LegalEntityId LegalEntityId, Guid PartyId, SubledgerDirectionContract Direction, DateOnly AsOfDate, string? CurrencyCode = null);
 public sealed record AgingBucketResult(string CurrencyCode, string Current, string Days1To30, string Days31To60, string Days61To90, string Days91Plus);
-public sealed record PartyStatementQuery(LegalEntityId LegalEntityId, Guid PartyId, SubledgerDirectionContract Direction, DateOnly FromDate, DateOnly ToDate);
+public sealed record PartyStatementQuery(LegalEntityId LegalEntityId, Guid PartyId, SubledgerDirectionContract Direction, DateOnly FromDate, DateOnly ToDate, string? CurrencyCode = null, int Limit = 500, int Page = 1);
 public sealed record PartyStatementLine(DateOnly EffectiveDate, DateOnly PostingDate, long SourceSequence, Guid SourceId, string SourceType, string SourceReference, string CurrencyCode, string Amount, string RunningBalance);
-public sealed record PartyStatementResult(Guid PartyId, LegalEntityId LegalEntityId, SubledgerDirectionContract Direction, DateOnly FromDate, DateOnly ToDate, IReadOnlyList<PartyStatementLine> Lines, IReadOnlyDictionary<string, string> ClosingBalances);
-public sealed record WriteOffPolicyCommand(LegalEntityId LegalEntityId, SubledgerDirectionContract Direction, string CurrencyCode, string MaximumAmount, string ApprovalThreshold, long ExpectedVersion);
+public sealed record PartyStatementResult(Guid PartyId, LegalEntityId LegalEntityId, SubledgerDirectionContract Direction, DateOnly FromDate, DateOnly ToDate, IReadOnlyList<PartyStatementLine> Lines, IReadOnlyDictionary<string, string> ClosingBalances, bool HasMore = false, int Page = 1);
+public sealed record WriteOffPolicyCommand(LegalEntityId LegalEntityId, SubledgerDirectionContract Direction, string CurrencyCode, string MaximumAmount, string ApprovalThreshold, long ExpectedVersion, Guid ActorId = default, Guid CorrelationId = default);
 public sealed record WriteOffPolicyResult(Guid Id, LegalEntityId LegalEntityId, SubledgerDirectionContract Direction, string CurrencyCode, string MaximumAmount, string ApprovalThreshold, bool AutomaticWriteOffEnabled, long Version, DateTimeOffset UpdatedAt);
 public sealed record CreateWriteOffCommand(LegalEntityId LegalEntityId, Guid OpenItemId, string Amount, string ReasonCode, string ReasonText, DateOnly EffectiveDate, string IdempotencyKey, Guid ActorId, Guid CorrelationId);
 public sealed record ApproveWriteOffCommand(LegalEntityId LegalEntityId, Guid RequestId, Guid ActorId, Guid CorrelationId);
@@ -121,6 +131,8 @@ public sealed record ReconciliationQuery(LegalEntityId LegalEntityId, DateOnly A
 public sealed record ReconciliationSourceContext(SubledgerDirectionContract Direction, string ControlRole, string ControlAccountReference, string ControlConfigurationReference, string BaseCurrencyCode, decimal SubledgerBaseBalance);
 public sealed record ReconciliationDetail(Guid Id, SubledgerDirectionContract Direction, string ControlRole, string ControlAccountReference, string ControlConfigurationReference, Guid? LedgerAccountId, string SubledgerBaseBalance, string LedgerBaseBalance, string Variance, bool ContextResolved);
 public sealed record ReconciliationResult(Guid Id, LegalEntityId LegalEntityId, DateOnly AsOfDate, string BaseCurrencyCode, string SubledgerBaseBalance, string LedgerBaseBalance, string Variance, bool IsBalanced, DateTimeOffset CreatedAt, IReadOnlyList<ReconciliationDetail> Details);
+public sealed record OpeningSubledgerValidationDirection(SubledgerDirectionContract Direction, string SubledgerBaseBalance, string LedgerBaseBalance, string Variance, bool IsBalanced);
+public sealed record OpeningSubledgerValidationResult(Guid BatchId, string Status, int LineCount, bool IsBalanced, IReadOnlyList<OpeningSubledgerValidationDirection> Directions);
 public sealed record CreateOpeningSubledgerBatchCommand(LegalEntityId LegalEntityId, string BatchIdentity, DateOnly GoLiveDate, string BaseCurrencyCode, string ControlConfigurationReference, string IdempotencyKey, Guid ActorId, Guid CorrelationId);
 public sealed record OpeningSubledgerLineCommand(string RowKey, Guid PartyId, SubledgerDirectionContract Direction, SubledgerPolarityContract Polarity, string SourceReference, DateOnly DocumentDate, DateOnly DueDate, string TransactionCurrency, string TransactionAmount, string BaseCurrency, string BaseAmount, string ControlAccountRole, string ControlAccountReference, string ControlConfigurationReference, string? HistoricFxSnapshot = null);
 public sealed record OpeningSubledgerBatchResult(Guid Id, string BatchIdentity, DateOnly GoLiveDate, string Status, int LineCount, IReadOnlyList<Guid> OpenItemIds, bool AlreadyCompleted);
@@ -165,16 +177,22 @@ public interface ISubledgerCapabilities
     Task<Guid> RegisterAdvanceAsync(TenantId tenantId, Guid membershipId, RegisterPartyCreditCommand command, CancellationToken cancellationToken = default);
     Task<Guid> RegisterCreditNoteAsync(TenantId tenantId, Guid membershipId, RegisterPartyCreditCommand command, CancellationToken cancellationToken = default);
     Task<SubledgerApplicationResult> ApplyAsync(TenantId tenantId, Guid membershipId, ApplyOpenItemsCommand command, CancellationToken cancellationToken = default);
+    Task<ApplicationPreviewResult> PreviewAsync(TenantId tenantId, Guid membershipId, ApplyOpenItemsCommand command, CancellationToken cancellationToken = default);
     Task<SubledgerApplicationResult> ReverseAsync(TenantId tenantId, Guid membershipId, ReverseApplicationCommand command, CancellationToken cancellationToken = default);
     Task<OpenItemPage> ListOpenItemsAsync(TenantId tenantId, OpenItemListQuery query, CancellationToken cancellationToken = default);
+    Task<PartyOpenItemResult?> GetOpenItemAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid openItemId, CancellationToken cancellationToken = default);
+    Task<AutoApplySuggestionResult> SuggestApplicationsAsync(TenantId tenantId, Guid membershipId, AutoApplySuggestionQuery query, CancellationToken cancellationToken = default);
     Task<PartyBalanceResult> GetPartyBalanceAsync(TenantId tenantId, PartyBalanceQuery query, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AgingBucketResult>> GetAgingAsync(TenantId tenantId, Guid membershipId, AgingQuery query, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ReconciliationSourceContext>> GetReconciliationControlAccountsAsync(TenantId tenantId, Guid membershipId, ReconciliationQuery query, CancellationToken cancellationToken = default);
+    Task<ReconciliationResult?> GetReconciliationRunAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid runId, CancellationToken cancellationToken = default);
+    Task<OpeningSubledgerValidationResult> ValidateOpeningSubledgerBatchAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid batchId, CancellationToken cancellationToken = default);
     Task<PartyStatementResult> GetStatementAsync(TenantId tenantId, Guid membershipId, PartyStatementQuery query, CancellationToken cancellationToken = default);
     Task<WriteOffPolicyResult> UpdateWriteOffPolicyAsync(TenantId tenantId, Guid membershipId, WriteOffPolicyCommand command, CancellationToken cancellationToken = default);
     Task<Guid> CreateWriteOffRequestAsync(TenantId tenantId, Guid membershipId, CreateWriteOffCommand command, CancellationToken cancellationToken = default);
     Task<WriteOffResult> ApproveWriteOffAsync(TenantId tenantId, Guid membershipId, ApproveWriteOffCommand command, CancellationToken cancellationToken = default);
     Task<ReconciliationResult> ReconcileControlBalancesAsync(TenantId tenantId, Guid membershipId, ReconciliationQuery query, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default);
     Task<Guid> CreateOpeningSubledgerBatchAsync(TenantId tenantId, Guid membershipId, CreateOpeningSubledgerBatchCommand command, CancellationToken cancellationToken = default);
-    Task AddOpeningSubledgerLinesAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid batchId, IReadOnlyList<OpeningSubledgerLineCommand> lines, CancellationToken cancellationToken = default);
+    Task AddOpeningSubledgerLinesAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid batchId, IReadOnlyList<OpeningSubledgerLineCommand> lines, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default);
     Task<OpeningSubledgerBatchResult> FinalizeOpeningSubledgerBatchAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid batchId, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default);
 }

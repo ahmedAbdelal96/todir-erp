@@ -83,6 +83,16 @@ public sealed class ApiCompositionTests
         Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/periods/{periodId}/close-readiness", out _));
         Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/posting-preview", out _));
         Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/periods/{periodId}/reopen", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/open-items", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/parties/{partyId}/open-items", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/applications/suggest", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/applications/preview", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/applications", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/parties/{partyId}/financial-profile", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/parties/{partyId}/statement", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/reconciliation/control-accounts", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/reconciliation/run", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/subledger/opening-batches/{batchId}/finalize", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/facts", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/facts", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/entries/{entryId}", out _));

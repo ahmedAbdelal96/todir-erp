@@ -4,9 +4,18 @@ using DbMigrator.SeedData;
 using Npgsql;
 
 var seedDevelopment = args.Length == 2 && string.Equals(args[0], "--seed", StringComparison.OrdinalIgnoreCase) && string.Equals(args[1], "development", StringComparison.OrdinalIgnoreCase);
+var rebuildTenantId = Guid.Empty;
+var rebuildEntityId = Guid.Empty;
+var rebuildSubledger = args.Length == 3 && string.Equals(args[0], "--rebuild-subledger-cache", StringComparison.OrdinalIgnoreCase)
+    && Guid.TryParse(args[1], out rebuildTenantId) && Guid.TryParse(args[2], out rebuildEntityId);
 if (args.Any(argument => string.Equals(argument, "--seed", StringComparison.OrdinalIgnoreCase)) && !seedDevelopment)
 {
     Console.Error.WriteLine("Supported seed mode: --seed development");
+    return 2;
+}
+if (args.Any(argument => string.Equals(argument, "--rebuild-subledger-cache", StringComparison.OrdinalIgnoreCase)) && !rebuildSubledger)
+{
+    Console.Error.WriteLine("Usage: --rebuild-subledger-cache <tenant-guid> <legal-entity-guid>");
     return 2;
 }
 if (seedDevelopment)
@@ -14,7 +23,6 @@ if (seedDevelopment)
     try { DevelopmentSeedEnvironment.RequireSupported(); }
     catch (InvalidOperationException exception) { Console.Error.WriteLine(exception.Message); return 2; }
 }
-
 var connectionString = Environment.GetEnvironmentVariable("TODIR_MIGRATOR_CONNECTION");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -297,6 +305,20 @@ await using (var financeRateSourceOwnership = new NpgsqlCommand("alter function 
     await financeRateSourceOwnership.ExecuteNonQueryAsync();
 await using (var supportExpiryOwnership = new NpgsqlCommand("alter function platform.expire_support_access_grants() owner to erp_dispatcher", connection))
     await supportExpiryOwnership.ExecuteNonQueryAsync();
+
+if (rebuildSubledger)
+{
+    try
+    {
+        var changedRows = await DbMigrator.SubledgerProjectionRebuilder.RunAsync(ownedConnection, rebuildTenantId, rebuildEntityId);
+        Console.WriteLine($"Subledger open-item cache rebuild committed; changed rows: {changedRows}.");
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Subledger open-item cache rebuild rolled back: {exception.Message}");
+        return 5;
+    }
+}
 
 if (seedDevelopment)
 {

@@ -1,4 +1,5 @@
 using Core.Transactions;
+using System.Diagnostics;
 using Core.Authorization;
 using Core.Services;
 using Modules.Subledger.Repositories;
@@ -14,12 +15,17 @@ using Shared.Contracts.Directory;
 using Shared.Contracts.Ledger;
 using Shared.Primitives.Financial;
 using Shared.Primitives.Identifiers;
+using Xunit.Abstractions;
 using Xunit;
 
 namespace Subledger.Tests;
 
 public sealed class SubledgerPostgresIntegrationTests
 {
+    private readonly ITestOutputHelper output;
+
+    public SubledgerPostgresIntegrationTests(ITestOutputHelper output) => this.output = output;
+
     private static readonly TenantId Tenant = new(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
     private static readonly TenantId OtherTenant = new(Guid.Parse("3f93b180-d6a9-3e50-9c92-6be0607e96eb"));
     private static readonly LegalEntityId Entity = new(Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528"));
@@ -167,6 +173,93 @@ public sealed class SubledgerPostgresIntegrationTests
         var supplierCreditNote = await CreateAsync(repository, partyId, "CreditNote", "Debit", $"SUBLEDGER-AP-CREDITNOTE-{suffix}", 2m, Modules.Subledger.Entities.SubledgerDirection.Payable);
         await repository.ApplyAsync(Tenant, new(Entity, partyId, SubledgerDirectionContract.Payable, $"ap-credit-note-apply-{suffix}", new(2026, 10, 28), new(2026, 10, 28), [new(supplierCreditNote, payableBill, "2")], Guid.CreateVersion7(), Guid.CreateVersion7()), [2m], 2, Shared.Primitives.Financial.FinancialRoundingModeValue.HalfUp, default);
         Assert.Equal(13m, await ReadOpenAmountAsync(dataSource, payableBill));
+    }
+
+    [Fact]
+    public async Task AutoApplySuggestionsPreferExactReferenceThenOldestDueAndCarryVersions()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_LEDGER_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_SUBLEDGER_TEST_CONNECTION to a migrated development database and runtime-equivalent erp_app connection.");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var repository = new SubledgerRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), TimeProvider.System);
+        var partyId = await FindActivePartyAsync(dataSource);
+        var suffix = Guid.NewGuid().ToString("N");
+        var controlReference = $"MATCH-CONTROL-{suffix}";
+        var controlConfiguration = $"MATCH-CONFIG-{suffix}";
+        OpenItemSnapshotContract Isolated(OpenItemSnapshotContract value) => value with { ControlAccountReference = controlReference, ControlConfigurationReference = controlConfiguration };
+        var oldInvoice = Isolated(Snapshot($"SUBLEDGER-MATCH-OLD-{suffix}", 50m)) with { DueDate = new(2026, 1, 1) };
+        var exactReference = $"inv ref 22 {suffix}";
+        var exactInvoice = Isolated(Snapshot($"SUBLEDGER-MATCH-EXACT-{suffix}", 40m)) with { SourceDisplayNumber = exactReference, DocumentDate = new(2026, 11, 1), DueDate = new(2026, 12, 1) };
+        var foreignInvoice = Isolated(Snapshot($"SUBLEDGER-MATCH-FOREIGN-{suffix}", 30m)) with
+        {
+            TransactionCurrency = "USD", OriginalTransactionAmount = "30", OriginalBaseAmount = "1500",
+            HistoricFxSnapshot = "{\"rate\":50}", DueDate = new(2025, 1, 1)
+        };
+        var debitIds = await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [oldInvoice, exactInvoice, foreignInvoice], default);
+        var source = Isolated(Snapshot($"SUBLEDGER-MATCH-SOURCE-{suffix}", 80m)) with { SourceDisplayNumber = "PAY-22" };
+        var sourceId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment", [source], default)).Single();
+        Assert.Equal(1L, await CountOutboxByCausationAsync(Tenant.Value, "OpenItemCreatedV1", sourceId));
+        var service = new SubledgerService(repository, new ActivePartyDirectory(), new InstallmentFinanceBase(), new FixedEntityCurrency(),
+            new AllPermissionSubjectStore(Tenant, Guid.Parse("10000000-0000-7000-8000-000000000001")), new PermissionAuthorizer(), TimeProvider.System);
+
+        var result = await service.SuggestApplicationsAsync(Tenant, Guid.Parse("10000000-0000-7000-8000-000000000001"),
+            new(Entity, sourceId, $"INV ref-22 {suffix}", "ReferenceMatchFirst", 10));
+
+        Assert.Equal(80m, decimal.Parse(result.SourceAvailable, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal("EGP", result.CurrencyCode);
+        Assert.True(result.CrossCurrencyExcluded);
+        Assert.Collection(result.Suggestions,
+            exact => { Assert.Equal(debitIds[1], exact.DebitItemId); Assert.Equal("ExactReference", exact.ReasonCode); Assert.Equal("High", exact.ConfidenceClass); },
+            oldest => { Assert.Equal(debitIds[0], oldest.DebitItemId); Assert.Equal("OldestDueFallback", oldest.ReasonCode); Assert.Equal("Low", oldest.ConfidenceClass); });
+        Assert.Equal(0m, decimal.Parse(result.RemainingSource, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.All(result.Suggestions, line => Assert.True(line.ExpectedDebitVersion > 0 && line.ExpectedCreditVersion > 0));
+
+        var oldestDue = await service.SuggestApplicationsAsync(Tenant, Guid.Parse("10000000-0000-7000-8000-000000000001"),
+            new(Entity, sourceId, $"INV ref-22 {suffix}", "AutoOldestDue", 10));
+        Assert.Equal(debitIds[0], oldestDue.Suggestions[0].DebitItemId);
+        Assert.Equal("OldestDueFallback", oldestDue.Suggestions[0].ReasonCode);
+        var oldestDocument = await service.SuggestApplicationsAsync(Tenant, Guid.Parse("10000000-0000-7000-8000-000000000001"),
+            new(Entity, sourceId, $"INV ref-22 {suffix}", "AutoOldestDocument", 10));
+        Assert.Equal(debitIds[0], oldestDocument.Suggestions[0].DebitItemId);
+        var manual = await service.SuggestApplicationsAsync(Tenant, Guid.Parse("10000000-0000-7000-8000-000000000001"),
+            new(Entity, sourceId, $"INV ref-22 {suffix}", "Manual", 10));
+        Assert.Empty(manual.Suggestions);
+        Assert.Equal(80m, decimal.Parse(manual.RemainingSource, System.Globalization.CultureInfo.InvariantCulture));
+
+        var equalTarget = Isolated(Snapshot($"SUBLEDGER-MATCH-EQUAL-{suffix}", 25m)) with { SourceDisplayNumber = "REF-25" };
+        var equalDebit = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [equalTarget], default)).Single();
+        var equalSource = Isolated(Snapshot($"SUBLEDGER-MATCH-EQUAL-SOURCE-{suffix}", 25m));
+        var equalCredit = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment", [equalSource], default)).Single();
+        var exactAmount = await service.SuggestApplicationsAsync(Tenant, Guid.Parse("10000000-0000-7000-8000-000000000001"),
+            new(Entity, equalCredit, "ref25", "ReferenceMatchFirst", 5));
+        Assert.Equal(equalDebit, Assert.Single(exactAmount.Suggestions).DebitItemId);
+        Assert.Equal("ExactAmountAndReference", Assert.Single(exactAmount.Suggestions).ReasonCode);
+    }
+
+    [Fact]
+    public async Task ApplicationCommitRejectsStaleSuggestionVersions()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_LEDGER_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_SUBLEDGER_TEST_CONNECTION to a migrated development database and runtime-equivalent erp_app connection.");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var repository = new SubledgerRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), TimeProvider.System);
+        var partyId = await FindActivePartyAsync(dataSource);
+        var suffix = Guid.NewGuid().ToString("N");
+        var debit = await CreateAsync(repository, partyId, "Invoice", "Debit", $"SUBLEDGER-STALE-DEBIT-{suffix}", 10m);
+        var credit = await CreateAsync(repository, partyId, "Payment", "Credit", $"SUBLEDGER-STALE-CREDIT-{suffix}", 10m);
+        var failure = await Assert.ThrowsAsync<Modules.Subledger.Entities.SubledgerException>(() => repository.ApplyAsync(Tenant,
+            new(Entity, partyId, SubledgerDirectionContract.Receivable, $"stale-suggestion-{suffix}", new(2026, 10, 25), new(2026, 10, 25),
+                [new ApplicationLineCommand(debit, credit, "10", null, 999, 999)], Guid.CreateVersion7(), Guid.CreateVersion7()), [10m], 2,
+            FinancialRoundingModeValue.HalfUp, default));
+        Assert.Equal("subledger.item_changed", failure.Code);
+        Assert.Equal(10m, await ReadOpenAmountAsync(dataSource, debit));
+        Assert.Equal(10m, await ReadOpenAmountAsync(dataSource, credit));
     }
 
     [Fact]
@@ -403,6 +496,13 @@ public sealed class SubledgerPostgresIntegrationTests
         Assert.Equal(result.Details.Sum(detail => decimal.Parse(detail.SubledgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture)), decimal.Parse(result.SubledgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture));
         Assert.Equal(result.Details.Sum(detail => decimal.Parse(detail.LedgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture)), decimal.Parse(result.LedgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture));
         Assert.Equal(1L, await CountReconciliationRunsAsync(dataSource, result.Id));
+        var controlAccounts = await service.GetReconciliationControlAccountsAsync(Tenant, membership, new(Entity, new(2026, 12, 31)), default);
+        Assert.NotEmpty(controlAccounts);
+        var loadedRun = await service.GetReconciliationRunAsync(Tenant, membership, Entity, result.Id, default);
+        Assert.NotNull(loadedRun);
+        Assert.Equal(result.Details.Select(detail => detail.Id).Order(), loadedRun.Details.Select(detail => detail.Id).Order());
+        Assert.Equal(result.Details.ToDictionary(detail => detail.Id, detail => decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)),
+            loadedRun.Details.ToDictionary(detail => detail.Id, detail => decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)));
     }
 
     [Fact]
@@ -458,7 +558,10 @@ public sealed class SubledgerPostgresIntegrationTests
             new("d-ap-bill", partyId, SubledgerDirectionContract.Payable, SubledgerPolarityContract.Credit, "legacy-ap-60", openingDate, openingDate.AddDays(30), "EGP", (targetAp + 10m).ToString(System.Globalization.CultureInfo.InvariantCulture), "EGP", (targetAp + 10m).ToString(System.Globalization.CultureInfo.InvariantCulture), "Payable", "role:Payable", configurationReference),
             new("e-ap-advance", partyId, SubledgerDirectionContract.Payable, SubledgerPolarityContract.Debit, "legacy-ap-credit", openingDate, openingDate, "EGP", "10", "EGP", "10", "Payable", "role:Payable", configurationReference)
         };
-        await service.AddOpeningSubledgerLinesAsync(Tenant, membership, Entity, batchId, openingLines, default);
+        await service.AddOpeningSubledgerLinesAsync(Tenant, membership, Entity, batchId, openingLines, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var validation = await service.ValidateOpeningSubledgerBatchAsync(Tenant, membership, Entity, batchId, default);
+        Assert.True(validation.IsBalanced);
+        Assert.Equal(openingLines.Length, validation.LineCount);
         var finalized = await service.FinalizeOpeningSubledgerBatchAsync(Tenant, membership, Entity, batchId, actorId, Guid.CreateVersion7(), default);
         Assert.Equal("Finalized", finalized.Status);
         Assert.Equal(5, finalized.LineCount);
@@ -474,7 +577,7 @@ public sealed class SubledgerPostgresIntegrationTests
         {
             BatchIdentity = $"SUBLEDGER-OPEN-FAIL-{Guid.NewGuid():N}", IdempotencyKey = $"opening-fail-{Guid.NewGuid():N}"
         }, default);
-        await service.AddOpeningSubledgerLinesAsync(Tenant, membership, Entity, failingBatch, openingLines, default);
+        await service.AddOpeningSubledgerLinesAsync(Tenant, membership, Entity, failingBatch, openingLines, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
         var collisionReference = $"OB-{failingBatch:N}-e-ap-advance";
         await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Payable,
             Modules.Subledger.Entities.OpenItemPolarity.Debit, "OpeningBalance", [Snapshot(collisionReference, 10m, controlRole: "Payable")], default);
@@ -544,6 +647,8 @@ public sealed class SubledgerPostgresIntegrationTests
         Assert.False(applied.AlreadyApplied);
         Assert.True(retry.AlreadyApplied);
         Assert.Single(retry.ApplicationIds);
+        Assert.Equal(1L, await CountOutboxByCausationAsync(Tenant.Value, "ApplicationConfirmedV1", applied.BatchId));
+        Assert.Equal(1L, await CountAuditByActionAsync(Tenant.Value, "open_item_application_confirmed", applied.BatchId));
         await Assert.ThrowsAsync<Modules.Subledger.Entities.SubledgerException>(() => repository.ApplyAsync(Tenant,
             apply with { Lines = [new(debitId, creditId, "41")] }, [41m], 2, Shared.Primitives.Financial.FinancialRoundingModeValue.HalfUp, default));
 
@@ -553,6 +658,8 @@ public sealed class SubledgerPostgresIntegrationTests
         Assert.Single(reversalAttempts, result => result.AlreadyApplied);
         Assert.Equal(reversalAttempts[0].ApplicationIds, reversalAttempts[1].ApplicationIds);
         Assert.Equal(1L, await CountReversalsForApplicationAsync(dataSource, applied.ApplicationIds.Single()));
+        Assert.Equal(1L, await CountOutboxByCausationAsync(Tenant.Value, "ApplicationReversedV1", reversalAttempts.Single(result => !result.AlreadyApplied).BatchId));
+        Assert.Equal(1L, await CountAuditByActionAsync(Tenant.Value, "open_item_application_reversed", reversalAttempts.Single(result => !result.AlreadyApplied).BatchId));
         Assert.Equal(100m, await ReadOpenAmountAsync(dataSource, debitId));
         Assert.Equal(100m, await ReadOpenAmountAsync(dataSource, creditId));
 
@@ -600,6 +707,69 @@ public sealed class SubledgerPostgresIntegrationTests
         Assert.Equal(1L, await CountBatchAsync(dataSource, "Apply", $"subledger-race-{suffix}-0") + await CountBatchAsync(dataSource, "Apply", $"subledger-race-{suffix}-1"));
         Assert.True((await ReadItemStateAsync(dataSource, Entity, sourceA)).OpenAmount >= 0m);
         Assert.True((await ReadItemStateAsync(dataSource, Entity, sourceB)).OpenAmount >= 0m);
+    }
+
+    [Fact]
+    [Trait("Category", "Performance")]
+    public async Task HotPartyConcurrentApplicationLoadReportsLatencyConflictsAndIntegrity()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_LEDGER_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_SUBLEDGER_TEST_CONNECTION to a migrated development database and runtime-equivalent erp_app connection.");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var repository = new SubledgerRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), TimeProvider.System);
+        var hotPartyId = Guid.Parse("81e634ac-715c-6ada-adb8-ffce63272361");
+        var dataset = await ReadScaleCountsAsync(dataSource, hotPartyId);
+        var suffix = Guid.NewGuid().ToString("N");
+        var sources = await repository.CreateOpenItemsAsync(Tenant, Entity, hotPartyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment",
+            Enumerable.Range(0, 16).Select(index => Snapshot($"SUBLEDGER-PERF-SOURCE-{suffix}-{index}", 10m)).ToArray(), default);
+        var targets = await repository.CreateOpenItemsAsync(Tenant, Entity, hotPartyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice",
+            Enumerable.Range(0, 128).Select(index => Snapshot($"SUBLEDGER-PERF-TARGET-{suffix}-{index}", 1m)).ToArray(), default);
+        var membershipId = Guid.Parse("10000000-0000-7000-8000-000000000001");
+        var service = new SubledgerService(repository, new ActivePartyDirectory(), new InstallmentFinanceBase(), new FixedEntityCurrency(),
+            new AllPermissionSubjectStore(Tenant, membershipId), new PermissionAuthorizer(), TimeProvider.System);
+
+        var results = new LoadResult[128];
+        var totalStarted = Stopwatch.GetTimestamp();
+        await Parallel.ForEachAsync(Enumerable.Range(0, 128), new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (index, _) =>
+        {
+            var group = index / 8;
+            var started = Stopwatch.GetTimestamp();
+            try
+            {
+                await service.ApplyAsync(Tenant, membershipId,
+                    new(Entity, hotPartyId, SubledgerDirectionContract.Receivable, $"perf-{suffix}-{index}", new(2026, 10, 25), new(2026, 10, 25),
+                        [new(targets[index], sources[group], "1", ExpectedDebitVersion: 1, ExpectedCreditVersion: 1)], Guid.CreateVersion7(), Guid.CreateVersion7()), _);
+                results[index] = new LoadResult(Stopwatch.GetElapsedTime(started).TotalMilliseconds, null, false);
+            }
+            catch (Modules.Subledger.Entities.SubledgerException exception)
+            {
+                results[index] = new LoadResult(Stopwatch.GetElapsedTime(started).TotalMilliseconds, exception.Code, false);
+            }
+            catch (PostgresException exception)
+            {
+                results[index] = new LoadResult(Stopwatch.GetElapsedTime(started).TotalMilliseconds, exception.SqlState, exception.SqlState == "40P01");
+            }
+        });
+        var elapsed = Stopwatch.GetElapsedTime(totalStarted).TotalSeconds;
+        var latency = results.Select(result => result.Milliseconds).Order().ToArray();
+        var successes = results.Count(result => result.ErrorCode is null);
+        var staleConflicts = results.Count(result => result.ErrorCode == "subledger.item_changed");
+        var deadlocks = results.Count(result => result.Deadlock);
+        var unexpected = results.Where(result => result.ErrorCode is not null and not "subledger.item_changed").ToArray();
+        var negativeRemaining = await CountNegativeOpenItemsAsync(dataSource, hotPartyId);
+        var unexpectedSummary = string.Join(",", unexpected.GroupBy(result => result.ErrorCode).Select(group => $"{group.Key}:{group.Count()}"));
+
+        output.WriteLine($"SUBLEDGER_CONCURRENCY datasetItems={dataset.Items} datasetApplications={dataset.Applications} hotPartyOpenItems={dataset.HotPartyOpenItems} operations=128 workers=8");
+        output.WriteLine($"throughput={128d / elapsed:F2}/s p50={Percentile(latency, 0.50):F2}ms p95={Percentile(latency, 0.95):F2}ms p99={Percentile(latency, 0.99):F2}ms successes={successes} staleConflicts={staleConflicts} deadlocks={deadlocks} retries=0 negativeRemaining={negativeRemaining}");
+        output.WriteLine($"otherErrors={unexpectedSummary}");
+        Assert.Equal(16, successes);
+        Assert.Equal(112, staleConflicts);
+        Assert.Equal(0, deadlocks);
+        Assert.Empty(unexpected);
+        Assert.Equal(0, negativeRemaining);
     }
 
     [Fact]
@@ -962,6 +1132,49 @@ public sealed class SubledgerPostgresIntegrationTests
         return result is Guid id ? id : throw new InvalidOperationException("The Subledger PostgreSQL fixture has no active party visible in the Atlas legal entity.");
     }
 
+    private static double Percentile(double[] sortedValues, double percentile)
+    {
+        var index = Math.Clamp((int)Math.Ceiling(percentile * sortedValues.Length) - 1, 0, sortedValues.Length - 1);
+        return sortedValues[index];
+    }
+
+    private static async Task<long> CountNegativeOpenItemsAsync(NpgsqlDataSource dataSource, Guid partyId)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using (var tenantContext = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction))
+        {
+            tenantContext.Parameters.AddWithValue(Tenant.Value.ToString("D"));
+            await tenantContext.ExecuteNonQueryAsync();
+        }
+        await using var command = new NpgsqlCommand("select count(*) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and party_id=$3 and (open_transaction_amount<0 or open_base_carrying_amount<0)", connection, transaction);
+        command.Parameters.AddWithValue(Tenant.Value);
+        command.Parameters.AddWithValue(Entity.Value);
+        command.Parameters.AddWithValue(partyId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<ScaleCounts> ReadScaleCountsAsync(NpgsqlDataSource dataSource, Guid partyId)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using (var tenantContext = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction))
+        {
+            tenantContext.Parameters.AddWithValue(Tenant.Value.ToString("D"));
+            await tenantContext.ExecuteNonQueryAsync();
+        }
+        await using var command = new NpgsqlCommand("select (select count(*) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2),(select count(*) from finance_subledger.open_item_application where tenant_id=$1 and legal_entity_id=$2),(select count(*) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and party_id=$3 and is_open)", connection, transaction);
+        command.Parameters.AddWithValue(Tenant.Value);
+        command.Parameters.AddWithValue(Entity.Value);
+        command.Parameters.AddWithValue(partyId);
+        await using var reader = await command.ExecuteReaderAsync();
+        await reader.ReadAsync();
+        return new(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));
+    }
+
+    private sealed record LoadResult(double Milliseconds, string? ErrorCode, bool Deadlock);
+    private sealed record ScaleCounts(long Items, long Applications, long HotPartyOpenItems);
+
     private static (NpgsqlDataSource DataSource, SubledgerRepository Repository) CreateRuntimeRepository()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
@@ -1237,6 +1450,32 @@ public sealed class SubledgerPostgresIntegrationTests
         return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    private static async Task<long> CountOutboxByCausationAsync(Guid tenantId, string messageType, Guid causationId)
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION to verify transactional Subledger outbox records.");
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("select count(*) from platform.outbox_message where tenant_id=$1 and message_type=$2 and causation_id=$3", connection);
+        command.Parameters.AddWithValue(tenantId);
+        command.Parameters.AddWithValue(messageType);
+        command.Parameters.AddWithValue(causationId);
+        return (long)(await command.ExecuteScalarAsync() ?? 0L);
+    }
+
+    private static async Task<long> CountAuditByActionAsync(Guid tenantId, string action, Guid entityId)
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION to verify transactional Subledger audit records.");
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("select count(*) from platform.audit_entry where tenant_id=$1 and action=$2 and entity_id=$3", connection);
+        command.Parameters.AddWithValue(tenantId);
+        command.Parameters.AddWithValue(action);
+        command.Parameters.AddWithValue(entityId);
+        return (long)(await command.ExecuteScalarAsync() ?? 0L);
+    }
+
     private static async Task<decimal> SumAppliedAsync(NpgsqlDataSource dataSource, Guid itemId)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
@@ -1293,7 +1532,7 @@ public sealed class SubledgerPostgresIntegrationTests
             var roleId = Guid.CreateVersion7();
             var role = new Role(roleId, tenant, "test", "Test", false, true, 1);
             var assignment = new MembershipRoleAssignment(tenant, membership, roleId, PermissionScope.ForLegalEntity(tenant, Entity));
-            var codes = new[] { "subledger.reconciliation.run", "subledger.writeoff.policy.manage", "subledger.writeoff.create", "subledger.writeoff.approve", "subledger.opening.manage", "subledger.opening.finalize" };
+            var codes = new[] { "subledger.reconciliation.run", "subledger.reconciliation.read", "subledger.writeoff.policy.manage", "subledger.writeoff.create", "subledger.writeoff.approve", "subledger.opening.manage", "subledger.opening.finalize", "subledger.application.create" };
             var permissions = codes.Select(code => new RolePermissionEntry(tenant, roleId, code)).ToArray();
             return Task.FromResult<AuthorizationSubject?>(new(tenant, membership, [assignment], [role], permissions, 1));
         }

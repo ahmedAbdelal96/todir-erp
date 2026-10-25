@@ -2,7 +2,7 @@
   "$schema": "../../../docs/platform/module-manifest-schema.json",
   "id": "subledger",
   "version": "1.0.0",
-  "contractsVersion": 5,
+  "contractsVersion": 6,
   "layer": "L2",
   "type": "module",
   "purchasable": false,
@@ -61,6 +61,7 @@
     "provides": [
       "subledger.open-items",
       "subledger.application",
+      "subledger.application-suggestions",
       "subledger.party-financial-profile",
       "subledger.settlement-state",
       "subledger.party-exposure",
@@ -81,7 +82,15 @@
     ]
   },
   "messaging": {
-    "publishes": [],
+    "publishes": [
+      "OpenItemCreatedV1",
+      "ApplicationConfirmedV1",
+      "ApplicationReversedV1",
+      "PartyFinancialProfileChangedV1",
+      "CreditLimitChangedV1",
+      "WriteOffApprovedV1",
+      "OpeningBatchFinalizedV1"
+    ],
     "consumes": []
   },
   "lifecycle": {

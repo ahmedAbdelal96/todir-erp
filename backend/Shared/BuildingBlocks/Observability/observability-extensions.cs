@@ -19,10 +19,12 @@ public static class ObservabilityExtensions
                 .AddSource("Todir.Request")
                 .AddSource("Core.Handler")
                 .AddSource("Core.Database")
+                .AddSource("Subledger")
                 .AddSource("Npgsql")
                 .AddAspNetCoreInstrumentation())
             .WithMetrics(metrics => metrics
                 .AddMeter(CoreMetrics.Meter.Name)
+                .AddMeter("Subledger")
                 .AddAspNetCoreInstrumentation()
                 .AddPrometheusExporter());
         return services;

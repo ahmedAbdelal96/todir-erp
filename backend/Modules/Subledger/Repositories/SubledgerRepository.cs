@@ -2,9 +2,12 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
 using Core.Transactions;
+using Core.Services;
 using Shared.Contracts.Ledger;
 using Modules.Subledger.Entities;
+using Modules.Subledger.Events;
 using Npgsql;
 using Shared.Contracts.Subledger;
 using Shared.Primitives.Identifiers;
@@ -38,7 +41,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         return ReadProfile(reader);
     }
 
-    public Task<PartyFinancialProfileResult> SaveProfileAsync(TenantId tenant, PartyFinancialProfileCommand request, decimal? creditLimit, string? creditCurrency, CancellationToken ct) =>
+    public Task<PartyFinancialProfileResult> SaveProfileAsync(TenantId tenant, PartyFinancialProfileCommand request, decimal? creditLimit, string? creditCurrency, CancellationToken ct, bool creditLimitChanged = false) =>
         transactions.ExecuteAsync(tenant, async (context, token) =>
         {
             var now = clock.GetUtcNow();
@@ -57,8 +60,22 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             }
             await using var query = new NpgsqlCommand("select id,party_id,legal_entity_id,default_receivable_payment_term_id,default_payable_payment_term_id,credit_limit_amount,credit_limit_currency,receivable_policy_code,payable_policy_code,version,updated_at from finance_subledger.party_financial_profile where tenant_id=$1 and legal_entity_id=$2 and party_id=$3", context.Connection, context.Transaction);
             Add(query, tenant.Value, request.LegalEntityId.Value, request.PartyId);
-            await using var reader = await query.ExecuteReaderAsync(token); await reader.ReadAsync(token);
-            return ReadProfile(reader);
+            PartyFinancialProfileResult result;
+            await using (var reader = await query.ExecuteReaderAsync(token))
+            {
+                if (!await reader.ReadAsync(token)) throw new SubledgerException("subledger.profile_changed", "The financial profile could not be loaded after update.");
+                result = ReadProfile(reader);
+            }
+            var correlationId = request.CorrelationId == Guid.Empty ? Guid.CreateVersion7() : request.CorrelationId;
+            EnqueueEvent(context, tenant, SubledgerEventTypes.PartyFinancialProfileChangedV1,
+                new PartyFinancialProfileChangedEventV1(result.Id, request.LegalEntityId.Value, request.PartyId, result.Version), result.Id, correlationId, result.UpdatedAt);
+            if (creditLimitChanged)
+                EnqueueEvent(context, tenant, SubledgerEventTypes.CreditLimitChangedV1,
+                    new CreditLimitChangedEventV1(result.Id, request.LegalEntityId.Value, request.PartyId, result.Version), result.Id, correlationId, result.UpdatedAt);
+            if (request.ActorId != Guid.Empty)
+                await AuditAsync(context, tenant, request.LegalEntityId, request.ActorId, null, "party_financial_profile_changed", "party_financial_profile", result.Id,
+                    JsonSerializer.Serialize(new { expectedVersion = request.ExpectedVersion }), JsonSerializer.Serialize(new { version = result.Version, creditLimitChanged }), null, correlationId, result.UpdatedAt, token);
+            return result;
         }, ct);
 
     public Task<WriteOffPolicyResult> SaveWriteOffPolicyAsync(TenantId tenant, WriteOffPolicyCommand command, decimal maximumAmount, decimal approvalThreshold, string currency, CancellationToken ct) =>
@@ -79,9 +96,17 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             }
             await using var query = new NpgsqlCommand("select id,legal_entity_id,direction,currency_code,maximum_amount,approval_threshold,automatic_write_off_enabled,version,updated_at from finance_subledger.write_off_policy where tenant_id=$1 and legal_entity_id=$2 and direction=$3 and currency_code=$4", context.Connection, context.Transaction);
             Add(query, tenant.Value, command.LegalEntityId.Value, command.Direction.ToString(), currency);
-            await using var reader = await query.ExecuteReaderAsync(token);
-            if (!await reader.ReadAsync(token)) throw new SubledgerException("subledger.writeoff_policy_changed", "The write-off policy could not be loaded.");
-            return ReadWriteOffPolicy(reader);
+            WriteOffPolicyResult result;
+            await using (var reader = await query.ExecuteReaderAsync(token))
+            {
+                if (!await reader.ReadAsync(token)) throw new SubledgerException("subledger.writeoff_policy_changed", "The write-off policy could not be loaded.");
+                result = ReadWriteOffPolicy(reader);
+            }
+            if (command.ActorId != Guid.Empty)
+                await AuditAsync(context, tenant, command.LegalEntityId, command.ActorId, null, "writeoff_policy_changed", "write_off_policy", result.Id,
+                    JsonSerializer.Serialize(new { expectedVersion = command.ExpectedVersion }), JsonSerializer.Serialize(new { result.Version, result.CurrencyCode }), null,
+                    command.CorrelationId == Guid.Empty ? Guid.CreateVersion7() : command.CorrelationId, now, token);
+            return result;
         }, ct);
 
     public Task<Guid> CreateWriteOffRequestAsync(TenantId tenant, CreateWriteOffCommand request, decimal amount, string currency, short roundingScale, string roundingMode, CancellationToken ct) =>
@@ -164,6 +189,8 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             if (await updateRequest.ExecuteNonQueryAsync(token) != 1) throw new SubledgerException("subledger.writeoff_transition_invalid", "The write-off request changed while it was being approved.");
             await WriteWriteOffAuditAsync(context, tenant, request.LegalEntityId, requestId, "Approved", request.ActorId,
                 JsonSerializer.Serialize(new { writeOffId, amount, currency, baseAmount, item.BaseCurrency, posting.FactId, posting.JournalEntryId, effectiveDate }), now, token);
+            EnqueueEvent(context, tenant, SubledgerEventTypes.WriteOffApprovedV1,
+                new WriteOffApprovedEventV1(writeOffId, requestId, request.LegalEntityId.Value, itemId, posting.FactId), writeOffId, request.CorrelationId, now);
             return new WriteOffResult(writeOffId, requestId, itemId, amount.ToString(CultureInfo.InvariantCulture), currency, baseAmount.ToString(CultureInfo.InvariantCulture), item.BaseCurrency, effectiveDate, posting.FactId, request.ActorId, false);
         }, ct);
 
@@ -182,13 +209,16 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
                 }
             }
             var id = Guid.CreateVersion7();
+            var now = clock.GetUtcNow();
             await using var insert = new NpgsqlCommand("insert into finance_subledger.opening_batch(tenant_id,legal_entity_id,id,batch_identity,go_live_date,base_currency,control_configuration_reference,idempotency_key,payload_hash,status,created_by,correlation_id,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,'Draft',$10,$11,$12)", context.Connection, context.Transaction);
-            Add(insert, tenant.Value, request.LegalEntityId.Value, id, request.BatchIdentity.Trim(), request.GoLiveDate, baseCurrency, request.ControlConfigurationReference.Trim(), request.IdempotencyKey.Trim(), payloadHash, request.ActorId, request.CorrelationId, clock.GetUtcNow());
+            Add(insert, tenant.Value, request.LegalEntityId.Value, id, request.BatchIdentity.Trim(), request.GoLiveDate, baseCurrency, request.ControlConfigurationReference.Trim(), request.IdempotencyKey.Trim(), payloadHash, request.ActorId, request.CorrelationId, now);
             await insert.ExecuteNonQueryAsync(token);
+            await AuditAsync(context, tenant, request.LegalEntityId, request.ActorId, null, "opening_batch_created", "opening_batch", id, null,
+                JsonSerializer.Serialize(new { request.BatchIdentity, request.GoLiveDate, BaseCurrency = baseCurrency }), null, request.CorrelationId, now, token);
             return id;
         }, ct);
 
-    public Task AddOpeningSubledgerLinesAsync(TenantId tenant, LegalEntityId entity, Guid batchId, IReadOnlyList<OpeningSubledgerLineCommand> lines, CancellationToken ct) =>
+    public Task AddOpeningSubledgerLinesAsync(TenantId tenant, LegalEntityId entity, Guid batchId, IReadOnlyList<OpeningSubledgerLineCommand> lines, Guid actorId, Guid correlationId, CancellationToken ct) =>
         transactions.ExecuteAsync(tenant, async (context, token) =>
         {
             await using (var batch = new NpgsqlCommand("select status from finance_subledger.opening_batch where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction))
@@ -212,6 +242,8 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
                 var existingHash = (string?)await existing.ExecuteScalarAsync(token);
                 if (existingHash?.Trim() != hash) throw new SubledgerException("subledger.opening_row_conflict", "An opening row key was replayed with different financial details.");
             }
+            await AuditAsync(context, tenant, entity, actorId, null, "opening_batch_lines_added", "opening_batch", batchId, null,
+                JsonSerializer.Serialize(new { LineCount = lines.Count }), null, correlationId, clock.GetUtcNow(), token);
             return true;
         }, ct);
 
@@ -281,10 +313,15 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             await using var finalize = new NpgsqlCommand("update finance_subledger.opening_batch set status='Finalized',finalized_by=$4,finalization_correlation_id=$5,finalized_at=$6 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Draft'", context.Connection, context.Transaction);
             Add(finalize, tenant.Value, entity.Value, batchId, actorId, correlationId, now);
             if (await finalize.ExecuteNonQueryAsync(token) != 1) throw new SubledgerException("subledger.opening_batch_changed", "The opening batch changed while it was being finalized.");
+            EnqueueEvent(context, tenant, SubledgerEventTypes.OpeningBatchFinalizedV1,
+                new OpeningBatchFinalizedEventV1(batchId, entity.Value, openItemIds.Count), batchId, correlationId, now);
+            await AuditAsync(context, tenant, entity, actorId, null, "opening_batch_finalized", "opening_batch", batchId,
+                JsonSerializer.Serialize(new { Status = "Draft", LineCount = lines.Count }),
+                JsonSerializer.Serialize(new { Status = "Finalized", OpenItemCount = openItemIds.Count }), null, correlationId, now, token);
             return new OpeningSubledgerBatchResult(batchId, identity, goLiveDate, "Finalized", lines.Count, openItemIds, false);
         }, ct);
 
-    public Task<IReadOnlyList<Guid>> CreateOpenItemsAsync(TenantId tenant, LegalEntityId entity, Guid partyId, SubledgerDirection direction, OpenItemPolarity polarity, string sourceType, IReadOnlyList<OpenItemSnapshotContract> items, CancellationToken ct) =>
+    public Task<IReadOnlyList<Guid>> CreateOpenItemsAsync(TenantId tenant, LegalEntityId entity, Guid partyId, SubledgerDirection direction, OpenItemPolarity polarity, string sourceType, IReadOnlyList<OpenItemSnapshotContract> items, CancellationToken ct, Guid? correlationId = null, Guid? actorId = null) =>
         transactions.ExecuteAsync(tenant, async (context, token) =>
         {
             var ids = new List<Guid>(items.Count);
@@ -294,7 +331,17 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
                 var id = Guid.CreateVersion7();
                 await using var insert = new NpgsqlCommand("insert into finance_subledger.party_open_item(tenant_id,legal_entity_id,id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,open_transaction_amount,base_currency,original_base_amount,open_base_carrying_amount,control_account_role,control_account_reference,control_configuration_reference,historic_fx_snapshot,source_version,source_payload_hash,status,is_open,row_version,created_at,payment_term_snapshot) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$17,$18,$19,$20,$21::jsonb,$22,$23,'Open',true,1,$24,$25::jsonb) on conflict do nothing", context.Connection, context.Transaction);
                 Add(insert, tenant.Value, entity.Value, id, partyId, direction.ToString(), polarity.ToString(), sourceType, item.SourceReference.Trim(), Db(Clean(item.SourceScheduleReference)), Db(Clean(item.SourceDisplayNumber)), item.DocumentDate, item.PostingDate, item.DueDate, NormalizeCurrency(item.TransactionCurrency), ParseAmount(item.OriginalTransactionAmount), NormalizeCurrency(item.BaseCurrency), ParseAmount(item.OriginalBaseAmount), item.ControlAccountRole, item.ControlAccountReference.Trim(), item.ControlConfigurationReference.Trim(), Db(item.HistoricFxSnapshot), item.SourceVersion, payloadHash, clock.GetUtcNow(), Db(item.PaymentTermSnapshot));
-                if (await insert.ExecuteNonQueryAsync(token) == 1) { ids.Add(id); continue; }
+                if (await insert.ExecuteNonQueryAsync(token) == 1)
+                {
+                    ids.Add(id);
+                    var occurredAt = clock.GetUtcNow();
+                    EnqueueEvent(context, tenant, SubledgerEventTypes.OpenItemCreatedV1, new OpenItemCreatedEventV1(id, entity.Value, partyId, direction.ToString(), sourceType), id, correlationId ?? id, occurredAt);
+                    if (actorId is { } actor && actor != Guid.Empty)
+                        await AuditAsync(context, tenant, entity, actor, null, "open_item_created", "party_open_item", id, null,
+                            JsonSerializer.Serialize(new { partyId, direction, polarity, sourceType }), null,
+                            correlationId ?? id, occurredAt, token);
+                    continue;
+                }
                 await using var existing = new NpgsqlCommand("select id,source_payload_hash from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_type=$3 and source_reference=$4 and source_schedule_reference is not distinct from $5::text", context.Connection, context.Transaction);
                 Add(existing, tenant.Value, entity.Value, sourceType, item.SourceReference.Trim(), Db(Clean(item.SourceScheduleReference)));
                 await using var reader = await existing.ExecuteReaderAsync(token);
@@ -346,6 +393,15 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             var ids = lines.SelectMany(line => new[] { line.DebitItemId, line.CreditItemId }).Distinct().Order().ToArray();
             var items = await LockItemsAsync(context, tenant, request.LegalEntityId, ids, token);
             if (items.Count != ids.Length) throw new SubledgerException("subledger.open_item_not_found", "One or more open items were not found.");
+            Activity.Current?.AddEvent(new ActivityEvent("subledger.open_item_locks_acquired"));
+            foreach (var requested in request.Lines)
+            {
+                if (!items.TryGetValue(requested.DebitItemId, out var debitItem) || !items.TryGetValue(requested.CreditItemId, out var creditItem))
+                    throw new SubledgerException("subledger.open_item_not_found", "One or more open items were not found.");
+                if (requested.ExpectedDebitVersion is { } debitVersion && debitItem.RowVersion != debitVersion
+                    || requested.ExpectedCreditVersion is { } creditVersion && creditItem.RowVersion != creditVersion)
+                    throw new SubledgerException("subledger.item_changed", "An open-item balance changed after preview. Refresh the suggestions and try again.");
+            }
             var debitTotals = new Dictionary<Guid, decimal>(); var creditTotals = new Dictionary<Guid, decimal>();
             for (var i = 0; i < lines.Length; i++)
             {
@@ -357,6 +413,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             }
             foreach (var pair in debitTotals) if (pair.Value > items[pair.Key].OpenAmount) throw new SubledgerException("subledger.application_over_target", "The application exceeds the remaining amount.");
             foreach (var pair in creditTotals) if (pair.Value > items[pair.Key].OpenAmount) throw new SubledgerException("subledger.application_over_source", "The application exceeds the available credit.");
+            Activity.Current?.AddEvent(new ActivityEvent("subledger.applications_calculated"));
 
             var closedBases = new List<(decimal Debit, decimal Credit)>();
             var remainingAmounts = items.ToDictionary(pair => pair.Key, pair => pair.Value.OpenAmount);
@@ -377,6 +434,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
                 await PostSettlementFxDifferenceAsync(context, tenant, request.LegalEntityId, appId, debit.BaseCurrency, debit.ControlRole, debitBase - creditBase,
                     request.SettlementDate, request.ActorId, request.CorrelationId, $"application:{appId:N}", token);
             }
+            Activity.Current?.AddEvent(new ActivityEvent("subledger.accounting_facts_generated"));
             foreach (var id in debitTotals.Keys.Union(creditTotals.Keys).Order())
             {
                 var item = items[id]; var applied = debitTotals.GetValueOrDefault(id) + creditTotals.GetValueOrDefault(id);
@@ -384,7 +442,60 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
                 for (var i = 0; i < lines.Length; i++) if (lines[i].DebitItemId == id) baseApplied += closedBases[i].Debit; else if (lines[i].CreditItemId == id) baseApplied += closedBases[i].Credit;
                 await ReduceItemAsync(context, tenant, request.LegalEntityId, id, applied, baseApplied, item, token);
             }
-            return new(batchId, false, await ApplicationIdsAsync(context, tenant, request.LegalEntityId, batchId, token));
+            var applicationIds = await ApplicationIdsAsync(context, tenant, request.LegalEntityId, batchId, token);
+            EnqueueEvent(context, tenant, SubledgerEventTypes.ApplicationConfirmedV1,
+                new ApplicationConfirmedEventV1(batchId, request.LegalEntityId.Value, request.PartyId, request.Direction.ToString(), applicationIds.Count),
+                batchId, request.CorrelationId, clock.GetUtcNow());
+            await AuditAsync(context, tenant, request.LegalEntityId, request.ActorId, null, "open_item_application_confirmed", "application_batch", batchId,
+                null, JsonSerializer.Serialize(new { request.PartyId, request.Direction, LineCount = applicationIds.Count }), null, request.CorrelationId, clock.GetUtcNow(), token);
+            return new(batchId, false, applicationIds);
+        }, ct);
+
+    public Task<ApplicationPreviewResult> PreviewApplicationAsync(TenantId tenant, ApplyOpenItemsCommand request, IReadOnlyList<ResolvedApplicationLineContract> resolvedLines,
+        int moneyScale, Shared.Primitives.Financial.FinancialRoundingModeValue roundingMode, CancellationToken ct) =>
+        transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            if (resolvedLines.Count != request.Lines.Count) throw new SubledgerException("subledger.application_lines_invalid", "Resolved settlement amounts do not match the requested application lines.");
+            var ids = resolvedLines.SelectMany(line => new[] { line.DebitItemId, line.CreditItemId }).Distinct().Order().ToArray();
+            var items = new Dictionary<Guid, LockedItem>();
+            await using (var load = new NpgsqlCommand("select id,party_id,direction,polarity,transaction_currency,open_transaction_amount,settled_transaction_amount,base_currency,open_base_carrying_amount,control_account_role,control_account_reference,control_configuration_reference,status,row_version from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and id=any($3)", context.Connection, context.Transaction))
+            {
+                Add(load, tenant.Value, request.LegalEntityId.Value, ids);
+                await using var reader = await load.ExecuteReaderAsync(token);
+                while (await reader.ReadAsync(token)) items.Add(reader.GetGuid(0), new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4).Trim(), reader.GetDecimal(5), reader.GetDecimal(6), reader.GetString(7).Trim(), reader.GetDecimal(8), reader.GetString(9), reader.GetString(10), reader.GetString(11), reader.GetString(12), reader.GetInt64(13)));
+            }
+            if (items.Count != ids.Length) throw new SubledgerException("subledger.open_item_not_found", "One or more open items were not found.");
+            var debitTotals = new Dictionary<Guid, decimal>(); var creditTotals = new Dictionary<Guid, decimal>();
+            var transactionRemaining = items.ToDictionary(pair => pair.Key, pair => pair.Value.OpenAmount);
+            var baseRemaining = items.ToDictionary(pair => pair.Key, pair => pair.Value.OpenBase);
+            var result = new List<ApplicationPreviewLine>(resolvedLines.Count);
+            decimal totalDebit = 0m, totalCredit = 0m, totalFx = 0m;
+            for (var index = 0; index < resolvedLines.Count; index++)
+            {
+                var line = resolvedLines[index]; var requested = request.Lines[index];
+                if (!items.TryGetValue(line.DebitItemId, out var debit) || !items.TryGetValue(line.CreditItemId, out var credit))
+                    throw new SubledgerException("subledger.open_item_not_found", "One or more open items were not found.");
+                if (requested.ExpectedDebitVersion is { } debitVersion && debit.RowVersion != debitVersion
+                    || requested.ExpectedCreditVersion is { } creditVersion && credit.RowVersion != creditVersion)
+                    throw new SubledgerException("subledger.item_changed", "An open-item balance changed after preview. Refresh and try again.");
+                var debitAmount = ParseAmount(line.DebitAmount); var creditAmount = ParseAmount(line.CreditAmount);
+                ValidatePair(debit, credit, request.PartyId, request.Direction, debitAmount, creditAmount, line.DebitFxSnapshot, line.CreditFxSnapshot, ParseAmount(line.SettlementBaseAmount));
+                debitTotals[line.DebitItemId] = debitTotals.GetValueOrDefault(line.DebitItemId) + debitAmount;
+                creditTotals[line.CreditItemId] = creditTotals.GetValueOrDefault(line.CreditItemId) + creditAmount;
+                totalDebit += debitAmount; totalCredit += creditAmount;
+                var debitBase = BasePortion(transactionRemaining[line.DebitItemId], baseRemaining[line.DebitItemId], debitAmount, moneyScale, roundingMode);
+                var creditBase = BasePortion(transactionRemaining[line.CreditItemId], baseRemaining[line.CreditItemId], creditAmount, moneyScale, roundingMode);
+                transactionRemaining[line.DebitItemId] -= debitAmount; transactionRemaining[line.CreditItemId] -= creditAmount;
+                baseRemaining[line.DebitItemId] -= debitBase; baseRemaining[line.CreditItemId] -= creditBase;
+                var fx = debitBase - creditBase; totalFx += fx;
+                result.Add(new(line.DebitItemId, line.CreditItemId, line.DebitAmount, line.CreditAmount, debit.RowVersion, credit.RowVersion,
+                    (debit.OpenAmount - debitTotals[line.DebitItemId]).ToString(CultureInfo.InvariantCulture),
+                    (credit.OpenAmount - creditTotals[line.CreditItemId]).ToString(CultureInfo.InvariantCulture), fx.ToString(CultureInfo.InvariantCulture), debit.BaseCurrency));
+            }
+            foreach (var pair in debitTotals) if (pair.Value > items[pair.Key].OpenAmount) throw new SubledgerException("subledger.application_over_target", "The application exceeds the remaining amount.");
+            foreach (var pair in creditTotals) if (pair.Value > items[pair.Key].OpenAmount) throw new SubledgerException("subledger.application_over_source", "The application exceeds the available credit.");
+            return new ApplicationPreviewResult(request.PartyId, request.LegalEntityId.Value, request.Direction, result,
+                totalDebit.ToString(CultureInfo.InvariantCulture), totalCredit.ToString(CultureInfo.InvariantCulture), totalFx.ToString(CultureInfo.InvariantCulture));
         }, ct);
 
     public Task<SubledgerApplicationResult> ReverseAsync(TenantId tenant, ReverseApplicationCommand request, CancellationToken ct) =>
@@ -427,6 +538,11 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             await RestoreItemAsync(context, tenant, request.LegalEntityId, items[original.CreditId], original.CreditAmount, original.CreditBaseClosed, token);
             await PostSettlementFxDifferenceAsync(context, tenant, request.LegalEntityId, original.Id, original.BaseCurrency, items[original.DebitId].ControlRole,
                 original.DebitBaseClosed - original.CreditBaseClosed, request.EffectiveDate, request.ActorId, request.CorrelationId, $"application-reversal:{original.Id:N}", token, reverse: true);
+            EnqueueEvent(context, tenant, SubledgerEventTypes.ApplicationReversedV1,
+                new ApplicationReversedEventV1(batchId, request.ApplicationId, request.LegalEntityId.Value, original.PartyId, original.Direction),
+                batchId, request.CorrelationId, clock.GetUtcNow());
+            await AuditAsync(context, tenant, request.LegalEntityId, request.ActorId, null, "open_item_application_reversed", "application_reversal", batchId,
+                null, JsonSerializer.Serialize(new { request.ApplicationId, request.EffectiveDate }), request.Reason.Trim(), request.CorrelationId, clock.GetUtcNow(), token);
             return new(batchId, false, [request.ApplicationId]);
         }, ct);
 
@@ -435,12 +551,56 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         var limit = Math.Clamp(query.Limit, 1, 200);
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, transaction, tenant, ct);
-        await using var command = new NpgsqlCommand("select id,legal_entity_id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,settled_transaction_amount,open_transaction_amount,base_currency,original_base_amount,settled_base_carrying_amount,open_base_carrying_amount,control_account_role,control_account_reference,status,row_version from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and party_id=$3 and ($4::text is null or direction=$4) and (not $5 or is_open) and ($6::uuid is null or id>$6) order by id limit $7", connection, transaction);
-        Add(command, tenant.Value, query.LegalEntityId.Value, query.PartyId, Db(query.Direction?.ToString()), query.OpenOnly, Db(ParseCursor(query.Cursor)), limit + 1);
+        await using var command = new NpgsqlCommand("select id,legal_entity_id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,settled_transaction_amount,open_transaction_amount,base_currency,original_base_amount,settled_base_carrying_amount,open_base_carrying_amount,control_account_role,control_account_reference,status,row_version from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and party_id=$3 and ($4::text is null or direction=$4) and (not $5 or is_open) and ($6::uuid is null or id>$6) and ($8::text is null or (source_display_number is not null and lower(source_display_number) like lower($8)||'%') or lower(source_reference) like lower($8)||'%') and ($9::date is null or due_date >= $9) and ($10::date is null or due_date <= $10) and ($11::text is null or transaction_currency=$11) and (not $12 or (is_open and due_date < $13)) and ($14::text is null or status=$14) order by id limit $7", connection, transaction);
+        Add(command, tenant.Value, query.LegalEntityId.Value, query.PartyId, Db(query.Direction?.ToString()), query.OpenOnly, Db(ParseCursor(query.Cursor)), limit + 1,
+            Db(query.Search), Db(query.DueFrom), Db(query.DueTo), Db(query.CurrencyCode), query.OverdueOnly, Db(query.AsOfDate), Db(query.Status));
         var rows = new List<PartyOpenItemResult>(); await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) rows.Add(ReadItem(reader));
         var hasMore = rows.Count > limit; if (hasMore) rows.RemoveAt(rows.Count - 1);
         return new(rows, hasMore && rows.Count > 0 ? rows[^1].Id.ToString("D") : null);
+    }
+
+    public async Task<PartyOpenItemResult?> GetOpenItemAsync(TenantId tenant, LegalEntityId entity, Guid openItemId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        await using var command = new NpgsqlCommand("select id,legal_entity_id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,settled_transaction_amount,open_transaction_amount,base_currency,original_base_amount,settled_base_carrying_amount,open_base_carrying_amount,control_account_role,control_account_reference,status,row_version from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection, transaction);
+        Add(command, tenant.Value, entity.Value, openItemId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct) ? ReadItem(reader) : null;
+    }
+
+    public async Task<AutoApplyContext> GetAutoApplyContextAsync(TenantId tenant, LegalEntityId entity, Guid sourceItemId, string? reference, int candidateLimit, bool prioritizeReference, bool oldestDocumentFirst, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        const string columns = "id,legal_entity_id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,settled_transaction_amount,open_transaction_amount,base_currency,original_base_amount,settled_base_carrying_amount,open_base_carrying_amount,control_account_role,control_account_reference,status,row_version";
+        PartyOpenItemResult source;
+        string sourceConfiguration;
+        await using (var loadSource = new NpgsqlCommand($"select {columns},control_configuration_reference from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection, transaction))
+        {
+            Add(loadSource, tenant.Value, entity.Value, sourceItemId);
+            await using var reader = await loadSource.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) throw new SubledgerException("subledger.open_item_not_found", "The source open item was not found in this legal entity.");
+            if (reader.GetString(22) is not ("Open" or "PartiallySettled")) throw new SubledgerException("subledger.item_closed", "The source open item has no available balance.");
+            source = ReadItem(reader);
+            sourceConfiguration = reader.GetString(24);
+        }
+
+        var opposite = source.Polarity == SubledgerPolarityContract.Debit ? "Credit" : "Debit";
+        var matchReference = string.IsNullOrWhiteSpace(reference) ? source.SourceDisplayNumber ?? source.SourceReference : reference.Trim();
+        var candidates = new List<AutoApplyCandidateContext>();
+        await using (var loadCandidates = new NpgsqlCommand($"select {string.Join(',', columns.Split(',').Select(column => "i." + column))},i.control_configuration_reference from finance_subledger.party_open_item i where i.tenant_id=$1 and i.legal_entity_id=$2 and i.party_id=$3 and i.direction=$4 and i.polarity=$5 and i.is_open and i.id<>$6 and i.transaction_currency=$7 and i.control_account_role=$8 and i.control_account_reference=$9 and i.control_configuration_reference=$10 and i.base_currency=$11 order by ($14::boolean and (regexp_replace(upper(coalesce(i.source_display_number,'')), '[^[:alnum:]]', '', 'g')=regexp_replace(upper($12), '[^[:alnum:]]', '', 'g') or regexp_replace(upper(i.source_reference), '[^[:alnum:]]', '', 'g')=regexp_replace(upper($12), '[^[:alnum:]]', '', 'g'))) desc,(case when $15::boolean then i.document_date else i.due_date end),i.document_date,i.id limit $13", connection, transaction))
+        {
+            Add(loadCandidates, tenant.Value, entity.Value, source.PartyId, source.Direction.ToString(), opposite, source.Id, source.TransactionCurrency,
+                source.ControlAccountRole, source.ControlAccountReference, sourceConfiguration, source.BaseCurrency, matchReference, Math.Clamp(candidateLimit, 0, 500), prioritizeReference, oldestDocumentFirst);
+            await using var reader = await loadCandidates.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) candidates.Add(new(ReadItem(reader), reader.GetString(24)));
+        }
+        await transaction.CommitAsync(ct);
+        return new(source, sourceConfiguration, candidates);
     }
 
     public async Task<PartyBalanceResult> GetPartyBalanceAsync(TenantId tenant, PartyBalanceQuery query, CancellationToken ct)
@@ -546,11 +706,11 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
               coalesce(sum(amount) filter(where due_date < $4-30 and due_date >= $4-60),0),
               coalesce(sum(amount) filter(where due_date < $4-60 and due_date >= $4-90),0),
               coalesce(sum(amount) filter(where due_date < $4-90),0)
-            from remaining where amount > 0 group by transaction_currency order by transaction_currency
+            from remaining where amount > 0 and ($7::text is null or transaction_currency=$7) group by transaction_currency order by transaction_currency
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         Add(command, tenant.Value, query.LegalEntityId.Value, query.PartyId, query.AsOfDate, query.Direction.ToString(),
-            query.Direction == SubledgerDirectionContract.Receivable ? "Debit" : "Credit");
+            query.Direction == SubledgerDirectionContract.Receivable ? "Debit" : "Credit", Db(query.CurrencyCode));
         var result = new List<AgingBucketResult>(); await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) result.Add(new(reader.GetString(0).Trim(), D(reader, 1), D(reader, 2), D(reader, 3), D(reader, 4), D(reader, 5)));
         return result;
@@ -595,29 +755,33 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
               union all
               select a.application_date,a.settlement_date,20::bigint,a.id,'ApplicationDebit',a.id::text,d.transaction_currency,
                 case when d.polarity=$6 then -a.debit_applied_amount else a.debit_applied_amount end
-              from finance_subledger.open_item_application a
+              from finance_subledger.application_batch b
+              join finance_subledger.open_item_application a on a.tenant_id=b.tenant_id and a.legal_entity_id=b.legal_entity_id and a.batch_id=b.id
               join finance_subledger.party_open_item d on d.tenant_id=a.tenant_id and d.legal_entity_id=a.legal_entity_id and d.id=a.debit_item_id
-              where a.tenant_id=$1 and a.legal_entity_id=$2 and d.party_id=$3 and d.direction=$4 and a.application_date between $5 and $7
+              where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$4 and b.operation='Apply' and b.application_date between $5 and $7
               union all
               select a.application_date,a.settlement_date,21::bigint,a.id,'ApplicationCredit',a.id::text,c.transaction_currency,
                 case when c.polarity=$6 then -a.credit_applied_amount else a.credit_applied_amount end
-              from finance_subledger.open_item_application a
+              from finance_subledger.application_batch b
+              join finance_subledger.open_item_application a on a.tenant_id=b.tenant_id and a.legal_entity_id=b.legal_entity_id and a.batch_id=b.id
               join finance_subledger.party_open_item c on c.tenant_id=a.tenant_id and c.legal_entity_id=a.legal_entity_id and c.id=a.credit_item_id
-              where a.tenant_id=$1 and a.legal_entity_id=$2 and c.party_id=$3 and c.direction=$4 and a.application_date between $5 and $7
+              where b.tenant_id=$1 and b.legal_entity_id=$2 and b.party_id=$3 and b.direction=$4 and b.operation='Apply' and b.application_date between $5 and $7
               union all
               select r.effective_date,r.effective_date,30::bigint,r.id,'ApplicationReversalDebit',r.original_application_id::text,d.transaction_currency,
                 case when d.polarity=$6 then a.debit_applied_amount else -a.debit_applied_amount end
               from finance_subledger.application_reversal r
+              join finance_subledger.application_batch rb on rb.tenant_id=r.tenant_id and rb.legal_entity_id=r.legal_entity_id and rb.id=r.reversal_batch_id
               join finance_subledger.open_item_application a on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
               join finance_subledger.party_open_item d on d.tenant_id=a.tenant_id and d.legal_entity_id=a.legal_entity_id and d.id=a.debit_item_id
-              where r.tenant_id=$1 and r.legal_entity_id=$2 and d.party_id=$3 and d.direction=$4 and r.effective_date between $5 and $7
+              where rb.tenant_id=$1 and rb.legal_entity_id=$2 and rb.party_id=$3 and rb.direction=$4 and r.effective_date between $5 and $7
               union all
               select r.effective_date,r.effective_date,31::bigint,r.id,'ApplicationReversalCredit',r.original_application_id::text,c.transaction_currency,
                 case when c.polarity=$6 then a.credit_applied_amount else -a.credit_applied_amount end
               from finance_subledger.application_reversal r
+              join finance_subledger.application_batch rb on rb.tenant_id=r.tenant_id and rb.legal_entity_id=r.legal_entity_id and rb.id=r.reversal_batch_id
               join finance_subledger.open_item_application a on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
               join finance_subledger.party_open_item c on c.tenant_id=a.tenant_id and c.legal_entity_id=a.legal_entity_id and c.id=a.credit_item_id
-              where r.tenant_id=$1 and r.legal_entity_id=$2 and c.party_id=$3 and c.direction=$4 and r.effective_date between $5 and $7
+              where rb.tenant_id=$1 and rb.legal_entity_id=$2 and rb.party_id=$3 and rb.direction=$4 and r.effective_date between $5 and $7
               union all
               select w.effective_date,w.effective_date,25::bigint,w.id,'WriteOff',wr.reason_code,i.transaction_currency,
                 case when i.polarity=$6 then -w.amount else w.amount end
@@ -636,15 +800,20 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             )
             select effective_date,posting_date,source_sequence,id,source_type,source_reference,currency,amount,
               sum(opening_balance + amount) over(partition by currency order by effective_date,posting_date,source_sequence,id rows between unbounded preceding and current row) as running_balance
-            from rows order by currency,effective_date,posting_date,source_sequence,id
+            from rows
+            where ($8::text is null or currency=$8)
+            order by currency,effective_date,posting_date,source_sequence,id
+            limit $9 offset $10
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         Add(command, tenant.Value, query.LegalEntityId.Value, query.PartyId, query.Direction.ToString(), query.FromDate,
-            query.Direction == SubledgerDirectionContract.Receivable ? "Debit" : "Credit", query.ToDate);
+            query.Direction == SubledgerDirectionContract.Receivable ? "Debit" : "Credit", query.ToDate, Db(query.CurrencyCode), query.Limit + 1, (query.Page - 1) * query.Limit);
         var lines = new List<PartyStatementLine>(); await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) lines.Add(new(reader.GetFieldValue<DateOnly>(0), reader.GetFieldValue<DateOnly>(1), reader.GetInt64(2), reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetString(6).Trim(), D(reader, 7), D(reader, 8)));
+        var hasMore = lines.Count > query.Limit;
+        if (hasMore) lines.RemoveAt(lines.Count - 1);
         var closing = lines.GroupBy(x => x.CurrencyCode, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.Last().RunningBalance, StringComparer.Ordinal);
-        return new(query.PartyId, query.LegalEntityId, query.Direction, query.FromDate, query.ToDate, lines, closing);
+        return new(query.PartyId, query.LegalEntityId, query.Direction, query.FromDate, query.ToDate, lines, closing, hasMore, query.Page);
     }
 
     public async Task<IReadOnlyList<ReconciliationSourceContext>> GetReconciliationSourceContextsAsync(TenantId tenant, LegalEntityId entity, DateOnly asOfDate, CancellationToken ct)
@@ -655,28 +824,50 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         const string sql = """
             with item_balance as (
               select i.id,i.direction,i.polarity,i.control_account_role,i.control_account_reference,i.control_configuration_reference,i.base_currency,
-                i.original_base_amount-coalesce(applied.amount,0)+coalesce(reversed.amount,0)-coalesce(written_off.amount,0) as remaining
+                i.original_base_amount as original_amount
               from finance_subledger.party_open_item i
-              left join lateral (
-                select sum(case when a.debit_item_id=i.id then a.debit_base_carrying_amount_closed else a.credit_base_carrying_amount_closed end) amount
-                from finance_subledger.open_item_application a where a.tenant_id=i.tenant_id and a.legal_entity_id=i.legal_entity_id
-                  and (a.debit_item_id=i.id or a.credit_item_id=i.id) and a.application_date<=$3
-              ) applied on true
-              left join lateral (
-                select sum(case when a.debit_item_id=i.id then a.debit_base_carrying_amount_closed else a.credit_base_carrying_amount_closed end) amount
-                from finance_subledger.application_reversal r join finance_subledger.open_item_application a
-                  on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
-                where r.tenant_id=i.tenant_id and r.legal_entity_id=i.legal_entity_id and (a.debit_item_id=i.id or a.credit_item_id=i.id) and r.effective_date<=$3
-              ) reversed on true
-              left join lateral (
-                select sum(w.base_amount) amount from finance_subledger.write_off w where w.tenant_id=i.tenant_id
-                  and w.legal_entity_id=i.legal_entity_id and w.open_item_id=i.id and w.effective_date<=$3
-              ) written_off on true
               where i.tenant_id=$1 and i.legal_entity_id=$2 and i.posting_date<=$3
+            ), application_effects as (
+              select item_id,sum(amount) amount from (
+                select a.debit_item_id item_id,a.debit_base_carrying_amount_closed amount
+                from finance_subledger.open_item_application a
+                where a.tenant_id=$1 and a.legal_entity_id=$2 and a.application_date<=$3
+                union all
+                select a.credit_item_id item_id,a.credit_base_carrying_amount_closed amount
+                from finance_subledger.open_item_application a
+                where a.tenant_id=$1 and a.legal_entity_id=$2 and a.application_date<=$3
+              ) lines group by item_id
+            ), reversal_effects as (
+              select item_id,sum(amount) amount from (
+                select a.debit_item_id item_id,a.debit_base_carrying_amount_closed amount
+                from finance_subledger.application_reversal r
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and r.effective_date<=$3
+                union all
+                select a.credit_item_id item_id,a.credit_base_carrying_amount_closed amount
+                from finance_subledger.application_reversal r
+                join finance_subledger.open_item_application a
+                  on a.tenant_id=r.tenant_id and a.legal_entity_id=r.legal_entity_id and a.id=r.original_application_id
+                where r.tenant_id=$1 and r.legal_entity_id=$2 and r.effective_date<=$3
+              ) lines group by item_id
+            ), write_off_effects as (
+              select w.open_item_id item_id,sum(w.base_amount) amount
+              from finance_subledger.write_off w
+              where w.tenant_id=$1 and w.legal_entity_id=$2 and w.effective_date<=$3
+              group by w.open_item_id
+            ), balances as (
+              select i.*,a.amount applied_amount,r.amount reversed_amount,w.amount written_off_amount
+              from item_balance i
+              left join application_effects a on a.item_id=i.id
+              left join reversal_effects r on r.item_id=i.id
+              left join write_off_effects w on w.item_id=i.id
             )
             select direction,control_account_role,control_account_reference,control_configuration_reference,base_currency,
-              sum(case when (direction='Receivable' and polarity='Debit') or (direction='Payable' and polarity='Credit') then remaining else -remaining end)
-            from item_balance group by direction,control_account_role,control_account_reference,control_configuration_reference,base_currency
+              sum(case when (direction='Receivable' and polarity='Debit') or (direction='Payable' and polarity='Credit')
+                then original_amount-coalesce(applied_amount,0)+coalesce(reversed_amount,0)-coalesce(written_off_amount,0)
+                else -(original_amount-coalesce(applied_amount,0)+coalesce(reversed_amount,0)-coalesce(written_off_amount,0)) end)
+            from balances group by direction,control_account_role,control_configuration_reference,control_account_reference,base_currency
             order by direction,control_account_role,control_configuration_reference,control_account_reference
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -706,8 +897,46 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
                     Db(detail.LedgerAccountId), ParseAmount(detail.SubledgerBaseBalance), ParseAmount(detail.LedgerBaseBalance), ParseAmount(detail.Variance), detail.ContextResolved);
                 await row.ExecuteNonQueryAsync(token);
             }
+            await AuditAsync(context, tenant, entity, actorId, null, "control_reconciliation_completed", "control_reconciliation_run", runId,
+                null, JsonSerializer.Serialize(new { asOfDate, IsBalanced = balanced, Variance = variance }), null, correlationId, createdAt, token);
             return new ReconciliationResult(runId, entity, asOfDate, baseCurrency, subledgerTotal.ToString(CultureInfo.InvariantCulture), ledgerTotal.ToString(CultureInfo.InvariantCulture), variance.ToString(CultureInfo.InvariantCulture), balanced, createdAt, details);
         }, ct);
+
+    public async Task<ReconciliationResult?> GetReconciliationRunAsync(TenantId tenant, LegalEntityId entity, Guid runId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        DateOnly asOfDate;
+        string baseCurrency;
+        string subledgerBalance;
+        string ledgerBalance;
+        string variance;
+        bool balanced;
+        DateTimeOffset createdAt;
+        await using (var command = new NpgsqlCommand("select as_of_date,base_currency,subledger_base_balance,ledger_base_balance,variance,is_balanced,created_at from finance_subledger.control_reconciliation_run where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection, transaction))
+        {
+            Add(command, tenant.Value, entity.Value, runId);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) return null;
+            asOfDate = reader.GetFieldValue<DateOnly>(0);
+            baseCurrency = reader.GetString(1).Trim();
+            subledgerBalance = D(reader, 2);
+            ledgerBalance = D(reader, 3);
+            variance = D(reader, 4);
+            balanced = reader.GetBoolean(5);
+            createdAt = reader.GetFieldValue<DateTimeOffset>(6);
+        }
+        var details = new List<ReconciliationDetail>();
+        await using (var command = new NpgsqlCommand("select id,direction,control_role,control_account_reference,control_configuration_reference,ledger_account_id,subledger_base_balance,ledger_base_balance,variance,context_resolved from finance_subledger.control_reconciliation_detail where tenant_id=$1 and legal_entity_id=$2 and run_id=$3 order by direction,control_role,control_account_reference,id", connection, transaction))
+        {
+            Add(command, tenant.Value, entity.Value, runId);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) details.Add(new(reader.GetGuid(0), Enum.Parse<SubledgerDirectionContract>(reader.GetString(1)), reader.GetString(2),
+                reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), D(reader, 6), D(reader, 7), D(reader, 8), reader.GetBoolean(9)));
+        }
+        return new(runId, entity, asOfDate, baseCurrency, subledgerBalance, ledgerBalance, variance, balanced, createdAt, details);
+    }
 
     private static async Task<IReadOnlyList<OpeningSubledgerStoredLine>> LoadOpeningLinesInTransactionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid batchId, CancellationToken ct)
     {
@@ -835,6 +1064,16 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
     {
         await using var command = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction); command.Parameters.AddWithValue(tenant.Value.ToString("D")); await command.ExecuteNonQueryAsync(ct);
     }
+
+    private static void EnqueueEvent(ITransactionContext context, TenantId tenant, string messageType, object payload, Guid causationId, Guid correlationId, DateTimeOffset occurredAt) =>
+        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), messageType, JsonSerializer.Serialize(payload, JsonOptions), tenant, occurredAt,
+            correlationId, causationId, "subledger", Activity.Current?.Id));
+
+    private static Task AuditAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid actorId, Guid? membershipId, string action,
+        string entityType, Guid entityId, string? before, string? after, string? reason, Guid correlationId, DateTimeOffset occurredAt, CancellationToken ct) =>
+        NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction,
+            new AuditEntry(Guid.CreateVersion7(), tenant, entity.Value, null, "Human", actorId, membershipId, "subledger", action, entityType, entityId,
+                before, after, reason, "api", correlationId, Activity.Current?.TraceId.ToString(), occurredAt, null), ct);
 
     private static async Task WriteWriteOffAuditAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid requestId, string action, Guid actorId, string evidence, DateTimeOffset createdAt, CancellationToken ct)
     {

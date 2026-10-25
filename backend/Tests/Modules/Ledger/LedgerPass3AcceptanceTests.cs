@@ -438,7 +438,7 @@ public sealed class LedgerPass3AcceptanceTests
 
     private static Process StartWorker(string connectionString, string rabbitPort)
     {
-        var repository = new DirectoryInfo(AppContext.BaseDirectory);
+        var repository = new DirectoryInfo(Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT") ?? AppContext.BaseDirectory);
         while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "backend", "DbMigrator", "DbMigrator.csproj"))) repository = repository.Parent;
         if (repository is null) throw new InvalidOperationException("The repository root could not be located for the Worker acceptance process.");
         var worker = new Process
