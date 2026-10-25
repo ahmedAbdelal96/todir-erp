@@ -164,25 +164,116 @@ foreach (var script in scripts)
     var scriptName = Path.GetRelativePath(repositoryRoot, script).Replace('\\', '/');
     var moduleId = ModuleIdForScript(scriptName);
     var checksum = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(script))).ToLowerInvariant();
+    string? appliedChecksum;
     await using (var existing = new NpgsqlCommand("select checksum from platform_migration.applied_script where module_id = $1 and script_name = $2", connection))
     {
         existing.Parameters.AddWithValue(moduleId); existing.Parameters.AddWithValue(scriptName);
-        var appliedChecksum = (string?)await existing.ExecuteScalarAsync();
-        if (appliedChecksum is not null)
-        {
-            if (!string.Equals(appliedChecksum, checksum, StringComparison.Ordinal)) throw new InvalidOperationException($"Migration checksum changed for {scriptName}; create a forward-fix migration instead.");
-            Console.WriteLine($"Already applied {scriptName}");
-            continue;
-        }
+        appliedChecksum = (string?)await existing.ExecuteScalarAsync();
     }
 
-    Console.WriteLine($"Applying {scriptName}");
-    await using var command = new NpgsqlCommand(await File.ReadAllTextAsync(script), connection);
-    command.CommandTimeout = 0;
-    await command.ExecuteNonQueryAsync();
-    await using var record = new NpgsqlCommand("insert into platform_migration.applied_script (module_id, script_name, checksum, applied_at) values ($1, $2, $3, now())", connection);
-    record.Parameters.AddWithValue(moduleId); record.Parameters.AddWithValue(scriptName); record.Parameters.AddWithValue(checksum);
-    await record.ExecuteNonQueryAsync();
+    var isRlsFinalization = Path.GetFileName(script).Equals("platform-rls-finalization.sql", StringComparison.Ordinal);
+    if (appliedChecksum is not null && !string.Equals(appliedChecksum, checksum, StringComparison.Ordinal))
+        throw new InvalidOperationException($"Migration checksum changed for {scriptName}; create a forward-fix migration instead.");
+    if (appliedChecksum is not null && !isRlsFinalization)
+    {
+        Console.WriteLine($"Already applied {scriptName}");
+        continue;
+    }
+
+    Console.WriteLine(appliedChecksum is null ? $"Applying {scriptName}" : $"Reapplying idempotent finalization {scriptName}");
+    var maintenanceTable = Path.GetFileName(script) switch
+    {
+        "catalog-forward-fix-product-template-code.sql" => "foundation_catalog.product_template",
+        "finbase-forward-fix-canonical-ratio-due-rules.sql" => "foundation_finbase.payment_term_rule",
+        "finbase-forward-fix-rounding-contexts.sql" => "foundation_finbase.financial_rounding_policy",
+        _ => null
+    };
+    if (Path.GetFileName(script) is "finbase-forward-fix-provider-history.sql" or "pricing-schema.sql")
+    {
+        // The SQL function body is validated when created. Compile it with normal
+        // RLS semantics; its fixed-parameter dispatcher owner governs runtime access.
+        await using var migrationTransaction = await connection.BeginTransactionAsync();
+        try
+        {
+            await using (var rowSecurity = new NpgsqlCommand("set local row_security = on", connection, migrationTransaction))
+                await rowSecurity.ExecuteNonQueryAsync();
+            await using (var command = new NpgsqlCommand(await File.ReadAllTextAsync(script), connection, migrationTransaction))
+            {
+                command.CommandTimeout = 0;
+                await command.ExecuteNonQueryAsync();
+            }
+            if (appliedChecksum is null)
+            {
+                await using var record = new NpgsqlCommand("insert into platform_migration.applied_script (module_id, script_name, checksum, applied_at) values ($1, $2, $3, now())", connection, migrationTransaction);
+                record.Parameters.AddWithValue(moduleId); record.Parameters.AddWithValue(scriptName); record.Parameters.AddWithValue(checksum);
+                await record.ExecuteNonQueryAsync();
+            }
+            await migrationTransaction.CommitAsync();
+        }
+        catch
+        {
+            await migrationTransaction.RollbackAsync();
+            throw;
+        }
+    }
+    else if (maintenanceTable is not null)
+    {
+        // These data corrections must see rows across tenants. Keep the maintenance
+        // override transaction-scoped so FORCE RLS is never observable as disabled.
+        await using var migrationTransaction = await connection.BeginTransactionAsync();
+        var restoreForcedRls = false;
+        try
+        {
+            await using (var forceState = new NpgsqlCommand("select relforcerowsecurity from pg_class where oid = $1::regclass", connection, migrationTransaction))
+            {
+                forceState.Parameters.AddWithValue(maintenanceTable);
+                restoreForcedRls = (bool)(await forceState.ExecuteScalarAsync() ?? false);
+            }
+
+            if (restoreForcedRls)
+            {
+                await using var relaxForce = new NpgsqlCommand($"alter table {maintenanceTable} no force row level security", connection, migrationTransaction);
+                await relaxForce.ExecuteNonQueryAsync();
+            }
+
+            await using (var command = new NpgsqlCommand(await File.ReadAllTextAsync(script), connection, migrationTransaction))
+            {
+                command.CommandTimeout = 0;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            if (restoreForcedRls)
+            {
+                await using var restoreForce = new NpgsqlCommand($"alter table {maintenanceTable} force row level security", connection, migrationTransaction);
+                await restoreForce.ExecuteNonQueryAsync();
+            }
+
+            await using (var record = new NpgsqlCommand("insert into platform_migration.applied_script (module_id, script_name, checksum, applied_at) values ($1, $2, $3, now())", connection, migrationTransaction))
+            {
+                record.Parameters.AddWithValue(moduleId); record.Parameters.AddWithValue(scriptName); record.Parameters.AddWithValue(checksum);
+                await record.ExecuteNonQueryAsync();
+            }
+
+            await migrationTransaction.CommitAsync();
+        }
+        catch
+        {
+            await migrationTransaction.RollbackAsync();
+            throw;
+        }
+    }
+    else
+    {
+        await using var command = new NpgsqlCommand(await File.ReadAllTextAsync(script), connection);
+        command.CommandTimeout = 0;
+        await command.ExecuteNonQueryAsync();
+        if (appliedChecksum is null)
+        {
+            await using var record = new NpgsqlCommand("insert into platform_migration.applied_script (module_id, script_name, checksum, applied_at) values ($1, $2, $3, now())", connection);
+            record.Parameters.AddWithValue(moduleId); record.Parameters.AddWithValue(scriptName); record.Parameters.AddWithValue(checksum);
+            await record.ExecuteNonQueryAsync();
+        }
+    }
 }
 
 // Schema baselines are pg_dump-style scripts that set row_security=off. Do not
