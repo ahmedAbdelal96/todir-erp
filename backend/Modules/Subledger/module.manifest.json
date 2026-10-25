@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "subledger",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L2",
+  "type": "module",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": { "hard": ["platform-kernel", "ledger", "directory", "finbase"], "optionalCapabilities": [] },
+  "owns": { "schema": "finance_subledger", "entities": ["party_financial_profile", "party_open_item", "application_batch", "open_item_application", "application_reversal"] },
+  "permissions": ["subledger.read", "subledger.profile.manage", "subledger.application.create", "subledger.application.reverse"],
+  "capabilities": { "provides": ["subledger.open-items", "subledger.application", "subledger.party-financial-profile", "subledger.settlement-state"], "consumes": ["directory.party", "finbase.money", "finbase.payment-terms"] },
+  "messaging": { "publishes": [], "consumes": [] },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}
