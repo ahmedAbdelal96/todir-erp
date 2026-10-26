@@ -214,13 +214,13 @@ export function AppShell() {
         {/* Left Side (in LTR) / Right Side (in RTL): Brand & Company */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
           <Link className="brand" to="/" aria-label="TODIR">
-            <span className="brand-icon" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "32px", height: "32px", borderRadius: "var(--radius-md, 0.5rem)", background: "linear-gradient(135deg, var(--color-brand-primary, #4f46e5) 0%, var(--color-brand-primary-hover, #4338ca) 100%)", color: "#ffffff", fontWeight: 900, fontSize: "1rem", boxShadow: "0 2px 4px rgba(79, 70, 229, 0.25)" }}>
+            <span className="brand-icon" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "32px", height: "32px", borderRadius: "var(--radius-md, 0.5rem)", background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)", color: "#ffffff", fontWeight: 900, fontSize: "1rem", boxShadow: "0 2px 8px rgba(37, 99, 235, 0.45)" }}>
               T
             </span>
-            <span style={{ fontSize: "1.125rem", fontWeight: 800, letterSpacing: "0.02em", color: "var(--color-content-primary, #0f172a)" }}>TODIR</span>
+            <span style={{ fontSize: "1.125rem", fontWeight: 800, letterSpacing: "0.04em", color: "#ffffff" }}>TODIR</span>
           </Link>
 
-          <span className="brand-divider" style={{ color: "var(--color-border-strong, #cbd5e1)" }}>|</span>
+          <span className="brand-divider" style={{ color: "rgba(255, 255, 255, 0.25)" }}>|</span>
 
           <span
             className="brand-company"
@@ -230,14 +230,15 @@ export function AppShell() {
               gap: "0.375rem",
               padding: "0.25rem 0.625rem",
               borderRadius: "var(--radius-full, 9999px)",
-              backgroundColor: "var(--color-brand-primary-subtle, rgba(79, 70, 229, 0.08))",
+              backgroundColor: "rgba(255, 255, 255, 0.12)",
               fontSize: "0.8125rem",
               fontWeight: 600,
-              color: "var(--color-brand-primary, #4338ca)",
-              border: "1px solid rgba(79, 70, 229, 0.18)"
+              color: "#ffffff",
+              border: "1px solid rgba(255, 255, 255, 0.22)",
+              backdropFilter: "blur(8px)"
             }}
           >
-            <BuildingIcon size={14} style={{ color: "var(--color-brand-primary, #4f46e5)" }} />
+            <BuildingIcon size={14} style={{ color: "#93c5fd" }} />
             {companyName}
           </span>
         </div>
@@ -250,13 +251,13 @@ export function AppShell() {
               alignItems: "center",
               gap: "0.375rem",
               backgroundColor: "#ffffff",
-              padding: "0.3125rem 0.625rem",
+              padding: "0.3125rem 0.75rem",
               borderRadius: "var(--radius-md, 0.375rem)",
-              border: "1px solid var(--color-border-default, #cbd5e1)",
-              boxShadow: "0 1px 2px 0 rgba(15, 23, 42, 0.04)"
+              border: "1px solid #cbd5e1",
+              boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.12)"
             }}
           >
-            <label htmlFor="entity-select" style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-content-muted)" }}>
+            <label htmlFor="entity-select" style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
               {labels.entity}
             </label>
             <select
@@ -269,7 +270,7 @@ export function AppShell() {
                 border: "none",
                 fontSize: "0.8125rem",
                 fontWeight: 600,
-                color: "var(--color-content-primary)",
+                color: "#0f172a",
                 cursor: "pointer",
                 outline: "none"
               }}
@@ -278,9 +279,9 @@ export function AppShell() {
               {legalEntities.map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}
             </select>
 
-            <span style={{ color: "var(--color-border-strong, #cbd5e1)" }}>|</span>
+            <span style={{ color: "#cbd5e1" }}>|</span>
 
-            <label htmlFor="branch-select" style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-content-muted)" }}>
+            <label htmlFor="branch-select" style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
               {labels.branch}
             </label>
             <select
@@ -293,7 +294,7 @@ export function AppShell() {
                 border: "none",
                 fontSize: "0.8125rem",
                 fontWeight: 600,
-                color: "var(--color-content-primary)",
+                color: "#0f172a",
                 cursor: "pointer",
                 outline: "none"
               }}
@@ -316,15 +317,15 @@ export function AppShell() {
               fontSize: "0.8125rem",
               fontWeight: 600,
               borderRadius: "var(--radius-md, 0.375rem)",
-              border: "1px solid var(--color-border-default, #cbd5e1)",
-              backgroundColor: "var(--color-surface-card, #ffffff)",
-              color: "var(--color-content-secondary, #334155)",
-              boxShadow: "0 1px 2px 0 rgba(15, 23, 42, 0.04)",
+              border: "1px solid rgba(255, 255, 255, 0.22)",
+              backgroundColor: "rgba(255, 255, 255, 0.12)",
+              color: "#ffffff",
+              boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.08)",
               cursor: "pointer",
               transition: "all 150ms ease"
             }}
           >
-            <GlobeIcon size={14} />
+            <GlobeIcon size={14} style={{ color: "#93c5fd" }} />
             <span>{labels.language}</span>
           </button>
 

@@ -69,22 +69,23 @@ export function UserMenu({
           display: "flex",
           alignItems: "center",
           gap: "0.5rem",
-          padding: "0.375rem 0.625rem",
+          padding: "0.3125rem 0.625rem",
           borderRadius: "var(--radius-md, 0.375rem)",
-          backgroundColor: isOpen ? "var(--color-surface-subtle, #f1f5f9)" : "transparent",
-          border: "1px solid var(--color-border-default, #e2e8f0)",
-          color: "var(--color-content-primary, #0f172a)",
+          backgroundColor: isOpen ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.12)",
+          border: "1px solid rgba(255, 255, 255, 0.22)",
+          color: "#ffffff",
           cursor: "pointer",
           fontSize: "0.875rem",
           fontWeight: 600,
           outline: "none",
+          boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.08)",
           transition: "background-color 150ms ease, border-color 150ms ease"
         }}
         onMouseEnter={(e) => {
-          if (!isOpen) e.currentTarget.style.backgroundColor = "var(--color-surface-subtle, #f1f5f9)";
+          if (!isOpen) e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
         }}
         onMouseLeave={(e) => {
-          if (!isOpen) e.currentTarget.style.backgroundColor = "transparent";
+          if (!isOpen) e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.12)";
         }}
       >
         {/* User Avatar Initials */}
@@ -93,7 +94,7 @@ export function UserMenu({
             width: "28px",
             height: "28px",
             borderRadius: "50%",
-            background: "linear-gradient(135deg, var(--color-brand-primary, #4f46e5) 0%, var(--color-brand-primary-hover, #4338ca) 100%)",
+            background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
             color: "#ffffff",
             display: "flex",
             alignItems: "center",
@@ -101,14 +102,14 @@ export function UserMenu({
             fontSize: "0.75rem",
             fontWeight: 700,
             flexShrink: 0,
-            boxShadow: "0 1px 2px rgba(79, 70, 229, 0.2)"
+            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.2)"
           }}
         >
           {initials}
         </span>
 
         <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>{userName}</span>
-        <ChevronDownIcon size={14} style={{ color: "var(--color-content-muted, #64748b)" }} />
+        <ChevronDownIcon size={14} style={{ color: "rgba(255, 255, 255, 0.7)" }} />
       </button>
 
       {/* Dropdown Menu */}

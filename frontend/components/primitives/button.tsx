@@ -133,10 +133,10 @@ function getVariantStyles(variant: ButtonVariant): React.CSSProperties {
   switch (variant) {
     case "primary":
       return {
-        backgroundColor: "var(--color-action-primary, #4f46e5)",
-        borderColor: "var(--color-action-primary-hover, #4338ca)",
+        backgroundColor: "var(--color-action-primary, #102a43)",
+        borderColor: "var(--color-action-primary-hover, #0c1f31)",
         color: "var(--color-action-primary-content, #ffffff)",
-        boxShadow: "0 1px 3px 0 rgba(79, 70, 229, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.22)"
+        boxShadow: "0 2px 4px 0 rgba(16, 42, 67, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.22)"
       };
     case "secondary":
       return {

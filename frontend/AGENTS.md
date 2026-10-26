@@ -92,25 +92,34 @@ Product success means employees prefer using the system for daily work because e
 
 Every user-facing screen, card, form, table, and component in the ERP must adhere to these non-negotiable visual and interaction standards:
 
-#### 1. Canvas-to-Card Contrast Invariant (Ban on Washed-Out / Pale UI)
-* **Canvas Grounding**: The application background canvas must NEVER be pure white (`#ffffff`) or faint near-white (`#f8fafc`). It must strictly use the crisp, cool neutral slate canvas: `var(--color-surface-page, #f1f5f9)` / `oklch(0.965 0.01 240)`.
+#### 1. Authentic Corporate Brand Shell & Dark Oxford Navy Topbar (`#102a43`)
+* **Dark Topbar Grounding**: The primary application header (`.topbar`) is strictly anchored with authentic Dark Oxford Navy (`#102a43`), border-bottom `#0c1f31`, and deep drop shadow `0 4px 12px -2px rgba(16, 42, 67, 0.25)`. A pale or washed-out white topbar is forbidden as it strips visual authority from the application.
+* **TopBar High-Contrast Controls**:
+  * Brand title: pure white `#ffffff`, brand icon vibrant royal blue gradient `linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)`.
+  * Company pill: translucent frosted navy `rgba(255, 255, 255, 0.12)` with crisp white text and `#93c5fd` icon.
+  * Context selectors (Legal Entity & Branch): crisp pure white pill card (`background: #ffffff`, `border: 1px solid #cbd5e1`, `box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12)`), ensuring immediate visibility and legibility.
+  * User menu & language toggle: frosted pills with pure white text and crisp borders.
+* **Sidebar Active Navigation**: Active menu items use Oxford Navy `linear-gradient(135deg, #102a43 0%, #1e3a5f 100%)` with pure white text, bold font, and an illuminated blue icon container (`#93c5fd` on `rgba(255, 255, 255, 0.18)`).
+
+#### 2. Canvas-to-Card Contrast Invariant (Ban on Washed-Out / Pale UI)
+* **Canvas Grounding**: The application background canvas must NEVER be pure white (`#ffffff`) or faint near-white (`#f8fafc`). It must strictly use the crisp, cool neutral slate canvas: `var(--color-surface-page, #f0f4f8)` / `oklch(0.965 0.01 240)`.
 * **Card Elevation**: Master cards, operational surfaces, dialogs, and table containers must be pure crisp white (`var(--color-surface-card, #ffffff)` / `oklch(1.0 0 0)`).
 * **Anti-Washout Rule**: Faint, borderless, low-contrast "ghost" screens where cards blend seamlessly into the background canvas are strictly prohibited as product defects. Cards must always visibly pop out from the canvas with clear separation.
 
-#### 2. Composite Multi-Layer Elevation & Shadow System
+#### 3. Composite Multi-Layer Elevation & Shadow System
 Never use single-layer faint shadows (< 0.05 opacity). Every elevated surface must have depth created by dual-layer ambient occlusion + key light:
 * **`--shadow-xs`**: `0 1px 2px 0 rgba(15, 23, 42, 0.05)` (subtle controls, search inputs, filter bars, segmented buttons).
 * **`--shadow-sm`**: `0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.05)` (standard cards, `Surface`, `StatCard`, tables, form sections).
 * **`--shadow-md`**: `0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04)` (hover states, dropdown menus, popovers).
 * **`--shadow-lg` / `--shadow-xl`**: `0 10px 15px -3px rgba(15, 23, 42, 0.09)` / `0 20px 25px -5px rgba(15, 23, 42, 0.1)` (dialogs, modal sheets, drawer overlays).
 
-#### 3. Crisp Border Hierarchy & Specular Highlights
+#### 4. Crisp Border Hierarchy & Specular Highlights
 * **Outer Boundaries**: Card and container perimeters must use crisp slate: `1px solid var(--color-border-default, #cbd5e1)`. Invisible or washed-out borders (`#f1f5f9` or `#f8fafc`) on outer card boundaries are forbidden.
 * **Internal Dividers**: Headers, footers, and table rows must use clean dividers: `1px solid var(--color-border-subtle, #e2e8f0)`.
 * **Surface Card Headers**: Every `Surface` card header must feature a subtle contrast background (`var(--color-surface-subtle, #f8fafc)`), bold typography (`fontWeight: 700`, `letterSpacing: "-0.01em"`), and a 1px bottom border.
 
-#### 4. Vibrant Enterprise Color & Semantic Intent System
-* **Brand Primary**: Authoritative Royal Indigo (`#4f46e5` / `#4338ca` or `oklch(0.50 0.22 260)`), providing high-contrast visual focus.
+#### 5. Vibrant Enterprise Color & Semantic Intent System
+* **Brand Primary**: Authoritative Oxford Navy (`#102a43`) with Royal Blue accents (`#2563eb`), providing high-contrast visual focus.
 * **Typography Hierarchy**: Primary text must be deep Slate 950 (`#0f172a`), secondary text Slate 700 (`#334155`), and muted text Slate 500 (`#64748b`). Never use light gray for labels, table headers, or data values.
 * **Protected Status Intents**:
   * **Success (Emerald)**: `#059669` base, `#ecfdf5` subtle bg, `#a7f3d0` border, `#065f46` content.
@@ -118,21 +127,22 @@ Never use single-layer faint shadows (< 0.05 opacity). Every elevated surface mu
   * **Danger (Rose/Red)**: `#dc2626` base, `#fef2f2` subtle bg, `#fecaca` border, `#991b1b` content.
   * **Info (Azure/Sky)**: `#0284c7` base, `#f0f9ff` subtle bg, `#bae6fd` border, `#1e40af` content.
 
-#### 5. Professional Iconography & Visual Anchors
+#### 6. Professional Iconography & Visual Anchors
 * **No Floating Naked Icons**: Icons in KPIs, headers, and navigation must be housed in dedicated rounded badge containers with tinted background and crisp matching 1px border.
 * **StatCard Hero Badges**: 46x46px containers (`borderRadius: var(--radius-lg)`), soft semantic background + matching 1px border + ambient drop shadow.
 * **Sidebar Navigation Badges**: Dedicated 26x26px icon containers. Active routes receive a vibrant brand accent background, bold weight, and a crisp active border indicator.
 * **Status Badge Halo**: Every `StatusBadge` must feature a 7px status dot with a glowing halo ring (`boxShadow: 0 0 0 2px <subtle-bg>, 0 0 4px <base-color>`) for instant pre-attentive recognition.
 
-#### 6. Tactile Micro-Interactions & Interactive States
-* **Primary Button**: Specular top highlight (`inset 0 1px 0 0 rgba(255, 255, 255, 0.22)`), subtle gradient, drop shadow `0 1px 3px rgba(79, 70, 229, 0.35)`.
+#### 7. Tactile Micro-Interactions & Interactive States
+* **Primary Button**: Deep Oxford Navy `#102a43`, specular top highlight (`inset 0 1px 0 0 rgba(255, 255, 255, 0.22)`), drop shadow `0 2px 4px rgba(16, 42, 67, 0.25)`.
 * **Secondary Button**: Pure white card background, 1px border `#cbd5e1`, subtle shadow, hover elevation.
 * **Interactive Feedback**: Hover states must provide subtle elevation (`box-shadow: var(--shadow-md)`), and active clicks must provide tactile depression (`transform: translateY(1px)`).
-* **Form Controls**: Crisp `#cbd5e1` resting border with resting shadow; on focus, a vibrant focus ring `0 0 0 3px rgba(79, 70, 229, 0.15)`.
+* **Form Controls**: Crisp `#cbd5e1` resting border with resting shadow; on focus, a vibrant focus ring `0 0 0 3px rgba(16, 42, 67, 0.15)`.
 
-#### 7. High-Density ERP Architecture with Breathing Room
+#### 8. High-Density ERP Architecture with Breathing Room
 * Information density must never compromise scannability.
 * Maintain consistent `1.25rem - 1.5rem` card padding, `0.875rem` table cell padding, and structured multi-column property grids (`PropertyGrid`).
+* All transactional amounts and dates must be cleanly isolated with `<bdi>` and standard `<MoneyDisplay>` / `<LocalDateDisplay>`.
 * All transactional amounts and dates must be cleanly isolated with `<bdi>` and standard `<MoneyDisplay>` / `<LocalDateDisplay>`.
 
 ### The Sacred Boundary

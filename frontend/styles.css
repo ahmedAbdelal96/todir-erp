@@ -5,27 +5,27 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* Enterprise Precision Indigo & Slate Palette Tokens */
-  --color-brand-primary: #4f46e5;
-  --color-brand-primary-hover: #4338ca;
-  --color-brand-primary-active: #3730a3;
-  --color-brand-primary-subtle: rgba(79, 70, 229, 0.08);
+  /* Enterprise Oxford Navy & Royal Blue Corporate Palette */
+  --color-brand-primary: #102a43;
+  --color-brand-primary-hover: #1e3a5f;
+  --color-brand-primary-active: #0c1f31;
+  --color-brand-primary-subtle: rgba(16, 42, 67, 0.08);
 
-  --color-action-primary: #4f46e5;
-  --color-action-primary-hover: #4338ca;
-  --color-action-primary-active: #3730a3;
+  --color-action-primary: #102a43;
+  --color-action-primary-hover: #1e3a5f;
+  --color-action-primary-active: #0c1f31;
   --color-action-primary-content: #ffffff;
   --color-action-secondary: #ffffff;
-  --color-action-secondary-hover: #f8fafc;
-  --color-action-secondary-active: #f1f5f9;
-  --color-action-secondary-content: #1e293b;
+  --color-action-secondary-hover: #f1f5f9;
+  --color-action-secondary-active: #e2e8f0;
+  --color-action-secondary-content: #102a43;
 
-  --color-surface-page: #f1f5f9;
+  --color-surface-page: #f0f4f8;
   --color-surface-card: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-surface-subtle: #f8fafc;
   --color-surface-inset: #e2e8f0;
-  --color-surface-overlay: rgba(15, 23, 42, 0.6);
+  --color-surface-overlay: rgba(16, 42, 67, 0.6);
 
   --color-content-primary: #0f172a;
   --color-content-secondary: #334155;
@@ -180,18 +180,17 @@ a {
   background-color: var(--color-surface-page, #f8fafc);
 }
 
-/* Topbar */
+/* Topbar - Enterprise Dark Oxford Navy (#102a43) */
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 64px;
   padding-inline: 1.75rem;
-  background-color: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--color-border-default, #cbd5e1);
-  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.05);
+  background-color: #102a43;
+  color: #ffffff;
+  border-bottom: 1px solid #0c1f31;
+  box-shadow: 0 4px 12px -2px rgba(16, 42, 67, 0.25), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
   position: sticky;
   top: 0;
   z-index: var(--z-sticky, 1100);
@@ -204,21 +203,22 @@ a {
   font-size: 1.25rem;
   font-weight: 800;
   letter-spacing: 0.04em;
-  color: var(--color-action-primary, #4f46e5);
+  color: #ffffff !important;
+  text-decoration: none;
 }
 
 .brand-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--radius-md, 0.5rem);
-  background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
   color: #ffffff;
   font-weight: 900;
-  font-size: 1rem;
-  box-shadow: 0 2px 6px 0 rgba(79, 70, 229, 0.35);
+  font-size: 1.05rem;
+  box-shadow: 0 2px 8px 0 rgba(37, 99, 235, 0.45);
 }
 
 .context-controls {
@@ -259,32 +259,32 @@ a {
   gap: 0.75rem;
   padding: 0.625rem 0.875rem;
   border-radius: var(--radius-md, 0.5rem);
-  color: var(--color-content-secondary, #334155);
+  color: #334e68;
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   border: 1px solid transparent;
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   outline: none;
 }
 
 .sidebar a:hover {
-  background-color: var(--color-surface-subtle, #f8fafc);
-  border-color: var(--color-border-subtle, #e2e8f0);
-  color: var(--color-content-primary, #0f172a);
+  background-color: #f0f4f8;
+  border-color: #cbd5e1;
+  color: #102a43;
 }
 
 .sidebar a.active, .sidebar a[aria-current="page"] {
-  background: linear-gradient(135deg, rgba(79, 70, 229, 0.12) 0%, rgba(99, 102, 241, 0.06) 100%);
-  color: #4338ca;
+  background: linear-gradient(135deg, #102a43 0%, #1e3a5f 100%);
+  color: #ffffff !important;
   font-weight: 700;
-  border: 1px solid rgba(79, 70, 229, 0.2);
-  box-shadow: 0 1px 3px 0 rgba(79, 70, 229, 0.08);
+  border: 1px solid #102a43;
+  box-shadow: 0 4px 8px -2px rgba(16, 42, 67, 0.35);
 }
 
 .sidebar a.active .sidebar-icon-container,
 .sidebar a[aria-current="page"] .sidebar-icon-container {
-  background-color: rgba(79, 70, 229, 0.18) !important;
-  color: #4338ca !important;
+  background-color: rgba(255, 255, 255, 0.18) !important;
+  color: #93c5fd !important;
 }
 
 /* Content Area */
