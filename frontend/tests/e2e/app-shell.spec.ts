@@ -148,4 +148,45 @@ test.describe('App Shell Bootstrap & Localization', () => {
     await expect(page).not.toHaveURL(/#/);
     await expect(page.getByRole('heading', { name: 'الإعدادات' })).toBeVisible();
   });
+
+  test('captures redesigned executive topbar evidence', async ({ page }) => {
+    // Override session context with Delta Supplies realistic operational data
+    await page.route('**/api/v1/session/context', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          authenticated: true,
+          tenantId: 'tenant-delta',
+          memberships: [
+            { id: 'm1', tenantId: 'tenant-delta', displayName: 'شركة دلتا للتوريدات' },
+          ],
+          context: {
+            displayName: 'شركة دلتا للتوريدات',
+            legalEntities: [
+              { id: 'le1', code: 'MAIN', name: 'شركة دلتا للتوريدات' },
+              { id: 'le2', code: 'SECONDARY', name: 'شركة دلتا للتوريدات — الإسكندرية' }
+            ],
+            branches: [
+              { id: 'b1', legalEntityId: 'le1', code: 'MAIN', name: 'Delta Supplies — Main Branch' },
+              { id: 'b2', legalEntityId: 'le1', code: 'BR-02', name: 'فرع الجيزة' }
+            ],
+          },
+        }),
+      });
+    });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await page.waitForLoadState('domcontentloaded');
+
+    // Verify redesigned header elements
+    const topbar = page.locator('.topbar');
+    await expect(topbar).toBeVisible();
+
+    // Capture screenshot of the topbar
+    await topbar.screenshot({
+      path: 'C:/Users/Adham/.gemini/antigravity/brain/2cce5b52-1525-442e-8037-81105c0347eb/appheader-redesign.png'
+    });
+  });
 });

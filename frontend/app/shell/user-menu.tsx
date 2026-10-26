@@ -69,23 +69,24 @@ export function UserMenu({
           display: "flex",
           alignItems: "center",
           gap: "0.5rem",
-          padding: "0.3125rem 0.625rem",
+          height: "38px",
+          padding: "0 0.75rem",
           borderRadius: "var(--radius-md, 0.375rem)",
-          backgroundColor: isOpen ? "rgba(255, 255, 255, 0.22)" : "rgba(255, 255, 255, 0.12)",
-          border: "1px solid rgba(255, 255, 255, 0.22)",
+          backgroundColor: isOpen ? "rgba(255, 255, 255, 0.18)" : "rgba(255, 255, 255, 0.08)",
+          border: "1px solid rgba(255, 255, 255, 0.18)",
           color: "#ffffff",
           cursor: "pointer",
-          fontSize: "0.875rem",
+          fontSize: "0.8125rem",
           fontWeight: 600,
           outline: "none",
           boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.08)",
           transition: "background-color 150ms ease, border-color 150ms ease"
         }}
         onMouseEnter={(e) => {
-          if (!isOpen) e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+          if (!isOpen) e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.14)";
         }}
         onMouseLeave={(e) => {
-          if (!isOpen) e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.12)";
+          if (!isOpen) e.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.08)";
         }}
       >
         {/* User Avatar Initials */}

@@ -20,7 +20,9 @@ import {
   SettingsIcon,
   BuildingIcon,
   GlobeIcon,
-  ShieldCheckIcon
+  ShieldCheckIcon,
+  MapPinIcon,
+  ChevronDownIcon
 } from "../../components/primitives/icons.tsx";
 import { AuthView } from "../auth/index.ts";
 import { requestCsrf, clearCsrfToken, logoutUser } from "../../core/api/auth-service.ts";
@@ -75,6 +77,42 @@ function getModuleIcon(id: string): React.JSX.Element {
     default:
       return <BuildingIcon size={18} />;
   }
+}
+
+function formatEntityLabel(code: string, name: string): string {
+  if (!name) return code || "—";
+  const cleanName = name.replace(/^MAIN\s*[—–-]\s*/i, "").trim();
+  if (!code || code === "MAIN" || code === "DEFAULT" || cleanName.includes(code)) {
+    return cleanName;
+  }
+  return `${cleanName} (${code})`;
+}
+
+function formatBranchLabel(code: string, name: string, entityName?: string, isArabic?: boolean): string {
+  if (!name) return code || "—";
+  let cleanName = name.replace(/^MAIN\s*[—–-]\s*/i, "").trim();
+
+  if (entityName) {
+    const cleanEntity = entityName.replace(/^MAIN\s*[—–-]\s*/i, "").trim();
+    if (cleanName.toLowerCase().startsWith(cleanEntity.toLowerCase())) {
+      cleanName = cleanName.slice(cleanEntity.length).replace(/^[—–-\s]+/, "").trim();
+    }
+  }
+
+  cleanName = cleanName.replace(/^[a-zA-Z0-9\s]+[—–-]\s*(Main Branch|Secondary Branch)/i, "$1");
+
+  if (isArabic) {
+    if (/^main\s*branch$/i.test(cleanName)) {
+      cleanName = "الفرع الرئيسي";
+    } else if (/^secondary\s*branch$/i.test(cleanName)) {
+      cleanName = "الفرع الثانوي";
+    }
+  }
+
+  if (!code || code === "MAIN" || code === "DEFAULT" || cleanName.includes(code)) {
+    return cleanName || name;
+  }
+  return `${cleanName || name} (${code})`;
 }
 
 export function AppShell() {
@@ -246,65 +284,63 @@ export function AppShell() {
           </span>
         </div>
 
-        {/* Center / Operational Context (Legal Entity & Branch) */}
+        {/* Operational Context Controls (Legal Entity & Branch) */}
         <div className="context-controls">
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.375rem",
-              backgroundColor: "#ffffff",
-              padding: "0.3125rem 0.75rem",
-              borderRadius: "var(--radius-md, 0.375rem)",
-              border: "1px solid #cbd5e1",
-              boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.12)"
-            }}
-          >
-            <label htmlFor="entity-select" style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
+          {/* 1. Legal Entity / Company Selector */}
+          <div className="context-pill">
+            <BuildingIcon size={14} style={{ color: "#93c5fd", flexShrink: 0 }} />
+            <label htmlFor="entity-select" className="context-pill-label">
               {labels.entity}
             </label>
-            <select
-              id="entity-select"
-              aria-label={labels.entity}
-              value={legalEntity}
-              onChange={(event) => void switchOrganization(event.target.value, "")}
-              style={{
-                background: "transparent",
-                border: "none",
-                fontSize: "0.8125rem",
-                fontWeight: 600,
-                color: "#0f172a",
-                cursor: "pointer",
-                outline: "none"
-              }}
-            >
-              <option value="">—</option>
-              {legalEntities.map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}
-            </select>
+            <div className="context-pill-select-wrapper">
+              <select
+                id="entity-select"
+                aria-label={labels.entity}
+                value={legalEntity}
+                onChange={(event) => void switchOrganization(event.target.value, "")}
+                className="context-pill-select"
+              >
+                <option value="">—</option>
+                {legalEntities.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {formatEntityLabel(item.code, item.name)}
+                  </option>
+                ))}
+              </select>
+              <ChevronDownIcon size={12} className="context-pill-chevron" />
+            </div>
+          </div>
 
-            <span style={{ color: "#cbd5e1" }}>|</span>
-
-            <label htmlFor="branch-select" style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
+          {/* 2. Branch Selector */}
+          <div className="context-pill">
+            <MapPinIcon size={14} style={{ color: "#6ee7b7", flexShrink: 0 }} />
+            <label htmlFor="branch-select" className="context-pill-label">
               {labels.branch}
             </label>
-            <select
-              id="branch-select"
-              aria-label={labels.branch}
-              value={branch}
-              onChange={(event) => void switchOrganization(legalEntity, event.target.value)}
-              style={{
-                background: "transparent",
-                border: "none",
-                fontSize: "0.8125rem",
-                fontWeight: 600,
-                color: "#0f172a",
-                cursor: "pointer",
-                outline: "none"
-              }}
-            >
-              <option value="">—</option>
-              {branches.filter(item => !legalEntity || item.legalEntityId === legalEntity).map(item => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}
-            </select>
+            <div className="context-pill-select-wrapper">
+              <select
+                id="branch-select"
+                aria-label={labels.branch}
+                value={branch}
+                onChange={(event) => void switchOrganization(legalEntity, event.target.value)}
+                className="context-pill-select"
+              >
+                <option value="">—</option>
+                {branches
+                  .filter((item) => !legalEntity || item.legalEntityId === legalEntity)
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {formatBranchLabel(
+                        item.code,
+                        item.name,
+                        legalEntities.find((l) => l.id === legalEntity)?.name,
+                        language === "ar"
+                      )}
+                    </option>
+                  ))}
+              </select>
+              <ChevronDownIcon size={12} className="context-pill-chevron" />
+            </div>
           </div>
 
           {/* Clean Language quick toggle */}
@@ -312,21 +348,6 @@ export function AppShell() {
             type="button"
             className="topbar-lang-btn"
             onClick={() => void changeLanguage(language === "ar" ? "en" : "ar")}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.375rem",
-              padding: "0.3125rem 0.625rem",
-              fontSize: "0.8125rem",
-              fontWeight: 600,
-              borderRadius: "var(--radius-md, 0.375rem)",
-              border: "1px solid rgba(255, 255, 255, 0.22)",
-              backgroundColor: "rgba(255, 255, 255, 0.12)",
-              color: "#ffffff",
-              boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.08)",
-              cursor: "pointer",
-              transition: "all 150ms ease"
-            }}
           >
             <GlobeIcon size={14} style={{ color: "#93c5fd" }} />
             <span>{labels.language}</span>
