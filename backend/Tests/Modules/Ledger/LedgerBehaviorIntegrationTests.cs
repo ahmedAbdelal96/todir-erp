@@ -1,4 +1,8 @@
 using Modules.Ledger.Entities;
+using Modules.Ledger.DTOs;
+using Modules.Ledger.Repositories;
+using Modules.Ledger.Services;
+using Core.Transactions;
 using Npgsql;
 using Shared.Contracts.Ledger;
 using Xunit;
@@ -196,17 +200,17 @@ public sealed class LedgerBehaviorIntegrationTests
         await using var connection = await dataSource.OpenConnectionAsync();
         await LedgerTestSupport.SetTenantAsync(connection, LedgerTestSupport.AtlasTenant);
         var roleId = await ScalarGuid(connection, "select id from finance_ledger.account_role where tenant_id=$1 and legal_entity_id=$2 and code='SalesRevenue'", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value);
-        var mappingIds = new List<Guid>(); var versionIds = new List<Guid>();
+        var mappingIds = new List<Guid>();
         try
         {
-            var first = await AddCandidateAsync(connection, roleId, specificAccount.Id, 1, $"specific-{suffix}", $"GENERAL-{suffix}-1"); mappingIds.Add(first.MappingId); versionIds.Add(first.VersionId);
+            var first = await AddCandidateAsync(connection, roleId, specificAccount.Id, 1, $"specific-{suffix}", $"GENERAL-{suffix}-1"); mappingIds.Add(first.MappingId);
             var specificResult = await repository.PostCustomerInvoiceAsync(LedgerTestSupport.Invoice($"SPECIFIC-{suffix}"));
             Assert.Contains(specificResult.Determinations!, item => item.AccountRole == "SalesRevenue" && item.SelectedAccountId == specificAccount.Id && item.SpecificityRank == 1);
-            var second = await AddCandidateAsync(connection, roleId, moreSpecificAccount.Id, 2, $"more-specific-{suffix}", $"GENERAL-{suffix}-2"); mappingIds.Add(second.MappingId); versionIds.Add(second.VersionId);
+            var second = await AddCandidateAsync(connection, roleId, moreSpecificAccount.Id, 2, $"more-specific-{suffix}", $"GENERAL-{suffix}-2"); mappingIds.Add(second.MappingId);
             var moreSpecificResult = await repository.PostCustomerInvoiceAsync(LedgerTestSupport.Invoice($"MORE-SPECIFIC-{suffix}"));
             Assert.Contains(moreSpecificResult.Determinations!, item => item.AccountRole == "SalesRevenue" && item.SelectedAccountId == moreSpecificAccount.Id && item.SpecificityRank == 2);
-            var conflictA = await AddCandidateAsync(connection, roleId, specificAccount.Id, 3, $"conflict-a-{suffix}", $"GENERAL-{suffix}-3"); mappingIds.Add(conflictA.MappingId); versionIds.Add(conflictA.VersionId);
-            var conflictB = await AddCandidateAsync(connection, roleId, conflictAccount.Id, 3, $"conflict-b-{suffix}", $"GENERAL-{suffix}-4"); mappingIds.Add(conflictB.MappingId); versionIds.Add(conflictB.VersionId);
+            var conflictA = await AddCandidateAsync(connection, roleId, specificAccount.Id, 3, $"conflict-a-{suffix}", $"GENERAL-{suffix}-3"); mappingIds.Add(conflictA.MappingId);
+            var conflictB = await AddCandidateAsync(connection, roleId, conflictAccount.Id, 3, $"conflict-b-{suffix}", $"GENERAL-{suffix}-4"); mappingIds.Add(conflictB.MappingId);
             var conflict = await Assert.ThrowsAsync<LedgerDomainException>(() => repository.PostCustomerInvoiceAsync(LedgerTestSupport.Invoice($"CONFLICT-{suffix}")));
             Assert.Equal("ledger.account_mapping_conflict", conflict.Code);
         }
@@ -214,7 +218,6 @@ public sealed class LedgerBehaviorIntegrationTests
         {
             await using var cleanupSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection("TODIR_P04_ADMIN_CONNECTION"));
             await using var cleanup = await cleanupSource.OpenConnectionAsync();
-            await using var retireVersions = new NpgsqlCommand("update finance_ledger.account_mapping_version set status='Retired' where tenant_id=$1 and id = any($2)", cleanup); retireVersions.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); retireVersions.Parameters.AddWithValue(versionIds.ToArray()); await retireVersions.ExecuteNonQueryAsync();
             await using var archiveMappings = new NpgsqlCommand("update finance_ledger.account_mapping set status='Archived' where tenant_id=$1 and id = any($2)", cleanup); archiveMappings.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); archiveMappings.Parameters.AddWithValue(mappingIds.ToArray()); await archiveMappings.ExecuteNonQueryAsync();
         }
     }
@@ -263,6 +266,108 @@ public sealed class LedgerBehaviorIntegrationTests
         await using var mutateConfiguration = new NpgsqlCommand("update finance_ledger.accounting_configuration_version set snapshot_hash='tampered' where tenant_id=$1 and id=$2", connection); mutateConfiguration.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); mutateConfiguration.Parameters.AddWithValue(configuration); var configurationException = await Assert.ThrowsAsync<PostgresException>(() => mutateConfiguration.ExecuteNonQueryAsync()); Assert.Equal("55000", configurationException.SqlState);
     }
 
+    [Fact]
+    public async Task MappingConfigurationActivationKeepsPostingAndSettlementBoundToTheirHistoricalContext()
+    {
+        await using var dataSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection());
+        var ledger = LedgerTestSupport.CreateRepository(dataSource);
+        var lifecycle = new LedgerMappingConfigurationRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), new LedgerConfigurationCache(), TimeProvider.System);
+        var initial = await ledger.PostCustomerInvoiceAsync(LedgerTestSupport.Invoice($"CONFIG-A-{Guid.NewGuid():N}"));
+
+        await using var adminDataSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection("TODIR_P04_ADMIN_CONNECTION"));
+        await using var connection = await adminDataSource.OpenConnectionAsync();
+        await LedgerTestSupport.SetTenantAsync(connection, LedgerTestSupport.AtlasTenant);
+        var configurationA = await ScalarGuid(connection, "select accounting_configuration_version_id from finance_ledger.journal_entry where tenant_id=$1 and id=$2", LedgerTestSupport.AtlasTenant.Value, initial.JournalEntryId);
+        var receivableA = await ScalarGuid(connection, "select v.target_account_id from finance_ledger.account_mapping_version v join finance_ledger.account_mapping m on m.tenant_id=v.tenant_id and m.legal_entity_id=v.legal_entity_id and m.id=v.mapping_id join finance_ledger.account_role r on r.tenant_id=m.tenant_id and r.legal_entity_id=m.legal_entity_id and r.id=m.role_id where v.tenant_id=$1 and v.legal_entity_id=$2 and v.accounting_configuration_version_id=$3 and r.code='Receivable' and v.status='Active'", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, configurationA);
+        var payableA = await ScalarGuid(connection, "select v.target_account_id from finance_ledger.account_mapping_version v join finance_ledger.account_mapping m on m.tenant_id=v.tenant_id and m.legal_entity_id=v.legal_entity_id and m.id=v.mapping_id join finance_ledger.account_role r on r.tenant_id=m.tenant_id and r.legal_entity_id=m.legal_entity_id and r.id=m.role_id where v.tenant_id=$1 and v.legal_entity_id=$2 and v.accounting_configuration_version_id=$3 and r.code='Payable' and v.status='Active'", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, configurationA);
+        var receivableB = (await ledger.CreateAccountAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new($"8{Guid.NewGuid():N}"[..13], "عملاء بديل", "Alternate receivables", AccountType.Asset, "ReceivableControl", null, true), default)).Id;
+        var payableB = (await ledger.CreateAccountAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new($"7{Guid.NewGuid():N}"[..13], "موردون بديل", "Alternate payables", AccountType.Liability, "PayableControl", null, true), default)).Id;
+
+        var effectiveFrom = DateOnly.FromDateTime(DateTime.UtcNow);
+        var incompleteDraft = await lifecycle.CreateDraftAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new(effectiveFrom), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var missingMapping = incompleteDraft.Mappings.Single(mapping => mapping.RoleCode == "SalesRevenue");
+        await using (var removeDraftMapping = new NpgsqlCommand("delete from finance_ledger.account_mapping_version where tenant_id=$1 and legal_entity_id=$2 and accounting_configuration_version_id=$3 and id=$4 and status='Draft'", connection))
+        {
+            removeDraftMapping.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); removeDraftMapping.Parameters.AddWithValue(LedgerTestSupport.AtlasEntity.Value); removeDraftMapping.Parameters.AddWithValue(incompleteDraft.Id); removeDraftMapping.Parameters.AddWithValue(missingMapping.MappingVersionId);
+            Assert.Equal(1, await removeDraftMapping.ExecuteNonQueryAsync());
+        }
+        var incompleteValidation = await lifecycle.ValidateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, incompleteDraft.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        Assert.Contains(incompleteValidation.Errors, error => error.Code == "ledger.account_mapping_missing");
+
+        var conflictDraft = await lifecycle.CreateDraftAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new(effectiveFrom), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var conflictRoleId = await ScalarGuid(connection, "select id from finance_ledger.account_role where tenant_id=$1 and legal_entity_id=$2 and code='Receivable'", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value);
+        var conflictMappingId = Guid.CreateVersion7();
+        await using (var addConflictMapping = new NpgsqlCommand("insert into finance_ledger.account_mapping (tenant_id,legal_entity_id,id,role_id,code,status,version) values ($1,$2,$3,$4,$5,'Active',1)", connection))
+        {
+            addConflictMapping.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); addConflictMapping.Parameters.AddWithValue(LedgerTestSupport.AtlasEntity.Value); addConflictMapping.Parameters.AddWithValue(conflictMappingId); addConflictMapping.Parameters.AddWithValue(conflictRoleId); addConflictMapping.Parameters.AddWithValue($"LIFECYCLE-CONFLICT-{Guid.NewGuid():N}"); await addConflictMapping.ExecuteNonQueryAsync();
+        }
+        await using (var addConflictVersion = new NpgsqlCommand("insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,accounting_configuration_version_id,version_number,effective_from,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,$5,1,$6,0,$7,'Draft')", connection))
+        {
+            addConflictVersion.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); addConflictVersion.Parameters.AddWithValue(LedgerTestSupport.AtlasEntity.Value); addConflictVersion.Parameters.AddWithValue(Guid.CreateVersion7()); addConflictVersion.Parameters.AddWithValue(conflictMappingId); addConflictVersion.Parameters.AddWithValue(conflictDraft.Id); addConflictVersion.Parameters.AddWithValue(effectiveFrom); addConflictVersion.Parameters.AddWithValue(receivableB); await addConflictVersion.ExecuteNonQueryAsync();
+        }
+        var conflictValidation = await lifecycle.ValidateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, conflictDraft.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        Assert.Contains(conflictValidation.Errors, error => error.Code == "ledger.account_mapping_conflict");
+
+        var nonPostable = (await ledger.CreateAccountAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new($"6{Guid.NewGuid():N}"[..13], "حساب غير قابل للترحيل", "Non-postable", AccountType.Asset, "Other", null, false), default)).Id;
+        var draft = await lifecycle.CreateDraftAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new(effectiveFrom), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var staleDraft = await lifecycle.CreateDraftAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new(effectiveFrom), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var receivableMapping = draft.Mappings.Single(mapping => mapping.RoleCode == "Receivable");
+        var payableMapping = draft.Mappings.Single(mapping => mapping.RoleCode == "Payable");
+        await lifecycle.UpdateDraftMappingAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, draft.Id, receivableMapping.MappingVersionId, new(receivableB), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        await lifecycle.UpdateDraftMappingAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, draft.Id, payableMapping.MappingVersionId, new(payableB), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var staleReceivable = staleDraft.Mappings.Single(mapping => mapping.RoleCode == "Receivable");
+        var stalePayable = staleDraft.Mappings.Single(mapping => mapping.RoleCode == "Payable");
+        var invalidTarget = await Assert.ThrowsAsync<LedgerDomainException>(() => lifecycle.UpdateDraftMappingAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, staleDraft.Id, staleReceivable.MappingVersionId, new(nonPostable), Guid.CreateVersion7(), Guid.CreateVersion7(), default));
+        Assert.Equal("ledger.mapping_target_invalid", invalidTarget.Code);
+        await lifecycle.UpdateDraftMappingAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, staleDraft.Id, staleReceivable.MappingVersionId, new(receivableB), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        await lifecycle.UpdateDraftMappingAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, staleDraft.Id, stalePayable.MappingVersionId, new(payableB), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var draftValidation = await lifecycle.ValidateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, draft.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        Assert.True(draftValidation.Valid, System.Text.Json.JsonSerializer.Serialize(draftValidation.Errors));
+        async Task<(Guid? Activated, string? Error)> TryActivateAsync(Guid configurationId)
+        {
+            try { await lifecycle.ActivateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, configurationId, Guid.CreateVersion7(), Guid.CreateVersion7(), default); return (configurationId, null); }
+            catch (LedgerDomainException error) { return (null, error.Code); }
+        }
+        var concurrent = await Task.WhenAll(TryActivateAsync(draft.Id), TryActivateAsync(staleDraft.Id));
+        var winningActivation = Assert.Single(concurrent, result => result.Activated.HasValue);
+        var losingActivation = Assert.Single(concurrent, result => result.Error is not null);
+        var configurationB = winningActivation.Activated!.Value;
+        Assert.Equal("ledger.mapping_configuration_stale", losingActivation.Error);
+
+        var next = await ledger.PostCustomerInvoiceAsync(LedgerTestSupport.Invoice($"CONFIG-B-{Guid.NewGuid():N}"));
+        var nextConfig = await ScalarGuid(connection, "select accounting_configuration_version_id from finance_ledger.journal_entry where tenant_id=$1 and id=$2", LedgerTestSupport.AtlasTenant.Value, next.JournalEntryId);
+        var oldArLine = await ScalarGuid(connection, "select account_id from finance_ledger.journal_entry_line where tenant_id=$1 and journal_entry_id=$2 and sequence_no=1", LedgerTestSupport.AtlasTenant.Value, initial.JournalEntryId);
+        var newArLine = await ScalarGuid(connection, "select account_id from finance_ledger.journal_entry_line where tenant_id=$1 and journal_entry_id=$2 and sequence_no=1", LedgerTestSupport.AtlasTenant.Value, next.JournalEntryId);
+        Assert.Equal(configurationB, nextConfig);
+        Assert.Equal(receivableA, oldArLine);
+        Assert.Equal(receivableB, newArLine);
+
+        var writeOffId = Guid.CreateVersion7();
+        var writeOff = new SettlementWriteOffPayload(writeOffId, Guid.CreateVersion7(), Guid.CreateVersion7(), "Payable", "1", "EGP", 1m, "EGP", "acceptance", "Historical payable control proof", configurationA);
+        var fact = new AccountingFactEnvelope<IAccountingFactPayload>(writeOffId, LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, AccountingFactTypes.SettlementWriteOff, 1, "subledger", $"historical-writeoff:{writeOffId:N}", $"historical-writeoff:{writeOffId:N}", effectiveFrom, effectiveFrom, writeOff, Guid.CreateVersion7(), Guid.CreateVersion7());
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var historicalEffect = await coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, (context, ct) => ledger.PostSettlementWriteOffInTransactionAsync(context, fact, writeOff, ct), default);
+        var effectConfig = await ScalarGuid(connection, "select accounting_configuration_version_id from finance_ledger.journal_entry where tenant_id=$1 and id=$2", LedgerTestSupport.AtlasTenant.Value, historicalEffect.JournalEntryId);
+        var historicalPayableLine = await LedgerTestSupport.ScalarLongAsync(connection, "select count(*) from finance_ledger.journal_entry_line where tenant_id=$1 and journal_entry_id=$2 and account_id=$3", ("tenant", LedgerTestSupport.AtlasTenant.Value), ("entry", historicalEffect.JournalEntryId), ("account", payableA));
+        Assert.Equal(configurationA, effectConfig);
+        Assert.Equal(1, historicalPayableLine);
+        var currentWriteOffId = Guid.CreateVersion7();
+        var currentWriteOff = writeOff with { WriteOffId = currentWriteOffId, OpenItemId = Guid.CreateVersion7(), HistoricalConfigurationVersionId = null };
+        var currentFact = fact with { FactId = currentWriteOffId, SourceReference = $"current-writeoff:{currentWriteOffId:N}", IdempotencyKey = $"current-writeoff:{currentWriteOffId:N}", Payload = currentWriteOff };
+        var currentEffect = await coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, (context, ct) => ledger.PostSettlementWriteOffInTransactionAsync(context, currentFact, currentWriteOff, ct), default);
+        var currentEffectConfig = await ScalarGuid(connection, "select accounting_configuration_version_id from finance_ledger.journal_entry where tenant_id=$1 and id=$2", LedgerTestSupport.AtlasTenant.Value, currentEffect.JournalEntryId);
+        var currentPayableLine = await LedgerTestSupport.ScalarLongAsync(connection, "select count(*) from finance_ledger.journal_entry_line where tenant_id=$1 and journal_entry_id=$2 and account_id=$3", ("tenant", LedgerTestSupport.AtlasTenant.Value), ("entry", currentEffect.JournalEntryId), ("account", payableB));
+        Assert.Equal(configurationB, currentEffectConfig);
+        Assert.Equal(1, currentPayableLine);
+        Assert.Equal(receivableA, await ScalarGuid(connection, "select v.target_account_id from finance_ledger.account_mapping_version v join finance_ledger.account_mapping m on m.tenant_id=v.tenant_id and m.legal_entity_id=v.legal_entity_id and m.id=v.mapping_id join finance_ledger.account_role r on r.tenant_id=m.tenant_id and r.legal_entity_id=m.legal_entity_id and r.id=m.role_id where v.tenant_id=$1 and v.legal_entity_id=$2 and v.accounting_configuration_version_id=$3 and r.code='Receivable' and v.status='Active'", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, configurationA));
+
+        var restoreDraft = await lifecycle.CreateDraftAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new(effectiveFrom), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        await lifecycle.UpdateDraftMappingAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, restoreDraft.Id, restoreDraft.Mappings.Single(mapping => mapping.RoleCode == "Receivable").MappingVersionId, new(receivableA), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        await lifecycle.UpdateDraftMappingAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, restoreDraft.Id, restoreDraft.Mappings.Single(mapping => mapping.RoleCode == "Payable").MappingVersionId, new(payableA), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        Assert.True((await lifecycle.ValidateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, restoreDraft.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), default)).Valid);
+        await lifecycle.ActivateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, restoreDraft.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+    }
+
     private static async Task<Guid> ScalarGuid(NpgsqlConnection connection, string sql, params object[] values)
     {
         await using var command = new NpgsqlCommand(sql, connection);
@@ -277,7 +382,7 @@ public sealed class LedgerBehaviorIntegrationTests
         {
             mapping.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); mapping.Parameters.AddWithValue(LedgerTestSupport.AtlasEntity.Value); mapping.Parameters.AddWithValue(mappingId); mapping.Parameters.AddWithValue(roleId); mapping.Parameters.AddWithValue(code); await mapping.ExecuteNonQueryAsync();
         }
-        await using (var version = new NpgsqlCommand("insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,version_number,effective_from,product_category_code,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,1,'2026-01-01',$5,$6,$7,'Active')", connection))
+        await using (var version = new NpgsqlCommand("insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,accounting_configuration_version_id,version_number,effective_from,product_category_code,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,(select active_configuration_version_id from finance_ledger.ledger_entity_configuration where tenant_id=$1 and legal_entity_id=$2),1,'2026-01-01',$5,$6,$7,'Active')", connection))
         {
             version.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); version.Parameters.AddWithValue(LedgerTestSupport.AtlasEntity.Value); version.Parameters.AddWithValue(versionId); version.Parameters.AddWithValue(mappingId); version.Parameters.AddWithValue("GENERAL"); version.Parameters.AddWithValue(rank); version.Parameters.AddWithValue(accountId); await version.ExecuteNonQueryAsync();
         }

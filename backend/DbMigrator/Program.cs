@@ -189,11 +189,12 @@ foreach (var script in scripts)
     }
 
     Console.WriteLine(appliedChecksum is null ? $"Applying {scriptName}" : $"Reapplying idempotent finalization {scriptName}");
-    var maintenanceTable = Path.GetFileName(script) switch
+    var maintenanceTables = Path.GetFileName(script) switch
     {
-        "catalog-forward-fix-product-template-code.sql" => "foundation_catalog.product_template",
-        "finbase-forward-fix-canonical-ratio-due-rules.sql" => "foundation_finbase.payment_term_rule",
-        "finbase-forward-fix-rounding-contexts.sql" => "foundation_finbase.financial_rounding_policy",
+        "catalog-forward-fix-product-template-code.sql" => new[] { "foundation_catalog.product_template" },
+        "finbase-forward-fix-canonical-ratio-due-rules.sql" => new[] { "foundation_finbase.payment_term_rule" },
+        "finbase-forward-fix-rounding-contexts.sql" => new[] { "foundation_finbase.financial_rounding_policy" },
+        "ledger-forward-fix-z-accounting-configuration-mappings.sql" => new[] { "finance_ledger.account_mapping_version", "finance_ledger.accounting_configuration_version", "finance_ledger.ledger_entity_configuration", "finance_ledger.journal_entry", "finance_ledger.journal_entry_line" },
         _ => null
     };
     if (Path.GetFileName(script) is "finbase-forward-fix-provider-history.sql" or "pricing-schema.sql")
@@ -224,21 +225,22 @@ foreach (var script in scripts)
             throw;
         }
     }
-    else if (maintenanceTable is not null)
+    else if (maintenanceTables is not null)
     {
         // These data corrections must see rows across tenants. Keep the maintenance
         // override transaction-scoped so FORCE RLS is never observable as disabled.
         await using var migrationTransaction = await connection.BeginTransactionAsync();
-        var restoreForcedRls = false;
+        var restoreForcedRls = new List<string>();
         try
         {
-            await using (var forceState = new NpgsqlCommand("select relforcerowsecurity from pg_class where oid = $1::regclass", connection, migrationTransaction))
+            foreach (var maintenanceTable in maintenanceTables)
             {
+                await using var forceState = new NpgsqlCommand("select relforcerowsecurity from pg_class where oid = $1::regclass", connection, migrationTransaction);
                 forceState.Parameters.AddWithValue(maintenanceTable);
-                restoreForcedRls = (bool)(await forceState.ExecuteScalarAsync() ?? false);
+                if ((bool)(await forceState.ExecuteScalarAsync() ?? false)) restoreForcedRls.Add(maintenanceTable);
             }
 
-            if (restoreForcedRls)
+            foreach (var maintenanceTable in restoreForcedRls)
             {
                 await using var relaxForce = new NpgsqlCommand($"alter table {maintenanceTable} no force row level security", connection, migrationTransaction);
                 await relaxForce.ExecuteNonQueryAsync();
@@ -250,7 +252,7 @@ foreach (var script in scripts)
                 await command.ExecuteNonQueryAsync();
             }
 
-            if (restoreForcedRls)
+            foreach (var maintenanceTable in restoreForcedRls)
             {
                 await using var restoreForce = new NpgsqlCommand($"alter table {maintenanceTable} force row level security", connection, migrationTransaction);
                 await restoreForce.ExecuteNonQueryAsync();

@@ -1,0 +1,98 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "TODIR Ledger API", "version": "1.0.0" },
+  "paths": {
+    "/api/v1/ledger/legal-entities/{entityId}/mapping-configurations": {
+      "post": {
+        "operationId": "createLedgerMappingConfigurationDraft",
+        "summary": "Create a draft from the legal entity's active accounting configuration",
+        "description": "Requires ledger.mapping.manage. The draft is scoped to the tenant and legal entity and records the active configuration it is based on.",
+        "parameters": [{ "$ref": "#/components/parameters/EntityId" }],
+        "requestBody": { "$ref": "#/components/requestBodies/CreateMappingConfigurationDraft" },
+        "responses": {
+          "201": { "description": "Draft configuration and copied mapping versions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MappingConfiguration" } } } },
+          "400": { "$ref": "#/components/responses/DomainError" },
+          "401": { "description": "Authentication is required" },
+          "403": { "$ref": "#/components/responses/PermissionDenied" }
+        }
+      }
+    },
+    "/api/v1/ledger/legal-entities/{entityId}/mapping-configurations/{configurationId}": {
+      "get": {
+        "operationId": "getLedgerMappingConfiguration",
+        "summary": "Read a configuration version and its mapping snapshot",
+        "description": "Requires ledger.mapping.read. Results are scoped to the tenant and legal entity.",
+        "parameters": [{ "$ref": "#/components/parameters/EntityId" }, { "$ref": "#/components/parameters/ConfigurationId" }],
+        "responses": {
+          "200": { "description": "Configuration version and mappings", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MappingConfiguration" } } } },
+          "400": { "$ref": "#/components/responses/DomainError" },
+          "401": { "description": "Authentication is required" },
+          "403": { "$ref": "#/components/responses/PermissionDenied" }
+        }
+      }
+    },
+    "/api/v1/ledger/legal-entities/{entityId}/mapping-configurations/{configurationId}/mappings/{mappingVersionId}": {
+      "put": {
+        "operationId": "updateLedgerDraftMappingTarget",
+        "summary": "Change a target account in a draft configuration",
+        "description": "Requires ledger.mapping.manage. Active or historical mapping versions cannot be changed.",
+        "parameters": [{ "$ref": "#/components/parameters/EntityId" }, { "$ref": "#/components/parameters/ConfigurationId" }, { "$ref": "#/components/parameters/MappingVersionId" }],
+        "requestBody": { "$ref": "#/components/requestBodies/UpdateDraftMapping" },
+        "responses": {
+          "200": { "description": "Updated draft mapping", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MappingConfigurationItem" } } } },
+          "400": { "$ref": "#/components/responses/DomainError" },
+          "401": { "description": "Authentication is required" },
+          "403": { "$ref": "#/components/responses/PermissionDenied" }
+        }
+      }
+    },
+    "/api/v1/ledger/legal-entities/{entityId}/mapping-configurations/{configurationId}/validate": {
+      "post": {
+        "operationId": "validateLedgerMappingConfigurationDraft",
+        "summary": "Validate mapping completeness, targets, and conflicts",
+        "description": "Requires ledger.mapping.manage. Validation is repeated during activation.",
+        "parameters": [{ "$ref": "#/components/parameters/EntityId" }, { "$ref": "#/components/parameters/ConfigurationId" }],
+        "responses": {
+          "200": { "description": "Validation result and deterministic snapshot hash", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MappingConfigurationValidation" } } } },
+          "400": { "$ref": "#/components/responses/DomainError" },
+          "401": { "description": "Authentication is required" },
+          "403": { "$ref": "#/components/responses/PermissionDenied" }
+        }
+      }
+    },
+    "/api/v1/ledger/legal-entities/{entityId}/mapping-configurations/{configurationId}/activate": {
+      "post": {
+        "operationId": "activateLedgerMappingConfiguration",
+        "summary": "Atomically activate a validated draft configuration",
+        "description": "Requires ledger.mapping.activate. The active configuration changes atomically; concurrent stale drafts are rejected.",
+        "parameters": [{ "$ref": "#/components/parameters/EntityId" }, { "$ref": "#/components/parameters/ConfigurationId" }],
+        "responses": {
+          "200": { "description": "Activated configuration", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MappingConfiguration" } } } },
+          "400": { "$ref": "#/components/responses/DomainError" },
+          "401": { "description": "Authentication is required" },
+          "403": { "$ref": "#/components/responses/PermissionDenied" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "EntityId": { "name": "entityId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "ConfigurationId": { "name": "configurationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "MappingVersionId": { "name": "mappingVersionId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "requestBodies": {
+      "CreateMappingConfigurationDraft": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["effectiveFrom"], "properties": { "effectiveFrom": { "type": "string", "format": "date" } }, "additionalProperties": false } } } },
+      "UpdateDraftMapping": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["targetAccountId"], "properties": { "targetAccountId": { "type": "string", "format": "uuid" } }, "additionalProperties": false } } } }
+    },
+    "schemas": {
+      "MappingConfiguration": { "type": "object", "required": ["id", "versionNumber", "status", "effectiveFrom", "mappings"], "properties": { "id": { "type": "string", "format": "uuid" }, "versionNumber": { "type": "integer", "format": "int64" }, "status": { "type": "string", "enum": ["Draft", "Active", "Retired"] }, "effectiveFrom": { "type": "string", "format": "date" }, "basedOnConfigurationVersionId": { "type": ["string", "null"], "format": "uuid" }, "mappings": { "type": "array", "items": { "$ref": "#/components/schemas/MappingConfigurationItem" } } } },
+      "MappingConfigurationItem": { "type": "object", "required": ["mappingVersionId", "mappingId", "mappingCode", "roleCode", "versionNumber", "targetAccountId", "accountCode", "status", "accountValid", "specificityRank", "effectiveFrom"], "properties": { "mappingVersionId": { "type": "string", "format": "uuid" }, "mappingId": { "type": "string", "format": "uuid" }, "mappingCode": { "type": "string" }, "roleCode": { "type": "string" }, "versionNumber": { "type": "integer", "format": "int64" }, "targetAccountId": { "type": "string", "format": "uuid" }, "accountCode": { "type": "string" }, "status": { "type": "string" }, "accountValid": { "type": "boolean" }, "specificityRank": { "type": "integer" }, "productCategoryCode": { "type": ["string", "null"] }, "partyGroupCode": { "type": ["string", "null"] }, "taxCode": { "type": ["string", "null"] }, "journalCode": { "type": ["string", "null"] }, "effectiveFrom": { "type": "string", "format": "date" }, "effectiveTo": { "type": ["string", "null"], "format": "date" } } },
+      "MappingConfigurationValidation": { "type": "object", "required": ["configurationVersionId", "valid", "errors", "snapshotHash"], "properties": { "configurationVersionId": { "type": "string", "format": "uuid" }, "valid": { "type": "boolean" }, "errors": { "type": "array", "items": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" }, "capability": { "type": ["string", "null"] } } } }, "snapshotHash": { "type": "string" } } }
+    },
+    "responses": {
+      "DomainError": { "description": "ProblemDetails with a stable domain error code" },
+      "PermissionDenied": { "description": "The required scoped Ledger permission is missing" }
+    }
+  }
+}

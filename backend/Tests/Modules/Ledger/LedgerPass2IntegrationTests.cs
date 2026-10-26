@@ -101,25 +101,37 @@ public sealed class LedgerPass2IntegrationTests
         await using var dataSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection());
         var posting = LedgerTestSupport.CreateRepository(dataSource);
         var operations = new LedgerOperationsRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), posting, TimeProvider.System);
+        var lifecycle = new LedgerMappingConfigurationRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), new LedgerConfigurationCache(), TimeProvider.System);
         var v1Account = (await posting.CreateAccountAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new($"71{Guid.NewGuid():N}"[..10], "إيراد أول", "Revenue V1", AccountType.Revenue, "Sales", null), default)).Id;
         var v2Account = (await posting.CreateAccountAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new($"72{Guid.NewGuid():N}"[..10], "إيراد ثان", "Revenue V2", AccountType.Revenue, "Sales", null), default)).Id;
         await using var connection = await dataSource.OpenConnectionAsync(); await LedgerTestSupport.SetTenantAsync(connection, LedgerTestSupport.AtlasTenant);
-        var roleId = await ScalarGuidAsync(connection, "select id from finance_ledger.account_role where tenant_id=$1 and legal_entity_id=$2 and code='SalesRevenue'", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value);
-        var mappingId = Guid.CreateVersion7(); var v1Id = Guid.CreateVersion7(); var v2Id = Guid.CreateVersion7(); var code = $"REV-HISTORY-{Guid.NewGuid():N}";
-        await ExecuteAsync(connection, "insert into finance_ledger.account_mapping (tenant_id,legal_entity_id,id,role_id,code,status,version) values ($1,$2,$3,$4,$5,'Active',2)", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, mappingId, roleId, code);
-        await ExecuteAsync(connection, "insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,version_number,effective_from,product_category_code,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,1,'2026-01-01','GENERAL',9,$5,'Active')", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, v1Id, mappingId, v1Account);
+        var configurationA = await ScalarGuidAsync(connection, "select active_configuration_version_id from finance_ledger.ledger_entity_configuration where tenant_id=$1 and legal_entity_id=$2", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value);
+        var originalRevenue = await ScalarGuidAsync(connection, "select v.target_account_id from finance_ledger.account_mapping_version v join finance_ledger.account_mapping m on m.tenant_id=v.tenant_id and m.legal_entity_id=v.legal_entity_id and m.id=v.mapping_id join finance_ledger.account_role r on r.tenant_id=m.tenant_id and r.legal_entity_id=m.legal_entity_id and r.id=m.role_id where v.tenant_id=$1 and v.legal_entity_id=$2 and v.accounting_configuration_version_id=$3 and r.code='SalesRevenue' and v.status='Active' order by v.version_number desc limit 1", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, configurationA);
         var entryA = await posting.PostCustomerInvoiceAsync(LedgerTestSupport.Invoice($"MAPPING-V1-{Guid.NewGuid():N}"));
-        await ExecuteAsync(connection, "update finance_ledger.account_mapping_version set status='Retired' where tenant_id=$1 and id=$2", LedgerTestSupport.AtlasTenant.Value, v1Id);
-        await ExecuteAsync(connection, "insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,version_number,effective_from,product_category_code,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,2,'2026-02-01','GENERAL',9,$5,'Active')", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, v2Id, mappingId, v2Account);
+        var draft = await lifecycle.CreateDraftAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity,
+            new(DateOnly.FromDateTime(DateTime.UtcNow)), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var revenueMapping = draft.Mappings.Single(mapping => mapping.RoleCode == "SalesRevenue");
+        await lifecycle.UpdateDraftMappingAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, draft.Id,
+            revenueMapping.MappingVersionId, new(v2Account), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var validation = await lifecycle.ValidateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, draft.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        Assert.True(validation.Valid, System.Text.Json.JsonSerializer.Serialize(validation.Errors));
+        await lifecycle.ActivateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, draft.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
         var entryB = await posting.PostCustomerInvoiceAsync(LedgerTestSupport.Invoice($"MAPPING-V2-{Guid.NewGuid():N}", new(2026, 2, 1)));
         var explanationA = await operations.ExplainEntryAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, entryA.JournalEntryId, default);
         var explanationB = await operations.ExplainEntryAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, entryB.JournalEntryId, default);
         var revenueA = Assert.Single(explanationA.Lines, line => line.AccountRole == "SalesRevenue"); var revenueB = Assert.Single(explanationB.Lines, line => line.AccountRole == "SalesRevenue");
-        Assert.Equal(v1Account, revenueA.AccountId); Assert.Equal(1, revenueA.MappingVersion); Assert.Equal(mappingId, revenueA.MappingId); Assert.Equal(v1Id, revenueA.MappingVersionId);
-        Assert.Equal(v2Account, revenueB.AccountId); Assert.Equal(2, revenueB.MappingVersion); Assert.Equal(mappingId, revenueB.MappingId); Assert.Equal(v2Id, revenueB.MappingVersionId);
-        await ExecuteAsync(connection, "update finance_ledger.account_mapping_version set status='Retired' where tenant_id=$1 and mapping_id=$2", LedgerTestSupport.AtlasTenant.Value, mappingId); await ExecuteAsync(connection, "update finance_ledger.account_mapping set status='Archived' where tenant_id=$1 and id=$2", LedgerTestSupport.AtlasTenant.Value, mappingId);
-        var archivedExplanation = await operations.ExplainEntryAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, entryA.JournalEntryId, default);
-        var archivedRevenue = Assert.Single(archivedExplanation.Lines, line => line.AccountRole == "SalesRevenue"); Assert.Equal(v1Account, archivedRevenue.AccountId); Assert.Equal(1, archivedRevenue.MappingVersion); Assert.Equal(v1Id, archivedRevenue.MappingVersionId);
+        Assert.Equal(configurationA, explanationA.AccountingConfigurationVersionId); Assert.Equal(originalRevenue, revenueA.AccountId);
+        Assert.Equal(draft.Id, explanationB.AccountingConfigurationVersionId); Assert.Equal(v2Account, revenueB.AccountId);
+        var restoreDraft = await lifecycle.CreateDraftAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity,
+            new(DateOnly.FromDateTime(DateTime.UtcNow)), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var restoreMapping = restoreDraft.Mappings.Single(mapping => mapping.RoleCode == "SalesRevenue");
+        await lifecycle.UpdateDraftMappingAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, restoreDraft.Id,
+            restoreMapping.MappingVersionId, new(originalRevenue), Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        Assert.True((await lifecycle.ValidateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, restoreDraft.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), default)).Valid);
+        await lifecycle.ActivateAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, restoreDraft.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var immutableExplanation = await operations.ExplainEntryAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, entryA.JournalEntryId, default);
+        Assert.Equal(configurationA, immutableExplanation.AccountingConfigurationVersionId);
+        Assert.Equal(originalRevenue, Assert.Single(immutableExplanation.Lines, line => line.AccountRole == "SalesRevenue").AccountId);
         var deltaTenant = new Shared.Primitives.Identifiers.TenantId(Guid.Parse("3f93b180-d6a9-3e50-9c92-6be0607e96eb")); var deltaEntity = new Shared.Primitives.Identifiers.LegalEntityId(Guid.Parse("d8eb39bb-b048-7c5d-bacd-e3a923eee21c"));
         await Assert.ThrowsAsync<LedgerDomainException>(() => operations.ExplainEntryAsync(deltaTenant, deltaEntity, entryA.JournalEntryId, default));
         await Assert.ThrowsAsync<LedgerDomainException>(() => operations.ExplainEntryAsync(LedgerTestSupport.AtlasTenant, deltaEntity, entryA.JournalEntryId, default));

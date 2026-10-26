@@ -111,7 +111,11 @@ public sealed class LedgerSetupRepository(
             {
                 var roleId = await EnsureRoleAsync(context, tenant, entity, role, token);
                 var mappingId = await EnsureMappingAsync(context, tenant, entity, role, roleId, token);
-                await EnsureMappingVersionAsync(context, tenant, entity, mappingId, accounts[role.AccountCode], token);
+                var targetAccountId = accounts[role.AccountCode];
+                if (role.Code == "Cash" && !await IsPostableAccountAsync(context, tenant, entity, targetAccountId, token))
+                    targetAccountId = await FindPostableCashAccountAsync(context, tenant, entity, token)
+                        ?? throw new LedgerDomainException("ledger.cash_account_missing", "Configure an active postable cash account before initializing Ledger.");
+                await EnsureMappingVersionAsync(context, tenant, entity, configurationId, mappingId, targetAccountId, token);
                 roleCount++;
                 mappingCount++;
             }
@@ -239,7 +243,13 @@ public sealed class LedgerSetupRepository(
         var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into finance_ledger.account_mapping (tenant_id,legal_entity_id,id,role_id,code,status,version) values ($1,$2,$3,$4,$5,'Active',1)", ct, tenant.Value, entity.Value, id, roleId, $"MANAGED-{role.Code}"); return id;
     }
 
-    private static async Task EnsureMappingVersionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid mappingId, Guid accountId, CancellationToken ct) => await ExecuteAsync(context, "insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,version_number,effective_from,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,1,current_date,0,$5,'Active') on conflict (tenant_id,mapping_id,version_number) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), mappingId, accountId);
+    private static async Task<bool> IsPostableAccountAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid accountId, CancellationToken ct) =>
+        await ScalarGuidAsync(context, "select id from finance_ledger.account where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Active' and allow_direct_posting=true", ct, tenant.Value, entity.Value, accountId) == accountId;
+
+    private static async Task<Guid?> FindPostableCashAccountAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, CancellationToken ct) =>
+        await ScalarGuidAsync(context, "select id from finance_ledger.account where tenant_id=$1 and legal_entity_id=$2 and status='Active' and allow_direct_posting=true and subtype='Cash' order by code limit 1", ct, tenant.Value, entity.Value);
+
+    private static async Task EnsureMappingVersionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid configurationId, Guid mappingId, Guid accountId, CancellationToken ct) => await ExecuteAsync(context, "insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,accounting_configuration_version_id,version_number,effective_from,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,$5,1,current_date,0,$6,'Active') on conflict (tenant_id,mapping_id,version_number) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), mappingId, configurationId, accountId);
 
     private async Task EnsureSimplePostingRuleAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, string factType, string code, CancellationToken ct)
     {

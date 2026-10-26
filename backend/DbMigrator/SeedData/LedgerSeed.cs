@@ -86,15 +86,15 @@ public static class LedgerSeed
             var roleRetained = await AddRoleAsync(context, entityId, suffix, 7, "RetainedEarnings", "الأرباح المحتجزة", "Retained earnings", cancellationToken);
             var roleBadDebt = await AddRoleAsync(context, entityId, suffix, 8, "BadDebtExpense", "مصروف الديون المعدومة", "Bad debt expense", cancellationToken);
             var roleWriteOffIncome = await AddRoleAsync(context, entityId, suffix, 9, "WriteOffIncome", "إيراد تسوية الديون", "Write-off income", cancellationToken);
-            await AddMappingAsync(context, entityId, suffix, 1, roleReceivable, receivable, "Receivable", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, suffix, 2, roleRevenue, salesRevenue, "SalesRevenue", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, suffix, 3, roleTax, outputTax, "OutputTax", null, null, "VAT14", cancellationToken);
-            await AddMappingAsync(context, entityId, suffix, 4, rolePayable, payable, "Payable", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, suffix, 5, roleFxGain, fxGain, "FXGain", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, suffix, 6, roleFxLoss, fxLoss, "FXLoss", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, suffix, 7, roleRetained, retainedEarnings, "RetainedEarnings", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, suffix, 8, roleBadDebt, badDebtExpense, "BadDebtExpense", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, suffix, 9, roleWriteOffIncome, writeOffIncome, "WriteOffIncome", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, configId, suffix, 1, roleReceivable, receivable, "Receivable", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, configId, suffix, 2, roleRevenue, salesRevenue, "SalesRevenue", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, configId, suffix, 3, roleTax, outputTax, "OutputTax", null, null, "VAT14", cancellationToken);
+            await AddMappingAsync(context, entityId, configId, suffix, 4, rolePayable, payable, "Payable", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, configId, suffix, 5, roleFxGain, fxGain, "FXGain", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, configId, suffix, 6, roleFxLoss, fxLoss, "FXLoss", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, configId, suffix, 7, roleRetained, retainedEarnings, "RetainedEarnings", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, configId, suffix, 8, roleBadDebt, badDebtExpense, "BadDebtExpense", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, configId, suffix, 9, roleWriteOffIncome, writeOffIncome, "WriteOffIncome", null, null, null, cancellationToken);
 
             var ruleId = SeedIds.Child(context.Tenant.Id, $"ledger-rule:{suffix}", 1); var ruleVersionId = SeedIds.Child(context.Tenant.Id, $"ledger-rule-version:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.posting_rule (tenant_id,legal_entity_id,id,fact_type,fact_version,code,status,version,created_at) values ($1,$2,$3,'CustomerInvoicePosted',1,'CUSTOMER_INVOICE_V1','Active',1,$4) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, ruleId, context.AsOf);
@@ -124,11 +124,11 @@ public static class LedgerSeed
         return id;
     }
 
-    private static async Task AddMappingAsync(SeedContext context, Guid entityId, string suffix, int index, Guid roleId, Guid accountId, string code, string? productCategory, string? partyGroup, string? taxCode, CancellationToken cancellationToken)
+    private static async Task AddMappingAsync(SeedContext context, Guid entityId, Guid configurationId, string suffix, int index, Guid roleId, Guid accountId, string code, string? productCategory, string? partyGroup, string? taxCode, CancellationToken cancellationToken)
     {
         var mappingId = SeedIds.Child(context.Tenant.Id, $"ledger-mapping:{suffix}", index); var versionId = SeedIds.Child(context.Tenant.Id, $"ledger-mapping-version:{suffix}", index);
         await context.ExecuteAsync("insert into finance_ledger.account_mapping (tenant_id,legal_entity_id,id,role_id,code,status,version) values ($1,$2,$3,$4,$5,'Active',1) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, mappingId, roleId, code);
-        await context.ExecuteAsync("insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,version_number,effective_from,product_category_code,party_group_code,tax_code,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,1,'2026-01-01',$5::text,$6::text,$7::text,case when $5::text is not null or $6::text is not null or $7::text is not null then 1 else 0 end,$8,'Active') on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, versionId, mappingId, (object?)productCategory ?? DBNull.Value, (object?)partyGroup ?? DBNull.Value, (object?)taxCode ?? DBNull.Value, accountId);
+        await context.ExecuteAsync("insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,accounting_configuration_version_id,version_number,effective_from,product_category_code,party_group_code,tax_code,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,$5,1,'2026-01-01',$6::text,$7::text,$8::text,case when $6::text is not null or $7::text is not null or $8::text is not null then 1 else 0 end,$9,'Active') on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, versionId, mappingId, configurationId, (object?)productCategory ?? DBNull.Value, (object?)partyGroup ?? DBNull.Value, (object?)taxCode ?? DBNull.Value, accountId);
     }
 }
 

@@ -43,7 +43,7 @@ public sealed class LedgerAtomicityIntegrationTests
         await Assert.ThrowsAsync<LedgerDomainException>(() => coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
         {
             await InsertInboxAsync(context, fixture);
-            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, ct);
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, cancellationToken: ct);
             return 0;
         }));
 
@@ -58,14 +58,14 @@ public sealed class LedgerAtomicityIntegrationTests
         var coordinator = new NpgsqlTransactionCoordinator(dataSource);
         await coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
         {
-            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, ct);
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, cancellationToken: ct);
             return 0;
         });
 
         var changedPayload = fixture.Payload with { Description = "Changed payload under the same source identity" };
         var conflict = await Assert.ThrowsAsync<LedgerDomainException>(() => coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
         {
-            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, changedPayload, ct);
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, changedPayload, cancellationToken: ct);
             return 0;
         }));
 
@@ -86,7 +86,7 @@ public sealed class LedgerAtomicityIntegrationTests
         await Assert.ThrowsAsync<LedgerDomainException>(() => coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
         {
             await InsertInboxAsync(context, fixture);
-            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, invalidPayload, ct);
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, invalidPayload, cancellationToken: ct);
             return 0;
         }));
 
@@ -104,7 +104,7 @@ public sealed class LedgerAtomicityIntegrationTests
         await Assert.ThrowsAsync<PostgresException>(() => coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
         {
             await InsertInboxAsync(context, fixture);
-            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, ct);
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, cancellationToken: ct);
             return 0;
         }));
 
@@ -123,7 +123,7 @@ public sealed class LedgerAtomicityIntegrationTests
         await Assert.ThrowsAsync<PostgresException>(() => coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
         {
             await InsertInboxAsync(context, fixture);
-            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, invalidPayload, ct);
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, invalidPayload, cancellationToken: ct);
             return 0;
         }));
 
@@ -141,7 +141,7 @@ public sealed class LedgerAtomicityIntegrationTests
         await Assert.ThrowsAsync<PostgresException>(() => coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
         {
             await InsertInboxAsync(context, fixture);
-            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, ct);
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, cancellationToken: ct);
             await ExecuteAsync(context, "insert into platform.audit_entry (id,tenant_id,legal_entity_id,actor_type,actor_id,module,action,entity_type,entity_id,source,correlation_id,occurred_at) values ($1,$2,$3,'User',$4,'ledger','atomicity.audit_failure','AccountingFact',$5,'test',$6,now())", Guid.CreateVersion7(), foreignTenant, LedgerTestSupport.AtlasEntity.Value, fixture.Fact.ActorId, fixture.Fact.FactId, fixture.Fact.CorrelationId);
             return 0;
         }));
@@ -166,7 +166,7 @@ public sealed class LedgerAtomicityIntegrationTests
         await Assert.ThrowsAsync<PostgresException>(() => coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, async (context, ct) =>
         {
             await InsertInboxAsync(context, fixture);
-            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, ct);
+            await fixture.Repository.PostExplicitInTransactionAsync(context, fixture.Fact, fixture.Payload, cancellationToken: ct);
             context.AddOutbox(new OutboxMessage(conflictingOutboxId, "AtomicityConflict", "{}", LedgerTestSupport.AtlasTenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), Guid.CreateVersion7(), "ledger"));
             return 0;
         }));

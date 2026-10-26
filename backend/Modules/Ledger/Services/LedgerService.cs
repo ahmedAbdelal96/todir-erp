@@ -6,8 +6,13 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Ledger.Services;
 
-public sealed class LedgerService(LedgerRepository repository, LedgerOperationsRepository operations, LedgerSetupRepository setup, LedgerUxRepository ux, LedgerPreviewService preview) : ILedgerPostingEngine, ILedgerControlBalanceRead
+public sealed class LedgerService(LedgerRepository repository, LedgerOperationsRepository operations, LedgerSetupRepository setup, LedgerMappingConfigurationRepository mappings, LedgerUxRepository ux, LedgerPreviewService preview) : ILedgerPostingEngine, ILedgerControlBalanceRead
 {
+    public Task<MappingConfigurationDto> CreateMappingConfigurationDraftAsync(TenantId tenant, LegalEntityId entity, CreateMappingConfigurationDraftRequest request, Guid actor, Guid correlationId, CancellationToken ct) => mappings.CreateDraftAsync(tenant, entity, request, actor, correlationId, ct);
+    public Task<MappingConfigurationDto> GetMappingConfigurationAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, CancellationToken ct) => mappings.GetConfigurationAsync(tenant, entity, configurationId, ct);
+    public Task<MappingConfigurationItemDto> UpdateMappingConfigurationDraftAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, Guid mappingVersionId, UpdateMappingConfigurationDraftRequest request, Guid actor, Guid correlationId, CancellationToken ct) => mappings.UpdateDraftMappingAsync(tenant, entity, configurationId, mappingVersionId, request, actor, correlationId, ct);
+    public Task<MappingConfigurationValidationDto> ValidateMappingConfigurationAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, Guid actor, Guid correlationId, CancellationToken ct) => mappings.ValidateAsync(tenant, entity, configurationId, actor, correlationId, ct);
+    public Task<MappingConfigurationDto> ActivateMappingConfigurationAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, Guid actor, Guid correlationId, CancellationToken ct) => mappings.ActivateAsync(tenant, entity, configurationId, actor, correlationId, ct);
     public Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default) => repository.GetControlBalanceAsync(tenantId, legalEntityId, controlRole, configurationVersionId, asOfDate, cancellationToken);
     public Task<IReadOnlyList<AccountDto>> ListAccountsAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct) => repository.ListAccountsAsync(tenant, entity, ct);
     public Task<AccountDto> CreateAccountAsync(TenantId tenant, LegalEntityId entity, CreateAccountRequest request, CancellationToken ct) => repository.CreateAccountAsync(tenant, entity, request, ct);

@@ -76,9 +76,9 @@ public sealed record ExpenseRecognizedPayload(decimal Amount, string CurrencyCod
 public sealed record PayrollPostedPayload(decimal GrossAmount, decimal PayableAmount, string CurrencyCode) : IAccountingFactPayload;
 public sealed record TaxAdjustmentPayload(decimal Amount, string CurrencyCode, string TaxCode, string AdjustmentRole) : IAccountingFactPayload;
 public sealed record FxDifferencePayload(decimal Amount, string CurrencyCode, string DifferenceRole) : IAccountingFactPayload;
-public sealed record SettlementFxDifferencePayload(decimal Amount, string BaseCurrencyCode, string ControlAccountRole, string DifferenceRole, Guid ApplicationId) : IAccountingFactPayload;
+public sealed record SettlementFxDifferencePayload(decimal Amount, string BaseCurrencyCode, string ControlAccountRole, string DifferenceRole, Guid ApplicationId, Guid? HistoricalConfigurationVersionId = null) : IAccountingFactPayload;
 public sealed record SettlementWriteOffPayload(Guid WriteOffId, Guid PartyId, Guid OpenItemId, string Direction, string TransactionAmount,
-    string TransactionCurrencyCode, decimal BaseAmount, string BaseCurrencyCode, string ReasonCode, string ReasonText) : IAccountingFactPayload;
+    string TransactionCurrencyCode, decimal BaseAmount, string BaseCurrencyCode, string ReasonCode, string ReasonText, Guid? HistoricalConfigurationVersionId = null) : IAccountingFactPayload;
 
 public sealed record LedgerControlBalanceSnapshot(Guid AccountId, string ControlRole, decimal SignedBaseBalance, string BaseCurrencyCode, Guid ConfigurationVersionId);
 

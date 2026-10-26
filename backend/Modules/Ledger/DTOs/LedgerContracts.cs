@@ -44,6 +44,11 @@ public sealed record LedgerReadinessDto(Guid LegalEntityId, LedgerMode Mode, Led
 public sealed record ManagedLedgerSetupRequest(string TemplateCode = "development-core", LedgerMode Mode = LedgerMode.Managed, DateOnly? FiscalYearStart = null, DateOnly? FiscalYearEnd = null);
 public sealed record ManagedLedgerSetupDto(Guid LegalEntityId, LedgerMode Mode, bool Initialized, Guid ConfigurationVersionId, int AccountsCreated, int JournalsCreated, int RolesCreated, int MappingsCreated, int PeriodsCreated, LedgerReadinessDto Readiness);
 public sealed record LedgerModeDto(Guid LegalEntityId, LedgerMode Mode, long Version);
+public sealed record CreateMappingConfigurationDraftRequest(DateOnly EffectiveFrom);
+public sealed record UpdateMappingConfigurationDraftRequest(Guid TargetAccountId);
+public sealed record MappingConfigurationDto(Guid Id, long VersionNumber, string Status, DateOnly EffectiveFrom, Guid? BasedOnConfigurationVersionId, IReadOnlyList<MappingConfigurationItemDto> Mappings);
+public sealed record MappingConfigurationItemDto(Guid MappingVersionId, Guid MappingId, string MappingCode, string RoleCode, long VersionNumber, Guid TargetAccountId, string AccountCode, string Status, bool AccountValid, int SpecificityRank, string? ProductCategoryCode, string? PartyGroupCode, string? TaxCode, string? JournalCode, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
+public sealed record MappingConfigurationValidationDto(Guid ConfigurationVersionId, bool Valid, IReadOnlyList<LedgerReadinessReason> Errors, string SnapshotHash);
 public sealed record AccountSearchPageDto(IReadOnlyList<AccountDto> Items, string? NextCursor);
 public sealed record AccountWorkspaceDto(AccountDto Account, IReadOnlyList<GeneralLedgerRowDto> RecentActivity, AccountBalanceDto Balance, IReadOnlyList<EntryExplanationDimensionDto> Dimensions, IReadOnlyList<LedgerReadinessReason> Configuration, IReadOnlyList<AuditSummaryDto> Audit);
 public sealed record AuditSummaryDto(string Action, Guid EntityId, Guid? ActorId, DateTimeOffset OccurredAt, string? Reason);

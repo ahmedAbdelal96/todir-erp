@@ -35,6 +35,11 @@ public sealed class LedgerPass3AcceptanceTests
             Assert.Equal(first.ConfigurationVersionId, second.ConfigurationVersionId);
             Assert.Equal(firstCounts, secondCounts);
             Assert.Equal(LedgerReadinessState.Ready, first.Readiness.State);
+            await using (var connection = await dataSource.OpenConnectionAsync())
+            {
+                await LedgerTestSupport.SetTenantAsync(connection, LedgerTestSupport.AtlasTenant);
+                Assert.Equal(1, await ScalarAsync(connection, "select count(*) from finance_ledger.account_mapping_version v join finance_ledger.account_mapping m on m.tenant_id=v.tenant_id and m.legal_entity_id=v.legal_entity_id and m.id=v.mapping_id join finance_ledger.account_role r on r.tenant_id=m.tenant_id and r.legal_entity_id=m.legal_entity_id and r.id=m.role_id join finance_ledger.account a on a.tenant_id=v.tenant_id and a.legal_entity_id=v.legal_entity_id and a.id=v.target_account_id where v.tenant_id=$1 and v.legal_entity_id=$2 and r.code='Cash' and v.accounting_configuration_version_id=$3 and v.status='Active' and a.status='Active' and a.allow_direct_posting=true", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, first.ConfigurationVersionId));
+            }
 
             var changed = await setup.ChangeModeAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, LedgerMode.Full, actor, Guid.CreateVersion7(), default);
             Assert.Equal(LedgerMode.Full, changed.Mode);
@@ -380,9 +385,16 @@ public sealed class LedgerPass3AcceptanceTests
 
     private static async Task<IReadOnlyList<Guid>> AccountIdsAsync(NpgsqlDataSource dataSource, int limit)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(); await LedgerTestSupport.SetTenantAsync(connection, LedgerTestSupport.AtlasTenant);
-        await using var command = new NpgsqlCommand("select id from finance_ledger.account where tenant_id=$1 and legal_entity_id=$2 and status='Active' and allow_direct_posting=true and subtype not in ('Receivable','Payable','Inventory','OutputTax','InputTax','Tax') order by code limit $3", connection); command.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); command.Parameters.AddWithValue(LedgerTestSupport.AtlasEntity.Value); command.Parameters.AddWithValue(limit);
-        await using var reader = await command.ExecuteReaderAsync(); var result = new List<Guid>(); while (await reader.ReadAsync()) result.Add(reader.GetGuid(0)); Assert.True(result.Count >= limit); return result;
+        var posting = LedgerTestSupport.CreateRepository(dataSource);
+        var result = new List<Guid>(limit);
+        while (result.Count < limit)
+        {
+            var suffix = Guid.NewGuid().ToString("N");
+            var account = await posting.CreateAccountAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity,
+                new($"Q{suffix[..12]}", "حساب اختبار", "Query budget account", AccountType.Asset, "Current", null, true), default);
+            result.Add(account.Id);
+        }
+        return result;
     }
 
     private static LedgerPostingLinePayload[] BuildExplicitLines(IReadOnlyList<Guid> accounts, int count, decimal total)
@@ -451,7 +463,7 @@ public sealed class LedgerPass3AcceptanceTests
         };
         worker.StartInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
         worker.StartInfo.Environment["TODIR_DATABASE_CONNECTION"] = connectionString;
-        worker.StartInfo.Environment["TODIR_RABBITMQ_HOST"] = "127.0.0.1";
+        worker.StartInfo.Environment["TODIR_RABBITMQ_HOST"] = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_HOST") ?? "127.0.0.1";
         worker.StartInfo.Environment["TODIR_RABBITMQ_PORT"] = rabbitPort;
         worker.StartInfo.Environment["TODIR_RABBITMQ_USER"] = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_USER") ?? "todir";
         worker.StartInfo.Environment["TODIR_RABBITMQ_PASSWORD"] = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_PASSWORD") ?? "todir-dev-only";
