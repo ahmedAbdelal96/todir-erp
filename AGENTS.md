@@ -88,6 +88,8 @@ DATABASE LANGUAGE != DOMAIN LANGUAGE != API LANGUAGE != USER-FACING LANGUAGE
 
 The product must make data easy to enter and read, reduce duplicate work and unnecessary steps, and let managers act on trustworthy information without technical interpretation or routine spreadsheet exports. Design each role around its job and progressively reveal advanced options. For every workflow, ask whether defaults can safely remove fields, the next action is obvious, the wording is natural to a normal employee, and the flow is faster than the current manual process. Technical correctness with needless friction is not sufficient: employees should want to work in the system.
 
+Every user-facing screen must strictly follow the governed high-contrast corporate design system codified in `/frontend/AGENTS.md`. The application shell is anchored with the authentic Dark Oxford Navy header (`#102a43`), the page canvas uses cool neutral slate (`#f0f4f8`), and cards are pure crisp white (`#ffffff`) with solid perimeter borders (`#cbd5e1`) and dual-layer elevation shadows. Pale, borderless, low-contrast "ghost" screens where cards blend seamlessly into the background canvas are strictly prohibited as product defects.
+
 # 4. Locked repository structure
 
 The repository structure is closed. Approved navigation roots are:
