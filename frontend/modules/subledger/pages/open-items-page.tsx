@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../../../components/pages/page-header.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
+import { Alert } from "../../../components/primitives/alert.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { FinancialStatusBadge } from "../components/financial-status-badge.tsx";
 import { OpenItemDetailDrawer } from "../components/open-item-detail-drawer.tsx";
@@ -27,6 +28,7 @@ export function OpenItemsPage(): React.JSX.Element {
   const [selectedDetailItem, setSelectedDetailItem] = useState<PartyOpenItem | null>(null);
   const [selectedWriteOffItem, setSelectedWriteOffItem] = useState<PartyOpenItem | null>(null);
   const [selectedReversal, setSelectedReversal] = useState<{ applicationId: string; openItemId: string } | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const queryFilter = useMemo<OpenItemListFilter>(() => {
     const f: {
@@ -93,6 +95,12 @@ export function OpenItemsPage(): React.JSX.Element {
           </div>
         }
       />
+
+      {successMessage && (
+        <Alert variant="success">
+          {successMessage}
+        </Alert>
+      )}
 
       {/* Filter Surface */}
       <Surface variant="card" padding="normal" className="bg-white border border-slate-200 rounded-lg shadow-sm">
@@ -208,6 +216,7 @@ export function OpenItemsPage(): React.JSX.Element {
               <tbody className="divide-y divide-slate-200 text-slate-900 font-medium">
                 {filteredItems.map((item) => {
                   const remAmt = parseFloat(item.openTransactionAmount || "0");
+                  const settledAmt = parseFloat(item.settledTransactionAmount || "0");
                   const isSettled = remAmt <= 0;
                   const isOverdue = new Date(item.dueDate) < new Date() && remAmt > 0;
                   const daysOverdue = Math.max(
@@ -300,6 +309,21 @@ export function OpenItemsPage(): React.JSX.Element {
                               {t("openItems.writeOff")}
                             </button>
                           )}
+
+                          {settledAmt > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedReversal({
+                                  applicationId: `app-${item.id}`,
+                                  openItemId: item.id
+                                })
+                              }
+                              className="px-2 py-1 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-300"
+                            >
+                              {t("reversal.title")}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -340,6 +364,7 @@ export function OpenItemsPage(): React.JSX.Element {
           onClose={() => setSelectedWriteOffItem(null)}
           onCompleted={() => {
             setSelectedWriteOffItem(null);
+            setSuccessMessage(t("common.saved", "تم الحفظ بنجاح"));
             void openItemsQuery.refetch();
           }}
         />
@@ -354,6 +379,7 @@ export function OpenItemsPage(): React.JSX.Element {
           onClose={() => setSelectedReversal(null)}
           onCompleted={() => {
             setSelectedReversal(null);
+            setSuccessMessage(t("reversal.successMessage"));
             void openItemsQuery.refetch();
           }}
         />

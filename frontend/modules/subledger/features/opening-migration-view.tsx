@@ -39,7 +39,7 @@ export function OpeningMigrationView({
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      const batchId = await createBatchMutation.mutateAsync({
+      const rawRes = await createBatchMutation.mutateAsync({
         legalEntityId,
         batchIdentity,
         goLiveDate,
@@ -47,8 +47,14 @@ export function OpeningMigrationView({
         controlConfigurationReference: controlRef,
         idempotencyKey: `create-batch-${batchIdentity}-${Date.now()}`
       });
+      const resolvedId =
+        typeof rawRes === "string"
+          ? rawRes
+          : (rawRes as unknown as Record<string, string>)?.batchId ||
+            (rawRes as unknown as Record<string, string>)?.id ||
+            batchIdentity;
       setActiveBatch({
-        id: batchId,
+        id: resolvedId,
         batchIdentity,
         goLiveDate,
         status: "Draft",
@@ -56,7 +62,7 @@ export function OpeningMigrationView({
         openItemIds: [],
         alreadyCompleted: false
       });
-      setSuccessMessage(t("opening.balancedSuccess"));
+      setSuccessMessage(t("opening.activeBatch") + ": " + batchIdentity);
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : t("opening.imbalanceWarning"));
     }

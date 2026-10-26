@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { ApiError } from "../../../core/api/http-client.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
@@ -144,8 +145,14 @@ export function ApplicationWorkspace({
       const nextReasons: Record<string, AutoApplySuggestionLine> = {};
 
       for (const line of result.suggestions) {
-        nextAlloc[line.debitItemId] = line.debitAmount;
-        nextReasons[line.debitItemId] = line;
+        const amt = line.debitAmount || (line as unknown as Record<string, string>).suggestedAmount || "0.00";
+        const code = line.reasonCode || (line as unknown as Record<string, string>).policyRuleTriggered || "OldestDue";
+        nextAlloc[line.debitItemId] = amt;
+        nextReasons[line.debitItemId] = {
+          ...line,
+          debitAmount: amt,
+          reasonCode: code
+        };
       }
 
       setAllocations(nextAlloc);
@@ -225,10 +232,21 @@ export function ApplicationWorkspace({
       setSuccessMessage(t("application.successMessage"));
       if (onCompleted) onCompleted();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("item_changed") || msg.includes("conflict")) {
+      setIsPreviewOpen(false);
+      const isConflict =
+        (err instanceof ApiError &&
+          (err.status === 409 ||
+           err.problemDetails?.title?.includes("item_changed") ||
+           err.message?.includes("item_changed"))) ||
+        (err instanceof Error &&
+          (err.message.includes("item_changed") ||
+           err.message.includes("conflict") ||
+           err.message.includes("concurrency") ||
+           err.message.includes("409")));
+      if (isConflict) {
         setErrorMessage(t("application.concurrencyError"));
       } else {
+        const msg = err instanceof Error ? err.message : String(err);
         setErrorMessage(msg);
       }
     }

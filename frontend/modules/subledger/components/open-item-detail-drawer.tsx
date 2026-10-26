@@ -49,6 +49,17 @@ export function OpenItemDetailDrawer({
       description={t("drawer.title")}
       footer={
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", width: "100%" }}>
+          {parseFloat(item.settledTransactionAmount || "0") > 0 && onTriggerReversal && (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                onTriggerReversal(`app-${item.id}`);
+              }}
+            >
+              {t("reversal.title")}
+            </Button>
+          )}
+
           {isOpenItem && (onWriteOff || onTriggerWriteOff) && (
             <Button
               variant="secondary"
