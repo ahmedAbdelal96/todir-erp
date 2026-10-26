@@ -143,9 +143,6 @@ export const ar = {
   partyPage: {
     businessParty: "الطرف التجاري:",
     loadParty: "عرض الحساب",
-    sampleParties: "أطراف نموذجية:",
-    customer1: "العميل الأول (Customer 1)",
-    supplier2: "المورد الثاني (Supplier 2)",
     financialCockpitTab: "لوحة الموقف المالي"
   },
   application: {

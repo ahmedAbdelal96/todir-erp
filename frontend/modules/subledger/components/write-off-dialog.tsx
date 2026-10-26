@@ -151,7 +151,7 @@ export function WriteOffDialog({
               borderRadius: "var(--radius-md, 0.375rem)",
               border: "1px solid var(--color-border-default, #cbd5e1)",
               fontSize: "0.875rem",
-              backgroundColor: "#ffffff"
+              backgroundColor: "var(--color-surface-card, #ffffff)"
             }}
           >
             <option value="Tolerance">{t("writeOff.reasons.Tolerance")}</option>

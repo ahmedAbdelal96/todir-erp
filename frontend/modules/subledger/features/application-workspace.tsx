@@ -71,6 +71,12 @@ export function ApplicationWorkspace({
     [creditSources, selectedSourceId]
   );
 
+  React.useEffect(() => {
+    if (!selectedSourceId && creditSources.length > 0 && creditSources[0]) {
+      setSelectedSourceId(creditSources[0].id);
+    }
+  }, [selectedSourceId, creditSources]);
+
   // Allocation state: map of debitItemId -> applied amount string
   const [allocations, setAllocations] = useState<Record<string, string>>({});
   // Auto-apply reasons: map of debitItemId -> AutoApplySuggestionLine
@@ -228,6 +234,14 @@ export function ApplicationWorkspace({
     }
   };
 
+  if (!partyId) {
+    return (
+      <Surface variant="card" padding="normal" className="bg-white border border-slate-200 rounded-lg shadow-sm text-center py-12">
+        <p className="text-sm font-semibold text-slate-700">{t("partyFinancial.selectPrompt")}</p>
+      </Surface>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", width: "100%" }}>
       {errorMessage && (
@@ -279,7 +293,7 @@ export function ApplicationWorkspace({
                   </div>
                 </div>
 
-                <div style={{ borderInlineStart: "1px solid #cbd5e1", paddingInlineStart: "1rem" }}>
+                <div style={{ borderInlineStart: "1px solid var(--color-border-default, #cbd5e1)", paddingInlineStart: "1rem" }}>
                   <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-content-muted)" }}>
                     {t("application.appliedTotal")}
                   </div>
@@ -291,7 +305,7 @@ export function ApplicationWorkspace({
                   </div>
                 </div>
 
-                <div style={{ borderInlineStart: "1px solid #cbd5e1", paddingInlineStart: "1rem" }}>
+                <div style={{ borderInlineStart: "1px solid var(--color-border-default, #cbd5e1)", paddingInlineStart: "1rem" }}>
                   <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-content-muted)" }}>
                     {t("application.remainingSource")}
                   </div>
@@ -322,7 +336,7 @@ export function ApplicationWorkspace({
                 padding: "0.5rem 0.875rem",
                 borderRadius: "var(--radius-md, 0.375rem)",
                 border: "1px solid var(--color-border-default, #cbd5e1)",
-                backgroundColor: "#ffffff",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
                 fontSize: "0.875rem",
                 fontWeight: 600,
                 minWidth: "320px"

@@ -143,9 +143,6 @@ export const en = {
   partyPage: {
     businessParty: "Business Party:",
     loadParty: "Load",
-    sampleParties: "Sample Parties:",
-    customer1: "Customer 1",
-    supplier2: "Supplier 2",
     financialCockpitTab: "Financial Cockpit"
   },
   application: {

@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import type { ModuleRouteRegistration } from "../../app/router/route-contract.ts";
 import { SubledgerLandingPage } from "./pages/subledger-landing-page.tsx";
 import { OpenItemsPage } from "./pages/open-items-page.tsx";
@@ -13,13 +14,15 @@ import { useSubledgerScope } from "./hooks/subledger-queries.ts";
 function AgingRouteWrapper(): React.JSX.Element {
   const { t } = useTranslation("subledger");
   const { legalEntityId } = useSubledgerScope();
+  const [searchParams] = useSearchParams();
+  const partyId = searchParams.get("partyId") ?? undefined;
   return (
     <div className="space-y-6">
       <div className="pb-3 border-b border-slate-200">
         <h2 className="text-base font-bold text-slate-900">{t("routes.agingTitle")}</h2>
         <p className="text-xs text-slate-500 mt-0.5">{t("routes.agingSubtitle")}</p>
       </div>
-      <AgingReportView legalEntityId={legalEntityId} partyId="11111111-1111-1111-1111-111111111111" />
+      <AgingReportView legalEntityId={legalEntityId} partyId={partyId} />
     </div>
   );
 }
@@ -27,13 +30,15 @@ function AgingRouteWrapper(): React.JSX.Element {
 function StatementRouteWrapper(): React.JSX.Element {
   const { t } = useTranslation("subledger");
   const { legalEntityId } = useSubledgerScope();
+  const [searchParams] = useSearchParams();
+  const partyId = searchParams.get("partyId") ?? undefined;
   return (
     <div className="space-y-6">
       <div className="pb-3 border-b border-slate-200">
         <h2 className="text-base font-bold text-slate-900">{t("routes.statementTitle")}</h2>
         <p className="text-xs text-slate-500 mt-0.5">{t("routes.statementSubtitle")}</p>
       </div>
-      <PartyStatementView legalEntityId={legalEntityId} partyId="11111111-1111-1111-1111-111111111111" />
+      <PartyStatementView legalEntityId={legalEntityId} partyId={partyId} />
     </div>
   );
 }

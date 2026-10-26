@@ -21,7 +21,7 @@ export function PartyFinancePage(): React.JSX.Element {
   const initialParty =
     params.partyId ||
     searchParams.get("partyId") ||
-    "11111111-1111-1111-1111-111111111111"; // Default to Seed Customer 1
+    "";
 
   const initialDirection: SubledgerDirection =
     (searchParams.get("direction") as SubledgerDirection) || "Receivable";
@@ -85,25 +85,6 @@ export function PartyFinancePage(): React.JSX.Element {
             >
               {t("partyPage.loadParty")}
             </Button>
-
-            {/* Quick Seed Buttons for Instant Inspection */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-500 font-semibold">{t("partyPage.sampleParties")}</span>
-              <button
-                type="button"
-                onClick={() => handleApplyParty("11111111-1111-1111-1111-111111111111")}
-                className="px-2 py-1 text-[11px] font-bold rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300"
-              >
-                {t("partyPage.customer1")}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleApplyParty("22222222-2222-2222-2222-222222222222")}
-                className="px-2 py-1 text-[11px] font-bold rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300"
-              >
-                {t("partyPage.supplier2")}
-              </button>
-            </div>
           </div>
 
           {/* Direction toggle */}
@@ -187,24 +168,30 @@ export function PartyFinancePage(): React.JSX.Element {
 
       {/* Tab Content */}
       {activeTab === "cockpit" && (
-        <div className="space-y-6">
-          {/* Dual Balance Cards: Customer AR & Supplier AP */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <SubledgerBalanceCard
-              balance={customerExposureQuery.data}
-              isLoading={customerExposureQuery.isLoading}
-              title={t("partyFinancial.customerSide")}
-            />
-            <SubledgerBalanceCard
-              balance={supplierExposureQuery.data}
-              isLoading={supplierExposureQuery.isLoading}
-              title={t("partyFinancial.supplierSide")}
-            />
-          </div>
+        !partyId ? (
+          <Surface variant="card" padding="normal" className="bg-white border border-slate-200 rounded-lg shadow-sm text-center py-12">
+            <p className="text-sm font-semibold text-slate-700">{t("partyFinancial.selectPrompt")}</p>
+          </Surface>
+        ) : (
+          <div className="space-y-6">
+            {/* Dual Balance Cards: Customer AR & Supplier AP */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <SubledgerBalanceCard
+                balance={customerExposureQuery.data}
+                isLoading={customerExposureQuery.isLoading}
+                title={t("partyFinancial.customerSide")}
+              />
+              <SubledgerBalanceCard
+                balance={supplierExposureQuery.data}
+                isLoading={supplierExposureQuery.isLoading}
+                title={t("partyFinancial.supplierSide")}
+              />
+            </div>
 
-          {/* Financial Profile Card */}
-          <FinancialProfileCard legalEntityId={legalEntityId} partyId={partyId} />
-        </div>
+            {/* Financial Profile Card */}
+            <FinancialProfileCard legalEntityId={legalEntityId} partyId={partyId} />
+          </div>
+        )
       )}
 
       {activeTab === "application" && (

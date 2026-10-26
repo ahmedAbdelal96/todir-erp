@@ -166,7 +166,7 @@ export function ControlReconciliationView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-slate-900 font-medium">
-                {lastResult.details.map((d) => {
+                {(lastResult.details ?? []).map((d) => {
                   const varNum = parseFloat(d.variance || "0");
                   const isZeroVar = Math.abs(varNum) < 0.0001;
                   return (
@@ -238,7 +238,7 @@ export function ControlReconciliationView({
                       {ctx.controlAccountReference || ctx.controlConfigurationReference}
                     </td>
                     <td className="px-4 py-3 text-end font-semibold text-slate-900">
-                      <MoneyDisplay value={{ amount: ctx.subledgerBaseBalance.toString(), currency: ctx.baseCurrencyCode }} />
+                      <MoneyDisplay value={{ amount: String(ctx.subledgerBaseBalance ?? 0), currency: ctx.baseCurrencyCode || "EGP" }} />
                     </td>
                   </tr>
                 ))}
