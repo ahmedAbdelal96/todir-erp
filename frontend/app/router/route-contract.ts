@@ -4,7 +4,7 @@ export type ModuleNavigationRegistration = Readonly<{
   id: string;
   moduleIds: readonly string[];
   path: string;
-  navigationKey: "home" | "users" | "loginDomain" | "directory" | "catalog" | "invoicing" | "payments" | "accounting" | "import" | "financeBase" | "pricing" | "tax" | "preview" | "settings";
+  navigationKey: "home" | "users" | "loginDomain" | "directory" | "catalog" | "invoicing" | "payments" | "accounting" | "import" | "financeBase" | "pricing" | "subledger" | "tax" | "preview" | "settings";
   permission?: string | undefined;
   icon: string;
 }>;
