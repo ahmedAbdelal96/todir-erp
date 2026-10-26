@@ -81,8 +81,7 @@ internal sealed class CorrelationMiddleware(RequestDelegate next, ILogger<Correl
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var correlationId = ReadOrCreateCorrelationId(context.Request.Headers["X-Correlation-Id"]);
-        context.Response.Headers["X-Correlation-Id"] = correlationId;
+        var correlationId = RequestCorrelationId.GetOrCreate(context).ToString("D");
         using var activity = ActivitySource.StartActivity("HTTP request", ActivityKind.Server);
         activity?.SetTag("service", options.Service);
         activity?.SetTag("environment", options.Environment);
@@ -110,11 +109,6 @@ internal sealed class CorrelationMiddleware(RequestDelegate next, ILogger<Correl
             CoreMetrics.HttpRequestDuration.Record(duration, tags);
         }
     }
-
-    private static string ReadOrCreateCorrelationId(string? value) =>
-        Guid.TryParse(value, out var parsed) && parsed != Guid.Empty
-            ? parsed.ToString("D")
-            : Guid.CreateVersion7().ToString("D");
 }
 
 internal sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)

@@ -172,7 +172,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             if (ledgerPosting is null) throw new SubledgerException("subledger.ledger_capability_unavailable", "Ledger write-off posting is unavailable; the request remains pending.");
             var writeOffId = Guid.CreateVersion7(); var now = clock.GetUtcNow();
             var payload = new SettlementWriteOffPayload(writeOffId, partyId, itemId, direction, amount.ToString(CultureInfo.InvariantCulture), currency,
-                baseAmount, item.BaseCurrency, reasonCode, reasonText);
+                baseAmount, item.BaseCurrency, reasonCode, reasonText, ParseConfigurationId(item.ControlConfiguration));
             var fact = new AccountingFactEnvelope<IAccountingFactPayload>(writeOffId, tenant, request.LegalEntityId, AccountingFactTypes.SettlementWriteOff, 1,
                 "subledger", $"writeoff:{requestId:N}", $"subledger-writeoff:{requestId:N}", effectiveDate, effectiveDate, payload, request.CorrelationId, request.ActorId);
             LedgerPostingResult posting;
@@ -431,7 +431,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
                 await using var insert = new NpgsqlCommand("insert into finance_subledger.open_item_application(tenant_id,legal_entity_id,id,batch_id,debit_item_id,credit_item_id,debit_applied_amount,credit_applied_amount,base_currency,debit_base_carrying_amount_closed,credit_base_carrying_amount_closed,application_date,settlement_date,sequence_no,created_at,debit_fx_snapshot,credit_fx_snapshot,settlement_base_amount) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17::jsonb,$18)", context.Connection, context.Transaction);
                 Add(insert, tenant.Value, request.LegalEntityId.Value, appId, batchId, line.DebitItemId, line.CreditItemId, amount, line.CreditAmount, debit.BaseCurrency, debitBase, creditBase, request.ApplicationDate, request.SettlementDate, (long)i + 1, clock.GetUtcNow(), Db(line.DebitFxSnapshot), Db(line.CreditFxSnapshot), line.SettlementBaseAmount);
                 await insert.ExecuteNonQueryAsync(token);
-                await PostSettlementFxDifferenceAsync(context, tenant, request.LegalEntityId, appId, debit.BaseCurrency, debit.ControlRole, debitBase - creditBase,
+                await PostSettlementFxDifferenceAsync(context, tenant, request.LegalEntityId, appId, debit.BaseCurrency, debit.ControlRole, debit.ControlConfiguration, debitBase - creditBase,
                     request.SettlementDate, request.ActorId, request.CorrelationId, $"application:{appId:N}", token);
             }
             Activity.Current?.AddEvent(new ActivityEvent("subledger.accounting_facts_generated"));
@@ -536,7 +536,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             if (await reversal.ExecuteNonQueryAsync(token) == 0) throw new SubledgerException("subledger.application_already_reversed", "This application has already been reversed.");
             await RestoreItemAsync(context, tenant, request.LegalEntityId, items[original.DebitId], original.DebitAmount, original.DebitBaseClosed, token);
             await RestoreItemAsync(context, tenant, request.LegalEntityId, items[original.CreditId], original.CreditAmount, original.CreditBaseClosed, token);
-            await PostSettlementFxDifferenceAsync(context, tenant, request.LegalEntityId, original.Id, original.BaseCurrency, items[original.DebitId].ControlRole,
+            await PostSettlementFxDifferenceAsync(context, tenant, request.LegalEntityId, original.Id, original.BaseCurrency, items[original.DebitId].ControlRole, items[original.DebitId].ControlConfiguration,
                 original.DebitBaseClosed - original.CreditBaseClosed, request.EffectiveDate, request.ActorId, request.CorrelationId, $"application-reversal:{original.Id:N}", token, reverse: true);
             EnqueueEvent(context, tenant, SubledgerEventTypes.ApplicationReversedV1,
                 new ApplicationReversedEventV1(batchId, request.ApplicationId, request.LegalEntityId.Value, original.PartyId, original.Direction),
@@ -1251,13 +1251,14 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
     }
 
     private async Task PostSettlementFxDifferenceAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid applicationId, string baseCurrency,
-        string controlRole, decimal signedDifference, DateOnly postingDate, Guid actorId, Guid correlationId, string sourceReference, CancellationToken ct, bool reverse = false)
+        string controlRole, string historicalConfigurationReference, decimal signedDifference, DateOnly postingDate, Guid actorId, Guid correlationId, string sourceReference, CancellationToken ct, bool reverse = false)
     {
         if (signedDifference == 0m) return;
         if (ledgerPosting is null) throw new SubledgerException("subledger.ledger_capability_unavailable", "Ledger settlement FX posting is unavailable; no application state can be committed.");
         if (reverse) signedDifference = -signedDifference;
         var factId = Guid.CreateVersion7();
-        var fxPayload = new SettlementFxDifferencePayload(Math.Abs(signedDifference), baseCurrency, controlRole, signedDifference > 0m ? "FXLoss" : "FXGain", applicationId);
+        var historicalConfigurationId = ParseConfigurationId(historicalConfigurationReference);
+        var fxPayload = new SettlementFxDifferencePayload(Math.Abs(signedDifference), baseCurrency, controlRole, signedDifference > 0m ? "FXLoss" : "FXGain", applicationId, historicalConfigurationId);
         IAccountingFactPayload payload = fxPayload;
         var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, entity, AccountingFactTypes.SettlementFxDifference, 1, "subledger", sourceReference,
             $"subledger-settlement-fx:{sourceReference}", postingDate, postingDate, payload, correlationId, actorId);
@@ -1341,6 +1342,10 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
     private static string NormalizeCurrency(string value) => value.Trim().ToUpperInvariant() is { Length: 3 } currency && currency.All(char.IsAsciiLetter) ? currency : throw new SubledgerException("subledger.currency_invalid", "A valid three-letter currency code is required.");
     private static string NormalizeMatchReference(string value) => string.Concat(value.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit));
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static Guid ParseConfigurationId(string reference) => reference.StartsWith("configuration:", StringComparison.Ordinal)
+        && Guid.TryParse(reference["configuration:".Length..], out var id)
+            ? id
+            : throw new SubledgerException("subledger.ledger_configuration_reference_invalid", "The open item has no valid historical Ledger configuration reference.");
     private static object Db(object? value) => value ?? DBNull.Value;
     private static Guid? ParseCursor(string? value) => Guid.TryParse(value, out var id) ? id : null;
     private static void Add(NpgsqlCommand command, params object?[] values) { foreach (var value in values) command.Parameters.AddWithValue(value ?? DBNull.Value); }

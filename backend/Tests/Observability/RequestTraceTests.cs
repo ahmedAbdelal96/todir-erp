@@ -48,16 +48,23 @@ public sealed class RequestTraceTests
         await app.StartAsync();
 
         using var client = app.GetTestClient();
-        client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.CreateVersion7().ToString("D"));
+        var correlationId = Guid.CreateVersion7().ToString("D");
+        client.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
         var response = await client.GetAsync("/probe");
         response.EnsureSuccessStatusCode();
         await app.StopAsync();
 
         Assert.NotEmpty(completedActivities);
-        var traceIds = completedActivities.Select(activity => activity.TraceId).Distinct().ToArray();
+        var traceIds = completedActivities
+            .Where(activity => activity.OperationName == "HTTP request"
+                && activity.Tags.Any(tag => tag.Key == "correlation_id" && tag.Value == correlationId))
+            .Select(activity => activity.TraceId)
+            .Distinct()
+            .ToArray();
         Assert.Single(traceIds);
-        Assert.Contains(completedActivities, activity => activity.OperationName == "HTTP request");
-        Assert.Contains(completedActivities, activity => activity.OperationName == "P03 handler");
-        Assert.Contains(completedActivities, activity => activity.OperationName == "PostgreSQL SELECT 1" && activity.Tags.Any(tag => tag.Key == "db.system" && tag.Value == "postgresql"));
+        var requestActivities = completedActivities.Where(activity => activity.TraceId == traceIds[0]).ToArray();
+        Assert.Contains(requestActivities, activity => activity.OperationName == "HTTP request");
+        Assert.Contains(requestActivities, activity => activity.OperationName == "P03 handler");
+        Assert.Contains(requestActivities, activity => activity.OperationName == "PostgreSQL SELECT 1" && activity.Tags.Any(tag => tag.Key == "db.system" && tag.Value == "postgresql"));
     }
 }

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Modules.Subledger.Entities;
 using Modules.Subledger.Services;
 using Shared.Contracts.Subledger;
+using Shared.BuildingBlocks.Observability;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Subledger;
@@ -160,7 +161,7 @@ public static class SubledgerEndpoints
             var access = await ResolveAsync(http.User, subjects, authorizer, "subledger.writeoff.create", command.LegalEntityId.Value, ct);
             if (access.Response is not null) return access.Response;
             if (!Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return ApiProblem(401, "authentication_required", "An authenticated user is required.");
-            command = command with { ActorId = actorId, CorrelationId = Guid.CreateVersion7() };
+            command = command with { ActorId = actorId, CorrelationId = CorrelationId(http) };
             return await Execute(() => subledger.CreateWriteOffRequestAsync(access.Tenant, access.MembershipId, command, ct));
         });
 
@@ -169,7 +170,7 @@ public static class SubledgerEndpoints
             if (!Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return ApiProblem(401, "authentication_required", "An authenticated user is required.");
             var access = await ResolveAsync(http.User, subjects, authorizer, "subledger.writeoff.approve", legalEntityId, ct);
             if (access.Response is not null) return access.Response;
-            var command = new ApproveWriteOffCommand(new LegalEntityId(legalEntityId), requestId, actorId, Guid.CreateVersion7());
+            var command = new ApproveWriteOffCommand(new LegalEntityId(legalEntityId), requestId, actorId, CorrelationId(http));
             return await Execute(() => subledger.ApproveWriteOffAsync(access.Tenant, access.MembershipId, command, ct));
         });
 
@@ -178,7 +179,7 @@ public static class SubledgerEndpoints
             var access = await ResolveAsync(http.User, subjects, authorizer, "subledger.reconciliation.run", query.LegalEntityId.Value, ct);
             if (access.Response is not null) return access.Response;
             if (!Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return ApiProblem(401, "authentication_required", "An authenticated user is required.");
-            return await Execute(() => subledger.ReconcileControlBalancesAsync(access.Tenant, access.MembershipId, query, actorId, Guid.CreateVersion7(), ct));
+            return await Execute(() => subledger.ReconcileControlBalancesAsync(access.Tenant, access.MembershipId, query, actorId, CorrelationId(http), ct));
         });
 
         group.MapGet("/reconciliation/control-accounts", async (Guid legalEntityId, DateOnly asOfDate, HttpContext http,
@@ -211,7 +212,7 @@ public static class SubledgerEndpoints
             var access = await ResolveAsync(http.User, subjects, authorizer, "subledger.opening.manage", command.LegalEntityId.Value, ct);
             if (access.Response is not null) return access.Response;
             if (!Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return ApiProblem(401, "authentication_required", "An authenticated user is required.");
-            command = command with { ActorId = actorId, CorrelationId = Guid.CreateVersion7() };
+            command = command with { ActorId = actorId, CorrelationId = CorrelationId(http) };
             return await Execute(() => subledger.CreateOpeningSubledgerBatchAsync(access.Tenant, access.MembershipId, command, ct));
         });
 
@@ -237,7 +238,7 @@ public static class SubledgerEndpoints
             var access = await ResolveAsync(http.User, subjects, authorizer, "subledger.opening.finalize", legalEntityId, ct);
             if (access.Response is not null) return access.Response;
             if (!Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return ApiProblem(401, "authentication_required", "An authenticated user is required.");
-            return await Execute(() => subledger.FinalizeOpeningSubledgerBatchAsync(access.Tenant, access.MembershipId, new LegalEntityId(legalEntityId), batchId, actorId, Guid.CreateVersion7(), ct));
+            return await Execute(() => subledger.FinalizeOpeningSubledgerBatchAsync(access.Tenant, access.MembershipId, new LegalEntityId(legalEntityId), batchId, actorId, CorrelationId(http), ct));
         });
     }
 
@@ -272,7 +273,7 @@ public static class SubledgerEndpoints
 
     private static bool TryDirection(string direction, out SubledgerDirectionContract result) => Enum.TryParse(direction, true, out result) && Enum.IsDefined(result);
 
-    private static Guid CorrelationId(HttpContext http) => Guid.TryParse(http.Request.Headers["X-Correlation-Id"], out var value) && value != Guid.Empty ? value : Guid.CreateVersion7();
+    private static Guid CorrelationId(HttpContext http) => RequestCorrelationId.GetOrCreate(http);
 
     private static async Task<IResult> Execute<T>(Func<Task<T>> action)
     {

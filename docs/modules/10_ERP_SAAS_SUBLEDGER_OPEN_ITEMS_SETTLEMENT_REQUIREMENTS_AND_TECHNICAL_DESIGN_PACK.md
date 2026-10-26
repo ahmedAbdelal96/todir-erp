@@ -5522,6 +5522,10 @@ must all be answerable.
 
 # 485. Final Engineering Verdict
 
+## Development Seed is not reconciliation certification
+
+Canonical Development Seed Open Items are demo fixtures for evaluating Subledger workflows. They are not expected to have matching Ledger postings and must not be used as evidence that AR/AP balances reconcile to Ledger control accounts. Reconciliation certification must use a dedicated integration scenario that creates the corresponding Subledger and Ledger accounting evidence through supported paths, verifies exact zero variance, and removes any deliberate mismatch before completion.
+
 Subledger is approved only when:
 
 ```text

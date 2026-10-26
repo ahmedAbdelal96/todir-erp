@@ -407,12 +407,13 @@ public sealed class SubledgerPostgresIntegrationTests
         var repository = new SubledgerRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), TimeProvider.System, new FailingLedgerPostingCapability());
         var partyId = await FindActivePartyAsync(dataSource);
         var suffix = Guid.NewGuid().ToString("N");
+        var configurationReference = $"configuration:{await ReadCurrentLedgerConfigurationAsync(dataSource):D}";
         var usdInvoice = Snapshot($"SUBLEDGER-FX-ROLLBACK-INVOICE-{suffix}", 100m) with
         {
             TransactionCurrency = "USD", OriginalTransactionAmount = "100", OriginalBaseAmount = "5200",
-            HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}"
+            HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}", ControlConfigurationReference = configurationReference
         };
-        var egpPayment = Snapshot($"SUBLEDGER-FX-ROLLBACK-PAYMENT-{suffix}", 5000m);
+        var egpPayment = Snapshot($"SUBLEDGER-FX-ROLLBACK-PAYMENT-{suffix}", 5000m) with { ControlConfigurationReference = configurationReference };
         var debitId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
             Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [usdInvoice], default)).Single();
         var creditId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
@@ -441,12 +442,13 @@ public sealed class SubledgerPostgresIntegrationTests
         var repository = new SubledgerRepository(dataSource, coordinator, TimeProvider.System, new LedgerTransactionCapability(ledger));
         var partyId = await FindActivePartyAsync(dataSource);
         var suffix = Guid.NewGuid().ToString("N");
+        var configurationReference = $"configuration:{await ReadCurrentLedgerConfigurationAsync(dataSource):D}";
         var invoice = Snapshot($"SUBLEDGER-FX-LEDGER-INVOICE-{suffix}", 100m) with
         {
             TransactionCurrency = "USD", OriginalTransactionAmount = "100", OriginalBaseAmount = "5200",
-            HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}"
+            HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}", ControlConfigurationReference = configurationReference
         };
-        var payment = Snapshot($"SUBLEDGER-FX-LEDGER-PAYMENT-{suffix}", 5000m);
+        var payment = Snapshot($"SUBLEDGER-FX-LEDGER-PAYMENT-{suffix}", 5000m) with { ControlConfigurationReference = configurationReference };
         var debitId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
             Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [invoice], default)).Single();
         var creditId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
@@ -484,10 +486,11 @@ public sealed class SubledgerPostgresIntegrationTests
         var repository = new SubledgerRepository(dataSource, coordinator, TimeProvider.System, new LedgerTransactionCapability(ledger));
         var partyId = await FindActivePartyAsync(dataSource);
         var suffix = Guid.NewGuid().ToString("N");
+        var configurationReference = $"configuration:{await ReadCurrentLedgerConfigurationAsync(dataSource):D}";
         var itemSnapshot = Snapshot($"SUBLEDGER-WRITEOFF-{suffix}", 10m) with
         {
             TransactionCurrency = "USD", OriginalTransactionAmount = "10", OriginalBaseAmount = "500",
-            HistoricFxSnapshot = "{\"rate\":50,\"from\":\"USD\",\"to\":\"EGP\"}"
+            HistoricFxSnapshot = "{\"rate\":50,\"from\":\"USD\",\"to\":\"EGP\"}", ControlConfigurationReference = configurationReference
         };
         var itemId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
             Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [itemSnapshot], default)).Single();
@@ -549,7 +552,9 @@ public sealed class SubledgerPostgresIntegrationTests
         var repository = new SubledgerRepository(dataSource, coordinator, TimeProvider.System, new FailingLedgerPostingCapability());
         var partyId = await FindActivePartyAsync(dataSource);
         var suffix = Guid.NewGuid().ToString("N");
-        var itemId = await CreateAsync(repository, partyId, "Invoice", "Debit", $"SUBLEDGER-WRITEOFF-FAIL-{suffix}", 10m);
+        var configurationReference = $"configuration:{await ReadCurrentLedgerConfigurationAsync(dataSource):D}";
+        var itemId = await CreateAsync(repository, partyId, "Invoice", "Debit", $"SUBLEDGER-WRITEOFF-FAIL-{suffix}", 10m,
+            controlConfigurationReference: configurationReference);
         var version = await ReadWriteOffPolicyVersionAsync(dataSource, "EGP");
         await repository.SaveWriteOffPolicyAsync(Tenant, new(Entity, SubledgerDirectionContract.Receivable, "EGP", "5", "1", version), 5m, 1m, "EGP", default);
         var creator = Guid.CreateVersion7();
@@ -575,7 +580,7 @@ public sealed class SubledgerPostgresIntegrationTests
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var coordinator = new NpgsqlTransactionCoordinator(dataSource);
         var ledger = new LedgerRepository(dataSource, coordinator, new FixedEntityCurrency(), TimeProvider.System);
-        var repository = new SubledgerRepository(dataSource, coordinator, TimeProvider.System);
+        var repository = new SubledgerRepository(dataSource, coordinator, TimeProvider.System, new LedgerTransactionCapability(ledger));
         var membership = Guid.CreateVersion7();
         var service = new SubledgerService(repository, new ActivePartyDirectory(), new InstallmentFinanceBase(), new FixedEntityCurrency(),
             new AllPermissionSubjectStore(Tenant, membership), new PermissionAuthorizer(), TimeProvider.System, ledger);
@@ -683,6 +688,254 @@ public sealed class SubledgerPostgresIntegrationTests
         Assert.Equal("Draft", (await repository.GetOpeningSubledgerBatchAsync(Tenant, Entity, failingBatch, default))!.Status);
         Assert.Equal(preFinalizeRows, await CountOpeningItemsBySourceAsync(dataSource, collisionReference));
         Assert.Equal(0L, await CountOpeningBatchLinksAsync(dataSource, failingBatch));
+    }
+
+    [Fact]
+    public async Task LiveArApControlTotalsRemainExactlyEqualAcrossMultiPartyApplications()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_SUBLEDGER_TEST_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_LEDGER_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_SUBLEDGER_TEST_CONNECTION to a migrated development database and runtime-equivalent erp_app connection.");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var ledger = new LedgerRepository(dataSource, coordinator, new FixedEntityCurrency(), TimeProvider.System);
+        var ledgerOperations = new LedgerOperationsRepository(dataSource, coordinator, ledger, TimeProvider.System);
+        var entityId = new LegalEntityId(await FindSecondaryLegalEntityAsync(dataSource));
+        var configurationId = await ReadCurrentLedgerConfigurationAsync(dataSource, entityId);
+        var configurationReference = $"configuration:{configurationId:D}";
+        var partyA = await FindActivePartyAsync(dataSource);
+        var openingDate = new DateOnly(2026, 10, 25);
+        var receivable = await ledger.GetControlBalanceAsync(Tenant, entityId, "Receivable", configurationId, new(2026, 10, 25));
+        var payable = await ledger.GetControlBalanceAsync(Tenant, entityId, "Payable", configurationId, new(2026, 10, 25));
+        var membershipId = Guid.CreateVersion7();
+        var actorId = Guid.CreateVersion7();
+        var repository = new SubledgerRepository(dataSource, coordinator, TimeProvider.System, new LedgerTransactionCapability(ledger));
+        var service = new SubledgerService(repository, new ActivePartyDirectory(), new InstallmentFinanceBase(), new FixedEntityCurrency(),
+            new AllPermissionSubjectStore(Tenant, membershipId, entityId), new PermissionAuthorizer(), TimeProvider.System, ledger);
+        var initial = await service.ReconcileControlBalancesAsync(Tenant, membershipId,
+            new(entityId, new DateOnly(2026, 10, 25)), actorId, Guid.CreateVersion7(), default);
+        var deltaAr = 100m;
+        var deltaAp = 50m;
+        var initialAr = initial.Details.FirstOrDefault(detail => detail.Direction == SubledgerDirectionContract.Receivable);
+        var initialAp = initial.Details.FirstOrDefault(detail => detail.Direction == SubledgerDirectionContract.Payable);
+        var targetAr = (initialAr is null ? 0m : decimal.Parse(initialAr.SubledgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture)) + deltaAr;
+        var targetAp = (initialAp is null ? 0m : decimal.Parse(initialAp.SubledgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture)) + deltaAp;
+        var accounts = await ledger.ListAccountsAsync(Tenant, entityId, default);
+        var cashAccountId = accounts.Single(account => account.Code == "110000").Id;
+        var ledgerLines = new List<OpeningBalanceLineRequest>();
+        AddSignedLine(ledgerLines, receivable.AccountId, targetAr - receivable.SignedBaseBalance, "EGP");
+        AddSignedLine(ledgerLines, payable.AccountId, -(targetAp - payable.SignedBaseBalance), "EGP");
+        AddSignedLine(ledgerLines, cashAccountId, -(targetAr - receivable.SignedBaseBalance) + (targetAp - payable.SignedBaseBalance), "EGP");
+        var ledgerBatch = await ledgerOperations.CreateOpeningBatchAsync(Tenant, entityId,
+            new($"SL25-LIVE-OPEN-{Guid.NewGuid():N}", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Guid.NewGuid().ToByteArray())).ToLowerInvariant(), "SL25Acceptance", openingDate, ledgerLines),
+            Guid.CreateVersion7(), default);
+        await ledgerOperations.PostOpeningBatchAsync(Tenant, entityId, ledgerBatch, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+
+        var partyB = await FindAnotherActivePartyAsync(dataSource, partyA);
+        var batch = await service.CreateOpeningSubledgerBatchAsync(Tenant, membershipId,
+            new(entityId, $"SL25-LIVE-SUB-{Guid.NewGuid():N}", openingDate, "EGP", configurationReference, $"sl25-live-{Guid.NewGuid():N}", actorId, Guid.CreateVersion7()), default);
+        var lines = new OpeningSubledgerLineCommand[]
+        {
+            new("ar-a-invoice", partyA, SubledgerDirectionContract.Receivable, SubledgerPolarityContract.Debit, "SL25-AR-A", openingDate, openingDate.AddDays(30), "EGP", (deltaAr - 40m).ToString(System.Globalization.CultureInfo.InvariantCulture), "EGP", (deltaAr - 40m).ToString(System.Globalization.CultureInfo.InvariantCulture), "Receivable", "role:Receivable", configurationReference),
+            new("ar-b-invoice", partyB, SubledgerDirectionContract.Receivable, SubledgerPolarityContract.Debit, "SL25-AR-B", openingDate, openingDate.AddDays(30), "EGP", "50", "EGP", "50", "Receivable", "role:Receivable", configurationReference),
+            new("ar-a-advance", partyA, SubledgerDirectionContract.Receivable, SubledgerPolarityContract.Credit, "SL25-AR-ADV", openingDate, openingDate, "EGP", "10", "EGP", "10", "Receivable", "role:Receivable", configurationReference),
+            new("ap-a-bill", partyA, SubledgerDirectionContract.Payable, SubledgerPolarityContract.Credit, "SL25-AP-A", openingDate, openingDate.AddDays(30), "EGP", (deltaAp - 15m).ToString(System.Globalization.CultureInfo.InvariantCulture), "EGP", (deltaAp - 15m).ToString(System.Globalization.CultureInfo.InvariantCulture), "Payable", "role:Payable", configurationReference),
+            new("ap-b-bill", partyB, SubledgerDirectionContract.Payable, SubledgerPolarityContract.Credit, "SL25-AP-B", openingDate, openingDate.AddDays(30), "EGP", "25", "EGP", "25", "Payable", "role:Payable", configurationReference),
+            new("ap-a-advance", partyA, SubledgerDirectionContract.Payable, SubledgerPolarityContract.Debit, "SL25-AP-ADV", openingDate, openingDate, "EGP", "10", "EGP", "10", "Payable", "role:Payable", configurationReference)
+        };
+        await service.AddOpeningSubledgerLinesAsync(Tenant, membershipId, entityId, batch, lines, actorId, Guid.CreateVersion7(), default);
+        var openingValidation = await service.ValidateOpeningSubledgerBatchAsync(Tenant, membershipId, entityId, batch, default);
+        Assert.True(openingValidation.IsBalanced, System.Text.Json.JsonSerializer.Serialize(openingValidation.Directions));
+        var finalized = await service.FinalizeOpeningSubledgerBatchAsync(Tenant, membershipId, entityId, batch, actorId, Guid.CreateVersion7(), default);
+        Assert.Equal("Finalized", finalized.Status);
+
+        var before = await service.ReconcileControlBalancesAsync(Tenant, membershipId, new(entityId, openingDate), actorId, Guid.CreateVersion7(), default);
+        Assert.True(before.IsBalanced, System.Text.Json.JsonSerializer.Serialize(before.Details));
+        Assert.Equal(0m, decimal.Parse(before.Variance, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(targetAr, decimal.Parse(before.Details.Single(detail => detail.Direction == SubledgerDirectionContract.Receivable).SubledgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(targetAr, decimal.Parse(before.Details.Single(detail => detail.Direction == SubledgerDirectionContract.Receivable).LedgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(targetAp, decimal.Parse(before.Details.Single(detail => detail.Direction == SubledgerDirectionContract.Payable).SubledgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(targetAp, decimal.Parse(before.Details.Single(detail => detail.Direction == SubledgerDirectionContract.Payable).LedgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture));
+
+        var invoiceAReference = $"SL25-AR-INVOICE-A-{Guid.CreateVersion7():N}";
+        var invoiceAPayload = new CustomerInvoicePostedPayload(100m, 14m, 114m, "EGP", "CUSTOMER", "GENERAL", [new("VAT14", 14m, 14m, "OutputTax")]);
+        var invoiceAFact = new AccountingFactEnvelope<CustomerInvoicePostedPayload>(Guid.CreateVersion7(), Tenant, entityId, AccountingFactTypes.CustomerInvoicePosted, 1, "sales", invoiceAReference, $"sl25-a-{Guid.CreateVersion7():N}", openingDate, openingDate, invoiceAPayload, Guid.CreateVersion7(), Guid.CreateVersion7());
+        var invoiceAEntry = await ledger.PostCustomerInvoiceAsync(invoiceAFact, default);
+        var invoiceAItem = Snapshot(invoiceAReference, 114m) with { ControlAccountReference = "role:Receivable", ControlConfigurationReference = configurationReference };
+        var invoiceAOpenItemId = (await repository.CreateOpenItemsAsync(Tenant, entityId, partyA, Modules.Subledger.Entities.SubledgerDirection.Receivable, Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [invoiceAItem], default)).Single();
+        Assert.NotEqual(Guid.Empty, invoiceAEntry.JournalEntryId);
+        var afterInvoiceA = await service.ReconcileControlBalancesAsync(Tenant, membershipId, new(entityId, openingDate), actorId, Guid.CreateVersion7(), default);
+        Assert.True(afterInvoiceA.IsBalanced, System.Text.Json.JsonSerializer.Serialize(afterInvoiceA.Details));
+        Assert.All(afterInvoiceA.Details, detail => Assert.Equal(0m, decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)));
+
+        var cashLinesBefore = await CountJournalLinesByAccountAsync(dataSource, entityId, cashAccountId);
+        var arApplicationId = await ApplyWithPreviewAsync(service, membershipId, entityId, partyA, SubledgerDirectionContract.Receivable,
+            await ReadOpeningItemIdAsync(dataSource, batch, "ar-a-invoice"),
+            await ReadOpeningItemIdAsync(dataSource, batch, "ar-a-advance"), "10", openingDate, actorId);
+        var apApplicationId = await ApplyWithPreviewAsync(service, membershipId, entityId, partyA, SubledgerDirectionContract.Payable,
+            await ReadOpeningItemIdAsync(dataSource, batch, "ap-a-advance"),
+            await ReadOpeningItemIdAsync(dataSource, batch, "ap-a-bill"), "10", openingDate, actorId);
+        Assert.Equal(cashLinesBefore, await CountJournalLinesByAccountAsync(dataSource, entityId, cashAccountId));
+
+        var after = await service.ReconcileControlBalancesAsync(Tenant, membershipId, new(entityId, openingDate), actorId, Guid.CreateVersion7(), default);
+        Assert.True(after.IsBalanced);
+        Assert.Equal(0m, decimal.Parse(after.Variance, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.All(after.Details, detail => Assert.Equal(0m, decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)));
+
+        await service.ReverseAsync(Tenant, membershipId, new(entityId, arApplicationId, $"sl25-reverse-ar-{Guid.CreateVersion7():N}", openingDate.AddDays(1),
+            "SL25 exact reconciliation reversal", actorId, Guid.CreateVersion7()), default);
+        await service.ReverseAsync(Tenant, membershipId, new(entityId, apApplicationId, $"sl25-reverse-ap-{Guid.CreateVersion7():N}", openingDate.AddDays(1),
+            "SL25 exact reconciliation reversal", actorId, Guid.CreateVersion7()), default);
+        Assert.Equal(cashLinesBefore, await CountJournalLinesByAccountAsync(dataSource, entityId, cashAccountId));
+        var reversed = await service.ReconcileControlBalancesAsync(Tenant, membershipId,
+            new(entityId, openingDate.AddDays(1)), actorId, Guid.CreateVersion7(), default);
+        Assert.True(reversed.IsBalanced, System.Text.Json.JsonSerializer.Serialize(reversed.Details));
+        Assert.Equal(0m, decimal.Parse(reversed.Variance, System.Globalization.CultureInfo.InvariantCulture));
+        Assert.All(reversed.Details, detail => Assert.Equal(0m, decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)));
+
+        var fxInvoice = Snapshot($"SL25-FX-INVOICE-{Guid.CreateVersion7():N}", 100m) with
+        {
+            TransactionCurrency = "USD", OriginalTransactionAmount = "100", OriginalBaseAmount = "5200",
+            ControlAccountReference = "role:Receivable", ControlConfigurationReference = configurationReference,
+            HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}"
+        };
+        var fxPayment = Snapshot($"SL25-FX-PAYMENT-{Guid.CreateVersion7():N}", 5000m) with
+        {
+            ControlAccountReference = "role:Receivable", ControlConfigurationReference = configurationReference
+        };
+        var fxInvoiceId = (await repository.CreateOpenItemsAsync(Tenant, entityId, partyA, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [fxInvoice], default)).Single();
+        var fxPaymentId = (await repository.CreateOpenItemsAsync(Tenant, entityId, partyA, Modules.Subledger.Entities.SubledgerDirection.Receivable,
+            Modules.Subledger.Entities.OpenItemPolarity.Credit, "Payment", [fxPayment], default)).Single();
+        var revenueAccountId = accounts.Single(account => account.Code == "410100").Id;
+        var fxOpeningLines = new List<OpeningBalanceLineRequest>();
+        AddSignedLine(fxOpeningLines, receivable.AccountId, 200m, "EGP");
+        AddSignedLine(fxOpeningLines, cashAccountId, 5000m, "EGP");
+        AddSignedLine(fxOpeningLines, revenueAccountId, -5200m, "EGP");
+        var fxOpeningBatch = await ledgerOperations.CreateOpeningBatchAsync(Tenant, entityId,
+            new($"SL25-FX-OPEN-{Guid.CreateVersion7():N}", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Guid.NewGuid().ToByteArray())).ToLowerInvariant(),
+                "SL25FxAcceptance", openingDate.AddDays(1), fxOpeningLines), Guid.CreateVersion7(), default);
+        await ledgerOperations.PostOpeningBatchAsync(Tenant, entityId, fxOpeningBatch, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+        var beforeFx = await service.ReconcileControlBalancesAsync(Tenant, membershipId,
+            new(entityId, openingDate.AddDays(1)), actorId, Guid.CreateVersion7(), default);
+        Assert.True(beforeFx.IsBalanced, System.Text.Json.JsonSerializer.Serialize(beforeFx.Details));
+        var fxCashLinesBefore = await CountJournalLinesByAccountAsync(dataSource, entityId, cashAccountId);
+        var fxApplication = new ApplyOpenItemsCommand(entityId, partyA, SubledgerDirectionContract.Receivable,
+            $"sl25-fx-application-{Guid.CreateVersion7():N}", openingDate.AddDays(1), openingDate.AddDays(1),
+            [new(fxInvoiceId, fxPaymentId, "100", "5000")], actorId, Guid.CreateVersion7());
+        var fxLine = new ResolvedApplicationLineContract(fxInvoiceId, fxPaymentId, "100", "5000",
+            "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}", "{\"rate\":1,\"from\":\"EGP\",\"to\":\"EGP\"}", "5000");
+        var fxResult = await repository.ApplyAsync(Tenant, fxApplication, [fxLine], 2, FinancialRoundingModeValue.HalfUp, default);
+        var fxApplicationId = Assert.Single(fxResult.ApplicationIds);
+        Assert.Equal(0m, await ReadOpenAmountAsync(dataSource, entityId, fxInvoiceId));
+        Assert.Equal(0m, await ReadOpenBaseAmountAsync(dataSource, entityId, fxInvoiceId));
+        Assert.Equal(0m, await ReadOpenAmountAsync(dataSource, entityId, fxPaymentId));
+        Assert.Equal(0m, await ReadOpenBaseAmountAsync(dataSource, entityId, fxPaymentId));
+        Assert.Equal(200m, await ReadPostedFactTotalAsync(dataSource, entityId, "SettlementFxDifference", $"application:{fxApplicationId:N}", "Settlement FX loss"));
+        Assert.Equal(fxCashLinesBefore, await CountJournalLinesByAccountAsync(dataSource, entityId, cashAccountId));
+        var afterFx = await service.ReconcileControlBalancesAsync(Tenant, membershipId,
+            new(entityId, openingDate.AddDays(1)), actorId, Guid.CreateVersion7(), default);
+        Assert.True(afterFx.IsBalanced, System.Text.Json.JsonSerializer.Serialize(afterFx.Details));
+        Assert.All(afterFx.Details, detail => Assert.Equal(0m, decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)));
+
+        await repository.ReverseAsync(Tenant, new(entityId, fxApplicationId, $"sl25-fx-reverse-{Guid.CreateVersion7():N}", openingDate.AddDays(2),
+            "SL25 realized FX reversal", actorId, Guid.CreateVersion7()), default);
+        Assert.Equal(-200m, await ReadPostedFactTotalAsync(dataSource, entityId, "SettlementFxDifference", $"application-reversal:{fxApplicationId:N}", "Settlement FX gain"));
+        Assert.Equal(2L, await CountPostedFxFactsForApplicationAsync(dataSource, entityId, fxApplicationId));
+        var afterFxReversal = await service.ReconcileControlBalancesAsync(Tenant, membershipId,
+            new(entityId, openingDate.AddDays(2)), actorId, Guid.CreateVersion7(), default);
+        Assert.True(afterFxReversal.IsBalanced, System.Text.Json.JsonSerializer.Serialize(afterFxReversal.Details));
+        Assert.All(afterFxReversal.Details, detail => Assert.Equal(0m, decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)));
+
+        var mappingLifecycle = new LedgerMappingConfigurationRepository(dataSource, coordinator, new LedgerConfigurationCache(), TimeProvider.System);
+        var receivableB = (await ledger.CreateAccountAsync(Tenant, entityId, new($"8{Guid.NewGuid():N}"[..13], "عملاء إصدار ب", "Receivables B", AccountType.Asset, "ReceivableControl", null, true), default)).Id;
+        var payableB = (await ledger.CreateAccountAsync(Tenant, entityId, new($"7{Guid.NewGuid():N}"[..13], "موردون إصدار ب", "Payables B", AccountType.Liability, "PayableControl", null, true), default)).Id;
+        var configBDraft = await mappingLifecycle.CreateDraftAsync(Tenant, entityId,
+            new(DateOnly.FromDateTime(DateTime.UtcNow)), actorId, Guid.CreateVersion7(), default);
+        await mappingLifecycle.UpdateDraftMappingAsync(Tenant, entityId, configBDraft.Id,
+            configBDraft.Mappings.Single(mapping => mapping.RoleCode == "Receivable").MappingVersionId,
+            new(receivableB), actorId, Guid.CreateVersion7(), default);
+        await mappingLifecycle.UpdateDraftMappingAsync(Tenant, entityId, configBDraft.Id,
+            configBDraft.Mappings.Single(mapping => mapping.RoleCode == "Payable").MappingVersionId,
+            new(payableB), actorId, Guid.CreateVersion7(), default);
+        var configBValidation = await mappingLifecycle.ValidateAsync(Tenant, entityId, configBDraft.Id, actorId, Guid.CreateVersion7(), default);
+        Assert.True(configBValidation.Valid, System.Text.Json.JsonSerializer.Serialize(configBValidation.Errors));
+        await mappingLifecycle.ActivateAsync(Tenant, entityId, configBDraft.Id, actorId, Guid.CreateVersion7(), default);
+        var configurationB = configBDraft.Id;
+        var configurationBReference = $"configuration:{configurationB:D}";
+        var bReceivableControl = await ledger.GetControlBalanceAsync(Tenant, entityId, "Receivable", configurationB, openingDate.AddDays(2));
+        var bPayableControl = await ledger.GetControlBalanceAsync(Tenant, entityId, "Payable", configurationB, openingDate.AddDays(2));
+        Assert.Equal(receivableB, bReceivableControl.AccountId);
+        Assert.Equal(payableB, bPayableControl.AccountId);
+
+        const decimal deltaArB = 20m;
+        const decimal deltaApB = 15m;
+        var bLedgerLines = new List<OpeningBalanceLineRequest>();
+        AddSignedLine(bLedgerLines, bReceivableControl.AccountId, deltaArB, "EGP");
+        AddSignedLine(bLedgerLines, bPayableControl.AccountId, -deltaApB, "EGP");
+        AddSignedLine(bLedgerLines, cashAccountId, -deltaArB + deltaApB, "EGP");
+        var bLedgerBatch = await ledgerOperations.CreateOpeningBatchAsync(Tenant, entityId,
+            new($"SL25-LIVE-OPEN-B-{Guid.NewGuid():N}", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Guid.NewGuid().ToByteArray())).ToLowerInvariant(), "SL25AcceptanceB", openingDate.AddDays(2), bLedgerLines),
+            actorId, default);
+        await ledgerOperations.PostOpeningBatchAsync(Tenant, entityId, bLedgerBatch, actorId, Guid.CreateVersion7(), default);
+        var bSubledgerBatch = await service.CreateOpeningSubledgerBatchAsync(Tenant, membershipId,
+            new(entityId, $"SL25-LIVE-SUB-B-{Guid.NewGuid():N}", openingDate.AddDays(2), "EGP", configurationBReference, $"sl25-live-b-{Guid.CreateVersion7():N}", actorId, Guid.CreateVersion7()), default);
+        await service.AddOpeningSubledgerLinesAsync(Tenant, membershipId, entityId, bSubledgerBatch,
+        [
+            new("ar-b-new-context", partyA, SubledgerDirectionContract.Receivable, SubledgerPolarityContract.Debit, $"SL25-AR-B-{Guid.CreateVersion7():N}", openingDate.AddDays(2), openingDate.AddDays(32), "EGP", deltaArB.ToString(System.Globalization.CultureInfo.InvariantCulture), "EGP", deltaArB.ToString(System.Globalization.CultureInfo.InvariantCulture), "Receivable", "role:Receivable", configurationBReference),
+            new("ap-b-new-context", partyB, SubledgerDirectionContract.Payable, SubledgerPolarityContract.Credit, $"SL25-AP-B-{Guid.CreateVersion7():N}", openingDate.AddDays(2), openingDate.AddDays(32), "EGP", deltaApB.ToString(System.Globalization.CultureInfo.InvariantCulture), "EGP", deltaApB.ToString(System.Globalization.CultureInfo.InvariantCulture), "Payable", "role:Payable", configurationBReference)
+        ], actorId, Guid.CreateVersion7(), default);
+        var bValidation = await service.ValidateOpeningSubledgerBatchAsync(Tenant, membershipId, entityId, bSubledgerBatch, default);
+        Assert.True(bValidation.IsBalanced, System.Text.Json.JsonSerializer.Serialize(bValidation.Directions));
+        await service.FinalizeOpeningSubledgerBatchAsync(Tenant, membershipId, entityId, bSubledgerBatch, actorId, Guid.CreateVersion7(), default);
+
+        var invoiceBReference = $"SL25-AR-INVOICE-B-{Guid.CreateVersion7():N}";
+        var invoiceBFact = new AccountingFactEnvelope<CustomerInvoicePostedPayload>(Guid.CreateVersion7(), Tenant, entityId, AccountingFactTypes.CustomerInvoicePosted, 1, "sales", invoiceBReference, $"sl25-b-{Guid.CreateVersion7():N}", openingDate.AddDays(2), openingDate.AddDays(2), invoiceAPayload, Guid.CreateVersion7(), Guid.CreateVersion7());
+        var invoiceBEntry = await ledger.PostCustomerInvoiceAsync(invoiceBFact, default);
+        var invoiceBItem = Snapshot(invoiceBReference, 114m) with { ControlAccountReference = "role:Receivable", ControlConfigurationReference = configurationBReference };
+        var invoiceBOpenItemId = (await repository.CreateOpenItemsAsync(Tenant, entityId, partyB, Modules.Subledger.Entities.SubledgerDirection.Receivable, Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [invoiceBItem], default)).Single();
+        Assert.NotEqual(Guid.Empty, invoiceBEntry.JournalEntryId);
+
+        Assert.Equal(configurationReference, await ReadOpenItemConfigurationReferenceAsync(dataSource, await ReadOpeningItemIdAsync(dataSource, batch, "ar-b-invoice")));
+        Assert.Equal(configurationBReference, await ReadOpenItemConfigurationReferenceAsync(dataSource, await ReadOpeningItemIdAsync(dataSource, bSubledgerBatch, "ar-b-new-context")));
+        var historicalContextBeforeWriteOff = await service.ReconcileControlBalancesAsync(Tenant, membershipId, new(entityId, openingDate.AddDays(2)), actorId, Guid.CreateVersion7(), default);
+        Assert.True(historicalContextBeforeWriteOff.IsBalanced, System.Text.Json.JsonSerializer.Serialize(historicalContextBeforeWriteOff.Details));
+        Assert.All(historicalContextBeforeWriteOff.Details, detail => Assert.Equal(0m, decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)));
+        Assert.Equal(configurationReference, await ReadOpenItemConfigurationReferenceAsync(dataSource, invoiceAOpenItemId));
+        Assert.Equal(configurationBReference, await ReadOpenItemConfigurationReferenceAsync(dataSource, invoiceBOpenItemId));
+        var postActivationApplication = await ApplyWithPreviewAsync(service, membershipId, entityId, partyA, SubledgerDirectionContract.Receivable,
+            invoiceAOpenItemId, await ReadOpeningItemIdAsync(dataSource, batch, "ar-a-advance"), "5", openingDate.AddDays(2), actorId);
+        await service.ReverseAsync(Tenant, membershipId, new(entityId, postActivationApplication, $"sl25-reverse-after-config-b-{Guid.CreateVersion7():N}", openingDate.AddDays(3),
+            "SL25 historical A application reversal after B activation", actorId, Guid.CreateVersion7()), default);
+        var afterPostActivationReversal = await service.ReconcileControlBalancesAsync(Tenant, membershipId, new(entityId, openingDate.AddDays(3)), actorId, Guid.CreateVersion7(), default);
+        Assert.True(afterPostActivationReversal.IsBalanced, System.Text.Json.JsonSerializer.Serialize(afterPostActivationReversal.Details));
+        Assert.All(afterPostActivationReversal.Details, detail => Assert.Equal(0m, decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)));
+
+        var writeOffItemId = await ReadOpeningItemIdAsync(dataSource, batch, "ar-b-invoice");
+        var writeOffPolicyVersion = await ReadWriteOffPolicyVersionAsync(dataSource, entityId, "EGP");
+        await repository.SaveWriteOffPolicyAsync(Tenant,
+            new(entityId, SubledgerDirectionContract.Receivable, "EGP", "5", "1", writeOffPolicyVersion), 5m, 1m, "EGP", default);
+        var beforeWriteOff = await service.ReconcileControlBalancesAsync(Tenant, membershipId,
+            new(entityId, openingDate.AddDays(2)), actorId, Guid.CreateVersion7(), default);
+        Assert.True(beforeWriteOff.IsBalanced, System.Text.Json.JsonSerializer.Serialize(beforeWriteOff.Details));
+        var controlBeforeWriteOff = await ledger.GetControlBalanceAsync(Tenant, entityId, "Receivable", configurationId, openingDate.AddDays(2));
+        var writeOffCreator = Guid.CreateVersion7();
+        var writeOffRequest = new CreateWriteOffCommand(entityId, writeOffItemId, "1", "ROUNDING", "SL25 exact control reconciliation",
+            openingDate.AddDays(2), $"sl25-writeoff-{Guid.CreateVersion7():N}", writeOffCreator, Guid.CreateVersion7());
+        var writeOffRequestId = await repository.CreateWriteOffRequestAsync(Tenant, writeOffRequest, 1m, "EGP", 2, "HalfUp", default);
+        var writeOffApproval = await repository.ApproveWriteOffAsync(Tenant,
+            new(entityId, writeOffRequestId, Guid.CreateVersion7(), Guid.CreateVersion7()), default);
+        Assert.Equal(49m, await ReadOpenAmountAsync(dataSource, entityId, writeOffItemId));
+        Assert.Equal(49m, await ReadOpenBaseAmountAsync(dataSource, entityId, writeOffItemId));
+        Assert.Equal(1m, await ReadWriteOffLedgerBaseAmountAsync(dataSource, entityId, writeOffApproval.LedgerFactId));
+        var controlAfterWriteOff = await ledger.GetControlBalanceAsync(Tenant, entityId, "Receivable", configurationId, openingDate.AddDays(2));
+        Assert.Equal(controlBeforeWriteOff.SignedBaseBalance - 1m, controlAfterWriteOff.SignedBaseBalance);
+        var afterWriteOff = await service.ReconcileControlBalancesAsync(Tenant, membershipId,
+            new(entityId, openingDate.AddDays(2)), actorId, Guid.CreateVersion7(), default);
+        Assert.True(afterWriteOff.IsBalanced, System.Text.Json.JsonSerializer.Serialize(afterWriteOff.Details));
+        Assert.All(afterWriteOff.Details, detail => Assert.Equal(0m, decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture)));
+        foreach (var detail in afterWriteOff.Details)
+            output.WriteLine($"SL25 live {detail.Direction}: Subledger={detail.SubledgerBaseBalance}; Ledger={detail.LedgerBaseBalance}; Difference={detail.Variance}");
     }
 
     [Fact]
@@ -1622,12 +1875,82 @@ public sealed class SubledgerPostgresIntegrationTests
 
     private static async Task<Guid> ReadCurrentLedgerConfigurationAsync(NpgsqlDataSource dataSource)
     {
+        return await ReadCurrentLedgerConfigurationAsync(dataSource, Entity);
+    }
+
+    private static async Task<Guid> ReadCurrentLedgerConfigurationAsync(NpgsqlDataSource dataSource, LegalEntityId entityId)
+    {
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         await SetTenantForQueryAsync(connection, transaction);
         await using var command = new NpgsqlCommand("select active_configuration_version_id from finance_ledger.ledger_entity_configuration where tenant_id=$1 and legal_entity_id=$2", connection, transaction);
-        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(Entity.Value);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(entityId.Value);
         return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("The Ledger accounting configuration is unavailable."));
+    }
+
+    private static async Task<Guid> FindSecondaryLegalEntityAsync(NpgsqlDataSource dataSource)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await SetTenantForQueryAsync(connection, transaction);
+        await using var command = new NpgsqlCommand("select id from platform.legal_entity where tenant_id=$1 and id<>$2 and status='Active' order by id limit 1", connection, transaction);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(Entity.Value);
+        return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("The PostgreSQL fixture has no second active legal entity."));
+    }
+
+    private static async Task<Guid> ReadOpenItemIdBySourceAsync(NpgsqlDataSource dataSource, LegalEntityId entityId, string sourceReference)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await SetTenantForQueryAsync(connection, transaction);
+        await using var command = new NpgsqlCommand("select id from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_reference=$3", connection, transaction);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(entityId.Value); command.Parameters.AddWithValue(sourceReference);
+        return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException($"The Subledger open item {sourceReference} was not found."));
+    }
+
+    private static async Task<Guid> ReadOpeningItemIdAsync(NpgsqlDataSource dataSource, Guid batchId, string rowKey)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await SetTenantForQueryAsync(connection, transaction);
+        await using var command = new NpgsqlCommand("select created_open_item_id from finance_subledger.opening_batch_item where tenant_id=$1 and batch_id=$2 and row_key=$3", connection, transaction);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(batchId); command.Parameters.AddWithValue(rowKey);
+        return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException($"The opening row {rowKey} was not finalized."));
+    }
+
+    private static async Task<string> ReadOpenItemConfigurationReferenceAsync(NpgsqlDataSource dataSource, Guid itemId)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await SetTenantForQueryAsync(connection, transaction);
+        await using var command = new NpgsqlCommand("select control_configuration_reference from finance_subledger.party_open_item where tenant_id=$1 and id=$2", connection, transaction);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(itemId);
+        return (string)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException($"Open item {itemId} was not found."));
+    }
+
+    private static async Task<long> CountJournalLinesByAccountAsync(NpgsqlDataSource dataSource, LegalEntityId entityId, Guid accountId)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await SetTenantForQueryAsync(connection, transaction);
+        await using var command = new NpgsqlCommand("select count(*) from finance_ledger.journal_entry_line where tenant_id=$1 and legal_entity_id=$2 and account_id=$3", connection, transaction);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(entityId.Value); command.Parameters.AddWithValue(accountId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<Guid> ApplyWithPreviewAsync(SubledgerService service, Guid membershipId, LegalEntityId entityId, Guid partyId,
+        SubledgerDirectionContract direction, Guid debitItemId, Guid creditItemId, string amount, DateOnly effectiveDate, Guid actorId)
+    {
+        var command = new ApplyOpenItemsCommand(entityId, partyId, direction, $"sl25-application-{Guid.CreateVersion7():N}", effectiveDate, effectiveDate,
+            [new(debitItemId, creditItemId, amount)], actorId, Guid.CreateVersion7());
+        var preview = await service.PreviewAsync(Tenant, membershipId, command, default);
+        var line = Assert.Single(preview.Lines);
+        command = command with
+        {
+            Lines = [new(debitItemId, creditItemId, line.DebitAppliedAmount, line.CreditAppliedAmount, line.ExpectedDebitVersion, line.ExpectedCreditVersion)]
+        };
+        var result = await service.ApplyAsync(Tenant, membershipId, command, default);
+        return Assert.Single(result.ApplicationIds);
     }
 
     private static async Task<decimal> SumOpeningSubledgerBalancesAsync(NpgsqlDataSource dataSource, Guid batchId, Guid partyId, SubledgerDirectionContract direction)
@@ -1671,12 +1994,15 @@ public sealed class SubledgerPostgresIntegrationTests
     }
 
     private static async Task<long> ReadWriteOffPolicyVersionAsync(NpgsqlDataSource dataSource, string currency)
+        => await ReadWriteOffPolicyVersionAsync(dataSource, Entity, currency);
+
+    private static async Task<long> ReadWriteOffPolicyVersionAsync(NpgsqlDataSource dataSource, LegalEntityId entityId, string currency)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         await SetTenantForQueryAsync(connection, transaction);
         await using var command = new NpgsqlCommand("select coalesce((select version from finance_subledger.write_off_policy where tenant_id=$1 and legal_entity_id=$2 and direction='Receivable' and currency_code=$3),0)", connection, transaction);
-        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(Entity.Value); command.Parameters.AddWithValue(currency);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(entityId.Value); command.Parameters.AddWithValue(currency);
         return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
@@ -1814,15 +2140,15 @@ public sealed class SubledgerPostgresIntegrationTests
         public Task<IReadOnlySet<Guid>> FindActivePartiesAsync(TenantId tenantId, IReadOnlyCollection<Guid> partyIds, Guid? legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlySet<Guid>>(partyIds.ToHashSet());
     }
 
-    private sealed class AllPermissionSubjectStore(TenantId tenant, Guid membership) : IAuthorizationSubjectStore
+    private sealed class AllPermissionSubjectStore(TenantId tenant, Guid membership, LegalEntityId? entityScope = null) : IAuthorizationSubjectStore
     {
         public Task<AuthorizationSubject?> LoadAsync(TenantId tenantId, Guid membershipId, CancellationToken cancellationToken = default)
         {
             if (tenantId != tenant || membershipId != membership) return Task.FromResult<AuthorizationSubject?>(null);
             var roleId = Guid.CreateVersion7();
             var role = new Role(roleId, tenant, "test", "Test", false, true, 1);
-            var assignment = new MembershipRoleAssignment(tenant, membership, roleId, PermissionScope.ForLegalEntity(tenant, Entity));
-            var codes = new[] { "subledger.reconciliation.run", "subledger.reconciliation.read", "subledger.writeoff.policy.manage", "subledger.writeoff.create", "subledger.writeoff.approve", "subledger.opening.manage", "subledger.opening.finalize", "subledger.application.create" };
+            var assignment = new MembershipRoleAssignment(tenant, membership, roleId, PermissionScope.ForLegalEntity(tenant, entityScope ?? Entity));
+            var codes = new[] { "subledger.reconciliation.run", "subledger.reconciliation.read", "subledger.writeoff.policy.manage", "subledger.writeoff.create", "subledger.writeoff.approve", "subledger.opening.manage", "subledger.opening.finalize", "subledger.application.create", "subledger.application.cross_currency", "subledger.application.reverse", "subledger.advance.create", "subledger.credit-note.create" };
             var permissions = codes.Select(code => new RolePermissionEntry(tenant, roleId, code)).ToArray();
             return Task.FromResult<AuthorizationSubject?>(new(tenant, membership, [assignment], [role], permissions, 1));
         }
@@ -1884,17 +2210,23 @@ public sealed class SubledgerPostgresIntegrationTests
     }
 
     private static async Task<Guid> CreateAsync(SubledgerRepository repository, Guid partyId, string sourceType, string polarity, string reference, decimal amount,
-        Modules.Subledger.Entities.SubledgerDirection direction = Modules.Subledger.Entities.SubledgerDirection.Receivable) =>
-        (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId,
-            direction,
+        Modules.Subledger.Entities.SubledgerDirection direction = Modules.Subledger.Entities.SubledgerDirection.Receivable, string? controlConfigurationReference = null)
+    {
+        var snapshot = Snapshot(reference, amount, null, direction == Modules.Subledger.Entities.SubledgerDirection.Receivable ? "Receivable" : "Payable");
+        if (controlConfigurationReference is not null) snapshot = snapshot with { ControlConfigurationReference = controlConfigurationReference };
+        return (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, direction,
             polarity == "Debit" ? Modules.Subledger.Entities.OpenItemPolarity.Debit : Modules.Subledger.Entities.OpenItemPolarity.Credit,
-            sourceType, [Snapshot(reference, amount, null, direction == Modules.Subledger.Entities.SubledgerDirection.Receivable ? "Receivable" : "Payable")], default)).Single();
+            sourceType, [snapshot], default)).Single();
+    }
 
     private static OpenItemSnapshotContract Snapshot(string reference, decimal amount, string? schedule = null, string controlRole = "Receivable") => new(
         reference, schedule, reference, new(2026, 10, 25), new(2026, 10, 25), new(2026, 11, 24), "EGP", amount.ToString(System.Globalization.CultureInfo.InvariantCulture),
         "EGP", amount.ToString(System.Globalization.CultureInfo.InvariantCulture), controlRole, $"{controlRole}-CONTROL", $"{controlRole}-CONFIG-V1", null, 1);
 
     private static async Task<decimal> ReadOpenAmountAsync(NpgsqlDataSource dataSource, Guid itemId)
+        => await ReadOpenAmountAsync(dataSource, Entity, itemId);
+
+    private static async Task<decimal> ReadOpenAmountAsync(NpgsqlDataSource dataSource, LegalEntityId entityId, Guid itemId)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
@@ -1904,47 +2236,59 @@ public sealed class SubledgerPostgresIntegrationTests
             await tenant.ExecuteNonQueryAsync();
         }
         await using var command = new NpgsqlCommand("select open_transaction_amount from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection, transaction);
-        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(Entity.Value); command.Parameters.AddWithValue(itemId);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(entityId.Value); command.Parameters.AddWithValue(itemId);
         return (decimal)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("Expected open item was missing."));
     }
 
     private static async Task<decimal> ReadOpenBaseAmountAsync(NpgsqlDataSource dataSource, Guid itemId)
+        => await ReadOpenBaseAmountAsync(dataSource, Entity, itemId);
+
+    private static async Task<decimal> ReadOpenBaseAmountAsync(NpgsqlDataSource dataSource, LegalEntityId entityId, Guid itemId)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         await SetTenantForQueryAsync(connection, transaction);
         await using var command = new NpgsqlCommand("select open_base_carrying_amount from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection, transaction);
-        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(Entity.Value); command.Parameters.AddWithValue(itemId);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(entityId.Value); command.Parameters.AddWithValue(itemId);
         return (decimal)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("Expected Subledger item was missing."));
     }
 
     private static async Task<decimal> ReadPostedFactTotalAsync(NpgsqlDataSource dataSource, string factType, string sourceReference, string accountRole)
+        => await ReadPostedFactTotalAsync(dataSource, Entity, factType, sourceReference, accountRole);
+
+    private static async Task<decimal> ReadPostedFactTotalAsync(NpgsqlDataSource dataSource, LegalEntityId entityId, string factType, string sourceReference, string accountRole)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         await SetTenantForQueryAsync(connection, transaction);
         await using var command = new NpgsqlCommand("select coalesce(sum(l.base_debit-l.base_credit),0) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.fact_type=$3 and e.source_reference=$4 and l.account_role=$5", connection, transaction);
-        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(Entity.Value); command.Parameters.AddWithValue(factType); command.Parameters.AddWithValue(sourceReference); command.Parameters.AddWithValue(accountRole);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(entityId.Value); command.Parameters.AddWithValue(factType); command.Parameters.AddWithValue(sourceReference); command.Parameters.AddWithValue(accountRole);
         return (decimal)(await command.ExecuteScalarAsync() ?? 0m);
     }
 
     private static async Task<decimal> ReadWriteOffLedgerBaseAmountAsync(NpgsqlDataSource dataSource, Guid factId)
+        => await ReadWriteOffLedgerBaseAmountAsync(dataSource, Entity, factId);
+
+    private static async Task<decimal> ReadWriteOffLedgerBaseAmountAsync(NpgsqlDataSource dataSource, LegalEntityId entityId, Guid factId)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         await SetTenantForQueryAsync(connection, transaction);
         await using var command = new NpgsqlCommand("select coalesce(sum(l.base_debit+l.base_credit)/2,0) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.fact_id=$3 and e.fact_type='SettlementWriteOff'", connection, transaction);
-        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(Entity.Value); command.Parameters.AddWithValue(factId);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(entityId.Value); command.Parameters.AddWithValue(factId);
         return (decimal)(await command.ExecuteScalarAsync() ?? 0m);
     }
 
     private static async Task<long> CountPostedFxFactsForApplicationAsync(NpgsqlDataSource dataSource, Guid applicationId)
+        => await CountPostedFxFactsForApplicationAsync(dataSource, Entity, applicationId);
+
+    private static async Task<long> CountPostedFxFactsForApplicationAsync(NpgsqlDataSource dataSource, LegalEntityId entityId, Guid applicationId)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         await SetTenantForQueryAsync(connection, transaction);
         await using var command = new NpgsqlCommand("select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and fact_type='SettlementFxDifference' and (source_reference=$3 or source_reference=$4) and status='Posted'", connection, transaction);
-        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(Entity.Value);
+        command.Parameters.AddWithValue(Tenant.Value); command.Parameters.AddWithValue(entityId.Value);
         command.Parameters.AddWithValue($"application:{applicationId:N}"); command.Parameters.AddWithValue($"application-reversal:{applicationId:N}");
         return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
