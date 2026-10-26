@@ -230,11 +230,11 @@ export function AppShell() {
               gap: "0.375rem",
               padding: "0.25rem 0.625rem",
               borderRadius: "var(--radius-full, 9999px)",
-              backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+              backgroundColor: "var(--color-brand-primary-subtle, rgba(79, 70, 229, 0.08))",
               fontSize: "0.8125rem",
               fontWeight: 600,
-              color: "var(--color-content-secondary, #475569)",
-              border: "1px solid var(--color-border-subtle, #f1f5f9)"
+              color: "var(--color-brand-primary, #4338ca)",
+              border: "1px solid rgba(79, 70, 229, 0.18)"
             }}
           >
             <BuildingIcon size={14} style={{ color: "var(--color-brand-primary, #4f46e5)" }} />
@@ -249,10 +249,11 @@ export function AppShell() {
               display: "flex",
               alignItems: "center",
               gap: "0.375rem",
-              backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
-              padding: "0.25rem 0.5rem",
+              backgroundColor: "#ffffff",
+              padding: "0.3125rem 0.625rem",
               borderRadius: "var(--radius-md, 0.375rem)",
-              border: "1px solid var(--color-border-default, #e2e8f0)"
+              border: "1px solid var(--color-border-default, #cbd5e1)",
+              boxShadow: "0 1px 2px 0 rgba(15, 23, 42, 0.04)"
             }}
           >
             <label htmlFor="entity-select" style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-content-muted)" }}>
@@ -315,9 +316,10 @@ export function AppShell() {
               fontSize: "0.8125rem",
               fontWeight: 600,
               borderRadius: "var(--radius-md, 0.375rem)",
-              border: "1px solid var(--color-border-default, #e2e8f0)",
+              border: "1px solid var(--color-border-default, #cbd5e1)",
               backgroundColor: "var(--color-surface-card, #ffffff)",
-              color: "var(--color-content-secondary, #475569)",
+              color: "var(--color-content-secondary, #334155)",
+              boxShadow: "0 1px 2px 0 rgba(15, 23, 42, 0.04)",
               cursor: "pointer",
               transition: "all 150ms ease"
             }}
@@ -355,7 +357,7 @@ export function AppShell() {
                 end={item.id === "home"}
                 className={({ isActive }) => isActive ? "active" : undefined}
               >
-                <span style={{ display: "inline-flex", alignItems: "center" }}>
+                <span className="sidebar-icon-container" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "26px", height: "26px", borderRadius: "var(--radius-sm, 0.375rem)", backgroundColor: "rgba(15, 23, 42, 0.04)" }}>
                   {getModuleIcon(item.icon)}
                 </span>
                 <span>{t(`navigation:${item.navigationKey}`)}</span>

@@ -129,6 +129,7 @@ export function compileTheme(
 
     // Shadows
     "--shadow-none": referenceShadows.none,
+    "--shadow-xs": referenceShadows.xs,
     "--shadow-sm": referenceShadows.sm,
     "--shadow-md": referenceShadows.md,
     "--shadow-lg": referenceShadows.lg,

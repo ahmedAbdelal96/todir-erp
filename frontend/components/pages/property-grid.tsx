@@ -49,7 +49,7 @@ export function PropertyItem({
         padding: "0.875rem 1rem",
         backgroundColor: "var(--color-surface-subtle, #f8fafc)",
         borderRadius: "var(--radius-md, 0.5rem)",
-        border: "1px solid var(--color-border-subtle, #f1f5f9)",
+        border: "1px solid var(--color-border-subtle, #e2e8f0)",
         boxSizing: "border-box"
       }}
     >
@@ -161,20 +161,29 @@ export function StatCard({
 
   const intentColorMap = {
     primary: "var(--color-brand-primary, #4f46e5)",
-    success: "var(--color-status-success, #16a34a)",
+    success: "var(--color-status-success, #059669)",
     warning: "var(--color-status-warning, #d97706)",
     danger: "var(--color-status-danger, #dc2626)",
     info: "var(--color-status-info, #0284c7)",
-    neutral: "var(--color-content-muted, #64748b)"
+    neutral: "var(--color-content-secondary, #475569)"
   };
 
   const intentBgMap = {
-    primary: "var(--color-brand-primary-subtle, rgba(79, 70, 229, 0.08))",
-    success: "rgba(22, 163, 74, 0.08)",
-    warning: "rgba(217, 119, 6, 0.08)",
-    danger: "rgba(220, 38, 38, 0.08)",
-    info: "rgba(2, 132, 199, 0.08)",
+    primary: "var(--color-brand-primary-subtle, rgba(79, 70, 229, 0.1))",
+    success: "rgba(16, 185, 129, 0.12)",
+    warning: "rgba(245, 158, 11, 0.12)",
+    danger: "rgba(239, 68, 68, 0.12)",
+    info: "rgba(2, 132, 199, 0.12)",
     neutral: "var(--color-surface-subtle, #f1f5f9)"
+  };
+
+  const intentBorderMap = {
+    primary: "rgba(79, 70, 229, 0.22)",
+    success: "rgba(16, 185, 129, 0.25)",
+    warning: "rgba(245, 158, 11, 0.25)",
+    danger: "rgba(239, 68, 68, 0.25)",
+    info: "rgba(2, 132, 199, 0.25)",
+    neutral: "var(--color-border-default, #cbd5e1)"
   };
 
   return (
@@ -185,18 +194,18 @@ export function StatCard({
         alignItems: "center",
         justifyContent: "space-between",
         gap: "1rem",
-        padding: "1rem 1.25rem",
+        padding: "1.125rem 1.375rem",
         backgroundColor: "var(--color-surface-card, #ffffff)",
-        border: "1px solid var(--color-border-default, #e2e8f0)",
+        border: "1px solid var(--color-border-default, #cbd5e1)",
         borderRadius: "var(--radius-lg, 0.75rem)",
-        boxShadow: "var(--shadow-xs)"
+        boxShadow: "var(--shadow-sm, 0 1px 3px 0 rgba(15, 23, 42, 0.08))"
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-        <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--color-content-muted, #64748b)" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.3125rem" }}>
+        <span style={{ fontSize: "0.8125rem", fontWeight: 600, letterSpacing: "0.02em", color: "var(--color-content-secondary, #334155)" }}>
           {displayLabel}
         </span>
-        <div style={{ fontSize: "1.375rem", fontWeight: 800, color: "var(--color-content-primary, #0f172a)", letterSpacing: "-0.02em" }}>
+        <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-content-primary, #0f172a)", letterSpacing: "-0.03em", lineHeight: 1.2 }}>
           {value}
         </div>
         {displayDescription && (
@@ -212,11 +221,13 @@ export function StatCard({
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            width: "42px",
-            height: "42px",
-            borderRadius: "var(--radius-md, 0.5rem)",
+            width: "46px",
+            height: "46px",
+            borderRadius: "var(--radius-lg, 0.75rem)",
             backgroundColor: intentBgMap[intent],
             color: intentColorMap[intent],
+            border: `1px solid ${intentBorderMap[intent]}`,
+            boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
             flexShrink: 0
           }}
         >

@@ -32,10 +32,11 @@ export function FilterBar({
         justifyContent: "space-between",
         flexWrap: "wrap",
         gap: "0.75rem",
-        padding: "0.75rem 1rem",
+        padding: "0.875rem 1.25rem",
         backgroundColor: "var(--color-surface-card)",
         border: "1px solid var(--color-border-default)",
-        borderRadius: "var(--radius-md)",
+        borderRadius: "var(--radius-lg, 0.75rem)",
+        boxShadow: "var(--shadow-sm, 0 1px 3px 0 rgba(15, 23, 42, 0.08))",
         width: "100%",
         boxSizing: "border-box"
       }}

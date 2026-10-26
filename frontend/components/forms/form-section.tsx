@@ -36,14 +36,15 @@ export function FormSection({
         display: "flex",
         flexDirection: "column",
         gap: "1rem",
-        padding: "1.25rem",
+        padding: "1.25rem 1.5rem",
         backgroundColor: "var(--color-surface-card)",
         border: "1px solid var(--color-border-default)",
-        borderRadius: "var(--radius-lg, 0.5rem)"
+        borderRadius: "var(--radius-lg, 0.75rem)",
+        boxShadow: "var(--shadow-sm, 0 1px 3px 0 rgba(15, 23, 42, 0.08))"
       }}
     >
       {(title || description) && (
-        <div style={{ borderBottom: "1px solid var(--color-border-subtle, #f1f5f9)", paddingBottom: "0.75rem" }}>
+        <div style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)", paddingBottom: "0.75rem" }}>
           {title && (
             <h3
               style={{

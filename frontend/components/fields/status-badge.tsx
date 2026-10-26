@@ -49,8 +49,8 @@ export function StatusBadge({
         display: "inline-flex",
         alignItems: "center",
         gap: "0.375rem",
-        paddingInline: size === "small" ? "0.5rem" : "0.625rem",
-        paddingBlock: size === "small" ? "0.125rem" : "0.25rem",
+        paddingInline: size === "small" ? "0.625rem" : "0.75rem",
+        paddingBlock: size === "small" ? "0.1875rem" : "0.3125rem",
         borderRadius: "var(--radius-full, 9999px)",
         fontSize: size === "small" ? "0.75rem" : "0.8125rem",
         fontWeight: 600,
@@ -58,6 +58,7 @@ export function StatusBadge({
         backgroundColor: styles.backgroundColor,
         color: styles.color,
         border: `1px solid ${styles.borderColor}`,
+        boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.04)",
         whiteSpace: "nowrap"
       }}
     >
@@ -66,10 +67,11 @@ export function StatusBadge({
       ) : (
         <span
           style={{
-            width: "0.375rem",
-            height: "0.375rem",
+            width: "0.4375rem",
+            height: "0.4375rem",
             borderRadius: "50%",
-            backgroundColor: styles.dotColor
+            backgroundColor: styles.dotColor,
+            boxShadow: `0 0 0 2px ${styles.backgroundColor}, 0 0 4px ${styles.dotColor}`
           }}
         />
       )}

@@ -38,8 +38,8 @@ export function Surface({
   };
 
   const borderMap = {
-    card: "1px solid var(--color-border-default, #e2e8f0)",
-    subtle: "1px solid var(--color-border-subtle, #f1f5f9)",
+    card: "1px solid var(--color-border-default, #cbd5e1)",
+    subtle: "1px solid var(--color-border-subtle, #e2e8f0)",
     flat: "none"
   };
 
@@ -52,10 +52,11 @@ export function Surface({
         backgroundColor: backgroundMap[variant],
         border: borderMap[variant],
         borderRadius: "var(--radius-lg, 0.75rem)",
-        boxShadow: variant === "card" ? "var(--shadow-xs)" : "none",
+        boxShadow: variant === "card" ? "var(--shadow-sm, 0 1px 3px 0 rgba(15, 23, 42, 0.08))" : "none",
         width: "100%",
         boxSizing: "border-box",
         overflow: "hidden",
+        transition: "box-shadow 150ms ease, border-color 150ms ease",
         ...style
       }}
     >
@@ -67,14 +68,14 @@ export function Surface({
             justifyContent: "space-between",
             flexWrap: "wrap",
             gap: "0.75rem",
-            padding: "0.875rem 1.25rem",
-            borderBottom: "1px solid var(--color-border-subtle, #f1f5f9)",
+            padding: "1rem 1.5rem",
+            borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)",
             backgroundColor: variant === "card" ? "var(--color-surface-subtle, #f8fafc)" : "transparent"
           }}
         >
           <div>
             {title && (
-              <h3 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+              <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)", letterSpacing: "-0.01em" }}>
                 {title}
               </h3>
             )}
@@ -95,8 +96,8 @@ export function Surface({
       {footer && (
         <div
           style={{
-            padding: "0.75rem 1.25rem",
-            borderTop: "1px solid var(--color-border-subtle, #f1f5f9)",
+            padding: "0.875rem 1.5rem",
+            borderTop: "1px solid var(--color-border-subtle, #e2e8f0)",
             backgroundColor: "var(--color-surface-subtle, #f8fafc)"
           }}
         >
