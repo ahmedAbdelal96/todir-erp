@@ -16,6 +16,7 @@ export interface SearchFieldProps {
   readonly isDisabled?: boolean | undefined;
   readonly ariaLabel?: string | undefined;
   readonly className?: string | undefined;
+  readonly size?: "comfortable" | "compact" | undefined;
 }
 
 export function SearchField({
@@ -29,7 +30,8 @@ export function SearchField({
   isPending = false,
   isDisabled = false,
   ariaLabel,
-  className
+  className,
+  size
 }: SearchFieldProps): React.JSX.Element {
   const { t } = useTranslation("common");
   const searchPlaceholder = placeholder ?? t("components.searchPlaceholder");
@@ -126,6 +128,7 @@ export function SearchField({
       }}
     >
       <TextField
+        size={size}
         value={currentValue}
         onChange={handleChange}
         placeholder={searchPlaceholder}

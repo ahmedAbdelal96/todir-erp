@@ -183,10 +183,19 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
     }
   ];
 
+  const activeFilters = [
+    Boolean(nature),
+    Boolean(status),
+    Boolean(categoryId),
+    Boolean(brandId)
+  ].filter(Boolean).length;
+
   const filterBar = (
     <FilterBar
+      activeFilterCount={activeFilters}
       searchInput={
         <SearchField
+          size="compact"
           value={search}
           onChange={(val) => {
             setSearch(val);
@@ -205,67 +214,79 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
         setPage(1);
       }}
     >
-      <Select
-        aria-label={t("productList.typeFilter")}
-        selectedKey={nature}
-        onSelectionChange={(key) => {
-          setNature(String(key) as ProductNature | "");
-          setPage(1);
-        }}
-        placeholder={t("productList.allTypes")}
-      >
-        <SelectItem id="">{t("productList.allTypes")}</SelectItem>
-        <SelectItem id="Goods">{t("common.goods")}</SelectItem>
-        <SelectItem id="Service">{t("common.service")}</SelectItem>
-      </Select>
+      <div className="ui-filter-item">
+        <Select
+          size="compact"
+          aria-label={t("productList.typeFilter")}
+          selectedKey={nature}
+          onSelectionChange={(key) => {
+            setNature(String(key) as ProductNature | "");
+            setPage(1);
+          }}
+          placeholder={t("productList.allTypes")}
+        >
+          <SelectItem id="">{t("productList.allTypes")}</SelectItem>
+          <SelectItem id="Goods">{t("common.goods")}</SelectItem>
+          <SelectItem id="Service">{t("common.service")}</SelectItem>
+        </Select>
+      </div>
 
-      <Select
-        aria-label={t("productList.statusFilter")}
-        selectedKey={status}
-        onSelectionChange={(key) => {
-          setStatus(String(key) as CatalogStatus | "");
-          setPage(1);
-        }}
-        placeholder={t("productList.allStatuses")}
-      >
-        <SelectItem id="">{t("productList.allStatuses")}</SelectItem>
-        <SelectItem id="Active">{t("common.active")}</SelectItem>
-        <SelectItem id="Archived">{t("common.archived")}</SelectItem>
-      </Select>
+      <div className="ui-filter-item">
+        <Select
+          size="compact"
+          aria-label={t("productList.statusFilter")}
+          selectedKey={status}
+          onSelectionChange={(key) => {
+            setStatus(String(key) as CatalogStatus | "");
+            setPage(1);
+          }}
+          placeholder={t("productList.allStatuses")}
+        >
+          <SelectItem id="">{t("productList.allStatuses")}</SelectItem>
+          <SelectItem id="Active">{t("common.active")}</SelectItem>
+          <SelectItem id="Archived">{t("common.archived")}</SelectItem>
+        </Select>
+      </div>
 
-      <Select
-        aria-label={t("productList.categoryFilter")}
-        selectedKey={categoryId}
-        onSelectionChange={(key) => {
-          setCategoryId(String(key));
-          setPage(1);
-        }}
-        placeholder={t("productList.allCategories")}
-      >
-        <SelectItem id="">{t("productList.allCategories")}</SelectItem>
-        {categories.map((c) => (
-          <SelectItem key={c.id} id={c.id}>
-            {c.name}
-          </SelectItem>
-        ))}
-      </Select>
+      <div className="ui-filter-item">
+        <Select
+          size="compact"
+          aria-label={t("productList.categoryFilter")}
+          selectedKey={categoryId}
+          onSelectionChange={(key) => {
+            setCategoryId(String(key));
+            setPage(1);
+          }}
+          placeholder={t("productList.allCategories")}
+        >
+          <SelectItem id="">{t("productList.allCategories")}</SelectItem>
+          {categories.map((c) => (
+            <SelectItem key={c.id} id={c.id}>
+              {c.name}
+            </SelectItem>
+          ))}
+        </Select>
+      </div>
 
-      <Select
-        aria-label={t("productList.brandFilter")}
-        selectedKey={brandId}
-        onSelectionChange={(key) => {
-          setBrandId(String(key));
-          setPage(1);
-        }}
-        placeholder={t("productList.allBrands")}
-      >
-        <SelectItem id="">{t("productList.allBrands")}</SelectItem>
-        {brands.map((b) => (
-          <SelectItem key={b.id} id={b.id}>
-            {b.name}
-          </SelectItem>
-        ))}
-      </Select>
+      <div className="ui-filter-item">
+        <Select
+          size="compact"
+          aria-label={t("productList.brandFilter")}
+          selectedKey={brandId}
+          onSelectionChange={(key) => {
+            setBrandId(String(key));
+            setPage(1);
+          }}
+          placeholder={t("productList.allBrands")}
+        >
+          <SelectItem id="">{t("productList.allBrands")}</SelectItem>
+          {brands.map((b) => (
+            <SelectItem key={b.id} id={b.id}>
+              {b.name}
+            </SelectItem>
+          ))}
+        </Select>
+      </div>
     </FilterBar>
   );
 

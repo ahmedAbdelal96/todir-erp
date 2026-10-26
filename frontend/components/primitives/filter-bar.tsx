@@ -31,8 +31,8 @@ export function FilterBar({
         alignItems: "center",
         justifyContent: "space-between",
         flexWrap: "wrap",
-        gap: "0.75rem",
-        padding: "0.875rem 1.25rem",
+        gap: "0.625rem",
+        padding: "0.625rem 1rem",
         backgroundColor: "var(--color-surface-card)",
         border: "1px solid var(--color-border-default)",
         borderRadius: "var(--radius-lg, 0.75rem)",
@@ -42,20 +42,39 @@ export function FilterBar({
       }}
     >
       <div
+        className="ui-filter-bar-content"
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "0.75rem",
+          gap: "0.625rem",
           flexWrap: "wrap",
           flex: 1,
-          minWidth: "280px"
+          minWidth: 0
         }}
       >
-        {searchInput}
-        {children}
+        {searchInput && (
+          <div className="ui-filter-bar-search" style={{ flex: "1 1 240px", minWidth: "200px", maxWidth: "340px" }}>
+            {searchInput}
+          </div>
+        )}
+        {children && (
+          <div
+            className="ui-filter-bar-filters"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              flexWrap: "wrap",
+              flex: "2 1 auto",
+              minWidth: 0
+            }}
+          >
+            {children}
+          </div>
+        )}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+      <div className="ui-filter-bar-actions" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
         {activeFilterCount > 0 && (
           <span
             style={{

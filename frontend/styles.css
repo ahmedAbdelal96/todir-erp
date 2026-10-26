@@ -654,7 +654,60 @@ a {
   background-color: var(--color-surface-card, #ffffff);
   border: 1px solid var(--color-border-default, #cbd5e1);
   border-radius: var(--radius-lg, 0.75rem);
-  box-shadow: var(--shadow-xs);
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.06);
+}
+
+.ui-filter-bar-content {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ui-filter-bar-search {
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 340px;
+}
+
+.ui-filter-bar-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  flex: 2 1 auto;
+  min-width: 0;
+}
+
+.ui-filter-item {
+  min-width: 120px;
+  max-width: 180px;
+  flex: 1 1 125px;
+}
+
+.ui-filter-bar .ui-select {
+  width: auto !important;
+}
+
+.ui-filter-bar-filters .ui-select {
+  min-width: 120px;
+  max-width: 180px;
+  flex: 1 1 125px;
+}
+
+.ui-filter-bar-filters .ui-select button {
+  height: 36px !important;
+  font-size: 0.8125rem !important;
+  padding-inline: 0.625rem !important;
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.ui-filter-bar-filters .ui-select button:hover {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
 }
 
 /* Surface & Card Depth Enhancements */
