@@ -35,6 +35,26 @@ public sealed class DirectoryAdvancedRepository(
         return details is null ? null : await EnrichAsync(tenantId, details, ct);
     }
 
+    public async Task<bool> HasActiveRoleAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, string roleCode, CancellationToken ct)
+    {
+        if (roleCode is not ("Customer" or "Supplier")) return false;
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenantId, ct);
+        var canonical = await ResolveCanonicalAsync(connection, transaction, tenantId, partyId, ct);
+        var visible = canonical is not null && await IsVisibleAsync(connection, transaction, tenantId, canonical.Value, legalEntityId, ct);
+        if (!visible)
+        {
+            await transaction.RollbackAsync(ct);
+            return false;
+        }
+        await using var command = new NpgsqlCommand("select exists(select 1 from foundation_directory.party p join foundation_directory.party_role r on r.tenant_id=p.tenant_id and r.party_id=p.id where p.tenant_id=$1 and p.id=$2 and p.status='Active' and r.role_code=$3 and r.status='Active')", connection, transaction);
+        Add(command, tenantId.Value, canonical!.Value, roleCode);
+        var result = (bool?)await command.ExecuteScalarAsync(ct) == true;
+        await transaction.CommitAsync(ct);
+        return result;
+    }
+
     public async Task<PagedParties> ListVisibleAsync(TenantId tenantId, string? search, PartyType? partyType, PartyRoleCode? role, PartyStatus? status, Guid? legalEntityId, int page, int pageSize, CancellationToken ct)
     {
         page = Math.Clamp(page, 1, 100000);

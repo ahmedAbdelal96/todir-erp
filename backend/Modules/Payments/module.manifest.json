@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "payments",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L3",
+  "type": "module",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": {
+    "hard": ["platform-kernel", "directory", "finbase", "ledger", "subledger"],
+    "optionalCapabilities": ["platform.files"]
+  },
+  "owns": {
+    "schema": "finance_payments",
+    "entities": ["payment", "payment_account", "payment_method_config", "payment_request", "payment_attempt", "payment_fee", "payment_refund", "payment_reversal", "payment_relationship", "internal_transfer", "provider_config", "provider_operation", "provider_webhook_inbox", "payment_attachment_ref", "payment_list_projection", "payment_idempotency", "payment_link"]
+  },
+  "permissions": ["payments.read", "payments.incoming.create", "payments.outgoing.create", "payments.internal_transfer.create", "payments.complete_manual", "payments.cancel_pending", "payments.reverse", "payments.refund.create", "payments.refund.approve", "payments.account.read", "payments.account.manage", "payments.provider.read", "payments.provider.manage", "payments.provider.retry", "payments.provider.reconcile", "payments.cashbox.read", "payments.cashbox.use", "payments.cashbox.manage", "payments.fee.override", "payments.fx.override", "payments.date.override", "payments.audit.view"],
+  "capabilities": {
+    "provides": ["payments.money-movement", "payments.payment-accounts", "payments.provider-adapter", "payments.provider-webhooks", "payments.refunds", "payments.internal-transfers", "payments.payment-links", "payments.payment-read-model"],
+    "consumes": ["directory.party", "finbase.money", "finbase.exchange-rate", "subledger.open-items", "ledger.semantic-facts", "platform.numbering", "platform.audit", "platform.transaction-coordination", "platform.outbox"]
+  },
+  "messaging": { "publishes": ["PaymentCompletedV1", "PaymentReversedV1", "PaymentRefundedV1", "InternalTransferCompletedV1", "PaymentProviderOperationRequestedV1"], "consumes": [] },
+  "lifecycle": { "supportsGoLive": false, "deactivationPolicy": "blocked_if_dependents" }
+}

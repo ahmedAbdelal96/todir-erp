@@ -470,6 +470,135 @@ public sealed class LedgerRepository(
         await ExecuteAsync(context, "update finance_ledger.accounting_fact set status='Posted',posted_entry_id=$3,posted_at=$4 where tenant_id=$1 and id=$2", cancellationToken, fact.TenantId.Value, fact.FactId, entryId, now); await RefreshAccountPeriodBalancesAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, entryId, cancellationToken); context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), LedgerEventTypes.JournalEntryPostedV1, JsonSerializer.Serialize(new { fact.FactId, entryId, entryNumber, fact.FactType }, JsonOptions), fact.TenantId, now, fact.CorrelationId, fact.FactId, "ledger")); return new LedgerPostingResult(fact.FactId, entryId, entryNumber, "Posted", false);
     }
 
+    public async Task<LedgerPostingResult> PostPaymentInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        PaymentFactPayload payload, CancellationToken ct)
+    {
+        if (fact.SourceModule != "payments" || fact.FactType is not (AccountingFactTypes.PaymentReceived or AccountingFactTypes.PaymentMade or AccountingFactTypes.RefundPaid)
+            || payload.Amount <= 0m || string.IsNullOrWhiteSpace(payload.PaymentAccountReference)
+            || payload.Direction is not ("Incoming" or "Outgoing") || payload.SettlementRole is not ("Receivable" or "Payable")
+            || (fact.FactType == AccountingFactTypes.PaymentReceived) != (payload.Direction == "Incoming")
+            || (fact.FactType == AccountingFactTypes.RefundPaid && (payload.Direction != "Outgoing" || payload.SettlementRole != "Receivable")))
+            throw new LedgerDomainException("ledger.fact_invalid", "The payment fact does not contain valid semantic movement details.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct)) throw new LedgerDomainException("ledger.fact_producer_unregistered", "Payments is not registered for this accounting fact type.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var transactionCurrency = payload.CurrencyCode.Trim().ToUpperInvariant();
+        var factBaseCurrency = payload.BaseCurrencyCode?.Trim().ToUpperInvariant() ?? transactionCurrency;
+        var baseAmount = payload.BaseAmount ?? payload.Amount;
+        var feeAmount = payload.FeeAmount ?? 0m; var baseFeeAmount = payload.BaseFeeAmount ?? 0m;
+        if (transactionCurrency.Length != 3 || factBaseCurrency != baseCurrency || baseAmount <= 0m
+            || feeAmount < 0m || baseFeeAmount < 0m || (feeAmount == 0m) != (baseFeeAmount == 0m)
+            || payload.Direction == "Incoming" && (feeAmount >= payload.Amount || baseFeeAmount >= baseAmount)
+            || (transactionCurrency == baseCurrency && baseAmount != payload.Amount)
+            || (transactionCurrency != baseCurrency && (payload.BaseAmount is null || string.IsNullOrWhiteSpace(payload.ExchangeRateReference))))
+            throw new LedgerDomainException("ledger.currency_mismatch", "The payment fact is missing a valid immutable base-currency snapshot.");
+        var configuration = await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, ct);
+        var cashAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration, "Cash", ct);
+        var partyAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration, payload.SettlementRole, ct);
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var rate = baseAmount / payload.Amount;
+        var money = new LedgerPostingLinePayload(cashAccount, payload.Direction == "Incoming" ? baseAmount : 0m, payload.Direction == "Outgoing" ? baseAmount : 0m,
+            transactionCurrency, payload.Direction == "Incoming" ? payload.Amount : 0m, payload.Direction == "Outgoing" ? payload.Amount : 0m,
+            payload.Direction == "Incoming" ? baseAmount : 0m, payload.Direction == "Outgoing" ? baseAmount : 0m, rate, [], "Operational payment account movement", null);
+        var party = new LedgerPostingLinePayload(partyAccount, payload.Direction == "Outgoing" ? baseAmount : 0m, payload.Direction == "Incoming" ? baseAmount : 0m,
+            transactionCurrency, payload.Direction == "Outgoing" ? payload.Amount : 0m, payload.Direction == "Incoming" ? payload.Amount : 0m,
+            payload.Direction == "Outgoing" ? baseAmount : 0m, payload.Direction == "Incoming" ? baseAmount : 0m, rate, [], "Party settlement movement", payload.PartyId?.ToString("D"));
+        var description = payload.Direction == "Incoming" ? "Incoming payment received" : "Outgoing payment made";
+        var lines = new List<LedgerPostingLinePayload> { money };
+        lines.Add(party);
+        var explicitPayload = new ExplicitLedgerPostingPayload(journal, description, baseCurrency, lines);
+        return await PostExplicitInTransactionAsync(context, fact, explicitPayload, configuration, ct);
+    }
+
+    public async Task<LedgerPostingResult> PostPaymentFeeInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, PaymentFeeFactPayload payload, CancellationToken ct)
+    {
+        string[] feeTypes = ["BankFee", "ProviderFee", "CardProcessingFee", "FXFee", "TransferFee", "OtherApprovedFee"];
+        if (fact.SourceModule != "payments" || fact.FactType != AccountingFactTypes.PaymentFeeRecognized
+            || payload.Amount <= 0m || payload.BaseAmount <= 0m || string.IsNullOrWhiteSpace(payload.PaymentAccountReference)
+            || payload.CurrencyCode.Trim().Length != 3 || payload.BaseCurrencyCode.Trim().Length != 3 || !feeTypes.Contains(payload.FeeType, StringComparer.Ordinal))
+            throw new LedgerDomainException("ledger.fact_invalid", "The payment fee fact does not contain valid semantic fee details.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct)) throw new LedgerDomainException("ledger.fact_producer_unregistered", "Payments is not registered for this accounting fact type.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        if (!string.Equals(payload.BaseCurrencyCode, baseCurrency, StringComparison.OrdinalIgnoreCase)
+            || payload.CurrencyCode.Trim().Equals(baseCurrency, StringComparison.OrdinalIgnoreCase) && payload.Amount != payload.BaseAmount
+            || !payload.CurrencyCode.Trim().Equals(baseCurrency, StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(payload.ExchangeRateReference))
+            throw new LedgerDomainException("ledger.currency_mismatch", "The payment fee fact is missing a valid immutable base-currency snapshot.");
+        var configuration = await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, ct);
+        var cashAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration, "Cash", ct);
+        var expenseAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration, "PaymentFeeExpense", ct);
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var rate = payload.BaseAmount / payload.Amount;
+        var lines = new[]
+        {
+            new LedgerPostingLinePayload(expenseAccount, payload.BaseAmount, 0m, payload.CurrencyCode, payload.Amount, 0m, payload.BaseAmount, 0m, rate, [], $"Recognized {payload.FeeType}", null),
+            new LedgerPostingLinePayload(cashAccount, 0m, payload.BaseAmount, payload.CurrencyCode, 0m, payload.Amount, 0m, payload.BaseAmount, rate, [], "Payment account fee settlement", payload.PaymentAccountReference)
+        };
+        return await PostExplicitInTransactionAsync(context, fact,
+            new ExplicitLedgerPostingPayload(journal, $"Payment fee recognized: {payload.FeeType}", baseCurrency, lines), configuration, ct);
+    }
+
+
+    public async Task<LedgerPostingResult> PostInternalTransferInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, InternalTransferFactPayload payload, CancellationToken ct)
+    {
+        if (fact.SourceModule != "payments" || fact.FactType != AccountingFactTypes.InternalTransferCompleted || payload.SourceAmount <= 0m
+            || payload.DestinationAmount <= 0m || payload.SourceBaseAmount <= 0m || payload.DestinationBaseAmount <= 0m
+            || string.IsNullOrWhiteSpace(payload.SourcePaymentAccountReference)
+            || string.IsNullOrWhiteSpace(payload.DestinationPaymentAccountReference)
+            || payload.SourcePaymentAccountReference == payload.DestinationPaymentAccountReference
+            || payload.SourceCurrencyCode.Length != 3 || payload.DestinationCurrencyCode.Length != 3)
+            throw new LedgerDomainException("ledger.fact_invalid", "The internal transfer fact does not contain valid account movement details.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct)) throw new LedgerDomainException("ledger.fact_producer_unregistered", "Payments is not registered for this accounting fact type.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var sourceCurrency = payload.SourceCurrencyCode.Trim().ToUpperInvariant();
+        var destinationCurrency = payload.DestinationCurrencyCode.Trim().ToUpperInvariant();
+        if (!string.Equals(payload.BaseCurrencyCode, baseCurrency, StringComparison.OrdinalIgnoreCase)
+            || sourceCurrency == baseCurrency && payload.SourceBaseAmount != payload.SourceAmount
+            || destinationCurrency == baseCurrency && payload.DestinationBaseAmount != payload.DestinationAmount
+            || sourceCurrency != baseCurrency && string.IsNullOrWhiteSpace(payload.SourceExchangeRateReference)
+            || destinationCurrency != baseCurrency && string.IsNullOrWhiteSpace(payload.DestinationExchangeRateReference)
+            || sourceCurrency != baseCurrency && string.IsNullOrWhiteSpace(payload.SourceExchangeRateSnapshot)
+            || destinationCurrency != baseCurrency && string.IsNullOrWhiteSpace(payload.DestinationExchangeRateSnapshot)
+            || sourceCurrency == destinationCurrency && (payload.SourceAmount != payload.DestinationAmount || payload.SourceBaseAmount != payload.DestinationBaseAmount))
+            throw new LedgerDomainException("ledger.currency_mismatch", "The internal transfer fact has an invalid immutable base-currency snapshot.");
+        try
+        {
+            if (payload.SourceExchangeRateSnapshot is { } sourceSnapshot) using (JsonDocument.Parse(sourceSnapshot)) { }
+            if (payload.DestinationExchangeRateSnapshot is { } destinationSnapshot) using (JsonDocument.Parse(destinationSnapshot)) { }
+        }
+        catch (JsonException) { throw new LedgerDomainException("ledger.currency_mismatch", "The internal transfer exchange-rate snapshot is invalid."); }
+        var configuration = await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, ct);
+        var cashAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration, "Cash", ct);
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var sourceRate = payload.SourceBaseAmount / payload.SourceAmount;
+        var destinationRate = payload.DestinationBaseAmount / payload.DestinationAmount;
+        var lines = new List<LedgerPostingLinePayload>
+        {
+            new(cashAccount, payload.DestinationBaseAmount, 0m, destinationCurrency, payload.DestinationAmount, 0m, payload.DestinationBaseAmount, 0m, destinationRate, [], "Internal transfer destination", payload.DestinationPaymentAccountReference),
+            new(cashAccount, 0m, payload.SourceBaseAmount, sourceCurrency, 0m, payload.SourceAmount, 0m, payload.SourceBaseAmount, sourceRate, [], "Internal transfer source", payload.SourcePaymentAccountReference)
+        };
+        var fxDifference = payload.DestinationBaseAmount - payload.SourceBaseAmount;
+        if (fxDifference > 0m)
+        {
+            var gainAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FXGain", ct);
+            lines.Add(new(gainAccount, 0m, fxDifference, baseCurrency, 0m, fxDifference, 0m, fxDifference, 1m, [], "Internal transfer exchange gain", null));
+        }
+        else if (fxDifference < 0m)
+        {
+            var lossAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FXLoss", ct);
+            var loss = decimal.Abs(fxDifference);
+            lines.Add(new(lossAccount, loss, 0m, baseCurrency, loss, 0m, loss, 0m, 1m, [], "Internal transfer exchange loss", null));
+        }
+        return await PostExplicitInTransactionAsync(context, fact,
+            new ExplicitLedgerPostingPayload(journal, "Internal transfer between operational payment accounts", baseCurrency, lines), configuration, ct);
+    }
+
     public async Task<LedgerPostingResult> PostSettlementFxDifferenceInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementFxDifferencePayload payload, CancellationToken ct)
     {
         if (fact.FactType != AccountingFactTypes.SettlementFxDifference || fact.SourceModule != "subledger" || payload.Amount <= 0m
@@ -735,7 +864,7 @@ public sealed class LedgerRepository(
 
     private static async Task RefreshAccountPeriodBalancesAsync(ITransactionContext context, Guid tenantId, Guid entityId, Guid entryId, CancellationToken ct)
     {
-        const string sql = "insert into finance_ledger.account_period_balance (tenant_id,legal_entity_id,account_id,fiscal_year_id,accounting_period_id,dimension_key,currency_code,opening_debit,opening_credit,period_debit,period_credit,closing_balance,updated_at) select e.tenant_id,e.legal_entity_id,l.account_id,p.fiscal_year_id,e.accounting_period_id,'',e.base_currency_code,case when e.fact_type='OpeningBalancePosted' then l.base_debit else 0 end,case when e.fact_type='OpeningBalancePosted' then l.base_credit else 0 end,case when e.fact_type='OpeningBalancePosted' then 0 else l.base_debit end,case when e.fact_type='OpeningBalancePosted' then 0 else l.base_credit end,l.base_debit-l.base_credit,now() from finance_ledger.journal_entry e join finance_ledger.accounting_period p on p.tenant_id=e.tenant_id and p.legal_entity_id=e.legal_entity_id and p.id=e.accounting_period_id join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3 order by l.account_id,e.accounting_period_id,e.base_currency_code on conflict (tenant_id,legal_entity_id,account_id,accounting_period_id,dimension_key,currency_code) do update set opening_debit=finance_ledger.account_period_balance.opening_debit+excluded.opening_debit,opening_credit=finance_ledger.account_period_balance.opening_credit+excluded.opening_credit,period_debit=finance_ledger.account_period_balance.period_debit+excluded.period_debit,period_credit=finance_ledger.account_period_balance.period_credit+excluded.period_credit,closing_balance=finance_ledger.account_period_balance.closing_balance+excluded.closing_balance,updated_at=now()";
+        const string sql = "insert into finance_ledger.account_period_balance (tenant_id,legal_entity_id,account_id,fiscal_year_id,accounting_period_id,dimension_key,currency_code,opening_debit,opening_credit,period_debit,period_credit,closing_balance,updated_at) select e.tenant_id,e.legal_entity_id,l.account_id,p.fiscal_year_id,e.accounting_period_id,'',e.base_currency_code,sum(case when e.fact_type='OpeningBalancePosted' then l.base_debit else 0 end),sum(case when e.fact_type='OpeningBalancePosted' then l.base_credit else 0 end),sum(case when e.fact_type='OpeningBalancePosted' then 0 else l.base_debit end),sum(case when e.fact_type='OpeningBalancePosted' then 0 else l.base_credit end),sum(l.base_debit-l.base_credit),now() from finance_ledger.journal_entry e join finance_ledger.accounting_period p on p.tenant_id=e.tenant_id and p.legal_entity_id=e.legal_entity_id and p.id=e.accounting_period_id join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3 group by e.tenant_id,e.legal_entity_id,l.account_id,p.fiscal_year_id,e.accounting_period_id,e.base_currency_code order by l.account_id,e.accounting_period_id,e.base_currency_code on conflict (tenant_id,legal_entity_id,account_id,accounting_period_id,dimension_key,currency_code) do update set opening_debit=finance_ledger.account_period_balance.opening_debit+excluded.opening_debit,opening_credit=finance_ledger.account_period_balance.opening_credit+excluded.opening_credit,period_debit=finance_ledger.account_period_balance.period_debit+excluded.period_debit,period_credit=finance_ledger.account_period_balance.period_credit+excluded.period_credit,closing_balance=finance_ledger.account_period_balance.closing_balance+excluded.closing_balance,updated_at=now()";
         await ExecuteAsync(context, sql, ct, tenantId, entityId, entryId);
     }
 }

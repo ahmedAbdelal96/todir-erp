@@ -3,8 +3,11 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Directory.Services;
 
-public sealed class DirectoryCapabilities(DirectoryService directory) : IDirectoryCapabilities, IDirectoryImportCapabilities
+public sealed class DirectoryCapabilities(DirectoryService directory) : IDirectoryCapabilities, IDirectoryImportCapabilities, IDirectoryPartyRoleCapabilities
 {
+    public Task<bool> HasActiveRoleAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, string roleCode, CancellationToken cancellationToken = default)
+        => directory.HasActiveRoleAsync(tenantId, partyId, legalEntityId, roleCode, cancellationToken);
+
     public async Task<bool> IsActivePartyAsync(TenantId tenantId, Guid partyId, Guid? legalEntityId, CancellationToken cancellationToken = default)
     {
         var party = await directory.GetVisibleAsync(tenantId, partyId, legalEntityId, cancellationToken);

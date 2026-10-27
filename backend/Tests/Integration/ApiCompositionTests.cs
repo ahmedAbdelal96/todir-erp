@@ -97,6 +97,29 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase {
         Assert.True(customerInvoices.TryGetProperty("post", out _));
         Assert.True(paths.TryGetProperty("/api/v1/invoicing/customer-invoices/{id}/finalize", out _));
         Assert.True(paths.TryGetProperty("/api/v1/invoicing/supplier-invoices/{id}/finalize", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/incoming", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/outgoing", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/complete", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/applications", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/refunds", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/provider-refunds", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{refundPaymentId}/provider-refund-status", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/reverse", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/fees", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/internal-transfers", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/providers", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/payment-requests", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/payment-requests/{requestId}", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/payment-requests/{requestId}/attempts", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/payment-requests/{requestId}/status-sync", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/payment-requests/{requestId}/cancel", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/payment-requests/{requestId}/links", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/public-links/{token}", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/webhooks/reference/{tenantId}/{providerConfigId}", out _));
+        var publicLinkSchema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty("PublicPaymentLinkDetails").GetProperty("properties");
+        Assert.False(publicLinkSchema.TryGetProperty("tenantId", out _));
+        Assert.False(publicLinkSchema.TryGetProperty("requestId", out _));
+        Assert.False(publicLinkSchema.TryGetProperty("merchantReference", out _));
         Assert.True(paths.TryGetProperty("/api/v1/invoicing/customer-invoices/{id}/render-model", out _));
         Assert.True(paths.TryGetProperty("/api/v1/invoicing/supplier-invoices/{id}/compliance-snapshot", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/facts", out _));
@@ -104,7 +127,7 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase {
         Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/entries/{entryId}", out _));
         var numericFinancialFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "amount", "sourceAmount", "targetAmount", "rate", "cashIncrement", "percentage", "fixedAmount", "totalAmount"
+            "amount", "sourceAmount", "targetAmount", "rate", "cashIncrement", "percentage", "fixedAmount", "totalAmount", "feeAmount", "baseFeeAmount"
         };
         var checkedProperties = 0;
         foreach (var schema in document.RootElement.GetProperty("components").GetProperty("schemas").EnumerateObject())

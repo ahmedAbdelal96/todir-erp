@@ -16,6 +16,9 @@ public static class AccountingFactTypes
     public const string VendorDebitNotePosted = "VendorDebitNotePosted";
     public const string PaymentReceived = "PaymentReceived";
     public const string PaymentMade = "PaymentMade";
+    public const string RefundPaid = "RefundPaid";
+    public const string InternalTransferCompleted = "InternalTransferCompleted";
+    public const string PaymentFeeRecognized = "PaymentFeeRecognized";
     public const string InventoryReceiptValued = "InventoryReceiptValued";
     public const string InventoryIssueValued = "InventoryIssueValued";
     public const string InventoryCostAdjustment = "InventoryCostAdjustment";
@@ -31,7 +34,7 @@ public static class AccountingFactTypes
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         CustomerInvoicePosted, CustomerCreditNotePosted, VendorBillPosted, VendorCreditNotePosted, CustomerDebitNotePosted, VendorDebitNotePosted,
-        PaymentReceived, PaymentMade, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment,
+        PaymentReceived, PaymentMade, RefundPaid, InternalTransferCompleted, PaymentFeeRecognized, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment,
         ExpenseRecognized, PayrollPosted, TaxAdjustment, SettlementFxDifference, SettlementWriteOff, UnrealizedFxRevaluation,
         OpeningBalancePosted, ManualGeneralJournalPosted
     };
@@ -80,7 +83,17 @@ public sealed record InvoiceAccountingPreviewLine(int Sequence, string AccountCo
     string CurrencyCode, decimal BaseDebit, decimal BaseCredit, string? MappingReference, long? MappingVersion);
 public sealed record InvoiceAccountingPreview(string JournalCode, string BaseCurrencyCode, Guid PostingRuleVersionId, Guid ConfigurationVersionId,
     IReadOnlyList<InvoiceAccountingPreviewLine> Lines, decimal TotalDebit, decimal TotalCredit);
-public sealed record PaymentFactPayload(decimal Amount, string CurrencyCode, string PartyGroup, string SettlementRole) : IAccountingFactPayload;
+public sealed record PaymentFactPayload(decimal Amount, string CurrencyCode, string PartyGroup, string SettlementRole,
+    string Direction = "Incoming", string PaymentAccountReference = "", Guid? PartyId = null,
+    decimal? BaseAmount = null, string? BaseCurrencyCode = null, string? ExchangeRateReference = null,
+    decimal? FeeAmount = null, decimal? BaseFeeAmount = null) : IAccountingFactPayload;
+public sealed record PaymentFeeFactPayload(decimal Amount, string CurrencyCode, decimal BaseAmount, string BaseCurrencyCode,
+    string PaymentAccountReference, string FeeType, string? ExchangeRateReference = null) : IAccountingFactPayload;
+public sealed record InternalTransferFactPayload(decimal SourceAmount, string SourceCurrencyCode, decimal SourceBaseAmount,
+    decimal DestinationAmount, string DestinationCurrencyCode, decimal DestinationBaseAmount, string BaseCurrencyCode,
+    string SourcePaymentAccountReference, string DestinationPaymentAccountReference,
+    string? SourceExchangeRateReference, string? DestinationExchangeRateReference,
+    string? SourceExchangeRateSnapshot, string? DestinationExchangeRateSnapshot) : IAccountingFactPayload;
 public sealed record InventoryValuationFactPayload(decimal Amount, string CurrencyCode, string InventoryGroup, string ValuationRole) : IAccountingFactPayload;
 public sealed record ExpenseRecognizedPayload(decimal Amount, string CurrencyCode, string ExpenseCategory) : IAccountingFactPayload;
 public sealed record PayrollPostedPayload(decimal GrossAmount, decimal PayableAmount, string CurrencyCode) : IAccountingFactPayload;

@@ -10,6 +10,12 @@ public interface IDirectoryCapabilities
     Task<InvoicePartySnapshotContract?> ReadInvoiceSnapshotAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Role checks for financial workflows that need a customer or supplier capability.</summary>
+public interface IDirectoryPartyRoleCapabilities
+{
+    Task<bool> HasActiveRoleAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, string roleCode, CancellationToken cancellationToken = default);
+}
+
 public sealed record InvoicePartyIdentifierContract(string Type, string Value, string? CountryCode, string? Authority);
 public sealed record InvoicePartyAddressContract(Guid AddressId, string Usage, string CountryCode, string? City, string? Region, string? PostalCode, string Line1, string? Line2, bool IsDefault);
 public sealed record InvoicePartySnapshotContract(Guid PartyId, string DisplayName, string? LegalName, string? TradeName, string? CountryCode,

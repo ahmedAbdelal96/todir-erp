@@ -10,6 +10,7 @@ using Modules.Ledger;
 using Modules.Subledger;
 using Modules.Invoicing;
 using Modules.Invoicing.Controllers;
+using Modules.Payments;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -32,6 +33,7 @@ builder.Services.AddTaxModule();
 builder.Services.AddLedgerModule();
 builder.Services.AddSubledgerModule();
 builder.Services.AddInvoicingModule();
+builder.Services.AddPaymentsModule();
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 var configuredOrigins = (builder.Configuration["TODIR_CORS_ORIGINS"] ?? string.Empty)
@@ -99,7 +101,8 @@ app.UseAuthorization();
 app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
-    if (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method))
+    var providerWebhook = context.Request.Path.StartsWithSegments("/api/v1/payments/webhooks/reference");
+    if (!providerWebhook && (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method)))
     {
         try
         {
@@ -145,6 +148,7 @@ app.MapTaxModule();
 app.MapSubledgerModule();
 app.MapLedgerModule();
 app.MapInvoicingModule();
+app.MapPaymentsModule();
 app.Run();
 
 public partial class Program;

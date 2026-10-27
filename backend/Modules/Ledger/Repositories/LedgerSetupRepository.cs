@@ -135,6 +135,10 @@ public sealed class LedgerSetupRepository(
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorBillPosted, "VENDOR_BILL_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorCreditNotePosted, "VENDOR_CREDIT_NOTE_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.CustomerDebitNotePosted, "CUSTOMER_DEBIT_NOTE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PaymentReceived, "PAYMENT_RECEIVED_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PaymentMade, "PAYMENT_MADE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.RefundPaid, "PAYMENT_REFUND_PAID_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PaymentFeeRecognized, "PAYMENT_FEE_RECOGNIZED_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorDebitNotePosted, "VENDOR_DEBIT_NOTE_V1", token);
 
             var configWasCreated = existing is null;
@@ -273,6 +277,10 @@ public sealed class LedgerSetupRepository(
             ?? throw new LedgerDomainException("ledger.posting_rule_missing", "A managed posting rule version could not be created.");
         var legs = factType switch
         {
+            AccountingFactTypes.PaymentReceived => new[] { ("Cash", "BaseAmount", "Debit"), ("Receivable", "BaseAmount", "Credit") },
+            AccountingFactTypes.PaymentMade => new[] { ("Payable", "BaseAmount", "Debit"), ("Cash", "BaseAmount", "Credit") },
+            AccountingFactTypes.RefundPaid => new[] { ("Receivable", "BaseAmount", "Debit"), ("Cash", "BaseAmount", "Credit") },
+            AccountingFactTypes.PaymentFeeRecognized => new[] { ("PaymentFeeExpense", "BaseAmount", "Debit"), ("Cash", "BaseAmount", "Credit") },
             AccountingFactTypes.SettlementWriteOff => new[] { ("Receivable", "BaseAmount", "Credit"), ("BadDebtExpense", "BaseAmount", "Debit"), ("Payable", "BaseAmount", "Debit"), ("WriteOffIncome", "BaseAmount", "Credit") },
             AccountingFactTypes.SettlementFxDifference => new[] { ("Receivable", "BaseAmount", "Debit"), ("FXGain", "BaseAmount", "Credit"), ("FXLoss", "BaseAmount", "Debit") },
             _ => new[] { ("OpeningBalance", "BaseAmount", "Debit"), ("OpeningBalance", "BaseAmount", "Credit") }
@@ -290,7 +298,7 @@ public sealed class LedgerSetupRepository(
         ("invoicing", AccountingFactTypes.VendorBillPosted), ("invoicing", AccountingFactTypes.VendorCreditNotePosted),
         ("invoicing", AccountingFactTypes.CustomerDebitNotePosted), ("invoicing", AccountingFactTypes.VendorDebitNotePosted),
         ("sales", AccountingFactTypes.CustomerInvoicePosted), ("sales", AccountingFactTypes.CustomerCreditNotePosted),
-        ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade),
+        ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade), ("payments", AccountingFactTypes.RefundPaid), ("payments", AccountingFactTypes.PaymentFeeRecognized),
         ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment),
         ("payroll", AccountingFactTypes.PayrollPosted), ("tax", AccountingFactTypes.TaxAdjustment),
         ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff)

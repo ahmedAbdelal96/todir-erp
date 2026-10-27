@@ -7,6 +7,9 @@ using Modules.Catalog;
 using Modules.Directory;
 using Modules.FinanceBase;
 using Modules.Pricing;
+using Modules.Payments;
+using Modules.Ledger;
+using Modules.Subledger;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
@@ -20,12 +23,16 @@ builder.Services.AddCore(builder.Configuration, bus =>
     SampleModuleExtensions.ConfigureSampleMessaging(bus);
     bus.AddConsumer<CatalogProjectionConsumer, CatalogProjectionConsumerDefinition>();
     bus.AddConsumer<CatalogImportConsumer, CatalogImportConsumerDefinition>();
+    bus.AddConsumer<PaymentProviderOperationConsumer, PaymentProviderOperationConsumerDefinition>();
 });
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();
 builder.Services.AddDirectoryModule();
 builder.Services.AddFinanceBaseModule();
 builder.Services.AddPricingModule();
+builder.Services.AddLedgerModule();
+builder.Services.AddSubledgerModule();
+builder.Services.AddPaymentsModule();
 builder.Services.AddScheduling(builder.Configuration);
 builder.Services.AddHostedService<OutboxDispatchWorker>();
 builder.Services.AddHostedService<FinanceBaseRateSyncWorker>();

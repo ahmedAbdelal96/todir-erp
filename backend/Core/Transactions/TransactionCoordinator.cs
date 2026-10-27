@@ -26,6 +26,16 @@ public interface ITransactionalLedgerPostingCapability
     Task<LedgerPostingResult> PostSettlementWriteOffAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementWriteOffPayload payload, CancellationToken cancellationToken = default);
 }
 
+public interface ITransactionalPaymentLedgerPostingCapability
+{
+    Task<LedgerPostingResult> PostPaymentAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        PaymentFactPayload payload, CancellationToken cancellationToken = default);
+    Task<LedgerPostingResult> PostPaymentFeeAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        PaymentFeeFactPayload payload, CancellationToken cancellationToken = default);
+    Task<LedgerPostingResult> PostInternalTransferAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        InternalTransferFactPayload payload, CancellationToken cancellationToken = default);
+}
+
 public interface ITransactionalInvoiceLedgerPostingCapability
 {
     Task<Guid> GetActiveConfigurationVersionIdAsync(ITransactionContext context, TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default);
@@ -40,6 +50,8 @@ public interface ITransactionalSubledgerOpenItemCapability
 {
     Task<IReadOnlyList<Guid>> CreateInvoiceOpenItemsAsync(ITransactionContext context, TenantId tenantId, CreateOpenItemsCommand command, SubledgerDirectionContract direction, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Guid>> CreateInvoiceCorrectionOpenItemsAsync(ITransactionContext context, TenantId tenantId, CreateOpenItemsCommand command,
+        SubledgerDirectionContract direction, SubledgerPolarityContract polarity, CancellationToken cancellationToken = default);
+    Task<Guid> CreatePaymentOpenItemAsync(ITransactionContext context, TenantId tenantId, CreateOpenItemsCommand command,
         SubledgerDirectionContract direction, SubledgerPolarityContract polarity, CancellationToken cancellationToken = default);
 }
 

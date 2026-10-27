@@ -44,7 +44,8 @@ public static class SeedRunner
             var ledger = await RunStageAsync(connection, tenant, context => LedgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var subledger = await RunStageAsync(connection, tenant, context => SubledgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var invoicing = await RunStageAsync(connection, tenant, context => InvoicingSeed.SeedAsync(context, cancellationToken), cancellationToken);
-            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger, invoicing));
+            var payments = await RunStageAsync(connection, tenant, context => PaymentsSeed.SeedAsync(context, cancellationToken), cancellationToken);
+            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments));
         }
         return new(SeedIds.Version, summaries);
     }
@@ -66,7 +67,7 @@ public static class SeedRunner
     }
 }
 
-public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing);
+public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments);
 public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSummary> Tenants)
 {
     public void Print(TextWriter output)
@@ -86,6 +87,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  Ledger: {tenant.Ledger.LegalEntities} legal entities, {tenant.Ledger.Accounts} accounts, {tenant.Ledger.Periods} periods, invoice rule {(tenant.Ledger.HasInvoiceRule ? "ready" : "missing")}");
             output.WriteLine($"  Subledger: {tenant.Subledger.OpenItems} open items, {tenant.Subledger.Installments} installments, {tenant.Subledger.FinancialProfiles} financial profiles");
             output.WriteLine($"  Invoicing: {tenant.Invoicing.Drafts} drafts ({tenant.Invoicing.CustomerDrafts} customer, {tenant.Invoicing.SupplierDrafts} supplier)");
+            output.WriteLine($"  Payments: {tenant.Payments.PaymentAccounts} operational accounts, {tenant.Payments.MethodConfigurations} enabled method configurations, {tenant.Payments.PendingProviderRequests} reference-provider requests awaiting customer action");
         }
     }
 }

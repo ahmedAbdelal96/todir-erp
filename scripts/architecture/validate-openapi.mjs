@@ -1,5 +1,5 @@
 import fs from "node:fs";
-const files = ["docs/api/platform-openapi.json", "docs/api/ledger-openapi.json", "docs/api/subledger-openapi.json", "docs/api/invoicing-openapi.json"];
+const files = ["docs/api/platform-openapi.json", "docs/api/ledger-openapi.json", "docs/api/subledger-openapi.json", "docs/api/invoicing-openapi.json", "docs/api/payments-openapi.json"];
 for (const file of files) {
   const document = JSON.parse(fs.readFileSync(file, "utf8"));
   if (document.openapi !== "3.1.0" || !document.info?.title || !document.paths || Object.keys(document.paths).length === 0) {

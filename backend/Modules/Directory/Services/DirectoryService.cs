@@ -6,6 +6,7 @@ namespace Modules.Directory.Services;
 
 public sealed class DirectoryService(Repositories.DirectoryRepository repository, Repositories.DirectoryAdvancedRepository? advanced = null)
 {
+    public Task<bool> HasActiveRoleAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, string roleCode, CancellationToken cancellationToken) => Advanced.HasActiveRoleAsync(tenantId, partyId, legalEntityId, roleCode, cancellationToken);
     public Task<IReadOnlySet<Guid>> FindActivePartiesAsync(TenantId tenantId, IReadOnlyCollection<Guid> partyIds, Guid? legalEntityId, CancellationToken cancellationToken) => repository.FindActivePartiesAsync(tenantId, partyIds, legalEntityId, cancellationToken);
     public Task<IReadOnlyDictionary<string, IReadOnlyList<Guid>>> ResolveExternalPartyReferencesAsync(TenantId tenantId, IReadOnlyCollection<string> references, Guid? legalEntityId, CancellationToken cancellationToken) => repository.ResolveExternalPartyReferencesAsync(tenantId, references, legalEntityId, cancellationToken);
     public Task<IReadOnlyDictionary<Guid, string>> FindStablePartyReferencesAsync(TenantId tenantId, IReadOnlyCollection<Guid> partyIds, Guid? legalEntityId, CancellationToken cancellationToken) => repository.FindStablePartyReferencesAsync(tenantId, partyIds, legalEntityId, cancellationToken);
