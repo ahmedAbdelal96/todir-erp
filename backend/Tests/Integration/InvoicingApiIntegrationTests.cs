@@ -196,10 +196,13 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
     }
 
     [Theory]
-    [InlineData("Receivable", "customer-invoices", false, false)]
-    [InlineData("Payable", "supplier-invoices", true, false)]
-    [InlineData("Receivable", "customer-invoices", false, true)]
-    public async Task CustomerAndSupplierDocumentsFinalizeThroughApiAndReplayIdempotently(string direction, string route, bool supplier, bool injectFinalizationFailure)
+    [InlineData("Receivable", "customer-invoices", false, "")]
+    [InlineData("Payable", "supplier-invoices", true, "")]
+    [InlineData("Receivable", "customer-invoices", false, "InvoiceFinalization")]
+    [InlineData("Receivable", "customer-invoices", false, "LedgerJournal")]
+    [InlineData("Receivable", "customer-invoices", false, "SubledgerOpenItem")]
+    [InlineData("Receivable", "customer-invoices", false, "OutboxMessage")]
+    public async Task CustomerAndSupplierDocumentsFinalizeThroughApiAndReplayIdempotently(string direction, string route, bool supplier, string failurePoint)
     {
         var adminConnection = Required("TODIR_P04_ADMIN_CONNECTION");
         var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
@@ -272,18 +275,21 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         Assert.Equal(JsonValueKind.Object, previewBody.GetProperty("accountingPreview").ValueKind);
 
         var finalizeRequest = new { version = 1, idempotencyKey = "invoice-api-" + suffix };
-        if (injectFinalizationFailure)
+        if (failurePoint.Length > 0)
         {
             var functionName = "invoice_failure_" + suffix;
             var triggerName = "invoice_failure_" + suffix;
-            await InstallFinalizationFailpointAsync(adminConnection, functionName, triggerName);
+            await InstallFinalizationFailpointAsync(adminConnection, failurePoint, functionName, triggerName);
             try
             {
                 var failedFinalize = await PostAsync(client, $"/api/v1/invoicing/{route}/{invoiceId:D}/finalize?legalEntityId={seed.LegalEntityId:D}", finalizeRequest);
                 Assert.Equal(HttpStatusCode.InternalServerError, failedFinalize.StatusCode);
                 await AssertFinalizationRolledBackAsync(adminConnection, seed, invoiceId);
             }
-            finally { await RemoveFinalizationFailpointAsync(adminConnection, functionName, triggerName); }
+            finally { await RemoveFinalizationFailpointAsync(adminConnection, failurePoint, functionName, triggerName); }
+            var retriedFinalize = await PostAsync(client, $"/api/v1/invoicing/{route}/{invoiceId:D}/finalize?legalEntityId={seed.LegalEntityId:D}", finalizeRequest);
+            Assert.Equal(HttpStatusCode.OK, retriedFinalize.StatusCode);
+            await AssertFinalizationCommittedOnceAsync(adminConnection, seed, invoiceId, scheduleCount: 3);
             return;
         }
         var finalizePath = $"/api/v1/invoicing/{route}/{invoiceId:D}/finalize?legalEntityId={seed.LegalEntityId:D}";
@@ -469,6 +475,7 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
             Assert.Equal(HttpStatusCode.BadRequest, excess.StatusCode);
             var excessError = await excess.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal("invoicing.credit_quantity_exceeded", excessError.GetProperty("code").GetString());
+
         }
 
         var debitRequest = new
@@ -960,21 +967,32 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         public IReadOnlyList<TaxRuleCandidate> GetApprovedRules(LocalDate taxDate) => [];
     }
 
-    private static async Task InstallFinalizationFailpointAsync(string adminConnection, string functionName, string triggerName)
+    private static async Task InstallFinalizationFailpointAsync(string adminConnection, string failurePoint, string functionName, string triggerName)
     {
+        var (schema, table) = FinalizationFailpointTarget(failurePoint);
         await using var connection = new NpgsqlConnection(adminConnection);
         await connection.OpenAsync();
-        await using var command = new NpgsqlCommand($"create function business_invoicing.{functionName}() returns trigger language plpgsql as $$ begin raise exception 'invoicing.integration_failpoint'; end $$; create trigger {triggerName} before insert on business_invoicing.invoice_finalization_record for each row execute function business_invoicing.{functionName}()", connection);
+        await using var command = new NpgsqlCommand($"create function {schema}.{functionName}() returns trigger language plpgsql as $$ begin raise exception 'invoicing.integration_failpoint'; end $$; create trigger {triggerName} before insert on {schema}.{table} for each row execute function {schema}.{functionName}()", connection);
         await command.ExecuteNonQueryAsync();
     }
 
-    private static async Task RemoveFinalizationFailpointAsync(string adminConnection, string functionName, string triggerName)
+    private static async Task RemoveFinalizationFailpointAsync(string adminConnection, string failurePoint, string functionName, string triggerName)
     {
+        var (schema, table) = FinalizationFailpointTarget(failurePoint);
         await using var connection = new NpgsqlConnection(adminConnection);
         await connection.OpenAsync();
-        await using var command = new NpgsqlCommand($"drop trigger if exists {triggerName} on business_invoicing.invoice_finalization_record; drop function if exists business_invoicing.{functionName}()", connection);
+        await using var command = new NpgsqlCommand($"drop trigger if exists {triggerName} on {schema}.{table}; drop function if exists {schema}.{functionName}()", connection);
         await command.ExecuteNonQueryAsync();
     }
+
+    private static (string Schema, string Table) FinalizationFailpointTarget(string failurePoint) => failurePoint switch
+    {
+        "InvoiceFinalization" => ("business_invoicing", "invoice_finalization_record"),
+        "LedgerJournal" => ("finance_ledger", "journal_entry"),
+        "SubledgerOpenItem" => ("finance_subledger", "party_open_item"),
+        "OutboxMessage" => ("platform", "outbox_message"),
+        _ => throw new ArgumentOutOfRangeException(nameof(failurePoint), failurePoint, "Unknown finalization failpoint.")
+    };
 
     private static async Task AssertFinalizationRolledBackAsync(string adminConnection, SeedInvoiceContext seed, Guid invoiceId)
     {
@@ -992,6 +1010,24 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         Assert.Equal(0L, reader.GetInt64(2));
         Assert.Equal(0L, reader.GetInt64(3));
         Assert.Equal(0L, reader.GetInt64(4));
+    }
+
+    private static async Task AssertFinalizationCommittedOnceAsync(string adminConnection, SeedInvoiceContext seed, Guid invoiceId, int scheduleCount)
+    {
+        const string sql = "select i.lifecycle_state, (select count(*) from business_invoicing.invoice_finalization_record f where f.tenant_id=i.tenant_id and f.invoice_id=i.id), (select count(*) from finance_ledger.journal_entry j where j.tenant_id=i.tenant_id and j.legal_entity_id=i.legal_entity_id and j.source_module='invoicing' and j.source_reference=i.id::text), (select count(*) from finance_subledger.party_open_item o where o.tenant_id=i.tenant_id and o.legal_entity_id=i.legal_entity_id and o.source_reference=i.id::text), (select count(*) from platform.outbox_message m where m.tenant_id=i.tenant_id and m.causation_id=i.id and m.message_type in ('InvoiceFinalizedV1','InvoiceComplianceRequestedV1')) from business_invoicing.invoice i where i.tenant_id=$1 and i.legal_entity_id=$2 and i.id=$3";
+        await using var connection = new NpgsqlConnection(adminConnection);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(seed.TenantId);
+        command.Parameters.AddWithValue(seed.LegalEntityId);
+        command.Parameters.AddWithValue(invoiceId);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("Finalized", reader.GetString(0));
+        Assert.Equal(1L, reader.GetInt64(1));
+        Assert.Equal(1L, reader.GetInt64(2));
+        Assert.Equal((long)scheduleCount, reader.GetInt64(3));
+        Assert.Equal(2L, reader.GetInt64(4));
     }
 
     private static async Task LoginAsync(HttpClient client, string email, string password, Guid tenantId)
