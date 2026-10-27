@@ -189,4 +189,37 @@ test.describe('App Shell Bootstrap & Localization', () => {
       path: 'C:/Users/Adham/.gemini/antigravity/brain/2cce5b52-1525-442e-8037-81105c0347eb/appheader-redesign.png'
     });
   });
+
+  test('opens command palette with Ctrl+K and verifies spotlight search', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await page.waitForLoadState('domcontentloaded');
+
+    // 1. Verify search trigger button is visible in topbar
+    const triggerBtn = page.locator('.topbar-command-trigger');
+    await expect(triggerBtn).toBeVisible();
+
+    // 2. Click or press Ctrl+K to open
+    await page.keyboard.press('Control+k');
+
+    // 3. Command palette dialog should be visible
+    const palette = page.locator('.command-palette-card');
+    await expect(palette).toBeVisible();
+
+    // 4. Type search term in Arabic
+    const input = page.locator('input[role="combobox"]');
+    await input.fill('فاتورة');
+
+    // 5. Verify action is filtered
+    await expect(page.getByText('إنشاء فاتورة مبيعات جديدة')).toBeVisible();
+
+    // 6. Capture visual proof
+    await page.screenshot({
+      path: 'C:/Users/Adham/.gemini/antigravity/brain/2cce5b52-1525-442e-8037-81105c0347eb/command-palette-preview.png'
+    });
+
+    // 7. Press Escape to close
+    await page.keyboard.press('Escape');
+    await expect(palette).not.toBeVisible();
+  });
 });

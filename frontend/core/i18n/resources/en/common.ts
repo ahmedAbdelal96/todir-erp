@@ -66,5 +66,74 @@ export const en = {
     proTipsTitle: "Pro tips to speed up your work",
     faqsTitle: "Frequently asked questions & mistake prevention",
     close: "Understood, close guide"
+  },
+  commandPalette: {
+    title: "Command Palette & Quick Navigation",
+    placeholder: "Search screens, quick actions, or shortcuts... (Ctrl + K)",
+    noResults: "No matching results found",
+    openAria: "Quick Search & Commands",
+    triggerPlaceholder: "Search workspace & actions...",
+    categoryActions: "Quick Actions",
+    categoryNavigation: "System Screens & Modules",
+    categoryRecent: "Recent Records & Operations",
+    categoryRecords: "Records & Data",
+    badgeRecent: "Recent",
+    navigate: "Navigate",
+    select: "Select",
+    dismiss: "Close",
+    keyEnter: "Enter",
+    keyEsc: "Esc",
+    shortcutCtrl: "Ctrl",
+    shortcutK: "K",
+    spotlightBrand: "TODIR Spotlight",
+    subtitleCustomerInvoices: "Manage and create customer invoices",
+    subtitleSupplierInvoices: "Manage and record vendor bills",
+    subtitleCatalog: "Manage products, services, and pricing",
+    subtitleDirectory: "Customer, vendor, and contact directory",
+    subtitleSubledger: "Settle and reconcile open accounts",
+    subtitleFinbase: "Chart of accounts and ledgers",
+    subtitleTax: "Tax declarations and compliance",
+    actionNewCustomerInvoice: "Create New Customer Invoice",
+    actionNewSupplierInvoice: "Create New Supplier Bill",
+    actionNewProduct: "Add New Product to Catalog",
+    actionNewParty: "Add New Contact (Customer / Supplier)",
+    actionOpenSubledger: "Settle Open Items & Claims",
+    actionChartOfAccounts: "Chart of Accounts & Ledgers",
+    actionTaxDeclarations: "Tax Declarations & VAT"
+  },
+  draftRecovery: {
+    bannerTitle: "Auto-saved draft found",
+    bannerDescription: "Unsaved form data was automatically preserved from your previous session.",
+    restoreButton: "Restore Draft",
+    discardButton: "Discard & Clear",
+    restoredNotice: "Draft restored successfully",
+    discardedNotice: "Temporary draft cleared",
+    unsavedWarning: "You have unsaved changes. Are you sure you want to leave this page?"
+  },
+  batchActions: {
+    selectedCount: "{{count}} items selected",
+    clearSelection: "Clear Selection",
+    exportSelected: "Export Selected",
+    printSelected: "Batch Print",
+    deleteSelected: "Delete Selected",
+    changeStatus: "Change Status"
+  },
+  undoToast: {
+    undoAction: "Undo",
+    actionSuccess: "Operation completed successfully",
+    actionUndone: "Operation undone successfully"
+  },
+  quickPeek: {
+    title: "Quick Peek",
+    closeAria: "Close quick peek",
+    loading: "Loading preview details...",
+    empty: "No additional details to display",
+    openFullRecord: "Open Full Record"
+  },
+  networkStatus: {
+    offlineTitle: "No Internet Connection",
+    offlineMessage: "Your input is safely saved locally. Reconnection will happen automatically once online.",
+    onlineTitle: "Connection Restored",
+    onlineMessage: "Successfully reconnected to the system and refreshed data."
   }
 } as const;

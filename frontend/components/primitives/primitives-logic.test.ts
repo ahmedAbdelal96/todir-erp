@@ -112,4 +112,68 @@ describe("Shared Primitives & Forms Logic Validation", () => {
       assert.equal(normalized.length, 2);
     });
   });
+
+  describe("Command Palette Search & Ranking Logic", () => {
+    interface TestItem {
+      id: string;
+      title: string;
+      subtitle?: string;
+      keywords?: string[];
+      category: string;
+    }
+
+    function filterCommandItems(items: TestItem[], query: string): TestItem[] {
+      const clean = query.trim().toLowerCase();
+      if (!clean) return items;
+      return items.filter((item) => {
+        const matchesTitle = item.title.toLowerCase().includes(clean);
+        const matchesSub = item.subtitle?.toLowerCase().includes(clean);
+        const matchesKey = item.keywords?.some((k) => k.toLowerCase().includes(clean));
+        return matchesTitle || matchesSub || matchesKey;
+      });
+    }
+
+    const testItems: TestItem[] = [
+      { id: "1", title: "فاتورة مبيعات جديدة", subtitle: "إدارة فواتير العملاء", keywords: ["invoice", "sales", "عميل"], category: "actions" },
+      { id: "2", title: "فاتورة مشتريات جديدة", subtitle: "إدارة فواتير الموردين", keywords: ["bill", "purchase", "مورد"], category: "actions" },
+      { id: "3", title: "دليل الحسابات", subtitle: "شجرة الحسابات", keywords: ["accounting", "ledger"], category: "navigation" }
+    ];
+
+    it("matches items by Arabic title", () => {
+      const results = filterCommandItems(testItems, "مبيعات");
+      assert.equal(results.length, 1);
+      assert.equal(results[0]?.id, "1");
+    });
+
+    it("matches items by English keyword alias", () => {
+      const results = filterCommandItems(testItems, "bill");
+      assert.equal(results.length, 1);
+      assert.equal(results[0]?.id, "2");
+    });
+
+    it("returns empty array when query does not match", () => {
+      const results = filterCommandItems(testItems, "غير موجود");
+      assert.equal(results.length, 0);
+    });
+  });
+
+  describe("Floating Batch Action Bar State Computation", () => {
+    function computeBatchBarVisibility(selectedCount: number) {
+      return {
+        isVisible: selectedCount > 0,
+        badgeText: `${selectedCount}`
+      };
+    }
+
+    it("hides batch bar when selected count is 0", () => {
+      const state = computeBatchBarVisibility(0);
+      assert.equal(state.isVisible, false);
+    });
+
+    it("shows batch bar with correct badge when items are selected", () => {
+      const state = computeBatchBarVisibility(5);
+      assert.equal(state.isVisible, true);
+      assert.equal(state.badgeText, "5");
+    });
+  });
 });

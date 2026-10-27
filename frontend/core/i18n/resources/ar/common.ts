@@ -66,5 +66,74 @@ export const ar = {
     proTipsTitle: "نصائح وإرشادات لتسريع عملك",
     faqsTitle: "الأسئلة الشائعة وتفادي الأخطاء",
     close: "فهمت، إغلاق الدليل"
+  },
+  commandPalette: {
+    title: "لوحة الأوامر والتنقل السريع",
+    placeholder: "البحث في الشاشات، العمليات السريعة، أو الاختصارات... (Ctrl + K)",
+    noResults: "لا توجد نتائج مطابقة لبحثك",
+    openAria: "البحث السريع والأوامر",
+    triggerPlaceholder: "البحث في النظام والأوامر...",
+    categoryActions: "إجراءات سريعة",
+    categoryNavigation: "شاشات ووحدات النظام",
+    categoryRecent: "سجلات وعمليات حديثة",
+    categoryRecords: "سجلات وبيانات",
+    badgeRecent: "سابق",
+    navigate: "للتنقل",
+    select: "للاختيار",
+    dismiss: "للإغلاق",
+    keyEnter: "Enter",
+    keyEsc: "Esc",
+    shortcutCtrl: "Ctrl",
+    shortcutK: "K",
+    spotlightBrand: "TODIR Spotlight",
+    subtitleCustomerInvoices: "إدارة وإنشاء فواتير العملاء",
+    subtitleSupplierInvoices: "إدارة وتسجيل فواتير الموردين",
+    subtitleCatalog: "إدارة المنتجات والخدمات والأسعار",
+    subtitleDirectory: "دليل العملاء والموردين والجهات",
+    subtitleSubledger: "تسوية ومطابقة الحسابات المفتوحة",
+    subtitleFinbase: "الدليل المحاسبي وشجرة الحسابات",
+    subtitleTax: "الإقرارات والضرائب والامتثال",
+    actionNewCustomerInvoice: "إنشاء فاتورة مبيعات جديدة",
+    actionNewSupplierInvoice: "إنشاء فاتورة مشتريات جديدة",
+    actionNewProduct: "إضافة منتج جديد للكتالوج",
+    actionNewParty: "إضافة عميل أو مورد جديد (دليل الجهات)",
+    actionOpenSubledger: "تسوية البنود والمطالبات المفتوحة",
+    actionChartOfAccounts: "دليل الحسابات وشجرة القيود",
+    actionTaxDeclarations: "الإقرارات الضريبية والقيمة المضافة"
+  },
+  draftRecovery: {
+    bannerTitle: "تم العثور على مسودة محفوظة تلقائياً",
+    bannerDescription: "توجد بيانات غير محفوظة تم حفظها تلقائياً قبل مغادرتك السابقة.",
+    restoreButton: "استعادة المسودة",
+    discardButton: "تجاهل ومسح",
+    restoredNotice: "تمت استعادة المسودة بنجاح",
+    discardedNotice: "تم مسح المسودة المؤقتة",
+    unsavedWarning: "توجد تعديلات غير محفوظة. هل أنت متأكد من مغادرة هذه الصفحة؟"
+  },
+  batchActions: {
+    selectedCount: "تم تحديد {{count}} عنصر",
+    clearSelection: "إلغاء التحديد",
+    exportSelected: "تصدير المحدد",
+    printSelected: "طباعة مجمعة",
+    deleteSelected: "حذف المحدد",
+    changeStatus: "تغيير الحالة"
+  },
+  undoToast: {
+    undoAction: "تراجع",
+    actionSuccess: "تم تنفيذ العملية بنجاح",
+    actionUndone: "تم التراجع عن العملية بنجاح"
+  },
+  quickPeek: {
+    title: "معاينة سريعة",
+    closeAria: "إغلاق المعاينة السريعة",
+    loading: "جارٍ تحميل تفاصيل المعاينة...",
+    empty: "لا توجد تفاصيل إضافية لعرضها",
+    openFullRecord: "فتح السجل بالكامل"
+  },
+  networkStatus: {
+    offlineTitle: "لا يوجد اتصال بالإنترنت",
+    offlineMessage: "بياناتك المدخلة محفوظة محلياً بأمان. سيتم استئناف الاتصال تلقائياً فور عودة الشبكة.",
+    onlineTitle: "تمت استعادة الاتصال",
+    onlineMessage: "تمت إعادة الاتصال بالنظام بنجاح وتحديث البيانات."
   }
 } as const;

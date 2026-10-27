@@ -1,7 +1,7 @@
 import { Component, Suspense, type ErrorInfo, type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { UserMenu } from "./user-menu.tsx";
 import {
   HomeIcon,
@@ -22,8 +22,13 @@ import {
   GlobeIcon,
   ShieldCheckIcon,
   MapPinIcon,
-  ChevronDownIcon
+  ChevronDownIcon,
+  SearchIcon
 } from "../../components/primitives/icons.tsx";
+import { CommandPalette } from "../../components/primitives/command-palette.tsx";
+import { NetworkStatusBanner } from "../../components/primitives/network-status-banner.tsx";
+import { UndoToastProvider } from "../../components/primitives/toast-undo.tsx";
+import { buildCommandPaletteItems } from "./command-palette-registry.ts";
 import { AuthView } from "../auth/index.ts";
 import { requestCsrf, clearCsrfToken, logoutUser } from "../../core/api/auth-service.ts";
 import { changeLanguage, currentDirection, currentLanguage, i18n } from "../../core/i18n/i18n.ts";
@@ -117,6 +122,7 @@ function formatBranchLabel(code: string, name: string, entityName?: string, isAr
 
 export function AppShell() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { t } = useTranslation(["common", "navigation"]);
   const language = currentLanguage();
   const [screen, setScreen] = useState<Screen>("loading");
@@ -132,7 +138,25 @@ export function AppShell() {
   const [error, setError] = useState<string | undefined>();
   const [theme, setTheme] = useState<string>("default");
   const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const permCacheRef = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
+
+  const commandItems = buildCommandPaletteItems({
+    modules,
+    navigate,
+    t
+  });
 
   const direction = currentDirection();
   const labels = {
@@ -250,8 +274,9 @@ export function AppShell() {
   if (screen === "error") return <AccessView direction={direction} kind="error" message={error ?? undefined} onRetry={() => void loadSession()} />;
 
   return (
-    <div className="todir-app-shell shell" dir={direction} data-theme={theme} data-density={density}>
-      <header className="topbar">
+    <UndoToastProvider>
+      <div className="todir-app-shell shell" dir={direction} data-theme={theme} data-density={density}>
+        <header className="topbar">
         {/* Left Side (in LTR) / Right Side (in RTL): Brand & Company */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
           <Link className="brand" to="/" aria-label="TODIR">
@@ -283,6 +308,20 @@ export function AppShell() {
             {companyName}
           </span>
         </div>
+
+        {/* Central Spotlight Search & Command Palette Trigger */}
+        <button
+          type="button"
+          className="topbar-command-trigger"
+          onClick={() => setIsCommandPaletteOpen(true)}
+          aria-label={t("common:commandPalette.openAria", "البحث السريع والأوامر")}
+        >
+          <SearchIcon size={16} style={{ color: "#93c5fd", flexShrink: 0 }} />
+          <span>{t("common:commandPalette.triggerPlaceholder", "البحث في النظام والأوامر...")}</span>
+          <span className="topbar-command-shortcut">
+            <kbd>{t("common:commandPalette.shortcutCtrl", "Ctrl")}</kbd> + <kbd>{t("common:commandPalette.shortcutK", "K")}</kbd>
+          </span>
+        </button>
 
         {/* Operational Context Controls (Legal Entity & Branch) */}
         <div className="context-controls">
@@ -367,6 +406,8 @@ export function AppShell() {
         </div>
       </header>
 
+      <NetworkStatusBanner />
+
       {operation ? <div className="operation-progress" role="status" aria-live="polite">{operation}</div> : null}
 
       <div className="layout">
@@ -398,7 +439,14 @@ export function AppShell() {
           </Suspense>
         </main>
       </div>
+
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        items={commandItems}
+      />
     </div>
+    </UndoToastProvider>
   );
 }
 

@@ -9,3 +9,4 @@ export * from "./wizard-page.tsx";
 export * from "./dashboard-page.tsx";
 export * from "./property-grid.tsx";
 export * from "./page-help.tsx";
+export * from "./floating-batch-bar.tsx";

@@ -222,6 +222,40 @@ Typing free-form text or IDs for relational business entities creates data corru
 3. **Dedicated Domain Pickers**:
    - Standard domain pickers (`PartyPicker`, `ProductPicker`, `AccountPicker`) must encapsulate this behavior and be reused across all forms. Rebuilding ad-hoc entity selectors inside individual screens is prohibited.
 
+### 1.4 The Seven Enterprise UX Superpowers (Arabic Market Dominance Standard)
+
+To defeat global ERP competitors like Odoo 17/18 and SAP in usability, daily speed, and operational calmness for ordinary business users, every module and screen in TODIR ERP must adhere to and integrate these seven architectural superpowers:
+
+1. **Global Command Palette (`Ctrl + K` / Spotlight Navigation)**:
+   - Global keyboard shortcut `Ctrl + K` (or `Cmd + K`) or clicking the topbar search trigger opens an accessible spotlight modal (`CommandPalette`).
+   - Enables non-technical users to jump instantly to any screen, module, or high-frequency action (e.g. "فاتورة مبيعات جديدة", "إضافة صنف", "تسجيل قيد") using natural Arabic or English fuzzy keywords without hunting through menus.
+   - Tracks recent actions and screens in client storage, architected for seamless synchronization with backend user profiles.
+
+2. **Unsaved Changes Protection & Draft Auto-Recovery (`DirtyFormGuard` & `useDraftAutoSave`)**:
+   - Form edits must never be lost due to accidental tab closing, page reloads, browser back-clicks, or power outages.
+   - `useDirtyFormGuard` intercepts browser unloads with a clear reassurance message.
+   - `useDraftAutoSave` debounces and caches dirty form state. When returning to a form with an existing draft, `DraftRecoveryBanner` offers a 1-click `[استعادة المسودة]` or `[تجاهل ومسح]`.
+   - Architected with `DraftStorageAdapter` so it can plug into Redis or backend draft APIs in the future without changing form code.
+
+3. **High-Speed Numpad & Keyboard Grid Ergonomics (`useFastGridNavigation`)**:
+   - Cashiers, warehouse clerks, and accountants must not be forced to reach for the mouse while typing document lines.
+   - `useFastGridNavigation` enables cell-to-cell traversal with `Enter` / `Tab`.
+   - Pressing `Enter` on the last cell of the last line automatically calls `onAddRow()` and moves focus to the first cell of the newly created line.
+   - `Ctrl + S` triggers quick document saving; `Alt + N` adds a new line.
+
+4. **Sticky Floating Batch Action Bar (`FloatingBatchBar`)**:
+   - When users select multiple rows across any `ListPage`, an elevated Dark Oxford Navy dock floats at the bottom of the viewport.
+   - Provides immediate visual feedback (`تم تحديد X عنصر`), batch actions (`تصدير Excel`, `طباعة مجمعة`, `تغيير الحالة`), and 1-click deselect.
+
+5. **Action Reassurance with 5-Second Undo Toast (`useUndoToast`)**:
+   - Relieves user anxiety around mistakes and accidental mutations. Reversible state updates (e.g. deactivating a party, archiving a product line, removing a draft item) display a high-contrast toast with a 5-second countdown bar and an immediate **[تراجع (Undo)]** button.
+
+6. **Slide-Over Quick Peek Drawer (`QuickPeekDrawer`)**:
+   - Allows operators to inspect 360-degree entity details (customer credit limit, product stock, account balance) in a slide-over panel without leaving their active form or losing current input state. Closes with `Esc` or backdrop click.
+
+7. **Network Resilience & Connection Guard (`NetworkStatusBanner`)**:
+   - Monitors online/offline connectivity. When intermittent branch Wi-Fi drops, a calm amber banner reassures the operator that input is preserved safely locally, preventing panic and technical error dialogs. Reconnection shows a green confirmation before fading smoothly.
+
 ### The Sacred Boundary
 ```text
 DATABASE LANGUAGE != DOMAIN LANGUAGE != API LANGUAGE != USER-FACING LANGUAGE
