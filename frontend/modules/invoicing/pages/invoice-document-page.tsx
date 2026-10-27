@@ -44,8 +44,9 @@ export function InvoiceDocumentPage({
         id: invoice.id,
         etag: invoice.etag
       });
-    } catch (err: any) {
-      if (err?.status === 412 || err?.status === 409) {
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      if (status === 412 || status === 409) {
         setConcurrencyError(t("document.concurrentEdit"));
       } else {
         setConcurrencyError(t("document.postError"));

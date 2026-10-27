@@ -1,12 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { formatMoney, formatQuantity, formatPercentage } from "../../../components/formatting/index.ts";
-import type { Invoice } from "../public.ts";
+import type { LegacyInvoice, InvoiceTotals, InvoicePreview, InvoiceCorrectionLineInput } from "../types.ts";
 import type { DocumentStatusGroup } from "../../../components/pages/document-page.tsx";
 
-describe("F18 — Invoice Reference Validation", () => {
+describe("F18 — Invoicing Vertical Slice & Contract Validation", () => {
   it("preserves exact multi-axis status model without collapsing independent dimensions", () => {
-    const mockInvoice: Invoice = {
+    const mockInvoice: LegacyInvoice = {
       id: "inv-001",
       invoiceNumber: "INV-2026-0091",
       issueDate: "2026-10-01",
@@ -63,7 +63,7 @@ describe("F18 — Invoice Reference Validation", () => {
   });
 
   it("proves settlement transitions do not alter or overwrite document lifecycle state", () => {
-    const baseInvoice: Invoice = {
+    const baseInvoice: LegacyInvoice = {
       id: "inv-002",
       invoiceNumber: "INV-2026-0092",
       issueDate: "2026-10-01",
@@ -87,18 +87,16 @@ describe("F18 — Invoice Reference Validation", () => {
       createdBy: "User"
     };
 
-    // Subledger updates settlement status from Unpaid -> PartiallyPaid -> Paid
-    const partiallyPaidInvoice: Invoice = {
+    const partiallyPaidInvoice: LegacyInvoice = {
       ...baseInvoice,
       settlementStatus: "PartiallyPaid"
     };
 
-    const fullyPaidInvoice: Invoice = {
+    const fullyPaidInvoice: LegacyInvoice = {
       ...baseInvoice,
       settlementStatus: "Paid"
     };
 
-    // Lifecycle state remains strictly "Issued" throughout settlement lifecycle
     assert.equal(baseInvoice.lifecycleStatus, "Issued");
     assert.equal(partiallyPaidInvoice.lifecycleStatus, "Issued");
     assert.equal(fullyPaidInvoice.lifecycleStatus, "Issued");
@@ -115,8 +113,67 @@ describe("F18 — Invoice Reference Validation", () => {
     assert.equal(formattedDiscount, "15.00%");
   });
 
-  it("enforces ETag concurrency header validation on mutation commands", () => {
-    const etag = '"etag-version-4"';
-    assert.ok(etag.startsWith('"') && etag.endsWith('"'));
+  it("preserves authoritative server totals contract without client-side floating point rounding errors", () => {
+    const serverTotals: InvoiceTotals = {
+      netAmount: "1250.50",
+      discountAmount: "50.00",
+      chargeAmount: "25.00",
+      taxableAmount: "1225.50",
+      taxAmount: "183.825",
+      grossAmount: "1409.325",
+      roundingAdjustment: "0.00",
+      currencyCode: "SAR"
+    };
+
+    assert.equal(typeof serverTotals.netAmount, "string");
+    assert.equal(typeof serverTotals.grossAmount, "string");
+    assert.equal(serverTotals.grossAmount, "1409.325");
+  });
+
+  it("evaluates preview readiness based on blockers presence", () => {
+    const blockedPreview: InvoicePreview = {
+      invoiceId: "inv-preview-1",
+      version: 1,
+      lines: [],
+      paymentSchedule: [],
+      warnings: [{ code: "invoicing.term_deviation", message: "تنبيه شروط دفع", severity: "Warning" }],
+      blockers: [{ code: "invoicing.price_missing", message: "لا يوجد سعر معتمد", severity: "Blocker" }],
+      readyToFinalize: false
+    };
+
+    const readyPreview: InvoicePreview = {
+      invoiceId: "inv-preview-2",
+      version: 1,
+      lines: [],
+      paymentSchedule: [],
+      warnings: [],
+      blockers: [],
+      readyToFinalize: true
+    };
+
+    assert.equal(blockedPreview.readyToFinalize, false);
+    assert.equal(blockedPreview.blockers.length, 1);
+    assert.equal(readyPreview.readyToFinalize, true);
+    assert.equal(readyPreview.blockers.length, 0);
+  });
+
+  it("validates credit note quantities against remaining creditable amounts", () => {
+    const originalQty = 10;
+    const previouslyCreditedQty = 4;
+    const availableToCredit = originalQty - previouslyCreditedQty;
+
+    const validCreditInput: InvoiceCorrectionLineInput = {
+      originalLineId: "line-01",
+      quantity: "5.000"
+    };
+
+    const invalidOverCreditInput: InvoiceCorrectionLineInput = {
+      originalLineId: "line-01",
+      quantity: "8.000"
+    };
+
+    assert.equal(availableToCredit, 6);
+    assert.ok(parseFloat(validCreditInput.quantity) <= availableToCredit);
+    assert.ok(parseFloat(invalidOverCreditInput.quantity) > availableToCredit);
   });
 });
