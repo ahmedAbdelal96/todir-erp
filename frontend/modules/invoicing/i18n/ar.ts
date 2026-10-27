@@ -36,7 +36,10 @@ export const ar = {
     emptySupplierDescription: "سجّل فواتير المشتريات لمتابعة التزامات الشركة وجداول سداد الموردين.",
     noResultsTitle: "لا توجد نتائج مطابقة لبحثك",
     noResultsDescription: "جرّب تغيير معايير البحث أو مسح الفلاتر النشطة.",
-    refresh: "تحديث القائمة"
+    refresh: "تحديث القائمة",
+    exportBatch: "تصدير المحدد (CSV)",
+    printBatch: "طباعة مجمعة",
+    batchNotice: "تم تجهيز المستندات المحددة للطباعة المجمعة"
   },
   draft: {
     newCustomerTitle: "إنشاء فاتورة عميل جديدة",

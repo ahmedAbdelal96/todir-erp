@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { PartyPicker } from "../../directory/public.ts";
@@ -13,6 +13,12 @@ import { InvoiceTotalsCard } from "../components/invoice-totals-card.tsx";
 import { InvoicePreviewModal } from "../features/invoice-preview-modal.tsx";
 import { CancelDraftDialog } from "../features/cancel-draft-dialog.tsx";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
+import {
+  useDraftAutoSave,
+  useDirtyFormGuard,
+  DraftRecoveryBanner
+} from "../../../components/forms/index.ts";
+import { useFastGridNavigation } from "../../../components/grid/index.ts";
 import {
   useInvoicingScope,
   useInvoicingPermissions,
@@ -98,6 +104,56 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [whyPriceIndex, setWhyPriceIndex] = useState<number | null>(null);
+
+  const linesContainerRef = useRef<HTMLDivElement>(null);
+
+  const draftStorageKey = isEditing && id ? `inv-draft-${direction}-${id}` : `inv-draft-new-${direction}`;
+  const isFormDirty = Boolean(
+    partyId ||
+    lines.some((l) => l.description || (l.unitPrice && l.unitPrice !== "0.00") || l.quantity !== "1.000") ||
+    lines.length > 1 ||
+    supplierInvoiceNumber
+  );
+
+  useDirtyFormGuard({ isDirty: isFormDirty });
+
+  const {
+    existingDraft: localDraft,
+    restoreDraft: restoreLocalDraft,
+    discardDraft: discardLocalDraft,
+    clearDraft: clearLocalDraft
+  } = useDraftAutoSave({
+    draftKey: draftStorageKey,
+    data: {
+      partyId,
+      supplierInvoiceNumber,
+      documentDate,
+      postingDate,
+      taxDate,
+      supplyDate,
+      currencyCode,
+      paymentTermId,
+      documentDiscount,
+      lines
+    },
+    isDirty: isFormDirty
+  });
+
+  const handleRestoreDraft = () => {
+    const restored = restoreLocalDraft();
+    if (restored) {
+      if (restored.partyId) setPartyId(restored.partyId);
+      if (restored.supplierInvoiceNumber) setSupplierInvoiceNumber(restored.supplierInvoiceNumber);
+      if (restored.documentDate) setDocumentDate(restored.documentDate);
+      if (restored.postingDate) setPostingDate(restored.postingDate);
+      if (restored.taxDate) setTaxDate(restored.taxDate);
+      if (restored.supplyDate) setSupplyDate(restored.supplyDate);
+      if (restored.currencyCode) setCurrencyCode(restored.currencyCode);
+      if (restored.paymentTermId) setPaymentTermId(restored.paymentTermId);
+      if (restored.documentDiscount) setDocumentDiscount(restored.documentDiscount);
+      if (restored.lines && restored.lines.length > 0) setLines(restored.lines);
+    }
+  };
 
   useEffect(() => {
     if ((location.state as { saved?: boolean })?.saved) {
@@ -198,6 +254,7 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
           const res = await updateSupplierDraft.mutateAsync({ id, legalEntityId, request: updateReq });
           setVersion(res.version);
         }
+        clearLocalDraft();
         setSaveSuccessMessage(true);
         setTimeout(() => setSaveSuccessMessage(false), 3000);
       } catch (err: unknown) {
@@ -227,6 +284,7 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
         const res = isCustomer
           ? await createCustomerDraft.mutateAsync(createReq)
           : await createSupplierDraft.mutateAsync(createReq);
+        clearLocalDraft();
         const routePrefix = isCustomer ? "/invoicing/customer-invoices" : "/invoicing/supplier-invoices";
         navigate(`${routePrefix}/${encodeURIComponent(res.id)}/edit`, { state: { saved: true } });
       } catch (err: unknown) {
@@ -309,6 +367,7 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
       idempotencyKey: `fin-${targetDraftId}-${Date.now()}`
     };
 
+    clearLocalDraft();
     if (isCustomer) {
       const res = await finalizeCustomer.mutateAsync({ id: targetDraftId, legalEntityId, request: finReq });
       setIsPreviewOpen(false);
@@ -324,6 +383,7 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
 
   // Cancel Draft Handler
   const handleCancelDraft = async (reason: string) => {
+    clearLocalDraft();
     if (!id) {
       const routePrefix = isCustomer ? "/invoicing/customer-invoices" : "/invoicing/supplier-invoices";
       navigate(routePrefix);
@@ -346,6 +406,12 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
     updateSupplierDraft.isPending;
 
   const isFinalizing = finalizeCustomer.isPending || finalizeSupplier.isPending;
+
+  useFastGridNavigation({
+    containerRef: linesContainerRef,
+    onAddRow: handleAddLine,
+    onSave: handleSaveDraft
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", padding: "1.25rem", maxWidth: "1280px", margin: "0 auto" }}>
@@ -401,6 +467,15 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
           </Button>
         </div>
       </div>
+
+      {/* 0. Local Draft Auto-Recovery Banner */}
+      {localDraft && !isEditing && (
+        <DraftRecoveryBanner
+          onRestore={handleRestoreDraft}
+          onDiscard={discardLocalDraft}
+          savedTimestamp={localDraft.timestamp}
+        />
+      )}
 
       {/* Concurrency Conflict Banner */}
       {concurrencyConflict && (
@@ -622,7 +697,7 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
 
         {/* Lines Header & List with Responsive Horizontal Scroll */}
         <div style={{ overflowX: "auto", width: "100%" }}>
-          <div style={{ minWidth: "720px" }}>
+          <div ref={linesContainerRef} style={{ minWidth: "720px" }}>
             {/* Lines Header */}
             <div
               style={{

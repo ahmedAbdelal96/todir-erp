@@ -10,7 +10,10 @@ import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { EmptyState } from "../../../components/primitives/empty-state.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Pagination } from "../../../components/primitives/pagination.tsx";
-import { CatalogIcon, RefreshIcon } from "../../../components/primitives/icons.tsx";
+import { CatalogIcon, RefreshIcon, FileTextIcon } from "../../../components/primitives/icons.tsx";
+import { FloatingBatchBar } from "../../../components/pages/floating-batch-bar.tsx";
+import { QuickPeekDrawer } from "../../../components/primitives/quick-peek-drawer.tsx";
+import { useUndoToast } from "../../../components/primitives/toast-undo.tsx";
 import {
   useCatalogBrands,
   useCatalogCategories,
@@ -53,6 +56,9 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
 
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<readonly ProductSummary[]>([]);
+  const [peekingProduct, setPeekingProduct] = useState<ProductSummary | null>(null);
+  const { showUndoToast } = useUndoToast();
 
   const { data, isLoading, error, refetch } = useProductList({
     search: search || undefined,
@@ -85,6 +91,30 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
     } catch {
       // ignore
     }
+  };
+
+  const handleBatchExport = () => {
+    const csvHeader = "ID,Name,SKU,Nature,Category,Brand,Unit,Status\n";
+    const csvRows = selectedProducts.map(p => `"${p.id}","${p.displayName}","${p.sku || ""}","${p.nature}","${p.categoryName || ""}","${p.brandName || ""}","${p.baseUomCode || ""}","${p.status}"`).join("\n");
+    const blob = new Blob([csvHeader + csvRows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `selected-products-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleBatchToggleStatus = () => {
+    const previous = [...selectedProducts];
+    setSelectedProducts([]);
+    showUndoToast({
+      message: t("productList.batchUpdated"),
+      onUndo: () => {
+        setSelectedProducts(previous);
+      }
+    });
   };
 
   const columns: DataGridColumn<ProductSummary>[] = [
@@ -179,6 +209,33 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
           status={row.status}
           label={row.status === "Active" ? t("common.active") : t("common.archived")}
         />
+      )
+    },
+    {
+      id: "actions",
+      header: t("common.action"),
+      width: 80,
+      minWidth: 70,
+      cellRenderer: ({ row }) => (
+        <button
+          type="button"
+          onClick={() => setPeekingProduct(row)}
+          title={t("productList.quickPeekAction")}
+          aria-label={t("productList.quickPeekAction")}
+          style={{
+            border: "1px solid #cbd5e1",
+            background: "#ffffff",
+            color: "#1e3a8a",
+            borderRadius: "var(--radius-sm)",
+            padding: "0.25rem 0.5rem",
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center"
+          }}
+        >
+          <FileTextIcon size={14} />
+        </button>
       )
     }
   ];
@@ -453,9 +510,71 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
           <DataGrid
             staticRows={products}
             columns={columns}
+            selectable="multi"
+            onSelectionChange={setSelectedProducts}
           />
         )}
       </ListPage>
+
+      <FloatingBatchBar
+        selectedCount={selectedProducts.length}
+        onClearSelection={() => setSelectedProducts([])}
+        actions={[
+          {
+            id: "export",
+            label: t("productList.exportBatch"),
+            variant: "primary",
+            onExecute: handleBatchExport
+          },
+          {
+            id: "toggle-status",
+            label: t("productList.toggleBatch"),
+            variant: "secondary",
+            onExecute: handleBatchToggleStatus
+          }
+        ]}
+      />
+
+      <QuickPeekDrawer
+        isOpen={Boolean(peekingProduct)}
+        onClose={() => setPeekingProduct(null)}
+        title={peekingProduct?.displayName ?? t("productList.quickPeekTitle")}
+        subtitle={peekingProduct?.sku ?? undefined}
+        onOpenFullRecord={() => {
+          if (peekingProduct) {
+            onSelectProduct?.(peekingProduct);
+            setPeekingProduct(null);
+          }
+        }}
+        fullRecordLabel={t("productList.quickPeekOpenFull")}
+      >
+        {peekingProduct && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div style={{ backgroundColor: "#ffffff", padding: "1rem", borderRadius: "var(--radius-md)", border: "1px solid #cbd5e1" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>{t("productList.quickPeekSku")}</span>
+                <bdi dir="ltr" style={{ fontWeight: 700, fontFamily: "var(--font-mono)" }}>{peekingProduct.sku || "—"}</bdi>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>{t("productList.quickPeekNature")}</span>
+                <span style={{ fontWeight: 600 }}>{peekingProduct.nature === "Service" ? t("common.service") : t("common.goods")}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>{t("productList.quickPeekCategory")}</span>
+                <span style={{ fontWeight: 600 }}>{peekingProduct.categoryName || "—"}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>{t("productList.quickPeekBrand")}</span>
+                <span style={{ fontWeight: 600 }}>{peekingProduct.brandName || "—"}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: 600 }}>{t("productList.quickPeekStatus")}</span>
+                <StatusBadge status={peekingProduct.status} label={peekingProduct.status === "Active" ? t("common.active") : t("common.archived")} />
+              </div>
+            </div>
+          </div>
+        )}
+      </QuickPeekDrawer>
 
       <QuickCreateProductDialog
         isOpen={isQuickCreateOpen}

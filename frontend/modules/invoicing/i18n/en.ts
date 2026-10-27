@@ -36,7 +36,10 @@ export const en = {
     emptySupplierDescription: "Record supplier bills to track purchasing obligations and payment schedules.",
     noResultsTitle: "No matching invoices found",
     noResultsDescription: "Try adjusting your search criteria or resetting active filters.",
-    refresh: "Refresh list"
+    refresh: "Refresh list",
+    exportBatch: "Export Selected (CSV)",
+    printBatch: "Batch Print",
+    batchNotice: "Selected documents queued for batch print"
   },
   draft: {
     newCustomerTitle: "New Customer Invoice",

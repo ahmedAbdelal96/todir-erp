@@ -12,6 +12,8 @@ import { EmptyState } from "../../../components/primitives/empty-state.tsx";
 import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { InvoicingIcon, RefreshIcon } from "../../../components/primitives/icons.tsx";
+import { FloatingBatchBar } from "../../../components/pages/floating-batch-bar.tsx";
+import { useUndoToast } from "../../../components/primitives/toast-undo.tsx";
 import { InvoiceStatusGroup } from "../components/invoice-status-pill.tsx";
 import {
   useInvoicingScope,
@@ -26,7 +28,7 @@ export interface InvoiceListPageProps {
 }
 
 export function InvoiceListPage({ initialTab }: InvoiceListPageProps): React.JSX.Element {
-  const { t } = useTranslation("invoicing");
+  const { t } = useTranslation(["invoicing", "common"]);
   const navigate = useNavigate();
   const { legalEntityId, branchId } = useInvoicingScope();
   const perms = useInvoicingPermissions();
@@ -41,6 +43,8 @@ export function InvoiceListPage({ initialTab }: InvoiceListPageProps): React.JSX
   const [search, setSearch] = useState("");
   const [lifecycle, setLifecycle] = useState<string>("");
   const [page, setPage] = useState(1);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
+  const { showUndoToast } = useUndoToast();
   const pageSize = 25;
 
   const isCustomer = activeTab === "customer";
@@ -90,6 +94,27 @@ export function InvoiceListPage({ initialTab }: InvoiceListPageProps): React.JSX
     } else {
       navigate("/invoicing/supplier-invoices/new");
     }
+  };
+
+  const handleBatchExport = () => {
+    const selectedItems = items.filter((item) => selectedInvoiceIds.has(item.id));
+    const csvHeader = "ID,DocumentNumber,Party,Date,DueDate,Total,Currency,Lifecycle\n";
+    const csvRows = selectedItems.map(i => `"${i.id}","${i.documentNumber || ""}","${i.partyName || ""}","${i.documentDate}","${i.dueDate || ""}","${i.total ?? "0.00"}","${i.currencyCode}","${i.lifecycle}"`).join("\n");
+    const blob = new Blob([csvHeader + csvRows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `invoices-export-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleBatchPrint = () => {
+    showUndoToast({
+      message: t("list.batchNotice"),
+      onUndo: () => {}
+    });
   };
 
   const activeFilters = [Boolean(search), Boolean(lifecycle)].filter(Boolean).length;
@@ -144,8 +169,9 @@ export function InvoiceListPage({ initialTab }: InvoiceListPageProps): React.JSX
     : undefined;
 
   return (
-    <ListPage
-      title={isCustomer ? t("list.customerTitle") : t("list.supplierTitle")}
+    <>
+      <ListPage
+        title={isCustomer ? t("list.customerTitle") : t("list.supplierTitle")}
       subtitle={isCustomer ? t("list.customerSubtitle") : t("list.supplierSubtitle")}
       breadcrumbs={[
         { label: t("title"), href: "/invoicing" },
@@ -281,6 +307,17 @@ export function InvoiceListPage({ initialTab }: InvoiceListPageProps): React.JSX
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
               <thead>
                 <tr style={{ backgroundColor: "#102a43", color: "#ffffff", borderBottom: "1px solid #0c1f31" }}>
+                  <th style={{ width: "40px", padding: "0.75rem", textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={items.length > 0 && selectedInvoiceIds.size === items.length}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedInvoiceIds(new Set(items.map((i) => i.id)));
+                        else setSelectedInvoiceIds(new Set());
+                      }}
+                      aria-label={t("common:grid.selectAll")}
+                    />
+                  </th>
                   <th style={{ padding: "0.75rem 1rem", textAlign: "start", fontWeight: 700 }}>
                     {t("list.columnDocumentNumber")}
                   </th>
@@ -322,6 +359,23 @@ export function InvoiceListPage({ initialTab }: InvoiceListPageProps): React.JSX
                       e.currentTarget.style.backgroundColor = index % 2 === 0 ? "#ffffff" : "var(--color-surface-subtle, #f8fafc)";
                     }}
                   >
+                    {/* Checkbox */}
+                    <td style={{ width: "40px", padding: "0.75rem", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedInvoiceIds.has(item.id)}
+                        onChange={() => {
+                          setSelectedInvoiceIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(item.id)) next.delete(item.id);
+                            else next.add(item.id);
+                            return next;
+                          });
+                        }}
+                        aria-label={item.documentNumber || item.id}
+                      />
+                    </td>
+
                     {/* Document Number */}
                     <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "var(--color-brand-primary, #4f46e5)" }}>
                       <bdi>{item.documentNumber || t("draft.draftFallback", { id: item.id.slice(0, 8) })}</bdi>
@@ -391,5 +445,25 @@ export function InvoiceListPage({ initialTab }: InvoiceListPageProps): React.JSX
         </div>
       )}
     </ListPage>
-  );
+
+    <FloatingBatchBar
+      selectedCount={selectedInvoiceIds.size}
+      onClearSelection={() => setSelectedInvoiceIds(new Set())}
+      actions={[
+        {
+          id: "export",
+          label: t("list.exportBatch"),
+          variant: "primary",
+          onExecute: handleBatchExport
+        },
+        {
+          id: "print",
+          label: t("list.printBatch"),
+          variant: "secondary",
+          onExecute: handleBatchPrint
+        }
+      ]}
+    />
+  </>
+);
 }
