@@ -193,6 +193,16 @@ TODIR ERP is built to rival top-tier global enterprise platforms (such as Odoo) 
 5. **Strict Code Quality & Component Reuse**:
    - Modules MUST use the unified design system primitives (`frontend/components/primitives/`, `frontend/components/fields/`, `frontend/components/forms/`, `frontend/components/pages/`).
    - Reinventing custom buttons, raw unstyled inputs, raw HTML tables, or custom card wrappers inside modules is strictly prohibited as a code quality defect.
+6. **Mandatory In-Screen Contextual Help (`PageHelpModal` & `?` Button)**:
+   - Every business page archetype (`ListPage`, `RecordPage`, `DocumentPage`, or standalone workspace) must provide a contextual user guide (`PageHelpContent`) wired into `PageHeader` via the `help` prop.
+   - The user opens this guide by clicking the crisp, high-contrast `?` Help button (`PageHelpButton`) in the page header.
+   - The guide is tailored for everyday employees (cashiers, accountants, warehouse workers) and must contain:
+     - **Purpose (`summary`)**: Clear explanation of why the user is on this page and what tasks they accomplish.
+     - **Workflow Steps (`workflowSteps`)**: Numbered (1, 2, 3) step-by-step guide on how to browse, filter, or create.
+     - **Key Concepts (`keyConcepts`)**: Plain-language definitions of business terms without technical or database jargon.
+     - **Pro Tips (`proTips`)**: Practical tips to speed up work (e.g. keyboard shortcuts, filter resets, CSV exports).
+     - **FAQs & Mistakes (`faqs`)**: Reassurance on common edge cases (e.g. "Can I delete this record?", "How to fix a typo?").
+   - **Continuous Agent Synchronization**: Whenever an agent creates, refactors, or modifies a page, form, or workflow, the agent **MUST update the corresponding page help content** in module translations (`ar.ts` and `en.ts`) so in-app guidance always remains 100% accurate and synchronized with the latest UX.
 
 ### The Sacred Boundary
 ```text

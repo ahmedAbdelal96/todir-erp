@@ -53,5 +53,17 @@ export const ar = {
     lessThanOrEqual: "أقل من أو يساوي", greaterThanOrEqual: "أكبر من أو يساوي", inRange: "ضمن النطاق",
     contains: "يحتوي على", notContains: "لا يحتوي على", startsWith: "يبدأ بـ", endsWith: "ينتهي بـ",
     noRows: "لا توجد سجلات", page: "الصفحة", of: "من", to: "إلى", next: "التالي", previous: "السابق"
+  },
+  pageHelp: {
+    triggerAriaLabel: "دليل ومساعدة الصفحة",
+    triggerTooltip: "دليل الاستخدام والمساعدة",
+    defaultTitle: "دليل استخدام ومساعدة الصفحة",
+    defaultSubtitle: "إرشادات وتوضيحات لمساعدتك في إنجاز مهامك اليومية بسهولة وسرعة",
+    purposeTitle: "ما الهدف من هذه الصفحة؟",
+    workflowTitle: "خطوات الاستخدام وطريقة العمل",
+    conceptsTitle: "أهم المفاهيم والمصطلحات في هذه الشاشة",
+    proTipsTitle: "نصائح وإرشادات لتسريع عملك",
+    faqsTitle: "الأسئلة الشائعة وتفادي الأخطاء",
+    close: "فهمت، إغلاق الدليل"
   }
 } as const;

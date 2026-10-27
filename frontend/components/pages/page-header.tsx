@@ -1,6 +1,7 @@
 import React, { type ReactNode } from "react";
 import { Breadcrumbs, type BreadcrumbItem } from "../../app/shell/breadcrumbs.tsx";
 import { Button } from "../primitives/button.tsx";
+import { PageHelpButton, type PageHelpContent } from "./page-help.tsx";
 import clsx from "clsx";
 
 export interface PageAction {
@@ -22,6 +23,7 @@ export interface PageHeaderProps {
   readonly primaryAction?: PageAction | undefined;
   readonly secondaryActions?: ReactNode | undefined;
   readonly status?: ReactNode | undefined;
+  readonly help?: PageHelpContent | undefined;
   readonly className?: string | undefined;
   readonly style?: React.CSSProperties | undefined;
 }
@@ -34,6 +36,7 @@ export function PageHeader({
   primaryAction,
   secondaryActions,
   status,
+  help,
   className,
   style
 }: PageHeaderProps): React.JSX.Element {
@@ -116,6 +119,7 @@ export function PageHeader({
           }}
         >
           {secondaryActions}
+          {help && <PageHelpButton content={help} />}
           {primaryAction && (
             <Button
               variant={primaryAction.variant ?? "primary"}

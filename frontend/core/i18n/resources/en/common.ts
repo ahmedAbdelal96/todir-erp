@@ -53,5 +53,17 @@ export const en = {
     lessThanOrEqual: "Less than or equal", greaterThanOrEqual: "Greater than or equal", inRange: "In range",
     contains: "Contains", notContains: "Does not contain", startsWith: "Begins with", endsWith: "Ends with",
     noRows: "No records found", page: "Page", of: "of", to: "to", next: "Next", previous: "Previous"
+  },
+  pageHelp: {
+    triggerAriaLabel: "Page help and user guide",
+    triggerTooltip: "User guide & page help",
+    defaultTitle: "Page User Guide & Help",
+    defaultSubtitle: "Instructions and insights to help you complete your daily work easily and quickly",
+    purposeTitle: "What is this page for?",
+    workflowTitle: "Step-by-step workflow & usage",
+    conceptsTitle: "Key concepts & terminology",
+    proTipsTitle: "Pro tips to speed up your work",
+    faqsTitle: "Frequently asked questions & mistake prevention",
+    close: "Understood, close guide"
   }
 } as const;

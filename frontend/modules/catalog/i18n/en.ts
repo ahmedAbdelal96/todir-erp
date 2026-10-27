@@ -52,7 +52,28 @@ export const en = {
     loadErrorDescription: "An unexpected error occurred while communicating with the server. Please try again.",
     emptyTitle: "No products or services yet",
     emptyDescription: "Get started by adding the first product or service to your catalog.",
-    noResults: "No products match the current search and filter criteria."
+    noResults: "No products match the current search and filter criteria.",
+    help: {
+      summary: "The Products & Services Catalog is the central repository for all physical goods and services your business sells or purchases. Search, filter, and inspect detailed profiles here.",
+      step1Title: "Smart Search & Filtering",
+      step1Desc: "Use the search bar to locate items by name, SKU, or barcode, or filter by category and brand.",
+      step2Title: "Add New Item",
+      step2Desc: "Click '+ Add product or service' above to open the quick creation dialog and specify item type (goods vs service) and base unit.",
+      step3Title: "View Item Profile",
+      step3Desc: "Click any item name in the table to open its 360-degree profile and manage barcodes, alternate units, and price lists.",
+      concept1Term: "SKU (Stock Keeping Unit)",
+      concept1Desc: "A unique identifier for each item used for accurate stock tracking and invoicing.",
+      concept2Term: "Goods vs Service",
+      concept2Desc: "Goods are physical items with warehouse stock tracking; services represent non-stock labor or subscriptions.",
+      concept3Term: "Archived",
+      concept3Desc: "Archived items are hidden from new transactions while preserving previous financial and audit history.",
+      tip1: "Export your entire catalog to CSV anytime via the 'Export CSV' button.",
+      tip2: "Use 'Reset' on the filter bar to clear all filters in one click.",
+      faq1Q: "Can I permanently delete an item used in past invoices?",
+      faq1A: "Items with financial or warehouse transaction history cannot be deleted to protect audit trails, but they can be archived safely.",
+      faq2Q: "How do I add a barcode?",
+      faq2A: "Open the item details page by clicking its name, then go to the Barcodes section to add one or more barcodes."
+    }
   },
   productRecord: {
     loading: "Loading item details...",

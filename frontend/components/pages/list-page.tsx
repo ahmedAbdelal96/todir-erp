@@ -1,5 +1,6 @@
 import React, { type ReactNode } from "react";
 import { PageHeader, type PageAction } from "./page-header.tsx";
+import type { PageHelpContent } from "./page-help.tsx";
 import type { BreadcrumbItem } from "../../app/shell/breadcrumbs.tsx";
 import clsx from "clsx";
 
@@ -11,6 +12,7 @@ export interface ListPageProps {
   readonly secondaryActions?: ReactNode | undefined;
   readonly filterBar?: ReactNode | undefined;
   readonly pagination?: ReactNode | undefined;
+  readonly help?: PageHelpContent | undefined;
   readonly children: ReactNode;
   readonly className?: string | undefined;
 }
@@ -23,6 +25,7 @@ export function ListPage({
   secondaryActions,
   filterBar,
   pagination,
+  help,
   children,
   className
 }: ListPageProps): React.JSX.Element {
@@ -43,6 +46,7 @@ export function ListPage({
         breadcrumbs={breadcrumbs}
         primaryAction={primaryAction}
         secondaryActions={secondaryActions}
+        help={help}
       />
 
       {filterBar && (

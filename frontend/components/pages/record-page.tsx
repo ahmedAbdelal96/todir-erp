@@ -1,6 +1,7 @@
 import React, { type ReactNode } from "react";
 import { Breadcrumbs, type BreadcrumbItem } from "../../app/shell/breadcrumbs.tsx";
 import { StatusBadge, type StatusVariant } from "../fields/status-badge.tsx";
+import { PageHelpButton, type PageHelpContent } from "./page-help.tsx";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
 import { BidiText } from "../primitives/bidi-text.tsx";
@@ -12,6 +13,7 @@ export interface RecordPageProps {
   readonly statusLabel?: ReactNode | undefined;
   readonly breadcrumbs?: readonly BreadcrumbItem[] | undefined;
   readonly headerActions?: ReactNode | undefined;
+  readonly help?: PageHelpContent | undefined;
   readonly kpiCards?: ReactNode | undefined;
   readonly tabs?: ReactNode | undefined;
   readonly sidebar?: ReactNode | undefined;
@@ -32,6 +34,7 @@ export function RecordPage({
   statusLabel,
   breadcrumbs,
   headerActions,
+  help,
   kpiCards,
   tabs,
   sidebar,
@@ -99,8 +102,9 @@ export function RecordPage({
           </div>
         </div>
 
-        {headerActions && (
+        {(headerActions || help) && (
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            {help && <PageHelpButton content={help} />}
             {headerActions}
           </div>
         )}

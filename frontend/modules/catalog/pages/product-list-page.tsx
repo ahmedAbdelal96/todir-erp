@@ -290,6 +290,28 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
     </FilterBar>
   );
 
+  const helpContent = {
+    summary: t("productList.help.summary"),
+    workflowSteps: [
+      { step: 1, title: t("productList.help.step1Title"), description: t("productList.help.step1Desc") },
+      { step: 2, title: t("productList.help.step2Title"), description: t("productList.help.step2Desc") },
+      { step: 3, title: t("productList.help.step3Title"), description: t("productList.help.step3Desc") }
+    ],
+    keyConcepts: [
+      { term: t("productList.help.concept1Term"), explanation: t("productList.help.concept1Desc") },
+      { term: t("productList.help.concept2Term"), explanation: t("productList.help.concept2Desc") },
+      { term: t("productList.help.concept3Term"), explanation: t("productList.help.concept3Desc") }
+    ],
+    proTips: [
+      t("productList.help.tip1"),
+      t("productList.help.tip2")
+    ],
+    faqs: [
+      { question: t("productList.help.faq1Q"), answer: t("productList.help.faq1A") },
+      { question: t("productList.help.faq2Q"), answer: t("productList.help.faq2A") }
+    ]
+  };
+
   return (
     <>
       <ListPage
@@ -303,6 +325,7 @@ export function ProductListPage({ onSelectProduct }: ProductListPageProps): Reac
           label: t("productList.add"),
           onClick: () => setIsQuickCreateOpen(true)
         }}
+        help={helpContent}
         secondaryActions={
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             <Button variant="secondary" size="compact" onPress={() => setIsImportOpen(true)}>
