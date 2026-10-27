@@ -2138,6 +2138,7 @@ public sealed class SubledgerPostgresIntegrationTests
     {
         public Task<bool> IsActivePartyAsync(TenantId tenantId, Guid partyId, Guid? legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task<IReadOnlySet<Guid>> FindActivePartiesAsync(TenantId tenantId, IReadOnlyCollection<Guid> partyIds, Guid? legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlySet<Guid>>(partyIds.ToHashSet());
+        public Task<InvoicePartySnapshotContract?> ReadInvoiceSnapshotAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult<InvoicePartySnapshotContract?>(null);
     }
 
     private sealed class AllPermissionSubjectStore(TenantId tenant, Guid membership, LegalEntityId? entityScope = null) : IAuthorizationSubjectStore

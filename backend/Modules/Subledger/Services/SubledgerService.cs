@@ -461,6 +461,16 @@ public sealed class SubledgerService(
         return item;
     }
 
+    public async Task<SourceSettlementSummaryContract?> GetSourceSettlementSummaryAsync(TenantId tenantId, LegalEntityId legalEntityId, string sourceType,
+        Guid sourceDocumentId, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, legalEntityId, sourceDocumentId);
+        if (string.IsNullOrWhiteSpace(sourceType) || sourceType.Trim().Length > 80)
+            throw new SubledgerException("subledger.source_type_invalid", "A valid financial source type is required.");
+        _ = await EnsureEntityAsync(tenantId, legalEntityId, cancellationToken);
+        return await repository.GetSourceSettlementSummaryAsync(tenantId, legalEntityId, sourceType.Trim(), sourceDocumentId, cancellationToken);
+    }
+
     public async Task<AutoApplySuggestionResult> SuggestApplicationsAsync(TenantId tenantId, Guid membershipId, AutoApplySuggestionQuery query, CancellationToken cancellationToken = default)
     {
         var started = Stopwatch.GetTimestamp();

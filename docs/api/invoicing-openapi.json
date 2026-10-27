@@ -1,0 +1,2880 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TODIR Invoicing API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/api/v1/invoicing"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Invoicing"
+    }
+  ],
+  "paths": {
+    "/customer-invoices": {
+      "get": {
+        "operationId": "listcustomerinvoices",
+        "summary": "List customer-invoices for a legal entity",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "branchId"
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "partyId"
+          },
+          {
+            "schema": {
+              "format": "date",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "fromDate"
+          },
+          {
+            "schema": {
+              "format": "date",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "toDate"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "currencyCode"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "lifecycle"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search"
+          },
+          {
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "type": "integer",
+              "maximum": 10000
+            },
+            "in": "query",
+            "name": "page"
+          },
+          {
+            "schema": {
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "pageSize"
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createcustomerinvoicesDraft",
+        "summary": "Create a customer-invoices draft",
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvoiceDraftRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/preview": {
+      "post": {
+        "operationId": "previewcustomerinvoices",
+        "summary": "Preview a customer-invoices before saving",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvoiceDraftRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/{id}": {
+      "get": {
+        "operationId": "getcustomerinvoicesDraft",
+        "summary": "Read a customer-invoices draft",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      },
+      "put": {
+        "operationId": "updatecustomerinvoicesDraft",
+        "summary": "Update a customer-invoices draft with optimistic concurrency",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateInvoiceDraftRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/{id}/detail": {
+      "get": {
+        "operationId": "getcustomerinvoicesdetail",
+        "summary": "get detail for a customer-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/{id}/render-model": {
+      "get": {
+        "operationId": "getcustomerinvoicesrendermodel",
+        "summary": "get render-model for a customer-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceRenderModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/{id}/compliance-snapshot": {
+      "get": {
+        "operationId": "getcustomerinvoicescompliancesnapshot",
+        "summary": "get compliance-snapshot for a customer-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceComplianceSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/{id}/preview": {
+      "post": {
+        "operationId": "postcustomerinvoicespreview",
+        "summary": "post preview for a customer-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/{id}/finalize": {
+      "post": {
+        "operationId": "postcustomerinvoicesfinalize",
+        "summary": "post finalize for a customer-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceFinalization"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvoiceFinalizationRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/{id}/cancel-draft": {
+      "post": {
+        "operationId": "postcustomerinvoicescanceldraft",
+        "summary": "post cancel-draft for a customer-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelInvoiceDraftRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/supplier-invoices": {
+      "get": {
+        "operationId": "listsupplierinvoices",
+        "summary": "List supplier-invoices for a legal entity",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "branchId"
+          },
+          {
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "partyId"
+          },
+          {
+            "schema": {
+              "format": "date",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "fromDate"
+          },
+          {
+            "schema": {
+              "format": "date",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "toDate"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "currencyCode"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "lifecycle"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search"
+          },
+          {
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "type": "integer",
+              "maximum": 10000
+            },
+            "in": "query",
+            "name": "page"
+          },
+          {
+            "schema": {
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "pageSize"
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createsupplierinvoicesDraft",
+        "summary": "Create a supplier-invoices draft",
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvoiceDraftRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/supplier-invoices/preview": {
+      "post": {
+        "operationId": "previewsupplierinvoices",
+        "summary": "Preview a supplier-invoices before saving",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvoiceDraftRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/supplier-invoices/{id}": {
+      "get": {
+        "operationId": "getsupplierinvoicesDraft",
+        "summary": "Read a supplier-invoices draft",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      },
+      "put": {
+        "operationId": "updatesupplierinvoicesDraft",
+        "summary": "Update a supplier-invoices draft with optimistic concurrency",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateInvoiceDraftRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/supplier-invoices/{id}/detail": {
+      "get": {
+        "operationId": "getsupplierinvoicesdetail",
+        "summary": "get detail for a supplier-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/supplier-invoices/{id}/render-model": {
+      "get": {
+        "operationId": "getsupplierinvoicesrendermodel",
+        "summary": "get render-model for a supplier-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceRenderModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/supplier-invoices/{id}/compliance-snapshot": {
+      "get": {
+        "operationId": "getsupplierinvoicescompliancesnapshot",
+        "summary": "get compliance-snapshot for a supplier-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceComplianceSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": []
+          }
+        ]
+      }
+    },
+    "/supplier-invoices/{id}/preview": {
+      "post": {
+        "operationId": "postsupplierinvoicespreview",
+        "summary": "post preview for a supplier-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          },
+          "404": {
+            "description": "The invoice was not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/supplier-invoices/{id}/finalize": {
+      "post": {
+        "operationId": "postsupplierinvoicesfinalize",
+        "summary": "post finalize for a supplier-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceFinalization"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvoiceFinalizationRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/supplier-invoices/{id}/cancel-draft": {
+      "post": {
+        "operationId": "postsupplierinvoicescanceldraft",
+        "summary": "post cancel-draft for a supplier-invoices",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelInvoiceDraftRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/{id}/credit-notes": {
+      "post": {
+        "operationId": "createCustomerCreditNoteDraft",
+        "summary": "Create an explicit customer CreditNote correction linked to its original invoice",
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvoiceCorrectionRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    },
+    "/customer-invoices/{id}/debit-notes": {
+      "post": {
+        "operationId": "createCustomerDebitNoteDraft",
+        "summary": "Create an explicit customer DebitNote correction linked to its original invoice",
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or business rule violation"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "The required permission is missing"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "legalEntityId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvoiceCorrectionRequest"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "TodirSessionCookie": [],
+            "CsrfToken": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateInvoiceDraftRequest": {
+        "type": "object",
+        "required": [
+          "legalEntityId",
+          "partyId",
+          "documentDate",
+          "postingDate",
+          "taxDate",
+          "currencyCode",
+          "lines"
+        ],
+        "properties": {
+          "legalEntityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "branchId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "partyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "addressId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "postingDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "taxDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "supplyDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "paymentTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplierInvoiceNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvoiceLineInput"
+            }
+          },
+          "documentDiscountAmount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "charges": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/InvoiceChargeInput"
+            }
+          },
+          "priceMode": {
+            "type": "string",
+            "enum": [
+              "Exclusive",
+              "Inclusive"
+            ]
+          }
+        }
+      },
+      "UpdateInvoiceDraftRequest": {
+        "type": "object",
+        "required": [
+          "version",
+          "partyId",
+          "documentDate",
+          "postingDate",
+          "taxDate",
+          "currencyCode",
+          "lines"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "partyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "addressId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "documentDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "taxDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "supplyDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "paymentTermId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "supplierInvoiceNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvoiceLineInput"
+            }
+          },
+          "documentDiscountAmount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "charges": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/InvoiceChargeInput"
+            }
+          },
+          "priceMode": {
+            "type": "string",
+            "enum": [
+              "Exclusive",
+              "Inclusive"
+            ]
+          }
+        }
+      },
+      "InvoiceCorrectionRequest": {
+        "type": "object",
+        "required": [
+          "documentType",
+          "reason",
+          "documentDate",
+          "postingDate",
+          "taxDate",
+          "idempotencyKey",
+          "lines"
+        ],
+        "properties": {
+          "documentType": {
+            "description": "Must match the credit-notes or debit-notes action path.",
+            "enum": [
+              "CreditNote",
+              "DebitNote"
+            ],
+            "type": "string"
+          },
+          "postingDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "taxDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "documentDiscountAmount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplyDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvoiceCorrectionLineInput"
+            }
+          },
+          "charges": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/InvoiceChargeInput"
+            }
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "InvoiceCorrectionLineInput": {
+        "type": "object",
+        "required": [
+          "originalLineId",
+          "quantity"
+        ],
+        "properties": {
+          "originalLineId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          }
+        }
+      },
+      "InvoiceLineInput": {
+        "type": "object",
+        "required": [
+          "description",
+          "quantity"
+        ],
+        "properties": {
+          "priceOverrideReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unitCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "businessCategoryCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "unitOfMeasureId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "discountAmount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "productVariantId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceLineReference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unitPrice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InvoiceChargeInput": {
+        "type": "object",
+        "required": [
+          "code",
+          "description",
+          "amount",
+          "taxTreatment"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "businessCategoryCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taxTreatment": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          }
+        }
+      },
+      "InvoiceFinalizationRequest": {
+        "type": "object",
+        "required": [
+          "version",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "CancelInvoiceDraftRequest": {
+        "type": "object",
+        "required": [
+          "version",
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "InvoicePage": {
+        "type": "object",
+        "required": [
+          "items",
+          "totalCount",
+          "page",
+          "pageSize"
+        ],
+        "properties": {
+          "pageSize": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "totalCount": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvoiceListItem"
+            }
+          }
+        }
+      },
+      "InvoiceListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "legalEntityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lifecycle": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "total": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentType": {
+            "type": "string"
+          },
+          "documentDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "partyName": {
+            "type": "string"
+          },
+          "branchId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer"
+          },
+          "currencyCode": {
+            "type": "string"
+          }
+        }
+      },
+      "InvoicePreview": {
+        "type": "object",
+        "required": [
+          "invoiceId",
+          "version",
+          "lines",
+          "paymentSchedule",
+          "warnings",
+          "blockers",
+          "readyToFinalize"
+        ],
+        "properties": {
+          "invoiceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceLineResult"
+            },
+            "type": "array"
+          },
+          "totals": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvoiceTotals"
+              }
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "paymentSchedule": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceScheduleLine"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceIssue"
+            },
+            "type": "array"
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceIssue"
+            },
+            "type": "array"
+          },
+          "readyToFinalize": {
+            "type": "boolean"
+          },
+          "accountingPreview": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      },
+      "InvoiceDraft": {
+        "type": "object",
+        "required": [
+          "id",
+          "legalEntityId",
+          "direction",
+          "partyId",
+          "documentDate",
+          "postingDate",
+          "taxDate",
+          "currencyCode",
+          "lifecycle",
+          "version",
+          "lines",
+          "documentDiscountAmount",
+          "charges",
+          "priceMode"
+        ],
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "legalEntityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "branchId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "direction": {
+            "type": "string"
+          },
+          "partyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "addressId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "postingDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "taxDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "supplyDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "paymentTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplierInvoiceNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lifecycle": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceLineInput"
+            },
+            "type": "array"
+          },
+          "documentDiscountAmount": {
+            "type": "string"
+          },
+          "charges": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceChargeInput"
+            },
+            "type": "array"
+          },
+          "priceMode": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      },
+      "InvoiceDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "legalEntityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "branchId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "direction": {
+            "type": "string"
+          },
+          "documentType": {
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "partyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "partyDisplayName": {
+            "type": "string"
+          },
+          "partyLegalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "partyTradeName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "documentDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "postingDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "taxDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "supplyDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paymentTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "supplierInvoiceNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lifecycle": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "totals": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceLineResult"
+            },
+            "type": "array"
+          },
+          "paymentSchedule": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceScheduleLine"
+            },
+            "type": "array"
+          },
+          "settlementSummary": {
+            "type": "string"
+          },
+          "regulatorySummary": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentDiscountAmount": {
+            "type": "string"
+          },
+          "charges": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceChargeDetail"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "discountAllocations": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceDiscountAllocationDetail"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "priceMode": {
+            "type": "string"
+          },
+          "addressEvidenceJson": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      },
+      "InvoiceRenderModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "documentType": {
+            "type": "string"
+          },
+          "partyDisplayName": {
+            "type": "string"
+          },
+          "partyLegalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "partyTradeName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "addressEvidenceJson": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "postingDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "taxDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "supplyDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "priceMode": {
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/InvoiceTotals"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceLineResult"
+            },
+            "type": "array"
+          },
+          "paymentSchedule": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceScheduleLine"
+            },
+            "type": "array"
+          },
+          "documentDiscountAmount": {
+            "type": "string"
+          },
+          "charges": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceChargeDetail"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "InvoiceComplianceSnapshot": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "invoiceId",
+          "legalEntityId",
+          "direction",
+          "documentType",
+          "documentNumber",
+          "documentDate",
+          "postingDate",
+          "taxDate",
+          "currencyCode",
+          "priceMode",
+          "partyEvidenceJson",
+          "netAmount",
+          "taxableAmount",
+          "discountAmount",
+          "chargeAmount",
+          "taxAmount",
+          "grossAmount",
+          "lines",
+          "charges",
+          "paymentSchedule"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "invoiceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "legalEntityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "documentType": {
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "documentDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "postingDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "taxDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "supplyDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "priceMode": {
+            "type": "string"
+          },
+          "partyEvidenceJson": {
+            "type": "string"
+          },
+          "addressEvidenceJson": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paymentTermEvidenceJson": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "netAmount": {
+            "type": "string"
+          },
+          "taxableAmount": {
+            "type": "string"
+          },
+          "discountAmount": {
+            "type": "string"
+          },
+          "chargeAmount": {
+            "type": "string"
+          },
+          "taxAmount": {
+            "type": "string"
+          },
+          "grossAmount": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "charges": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "paymentSchedule": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceScheduleLine"
+            },
+            "type": "array"
+          },
+          "financialContext": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      },
+      "InvoiceFinalization": {
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "lifecycle": {
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/InvoiceTotals"
+          },
+          "paymentSchedule": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceScheduleLine"
+            },
+            "type": "array"
+          },
+          "journalEntryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "openItemIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "regulatoryNextAction": {
+            "type": "string"
+          }
+        }
+      },
+      "CreatedDraft": {
+        "type": "object",
+        "required": [
+          "id",
+          "lifecycle",
+          "version"
+        ],
+        "properties": {
+          "lifecycle": {
+            "const": "Draft",
+            "type": "string"
+          },
+          "version": {
+            "const": 1,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "documentType": {
+            "type": "string"
+          }
+        }
+      },
+      "InvoiceTotals": {
+        "type": "object",
+        "properties": {
+          "netAmount": {
+            "type": "string"
+          },
+          "discountAmount": {
+            "type": "string"
+          },
+          "chargeAmount": {
+            "type": "string"
+          },
+          "taxableAmount": {
+            "type": "string"
+          },
+          "taxAmount": {
+            "type": "string"
+          },
+          "grossAmount": {
+            "type": "string"
+          },
+          "roundingAdjustment": {
+            "type": "string"
+          },
+          "currencyCode": {
+            "type": "string"
+          }
+        }
+      },
+      "InvoiceScheduleLine": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer"
+          },
+          "dueDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "currencyCode": {
+            "type": "string"
+          }
+        }
+      },
+      "InvoiceIssue": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "lineReference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InvoiceLineResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "productVariantId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unitOfMeasureId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unitCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "resolvedUnitPrice": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finalUnitPrice": {
+            "type": "string"
+          },
+          "netAmount": {
+            "type": "string"
+          },
+          "taxAmount": {
+            "type": "string"
+          },
+          "grossAmount": {
+            "type": "string"
+          },
+          "priceExplanation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taxComponents": {
+            "items": {
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "productEvidenceJson": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unitEvidenceJson": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InvoiceChargeAllocationDetail": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "lineId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      },
+      "InvoiceChargeDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "taxTreatment": {
+            "type": "string"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/InvoiceChargeAllocationDetail"
+            },
+            "type": "array"
+          }
+        }
+      },
+      "InvoiceDiscountAllocationDetail": {
+        "type": "object",
+        "properties": {
+          "allocatedAmount": {
+            "type": "string"
+          },
+          "sourceAmount": {
+            "type": "string"
+          },
+          "lineId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "discountType": {
+            "type": "string"
+          }
+        }
+      },
+      "InvoiceSourceTrace": {
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "documentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "requestBodies": {
+      "CreateInvoiceDraft": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateInvoiceDraftRequest"
+            }
+          }
+        }
+      },
+      "UpdateInvoiceDraft": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateInvoiceDraftRequest"
+            }
+          }
+        }
+      },
+      "CreateInvoiceCorrection": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/InvoiceCorrectionRequest"
+            }
+          }
+        }
+      },
+      "FinalizeInvoice": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/InvoiceFinalizationRequest"
+            }
+          }
+        }
+      },
+      "CancelInvoiceDraft": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CancelInvoiceDraftRequest"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "TodirSessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "todir_session",
+        "description": "HttpOnly SameSite session cookie issued by TODIR authentication."
+      },
+      "CsrfToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-TOKEN",
+        "description": "Request token obtained from GET /api/v1/auth/csrf for every state-changing request."
+      }
+    }
+  }
+}

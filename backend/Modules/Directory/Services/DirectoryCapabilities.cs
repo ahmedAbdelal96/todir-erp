@@ -14,6 +14,9 @@ public sealed class DirectoryCapabilities(DirectoryService directory) : IDirecto
     public Task<IReadOnlySet<Guid>> FindActivePartiesAsync(TenantId tenantId, IReadOnlyCollection<Guid> partyIds, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => directory.FindActivePartiesAsync(tenantId, partyIds, legalEntityId, cancellationToken);
 
+    public Task<InvoicePartySnapshotContract?> ReadInvoiceSnapshotAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, CancellationToken cancellationToken = default)
+        => directory.ReadInvoiceSnapshotAsync(tenantId, partyId, legalEntityId, cancellationToken);
+
     public Task<IReadOnlyDictionary<string, IReadOnlyList<Guid>>> ResolveExternalPartyReferencesAsync(TenantId tenantId, IReadOnlyCollection<string> references, Guid? legalEntityId, CancellationToken cancellationToken = default)
         => directory.ResolveExternalPartyReferencesAsync(tenantId, references, legalEntityId, cancellationToken);
 

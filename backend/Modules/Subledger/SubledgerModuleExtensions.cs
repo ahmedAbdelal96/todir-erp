@@ -1,4 +1,5 @@
 using Core.Modules;
+using Core.Transactions;
 using Microsoft.Extensions.DependencyInjection;
 using Modules.Subledger.Repositories;
 using Modules.Subledger.Services;
@@ -14,6 +15,7 @@ public static class SubledgerModuleExtensions
         services.AddSingleton<IModuleManifestProvider, SubledgerModuleManifestProvider>();
         services.AddSingleton<SubledgerRepository>();
         services.AddSingleton<SubledgerService>();
+        services.AddSingleton<ITransactionalSubledgerOpenItemCapability, SubledgerTransactionCapability>();
         services.AddSingleton<ISubledgerCapabilities>(provider => provider.GetRequiredService<SubledgerService>());
         return services;
     }

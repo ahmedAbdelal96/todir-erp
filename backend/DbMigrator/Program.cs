@@ -93,7 +93,36 @@ await using (var ownerDatabaseGrant = new NpgsqlCommand("select format('grant cr
 // Databases restored from the pre-canonical layout can contain current
 // foundation tables owned by the restore administrator. Normalize ownership
 // before SET ROLE so the migration owner can perform the guarded consolidation.
-    await using (var normalizeCanonicalOwnership = new NpgsqlCommand("do $$ declare item record; begin for item in select relation_namespace.nspname as schema_name, relation.relname as relation_name, relation.relkind from pg_class relation join pg_namespace relation_namespace on relation_namespace.oid = relation.relnamespace where relation_namespace.nspname in ('platform','platform_migration','foundation_catalog','foundation_directory','foundation_finbase','foundation_tax','finance_ledger','sample') and relation.relkind in ('r','S') and pg_get_userbyid(relation.relowner) <> 'erp_owner' loop execute format('alter %s %I.%I owner to erp_owner', case when item.relkind = 'S' then 'sequence' else 'table' end, item.schema_name, item.relation_name); end loop; end $$", connection))
+    await using (var normalizeCanonicalOwnership = new NpgsqlCommand("""
+        do $$
+        declare item record;
+        begin
+            for item in
+                select nspname from pg_namespace
+                where (nspname in ('platform', 'platform_migration', 'sample')
+                    or nspname like 'foundation_%'
+                    or nspname like 'business_%'
+                    or nspname like 'finance_%')
+                  and pg_get_userbyid(nspowner) <> 'erp_owner'
+            loop
+                execute format('alter schema %I owner to erp_owner', item.nspname);
+            end loop;
+
+            for item in
+                select relation_namespace.nspname as schema_name, relation.relname as relation_name, relation.relkind
+                from pg_class relation
+                join pg_namespace relation_namespace on relation_namespace.oid = relation.relnamespace
+                where (relation_namespace.nspname in ('platform', 'platform_migration', 'sample')
+                    or relation_namespace.nspname like 'foundation_%'
+                    or relation_namespace.nspname like 'business_%'
+                    or relation_namespace.nspname like 'finance_%')
+                  and relation.relkind in ('r', 'S')
+                  and pg_get_userbyid(relation.relowner) <> 'erp_owner'
+            loop
+                execute format('alter %s %I.%I owner to erp_owner', case when item.relkind = 'S' then 'sequence' else 'table' end, item.schema_name, item.relation_name);
+            end loop;
+        end $$
+        """, connection))
     await normalizeCanonicalOwnership.ExecuteNonQueryAsync();
 
 await using (var setOwner = new NpgsqlCommand("set role erp_owner", connection))
@@ -195,6 +224,7 @@ foreach (var script in scripts)
         "finbase-forward-fix-canonical-ratio-due-rules.sql" => new[] { "foundation_finbase.payment_term_rule" },
         "finbase-forward-fix-rounding-contexts.sql" => new[] { "foundation_finbase.financial_rounding_policy" },
         "ledger-forward-fix-z-accounting-configuration-mappings.sql" => new[] { "finance_ledger.account_mapping_version", "finance_ledger.accounting_configuration_version", "finance_ledger.ledger_entity_configuration", "finance_ledger.journal_entry", "finance_ledger.journal_entry_line" },
+        "ledger-forward-fix-invoicing-debit-notes.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version" },
         _ => null
     };
     if (Path.GetFileName(script) is "finbase-forward-fix-provider-history.sql" or "pricing-schema.sql")
@@ -414,6 +444,7 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("catalog-forward-fix-import.sql", StringComparison.Ordinal) => 2,
     _ when fileName.Equals("catalog-forward-fix-import-reconciliation.sql", StringComparison.Ordinal) => 3,
     _ when fileName.Equals("catalog-forward-fix-import-worker.sql", StringComparison.Ordinal) => 4,
+    _ when fileName.Equals("ledger-forward-fix-invoicing-debit-notes.sql", StringComparison.Ordinal) => 6,
     // This index references write_off, which is introduced by the later-named Subledger pass-2 migration.
     _ when fileName.Equals("subledger-forward-fix-exposure-current-read.sql", StringComparison.Ordinal) => 6,
     _ => 5

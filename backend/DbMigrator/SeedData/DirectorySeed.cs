@@ -5,9 +5,25 @@ namespace DbMigrator.SeedData;
 
 public static class DirectorySeed
 {
+    private static readonly (string City, string Governorate, string PostalCode, string Street, string Unit)[] EgyptianLocations =
+    [
+        ("القاهرة", "القاهرة", "11511", "شارع قصر النيل", "الدور الثاني"),
+        ("مدينة نصر", "القاهرة", "11765", "شارع عباس العقاد", "مكتب 12"),
+        ("المعادي", "القاهرة", "11728", "شارع 9", "الدور الأول"),
+        ("العبور", "القليوبية", "11828", "المنطقة الصناعية الأولى", "مخزن 4"),
+        ("السادس من أكتوبر", "الجيزة", "12566", "المنطقة الصناعية الثالثة", "مبنى B"),
+        ("الجيزة", "الجيزة", "12511", "شارع جامعة الدول العربية", "مكتب 8"),
+        ("الإسكندرية", "الإسكندرية", "21500", "شارع فؤاد", "الدور الثالث"),
+        ("برج العرب", "الإسكندرية", "21934", "المنطقة الصناعية ببرج العرب", "مخزن 2"),
+        ("طنطا", "الغربية", "31111", "شارع البحر", "مكتب 5"),
+        ("المنصورة", "الدقهلية", "35511", "شارع الجمهورية", "الدور الأول"),
+        ("الزقازيق", "الشرقية", "44511", "شارع طلبة عويضة", "مكتب 3"),
+        ("الإسماعيلية", "الإسماعيلية", "41511", "شارع السلطان حسين", "مخزن 1")
+    ];
+
     public static async Task<SeedModuleSummary> SeedAsync(SeedContext context, CancellationToken cancellationToken)
     {
-        var parties = BuildParties(context.Tenant, context.Tenant.Id == SeedIds.AtlasTenant ? 80 : 55);
+        var parties = BuildParties(context.Tenant, context.Tenant.Id == SeedIds.AtlasTenant ? 180 : 120);
         foreach (var party in parties)
         {
             await context.ExecuteAsync("insert into foundation_directory.party (tenant_id,id,party_type,status,display_name,display_name_normalized,legal_name,trade_name,name_ar,name_en,first_name,middle_name,last_name,country_code,primary_language,created_by,updated_by,created_at,updated_at,version) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'EG',$14,$15,$15,$16,$16,1) on conflict (tenant_id,id) do update set party_type=excluded.party_type,status=excluded.status,display_name=excluded.display_name,display_name_normalized=excluded.display_name_normalized,legal_name=excluded.legal_name,trade_name=excluded.trade_name,name_ar=excluded.name_ar,name_en=excluded.name_en,first_name=excluded.first_name,middle_name=excluded.middle_name,last_name=excluded.last_name,primary_language=excluded.primary_language,updated_by=excluded.updated_by,updated_at=excluded.updated_at,version=foundation_directory.party.version+1", cancellationToken, context.Tenant.Id, party.Id, party.Type, party.Status, party.DisplayName, Normalize(party.DisplayName), party.LegalName ?? (object)DBNull.Value, party.TradeName ?? (object)DBNull.Value, party.NameAr ?? (object)DBNull.Value, party.NameEn ?? (object)DBNull.Value, party.FirstName ?? (object)DBNull.Value, party.MiddleName ?? (object)DBNull.Value, party.LastName ?? (object)DBNull.Value, "ar", context.AdministratorId, context.AsOf);
@@ -30,7 +46,8 @@ public static class DirectorySeed
             if (party.Index % 5 != 3)
             {
                 var addressId = SeedIds.Child(context.Tenant.Id, "address", party.Index);
-                await context.ExecuteAsync("insert into foundation_directory.address (tenant_id,id,country_code,city,region,postal_code,line1,line2,address_type,status,version,created_at,updated_at) values ($1,$2,'EG',$3,$4,$5,$6,$7,'General','Active',1,$8,$8) on conflict (tenant_id,id) do update set city=excluded.city,region=excluded.region,postal_code=excluded.postal_code,line1=excluded.line1,line2=excluded.line2,status='Active',updated_at=excluded.updated_at", cancellationToken, context.Tenant.Id, addressId, party.Index % 2 == 0 ? "القاهرة" : "الإسكندرية", party.Index % 2 == 0 ? "القاهرة" : "الإسكندرية", $"11{party.Index:0000}", $"شارع التجارة رقم {party.Index + 1}، المنطقة الصناعية", party.Index % 2 == 0 ? "الدور الأول" : (object)DBNull.Value, context.AsOf);
+                var location = EgyptianLocations[party.Index % EgyptianLocations.Length];
+                await context.ExecuteAsync("insert into foundation_directory.address (tenant_id,id,country_code,city,region,postal_code,line1,line2,address_type,status,version,created_at,updated_at) values ($1,$2,'EG',$3,$4,$5,$6,$7,'General','Active',1,$8,$8) on conflict (tenant_id,id) do update set city=excluded.city,region=excluded.region,postal_code=excluded.postal_code,line1=excluded.line1,line2=excluded.line2,status='Active',updated_at=excluded.updated_at", cancellationToken, context.Tenant.Id, addressId, location.City, location.Governorate, location.PostalCode, location.Street, location.Unit, context.AsOf);
                 await context.ExecuteAsync("insert into foundation_directory.party_address (tenant_id,party_id,address_id,usage,is_default) values ($1,$2,$3,'General',true) on conflict (tenant_id,party_id,address_id,usage) do update set is_default=true", cancellationToken, context.Tenant.Id, party.Id, addressId);
             }
             if (party.Index % 6 == 0)
@@ -90,7 +107,7 @@ public static class DirectorySeed
         }
         var duplicateId = SeedIds.Child(context.Tenant.Id, "duplicate-candidate", 1);
         await context.ExecuteAsync("insert into foundation_directory.duplicate_candidate (tenant_id,id,party_id,candidate_party_id,reason,confidence,status,created_at,resolution_reason) values ($1,$2,$3,$4,'Same verified tax identifier',0.99,'Open',$5,null) on conflict (tenant_id,id) do update set reason=excluded.reason,confidence=excluded.confidence,status='Open',resolved_at=null,resolved_by=null,resolution_reason=null", cancellationToken, context.Tenant.Id, duplicateId, parties[0].Id, parties[1].Id, context.AsOf);
-        await context.ExecuteAsync("insert into foundation_directory.external_reference (tenant_id,id,party_id,system_code,external_key,created_at) values ($1,$2,$3,'directory-import','ATLAS-001',$4) on conflict (tenant_id,system_code,external_key) do update set party_id=excluded.party_id", cancellationToken, context.Tenant.Id, SeedIds.Child(context.Tenant.Id, "external-reference", 1), first, context.AsOf);
+        await context.ExecuteAsync("insert into foundation_directory.external_reference (tenant_id,id,party_id,system_code,external_key,created_at) values ($1,$2,$3,'directory-import',$4,$5) on conflict (tenant_id,id) do update set party_id=excluded.party_id,external_key=excluded.external_key", cancellationToken, context.Tenant.Id, SeedIds.Child(context.Tenant.Id, "external-reference", 1), first, $"{context.Tenant.Slug.ToUpperInvariant()}-001", context.AsOf);
     }
 
     private static List<PartySpec> BuildParties(SeedTenant tenant, int count)
@@ -101,7 +118,25 @@ public static class DirectorySeed
             ("النور للتوريدات", "Al Nour Supplies"), ("النور للصناعات", "Al Nour Industries"),
             ("شركة الرواد للتجهيزات", "Pioneers Equipment Co."), ("مؤسسة النخبة التجارية", "Elite Trading Establishment"),
             ("شركة المستقبل للأدوات الكهربائية", "Future Electrical Tools"), ("الصفوة لمستلزمات التعبئة", "Safwa Packaging Supplies"),
-            ("مخازن الإمداد العربي", "Arab Supply Stores"), ("مكتب الخليج للخدمات", "Gulf Services Office")
+            ("مخازن الإمداد العربي", "Arab Supply Stores"), ("مكتب الخليج للخدمات", "Gulf Services Office"),
+            ("المصرية لمستلزمات المكاتب", "Egyptian Office Supplies"), ("النيل للأدوات الصحية", "Nile Plumbing Supplies"),
+            ("دلتا لمهمات المصانع", "Delta Factory Equipment"), ("الشرق للتغليف الصناعي", "East Industrial Packaging"),
+            ("المحور لتجارة الأجهزة", "Axis Appliance Trading"), ("الصفا للورقيات", "Safa Paper Products"),
+            ("المتحدة للمعدات الكهربائية", "United Electrical Equipment"), ("مخازن القاهرة للتوريدات", "Cairo Supply Stores"),
+            ("الإسكندرية لمستلزمات التعبئة", "Alexandria Packaging Supplies"), ("المتخصصون للصيانة", "Specialists Maintenance Co."),
+            ("الأمانة للتجارة والتوزيع", "Amanah Trading and Distribution"), ("الفجر للمهمات المكتبية", "Fajr Office Equipment"),
+            ("مؤسسة روافد للتوريدات", "Rawafid Supply Establishment"), ("شركة مدار للخدمات التجارية", "Madar Commercial Services"),
+            ("الوفاق لمهمات التشغيل", "Wefaq Operating Supplies"), ("المعادي للأدوات الصناعية", "Maadi Industrial Tools"),
+            ("الصفوة للتجارة بالجملة", "Safwa Wholesale Trading"), ("مخازن الدلتا المركزية", "Delta Central Stores"),
+            ("النخبة لتجهيز الشركات", "Elite Business Equipment")
+        };
+        var people = new[]
+        {
+            "أحمد محمود عبدالسلام", "سارة إبراهيم حمدي", "مريم حسن عبداللطيف", "عمر نبيل فؤاد",
+            "خالد سامي عبدالعزيز", "نور علي مصطفى", "هبة محمود رشاد", "يوسف عادل منصور",
+            "منى شريف عبدالحميد", "محمود فوزي سليمان", "دينا أحمد صبري", "كريم طارق جلال",
+            "إيمان محمد ناصر", "مصطفى جمال الدين", "رانيا حسن لطفي", "حسام إبراهيم كمال",
+            "آية عاطف محمود", "شريف عبدالمجيد السيد", "بسمة سمير خليل", "عمرو فتحي إبراهيم"
         };
         var result = new List<PartySpec>(count);
         for (var index = 0; index < count; index++)
@@ -110,7 +145,7 @@ public static class DirectorySeed
             var named = index < names.Length ? names[index] : ($"شركة {new[] { "اليسر", "البركة", "التميز", "الوفاء", "المرجان", "المنارة" }[index % 6]} للتوريدات — فرع {humanIndex}", $"{new[] { "Al Yusr", "Al Baraka", "Tamayouz", "Al Wafaa", "Marjan", "Al Manara" }[index % 6]} Supplies Branch {humanIndex}");
             var isPerson = index % 7 == 0;
             var isArchived = index == count - 1;
-            var display = isPerson ? new[] { "أحمد محمود", "سارة إبراهيم", "مريم حسن", "Omar Nabil" }[index % 4] : named.Item1;
+            var display = isPerson ? people[index % people.Length] : named.Item1;
             var type = isPerson ? "Person" : "Organization";
             var roles = index % 5 == 0 ? new[] { new PartyRole("Customer", "Active"), new PartyRole("Supplier", "Active") } : new[] { new PartyRole(index % 2 == 0 ? "Customer" : "Supplier", index == count - 2 ? "Inactive" : "Active") };
             result.Add(new(SeedIds.Party(tenant.Id, humanIndex), humanIndex, type, isArchived ? "Archived" : "Active", display, isPerson ? null : display, isPerson ? null : named.Item2, isPerson ? display : named.Item1, isPerson ? named.Item2 : null, isPerson ? display.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0] : null, isPerson ? "عميل" : null, isPerson ? display.Split(' ', StringSplitOptions.RemoveEmptyEntries).Last() : null, roles));

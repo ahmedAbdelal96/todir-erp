@@ -8,6 +8,8 @@ using Modules.Pricing;
 using Modules.Tax;
 using Modules.Ledger;
 using Modules.Subledger;
+using Modules.Invoicing;
+using Modules.Invoicing.Controllers;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -29,6 +31,7 @@ builder.Services.AddPricingModule();
 builder.Services.AddTaxModule();
 builder.Services.AddLedgerModule();
 builder.Services.AddSubledgerModule();
+builder.Services.AddInvoicingModule();
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 var configuredOrigins = (builder.Configuration["TODIR_CORS_ORIGINS"] ?? string.Empty)
@@ -141,6 +144,7 @@ app.MapPricingModule();
 app.MapTaxModule();
 app.MapSubledgerModule();
 app.MapLedgerModule();
+app.MapInvoicingModule();
 app.Run();
 
 public partial class Program;

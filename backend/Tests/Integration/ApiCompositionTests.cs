@@ -10,8 +10,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class ApiCompositionTests
-{
+public sealed class ApiCompositionTests : DatabaseIntegrationTestBase {
     [Fact]
     public void ApiBuildsWithValidatedPostgresTransactionAndInboxServices()
     {
@@ -93,6 +92,13 @@ public sealed class ApiCompositionTests
         Assert.True(paths.TryGetProperty("/api/v1/subledger/reconciliation/control-accounts", out _));
         Assert.True(paths.TryGetProperty("/api/v1/subledger/reconciliation/run", out _));
         Assert.True(paths.TryGetProperty("/api/v1/subledger/opening-batches/{batchId}/finalize", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/invoicing/customer-invoices", out var customerInvoices));
+        Assert.True(customerInvoices.TryGetProperty("get", out _));
+        Assert.True(customerInvoices.TryGetProperty("post", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/invoicing/customer-invoices/{id}/finalize", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/invoicing/supplier-invoices/{id}/finalize", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/invoicing/customer-invoices/{id}/render-model", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/invoicing/supplier-invoices/{id}/compliance-snapshot", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/facts", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/facts", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/entries/{entryId}", out _));

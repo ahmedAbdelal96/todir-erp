@@ -1,5 +1,6 @@
 using Npgsql;
 using Shared.Contracts.Ledger;
+using Shared.Contracts.Subledger;
 using Shared.Primitives.Identifiers;
 
 namespace Core.Transactions;
@@ -23,6 +24,23 @@ public interface ITransactionalLedgerPostingCapability
     Task<LedgerPostingResult> PostExplicitAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, ExplicitLedgerPostingPayload payload, CancellationToken cancellationToken = default);
     Task<LedgerPostingResult> PostSettlementFxDifferenceAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementFxDifferencePayload payload, CancellationToken cancellationToken = default);
     Task<LedgerPostingResult> PostSettlementWriteOffAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementWriteOffPayload payload, CancellationToken cancellationToken = default);
+}
+
+public interface ITransactionalInvoiceLedgerPostingCapability
+{
+    Task<Guid> GetActiveConfigurationVersionIdAsync(ITransactionContext context, TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default);
+    Task<LedgerPostingResult> PostInvoiceAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        InvoiceLedgerPostingContract invoice, CancellationToken cancellationToken = default);
+    Task<InvoiceAccountingPreview> PreviewInvoiceAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        InvoiceLedgerPostingContract invoice, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Creates invoice open items within the originating invoice transaction.</summary>
+public interface ITransactionalSubledgerOpenItemCapability
+{
+    Task<IReadOnlyList<Guid>> CreateInvoiceOpenItemsAsync(ITransactionContext context, TenantId tenantId, CreateOpenItemsCommand command, SubledgerDirectionContract direction, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Guid>> CreateInvoiceCorrectionOpenItemsAsync(ITransactionContext context, TenantId tenantId, CreateOpenItemsCommand command,
+        SubledgerDirectionContract direction, SubledgerPolarityContract polarity, CancellationToken cancellationToken = default);
 }
 
 public sealed record OutboxMessage(Guid MessageId, string MessageType, string Payload, TenantId TenantId, DateTimeOffset OccurredAt, Guid CorrelationId, Guid CausationId, string SourceModule, string? TraceParent = null);

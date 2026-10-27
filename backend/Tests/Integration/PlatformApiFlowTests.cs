@@ -14,8 +14,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class PlatformApiFlowTests
-{
+public sealed class PlatformApiFlowTests : DatabaseIntegrationTestBase {
     private static readonly string[] SampleModuleIds = ["sample"];
     private static readonly string[] EmptyFeatures = [];
 

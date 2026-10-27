@@ -118,6 +118,7 @@ public sealed class SubledgerAuthorizationTests
     {
         public Task<bool> IsActivePartyAsync(TenantId tenantId, Guid partyId, Guid? legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task<IReadOnlySet<Guid>> FindActivePartiesAsync(TenantId tenantId, IReadOnlyCollection<Guid> partyIds, Guid? legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlySet<Guid>>(partyIds.ToHashSet());
+        public Task<Shared.Contracts.Directory.InvoicePartySnapshotContract?> ReadInvoiceSnapshotAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, CancellationToken cancellationToken = default) => Task.FromResult<Shared.Contracts.Directory.InvoicePartySnapshotContract?>(null);
     }
 
     private sealed class FixedEntityCurrency : ILegalEntityFinancialReadStore

@@ -8,7 +8,7 @@ public static class CatalogSeed
     public static async Task<SeedModuleSummary> SeedAsync(SeedContext context, CancellationToken cancellationToken)
     {
         await EnsureMasterDataAsync(context, cancellationToken);
-        var products = BuildProducts(context.Tenant, context.Tenant.Id == SeedIds.AtlasTenant ? 100 : 60);
+        var products = BuildProducts(context.Tenant, context.Tenant.Id == SeedIds.AtlasTenant ? 240 : 160);
         foreach (var product in products)
         {
             await context.ExecuteAsync("insert into foundation_catalog.product_template (tenant_id,id,display_name,display_name_normalized,name_ar,name_en,product_nature,category_id,brand_id,status,created_at,updated_at,version,product_template_code) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,1,$12) on conflict (tenant_id,id) do update set display_name=excluded.display_name,display_name_normalized=excluded.display_name_normalized,name_ar=excluded.name_ar,name_en=excluded.name_en,product_nature=excluded.product_nature,category_id=excluded.category_id,brand_id=excluded.brand_id,status=excluded.status,updated_at=case when (foundation_catalog.product_template.display_name,foundation_catalog.product_template.display_name_normalized,foundation_catalog.product_template.name_ar,foundation_catalog.product_template.name_en,foundation_catalog.product_template.product_nature,foundation_catalog.product_template.category_id,foundation_catalog.product_template.brand_id,foundation_catalog.product_template.status) is distinct from (excluded.display_name,excluded.display_name_normalized,excluded.name_ar,excluded.name_en,excluded.product_nature,excluded.category_id,excluded.brand_id,excluded.status) then excluded.updated_at else foundation_catalog.product_template.updated_at end,version=foundation_catalog.product_template.version+case when (foundation_catalog.product_template.display_name,foundation_catalog.product_template.display_name_normalized,foundation_catalog.product_template.name_ar,foundation_catalog.product_template.name_en,foundation_catalog.product_template.product_nature,foundation_catalog.product_template.category_id,foundation_catalog.product_template.brand_id,foundation_catalog.product_template.status) is distinct from (excluded.display_name,excluded.display_name_normalized,excluded.name_ar,excluded.name_en,excluded.product_nature,excluded.category_id,excluded.brand_id,excluded.status) then 1 else 0 end", cancellationToken, context.Tenant.Id, product.Id, product.DisplayName, Normalize(product.DisplayName), product.NameAr, product.NameEn, product.Nature, SeedIds.Category(context.Tenant.Id, product.CategoryIndex), SeedIds.Brand(context.Tenant.Id, product.BrandIndex), product.Status, context.AsOf, $"SEED-PRD-{product.Index:000000}");
@@ -52,10 +52,10 @@ public static class CatalogSeed
 
     private static async Task EnsureMasterDataAsync(SeedContext context, CancellationToken cancellationToken)
     {
-        var categories = new[] { "مواد مكتبية", "أدوات كهربائية", "مستلزمات تعبئة", "معدات تشغيل", "أجهزة قياس", "قطع غيار" };
+        var categories = new[] { "ورقيات ومستلزمات مكتبية", "كابلات ومكونات كهربائية", "تغليف وعبوات", "معدات تشغيل", "أجهزة قياس", "قطع غيار", "أدوات يدوية", "مستلزمات نظافة", "أثاث مكتبي", "أجهزة حاسب وملحقاتها", "مهمات سلامة مهنية", "خدمات تجهيز وصيانة" };
         for (var index = 0; index < categories.Length; index++)
             await context.ExecuteAsync("insert into foundation_catalog.product_category (tenant_id,id,name,name_normalized,parent_id,status,version,created_at,updated_at) values ($1,$2,$3,$4,$5,'Active',1,$6,$6) on conflict (tenant_id,id) do update set name=excluded.name,name_normalized=excluded.name_normalized,parent_id=excluded.parent_id,status='Active',updated_at=case when (foundation_catalog.product_category.name,foundation_catalog.product_category.name_normalized,foundation_catalog.product_category.parent_id,foundation_catalog.product_category.status) is distinct from (excluded.name,excluded.name_normalized,excluded.parent_id,excluded.status) then excluded.updated_at else foundation_catalog.product_category.updated_at end,version=foundation_catalog.product_category.version+case when (foundation_catalog.product_category.name,foundation_catalog.product_category.name_normalized,foundation_catalog.product_category.parent_id,foundation_catalog.product_category.status) is distinct from (excluded.name,excluded.name_normalized,excluded.parent_id,excluded.status) then 1 else 0 end", cancellationToken, context.Tenant.Id, SeedIds.Category(context.Tenant.Id, index), categories[index], Normalize(categories[index]), index == 0 ? (object)DBNull.Value : SeedIds.Category(context.Tenant.Id, 0), context.AsOf);
-        var brands = new[] { "النخبة", "أطلس", "دلتا", "الرواد" };
+        var brands = new[] { "النخبة", "أطلس", "دلتا", "الرواد", "المصرية", "النيل", "الأمانة", "الصفوة" };
         for (var index = 0; index < brands.Length; index++)
             await context.ExecuteAsync("insert into foundation_catalog.brand (tenant_id,id,name,name_normalized,status,version,created_at,updated_at) values ($1,$2,$3,$4,'Active',1,$5,$5) on conflict (tenant_id,id) do update set name=excluded.name,name_normalized=excluded.name_normalized,status='Active',updated_at=case when (foundation_catalog.brand.name,foundation_catalog.brand.name_normalized,foundation_catalog.brand.status) is distinct from (excluded.name,excluded.name_normalized,excluded.status) then excluded.updated_at else foundation_catalog.brand.updated_at end,version=foundation_catalog.brand.version+case when (foundation_catalog.brand.name,foundation_catalog.brand.name_normalized,foundation_catalog.brand.status) is distinct from (excluded.name,excluded.name_normalized,excluded.status) then 1 else 0 end", cancellationToken, context.Tenant.Id, SeedIds.Brand(context.Tenant.Id, index), brands[index], Normalize(brands[index]), context.AsOf);
         foreach (var dimension in new[] { ("COUNT", "عدد"), ("MASS", "وزن"), ("BUSINESS", "وحدة أعمال") })
@@ -129,15 +129,28 @@ public static class CatalogSeed
 
     private static List<ProductSpec> BuildProducts(SeedTenant tenant, int count)
     {
-        var names = new[] { ("ورق تصوير أبيض A4", "A4 White Copy Paper"), ("كابل كهرباء نحاسي 2.5 مم", "Copper Electrical Cable 2.5mm"), ("شريط تغليف شفاف", "Clear Packaging Tape"), ("جهاز قياس رقمي", "Digital Measuring Device"), ("فلتر هواء صناعي", "Industrial Air Filter"), ("خدمة تجهيز الطلبات", "Order Preparation Service") };
+        var names = new[]
+        {
+            ("ورق تصوير أبيض A4 وزن 80 جم", "A4 Copy Paper 80 gsm"), ("كابل نحاس معزول 2.5 مم", "Insulated Copper Cable 2.5 mm"),
+            ("شريط لاصق للتغليف 48 مم", "Packaging Tape 48 mm"), ("جهاز قياس رقمي متعدد الاستخدام", "Digital Multimeter"),
+            ("فلتر هواء صناعي مقاس متوسط", "Industrial Air Filter Medium"), ("خدمة تجهيز الطلبات", "Order Preparation Service"),
+            ("دباسة مكتبية ثقيلة", "Heavy-Duty Office Stapler"), ("مصباح LED موفر 18 وات", "LED Lamp 18 W"),
+            ("كرتونة شحن مزدوجة الطبقة", "Double-Wall Shipping Carton"), ("قفازات حماية صناعية", "Industrial Safety Gloves"),
+            ("حبر طابعة ليزر أسود", "Black Laser Printer Toner"), ("مفتاح ربط صناعي 12 مم", "Industrial Wrench 12 mm"),
+            ("منظف أرضيات مركز 5 لتر", "Concentrated Floor Cleaner 5 L"), ("كرسي مكتب شبكي", "Mesh Office Chair"),
+            ("قرص تخزين خارجي 1 تيرابايت", "External Storage Drive 1 TB"), ("شريط تحذير أرضي أصفر وأسود", "Yellow and Black Floor Marking Tape"),
+            ("علبة ملفات كرتون مقوى", "Reinforced Cardboard File Box"), ("مقياس ضغط صناعي", "Industrial Pressure Gauge"),
+            ("وصلة كهرباء متعددة المخارج", "Multi-Outlet Power Strip"), ("لفة استرتش للتغليف", "Pallet Stretch Wrap")
+        };
         var result = new List<ProductSpec>(count);
         for (var index = 1; index <= count; index++)
         {
             var named = names[(index - 1) % names.Length];
             var fashion = index == 7;
-            var nameAr = fashion ? "قميص قطني كلاسيكي" : index <= names.Length ? named.Item1 : $"{named.Item1} — مقاس {index}";
-            var nameEn = fashion ? "Classic Cotton Shirt" : index <= names.Length ? named.Item2 : $"{named.Item2} Size {index}";
-            result.Add(new(SeedIds.Product(tenant.Id, index), index, index % 17 == 0 ? "خدمة تجهيز الطلبات" : $"{nameAr} / {nameEn}", nameAr, nameEn, index % 17 == 0 ? "Service" : "Goods", fashion ? 0 : index % 6, index % 4, index % 17 == 0 ? null : $"{(index % 2 == 0 ? "AT" : "مخ")}-{index:0000}", index == count));
+            var packSize = 1 + ((index - 1) / names.Length % 12);
+            var nameAr = fashion ? "قميص قطني كلاسيكي" : index % 17 == 0 ? "خدمة تجهيز الطلبات" : $"{named.Item1} — عبوة {packSize}";
+            var nameEn = fashion ? "Classic Cotton Shirt" : index % 17 == 0 ? "Order Preparation Service" : $"{named.Item2} — Pack {packSize}";
+            result.Add(new(SeedIds.Product(tenant.Id, index), index, $"{nameAr} / {nameEn}", nameAr, nameEn, index % 17 == 0 ? "Service" : "Goods", fashion ? 0 : index % 12, index % 8, index % 17 == 0 ? null : $"EG-{index % 2 + 1}-{index:0000}", index == count));
         }
         return result;
     }

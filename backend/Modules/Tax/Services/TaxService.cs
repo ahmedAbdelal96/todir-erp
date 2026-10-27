@@ -13,6 +13,21 @@ namespace Modules.Tax.Services;
 
 public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities catalog, IQuantityConversion quantityConversion, IDirectoryCapabilities directory, IFinanceBaseCapabilities financeBase, ITaxCountryPackRegistry countryPacks) : ITaxCapabilities
 {
+    public Task<InvoiceDocumentValidationResult> ValidateInvoiceDocumentAsync(InvoiceDocumentValidationRequest request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(request.CountryCode) || request.CountryCode.Length != 2 || request.CountryCode.Any(character => !char.IsAsciiLetter(character))
+            || string.IsNullOrWhiteSpace(request.DocumentType) || string.IsNullOrWhiteSpace(request.CurrencyCode) || request.CurrencyCode.Length != 3)
+            throw new TaxException("tax.invoice_document_context_invalid", "Country, document type, and transaction currency are required for document validation.");
+        var countryCode = request.CountryCode.ToUpperInvariant();
+        var taxDate = LocalDate.FromDateOnly(request.TaxDate);
+        var pack = countryPacks.Find(countryCode, taxDate);
+        if (pack is null) return Task.FromResult(new InvoiceDocumentValidationResult(false, null, null, []));
+
+        var issues = TaxInvoiceDocumentValidator.Validate(pack.GetInvoiceDocumentRequirements(request.DocumentType, taxDate), request.ProductReferences, request.Fields);
+        return Task.FromResult(new InvoiceDocumentValidationResult(true, pack.PackCode, pack.Version, issues));
+    }
+
     public async Task<TaxCapabilityDto?> GetCapabilityAsync(Guid tenantId, Guid legalEntityId, DateOnly at, CancellationToken cancellationToken) => await repository.GetCapabilityAsync(tenantId, legalEntityId, at, cancellationToken);
 
     public Task<TaxCapabilityDto> SetCapabilityAsync(Guid tenantId, Guid legalEntityId, Guid actorId, SetTaxCapabilityRequest request, Guid correlationId, CancellationToken cancellationToken) =>
@@ -105,7 +120,13 @@ public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities c
             throw new TaxException("tax.product_not_found", "The selected product or service is not active in Catalog.");
 
         var profiles = await repository.ResolveProfilesAsync(context.TenantId.Value, domain, dateOnly, cancellationToken);
-        domain = domain with { RegistrationId = profiles.RegistrationId, ProductTaxCategoryId = profiles.ProductCategoryId, PartyTaxCategoryId = profiles.PartyCategoryId };
+        domain = domain with
+        {
+            RegistrationId = profiles.RegistrationId,
+            ProductTaxCategoryId = profiles.ProductCategoryId,
+            PartyTaxCategoryId = profiles.PartyCategoryId,
+            TaxSchemeCode = domain.TaxSchemeCode ?? profiles.RegistrationEvidence?.SchemeCode
+        };
         if (domain.ProductTaxCategoryId is null)
             throw new TaxException("tax.product_classification_missing", "The product or service has no Tax Category for this Tax Date.");
         var finance = await financeBase.ResolveCalculationContextAsync(context.TenantId,context.LegalEntityId,context.TransactionCurrency,FinancialCalculationPurpose.Tax,dateOnly,cancellationToken)
@@ -219,7 +240,13 @@ public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities c
                 foreach (var item in lines)
                 {
                     if (!profiles.TryGetValue(item.index, out var profile)) throw new TaxException("tax.profile_resolution_missing", "Tax profile resolution did not return a result for every line.");
-                    domainByIndex[item.index] = domainByIndex[item.index] with { RegistrationId = profile.RegistrationId, ProductTaxCategoryId = profile.ProductCategoryId, PartyTaxCategoryId = profile.PartyCategoryId };
+                    domainByIndex[item.index] = domainByIndex[item.index] with
+                    {
+                        RegistrationId = profile.RegistrationId,
+                        ProductTaxCategoryId = profile.ProductCategoryId,
+                        PartyTaxCategoryId = profile.PartyCategoryId,
+                        TaxSchemeCode = domainByIndex[item.index].TaxSchemeCode ?? profile.RegistrationEvidence?.SchemeCode
+                    };
                     if (domainByIndex[item.index].ProductTaxCategoryId is null) throw new TaxException("tax.product_classification_missing", "The product or service has no Tax Category for this Tax Date.");
                     ruleContexts.Add(new(item.index, domainByIndex[item.index], dateGroup.Key));
                 }

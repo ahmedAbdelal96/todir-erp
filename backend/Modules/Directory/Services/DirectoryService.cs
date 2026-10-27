@@ -23,6 +23,22 @@ public sealed class DirectoryService(Repositories.DirectoryRepository repository
     public Task<IReadOnlyList<DuplicateCandidateDto>> DuplicatesAsync(TenantId tenantId, Guid partyId, CancellationToken cancellationToken) => repository.DuplicatesAsync(tenantId, partyId, cancellationToken);
     public Task<PartyReadinessDto?> ReadinessAsync(TenantId tenantId, Guid partyId, CancellationToken cancellationToken) => repository.ReadinessAsync(tenantId, partyId, cancellationToken);
     public Task<PartyDetails?> GetVisibleAsync(TenantId tenantId, Guid partyId, Guid? legalEntityId, CancellationToken cancellationToken) => Advanced.GetVisibleAsync(tenantId, partyId, legalEntityId, cancellationToken);
+    public async Task<Shared.Contracts.Directory.InvoicePartySnapshotContract?> ReadInvoiceSnapshotAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, CancellationToken cancellationToken)
+    {
+        var party = await GetVisibleAsync(tenantId, partyId, legalEntityId, cancellationToken);
+        if (party is null || party.Status != PartyStatus.Active) return null;
+        var taxIdentifiers = party.Identifiers
+            .Where(identifier => identifier.Type.Contains("tax", StringComparison.OrdinalIgnoreCase)
+                || identifier.Type.Contains("vat", StringComparison.OrdinalIgnoreCase)
+                || identifier.Type.Contains("tin", StringComparison.OrdinalIgnoreCase)
+                || identifier.Type.Contains("registration", StringComparison.OrdinalIgnoreCase))
+            .Select(identifier => new Shared.Contracts.Directory.InvoicePartyIdentifierContract(identifier.Type, identifier.Value, identifier.CountryCode, identifier.Authority))
+            .ToArray();
+        var addresses = party.Addresses.Select(address => new Shared.Contracts.Directory.InvoicePartyAddressContract(
+            address.Id, address.Usage, address.CountryCode, address.City, address.Region, address.PostalCode, address.Line1, address.Line2, address.IsDefault)).ToArray();
+        return new(party.Id, party.DisplayName, party.LegalName, party.TradeName, party.CountryCode, taxIdentifiers, addresses,
+            party.Roles.Where(role => role.Status == "Active").Select(role => role.Code.ToString()).ToArray());
+    }
     public Task<PagedParties> ListVisibleAsync(TenantId tenantId, string? search, PartyType? partyType, PartyRoleCode? role, PartyStatus? status, Guid? legalEntityId, int page, int pageSize, CancellationToken cancellationToken) => Advanced.ListVisibleAsync(tenantId, search, partyType, role, status, legalEntityId, page, pageSize, cancellationToken);
     public Task<PartyDetails> AddContactPersonAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid partyId, ContactPersonInput input, ContactPersonLinkInput link, Guid correlationId, CancellationToken cancellationToken) => Advanced.AddContactPersonAsync(tenantId, actorId, membershipId, partyId, input, link, correlationId, cancellationToken);
     public Task<PartyDetails> AddAliasAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid partyId, AliasInput input, Guid correlationId, CancellationToken cancellationToken) => Advanced.AddAliasAsync(tenantId, actorId, membershipId, partyId, input, correlationId, cancellationToken);

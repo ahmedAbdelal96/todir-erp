@@ -15,7 +15,8 @@ public static class SubledgerSeed
         var ledgerConfig = await context.ScalarAsync<Guid>("select active_configuration_version_id from finance_ledger.ledger_entity_configuration where tenant_id=$1 and legal_entity_id=$2", cancellationToken, context.Tenant.Id, context.EntityId);
         var usdRateId = await context.ScalarAsync<Guid>("select id from foundation_finbase.exchange_rate where tenant_id=$1 and legal_entity_id=$2 and from_currency='USD' and to_currency='EGP' and purpose='Accounting' and status='Approved' order by effective_date desc limit 1", cancellationToken, context.Tenant.Id, context.EntityId);
         var usdRate = await context.ScalarAsync<decimal>("select rate from foundation_finbase.exchange_rate where tenant_id=$1 and id=$2", cancellationToken, context.Tenant.Id, usdRateId);
-        var usdSnapshot = JsonSerializer.Serialize(new { TenantId = context.Tenant.Id, LegalEntityId = context.EntityId, ApprovedRateId = usdRateId, FromCurrency = "USD", ToCurrency = "EGP", Rate = usdRate.ToString(System.Globalization.CultureInfo.InvariantCulture), Purpose = "Accounting", EffectiveDate = new DateOnly(2026, 1, 2), Source = "DevelopmentSeed", Version = 1, ManualOverride = true, CapturedAt = context.AsOf });
+        var usdRateDate = await context.ScalarAsync<DateOnly>("select effective_date from foundation_finbase.exchange_rate where tenant_id=$1 and id=$2", cancellationToken, context.Tenant.Id, usdRateId);
+        var usdSnapshot = JsonSerializer.Serialize(new { TenantId = context.Tenant.Id, LegalEntityId = context.EntityId, ApprovedRateId = usdRateId, FromCurrency = "USD", ToCurrency = "EGP", Rate = usdRate.ToString(System.Globalization.CultureInfo.InvariantCulture), Purpose = "Accounting", EffectiveDate = usdRateDate, Source = "DevelopmentSeed", Version = 1, ManualOverride = true, CapturedAt = context.AsOf });
 
         await context.ExecuteAsync("insert into finance_subledger.party_financial_profile(tenant_id,legal_entity_id,id,party_id,default_receivable_payment_term_id,default_payable_payment_term_id,credit_limit_amount,credit_limit_currency,receivable_policy_code,payable_policy_code,status,version,created_at,updated_at) values($1,$2,$3,$4,$5,$5,250000,'EGP','STANDARD','STANDARD','Active',1,$6,$6) on conflict(tenant_id,legal_entity_id,party_id) do nothing",
             cancellationToken, context.Tenant.Id, context.EntityId, SeedIds.Child(context.Tenant.Id, "subledger-profile", 1), customerId, termId, context.AsOf);
@@ -32,7 +33,7 @@ public static class SubledgerSeed
             }
         };
         var snapshot = JsonSerializer.Serialize(installmentTerm);
-        var rows = new[]
+        var rows = new List<SeedOpenItem>
         {
             Item(customerId, "Receivable", "Debit", "Invoice", "INV-DEV-1001", "100000", "100000", new(2026,1,1), new(2026,1,1), new(2026,1,10), null),
             Item(customerId, "Receivable", "Debit", "Invoice", "INV-DEV-1002", "10000", "10000", new(2026,1,1), new(2026,1,1), new(2026,1,1), snapshot, "0001"),
@@ -46,6 +47,18 @@ public static class SubledgerSeed
             Item(supplierId, "Payable", "Credit", "Bill", "BILL-DEV-2001", "45000", "45000", new(2026,1,1), new(2026,1,1), new(2026,1,15), null),
             Item(supplierId, "Payable", "Debit", "Advance", "ADV-DEV-2001", "5000", "5000", new(2026,1,2), new(2026,1,2), new(2026,1,2), null)
         };
+
+        var asOfDate = DateOnly.FromDateTime(context.AsOf.UtcDateTime);
+        for (var index = 1; index <= 30; index++)
+        {
+            var documentDate = asOfDate.AddDays(-index * 5);
+            var dueDate = documentDate.AddDays(index % 3 == 0 ? 45 : index % 3 == 1 ? 15 : 30);
+            var amount = (4000m + index * 791m).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var customerParty = SeedIds.Party(context.Tenant.Id, 1 + 2 * (index % 40));
+            var supplierParty = SeedIds.Party(context.Tenant.Id, 2 + 2 * (index % 40));
+            rows.Add(Item(customerParty, "Receivable", "Debit", "Invoice", $"INV-DEV-AR-{index:0000}", amount, amount, documentDate, documentDate, dueDate, null));
+            rows.Add(Item(supplierParty, "Payable", "Credit", "Bill", $"BILL-DEV-AP-{index:0000}", amount, amount, documentDate, documentDate, dueDate, null));
+        }
 
         foreach (var row in rows)
         {
@@ -63,7 +76,7 @@ public static class SubledgerSeed
                 cancellationToken, context.Tenant.Id, context.EntityId, SeedIds.Child(context.Tenant.Id, $"subledger-write-off-policy-{direction.ToLowerInvariant()}", 1), direction, context.AsOf);
         }
 
-        return new SeedSubledgerSummary(rows.Length, 3, 2);
+        return new SeedSubledgerSummary(rows.Count, 3, 1);
     }
 
     private static SeedOpenItem Item(Guid partyId, string direction, string polarity, string sourceType, string sourceReference, string amount, string baseAmount,

@@ -7,8 +7,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class ImportSchedulingIntegrationTests
-{
+public sealed class ImportSchedulingIntegrationTests : DatabaseIntegrationTestBase {
     [Fact]
     public async Task ImportChunkSchedulingIsTransactionalAndIdempotent()
     {

@@ -163,6 +163,8 @@ public sealed record PartyOpenItemResult(
     string ControlAccountReference,
     string Status,
     long RowVersion);
+public sealed record SourceSettlementSummaryContract(string Status, string TransactionCurrency, string OriginalAmount,
+    string SettledAmount, string OpenAmount, int ItemCount);
 
 /// <summary>In-process Subledger contracts; source creation is not exposed as arbitrary HTTP CRUD.</summary>
 public interface ISubledgerCapabilities
@@ -181,6 +183,8 @@ public interface ISubledgerCapabilities
     Task<SubledgerApplicationResult> ReverseAsync(TenantId tenantId, Guid membershipId, ReverseApplicationCommand command, CancellationToken cancellationToken = default);
     Task<OpenItemPage> ListOpenItemsAsync(TenantId tenantId, OpenItemListQuery query, CancellationToken cancellationToken = default);
     Task<PartyOpenItemResult?> GetOpenItemAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid openItemId, CancellationToken cancellationToken = default);
+    Task<SourceSettlementSummaryContract?> GetSourceSettlementSummaryAsync(TenantId tenantId, LegalEntityId legalEntityId, string sourceType,
+        Guid sourceDocumentId, CancellationToken cancellationToken = default);
     Task<AutoApplySuggestionResult> SuggestApplicationsAsync(TenantId tenantId, Guid membershipId, AutoApplySuggestionQuery query, CancellationToken cancellationToken = default);
     Task<PartyBalanceResult> GetPartyBalanceAsync(TenantId tenantId, PartyBalanceQuery query, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AgingBucketResult>> GetAgingAsync(TenantId tenantId, Guid membershipId, AgingQuery query, CancellationToken cancellationToken = default);

@@ -12,6 +12,8 @@ public static class AccountingFactTypes
     public const string CustomerCreditNotePosted = "CustomerCreditNotePosted";
     public const string VendorBillPosted = "VendorBillPosted";
     public const string VendorCreditNotePosted = "VendorCreditNotePosted";
+    public const string CustomerDebitNotePosted = "CustomerDebitNotePosted";
+    public const string VendorDebitNotePosted = "VendorDebitNotePosted";
     public const string PaymentReceived = "PaymentReceived";
     public const string PaymentMade = "PaymentMade";
     public const string InventoryReceiptValued = "InventoryReceiptValued";
@@ -28,7 +30,7 @@ public static class AccountingFactTypes
 
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        CustomerInvoicePosted, CustomerCreditNotePosted, VendorBillPosted, VendorCreditNotePosted,
+        CustomerInvoicePosted, CustomerCreditNotePosted, VendorBillPosted, VendorCreditNotePosted, CustomerDebitNotePosted, VendorDebitNotePosted,
         PaymentReceived, PaymentMade, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment,
         ExpenseRecognized, PayrollPosted, TaxAdjustment, SettlementFxDifference, SettlementWriteOff, UnrealizedFxRevaluation,
         OpeningBalancePosted, ManualGeneralJournalPosted
@@ -70,6 +72,14 @@ public sealed record CustomerInvoicePostedPayload(
 public sealed record CustomerCreditNotePostedPayload(decimal NetAmount, decimal TaxAmount, decimal GrossAmount, string CurrencyCode, string ReceivablePartyGroup, string RevenueCategory, IReadOnlyList<InvoiceTaxComponent> Taxes) : IAccountingFactPayload;
 public sealed record VendorBillPostedPayload(decimal NetAmount, decimal TaxAmount, decimal GrossAmount, string CurrencyCode, string PayablePartyGroup, string ExpenseCategory, IReadOnlyList<InvoiceTaxComponent> Taxes) : IAccountingFactPayload;
 public sealed record VendorCreditNotePostedPayload(decimal NetAmount, decimal TaxAmount, decimal GrossAmount, string CurrencyCode, string PayablePartyGroup, string ExpenseCategory, IReadOnlyList<InvoiceTaxComponent> Taxes) : IAccountingFactPayload;
+public sealed record InvoiceLedgerLineContract(string CategoryCode, decimal NetAmount);
+public sealed record InvoiceLedgerPostingContract(string Direction, string DocumentType, decimal NetAmount, decimal TaxAmount, decimal GrossAmount,
+    string CurrencyCode, string PartyGroup, IReadOnlyList<InvoiceLedgerLineContract> Lines, IReadOnlyList<InvoiceTaxComponent> Taxes,
+    decimal? ExchangeRate = null, string? ExchangeRateReference = null) : IAccountingFactPayload;
+public sealed record InvoiceAccountingPreviewLine(int Sequence, string AccountCode, string AccountRole, decimal Debit, decimal Credit,
+    string CurrencyCode, decimal BaseDebit, decimal BaseCredit, string? MappingReference, long? MappingVersion);
+public sealed record InvoiceAccountingPreview(string JournalCode, string BaseCurrencyCode, Guid PostingRuleVersionId, Guid ConfigurationVersionId,
+    IReadOnlyList<InvoiceAccountingPreviewLine> Lines, decimal TotalDebit, decimal TotalCredit);
 public sealed record PaymentFactPayload(decimal Amount, string CurrencyCode, string PartyGroup, string SettlementRole) : IAccountingFactPayload;
 public sealed record InventoryValuationFactPayload(decimal Amount, string CurrencyCode, string InventoryGroup, string ValuationRole) : IAccountingFactPayload;
 public sealed record ExpenseRecognizedPayload(decimal Amount, string CurrencyCode, string ExpenseCategory) : IAccountingFactPayload;
@@ -183,6 +193,7 @@ public static class AccountingFactFingerprint
 
 public interface ILedgerPostingEngine
 {
+    Task<Guid> GetActiveConfigurationVersionIdAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default);
     Task<LedgerPostingResult> PostCustomerInvoiceAsync(
         AccountingFactEnvelope<CustomerInvoicePostedPayload> fact,
         CancellationToken cancellationToken = default);

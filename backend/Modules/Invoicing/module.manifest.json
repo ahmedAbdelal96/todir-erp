@@ -1,0 +1,30 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "invoicing",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L3",
+  "type": "module",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": {
+    "hard": ["platform-kernel", "directory", "catalog", "finbase", "pricing", "tax", "ledger", "subledger"],
+    "optionalCapabilities": ["platform.files"]
+  },
+  "owns": {
+    "schema": "business_invoicing",
+    "entities": ["invoice", "invoice_line", "invoice_party_snapshot", "invoice_address_snapshot", "invoice_price_snapshot", "invoice_tax_component", "invoice_payment_schedule", "invoice_charge", "invoice_charge_allocation", "invoice_discount_allocation", "invoice_relationship", "invoice_attachment", "invoice_issued_artifact", "invoice_finalization_record", "invoice_number_reference", "invoice_list_projection", "invoice_compliance_snapshot"]
+  },
+  "permissions": [
+    "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize", "invoicing.customer_invoice.cancel_draft",
+    "invoicing.supplier_invoice.read", "invoicing.supplier_invoice.create", "invoicing.supplier_invoice.edit", "invoicing.supplier_invoice.finalize",
+    "invoicing.credit_note.create", "invoicing.debit_note.create", "invoicing.price_override", "invoicing.payment_term_override", "invoicing.date_override",
+    "invoicing.accounting_preview", "invoicing.regulatory_details", "invoicing.attachment.manage", "invoicing.delivery.send", "invoicing.audit.view"
+  ],
+  "capabilities": {
+    "provides": ["invoicing.financial-documents", "invoicing.invoice-snapshots", "invoicing.invoice-corrections", "invoicing.source-draft", "invoicing.compliance-snapshot", "invoicing.file-references"],
+    "consumes": ["directory.party", "catalog.product-uom", "pricing.batch-resolution", "tax.batch-calculation", "tax.invoice-document-validation", "finbase.money", "finbase.payment-terms", "subledger.open-items", "ledger.semantic-facts", "platform.numbering", "platform.audit", "platform.transaction-coordination", "platform.outbox"]
+  },
+  "messaging": { "publishes": ["InvoiceDraftCreatedV1", "InvoiceDraftCancelledV1", "InvoiceFinalizedV1", "InvoiceCorrectedV1", "InvoiceComplianceRequestedV1", "InvoiceAttachmentAddedV1", "InvoiceIssuedArtifactRecordedV1"], "consumes": [] },
+  "lifecycle": { "supportsGoLive": false, "deactivationPolicy": "blocked_if_dependents" }
+}

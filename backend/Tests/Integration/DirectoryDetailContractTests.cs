@@ -13,8 +13,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class DirectoryDetailContractTests
-{
+public sealed class DirectoryDetailContractTests : DatabaseIntegrationTestBase {
     [Fact]
     public async Task DetailReturnsVisiblePartyAndIdenticalNotFoundForMissingOrOtherTenantParty()
     {

@@ -16,7 +16,7 @@ public static class DevelopmentSeedEnvironment
 
 public static class SeedRunner
 {
-    private static readonly DateTimeOffset AsOf = new(2026, 1, 1, 9, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset AsOf = new(2026, 10, 1, 9, 0, 0, TimeSpan.Zero);
 
     public static async Task<SeedRunSummary> RunAsync(NpgsqlConnection connection, CancellationToken cancellationToken = default)
     {
@@ -43,7 +43,8 @@ public static class SeedRunner
             var tax = await RunStageAsync(connection, tenant, context => TaxSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var ledger = await RunStageAsync(connection, tenant, context => LedgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var subledger = await RunStageAsync(connection, tenant, context => SubledgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
-            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger));
+            var invoicing = await RunStageAsync(connection, tenant, context => InvoicingSeed.SeedAsync(context, cancellationToken), cancellationToken);
+            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger, invoicing));
         }
         return new(SeedIds.Version, summaries);
     }
@@ -65,7 +66,7 @@ public static class SeedRunner
     }
 }
 
-public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger);
+public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing);
 public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSummary> Tenants)
 {
     public void Print(TextWriter output)
@@ -84,6 +85,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  Tax: {tenant.Tax.CapabilityEntities} legal entities (disabled and enabled), {tenant.Tax.RegisteredDevelopmentFixtures} synthetic registration, {tenant.Tax.UnreviewedCountryPacks} pack awaiting official review, {tenant.Tax.Categories} classifications");
             output.WriteLine($"  Ledger: {tenant.Ledger.LegalEntities} legal entities, {tenant.Ledger.Accounts} accounts, {tenant.Ledger.Periods} periods, invoice rule {(tenant.Ledger.HasInvoiceRule ? "ready" : "missing")}");
             output.WriteLine($"  Subledger: {tenant.Subledger.OpenItems} open items, {tenant.Subledger.Installments} installments, {tenant.Subledger.FinancialProfiles} financial profiles");
+            output.WriteLine($"  Invoicing: {tenant.Invoicing.Drafts} drafts ({tenant.Invoicing.CustomerDrafts} customer, {tenant.Invoicing.SupplierDrafts} supplier)");
         }
     }
 }

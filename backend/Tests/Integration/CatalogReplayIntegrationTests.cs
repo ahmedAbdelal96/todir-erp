@@ -13,8 +13,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class CatalogReplayIntegrationTests
-{
+public sealed class CatalogReplayIntegrationTests : DatabaseIntegrationTestBase {
     [Fact]
     public async Task PublishedCatalogEventCanBeReplayedWithoutDuplicatingProjection()
     {

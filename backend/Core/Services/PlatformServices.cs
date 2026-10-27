@@ -3,9 +3,35 @@ using System.Text;
 using System.Text.Json;
 using System.Globalization;
 using Npgsql;
+using Core.Transactions;
 using Shared.Primitives.Identifiers;
+using Shared.Contracts.Platform;
 
 namespace Core.Services;
+
+public sealed class NullPlatformOrganizationCapabilities : IPlatformOrganizationCapabilities
+{
+    public Task<bool> BranchBelongsToLegalEntityAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid branchId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+}
+
+public sealed class NpgsqlPlatformOrganizationCapabilities(NpgsqlDataSource dataSource) : IPlatformOrganizationCapabilities
+{
+    public async Task<bool> BranchBelongsToLegalEntityAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid branchId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var scope = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction))
+        {
+            scope.Parameters.AddWithValue(tenantId.Value.ToString("D"));
+            await scope.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using var command = new NpgsqlCommand("select exists(select 1 from platform.branch where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Active')", connection, transaction);
+        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(legalEntityId.Value); command.Parameters.AddWithValue(branchId);
+        var result = (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+        await transaction.CommitAsync(cancellationToken);
+        return result;
+    }
+}
 
 public sealed record AuditEntry(Guid Id, TenantId TenantId, Guid? LegalEntityId, Guid? BranchId, string ActorType, Guid? ActorId, Guid? MembershipId, string Module, string Action, string EntityType, Guid EntityId, string? BeforeJson, string? AfterJson, string? Reason, string Source, Guid CorrelationId, string? TraceId, DateTimeOffset OccurredAt, string? MetadataJson);
 public interface IAuditWriter { Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default); }
@@ -41,7 +67,8 @@ public sealed class NpgsqlAuditWriter(NpgsqlDataSource dataSource) : IAuditWrite
 
 public sealed record SequenceDefinition(string Key, TenantId TenantId, Guid? LegalEntityId, Guid? BranchId, string? ScopeKey, string? PeriodKey, string Prefix, int Padding, long NextValue);
 public interface ISequenceAllocator { Task<string> AllocateAsync(SequenceDefinition definition, CancellationToken cancellationToken = default); }
-public sealed class InMemorySequenceAllocator : ISequenceAllocator
+public interface ITransactionalSequenceAllocator { Task<string> AllocateAsync(ITransactionContext context, SequenceDefinition definition, CancellationToken cancellationToken = default); }
+public sealed class InMemorySequenceAllocator : ISequenceAllocator, ITransactionalSequenceAllocator
 {
     private readonly object gate = new();
     private readonly Dictionary<(TenantId TenantId, string Key, Guid? LegalEntityId, Guid? BranchId, string? ScopeKey, string? PeriodKey), long> values = [];
@@ -56,9 +83,33 @@ public sealed class InMemorySequenceAllocator : ISequenceAllocator
             return Task.FromResult($"{definition.Prefix}{value.ToString(CultureInfo.InvariantCulture).PadLeft(definition.Padding, '0')}");
         }
     }
+    public Task<string> AllocateAsync(ITransactionContext context, SequenceDefinition definition, CancellationToken cancellationToken = default) => AllocateAsync(definition, cancellationToken);
 }
-public sealed class NpgsqlSequenceAllocator(NpgsqlDataSource dataSource) : ISequenceAllocator
+public sealed class NpgsqlSequenceAllocator(NpgsqlDataSource dataSource) : ISequenceAllocator, ITransactionalSequenceAllocator
 {
+    public async Task<string> AllocateAsync(ITransactionContext context, SequenceDefinition definition, CancellationToken cancellationToken = default)
+    {
+        await using (var ensure = new NpgsqlCommand("insert into platform.sequence_definition(id,tenant_id,sequence_key,legal_entity_id,branch_id,scope_key,period_key,prefix_template,padding,mode,next_value,version) values($1,$2,$3,$4,$5,$6,$7,$8,$9,'Standard',$10,1) on conflict do nothing", context.Connection, context.Transaction))
+        {
+            ensure.Parameters.AddWithValue(Guid.CreateVersion7()); ensure.Parameters.AddWithValue(definition.TenantId.Value); ensure.Parameters.AddWithValue(definition.Key);
+            ensure.Parameters.AddWithValue((object?)definition.LegalEntityId ?? DBNull.Value); ensure.Parameters.AddWithValue((object?)definition.BranchId ?? DBNull.Value);
+            ensure.Parameters.AddWithValue((object?)definition.ScopeKey ?? DBNull.Value); ensure.Parameters.AddWithValue((object?)definition.PeriodKey ?? DBNull.Value);
+            ensure.Parameters.AddWithValue(definition.Prefix); ensure.Parameters.AddWithValue(definition.Padding); ensure.Parameters.AddWithValue(definition.NextValue);
+            await ensure.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using var command = new NpgsqlCommand("update platform.sequence_definition set next_value = next_value + 1, version = version + 1 where tenant_id = $1 and sequence_key = $2 and legal_entity_id is not distinct from $3 and branch_id is not distinct from $4 and scope_key is not distinct from $5 and period_key is not distinct from $6 returning prefix_template, next_value - 1, padding", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(definition.TenantId.Value);
+        command.Parameters.AddWithValue(definition.Key);
+        command.Parameters.AddWithValue((object?)definition.LegalEntityId ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)definition.BranchId ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)definition.ScopeKey ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)definition.PeriodKey ?? DBNull.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) throw new KeyNotFoundException("sequence.not_found");
+        var number = $"{reader.GetString(0)}{reader.GetInt64(1).ToString(CultureInfo.InvariantCulture).PadLeft(reader.GetInt32(2), '0')}";
+        return number;
+    }
+
     public async Task<string> AllocateAsync(SequenceDefinition definition, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);

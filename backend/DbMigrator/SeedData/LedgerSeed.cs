@@ -32,6 +32,8 @@ public static class LedgerSeed
             var salesRevenue = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 5);
             var outputTax = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 6);
             var payable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 7);
+            var inputTax = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 13);
+            var purchaseExpense = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 14);
             var fxGain = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 8);
             var fxLoss = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 9);
             var retainedEarnings = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 10);
@@ -46,6 +48,8 @@ public static class LedgerSeed
                 (salesRevenue, "410100", "إيرادات المبيعات", "Sales revenue", "Revenue", "Sales", revenueCategory, (Guid?)revenue, true),
                 (outputTax, "210100", "ضريبة القيمة المضافة المستحقة", "Output VAT", "Liability", "OutputTax", liabilityCategory, (Guid?)null, true),
                 (payable, "210200", "الموردون", "Accounts payable", "Liability", "Payable", liabilityCategory, (Guid?)null, true),
+                (inputTax, "120100", "ضريبة القيمة المضافة القابلة للاسترداد", "Recoverable input VAT", "Asset", "InputTax", assetCategory, (Guid?)assets, true),
+                (purchaseExpense, "510100", "مصروفات المشتريات", "Purchase expenses", "Expense", "Purchases", expenseCategory, (Guid?)null, true),
                 (fxGain, "999000", "أرباح فروق العملة", "FX gain", "Revenue", "FXGain", revenueCategory, (Guid?)null, true),
                 (fxLoss, "999100", "خسائر فروق العملة", "FX loss", "Expense", "FXLoss", expenseCategory, (Guid?)null, true),
                 (retainedEarnings, "310000", "الأرباح المحتجزة", "Retained earnings", "Equity", "RetainedEarnings", equityCategory, (Guid?)null, true),
@@ -56,7 +60,7 @@ public static class LedgerSeed
                 await context.ExecuteAsync("insert into finance_ledger.account (tenant_id,legal_entity_id,id,category_id,code,name_ar,name_en,account_type,subtype,normal_balance,parent_account_id,allow_direct_posting,currency_policy,status,version,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,case when $8 in ('Liability','Revenue','Equity') then 'Credit' else 'Debit' end,$10,$11,'BaseOnly','Active',1,$12,$12) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, account.Item1, account.Item7, account.Item2, account.Item3, account.Item4, account.Item5, account.Item6, account.Item8, account.Item9, context.AsOf);
             accountCount += accounts.Length;
 
-            foreach (var journal in new[] { ("SALES", "المبيعات", "Sales", "Sales", 1), ("GENERAL", "عام", "General", "General", 2), ("OPENING", "الأرصدة الافتتاحية", "Opening balances", "Opening", 3), ("FX", "فروق العملة", "Foreign exchange", "Fx", 4), ("ADJUSTMENT", "تسويات", "Adjustments", "General", 5) })
+            foreach (var journal in new[] { ("SALES", "المبيعات", "Sales", "Sales", 1), ("PURCHASE", "المشتريات", "Purchases", "Purchases", 6), ("GENERAL", "عام", "General", "General", 2), ("OPENING", "الأرصدة الافتتاحية", "Opening balances", "Opening", 3), ("FX", "فروق العملة", "Foreign exchange", "Fx", 4), ("ADJUSTMENT", "تسويات", "Adjustments", "General", 5) })
                 await context.ExecuteAsync("insert into finance_ledger.journal (tenant_id,legal_entity_id,id,code,name_ar,name_en,journal_type,status,version,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,'Active',1,$8,$8) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, SeedIds.Child(context.Tenant.Id, $"ledger-journal:{suffix}", journal.Item5), journal.Item1, journal.Item2, journal.Item3, journal.Item4, context.AsOf);
 
             var fiscalYearId = SeedIds.Child(context.Tenant.Id, $"ledger-year:{suffix}", 1);
@@ -72,7 +76,8 @@ public static class LedgerSeed
             await context.ExecuteAsync("insert into finance_ledger.accounting_configuration_version (tenant_id,legal_entity_id,id,version_number,effective_from,status,snapshot_hash,created_at) values ($1,$2,$3,1,'2026-01-01','Active','development-ledger-v1',$4) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, configId, context.AsOf);
             var entityConfigurationId = SeedIds.Child(context.Tenant.Id, $"ledger-entity-configuration:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.ledger_entity_configuration (tenant_id,legal_entity_id,id,mode,setup_template_code,active_configuration_version_id,initialized_at,version) values ($1,$2,$3,'Managed','development-core',$4,$5,1) on conflict (tenant_id,legal_entity_id) do nothing", cancellationToken, context.Tenant.Id, entityId, entityConfigurationId, configId, context.AsOf);
-            foreach (var producer in new[] { ("sales", "CustomerInvoicePosted"), ("sales", "CustomerCreditNotePosted"), ("payments", "PaymentReceived"), ("payments", "PaymentMade"), ("inventory", "InventoryReceiptValued"), ("inventory", "InventoryIssueValued"), ("inventory", "InventoryCostAdjustment"), ("payroll", "PayrollPosted"), ("tax", "TaxAdjustment"), ("subledger", "SettlementFxDifference"), ("subledger", "SettlementWriteOff") })
+            var activeConfigId = await context.ScalarAsync<Guid>("select active_configuration_version_id from finance_ledger.ledger_entity_configuration where tenant_id=$1 and legal_entity_id=$2", cancellationToken, context.Tenant.Id, entityId);
+            foreach (var producer in new[] { ("sales", "CustomerInvoicePosted"), ("sales", "CustomerCreditNotePosted"), ("invoicing", "CustomerInvoicePosted"), ("invoicing", "CustomerCreditNotePosted"), ("invoicing", "VendorBillPosted"), ("invoicing", "VendorCreditNotePosted"), ("invoicing", "CustomerDebitNotePosted"), ("invoicing", "VendorDebitNotePosted"), ("payments", "PaymentReceived"), ("payments", "PaymentMade"), ("inventory", "InventoryReceiptValued"), ("inventory", "InventoryIssueValued"), ("inventory", "InventoryCostAdjustment"), ("payroll", "PayrollPosted"), ("tax", "TaxAdjustment"), ("subledger", "SettlementFxDifference"), ("subledger", "SettlementWriteOff") })
             {
                 var producerId = SeedIds.Child(context.Tenant.Id, $"ledger-producer:{suffix}:{producer.Item1}:{producer.Item2}", 1);
                 await context.ExecuteAsync("insert into finance_ledger.fact_producer_registration (tenant_id,legal_entity_id,id,producer_module,fact_type,fact_version,status,registered_at) values ($1,$2,$3,$4,$5,1,'Active',$6) on conflict (tenant_id,legal_entity_id,producer_module,fact_type,fact_version) do nothing", cancellationToken, context.Tenant.Id, entityId, producerId, producer.Item1, producer.Item2, context.AsOf);
@@ -81,20 +86,26 @@ public static class LedgerSeed
             var roleRevenue = await AddRoleAsync(context, entityId, suffix, 2, "SalesRevenue", "إيرادات المبيعات", "Sales revenue", cancellationToken);
             var roleTax = await AddRoleAsync(context, entityId, suffix, 3, "OutputTax", "ضريبة المخرجات", "Output tax", cancellationToken);
             var rolePayable = await AddRoleAsync(context, entityId, suffix, 4, "Payable", "حساب الموردين", "Payables", cancellationToken);
+            var roleInputTax = await AddRoleAsync(context, entityId, suffix, 10, "InputTax", "ضريبة المدخلات", "Input tax", cancellationToken);
+            var rolePurchaseExpense = await AddRoleAsync(context, entityId, suffix, 11, "PurchaseExpense", "مصروفات المشتريات", "Purchase expenses", cancellationToken);
             var roleFxGain = await AddRoleAsync(context, entityId, suffix, 5, "FXGain", "أرباح فروق العملة", "FX gain", cancellationToken);
             var roleFxLoss = await AddRoleAsync(context, entityId, suffix, 6, "FXLoss", "خسائر فروق العملة", "FX loss", cancellationToken);
             var roleRetained = await AddRoleAsync(context, entityId, suffix, 7, "RetainedEarnings", "الأرباح المحتجزة", "Retained earnings", cancellationToken);
             var roleBadDebt = await AddRoleAsync(context, entityId, suffix, 8, "BadDebtExpense", "مصروف الديون المعدومة", "Bad debt expense", cancellationToken);
             var roleWriteOffIncome = await AddRoleAsync(context, entityId, suffix, 9, "WriteOffIncome", "إيراد تسوية الديون", "Write-off income", cancellationToken);
-            await AddMappingAsync(context, entityId, configId, suffix, 1, roleReceivable, receivable, "Receivable", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, configId, suffix, 2, roleRevenue, salesRevenue, "SalesRevenue", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, configId, suffix, 3, roleTax, outputTax, "OutputTax", null, null, "VAT14", cancellationToken);
-            await AddMappingAsync(context, entityId, configId, suffix, 4, rolePayable, payable, "Payable", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, configId, suffix, 5, roleFxGain, fxGain, "FXGain", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, configId, suffix, 6, roleFxLoss, fxLoss, "FXLoss", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, configId, suffix, 7, roleRetained, retainedEarnings, "RetainedEarnings", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, configId, suffix, 8, roleBadDebt, badDebtExpense, "BadDebtExpense", null, null, null, cancellationToken);
-            await AddMappingAsync(context, entityId, configId, suffix, 9, roleWriteOffIncome, writeOffIncome, "WriteOffIncome", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 1, roleReceivable, receivable, "Receivable", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 2, roleRevenue, salesRevenue, "SalesRevenue", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 3, roleTax, outputTax, "OutputTax", null, null, "VAT14", cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 12, roleTax, outputTax, "OutputTax-Demo-Standard", null, null, "DEMO-STANDARD", cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 4, rolePayable, payable, "Payable", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 10, roleInputTax, inputTax, "InputTax", null, null, "VAT14", cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 13, roleInputTax, inputTax, "InputTax-Demo-Standard", null, null, "DEMO-STANDARD", cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 11, rolePurchaseExpense, purchaseExpense, "PurchaseExpense", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 5, roleFxGain, fxGain, "FXGain", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 6, roleFxLoss, fxLoss, "FXLoss", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 7, roleRetained, retainedEarnings, "RetainedEarnings", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 8, roleBadDebt, badDebtExpense, "BadDebtExpense", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 9, roleWriteOffIncome, writeOffIncome, "WriteOffIncome", null, null, null, cancellationToken);
 
             var ruleId = SeedIds.Child(context.Tenant.Id, $"ledger-rule:{suffix}", 1); var ruleVersionId = SeedIds.Child(context.Tenant.Id, $"ledger-rule-version:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.posting_rule (tenant_id,legal_entity_id,id,fact_type,fact_version,code,status,version,created_at) values ($1,$2,$3,'CustomerInvoicePosted',1,'CUSTOMER_INVOICE_V1','Active',1,$4) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, ruleId, context.AsOf);
@@ -106,6 +117,11 @@ public static class LedgerSeed
             await AddSimpleRuleAsync(context, entityId, suffix, 3, "OpeningBalancePosted", "OPENING_BALANCE_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 4, "SettlementFxDifference", "SETTLEMENT_FX_DIFFERENCE_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 5, "SettlementWriteOff", "SETTLEMENT_WRITE_OFF_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 6, "CustomerCreditNotePosted", "CUSTOMER_CREDIT_NOTE_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 7, "VendorBillPosted", "VENDOR_BILL_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 8, "VendorCreditNotePosted", "VENDOR_CREDIT_NOTE_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 9, "CustomerDebitNotePosted", "CUSTOMER_DEBIT_NOTE_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 10, "VendorDebitNotePosted", "VENDOR_DEBIT_NOTE_V1", cancellationToken);
         }
         return new SeedLedgerSummary(entities.Length, accountCount, periodCount, true);
     }
@@ -126,9 +142,10 @@ public static class LedgerSeed
 
     private static async Task AddMappingAsync(SeedContext context, Guid entityId, Guid configurationId, string suffix, int index, Guid roleId, Guid accountId, string code, string? productCategory, string? partyGroup, string? taxCode, CancellationToken cancellationToken)
     {
-        var mappingId = SeedIds.Child(context.Tenant.Id, $"ledger-mapping:{suffix}", index); var versionId = SeedIds.Child(context.Tenant.Id, $"ledger-mapping-version:{suffix}", index);
+        var mappingId = SeedIds.Child(context.Tenant.Id, $"ledger-mapping:{suffix}", index); var versionId = SeedIds.Child(context.Tenant.Id, $"ledger-mapping-version:{suffix}:{configurationId:N}", index);
         await context.ExecuteAsync("insert into finance_ledger.account_mapping (tenant_id,legal_entity_id,id,role_id,code,status,version) values ($1,$2,$3,$4,$5,'Active',1) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, mappingId, roleId, code);
-        await context.ExecuteAsync("insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,accounting_configuration_version_id,version_number,effective_from,product_category_code,party_group_code,tax_code,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,$5,1,'2026-01-01',$6::text,$7::text,$8::text,case when $6::text is not null or $7::text is not null or $8::text is not null then 1 else 0 end,$9,'Active') on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, versionId, mappingId, configurationId, (object?)productCategory ?? DBNull.Value, (object?)partyGroup ?? DBNull.Value, (object?)taxCode ?? DBNull.Value, accountId);
+        var versionNumber = await context.ScalarAsync<long>("select coalesce((select version_number from finance_ledger.account_mapping_version where tenant_id=$1 and id=$2),(select coalesce(max(version_number),0)+1 from finance_ledger.account_mapping_version where tenant_id=$1 and mapping_id=$3))", cancellationToken, context.Tenant.Id, versionId, mappingId);
+        await context.ExecuteAsync("insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,accounting_configuration_version_id,version_number,effective_from,product_category_code,party_group_code,tax_code,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,$5,$6,'2026-01-01',$7::text,$8::text,$9::text,case when $7::text is not null or $8::text is not null or $9::text is not null then 1 else 0 end,$10,'Active') on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, versionId, mappingId, configurationId, versionNumber, (object?)productCategory ?? DBNull.Value, (object?)partyGroup ?? DBNull.Value, (object?)taxCode ?? DBNull.Value, accountId);
     }
 }
 

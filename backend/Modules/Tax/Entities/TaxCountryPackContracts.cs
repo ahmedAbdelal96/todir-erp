@@ -184,6 +184,7 @@ public interface ITaxCountryPack
     TaxJurisdictionResult ResolveJurisdiction(TaxCalculationContext context, LocalDate taxDate);
     TaxRegistrationValidation ValidateRegistration(string schemeCode, string? registrationNumber, LocalDate taxDate);
     IReadOnlyList<TaxDocumentRequirement> GetDocumentRequirements(string documentKind, TaxTreatment treatment, LocalDate taxDate);
+    IReadOnlyList<Shared.Contracts.Tax.InvoiceDocumentRequirement> GetInvoiceDocumentRequirements(string documentType, LocalDate taxDate);
     IReadOnlyList<TaxRuleCandidate> GetApprovedRules(LocalDate taxDate);
 }
 
@@ -191,6 +192,53 @@ public interface ITaxCountryPackRegistry
 {
     ITaxCountryPack? Find(string countryCode, LocalDate at);
     IReadOnlyCollection<ITaxCountryPack> GetReviewedPacks();
+}
+
+public static class TaxInvoiceDocumentValidator
+{
+    public static IReadOnlyList<Shared.Contracts.Tax.InvoiceDocumentValidationIssue> Validate(
+        IReadOnlyList<Shared.Contracts.Tax.InvoiceDocumentRequirement> requirements, IReadOnlyList<string> productReferences,
+        IReadOnlyList<Shared.Contracts.Tax.InvoiceDocumentField> fields)
+    {
+        var issues = new List<Shared.Contracts.Tax.InvoiceDocumentValidationIssue>();
+        foreach (var requirement in requirements)
+        {
+            if (requirement.Scope is not ("Header" or "Party" or "Address" or "Product" or "LegalText" or "Regulatory"))
+            {
+                issues.Add(new("tax.invoice_document_scope_invalid", requirement.Scope, "pack", requirement.Code));
+                continue;
+            }
+            var matching = fields.Where(field => string.Equals(field.Scope, requirement.Scope, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(field.Code, requirement.Code, StringComparison.OrdinalIgnoreCase)).ToArray();
+            var targets = string.Equals(requirement.Scope, "Product", StringComparison.OrdinalIgnoreCase)
+                ? productReferences.Distinct(StringComparer.Ordinal).ToArray()
+                : [matching.FirstOrDefault()?.Reference ?? requirement.Scope.ToLowerInvariant()];
+            foreach (var target in targets)
+            {
+                var value = matching.FirstOrDefault(field => string.Equals(field.Reference, target, StringComparison.Ordinal))?.Value;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    issues.Add(new("tax.invoice_document_field_required", requirement.Scope, target, requirement.Code));
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(requirement.Pattern)) continue;
+                try
+                {
+                    if (!System.Text.RegularExpressions.Regex.IsMatch(value, requirement.Pattern, System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)))
+                        issues.Add(new("tax.invoice_document_field_invalid", requirement.Scope, target, requirement.Code));
+                }
+                catch (ArgumentException)
+                {
+                    issues.Add(new("tax.invoice_document_rule_invalid", requirement.Scope, target, requirement.Code));
+                }
+                catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+                {
+                    issues.Add(new("tax.invoice_document_rule_timeout", requirement.Scope, target, requirement.Code));
+                }
+            }
+        }
+        return issues;
+    }
 }
 
 public sealed class TaxCountryPackRegistry : ITaxCountryPackRegistry

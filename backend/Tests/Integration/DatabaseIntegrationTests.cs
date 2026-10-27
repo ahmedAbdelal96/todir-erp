@@ -4,8 +4,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class DatabaseIntegrationTests
-{
+public sealed class DatabaseIntegrationTests : DatabaseIntegrationTestBase {
     [Fact]
     public async Task RuntimeRoleCannotReadAnotherTenantAfterFuzzedTenantContextSwitches()
     {

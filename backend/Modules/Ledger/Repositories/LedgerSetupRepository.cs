@@ -16,7 +16,7 @@ public sealed class LedgerSetupRepository(
     LedgerConfigurationCache cache,
     TimeProvider clock)
 {
-    private static readonly string[][] InvoiceRequiredRoles = [["AccountsReceivableControl", "Receivable"], ["SalesRevenue"], ["OutputTaxPayable", "OutputTax"]];
+    private static readonly string[][] InvoiceRequiredRoles = [["AccountsReceivableControl", "Receivable"], ["AccountsPayableControl", "Payable"], ["SalesRevenue"], ["PurchaseExpense"], ["OutputTaxPayable", "OutputTax"], ["InputTaxRecoverable", "InputTax"]];
     private static readonly string[][] PaymentRequiredRoles = [["AccountsReceivableControl", "Receivable"], ["AccountsPayableControl"], ["Cash"], ["FXGain"], ["FXLoss"]];
     private static readonly string[][] InventoryRequiredRoles = [["InventoryAsset"], ["COGS"]];
     private static readonly string[][] PayrollRequiredRoles = [["PayrollExpense"], ["PayrollPayable"]];
@@ -30,7 +30,7 @@ public sealed class LedgerSetupRepository(
         ("200000", "الالتزامات", "Liabilities", "Liability", "Other", false, null),
         ("210000", "الموردون", "Accounts Payable", "Liability", "PayableControl", true, "200000"),
         ("220000", "ضريبة المخرجات", "Output Tax Payable", "Liability", "Tax", true, "200000"),
-        ("221000", "ضريبة المدخلات القابلة للاسترداد", "Recoverable Input Tax", "Liability", "Tax", true, "200000"),
+        ("221000", "ضريبة المدخلات القابلة للاسترداد", "Recoverable Input Tax", "Asset", "Tax", true, "100000"),
         ("230000", "التزامات الرواتب", "Payroll Payable", "Liability", "Payroll", true, "200000"),
         ("300000", "حقوق الملكية", "Equity", "Equity", "Other", false, null),
         ("310000", "الأرباح المحتجزة", "Retained Earnings", "Equity", "RetainedEarnings", true, "300000"),
@@ -40,6 +40,7 @@ public sealed class LedgerSetupRepository(
         ("510000", "تكلفة المبيعات", "Cost of Goods Sold", "Expense", "COGS", true, "500000"),
         ("520000", "مصروف الرواتب", "Payroll Expense", "Expense", "Payroll", true, "500000"),
         ("530000", "ديون معدومة", "Bad Debt Expense", "Expense", "BadDebt", true, "500000"),
+        ("540000", "مصروفات المشتريات", "Purchase Expenses", "Expense", "Purchases", true, "500000"),
         ("420000", "إيرادات تسوية الديون", "Write-Off Income", "Revenue", "WriteOff", true, "400000"),
         ("999000", "أرباح فروق العملة", "FX Gain", "Revenue", "FXGain", true, null),
         ("999100", "خسائر فروق العملة", "FX Loss", "Expense", "FXLoss", true, null),
@@ -51,6 +52,11 @@ public sealed class LedgerSetupRepository(
         ("AccountsReceivableControl", "حساب العملاء", "Accounts Receivable Control", "120000"),
         ("AccountsPayableControl", "حساب الموردين", "Accounts Payable Control", "210000"),
         ("SalesRevenue", "إيرادات المبيعات", "Sales Revenue", "410000"),
+        ("PurchaseExpense", "مصروفات المشتريات", "Purchase Expenses", "540000"),
+        ("Receivable", "حساب العملاء", "Receivables", "120000"),
+        ("Payable", "حساب الموردين", "Payables", "210000"),
+        ("OutputTax", "ضريبة المخرجات", "Output Tax", "220000"),
+        ("InputTax", "ضريبة المدخلات", "Input Tax", "221000"),
         ("OutputTaxPayable", "ضريبة المخرجات", "Output Tax Payable", "220000"),
         ("InputTaxRecoverable", "ضريبة المدخلات القابلة للاسترداد", "Recoverable Input Tax", "221000"),
         ("Cash", "النقدية", "Cash", "110000"),
@@ -90,7 +96,7 @@ public sealed class LedgerSetupRepository(
                 accounts[account.Code] = id;
                 accountCount++;
             }
-            foreach (var journal in new[] { ("SALES", "المبيعات", "Sales", "Sales"), ("GENERAL", "عام", "General", "General"), ("OPENING", "افتتاحي", "Opening", "Opening"), ("FX", "فروق العملة", "Foreign exchange", "Fx"), ("ADJUSTMENT", "تسويات", "Adjustments", "General") })
+            foreach (var journal in new[] { ("SALES", "المبيعات", "Sales", "Sales"), ("PURCHASE", "المشتريات", "Purchases", "Purchases"), ("GENERAL", "عام", "General", "General"), ("OPENING", "افتتاحي", "Opening", "Opening"), ("FX", "فروق العملة", "Foreign exchange", "Fx"), ("ADJUSTMENT", "تسويات", "Adjustments", "General") })
             {
                 await EnsureJournalAsync(context, tenant, entity, journal, token);
                 journalCount++;
@@ -124,6 +130,12 @@ public sealed class LedgerSetupRepository(
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.SettlementFxDifference, "SETTLEMENT_FX_DIFFERENCE_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.SettlementWriteOff, "SETTLEMENT_WRITE_OFF_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.OpeningBalancePosted, "OPENING_BALANCE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.CustomerInvoicePosted, "CUSTOMER_INVOICE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.CustomerCreditNotePosted, "CUSTOMER_CREDIT_NOTE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorBillPosted, "VENDOR_BILL_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorCreditNotePosted, "VENDOR_CREDIT_NOTE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.CustomerDebitNotePosted, "CUSTOMER_DEBIT_NOTE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorDebitNotePosted, "VENDOR_DEBIT_NOTE_V1", token);
 
             var configWasCreated = existing is null;
             await ExecuteAsync(context, "insert into finance_ledger.ledger_entity_configuration (tenant_id,legal_entity_id,id,mode,setup_template_code,active_configuration_version_id,initialized_at,version) values ($1,$2,$3,$4,$5,$6,$7,1) on conflict (tenant_id,legal_entity_id) do update set mode=excluded.mode,setup_template_code=excluded.setup_template_code,active_configuration_version_id=excluded.active_configuration_version_id,version=finance_ledger.ledger_entity_configuration.version+1", token, tenant.Value, entity.Value, existing?.Id ?? Guid.CreateVersion7(), mode.ToString(), request.TemplateCode.Trim(), configurationId, clock.GetUtcNow());
@@ -274,6 +286,9 @@ public sealed class LedgerSetupRepository(
 
     private static readonly (string Module, string FactType)[] Producers =
     [
+        ("invoicing", AccountingFactTypes.CustomerInvoicePosted), ("invoicing", AccountingFactTypes.CustomerCreditNotePosted),
+        ("invoicing", AccountingFactTypes.VendorBillPosted), ("invoicing", AccountingFactTypes.VendorCreditNotePosted),
+        ("invoicing", AccountingFactTypes.CustomerDebitNotePosted), ("invoicing", AccountingFactTypes.VendorDebitNotePosted),
         ("sales", AccountingFactTypes.CustomerInvoicePosted), ("sales", AccountingFactTypes.CustomerCreditNotePosted),
         ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade),
         ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment),

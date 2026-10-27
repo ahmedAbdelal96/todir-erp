@@ -7,8 +7,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class MfaIntegrationTests
-{
+public sealed class MfaIntegrationTests : DatabaseIntegrationTestBase {
     [Fact]
     public async Task PersistentMfaProtectsSecretAndConsumesRecoveryCodeOnce()
     {

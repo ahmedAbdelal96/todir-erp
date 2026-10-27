@@ -8,8 +8,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class LedgerAuthorizationIntegrationTests
-{
+public sealed class LedgerAuthorizationIntegrationTests : DatabaseIntegrationTestBase {
     private static readonly Guid AtlasTenant = Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b");
     private static readonly Guid AtlasEntity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
 
@@ -42,7 +41,9 @@ public sealed class LedgerAuthorizationIntegrationTests
         using var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
         Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
         var csrf = await csrfResponse.Content.ReadFromJsonAsync<JsonElement>();
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email, password = "TodirDev2026!" }) };
+        var password = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for the Ledger authorization gate.");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email, password }) };
         request.Headers.Add("X-CSRF-TOKEN", csrf.GetProperty("token").GetString());
         using var response = await client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

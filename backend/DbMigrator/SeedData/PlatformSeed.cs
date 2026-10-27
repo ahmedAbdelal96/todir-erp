@@ -7,7 +7,7 @@ public static class PlatformSeed
     public static IReadOnlyList<SeedTenant> Tenants { get; } =
     [
         new(SeedIds.AtlasTenant, "atlas-trading", "شركة أطلس للتجارة", "atlas.com", "شركة أطلس للتجارة", "Atlas Trading", "EGP"),
-        new(SeedIds.DeltaTenant, "delta-supplies", "شركة دلتا للتوريدات", "delta.com", "شركة دلتا للتوريدات", "Delta Supplies", "USD")
+        new(SeedIds.DeltaTenant, "delta-supplies", "شركة دلتا للتوريدات", "delta.com", "شركة دلتا للتوريدات", "Delta Supplies", "EGP")
     ];
 
     public static async Task EnsureTenantsAsync(NpgsqlConnection connection, DateTimeOffset asOf, CancellationToken cancellationToken)

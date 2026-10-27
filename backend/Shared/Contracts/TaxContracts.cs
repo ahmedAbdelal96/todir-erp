@@ -38,6 +38,14 @@ public sealed record TaxRoundingEvidenceContract(string Strategy, int MoneyScale
 public sealed record TaxSnapshotEvidenceContract(string CapabilityState, string? RegistrationSnapshot, string? PartyTaxSnapshot, string? ProductTaxSnapshot, string JurisdictionSnapshot, string? TaxFxSnapshot, string? RoundingPolicyVersion, string? QuantitySnapshot = null);
 public sealed record TaxResultContract(string EvaluationState, string? Treatment, string NetAmount, string TaxTotal, string GrossAmount, IReadOnlyList<TaxLineContract> TaxLines, string JurisdictionSnapshot, string RegistrationSnapshot, string? RuleSetVersion, string CalculationVersion, TaxExplanationContract Explanation, string? TaxFxSnapshot = null, string? RoundingPolicyVersion = null, TaxRoundingEvidenceContract? RoundingEvidence = null, string? QuantitySnapshot = null);
 
+public sealed record InvoiceDocumentField(string Scope, string Reference, string Code, string? Value);
+public sealed record InvoiceDocumentRequirement(string Scope, string Code, string? Pattern = null);
+public sealed record InvoiceDocumentValidationRequest(string CountryCode, DateOnly TaxDate, string DocumentType, string CurrencyCode,
+    DateOnly? SupplyDate, IReadOnlyList<string> ProductReferences, IReadOnlyList<InvoiceDocumentField> Fields);
+public sealed record InvoiceDocumentValidationIssue(string Code, string Scope, string Reference, string FieldCode);
+public sealed record InvoiceDocumentValidationResult(bool Applicable, string? CountryPackCode, string? CountryPackVersion,
+    IReadOnlyList<InvoiceDocumentValidationIssue> Issues);
+
 public sealed record TaxSnapshotCaptureContract(string SourceDocumentKind, Guid SourceDocumentId, Guid? SourceLineId, TaxContextContract Context);
 public sealed record TaxSnapshotContract(Guid SnapshotId, string SourceDocumentKind, Guid SourceDocumentId, Guid? SourceLineId, string TaxDate, string EvaluationState, string? RuleSetVersion, string CalculationVersion, TaxContextContract Input, TaxResultContract Result, DateTimeOffset CapturedAt, TaxSnapshotEvidenceContract? Evidence = null);
 
@@ -46,4 +54,5 @@ public interface ITaxCapabilities
     Task<TaxResultContract> CalculateAsync(TaxContextContract context, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TaxResultContract>> CalculateBatchAsync(IReadOnlyList<TaxContextContract> contexts, CancellationToken cancellationToken = default);
     Task<TaxSnapshotContract> CaptureSnapshotAsync(TaxSnapshotCaptureContract snapshot, CancellationToken cancellationToken = default);
+    Task<InvoiceDocumentValidationResult> ValidateInvoiceDocumentAsync(InvoiceDocumentValidationRequest request, CancellationToken cancellationToken = default);
 }

@@ -23,7 +23,16 @@ public static class IdentitySeed
         "tax.read", "tax.registration.read", "tax.registration.manage", "tax.party_profile.read", "tax.party_profile.manage",
         "tax.product_profile.read", "tax.product_profile.manage", "tax.policy.read", "tax.policy.manage", "tax.rule.read",
         "tax.rule.manage", "tax.rule.activate", "tax.simulate", "tax.audit.view", "tax.import", "tax.export", "tax.capability.configure",
-        "tax.country_pack.read", "tax.country_pack.manage", "tax.country_pack.activate"
+        "tax.country_pack.read", "tax.country_pack.manage", "tax.country_pack.activate",
+        "subledger.read", "subledger.profile.read", "subledger.profile.manage", "subledger.credit_limit.read", "subledger.credit_limit.manage",
+        "subledger.application.create", "subledger.application.reverse", "subledger.application.cross_currency", "subledger.advance.create",
+        "subledger.credit-note.create", "subledger.aging.read", "subledger.statement.read", "subledger.reconciliation.read", "subledger.reconciliation.run",
+        "subledger.writeoff.policy.manage", "subledger.writeoff.create", "subledger.writeoff.approve", "subledger.fx.manual-rate",
+        "subledger.opening.manage", "subledger.opening.post", "subledger.opening.finalize",
+        "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize", "invoicing.customer_invoice.cancel_draft",
+        "invoicing.supplier_invoice.read", "invoicing.supplier_invoice.create", "invoicing.supplier_invoice.edit", "invoicing.supplier_invoice.finalize",
+        "invoicing.credit_note.create", "invoicing.debit_note.create", "invoicing.price_override", "invoicing.payment_term_override", "invoicing.date_override",
+        "invoicing.accounting_preview", "invoicing.regulatory_details", "invoicing.attachment.manage", "invoicing.delivery.send", "invoicing.audit.view"
     ];
 
     public static async Task<SeedIdentitySummary> SeedAsync(SeedContext context, string defaultPassword, string? protectedMfaSecret, string[]? mfaRecoveryDigests, CancellationToken cancellationToken)
@@ -53,8 +62,13 @@ public static class IdentitySeed
         var roleDefinitions = new (string Code, string Name, string[] Permissions)[]
         {
             ("administrator", "مدير النظام", Permissions),
-            ("accountant", "محاسب", ["platform.identity.read", "platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read", "finbase.rate.read", "finbase.rounding_policy.read", "finbase.payment_term.read", "pricing.read"]),
-            ("sales", "مبيعات", ["platform.organization.read", "directory.party.read", "directory.party.create", "directory.party.edit", "catalog.product.read", "finbase.currency.read", "finbase.payment_term.read", "pricing.read", "pricing.simulate"]),
+            ("accountant", "محاسب", ["platform.identity.read", "platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read", "finbase.rate.read", "finbase.rounding_policy.read", "finbase.payment_term.read", "pricing.read",
+                "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize", "invoicing.customer_invoice.cancel_draft",
+                "invoicing.supplier_invoice.read", "invoicing.supplier_invoice.create", "invoicing.supplier_invoice.edit", "invoicing.supplier_invoice.finalize",
+                "invoicing.credit_note.create", "invoicing.debit_note.create", "invoicing.price_override", "invoicing.payment_term_override", "invoicing.date_override",
+                "invoicing.accounting_preview", "invoicing.regulatory_details", "invoicing.attachment.manage", "invoicing.audit.view"]),
+            ("sales", "مبيعات", ["platform.organization.read", "directory.party.read", "directory.party.create", "directory.party.edit", "catalog.product.read", "finbase.currency.read", "finbase.payment_term.read", "pricing.read", "pricing.simulate",
+                "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.cancel_draft", "invoicing.accounting_preview"]),
             ("warehouse", "مخازن", ["platform.organization.read", "catalog.product.read", "catalog.product.edit", "catalog.uom.manage"]),
             ("office", "موظف إداري", ["platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read"])
         };
@@ -120,7 +134,7 @@ public static class IdentitySeed
         var users = new List<UserSpec>();
         var canonical = new List<(string Prefix, string Name, string RoleCode, string Status, bool MustChangePassword, bool IsCanonical)>
         {
-            new("admin", "مدير شركة أطلس", "administrator", "Active", false, true),
+            new("admin", tenant.Id == SeedIds.AtlasTenant ? "مدير شركة أطلس" : "مدير شركة دلتا", "administrator", "Active", false, true),
             new("accountant", "محمود عبدالسلام", "accountant", "Active", false, true),
             new("sales", "سارة حمدي", "sales", "Active", false, true),
             new("warehouse", "خالد السيد", "warehouse", "Active", false, true),

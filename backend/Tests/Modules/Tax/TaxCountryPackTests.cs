@@ -63,6 +63,40 @@ public sealed class TaxCountryPackTests
         Assert.Equal(TaxCountryPackStatus.Superseded,activated[0].Status);
     }
 
+    [Fact]
+    public void InvoiceDocumentRequirementsValidatePartyAndEveryProductWithoutCountryLogicInInvoicing()
+    {
+        var requirements = new Shared.Contracts.Tax.InvoiceDocumentRequirement[]
+        {
+            new("Party", "tax_id", "^[A-Z0-9-]{6,20}$"),
+            new("Product", "legal_code", "^[A-Z]{2}-[0-9]{4}$")
+        };
+        var fields = new Shared.Contracts.Tax.InvoiceDocumentField[]
+        {
+            new("Party", "party", "tax_id", "AB123456"),
+            new("Product", "line-1", "legal_code", "AA-1024"),
+            new("Product", "line-2", "legal_code", "invalid")
+        };
+
+        var issues = TaxInvoiceDocumentValidator.Validate(requirements, ["line-1", "line-2"], fields);
+
+        Assert.Single(issues);
+        Assert.Equal("tax.invoice_document_field_invalid", issues[0].Code);
+        Assert.Equal("line-2", issues[0].Reference);
+    }
+
+    [Fact]
+    public void InvoiceDocumentRequirementsRejectMissingEvidenceAndInvalidPackPatterns()
+    {
+        var issues = TaxInvoiceDocumentValidator.Validate(
+            [new("Party", "tax_id"), new("Product", "legal_code", "[")], ["line-1"],
+            [new("Product", "line-1", "legal_code", "AA-1024")]);
+
+        Assert.Contains(issues, issue => issue.Code == "tax.invoice_document_field_required" && issue.FieldCode == "tax_id");
+        Assert.Contains(issues, issue => issue.Code == "tax.invoice_document_rule_invalid" && issue.FieldCode == "legal_code");
+        Assert.Contains(TaxInvoiceDocumentValidator.Validate([new("Unscoped", "field")], [], []), issue => issue.Code == "tax.invoice_document_scope_invalid");
+    }
+
     private static TaxCountryPackManifest Manifest(string version,TaxCountryPackStatus status,LocalDate from,LocalDate? to) =>
         new("TEST-ONLY","ZZ",version,TaxCalculator.CalculationVersion,status,from,to,"Approved",new(true,false,false,false,false),["test-rules"],"Internal test authority","Reference scenario","fixture",null,"Reviewer",new LocalDate(2026,1,1),true);
 }

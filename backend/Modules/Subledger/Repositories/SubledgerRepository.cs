@@ -322,8 +322,10 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         }, ct);
 
     public Task<IReadOnlyList<Guid>> CreateOpenItemsAsync(TenantId tenant, LegalEntityId entity, Guid partyId, SubledgerDirection direction, OpenItemPolarity polarity, string sourceType, IReadOnlyList<OpenItemSnapshotContract> items, CancellationToken ct, Guid? correlationId = null, Guid? actorId = null) =>
-        transactions.ExecuteAsync(tenant, async (context, token) =>
-        {
+        transactions.ExecuteAsync(tenant, (context, token) => CreateOpenItemsInTransactionAsync(context, tenant, entity, partyId, direction, polarity, sourceType, items, token, correlationId, actorId), ct);
+
+    public async Task<IReadOnlyList<Guid>> CreateOpenItemsInTransactionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid partyId, SubledgerDirection direction, OpenItemPolarity polarity, string sourceType, IReadOnlyList<OpenItemSnapshotContract> items, CancellationToken token, Guid? correlationId = null, Guid? actorId = null)
+    {
             var ids = new List<Guid>(items.Count);
             foreach (var item in items)
             {
@@ -350,8 +352,8 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
                 if (!string.Equals(existingHash, payloadHash, StringComparison.Ordinal)) throw new SubledgerException("subledger.source_conflict", "The source identity already exists with different financial facts.");
                 ids.Add(existingId);
             }
-            return (IReadOnlyList<Guid>)ids;
-        }, ct);
+            return ids;
+    }
 
     public async Task<IReadOnlyDictionary<Guid, (string TransactionCurrency, string BaseCurrency)>> GetApplicationCurrenciesAsync(TenantId tenant, LegalEntityId entity, IReadOnlyCollection<Guid> itemIds, CancellationToken ct)
     {
@@ -569,6 +571,27 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         Add(command, tenant.Value, entity.Value, openItemId);
         await using var reader = await command.ExecuteReaderAsync(ct);
         return await reader.ReadAsync(ct) ? ReadItem(reader) : null;
+    }
+
+    public async Task<SourceSettlementSummaryContract?> GetSourceSettlementSummaryAsync(TenantId tenant, LegalEntityId entity, string sourceType,
+        Guid sourceDocumentId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        await using var command = new NpgsqlCommand("select min(transaction_currency),count(distinct transaction_currency),coalesce(sum(original_transaction_amount),0),coalesce(sum(settled_transaction_amount),0),coalesce(sum(open_transaction_amount),0),count(*) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_type=$3 and source_reference=$4", connection, transaction);
+        Add(command, tenant.Value, entity.Value, sourceType, sourceDocumentId.ToString("D"));
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        var count = reader.GetInt64(5);
+        if (count == 0) return null;
+        if (reader.GetInt64(1) != 1) throw new SubledgerException("subledger.source_currency_mismatch", "One source document cannot have open items in multiple transaction currencies.");
+        var original = reader.GetDecimal(2);
+        var settled = reader.GetDecimal(3);
+        var open = reader.GetDecimal(4);
+        var status = open == 0m ? "Settled" : settled == 0m ? "Open" : "PartiallySettled";
+        return new(status, reader.GetString(0).Trim(), original.ToString(CultureInfo.InvariantCulture), settled.ToString(CultureInfo.InvariantCulture),
+            open.ToString(CultureInfo.InvariantCulture), checked((int)count));
     }
 
     public async Task<AutoApplyContext> GetAutoApplyContextAsync(TenantId tenant, LegalEntityId entity, Guid sourceItemId, string? reference, int candidateLimit, bool prioritizeReference, bool oldestDocumentFirst, CancellationToken ct)

@@ -1,6 +1,23 @@
 # Local development runtime
 
-The local runtime uses the checked-in Docker Compose infrastructure and host-run API, Worker, and Vite processes. Connection strings and development-only service credentials belong in each host's ignored `appsettings.Development.json`; they must not be passed on every command line or committed.
+Start the backend and frontend in two terminals. From the repository root, run the backend launcher; it starts local infrastructure, builds the backend once, applies migrations and the repeatable development seed, then starts the API and Worker without rebuilding shared projects.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backend.ps1
+```
+
+In a second terminal, start Vite:
+
+```powershell
+Set-Location frontend
+npm run dev
+```
+
+Open `http://127.0.0.1:5173/`. The API health endpoint is `http://127.0.0.1:5080/health`. Press `Ctrl+C` in the backend terminal to stop both backend hosts; stop the frontend in its terminal separately.
+
+Connection strings and development-only service credentials belong in the ignored `backend/appsettings.Development.json`; they must not be committed. The backend launcher reads local runtime credentials from that file, targets the Compose database named `todir`, and aligns the local runtime role password with the configured password. It does not overwrite the settings file.
+
+Before building, the launcher stops existing API/Worker processes from this checkout to prevent duplicate hosts and shared-assembly locks. If another application owns port `5080`, startup stops with its process ID instead of trying to launch a second API.
 
 ## First-time setup
 
@@ -14,39 +31,6 @@ Replace the connection string and local service credentials in that one file. Th
 
 The repository's local Docker defaults are PostgreSQL `postgres/postgres`, RabbitMQ `todir/todir-dev-only`, database port `15432`, and RabbitMQ port `5672`. These values are development-only and are not production credentials.
 
-## Start infrastructure
-
-```powershell
-docker compose up -d
-docker compose ps
-```
-
-## Apply migrations and seed development data
-
-Run this when the database is new or when the development seed needs to be refreshed. The password is supplied only for the explicit seed operation and is never stored in source control:
-
-```powershell
-$env:SEED_DEFAULT_PASSWORD = "<local development password>"
-dotnet run --project backend/DbMigrator/DbMigrator.csproj -- --seed development
-```
-
-## Start the application
-
-Use separate terminals from the repository root:
-
-```powershell
-dotnet run --project backend/Api/Api.csproj
-```
-
-```powershell
-dotnet run --project backend/Worker/Worker.csproj
-```
-
-```powershell
-corepack pnpm install --frozen-lockfile
-corepack pnpm --dir frontend dev
-```
-
-Open `http://127.0.0.1:5173/`. The API is available at `http://127.0.0.1:5080/health`, and Vite proxies `/api` requests to that API.
+Vite proxies `/api` requests to the API.
 
 The canonical development accounts are `admin@atlas.com` and `admin@delta.com`; both use the password supplied as `SEED_DEFAULT_PASSWORD` during seeding.

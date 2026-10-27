@@ -6,8 +6,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class NumberingIntegrationTests
-{
+public sealed class NumberingIntegrationTests : DatabaseIntegrationTestBase {
     [Fact]
     public async Task DatabaseSequenceAllocatorProducesUniqueDeterministicNumbersUnderConcurrency()
     {

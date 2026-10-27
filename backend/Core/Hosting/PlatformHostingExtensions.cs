@@ -17,6 +17,7 @@ using Core.Messaging;
 using System.Text;
 using Core.Security;
 using Core.Authorization;
+using Shared.Contracts.Platform;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Cryptography;
@@ -47,6 +48,9 @@ public static class PlatformHostingExtensions
             : new NullUserAccountAdminStore());
         services.AddSingleton<IPlatformAdminSurfaceStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlPlatformAdminSurfaceStore(dataSource) : new NullPlatformAdminSurfaceStore());
         services.AddSingleton<ILegalEntityFinancialReadStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlLegalEntityFinancialReadStore(dataSource) : new NullLegalEntityFinancialReadStore());
+        services.AddSingleton<IPlatformOrganizationCapabilities>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlPlatformOrganizationCapabilities(dataSource)
+            : new NullPlatformOrganizationCapabilities());
         var cookieSecurePolicy = Enum.TryParse<CookieSecurePolicy>(configuration["TODIR_COOKIE_SECURE_POLICY"], ignoreCase: true, out var configuredCookieSecurePolicy)
             ? configuredCookieSecurePolicy
             : CookieSecurePolicy.Always;
@@ -98,6 +102,7 @@ public static class PlatformHostingExtensions
         if (!string.IsNullOrWhiteSpace(fileSigningSecret)) services.AddSingleton<IFileAccessSigner>(_ => new HmacFileAccessSigner(fileSigningSecret));
         services.AddSingleton<IAuditWriter>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlAuditWriter(dataSource) : new InMemoryAuditWriter());
         services.AddSingleton<ISequenceAllocator>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlSequenceAllocator(dataSource) : new InMemorySequenceAllocator());
+        services.AddSingleton<ITransactionalSequenceAllocator>(provider => (ITransactionalSequenceAllocator)provider.GetRequiredService<ISequenceAllocator>());
         services.AddSingleton<IMessageRetryPolicy, ExponentialMessageRetryPolicy>();
         services.AddSingleton<IMessageErrorStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlMessageErrorStore(dataSource) : new InMemoryMessageErrorStore());
         services.AddScoped<IMessageReplayService>(provider =>

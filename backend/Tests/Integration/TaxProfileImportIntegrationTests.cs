@@ -15,8 +15,7 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class TaxProfileImportIntegrationTests
-{
+public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBase {
     [Fact]
     public async Task TaxProfileImportExportRunsAgainstDisposablePostgresAndPreservesAtomicity()
     {
@@ -358,11 +357,11 @@ public sealed class TaxProfileImportIntegrationTests
     {
         await using var switchDatabase = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = databaseName }.ConnectionString);
         await switchDatabase.OpenAsync();
-        const string sql = "select t.id,i.id,r.id,e.id,(select p.product_template_code from foundation_catalog.product_template p where p.tenant_id=t.id and p.product_template_code='SEED-PRD-000001'),(select v.sku from foundation_catalog.product_variant v join foundation_catalog.product_template p on p.tenant_id=v.tenant_id and p.id=v.product_template_id where v.tenant_id=t.id and p.product_template_code='SEED-PRD-000002' and v.is_default_variant),(select p.product_template_code from foundation_catalog.product_template p where p.tenant_id=t.id and p.product_template_code='SEED-PRD-000004'),(select p.product_template_code from foundation_catalog.product_template p where p.tenant_id=t.id and p.product_template_code='SEED-PRD-000005') from platform.tenant t join platform.identity i on i.tenant_id=t.id and i.normalized_email='ADMIN@ATLAS.COM' join platform.membership m on m.tenant_id=t.id and m.identity_id=i.id join platform.role r on r.tenant_id=t.id and r.code='administrator' join platform.legal_entity e on e.tenant_id=t.id and e.code='SECONDARY' where t.slug='atlas-trading' limit 1";
+        const string sql = "select t.id,i.id,r.id,e.id,(select p.product_template_code from foundation_catalog.product_template p where p.tenant_id=t.id and p.product_template_code='SEED-PRD-000001'),(select v.sku from foundation_catalog.product_variant v join foundation_catalog.product_template p on p.tenant_id=v.tenant_id and p.id=v.product_template_id where v.tenant_id=t.id and p.product_template_code='SEED-PRD-000002' and v.is_default_variant),(select p.product_template_code from foundation_catalog.product_template p where p.tenant_id=t.id and p.product_template_code='SEED-PRD-000004'),(select p.product_template_code from foundation_catalog.product_template p where p.tenant_id=t.id and p.product_template_code='SEED-PRD-000005'),(select x.system_code || ':' || x.external_key from foundation_directory.external_reference x where x.tenant_id=t.id and x.external_key=upper(t.slug) || '-001' order by x.id limit 1) from platform.tenant t join platform.identity i on i.tenant_id=t.id and i.normalized_email='ADMIN@ATLAS.COM' join platform.membership m on m.tenant_id=t.id and m.identity_id=i.id join platform.role r on r.tenant_id=t.id and r.code='administrator' join platform.legal_entity e on e.tenant_id=t.id and e.code='SECONDARY' where t.slug='atlas-trading' limit 1";
         await using var command = new NpgsqlCommand(sql, switchDatabase);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync(), "The seeded Atlas administrator, administrator role, Secondary legal entity, and products must exist.");
-        return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetString(4), reader.GetString(5), "directory-import:ATLAS-001", reader.GetString(6), reader.GetString(7));
+        return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetString(8), reader.GetString(6), reader.GetString(7));
     }
 
     private static async Task<ProfileCounts> ReadProfileCountsAsync(NpgsqlConnection admin, Guid tenantId)

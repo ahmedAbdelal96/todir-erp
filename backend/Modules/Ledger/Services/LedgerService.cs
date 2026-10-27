@@ -8,6 +8,7 @@ namespace Modules.Ledger.Services;
 
 public sealed class LedgerService(LedgerRepository repository, LedgerOperationsRepository operations, LedgerSetupRepository setup, LedgerMappingConfigurationRepository mappings, LedgerUxRepository ux, LedgerPreviewService preview) : ILedgerPostingEngine, ILedgerControlBalanceRead
 {
+    public Task<Guid> GetActiveConfigurationVersionIdAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default) => repository.GetActiveConfigurationVersionIdAsync(tenantId, legalEntityId, cancellationToken);
     public Task<MappingConfigurationDto> CreateMappingConfigurationDraftAsync(TenantId tenant, LegalEntityId entity, CreateMappingConfigurationDraftRequest request, Guid actor, Guid correlationId, CancellationToken ct) => mappings.CreateDraftAsync(tenant, entity, request, actor, correlationId, ct);
     public Task<MappingConfigurationDto> GetMappingConfigurationAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, CancellationToken ct) => mappings.GetConfigurationAsync(tenant, entity, configurationId, ct);
     public Task<MappingConfigurationItemDto> UpdateMappingConfigurationDraftAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, Guid mappingVersionId, UpdateMappingConfigurationDraftRequest request, Guid actor, Guid correlationId, CancellationToken ct) => mappings.UpdateDraftMappingAsync(tenant, entity, configurationId, mappingVersionId, request, actor, correlationId, ct);

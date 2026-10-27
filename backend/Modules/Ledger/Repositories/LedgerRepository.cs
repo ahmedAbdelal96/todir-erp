@@ -20,6 +20,13 @@ public sealed class LedgerRepository(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    public Task<Guid> GetActiveConfigurationVersionIdAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default) => transactions.ExecuteAsync(tenantId, async (context, token) =>
+    {
+        await using var command = new NpgsqlCommand("select c.active_configuration_version_id from finance_ledger.ledger_entity_configuration c join finance_ledger.accounting_configuration_version v on v.tenant_id=c.tenant_id and v.legal_entity_id=c.legal_entity_id and v.id=c.active_configuration_version_id and v.status='Active' where c.tenant_id=$1 and c.legal_entity_id=$2", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(legalEntityId.Value);
+        return await command.ExecuteScalarAsync(token) is Guid id ? id : throw new LedgerDomainException("ledger.configuration_missing", "No active accounting configuration exists for this legal entity.");
+    }, cancellationToken);
+
     public async Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default)
     {
         if (controlRole is not ("Receivable" or "Payable") || configurationVersionId == Guid.Empty)
@@ -195,6 +202,159 @@ public sealed class LedgerRepository(
 
     public Task<LedgerPostingResult> PostCustomerInvoiceAsync(AccountingFactEnvelope<CustomerInvoicePostedPayload> fact, CancellationToken cancellationToken = default) =>
         PostAsync(new AccountingFactEnvelope<IAccountingFactPayload>(fact.FactId, fact.TenantId, fact.LegalEntityId, fact.FactType, fact.FactVersion, fact.SourceModule, fact.SourceReference, fact.IdempotencyKey, fact.BusinessDate, fact.PostingDate, fact.Payload, fact.CorrelationId, fact.ActorId), cancellationToken);
+
+    public async Task<LedgerPostingResult> PostInvoiceInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        InvoiceLedgerPostingContract invoice, CancellationToken cancellationToken)
+    {
+        if (fact.SourceModule != "invoicing" || fact.FactVersion != 1
+            || fact.FactType is not (AccountingFactTypes.CustomerInvoicePosted or AccountingFactTypes.VendorBillPosted or AccountingFactTypes.CustomerCreditNotePosted or AccountingFactTypes.VendorCreditNotePosted or AccountingFactTypes.CustomerDebitNotePosted or AccountingFactTypes.VendorDebitNotePosted))
+            throw new LedgerDomainException("ledger.fact_unsupported", "The invoice fact type is not supported by the transactional invoice posting contract.");
+        if (invoice.Direction is not ("Receivable" or "Payable") || invoice.DocumentType is not ("Invoice" or "CreditNote" or "DebitNote")
+            || invoice.NetAmount <= 0m || invoice.TaxAmount < 0m || invoice.GrossAmount != invoice.NetAmount + invoice.TaxAmount
+            || invoice.Lines.Count == 0 || invoice.Lines.Any(line => string.IsNullOrWhiteSpace(line.CategoryCode) || line.NetAmount < 0m)
+            || invoice.Lines.Sum(line => line.NetAmount) != invoice.NetAmount || invoice.Taxes.Sum(tax => tax.Amount) != invoice.TaxAmount)
+            throw new LedgerDomainException("ledger.fact_invalid", "Invoice amounts or accounting categories are inconsistent.");
+        var expectedFactType = (invoice.Direction, invoice.DocumentType) switch
+        {
+            ("Receivable", "Invoice") => AccountingFactTypes.CustomerInvoicePosted,
+            ("Receivable", "CreditNote") => AccountingFactTypes.CustomerCreditNotePosted,
+            ("Receivable", "DebitNote") => AccountingFactTypes.CustomerDebitNotePosted,
+            ("Payable", "Invoice") => AccountingFactTypes.VendorBillPosted,
+            ("Payable", "CreditNote") => AccountingFactTypes.VendorCreditNotePosted,
+            ("Payable", "DebitNote") => AccountingFactTypes.VendorDebitNotePosted,
+            _ => throw new LedgerDomainException("ledger.fact_invalid", "Invoice direction and document type are invalid.")
+        };
+        if (!string.Equals(fact.FactType, expectedFactType, StringComparison.Ordinal))
+            throw new LedgerDomainException("ledger.fact_invalid", "The semantic accounting fact does not match the invoice direction and document type.");
+        var payloadJson = JsonSerializer.Serialize(invoice, JsonOptions);
+        var payloadHash = AccountingFactFingerprint.Compute(invoice);
+        var prior = await FindInvoiceFactAsync(context, fact, cancellationToken);
+        if (prior is not null)
+        {
+            if (!string.Equals(prior.Value.Hash, payloadHash, StringComparison.Ordinal)) throw new LedgerDomainException("ledger.fact_duplicate_conflict", "The source invoice fact already exists with different financial facts.");
+            if (prior.Value.Entry is { } priorEntry) return new(fact.FactId, priorEntry, prior.Value.EntryNumber!, "Posted", true);
+        }
+        else
+        {
+            if (!await IsRegisteredProducerAsync(context, fact, cancellationToken)) throw new LedgerDomainException("ledger.fact_producer_unregistered", "Invoicing is not registered for this accounting fact type and version.");
+            await ExecuteAsync(context, "insert into finance_ledger.accounting_fact (tenant_id,legal_entity_id,id,fact_type,fact_version,source_module,source_reference,idempotency_key,business_date,posting_date,payload_jsonb,payload_hash,status,correlation_id,actor_id,received_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'Received',$13,$14,$15)", cancellationToken,
+                fact.TenantId.Value, fact.LegalEntityId.Value, fact.FactId, fact.FactType, fact.FactVersion, fact.SourceModule, fact.SourceReference, fact.IdempotencyKey,
+                fact.BusinessDate, fact.PostingDate, new NpgsqlParameter { Value = payloadJson, NpgsqlDbType = NpgsqlDbType.Jsonb }, payloadHash, fact.CorrelationId, fact.ActorId, clock.GetUtcNow());
+        }
+
+        var customer = invoice.Direction == "Receivable";
+        var reversal = invoice.DocumentType == "CreditNote";
+        var postingEnvelope = new AccountingFactEnvelope<CustomerInvoicePostedPayload>(fact.FactId, fact.TenantId, fact.LegalEntityId, fact.FactType, fact.FactVersion,
+            fact.SourceModule, fact.SourceReference, fact.IdempotencyKey, fact.BusinessDate, fact.PostingDate,
+            new(invoice.NetAmount, invoice.TaxAmount, invoice.GrossAmount, invoice.CurrencyCode, invoice.PartyGroup, invoice.Lines[0].CategoryCode, invoice.Taxes, invoice.ExchangeRate, invoice.ExchangeRateReference), fact.CorrelationId, fact.ActorId);
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, cancellationToken)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var exchangeRate = string.Equals(invoice.CurrencyCode, baseCurrency, StringComparison.OrdinalIgnoreCase) ? 1m
+            : invoice.ExchangeRate ?? throw new LedgerDomainException("ledger.currency_mismatch", "A foreign-currency invoice requires an approved exchange-rate snapshot.");
+        if (exchangeRate <= 0m) throw new LedgerDomainException("ledger.currency_mismatch", "Exchange rate must be positive.");
+        var period = await ResolvePeriodAsync(context, postingEnvelope, cancellationToken);
+        var rule = await ResolveRuleAsync(context, postingEnvelope, cancellationToken);
+        var configuration = await ResolveConfigurationAsync(context, postingEnvelope, cancellationToken);
+        var journalCode = customer ? "SALES" : "PURCHASE";
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code=$3 and status='Active'", cancellationToken, fact.TenantId.Value, fact.LegalEntityId.Value, journalCode)
+            ?? throw new LedgerDomainException("ledger.journal_missing", $"The {journalCode} journal is not configured.");
+        var determinations = new List<AccountDeterminationExplanation>();
+        var controlRole = customer ? "Receivable" : "Payable";
+        var control = await ResolveAccountAsync(context, postingEnvelope, configuration, controlRole, null, invoice.PartyGroup, null, cancellationToken);
+        determinations.Add(control.Explanation);
+        var entries = new List<(Guid Account, decimal Debit, decimal Credit, string Role, decimal Amount, AccountDeterminationExplanation Evidence)>();
+        var controlDebit = customer != reversal;
+        entries.Add((control.Id, controlDebit ? invoice.GrossAmount : 0m, controlDebit ? 0m : invoice.GrossAmount, controlRole, invoice.GrossAmount, control.Explanation));
+        var revenueRole = customer ? "SalesRevenue" : "PurchaseExpense";
+        var lineGroups = invoice.Lines.GroupBy(line => line.CategoryCode, StringComparer.Ordinal).Select(group => new InvoiceLedgerLineContract(group.Key, group.Sum(line => line.NetAmount))).ToArray();
+        var categoryAccounts = await ResolveInvoiceAccountsAsync(context, postingEnvelope, configuration,
+            revenueRole, lineGroups.Select(line => new InvoiceAccountLookup(line.CategoryCode, null)).ToArray(), cancellationToken);
+        foreach (var item in lineGroups)
+        {
+            var resolved = categoryAccounts[new(item.CategoryCode, null)];
+            determinations.Add(resolved.Explanation);
+            var credit = customer != reversal;
+            entries.Add((resolved.Id, credit ? 0m : item.NetAmount, credit ? item.NetAmount : 0m, revenueRole, item.NetAmount, resolved.Explanation));
+        }
+        var taxGroups = invoice.Taxes.GroupBy(tax => (tax.AccountRole, tax.Code)).Select(group => (group.Key.AccountRole, group.Key.Code, Amount: group.Sum(tax => tax.Amount))).ToArray();
+        foreach (var taxRoleGroup in taxGroups.GroupBy(tax => tax.AccountRole, StringComparer.Ordinal))
+        {
+            var role = string.IsNullOrWhiteSpace(taxRoleGroup.Key) ? (customer ? "OutputTax" : "InputTax") : taxRoleGroup.Key;
+            var taxAccounts = await ResolveInvoiceAccountsAsync(context, postingEnvelope, configuration, role,
+                taxRoleGroup.Select(tax => new InvoiceAccountLookup(null, tax.Code)).ToArray(), cancellationToken);
+            foreach (var tax in taxRoleGroup)
+            {
+                var resolved = taxAccounts[new(null, tax.Code)];
+                determinations.Add(resolved.Explanation);
+                var credit = customer != reversal;
+                entries.Add((resolved.Id, credit ? 0m : tax.Amount, credit ? tax.Amount : 0m, role, tax.Amount, resolved.Explanation));
+            }
+        }
+        LedgerDomainRules.EnsureBalanced(entries.Sum(line => line.Debit), entries.Sum(line => line.Credit));
+        var entryId = Guid.CreateVersion7();
+        var entryNumber = $"JE-{fact.FactId:N}";
+        var now = clock.GetUtcNow();
+        await ExecuteAsync(context, "insert into finance_ledger.journal_entry (tenant_id,legal_entity_id,id,journal_id,fact_id,source_module,source_reference,entry_number,posting_date,accounting_period_id,fact_type,fact_version,currency_code,base_currency_code,posting_rule_version_id,accounting_configuration_version_id,description,correlation_id,actor_id,posted_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)", cancellationToken,
+            fact.TenantId.Value, fact.LegalEntityId.Value, entryId, journal, fact.FactId, fact.SourceModule, fact.SourceReference, entryNumber, fact.PostingDate, period, fact.FactType,
+            fact.FactVersion, invoice.CurrencyCode, baseCurrency, rule, configuration, $"{invoice.Direction} {invoice.DocumentType} posted", fact.CorrelationId, fact.ActorId, now);
+        var sequence = 1;
+        foreach (var line in entries)
+        {
+            var exchangeSnapshot = new NpgsqlParameter { Value = JsonSerializer.Serialize(new { rate = exchangeRate, reference = invoice.ExchangeRateReference, from = invoice.CurrencyCode, to = baseCurrency }, JsonOptions), NpgsqlDbType = NpgsqlDbType.Jsonb };
+            var evidence = new NpgsqlParameter { Value = JsonSerializer.Serialize(new { specificity = line.Evidence.SpecificityRank, role = line.Role }, JsonOptions), NpgsqlDbType = NpgsqlDbType.Jsonb };
+            await ExecuteAsync(context, "insert into finance_ledger.journal_entry_line (tenant_id,legal_entity_id,id,journal_entry_id,sequence_no,account_id,debit,credit,currency_code,amount,semantic_role,account_role,account_mapping_id,account_mapping_version_id,determination_context,transaction_debit,transaction_credit,base_debit,base_credit,exchange_rate,exchange_rate_snapshot) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)", cancellationToken,
+                fact.TenantId.Value, fact.LegalEntityId.Value, Guid.CreateVersion7(), entryId, sequence++, line.Account, line.Debit, line.Credit, invoice.CurrencyCode, line.Amount,
+                line.Role, line.Evidence.AccountRole, line.Evidence.MappingId, line.Evidence.MappingVersionId, evidence, line.Debit, line.Credit, line.Debit * exchangeRate,
+                line.Credit * exchangeRate, exchangeRate, exchangeSnapshot);
+        }
+        await ExecuteAsync(context, "update finance_ledger.accounting_fact set status='Posted',posted_entry_id=$3,posted_at=$4 where tenant_id=$1 and id=$2", cancellationToken, fact.TenantId.Value, fact.FactId, entryId, now);
+        await RefreshAccountPeriodBalancesAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, entryId, cancellationToken);
+        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), LedgerEventTypes.JournalEntryPostedV1, JsonSerializer.Serialize(new { fact.FactId, entryId, entryNumber, fact.FactType }, JsonOptions), fact.TenantId, now, fact.CorrelationId, fact.FactId, "ledger"));
+        return new(fact.FactId, entryId, entryNumber, "Posted", false, determinations);
+    }
+
+    public async Task<InvoiceAccountingPreview> PreviewInvoiceInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, InvoiceLedgerPostingContract invoice, CancellationToken cancellationToken)
+    {
+        var posted = await PostInvoiceInTransactionAsync(context, fact, invoice, cancellationToken);
+        await using var command = new NpgsqlCommand("select j.code,e.base_currency_code,e.posting_rule_version_id,e.accounting_configuration_version_id,l.sequence_no,a.code,l.account_role,l.debit,l.credit,l.currency_code,l.base_debit,l.base_credit,m.code,mv.version_number from finance_ledger.journal_entry e join finance_ledger.journal j on j.tenant_id=e.tenant_id and j.legal_entity_id=e.legal_entity_id and j.id=e.journal_id join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id left join finance_ledger.account_mapping m on m.tenant_id=l.tenant_id and m.legal_entity_id=l.legal_entity_id and m.id=l.account_mapping_id left join finance_ledger.account_mapping_version mv on mv.tenant_id=l.tenant_id and mv.legal_entity_id=l.legal_entity_id and mv.id=l.account_mapping_version_id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3 order by l.sequence_no", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(fact.TenantId.Value);
+        command.Parameters.AddWithValue(fact.LegalEntityId.Value);
+        command.Parameters.AddWithValue(posted.JournalEntryId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var lines = new List<InvoiceAccountingPreviewLine>();
+        string? journalCode = null;
+        string? baseCurrency = null;
+        var rule = Guid.Empty;
+        var configuration = Guid.Empty;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            journalCode ??= reader.GetString(0);
+            baseCurrency ??= reader.GetString(1);
+            rule = reader.GetGuid(2);
+            configuration = reader.GetGuid(3);
+            lines.Add(new(reader.GetInt32(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7), reader.GetDecimal(8),
+                reader.GetString(9), reader.GetDecimal(10), reader.GetDecimal(11), reader.IsDBNull(12) ? null : reader.GetString(12),
+                reader.IsDBNull(13) ? null : reader.GetInt64(13)));
+        }
+        if (lines.Count == 0 || journalCode is null || baseCurrency is null)
+            throw new LedgerDomainException("ledger.preview_unavailable", "The invoice accounting preview could not be read from the posting engine result.");
+        return new(journalCode, baseCurrency, rule, configuration, lines, lines.Sum(line => line.BaseDebit), lines.Sum(line => line.BaseCredit));
+    }
+
+    public static async Task<Guid> GetActiveConfigurationVersionIdAsync(ITransactionContext context, TenantId tenantId, LegalEntityId legalEntityId, CancellationToken ct)
+    {
+        var id = await ScalarGuidAsync(context, "select c.active_configuration_version_id from finance_ledger.ledger_entity_configuration c join finance_ledger.accounting_configuration_version v on v.tenant_id=c.tenant_id and v.legal_entity_id=c.legal_entity_id and v.id=c.active_configuration_version_id and v.status='Active' where c.tenant_id=$1 and c.legal_entity_id=$2 for share of c", ct, tenantId.Value, legalEntityId.Value);
+        return id ?? throw new LedgerDomainException("ledger.configuration_missing", "No active accounting configuration exists for this legal entity.");
+    }
+
+    private static async Task<(string Hash, Guid? Entry, string? EntryNumber)?> FindInvoiceFactAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select payload_hash,posted_entry_id,(select entry_number from finance_ledger.journal_entry e where e.tenant_id=f.tenant_id and e.id=f.posted_entry_id) from finance_ledger.accounting_fact f where tenant_id=$1 and legal_entity_id=$2 and (idempotency_key=$3 or (source_module=$4 and source_reference=$5 and fact_type=$6 and fact_version=$7)) for update", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(fact.TenantId.Value); command.Parameters.AddWithValue(fact.LegalEntityId.Value); command.Parameters.AddWithValue(fact.IdempotencyKey); command.Parameters.AddWithValue(fact.SourceModule); command.Parameters.AddWithValue(fact.SourceReference); command.Parameters.AddWithValue(fact.FactType); command.Parameters.AddWithValue(fact.FactVersion);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct) ? (reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetString(2)) : null;
+    }
 
     public async Task<LedgerPostingResult> PostAsync(AccountingFactEnvelope<IAccountingFactPayload> fact, CancellationToken cancellationToken = default)
     {
@@ -473,6 +633,45 @@ public sealed class LedgerRepository(
     {
         await using var command = new NpgsqlCommand("select c.active_configuration_version_id from finance_ledger.ledger_entity_configuration c join finance_ledger.accounting_configuration_version v on v.tenant_id=c.tenant_id and v.legal_entity_id=c.legal_entity_id and v.id=c.active_configuration_version_id and v.status='Active' where c.tenant_id=$1 and c.legal_entity_id=$2 for share of c", context.Connection, context.Transaction);
         command.Parameters.AddWithValue(fact.TenantId.Value); command.Parameters.AddWithValue(fact.LegalEntityId.Value); var result = await command.ExecuteScalarAsync(ct); return result is Guid id ? id : throw new LedgerDomainException("ledger.configuration_missing", "No active accounting configuration exists for this legal entity.");
+    }
+
+    private sealed record InvoiceAccountLookup(string? CategoryCode, string? TaxCode);
+
+    private static async Task<Dictionary<InvoiceAccountLookup, (Guid Id, AccountDeterminationExplanation Explanation)>> ResolveInvoiceAccountsAsync(
+        ITransactionContext context, AccountingFactEnvelope<CustomerInvoicePostedPayload> fact, Guid configurationId, string role,
+        IReadOnlyList<InvoiceAccountLookup> lookups, CancellationToken ct)
+    {
+        if (lookups.Count == 0) return [];
+        const string sql = "with requested as (select * from unnest($5::text[],$6::text[]) as k(category_code,tax_code)), candidates as (select k.category_code,k.tax_code,m.id as mapping_id,v.id as mapping_version_id,v.target_account_id,v.specificity_rank,count(*) over(partition by k.category_code,k.tax_code,v.specificity_rank) as rank_count,max(v.specificity_rank) over(partition by k.category_code,k.tax_code) as max_rank,m.code,v.version_number,a.code as account_code from requested k join finance_ledger.account_mapping m on m.tenant_id=$1 and m.legal_entity_id=$2 join finance_ledger.account_role r on r.tenant_id=m.tenant_id and r.legal_entity_id=m.legal_entity_id and r.id=m.role_id and r.code=$3 join finance_ledger.account_mapping_version v on v.tenant_id=m.tenant_id and v.legal_entity_id=m.legal_entity_id and v.mapping_id=m.id join finance_ledger.account a on a.tenant_id=v.tenant_id and a.legal_entity_id=v.legal_entity_id and a.id=v.target_account_id where v.accounting_configuration_version_id=$4 and m.status='Active' and v.status='Active' and a.status='Active' and a.allow_direct_posting=true and v.effective_from <= $7 and (v.effective_to is null or v.effective_to >= $7) and (v.product_category_code is null or v.product_category_code=k.category_code) and v.party_group_code is null and (v.tax_code is null or v.tax_code=k.tax_code)) select category_code,tax_code,mapping_id,mapping_version_id,target_account_id,rank_count,code,version_number,account_code,specificity_rank from candidates where specificity_rank=max_rank order by category_code,tax_code";
+        await using var command = new NpgsqlCommand(sql, context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(fact.TenantId.Value);
+        command.Parameters.AddWithValue(fact.LegalEntityId.Value);
+        command.Parameters.AddWithValue(role);
+        command.Parameters.AddWithValue(configurationId);
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text, Value = lookups.Select(item => item.CategoryCode).ToArray() });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text, Value = lookups.Select(item => item.TaxCode).ToArray() });
+        command.Parameters.AddWithValue(fact.PostingDate);
+        var candidates = new Dictionary<InvoiceAccountLookup, List<(Guid MappingId, Guid MappingVersionId, Guid Id, int Count, string Mapping, long Version, string AccountCode, int Rank)>>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var lookup = new InvoiceAccountLookup(reader.IsDBNull(0) ? null : reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1));
+            if (!candidates.TryGetValue(lookup, out var rows)) candidates[lookup] = rows = [];
+            rows.Add((reader.GetGuid(2), reader.GetGuid(3), reader.GetGuid(4), reader.GetInt32(5), reader.GetString(6), reader.GetInt64(7), reader.GetString(8), reader.GetInt32(9)));
+        }
+        var result = new Dictionary<InvoiceAccountLookup, (Guid Id, AccountDeterminationExplanation Explanation)>();
+        foreach (var lookup in lookups.Distinct())
+        {
+            if (!candidates.TryGetValue(lookup, out var rows) || rows.Count == 0)
+                throw new LedgerDomainException("ledger.account_mapping_missing", $"No active account mapping exists for role {role}.");
+            if (rows.Any(row => row.Count > 1) || rows.Select(row => row.Id).Distinct().Count() != 1)
+                throw new LedgerDomainException("ledger.account_mapping_conflict", $"More than one account mapping matches role {role}.");
+            var selected = rows[0];
+            result.Add(lookup, (selected.Id, new AccountDeterminationExplanation(role, selected.Mapping, selected.Version, selected.MappingId,
+                selected.MappingVersionId, selected.AccountCode, selected.Id, fact.LegalEntityId.Value, selected.Rank,
+                $"highest matching specificity rank {selected.Rank}; category={lookup.CategoryCode ?? "*"}; partyGroup=*; taxCode={lookup.TaxCode ?? "*"}")));
+        }
+        return result;
     }
 
     private static async Task<(Guid Id, AccountDeterminationExplanation Explanation)> ResolveAccountAsync(ITransactionContext context, AccountingFactEnvelope<CustomerInvoicePostedPayload> fact, Guid configurationId, string role, string? category, string? partyGroup, string? taxCode, CancellationToken ct)
