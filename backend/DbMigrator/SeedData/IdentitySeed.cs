@@ -68,7 +68,7 @@ public static class IdentitySeed
                 "invoicing.credit_note.create", "invoicing.debit_note.create", "invoicing.price_override", "invoicing.payment_term_override", "invoicing.date_override",
                 "invoicing.accounting_preview", "invoicing.regulatory_details", "invoicing.attachment.manage", "invoicing.audit.view"]),
             ("sales", "مبيعات", ["platform.organization.read", "directory.party.read", "directory.party.create", "directory.party.edit", "catalog.product.read", "finbase.currency.read", "finbase.payment_term.read", "pricing.read", "pricing.simulate",
-                "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.cancel_draft", "invoicing.accounting_preview"]),
+                "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.cancel_draft"]),
             ("warehouse", "مخازن", ["platform.organization.read", "catalog.product.read", "catalog.product.edit", "catalog.uom.manage"]),
             ("office", "موظف إداري", ["platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read"])
         };
@@ -78,6 +78,8 @@ public static class IdentitySeed
             var id = SeedIds.Role(context.Tenant.Id, role.Code);
             result[role.Code] = id;
             await context.ExecuteAsync("insert into platform.role (id,tenant_id,code,name,is_system_template,is_active,version) values ($1,$2,$3,$4,false,true,1) on conflict (id) do update set code=excluded.code,name=excluded.name,is_active=true,version=platform.role.version+1", cancellationToken, id, context.Tenant.Id, role.Code, role.Name);
+            if (role.Code == "sales")
+                await context.ExecuteAsync("delete from platform.role_permission where tenant_id=$1 and role_id=$2 and permission_code='invoicing.accounting_preview'", cancellationToken, context.Tenant.Id, id);
             foreach (var permission in role.Permissions.Distinct(StringComparer.Ordinal))
                 await context.ExecuteAsync("insert into platform.role_permission (tenant_id,role_id,permission_code) values ($1,$2,$3) on conflict do nothing", cancellationToken, context.Tenant.Id, id, permission);
         }

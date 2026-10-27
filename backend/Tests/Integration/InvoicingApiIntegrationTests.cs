@@ -54,8 +54,8 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         await LoginAsync(client, "admin@atlas.com", password, seed.TenantId);
         var tax = factory.Services.GetRequiredService<ITaxCapabilities>();
         var engineResult = await tax.CalculateBatchAsync([new(new TenantId(seed.TenantId), new(seed.LegalEntityId), "Sales", "Invoice", "Sale",
-            invoiceDate, invoiceDate, null, invoiceDate, seed.PartyId, "EG", "EG", "TEST-REGION", null, seed.ProductVariantId, 1m,
-            seed.UnitOfMeasureId, "TaxExclusive", "125", "0", "0", seed.CurrencyCode, seed.CurrencyCode, null, "DEVELOPMENT", "Invoice")]);
+            invoiceDate, invoiceDate, null, invoiceDate, seed.PartyId, "EG", "EG", "TEST-REGION", null, seed.ProductVariantId, 2m,
+            seed.UnitOfMeasureId, "TaxExclusive", "250", "0", "0", seed.CurrencyCode, seed.CurrencyCode, null, "DEVELOPMENT", "Invoice")]);
         var engineTax = engineResult.Single();
         Assert.True(decimal.Parse(engineTax.TaxTotal, System.Globalization.CultureInfo.InvariantCulture) > 0m,
             $"Expected the development Tax rule to calculate a positive amount; state={engineTax.EvaluationState}, total={engineTax.TaxTotal}, explanation={engineTax.Explanation.Summary}.");
@@ -81,7 +81,7 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
                     unitOfMeasureId = seed.UnitOfMeasureId,
                     unitCode = seed.UnitCode,
                     description = "Tax enabled integration invoice " + suffix,
-                    quantity = "1",
+                    quantity = "2",
                     unitPrice = "125.00",
                     discountAmount = "0",
                     priceOverrideReason = "Integration tax contract proof"
@@ -107,6 +107,42 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         var finalizedBody = await finalized.Content.ReadFromJsonAsync<JsonElement>();
         Assert.True(decimal.Parse(finalizedBody.GetProperty("totals").GetProperty("taxAmount").GetString()!, System.Globalization.CultureInfo.InvariantCulture) > 0m);
 
+        var originalGross = decimal.Parse(finalizedBody.GetProperty("totals").GetProperty("grossAmount").GetString()!, System.Globalization.CultureInfo.InvariantCulture);
+        var originalLineId = previewBody.GetProperty("lines")[0].GetProperty("id").GetGuid();
+        var originalFingerprint = await ReadIssuedInvoiceFingerprintAsync(adminConnection, seed.TenantId, seed.LegalEntityId, invoiceId);
+        var correctionRequest = new
+        {
+            documentType = "CreditNote",
+            reason = "Partial return with original tax basis",
+            documentDate = invoiceDate,
+            postingDate = invoiceDate,
+            taxDate = invoiceDate,
+            supplyDate = (DateOnly?)null,
+            idempotencyKey = "invoice-tax-credit-" + suffix,
+            lines = new[] { new { originalLineId, quantity = "1" } }
+        };
+        var correction = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{invoiceId:D}/credit-notes?legalEntityId={seed.LegalEntityId:D}", correctionRequest);
+        Assert.Equal(HttpStatusCode.Created, correction.StatusCode);
+        var correctionId = (await correction.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var correctionReplay = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{invoiceId:D}/credit-notes?legalEntityId={seed.LegalEntityId:D}", correctionRequest);
+        Assert.Equal(correctionId, (await correctionReplay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid());
+        var correctionPreview = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{correctionId:D}/preview?legalEntityId={seed.LegalEntityId:D}", new { });
+        Assert.Equal(HttpStatusCode.OK, correctionPreview.StatusCode);
+        var correctionPreviewBody = await correctionPreview.Content.ReadFromJsonAsync<JsonElement>();
+        var correctionTax = decimal.Parse(correctionPreviewBody.GetProperty("totals").GetProperty("taxAmount").GetString()!, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(correctionTax > 0m, await correctionPreview.Content.ReadAsStringAsync());
+        Assert.True(correctionPreviewBody.GetProperty("lines")[0].GetProperty("taxComponents").GetArrayLength() > 0);
+        Assert.Equal(decimal.Round(originalGross / 2m, 2), decimal.Parse(correctionPreviewBody.GetProperty("totals").GetProperty("grossAmount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
+        var correctionFinalizeKey = "invoice-tax-credit-finalize-" + suffix;
+        var correctionFinalize = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{correctionId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+            new { version = 1, idempotencyKey = correctionFinalizeKey });
+        Assert.Equal(HttpStatusCode.OK, correctionFinalize.StatusCode);
+        var correctionFinalizeBody = await correctionFinalize.Content.ReadFromJsonAsync<JsonElement>();
+        var correctionFinalizeReplay = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{correctionId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+            new { version = 1, idempotencyKey = correctionFinalizeKey });
+        Assert.Equal(correctionFinalizeBody.GetProperty("journalEntryId").GetGuid(),
+            (await correctionFinalizeReplay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("journalEntryId").GetGuid());
+
         await using var connection = new NpgsqlConnection(adminConnection);
         await connection.OpenAsync();
         await using var evidence = new NpgsqlCommand("select count(*) from business_invoicing.invoice_tax_component where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3", connection);
@@ -114,6 +150,276 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         evidence.Parameters.AddWithValue(seed.LegalEntityId);
         evidence.Parameters.AddWithValue(invoiceId);
         Assert.True((long)(await evidence.ExecuteScalarAsync())! > 0L);
+        await using (var taxEvidence = new NpgsqlCommand("select (select coalesce(sum(tax_amount),0) from business_invoicing.invoice_tax_component where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3),(select coalesce(sum(tax_amount),0) from business_invoicing.invoice_tax_component where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$4)", connection))
+        {
+            taxEvidence.Parameters.AddWithValue(seed.TenantId);
+            taxEvidence.Parameters.AddWithValue(seed.LegalEntityId);
+            taxEvidence.Parameters.AddWithValue(invoiceId);
+            taxEvidence.Parameters.AddWithValue(correctionId);
+            await using var taxReader = await taxEvidence.ExecuteReaderAsync();
+            Assert.True(await taxReader.ReadAsync());
+            Assert.True(taxReader.GetDecimal(0) > 0m);
+            Assert.Equal(decimal.Round(taxReader.GetDecimal(0) / 2m, 2), taxReader.GetDecimal(1));
+            Assert.Equal(correctionTax, taxReader.GetDecimal(1));
+        }
+        Assert.Equal(originalFingerprint, await ReadIssuedInvoiceFingerprintAsync(adminConnection, seed.TenantId, seed.LegalEntityId, invoiceId));
+        await AssertFinalizedInvoiceMutationsRejectedAsync(runtimeConnection, seed.TenantId, seed.LegalEntityId, invoiceId, originalLineId, hasTax: true);
+    }
+
+    [Fact]
+    public async Task FullCustomerCreditNoteReversesTheIssuedBasisAndPreservesOriginalHistory()
+    {
+        var adminConnection = Required("TODIR_P04_ADMIN_CONNECTION");
+        var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
+        Assert.StartsWith("todir_invoice_", new NpgsqlConnectionStringBuilder(runtimeConnection).Database, StringComparison.Ordinal);
+        var seed = await ReadInvoiceSeedAsync(adminConnection, "Receivable");
+        var suffix = Guid.CreateVersion7().ToString("N");
+        var invoiceDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        await LoginAsync(client, "admin@atlas.com", Required("SEED_DEFAULT_PASSWORD"), seed.TenantId);
+
+        var create = await PostAsync(client, "/api/v1/invoicing/customer-invoices", new
+        {
+            legalEntityId = seed.LegalEntityId,
+            branchId = (Guid?)null,
+            partyId = seed.PartyId,
+            addressId = (Guid?)null,
+            documentDate = invoiceDate,
+            postingDate = invoiceDate,
+            taxDate = invoiceDate,
+            supplyDate = (DateOnly?)null,
+            currencyCode = seed.CurrencyCode,
+            paymentTermId = (Guid?)null,
+            supplierInvoiceNumber = (string?)null,
+            lines = new[] { new { productVariantId = seed.ProductVariantId, unitOfMeasureId = seed.UnitOfMeasureId, unitCode = seed.UnitCode,
+                description = "Original for a full customer credit note " + suffix, quantity = "1", unitPrice = "125.00", discountAmount = "0",
+                priceOverrideReason = "Full credit integration proof" } },
+            priceMode = "Exclusive"
+        });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var invoiceId = (await create.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var preview = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{invoiceId:D}/preview?legalEntityId={seed.LegalEntityId:D}", new { });
+        Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+        var previewBody = await preview.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(previewBody.GetProperty("readyToFinalize").GetBoolean(), await preview.Content.ReadAsStringAsync());
+        var originalLineId = previewBody.GetProperty("lines")[0].GetProperty("id").GetGuid();
+        var finalized = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{invoiceId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+            new { version = 1, idempotencyKey = "full-credit-original-" + suffix });
+        Assert.Equal(HttpStatusCode.OK, finalized.StatusCode);
+        var finalizedBody = await finalized.Content.ReadFromJsonAsync<JsonElement>();
+        var originalGross = decimal.Parse(finalizedBody.GetProperty("totals").GetProperty("grossAmount").GetString()!, System.Globalization.CultureInfo.InvariantCulture);
+        var originalJournalId = finalizedBody.GetProperty("journalEntryId").GetGuid();
+        var originalFingerprint = await ReadIssuedInvoiceFingerprintAsync(adminConnection, seed.TenantId, seed.LegalEntityId, invoiceId);
+
+        var request = new
+        {
+            documentType = "CreditNote",
+            reason = "Reverse the full issued customer invoice",
+            documentDate = invoiceDate,
+            postingDate = invoiceDate,
+            taxDate = invoiceDate,
+            supplyDate = (DateOnly?)null,
+            idempotencyKey = "full-credit-correction-" + suffix,
+            lines = new[] { new { originalLineId, quantity = "1" } }
+        };
+        var credit = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{invoiceId:D}/credit-notes?legalEntityId={seed.LegalEntityId:D}", request);
+        Assert.Equal(HttpStatusCode.Created, credit.StatusCode);
+        var creditId = (await credit.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var creditReplay = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{invoiceId:D}/credit-notes?legalEntityId={seed.LegalEntityId:D}", request);
+        Assert.Equal(creditId, (await creditReplay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid());
+        var creditPreview = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{creditId:D}/preview?legalEntityId={seed.LegalEntityId:D}", new { });
+        Assert.Equal(HttpStatusCode.OK, creditPreview.StatusCode);
+        var creditPreviewBody = await creditPreview.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(creditPreviewBody.GetProperty("readyToFinalize").GetBoolean(), await creditPreview.Content.ReadAsStringAsync());
+        Assert.Equal(originalGross, decimal.Parse(creditPreviewBody.GetProperty("totals").GetProperty("grossAmount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
+
+        var finalizeKey = "full-credit-finalize-" + suffix;
+        var creditFinalize = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{creditId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+            new { version = 1, idempotencyKey = finalizeKey });
+        Assert.Equal(HttpStatusCode.OK, creditFinalize.StatusCode);
+        var creditFinalizedBody = await creditFinalize.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.NotEqual(finalizedBody.GetProperty("documentNumber").GetString(), creditFinalizedBody.GetProperty("documentNumber").GetString());
+        Assert.NotEqual(originalJournalId, creditFinalizedBody.GetProperty("journalEntryId").GetGuid());
+        var replay = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{creditId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+            new { version = 1, idempotencyKey = finalizeKey });
+        Assert.Equal(creditFinalizedBody.GetProperty("journalEntryId").GetGuid(),
+            (await replay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("journalEntryId").GetGuid());
+
+        await using var admin = new NpgsqlConnection(adminConnection);
+        await admin.OpenAsync();
+        await using (var relation = new NpgsqlCommand("select r.relationship_type,r.amount,c.gross_total from business_invoicing.invoice_relationship r join business_invoicing.invoice c on c.tenant_id=r.tenant_id and c.legal_entity_id=r.legal_entity_id and c.id=r.invoice_id where r.tenant_id=$1 and r.legal_entity_id=$2 and r.invoice_id=$3 and r.related_invoice_id=$4", admin))
+        {
+            relation.Parameters.AddWithValue(seed.TenantId);
+            relation.Parameters.AddWithValue(seed.LegalEntityId);
+            relation.Parameters.AddWithValue(creditId);
+            relation.Parameters.AddWithValue(invoiceId);
+            await using var reader = await relation.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal("Credits", reader.GetString(0));
+            Assert.Equal(originalGross, reader.GetDecimal(1));
+            Assert.Equal(originalGross, reader.GetDecimal(2));
+        }
+        await using (var ledger = new NpgsqlCommand("select count(*),coalesce(sum(l.debit),0),coalesce(sum(l.credit),0) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3 and e.source_module='invoicing' and e.source_reference=$4 and e.status='Posted'", admin))
+        {
+            ledger.Parameters.AddWithValue(seed.TenantId);
+            ledger.Parameters.AddWithValue(seed.LegalEntityId);
+            ledger.Parameters.AddWithValue(creditFinalizedBody.GetProperty("journalEntryId").GetGuid());
+            ledger.Parameters.AddWithValue(creditId.ToString("D"));
+            await using var reader = await ledger.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.True(reader.GetInt64(0) > 0);
+            Assert.Equal(reader.GetDecimal(1), reader.GetDecimal(2));
+        }
+        await using (var subledger = new NpgsqlCommand("select count(*),count(*) filter (where direction='Receivable' and polarity='Credit') from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_reference=$3", admin))
+        {
+            subledger.Parameters.AddWithValue(seed.TenantId);
+            subledger.Parameters.AddWithValue(seed.LegalEntityId);
+            subledger.Parameters.AddWithValue(creditId.ToString("D"));
+            await using var reader = await subledger.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.True(reader.GetInt64(0) > 0);
+            Assert.Equal(reader.GetInt64(0), reader.GetInt64(1));
+        }
+        Assert.Equal(originalFingerprint, await ReadIssuedInvoiceFingerprintAsync(adminConnection, seed.TenantId, seed.LegalEntityId, invoiceId));
+        await AssertFinalizedInvoiceMutationsRejectedAsync(runtimeConnection, seed.TenantId, seed.LegalEntityId, invoiceId, originalLineId, hasTax: false);
+    }
+
+    [Fact]
+    public async Task TaxEnabledSupplierCreditUsesTaxAuthorityAndPreservesTheOriginalTaxEvidence()
+    {
+        var adminConnection = Required("TODIR_P04_ADMIN_CONNECTION");
+        var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
+        Assert.StartsWith("todir_invoice_", new NpgsqlConnectionStringBuilder(runtimeConnection).Database, StringComparison.Ordinal);
+        var seed = await ReadInvoiceSeedAsync(adminConnection, "Payable", requireTaxClassifiedProduct: true);
+        seed = seed with { LegalEntityId = await ReadSecondaryEntityIdAsync(adminConnection, seed.TenantId) };
+        var suffix = Guid.CreateVersion7().ToString("N");
+        var invoiceDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty)
+            .ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ITaxCountryPackRegistry>();
+                services.AddSingleton<ITaxCountryPackRegistry, TestOnlyCountryPackRegistry>();
+            }));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        await LoginAsync(client, "admin@atlas.com", Required("SEED_DEFAULT_PASSWORD"), seed.TenantId);
+
+        var create = await PostAsync(client, "/api/v1/invoicing/supplier-invoices", new
+        {
+            legalEntityId = seed.LegalEntityId,
+            branchId = (Guid?)null,
+            partyId = seed.PartyId,
+            addressId = (Guid?)null,
+            documentDate = invoiceDate,
+            postingDate = invoiceDate,
+            taxDate = invoiceDate,
+            supplyDate = (DateOnly?)null,
+            currencyCode = seed.CurrencyCode,
+            paymentTermId = (Guid?)null,
+            supplierInvoiceNumber = "TAX-SUP-" + suffix[..12],
+            lines = new[] { new { productVariantId = seed.ProductVariantId, unitOfMeasureId = seed.UnitOfMeasureId, unitCode = seed.UnitCode,
+                description = "Tax-enabled supplier invoice " + suffix, quantity = "2", unitPrice = "125.00", discountAmount = "0",
+                priceOverrideReason = "Supplier tax correction proof" } },
+            priceMode = "Exclusive"
+        });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var invoiceId = (await create.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var preview = await PostAsync(client, $"/api/v1/invoicing/supplier-invoices/{invoiceId:D}/preview?legalEntityId={seed.LegalEntityId:D}", new { });
+        Assert.True(preview.StatusCode == HttpStatusCode.OK, await preview.Content.ReadAsStringAsync());
+        var previewBody = await preview.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(previewBody.GetProperty("readyToFinalize").GetBoolean(), await preview.Content.ReadAsStringAsync());
+        var originalLineId = previewBody.GetProperty("lines")[0].GetProperty("id").GetGuid();
+        var finalized = await PostAsync(client, $"/api/v1/invoicing/supplier-invoices/{invoiceId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+            new { version = 1, idempotencyKey = "supplier-tax-original-" + suffix });
+        Assert.Equal(HttpStatusCode.OK, finalized.StatusCode);
+        var finalizedBody = await finalized.Content.ReadFromJsonAsync<JsonElement>();
+        var originalGross = decimal.Parse(finalizedBody.GetProperty("totals").GetProperty("grossAmount").GetString()!, System.Globalization.CultureInfo.InvariantCulture);
+        var originalFingerprint = await ReadIssuedInvoiceFingerprintAsync(adminConnection, seed.TenantId, seed.LegalEntityId, invoiceId);
+
+        var correctionRequest = new
+        {
+            documentType = "CreditNote",
+            reason = "Partial supplier credit at the original Tax basis",
+            documentDate = invoiceDate,
+            postingDate = invoiceDate,
+            taxDate = invoiceDate,
+            supplyDate = (DateOnly?)null,
+            idempotencyKey = "supplier-tax-credit-" + suffix,
+            lines = new[] { new { originalLineId, quantity = "1" } }
+        };
+        var correction = await PostAsync(client, $"/api/v1/invoicing/supplier-invoices/{invoiceId:D}/credit-notes?legalEntityId={seed.LegalEntityId:D}", correctionRequest);
+        Assert.Equal(HttpStatusCode.Created, correction.StatusCode);
+        var correctionId = (await correction.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var correctionPreview = await PostAsync(client, $"/api/v1/invoicing/supplier-invoices/{correctionId:D}/preview?legalEntityId={seed.LegalEntityId:D}", new { });
+        Assert.Equal(HttpStatusCode.OK, correctionPreview.StatusCode);
+        var correctionPreviewBody = await correctionPreview.Content.ReadFromJsonAsync<JsonElement>();
+        var correctionTax = decimal.Parse(correctionPreviewBody.GetProperty("totals").GetProperty("taxAmount").GetString()!, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(correctionTax > 0m, await correctionPreview.Content.ReadAsStringAsync());
+        Assert.Equal(decimal.Round(originalGross / 2m, 2), decimal.Parse(correctionPreviewBody.GetProperty("totals").GetProperty("grossAmount").GetString()!, System.Globalization.CultureInfo.InvariantCulture));
+
+        var finalizeKey = "supplier-tax-credit-finalize-" + suffix;
+        var correctionFinalize = await PostAsync(client, $"/api/v1/invoicing/supplier-invoices/{correctionId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+            new { version = 1, idempotencyKey = finalizeKey });
+        Assert.Equal(HttpStatusCode.OK, correctionFinalize.StatusCode);
+        var correctionFinalizeBody = await correctionFinalize.Content.ReadFromJsonAsync<JsonElement>();
+        var correctionReplay = await PostAsync(client, $"/api/v1/invoicing/supplier-invoices/{correctionId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+            new { version = 1, idempotencyKey = finalizeKey });
+        Assert.Equal(correctionFinalizeBody.GetProperty("journalEntryId").GetGuid(),
+            (await correctionReplay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("journalEntryId").GetGuid());
+
+        await using var admin = new NpgsqlConnection(adminConnection);
+        await admin.OpenAsync();
+        await using (var taxEvidence = new NpgsqlCommand("select (select coalesce(sum(tax_amount),0) from business_invoicing.invoice_tax_component where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3),(select coalesce(sum(tax_amount),0) from business_invoicing.invoice_tax_component where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$4)", admin))
+        {
+            taxEvidence.Parameters.AddWithValue(seed.TenantId);
+            taxEvidence.Parameters.AddWithValue(seed.LegalEntityId);
+            taxEvidence.Parameters.AddWithValue(invoiceId);
+            taxEvidence.Parameters.AddWithValue(correctionId);
+            await using var reader = await taxEvidence.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.True(reader.GetDecimal(0) > 0m);
+            Assert.Equal(decimal.Round(reader.GetDecimal(0) / 2m, 2), reader.GetDecimal(1));
+            Assert.Equal(correctionTax, reader.GetDecimal(1));
+        }
+        await using (var ledger = new NpgsqlCommand("select count(*),coalesce(sum(l.debit),0),coalesce(sum(l.credit),0) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3 and e.source_module='invoicing' and e.source_reference=$4 and e.status='Posted'", admin))
+        {
+            ledger.Parameters.AddWithValue(seed.TenantId);
+            ledger.Parameters.AddWithValue(seed.LegalEntityId);
+            ledger.Parameters.AddWithValue(correctionFinalizeBody.GetProperty("journalEntryId").GetGuid());
+            ledger.Parameters.AddWithValue(correctionId.ToString("D"));
+            await using var reader = await ledger.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.True(reader.GetInt64(0) > 0);
+            Assert.Equal(reader.GetDecimal(1), reader.GetDecimal(2));
+        }
+        await using (var subledger = new NpgsqlCommand("select count(*),count(*) filter (where direction='Payable' and polarity='Debit') from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_reference=$3", admin))
+        {
+            subledger.Parameters.AddWithValue(seed.TenantId);
+            subledger.Parameters.AddWithValue(seed.LegalEntityId);
+            subledger.Parameters.AddWithValue(correctionId.ToString("D"));
+            await using var reader = await subledger.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.True(reader.GetInt64(0) > 0);
+            Assert.Equal(reader.GetInt64(0), reader.GetInt64(1));
+        }
+        Assert.Equal(originalFingerprint, await ReadIssuedInvoiceFingerprintAsync(adminConnection, seed.TenantId, seed.LegalEntityId, invoiceId));
+        await AssertFinalizedInvoiceMutationsRejectedAsync(runtimeConnection, seed.TenantId, seed.LegalEntityId, invoiceId, originalLineId, hasTax: true);
     }
 
     [Fact]
@@ -173,6 +479,13 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
         Assert.StartsWith("todir_invoice_", new NpgsqlConnectionStringBuilder(runtimeConnection).Database, StringComparison.Ordinal);
         var seed = await ReadInvoiceSeedAsync(adminConnection, "Receivable");
+        await using (var permissionConnection = new NpgsqlConnection(adminConnection))
+        {
+            await permissionConnection.OpenAsync();
+            await using var revokePreview = new NpgsqlCommand("delete from platform.role_permission where tenant_id=$1 and role_id=(select id from platform.role where tenant_id=$1 and code='sales') and permission_code='invoicing.accounting_preview'", permissionConnection);
+            revokePreview.Parameters.AddWithValue(seed.TenantId);
+            await revokePreview.ExecuteNonQueryAsync();
+        }
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
             .UseEnvironment("Development")
             .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
@@ -189,10 +502,142 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         var supplierList = await client.GetAsync($"/api/v1/invoicing/supplier-invoices?legalEntityId={seed.LegalEntityId:D}&page=1&pageSize=10");
         var customerFinalize = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{seed.InvoiceId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
             new { version = 1, idempotencyKey = "sales-role-finalize-denial-" + Guid.CreateVersion7().ToString("N") });
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var invoicePreviewRequest = new
+        {
+            legalEntityId = seed.LegalEntityId, branchId = (Guid?)null, partyId = seed.PartyId, addressId = (Guid?)null,
+            documentDate = today, postingDate = today, taxDate = today, supplyDate = (DateOnly?)null, currencyCode = seed.CurrencyCode,
+            paymentTermId = (Guid?)null, supplierInvoiceNumber = (string?)null,
+            lines = new[] { new { productVariantId = seed.ProductVariantId, unitOfMeasureId = seed.UnitOfMeasureId, unitCode = seed.UnitCode,
+                description = "Permission proof", quantity = "1", unitPrice = (string?)null, discountAmount = "0", priceOverrideReason = (string?)null } },
+            priceMode = "Exclusive"
+        };
+        var unauthorizedAccountingPreview = await PostAsync(client, "/api/v1/invoicing/customer-invoices/preview", invoicePreviewRequest);
+        var priceOverrideRequest = new
+        {
+            legalEntityId = seed.LegalEntityId, branchId = (Guid?)null, partyId = seed.PartyId, addressId = (Guid?)null,
+            documentDate = today, postingDate = today, taxDate = today, supplyDate = (DateOnly?)null, currencyCode = seed.CurrencyCode,
+            paymentTermId = (Guid?)null, supplierInvoiceNumber = (string?)null,
+            lines = new[] { new { productVariantId = seed.ProductVariantId, unitOfMeasureId = seed.UnitOfMeasureId, unitCode = seed.UnitCode,
+                description = "Permission proof price override", quantity = "1", unitPrice = "125.00", discountAmount = "0", priceOverrideReason = "Unauthorized override proof" } },
+            priceMode = "Exclusive"
+        };
+        var unauthorizedPriceOverride = await PostAsync(client, "/api/v1/invoicing/customer-invoices", priceOverrideRequest);
 
         Assert.Equal(HttpStatusCode.OK, customerList.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, supplierList.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, customerFinalize.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, unauthorizedAccountingPreview.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, unauthorizedPriceOverride.StatusCode);
+    }
+
+    [Fact]
+    public async Task SalesInvoicePermissionsRespectLegalEntityAndBranchAssignments()
+    {
+        var adminConnection = Required("TODIR_P04_ADMIN_CONNECTION");
+        var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
+        var seed = await ReadInvoiceSeedAsync(adminConnection, "Receivable");
+        var secondaryEntityId = await ReadSecondaryEntityIdAsync(adminConnection, seed.TenantId);
+        Guid salesMembershipId;
+        Guid salesRoleId;
+        Guid branchId;
+        var outOfScopeBranchId = Guid.CreateVersion7();
+        await using var admin = new NpgsqlConnection(adminConnection);
+        await admin.OpenAsync();
+        await using (var lookup = new NpgsqlCommand("select m.id,r.id,(select b.id from platform.branch b where b.tenant_id=m.tenant_id and b.legal_entity_id=$2 order by b.code,b.id limit 1) from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id join platform.role r on r.tenant_id=a.tenant_id and r.id=a.role_id where i.tenant_id=$1 and i.email='sales@atlas.com' and r.code='sales' limit 1", admin))
+        {
+            lookup.Parameters.AddWithValue(seed.TenantId);
+            lookup.Parameters.AddWithValue(seed.LegalEntityId);
+            await using var reader = await lookup.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync(), "The Development Seed must provide a sales membership and a primary-entity branch.");
+            Assert.False(reader.IsDBNull(2), "The primary legal entity must have a branch for the branch-scope proof.");
+            salesMembershipId = reader.GetGuid(0);
+            salesRoleId = reader.GetGuid(1);
+            branchId = reader.GetGuid(2);
+        }
+
+        async Task SetSalesScopeAsync(string scopeType, Guid? scopeId)
+        {
+            await using var update = new NpgsqlCommand("update platform.membership_role_assignment set scope_type=$4,scope_id=$5 where tenant_id=$1 and membership_id=$2 and role_id=$3", admin);
+            update.Parameters.AddWithValue(seed.TenantId);
+            update.Parameters.AddWithValue(salesMembershipId);
+            update.Parameters.AddWithValue(salesRoleId);
+            update.Parameters.AddWithValue(scopeType);
+            update.Parameters.AddWithValue((object?)scopeId ?? DBNull.Value);
+            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+        }
+
+        try
+        {
+            await SetSalesScopeAsync("LegalEntity", seed.LegalEntityId);
+            using (var entityFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+                .UseEnvironment("Development")
+                .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
+                .UseSetting("TODIR_RABBITMQ_HOST", string.Empty)))
+            using (var entityClient = entityFactory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                BaseAddress = new Uri("https://localhost"),
+                AllowAutoRedirect = false,
+                HandleCookies = true
+            }))
+            {
+                await LoginAsync(entityClient, "sales@atlas.com", Required("SEED_DEFAULT_PASSWORD"), seed.TenantId);
+                var allowed = await entityClient.GetAsync($"/api/v1/invoicing/customer-invoices?legalEntityId={seed.LegalEntityId:D}&page=1&pageSize=10");
+                var denied = await entityClient.GetAsync($"/api/v1/invoicing/customer-invoices?legalEntityId={secondaryEntityId:D}&page=1&pageSize=10");
+                Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
+                Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+            }
+
+            await using (var insertBranch = new NpgsqlCommand("insert into platform.branch (id,tenant_id,legal_entity_id,code,name,status,created_at,version) values ($1,$2,$3,$4,'Permission boundary probe','Active',now(),1)", admin))
+            {
+                insertBranch.Parameters.AddWithValue(outOfScopeBranchId);
+                insertBranch.Parameters.AddWithValue(seed.TenantId);
+                insertBranch.Parameters.AddWithValue(seed.LegalEntityId);
+                insertBranch.Parameters.AddWithValue("SCOPE-" + outOfScopeBranchId.ToString("N")[..12]);
+                await insertBranch.ExecuteNonQueryAsync();
+            }
+            await SetSalesScopeAsync("Branch", branchId);
+            using (var branchFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+                .UseEnvironment("Development")
+                .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
+                .UseSetting("TODIR_RABBITMQ_HOST", string.Empty)))
+            using (var branchClient = branchFactory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                BaseAddress = new Uri("https://localhost"),
+                AllowAutoRedirect = false,
+                HandleCookies = true
+            }))
+            {
+                await LoginAsync(branchClient, "sales@atlas.com", Required("SEED_DEFAULT_PASSWORD"), seed.TenantId);
+                var denied = await PostAsync(branchClient, "/api/v1/invoicing/customer-invoices", new
+                {
+                    legalEntityId = seed.LegalEntityId,
+                    branchId = outOfScopeBranchId,
+                    partyId = seed.PartyId,
+                    addressId = (Guid?)null,
+                    documentDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    postingDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    taxDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    supplyDate = (DateOnly?)null,
+                    currencyCode = seed.CurrencyCode,
+                    paymentTermId = (Guid?)null,
+                    supplierInvoiceNumber = (string?)null,
+                    lines = new[] { new { productVariantId = seed.ProductVariantId, unitOfMeasureId = seed.UnitOfMeasureId, unitCode = seed.UnitCode,
+                        description = "Out-of-scope branch permission proof", quantity = "1", unitPrice = (string?)null, discountAmount = "0", priceOverrideReason = (string?)null } },
+                    priceMode = "Exclusive"
+                });
+                Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+            }
+        }
+        finally
+        {
+            await SetSalesScopeAsync("Tenant", null);
+            await using var removeBranch = new NpgsqlCommand("delete from platform.branch where tenant_id=$1 and legal_entity_id=$2 and id=$3", admin);
+            removeBranch.Parameters.AddWithValue(seed.TenantId);
+            removeBranch.Parameters.AddWithValue(seed.LegalEntityId);
+            removeBranch.Parameters.AddWithValue(outOfScopeBranchId);
+            await removeBranch.ExecuteNonQueryAsync();
+        }
     }
 
     [Theory]
@@ -395,6 +840,7 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         Assert.Equal(new string('a', 64), originalArtifact.Sha256);
 
         var originalLineId = previewBody.GetProperty("lines")[0].GetProperty("id").GetGuid();
+        var originalFingerprint = await ReadIssuedInvoiceFingerprintAsync(adminConnection, seed.TenantId, seed.LegalEntityId, invoiceId);
         if (!supplier)
         {
             var correctionRequest = new
@@ -475,8 +921,66 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
             Assert.Equal(HttpStatusCode.BadRequest, excess.StatusCode);
             var excessError = await excess.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal("invoicing.credit_quantity_exceeded", excessError.GetProperty("code").GetString());
-
         }
+
+        if (!supplier)
+        {
+            var remainingCreditRequest = new
+            {
+                documentType = "CreditNote",
+                reason = "Return the remaining invoiced quantity",
+                documentDate = invoiceDate,
+                postingDate = invoiceDate,
+                taxDate = invoiceDate,
+                supplyDate = (DateOnly?)null,
+                idempotencyKey = "invoice-correction-remaining-" + suffix,
+                lines = new[] { new { originalLineId, quantity = "0.5" } }
+            };
+            var remainingCredit = await PostAsync(client, $"/api/v1/invoicing/{route}/{invoiceId:D}/credit-notes?legalEntityId={seed.LegalEntityId:D}", remainingCreditRequest);
+            Assert.Equal(HttpStatusCode.Created, remainingCredit.StatusCode);
+            var remainingCreditId = (await remainingCredit.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+            var remainingReplay = await PostAsync(client, $"/api/v1/invoicing/{route}/{invoiceId:D}/credit-notes?legalEntityId={seed.LegalEntityId:D}", remainingCreditRequest);
+            Assert.Equal(remainingCreditId, (await remainingReplay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid());
+            var remainingFinalizeKey = "invoice-correction-remaining-finalize-" + suffix;
+            var remainingFinalize = await PostAsync(client, $"/api/v1/invoicing/{route}/{remainingCreditId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+                new { version = 1, idempotencyKey = remainingFinalizeKey });
+            Assert.Equal(HttpStatusCode.OK, remainingFinalize.StatusCode);
+            var remainingFinalizeBody = await remainingFinalize.Content.ReadFromJsonAsync<JsonElement>();
+            var remainingFinalizeReplay = await PostAsync(client, $"/api/v1/invoicing/{route}/{remainingCreditId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+                new { version = 1, idempotencyKey = remainingFinalizeKey });
+            Assert.Equal(remainingFinalizeBody.GetProperty("journalEntryId").GetGuid(),
+                (await remainingFinalizeReplay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("journalEntryId").GetGuid());
+        }
+        else
+        {
+            var supplierCreditRequest = new
+            {
+                documentType = "CreditNote",
+                reason = "Supplier issued a full credit for the original service invoice",
+                documentDate = invoiceDate,
+                postingDate = invoiceDate,
+                taxDate = invoiceDate,
+                supplyDate = (DateOnly?)null,
+                idempotencyKey = "supplier-invoice-credit-" + suffix,
+                lines = new[] { new { originalLineId, quantity = "1" } }
+            };
+            var supplierCredit = await PostAsync(client, $"/api/v1/invoicing/{route}/{invoiceId:D}/credit-notes?legalEntityId={seed.LegalEntityId:D}", supplierCreditRequest);
+            Assert.Equal(HttpStatusCode.Created, supplierCredit.StatusCode);
+            var supplierCreditId = (await supplierCredit.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+            var supplierCreditReplay = await PostAsync(client, $"/api/v1/invoicing/{route}/{invoiceId:D}/credit-notes?legalEntityId={seed.LegalEntityId:D}", supplierCreditRequest);
+            Assert.Equal(supplierCreditId, (await supplierCreditReplay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid());
+            var supplierFinalizeKey = "supplier-invoice-credit-finalize-" + suffix;
+            var supplierCreditFinalize = await PostAsync(client, $"/api/v1/invoicing/{route}/{supplierCreditId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+                new { version = 1, idempotencyKey = supplierFinalizeKey });
+            Assert.Equal(HttpStatusCode.OK, supplierCreditFinalize.StatusCode);
+            var supplierFinalizeBody = await supplierCreditFinalize.Content.ReadFromJsonAsync<JsonElement>();
+            var supplierFinalizeReplay = await PostAsync(client, $"/api/v1/invoicing/{route}/{supplierCreditId:D}/finalize?legalEntityId={seed.LegalEntityId:D}",
+                new { version = 1, idempotencyKey = supplierFinalizeKey });
+            Assert.Equal(supplierFinalizeBody.GetProperty("journalEntryId").GetGuid(),
+                (await supplierFinalizeReplay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("journalEntryId").GetGuid());
+        }
+
+        await AssertFinalizedInvoiceMutationsRejectedAsync(runtimeConnection, seed.TenantId, seed.LegalEntityId, invoiceId, originalLineId, hasTax: false);
 
         var debitRequest = new
         {
@@ -522,6 +1026,48 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         Assert.Equal(1, reader.GetInt64(1));
         Assert.Equal(1, reader.GetInt64(2));
         await reader.CloseAsync();
+
+        await using (var correctiveEvidence = new NpgsqlCommand("select count(*),coalesce(sum(relation.amount),0),coalesce(max(correction.gross_total),0) from business_invoicing.invoice_relationship relation join business_invoicing.invoice correction on correction.tenant_id=relation.tenant_id and correction.legal_entity_id=relation.legal_entity_id and correction.id=relation.invoice_id where relation.tenant_id=$1 and relation.legal_entity_id=$2 and relation.related_invoice_id=$3 and relation.relationship_type='Credits' and correction.document_type='CreditNote' and correction.lifecycle_state='Finalized'", admin))
+        {
+            correctiveEvidence.Parameters.AddWithValue(seed.TenantId);
+            correctiveEvidence.Parameters.AddWithValue(seed.LegalEntityId);
+            correctiveEvidence.Parameters.AddWithValue(invoiceId);
+            await using var correctiveReader = await correctiveEvidence.ExecuteReaderAsync();
+            Assert.True(await correctiveReader.ReadAsync());
+            Assert.Equal(supplier ? 1L : 2L, correctiveReader.GetInt64(0));
+            Assert.Equal(125m, correctiveReader.GetDecimal(1));
+            Assert.Equal(supplier ? 125m : 62.5m, correctiveReader.GetDecimal(2));
+        }
+        Assert.Equal(originalFingerprint, await ReadIssuedInvoiceFingerprintAsync(adminConnection, seed.TenantId, seed.LegalEntityId, invoiceId));
+
+        await using (var correctionJournal = new NpgsqlCommand("select e.source_reference,count(*),coalesce(sum(l.debit),0),coalesce(sum(l.credit),0) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.source_module='invoicing' and e.source_reference in (select c.id::text from business_invoicing.invoice_relationship r join business_invoicing.invoice c on c.tenant_id=r.tenant_id and c.legal_entity_id=r.legal_entity_id and c.id=r.invoice_id where r.tenant_id=$1 and r.legal_entity_id=$2 and r.related_invoice_id=$3 and r.relationship_type='Credits' and c.lifecycle_state='Finalized') and e.status='Posted' group by e.source_reference", admin))
+        {
+            correctionJournal.Parameters.AddWithValue(seed.TenantId);
+            correctionJournal.Parameters.AddWithValue(seed.LegalEntityId);
+            correctionJournal.Parameters.AddWithValue(invoiceId);
+            await using var correctionJournalReader = await correctionJournal.ExecuteReaderAsync();
+            var correctionJournalCount = 0;
+            while (await correctionJournalReader.ReadAsync())
+            {
+                correctionJournalCount++;
+                Assert.True(correctionJournalReader.GetInt64(1) > 0);
+                Assert.Equal(correctionJournalReader.GetDecimal(2), correctionJournalReader.GetDecimal(3));
+            }
+            Assert.Equal(supplier ? 1 : 2, correctionJournalCount);
+        }
+
+        await using (var correctionItems = new NpgsqlCommand("select count(*),count(*) filter (where direction=$4 and polarity=$5) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_reference in (select invoice_id::text from business_invoicing.invoice_relationship where tenant_id=$1 and legal_entity_id=$2 and related_invoice_id=$3 and relationship_type='Credits')", admin))
+        {
+            correctionItems.Parameters.AddWithValue(seed.TenantId);
+            correctionItems.Parameters.AddWithValue(seed.LegalEntityId);
+            correctionItems.Parameters.AddWithValue(invoiceId);
+            correctionItems.Parameters.AddWithValue(supplier ? "Payable" : "Receivable");
+            correctionItems.Parameters.AddWithValue(supplier ? "Debit" : "Credit");
+            await using var itemReader = await correctionItems.ExecuteReaderAsync();
+            Assert.True(await itemReader.ReadAsync());
+            Assert.True(itemReader.GetInt64(0) > 0);
+            Assert.Equal(itemReader.GetInt64(0), itemReader.GetInt64(1));
+        }
 
         await using (var journal = new NpgsqlCommand("select count(*),coalesce(sum(l.debit),0),coalesce(sum(l.credit),0) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3 and e.source_module='invoicing' and e.source_reference=$4 and e.status='Posted'", admin))
         {
@@ -718,11 +1264,14 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
 
         await using var connection = new NpgsqlConnection(adminConnection);
         await connection.OpenAsync();
-        await using var count = new NpgsqlCommand("select count(*) from business_invoicing.invoice_relationship r join business_invoicing.invoice c on c.tenant_id=r.tenant_id and c.legal_entity_id=r.legal_entity_id and c.id=r.invoice_id where r.tenant_id=$1 and r.legal_entity_id=$2 and r.related_invoice_id=$3 and r.relationship_type='Credits' and c.lifecycle_state='Finalized'", connection);
+        await using var count = new NpgsqlCommand("select count(*),coalesce(sum(r.amount),0),(select gross_total from business_invoicing.invoice where tenant_id=$1 and legal_entity_id=$2 and id=$3) from business_invoicing.invoice_relationship r join business_invoicing.invoice c on c.tenant_id=r.tenant_id and c.legal_entity_id=r.legal_entity_id and c.id=r.invoice_id where r.tenant_id=$1 and r.legal_entity_id=$2 and r.related_invoice_id=$3 and r.relationship_type='Credits' and c.lifecycle_state='Finalized'", connection);
         count.Parameters.AddWithValue(seed.TenantId);
         count.Parameters.AddWithValue(seed.LegalEntityId);
         count.Parameters.AddWithValue(invoiceId);
-        Assert.Equal(1L, (long)(await count.ExecuteScalarAsync())!);
+        await using var creditReader = await count.ExecuteReaderAsync();
+        Assert.True(await creditReader.ReadAsync());
+        Assert.Equal(1L, creditReader.GetInt64(0));
+        Assert.True(creditReader.GetDecimal(1) <= creditReader.GetDecimal(2));
     }
 
     [Fact]
@@ -821,6 +1370,7 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
             HandleCookies = true
         });
         await LoginAsync(client, "admin@atlas.com", password, seed.TenantId);
+        var benchmarkCsrfToken = await GetCsrfTokenAsync(client);
 
         object DraftBody(int lineCount, string label) => new
         {
@@ -851,7 +1401,7 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
 
         async Task<Guid> CreateDraftAsync(int lineCount, string label)
         {
-            var response = await PostAsync(client, "/api/v1/invoicing/customer-invoices", DraftBody(lineCount, label));
+            var response = await PostWithCsrfAsync(client, "/api/v1/invoicing/customer-invoices", DraftBody(lineCount, label), benchmarkCsrfToken);
             Assert.True(response.StatusCode == HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
             return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
         }
@@ -860,38 +1410,120 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         {
             var invoiceId = await CreateDraftAsync(lineCount, label);
             var path = $"/api/v1/invoicing/customer-invoices/{invoiceId:D}/finalize?legalEntityId={seed.LegalEntityId:D}";
-            var csrf = await GetCsrfTokenAsync(client);
             var timer = Stopwatch.StartNew();
-            var response = await PostWithCsrfAsync(client, path, new { version = 1, idempotencyKey = "iv24-" + suffix + "-" + label }, csrf);
+            var response = await PostWithCsrfAsync(client, path, new { version = 1, idempotencyKey = "iv24-" + suffix + "-" + label }, benchmarkCsrfToken);
             timer.Stop();
             Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
             return timer.Elapsed.TotalMilliseconds;
         }
 
         _ = await MeasureFinalizationAsync(1, $"warm-small-{Guid.CreateVersion7():N}");
-        _ = await MeasureFinalizationAsync(20, $"warm-medium-{Guid.CreateVersion7():N}");
+        for (var warmup = 0; warmup < 5; warmup++)
+            _ = await MeasureFinalizationAsync(20, $"warm-medium-{warmup}-{Guid.CreateVersion7():N}");
         var smallSamples = new List<double>(10);
-        var mediumSamples = new List<double>(10);
-        for (var sample = 0; sample < 10; sample++)
+        var mediumSamples = new List<double>(30);
+        for (var sample = 0; sample < 30; sample++)
         {
-            smallSamples.Add(await MeasureFinalizationAsync(1, $"small-{sample}-{Guid.CreateVersion7():N}"));
+            if (sample < 10) smallSamples.Add(await MeasureFinalizationAsync(1, $"small-{sample}-{Guid.CreateVersion7():N}"));
             mediumSamples.Add(await MeasureFinalizationAsync(20, $"medium-{sample}-{Guid.CreateVersion7():N}"));
         }
         var small = Percentiles(smallSamples);
         var medium = Percentiles(mediumSamples);
         output.WriteLine($"IV24 finalization, 1 line, samples={smallSamples.Count}, p50={small.P50:F1}ms, p95={small.P95:F1}ms, p99={small.P99:F1}ms, errors=0");
-        output.WriteLine($"IV24 finalization, 20 lines, samples={mediumSamples.Count}, p50={medium.P50:F1}ms, p95={medium.P95:F1}ms, p99={medium.P99:F1}ms, errors=0");
+        output.WriteLine($"IV24 finalization, 20 lines, samples={mediumSamples.Count}, min={mediumSamples.Min():F1}ms, p50={medium.P50:F1}ms, p95={medium.P95:F1}ms, p99={medium.P99:F1}ms, max={mediumSamples.Max():F1}ms, errors=0");
         Assert.True(medium.P95 <= 300d, $"20-line finalization p95 was {medium.P95:F1}ms; the local target is 300ms.");
+
+        await using (var planConnection = new NpgsqlConnection(adminConnection))
+        {
+            await planConnection.OpenAsync();
+            foreach (var (name, sql) in new[]
+            {
+                ("lifecycle", "explain (analyze, buffers, format text) select id,document_date,document_number,gross_total from business_invoicing.invoice where tenant_id=$1 and legal_entity_id=$2 and lifecycle_state='Finalized' order by document_date desc,id desc limit 50"),
+                ("party", "explain (analyze, buffers, format text) select id,document_date,document_number,gross_total from business_invoicing.invoice where tenant_id=$1 and legal_entity_id=$2 and party_id=$3 and lifecycle_state='Finalized' order by document_date desc,id desc limit 50")
+            })
+            {
+                await using var plan = new NpgsqlCommand(sql, planConnection);
+                plan.Parameters.AddWithValue(seed.TenantId);
+                plan.Parameters.AddWithValue(seed.LegalEntityId);
+                if (name == "party") plan.Parameters.AddWithValue(seed.PartyId);
+                await using var planReader = await plan.ExecuteReaderAsync();
+                var lines = new List<string>();
+                while (await planReader.ReadAsync()) lines.Add(planReader.GetString(0));
+                output.WriteLine($"IV24 list plan ({name}):{Environment.NewLine}{string.Join(Environment.NewLine, lines)}");
+            }
+        }
 
         var largeInvoiceId = await CreateDraftAsync(500, "large-500-line");
         var previewTimer = Stopwatch.StartNew();
-        var preview = await PostAsync(client, $"/api/v1/invoicing/customer-invoices/{largeInvoiceId:D}/preview?legalEntityId={seed.LegalEntityId:D}", new { });
+        var preview = await PostWithCsrfAsync(client, $"/api/v1/invoicing/customer-invoices/{largeInvoiceId:D}/preview?legalEntityId={seed.LegalEntityId:D}", new { }, benchmarkCsrfToken);
         previewTimer.Stop();
         Assert.True(preview.StatusCode == HttpStatusCode.OK, await preview.Content.ReadAsStringAsync());
         var previewBody = await preview.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(500, previewBody.GetProperty("lines").GetArrayLength());
         Assert.True(previewBody.GetProperty("readyToFinalize").GetBoolean(), await preview.Content.ReadAsStringAsync());
         output.WriteLine($"IV24 500-line preview={previewTimer.Elapsed.TotalMilliseconds:F1}ms; source inspection confirms Catalog, Pricing, and Tax are invoked through one batch contract per calculation.");
+    }
+
+    private static async Task<string> ReadIssuedInvoiceFingerprintAsync(string connectionString, Guid tenantId, Guid legalEntityId, Guid invoiceId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        const string sql = """
+            select md5(concat_ws(chr(10),
+                to_jsonb(i)::text,
+                (select coalesce(jsonb_agg(to_jsonb(l) order by l.sequence), '[]'::jsonb)::text from business_invoicing.invoice_line l where l.tenant_id=i.tenant_id and l.legal_entity_id=i.legal_entity_id and l.invoice_id=i.id),
+                (select coalesce(jsonb_agg(to_jsonb(s)), '[]'::jsonb)::text from business_invoicing.invoice_party_snapshot s where s.tenant_id=i.tenant_id and s.legal_entity_id=i.legal_entity_id and s.invoice_id=i.id),
+                (select coalesce(jsonb_agg(to_jsonb(s) order by s.line_id), '[]'::jsonb)::text from business_invoicing.invoice_price_snapshot s where s.tenant_id=i.tenant_id and s.legal_entity_id=i.legal_entity_id and s.invoice_id=i.id),
+                (select coalesce(jsonb_agg(to_jsonb(t) order by t.line_id,t.sequence), '[]'::jsonb)::text from business_invoicing.invoice_tax_component t where t.tenant_id=i.tenant_id and t.legal_entity_id=i.legal_entity_id and t.invoice_id=i.id),
+                (select coalesce(jsonb_agg(to_jsonb(s) order by s.sequence), '[]'::jsonb)::text from business_invoicing.invoice_payment_schedule s where s.tenant_id=i.tenant_id and s.legal_entity_id=i.legal_entity_id and s.invoice_id=i.id),
+                (select coalesce(jsonb_agg(to_jsonb(f)), '[]'::jsonb)::text from business_invoicing.invoice_finalization_record f where f.tenant_id=i.tenant_id and f.legal_entity_id=i.legal_entity_id and f.invoice_id=i.id),
+                (select to_jsonb(e)::text from finance_ledger.journal_entry e where e.tenant_id=i.tenant_id and e.legal_entity_id=i.legal_entity_id and e.id=i.journal_entry_id),
+                (select coalesce(jsonb_agg(to_jsonb(l) order by l.sequence_no), '[]'::jsonb)::text from finance_ledger.journal_entry_line l where l.tenant_id=i.tenant_id and l.legal_entity_id=i.legal_entity_id and l.journal_entry_id=i.journal_entry_id)
+            ))
+            from business_invoicing.invoice i
+            where i.tenant_id=$1 and i.legal_entity_id=$2 and i.id=$3
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(tenantId);
+        command.Parameters.AddWithValue(legalEntityId);
+        command.Parameters.AddWithValue(invoiceId);
+        return (string)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("The issued invoice fingerprint query returned no row."));
+    }
+
+    private static async Task AssertFinalizedInvoiceMutationsRejectedAsync(string runtimeConnectionString, Guid tenantId, Guid legalEntityId,
+        Guid invoiceId, Guid lineId, bool hasTax)
+    {
+        var mutations = new List<(string Name, string Sql)>
+        {
+            ("header totals and dates", "update business_invoicing.invoice set gross_total=gross_total+1, document_date=document_date+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3"),
+            ("issued line quantity", "update business_invoicing.invoice_line set quantity=quantity+1 where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3 and id=$4"),
+            ("party financial snapshot", "update business_invoicing.invoice_party_snapshot set evidence=evidence || '{\"tamper\":true}'::jsonb where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3"),
+            ("final commercial price", "update business_invoicing.invoice_price_snapshot set final_unit_price=final_unit_price+1 where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3 and line_id=$4"),
+            ("payment schedule", "update business_invoicing.invoice_payment_schedule set amount=amount+1 where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3 and sequence=(select min(sequence) from business_invoicing.invoice_payment_schedule where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3)")
+        };
+        if (hasTax)
+            mutations.Add(("Tax snapshot", "update business_invoicing.invoice_tax_component set tax_base=tax_base+1 where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3 and sequence=(select min(tax.sequence) from business_invoicing.invoice_tax_component tax where tax.tenant_id=$1 and tax.legal_entity_id=$2 and tax.invoice_id=$3)"));
+
+        foreach (var (name, sql) in mutations)
+        {
+            await using var connection = new NpgsqlConnection(runtimeConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction))
+            {
+                context.Parameters.AddWithValue(tenantId.ToString("D"));
+                await context.ExecuteNonQueryAsync();
+            }
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.Parameters.AddWithValue(tenantId);
+            command.Parameters.AddWithValue(legalEntityId);
+            command.Parameters.AddWithValue(invoiceId);
+            if (sql.Contains("invoice_line", StringComparison.Ordinal) || sql.Contains("invoice_price_snapshot", StringComparison.Ordinal))
+                command.Parameters.AddWithValue(lineId);
+            var exception = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+            Assert.True(exception.SqlState == "23514", $"Expected the finalized-document guard to reject {name}; got SQLSTATE {exception.SqlState}.");
+            await transaction.RollbackAsync();
+        }
     }
 
     private static (double P50, double P95, double P99) Percentiles(IReadOnlyCollection<double> samples)

@@ -73,8 +73,8 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(2, firstCounts.AtlasCommercialRegistrations);
             Assert.Equal(2, firstCounts.DeltaVatIdentifiers);
             Assert.Equal(2, firstCounts.DeltaCommercialRegistrations);
-            Assert.Equal(10, firstCounts.AtlasPriceLists + firstCounts.DeltaPriceLists);
-            Assert.Equal(300, firstCounts.AtlasPriceEntries + firstCounts.DeltaPriceEntries);
+            Assert.Equal(12, firstCounts.AtlasPriceLists + firstCounts.DeltaPriceLists);
+            Assert.Equal(302, firstCounts.AtlasPriceEntries + firstCounts.DeltaPriceEntries);
             Assert.Equal(2, firstCounts.AtlasScheduledVersions + firstCounts.DeltaScheduledVersions);
             Assert.Equal(71, firstCounts.AtlasOpenItems);
             Assert.Equal(3, firstCounts.AtlasInstallments);
@@ -134,6 +134,7 @@ public sealed class DevelopmentSeedTests
             Assert.Contains("invoicing.customer_invoice.create", rolePermissions["sales"]);
             Assert.DoesNotContain("invoicing.customer_invoice.finalize", rolePermissions["sales"]);
             Assert.DoesNotContain("invoicing.supplier_invoice.create", rolePermissions["sales"]);
+            Assert.DoesNotContain("invoicing.accounting_preview", rolePermissions["sales"]);
         }
     }
 
@@ -153,6 +154,14 @@ public sealed class DevelopmentSeedTests
             ("RETAIL", SeedIds.TenantEntity(SeedIds.AtlasTenant), 1250m),
             ("RETAIL-SECONDARY", SeedIds.TenantSecondaryEntity(SeedIds.AtlasTenant), 1450m)
         }, actual);
+        await reader.DisposeAsync();
+        await using var purchaseCommand = new NpgsqlCommand("select count(*) from foundation_pricing.price_list l join foundation_pricing.price_list_assignment a on a.tenant_id=l.tenant_id and a.price_list_id=l.id and a.legal_entity_id=l.legal_entity_id and a.direction=l.direction and a.is_default join foundation_pricing.price_list_version v on v.tenant_id=l.tenant_id and v.price_list_id=l.id and v.status='Active' join foundation_pricing.price_entry e on e.tenant_id=v.tenant_id and e.price_list_version_id=v.id where l.tenant_id=$1 and l.code='PURCHASE-SECONDARY' and l.legal_entity_id=$2 and l.direction='Buying' and e.variant_id=$3 and e.uom_id=$4 and e.party_id=$5 and e.unit_price=900", connection);
+        purchaseCommand.Parameters.AddWithValue(SeedIds.AtlasTenant);
+        purchaseCommand.Parameters.AddWithValue(SeedIds.TenantSecondaryEntity(SeedIds.AtlasTenant));
+        purchaseCommand.Parameters.AddWithValue(SeedIds.Variant(SeedIds.AtlasTenant, 2, "default"));
+        purchaseCommand.Parameters.AddWithValue(SeedIds.Uom(SeedIds.AtlasTenant, "EA"));
+        purchaseCommand.Parameters.AddWithValue(SeedIds.Party(SeedIds.AtlasTenant, 2));
+        Assert.Equal(1L, await purchaseCommand.ExecuteScalarAsync());
     }
 
     [Fact]
@@ -341,8 +350,8 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(expectedUsers, reader.GetInt32(2));
             Assert.Equal(expectedParties, reader.GetInt32(3));
             Assert.Equal(expectedProducts, reader.GetInt32(4));
-            Assert.Equal(5, reader.GetInt32(5));
-            Assert.Equal(150, reader.GetInt32(6));
+            Assert.Equal(6, reader.GetInt32(5));
+            Assert.Equal(151, reader.GetInt32(6));
             Assert.Equal(120, reader.GetInt32(7));
             await reader.DisposeAsync();
             await transaction.CommitAsync();
