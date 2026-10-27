@@ -155,7 +155,7 @@ Never use single-layer faint shadows (< 0.05 opacity). Every elevated surface mu
 * All transactional amounts and dates must be cleanly isolated with `<bdi>` and standard `<MoneyDisplay>` / `<LocalDateDisplay>`.
 
 #### 10. Mandatory Pre-Acceptance Visual Self-Review Checklist
-Before declaring any frontend mission complete, the agent must personally open and inspect every captured screenshot against this 7-point visual gate:
+Before declaring any frontend mission complete, the agent must personally open and inspect every captured screenshot against this 8-point visual gate:
 1. **Shell Grounding**: Is the topbar authentic Dark Oxford Navy (`#102a43`), with crisp white text and high-contrast context selector pills?
 2. **Canvas Separation**: Is the page canvas cool neutral slate (`#f0f4f8`), and do cards visibly pop with pure white surfaces, `#cbd5e1` borders, and dual-layer shadows?
 3. **Action Authority**: Are primary buttons deep Oxford Navy `#102a43` with top specular highlight and drop shadow?
@@ -163,6 +163,36 @@ Before declaring any frontend mission complete, the agent must personally open a
 5. **Data Isolation**: Are numbers, currencies, dates, and codes cleanly isolated with `<bdi>` without reversed characters or RTL distortion?
 6. **Zero Translation Leaks**: Is all copy natural Arabic without raw English enum names, GUIDs, or developer terminology?
 7. **No Layout Overflow**: Are tables, grids, cards, and modal dialogs free of horizontal scroll, clipping, or truncated text?
+8. **Zero View/Form Collision**: Does the page strictly separate browsing from data entry? Are all creation and editing flows cleanly isolated in dedicated Modal Dialogs or dedicated workspace routes (never inline forms embedded inside or below list tables)?
+
+### 1.2 Mandatory Separation of Concerns: Zero Mixed View/Form Collision
+
+TODIR ERP is built to rival top-tier global enterprise platforms (such as Odoo) in the Arabic SaaS market. Our target users are everyday business employees (accountants, inventory clerks, cashiers, sales reps, operations managers) with varying degrees of technical literacy. They must never be confused by cluttered or ambiguous screens.
+
+#### The Ironclad Rule of View / Form Separation:
+> **A page must NEVER combine browsing data (tables, lists, 360-degree record profiles) with inline creation or editing forms on the same screen.**
+
+#### Architectural Requirements:
+1. **List Pages (`ListPage`)**:
+   - Sole responsibility: Searching, filtering, scanning tabular records, pagination, and launching explicit actions.
+   - **STRICTLY PROHIBITED**: Embedding `<form>`, inline create/edit fields, or permanent editable draft rows directly inside or below a table on a list page.
+   - **Creation Flow**: Always triggered exclusively by an explicit Primary Action button (e.g. `+ إضافة عميل`, `+ إضافة صنف`, `+ إنشاء فاتورة جديدة`). Clicking this button MUST open:
+     - A focused **Modal Dialog** (`Dialog`) for quick/standard entity creation, OR
+     - Navigate to a dedicated **Creation Page / Workspace Route** (e.g. `/new`, `/draft`) for complex documents with its own sticky action toolbar (`حفظ المسودة`, `اعتماد`, `إلغاء`).
+2. **Record Pages (`RecordPage` - 360-Degree Entity Views)**:
+   - Sole responsibility: Reading comprehensive entity information (KPI stat cards, structured PropertyGrids, tabs for related activity/history).
+   - **Editing Flow**: Clicking `تعديل` on the record page header must open a dedicated **Edit Modal Dialog** (`Dialog`) or navigate to a dedicated **Edit Route** (`/:id/edit`). PropertyGrid cards must remain clean, read-only displays and must never morph in-place into messy text fields.
+   - **Sub-entity Mutations**: Adding an address, contact point, identifier, or bank account must open a dedicated modal dialog triggered by an action button within that section surface.
+3. **Table Row Actions**:
+   - Row-level edits, status transitions, or deletions must be triggered via explicit table action buttons (e.g. `IconButton` or menu item) that open a confirmation dialog, edit modal, or drawer. Never turn plain table cells into unstyled inline inputs.
+4. **Cognitive Ergonomics for Non-Technical Users**:
+   - The UI must be self-explanatory with zero user training required.
+   - Every screen has exactly ONE obvious primary action (highlighted in Dark Oxford Navy `#102a43`).
+   - Action verbs must be completely unambiguous (`حفظ التغييرات`, `إلغاء`, `إضافة...`). Generic verbs like `تنفيذ` or `Submit` are forbidden.
+   - Clear explanatory subtitles and microcopy in Arabic to guide the user without condescension.
+5. **Strict Code Quality & Component Reuse**:
+   - Modules MUST use the unified design system primitives (`frontend/components/primitives/`, `frontend/components/fields/`, `frontend/components/forms/`, `frontend/components/pages/`).
+   - Reinventing custom buttons, raw unstyled inputs, raw HTML tables, or custom card wrappers inside modules is strictly prohibited as a code quality defect.
 
 ### The Sacred Boundary
 ```text
@@ -270,12 +300,13 @@ Business pages should use the appropriate approved page archetype when applicabl
   ├── Pagination (Server-side pager with page size selector)
   └── Contextual EmptyState / LoadingState / ErrorState
   ```
-* **Key Props**:
+* **Key Props & Invariants**:
   - `title`: e.g. `"دليل الأطراف التجارية"`
   - `subtitle`: Brief description of what the table represents.
-  - `primaryAction`: `{ label: "إضافة طرف جديد", onClick: () => setIsCreateOpen(true) }`
+  - `primaryAction`: `{ label: "إضافة طرف جديد", onClick: () => setIsCreateOpen(true) }` (MUST open a dedicated Modal Dialog or navigate to dedicated creation route. NEVER render inline form inputs inside or below the table).
   - `filterBar`: `<FilterBar searchInput={<SearchField ... />} ...>`
   - `pagination`: `<Pagination page={page} totalPages={totalPages} ... />`
+  - **Zero Mixed Forms**: ListPage is strictly read-only and scannable; creation/editing must be completely decoupled into modals or separate pages.
 
 ### 4.2. Archetype 2: `RecordPage` (Master Entity 360-View Details)
 * **When to use**: Master entity profiles (Party Details, Product Details, User Account Details).
@@ -289,6 +320,9 @@ Business pages should use the appropriate approved page archetype when applicabl
   ├── Tabbed Sub-Views: (Optional) Tabs for related transactions, history, audit
   └── Formatted Audit Footer: Localized timestamp using application locale/timezone and user info
   ```
+* **Invariants**:
+  - PropertyGrids are strictly read-only presentations.
+  - Clicking `تعديل` in the header MUST open a dedicated Edit Dialog or navigate to an edit route. Never turn PropertyGrid fields into inline text inputs.
 * **StatCard Standard**:
   KPI/StatCard rows are optional. Never invent 3–4 metrics merely to satisfy a layout. Show KPIs only when they materially help the employee or manager understand state or make a decision.
   - `title`: Metric label (e.g. `"حالة الحساب"`, `"طبيعة الكيان"`, `"الرصيد الافتتاحي"`)

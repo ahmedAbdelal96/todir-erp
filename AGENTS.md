@@ -90,6 +90,18 @@ The product must make data easy to enter and read, reduce duplicate work and unn
 
 Every user-facing screen must strictly follow the governed high-contrast corporate design system codified in `/frontend/AGENTS.md`. The application shell is anchored with the authentic Dark Oxford Navy header (`#102a43`), the page canvas uses cool neutral slate (`#f0f4f8`), and cards are pure crisp white (`#ffffff`) with solid perimeter borders (`#cbd5e1`) and dual-layer elevation shadows. Pale, borderless, low-contrast "ghost" screens where cards blend seamlessly into the background canvas are strictly prohibited as product defects.
 
+## 3.1 Strict Separation of Concerns: Zero Mixed View/Form Collision
+
+To compete with global ERP leaders (such as Odoo) in the Arabic enterprise market, user experience must offer total cognitive clarity. Ordinary business users (accountants, warehouse clerks, sales reps, cashiers) must never face visual chaos or ambiguous screens:
+
+- **No Mixed Read/Write Screens**: A page must NEVER combine browsing data (tables, lists, 360-degree record profiles) with inline creation or editing forms on the same screen.
+- **List Pages (`ListPage`)**: Dedicated exclusively to browsing, searching, filtering, and status assessment. Strictly forbidden to embed inline creation or edit form fields inside, beside, or below list tables.
+- **Creation Workflows**: Must always be triggered by an explicit Primary Action button (e.g. `+ إضافة عميل`, `+ إنشاء فاتورة جديدة`). The button opens either:
+  1. A focused, accessible **Modal Dialog** (`Dialog`) for quick/standard entity creation, OR
+  2. A dedicated **Creation Page / Workspace Route** (e.g. `/new`, `/draft`) for complex documents and multi-line journals.
+- **Edit Workflows**: Must always be triggered by an explicit edit action on a specific record, which opens a dedicated **Edit Modal Dialog** or navigates to a dedicated **Edit Route**.
+- **Self-Explanatory microcopy**: No developer terminology, database identifiers, or raw status codes. Obvious next actions with clear visual hierarchy.
+
 # 4. Locked repository structure
 
 The repository structure is closed. Approved navigation roots are:
