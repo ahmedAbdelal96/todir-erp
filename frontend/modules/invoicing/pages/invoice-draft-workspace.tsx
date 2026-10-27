@@ -162,8 +162,7 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
     }
     const docDisc = parseFloat(documentDiscount) || 0;
     const finalNet = Math.max(0, sub - docDisc);
-    // Estimated 15% standard VAT for immediate responsive display if applicable
-    const estGross = finalNet * 1.15;
+    const estGross = finalNet;
     return {
       localSubtotal: sub.toFixed(2),
       localGrandTotal: estGross.toFixed(2)
@@ -370,7 +369,7 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
         </div>
 
         {/* Top Actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
           <Button variant="secondary" size="compact" onPress={() => navigate("/invoicing")}>
             {t("draft.backToList")}
           </Button>
@@ -619,43 +618,48 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
           {t("draft.linesSubtitle")}
         </p>
 
-        {/* Lines Header */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(240px, 2fr) 90px 80px 130px 110px 120px 40px",
-            gap: "0.5rem",
-            padding: "0.5rem 0.75rem",
-            backgroundColor: "#102a43",
-            color: "#ffffff",
-            borderRadius: "var(--radius-sm, 0.25rem) var(--radius-sm, 0.25rem) 0 0",
-            fontSize: "0.75rem",
-            fontWeight: 700
-          }}
-        >
-          <div>{t("draft.description")}</div>
-          <div>{t("draft.quantity")}</div>
-          <div style={{ textAlign: "center" }}>{t("draft.unit")}</div>
-          <div>{t("draft.unitPrice")}</div>
-          <div>{t("draft.discount")}</div>
-          <div style={{ textAlign: "end" }}>{t("draft.totalAmount")}</div>
-          <div></div>
-        </div>
+        {/* Lines Header & List with Responsive Horizontal Scroll */}
+        <div style={{ overflowX: "auto", width: "100%" }}>
+          <div style={{ minWidth: "720px" }}>
+            {/* Lines Header */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(240px, 2fr) 90px 80px 130px 110px 120px 40px",
+                gap: "0.5rem",
+                padding: "0.5rem 0.75rem",
+                backgroundColor: "#102a43",
+                color: "#ffffff",
+                borderRadius: "var(--radius-sm, 0.25rem) var(--radius-sm, 0.25rem) 0 0",
+                fontSize: "0.75rem",
+                fontWeight: 700
+              }}
+            >
+              <div>{t("draft.description")}</div>
+              <div>{t("draft.quantity")}</div>
+              <div style={{ textAlign: "center" }}>{t("draft.unit")}</div>
+              <div>{t("draft.unitPrice")}</div>
+              <div>{t("draft.discount")}</div>
+              <div style={{ textAlign: "end" }}>{t("draft.totalAmount")}</div>
+              <div></div>
+            </div>
 
-        {/* Lines List */}
-        <div style={{ border: "1px solid #cbd5e1", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)", overflow: "hidden" }}>
-          {lines.map((line, index) => (
-            <InvoiceLineEditor
-              key={index}
-              line={line}
-              index={index}
-              currencyCode={currencyCode}
-              canOverridePrice={perms.canOverridePrice}
-              onChange={handleLineChange}
-              onRemove={handleLineRemove}
-              onShowWhyPrice={(idx) => setWhyPriceIndex(idx)}
-            />
-          ))}
+            {/* Lines List */}
+            <div style={{ border: "1px solid #cbd5e1", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)", overflow: "hidden" }}>
+              {lines.map((line, index) => (
+                <InvoiceLineEditor
+                  key={index}
+                  line={line}
+                  index={index}
+                  currencyCode={currencyCode}
+                  canOverridePrice={perms.canOverridePrice}
+                  onChange={handleLineChange}
+                  onRemove={handleLineRemove}
+                  onShowWhyPrice={(idx) => setWhyPriceIndex(idx)}
+                />
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Add Line Action Footer */}

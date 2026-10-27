@@ -70,6 +70,18 @@ export function useInvoicingScope(explicit?: InvoicingContextScope): {
     // Graceful fallback outside provider
   }
 
+  let queryEntityId = "";
+  let queryBranchId = "";
+  if (typeof window !== "undefined" && window.location.search) {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      queryEntityId = sp.get("legalEntityId") || "";
+      queryBranchId = sp.get("branchId") || "";
+    } catch {
+      // ignore
+    }
+  }
+
   const tenantId =
     explicit?.tenantId ||
     sessionQuery.data?.tenantId ||
@@ -78,12 +90,14 @@ export function useInvoicingScope(explicit?: InvoicingContextScope): {
 
   let legalEntityId =
     explicit?.legalEntityId ||
+    queryEntityId ||
     sessionQuery.data?.context?.legalEntities?.[0]?.id ||
     runtimeEntityId ||
     "";
 
   let branchId =
     explicit?.branchId ||
+    queryBranchId ||
     sessionQuery.data?.context?.branches?.[0]?.id ||
     runtimeBranchId ||
     "";

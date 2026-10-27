@@ -22,6 +22,17 @@ export function RenderDocumentModal({
 
   if (!renderModel) return <></>;
 
+  const isCustomer = renderModel.direction !== "Payable";
+
+  const documentTitle =
+    renderModel.documentType === "CreditNote"
+      ? t("detail.creditNoteBadge")
+      : renderModel.documentType === "DebitNote"
+        ? t("detail.debitNoteBadge")
+        : isCustomer
+          ? t("detail.customerDocumentBadge")
+          : t("detail.supplierDocumentBadge");
+
   const handlePrint = () => {
     window.print();
   };
@@ -51,7 +62,7 @@ export function RenderDocumentModal({
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #102a43", paddingBottom: "1rem" }}>
             <div>
               <h1 style={{ margin: 0, fontSize: "1.5rem", fontWeight: 900, color: "#102a43" }}>
-                {renderModel.documentType === "CreditNote" ? t("detail.creditNoteBadge") : t("detail.customerDocumentBadge")}
+                {documentTitle}
               </h1>
               <p style={{ margin: "0.25rem 0 0", fontSize: "1.125rem", fontWeight: 700, color: "#475569" }}>
                 <bdi>{renderModel.documentNumber}</bdi>
@@ -73,7 +84,7 @@ export function RenderDocumentModal({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem", margin: "1.5rem 0", padding: "1rem", backgroundColor: "#f8fafc", borderRadius: "var(--radius-sm)" }}>
             <div>
               <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
-                {renderModel.direction === "Receivable" ? t("renderModel.billedTo") : t("renderModel.billedFrom")}
+                {isCustomer ? t("renderModel.billedTo") : t("renderModel.billedFrom")}
               </span>
               <h3 style={{ margin: "0.25rem 0", fontSize: "1.125rem", fontWeight: 700 }}>
                 {renderModel.partyDisplayName}
@@ -87,7 +98,8 @@ export function RenderDocumentModal({
           </div>
 
           {/* Lines Table */}
-          <table style={{ width: "100%", borderCollapse: "collapse", margin: "1.5rem 0", fontSize: "0.875rem" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", minWidth: "550px", borderCollapse: "collapse", margin: "1.5rem 0", fontSize: "0.875rem" }}>
             <thead>
               <tr style={{ backgroundColor: "#102a43", color: "#ffffff" }}>
                 <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>#</th>
@@ -121,6 +133,7 @@ export function RenderDocumentModal({
               ))}
             </tbody>
           </table>
+          </div>
 
           {/* Totals Box */}
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>

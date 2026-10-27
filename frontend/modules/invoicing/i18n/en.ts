@@ -214,7 +214,9 @@ export const en = {
     submitDebitNote: "Confirm & Issue Debit Note",
     issuingProgress: "Issuing corrective document...",
     cancel: "Cancel",
-    overCreditError: "The requested quantity or amount exceeds the remaining available creditable balance."
+    overCreditError: "The requested quantity or amount exceeds the remaining available creditable balance.",
+    reasonRequired: "A reason for correction is required.",
+    lineRequired: "At least one line item with a valid quantity must be selected."
   },
   renderModel: {
     title: "Print & Share Document Preview",
@@ -251,6 +253,22 @@ export const en = {
     unauthorizedFinalize: "You do not have permission to finalize and post invoices.",
     unauthorizedPriceOverride: "You do not have permission to manually override prices.",
     unauthorizedAccountingPreview: "You do not have permission to view accounting previews."
+  },
+  status: {
+    unsettled: "Unsettled",
+    partiallySettled: "Partially Settled",
+    settled: "Fully Settled",
+    fullySettled: "Fully Settled",
+    overSettled: "Over Settled",
+    notTracked: "Not Tracked",
+    approved: "Tax Approved",
+    cleared: "Cleared",
+    reported: "Reported",
+    submitted: "Submitted",
+    pending: "Pending Review",
+    rejected: "Rejected",
+    warning: "Needs Review",
+    notApplicable: "Not Applicable"
   },
   document: {
     loading: "Loading invoice data...",

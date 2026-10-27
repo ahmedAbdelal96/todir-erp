@@ -185,8 +185,8 @@ export const ar = {
     regulatoryNextActionLabel: "الإجراء النظامي التالي",
     correctionsTitle: "سجل الإشعارات المرتبطة والتصحيحات",
     noCorrections: "لا توجد إشعارات دائنة أو مدينة مرتبطة بهذه الفاتورة حتى الآن.",
-    issueCreditNoteAction: "إصدار إشعار دائن (Credit Note)",
-    issueDebitNoteAction: "إصدار إشعار مدين (Debit Note)",
+    issueCreditNoteAction: "إصدار إشعار دائن",
+    issueDebitNoteAction: "إصدار إشعار مدين",
     printAction: "معاينة المستند للطباعة",
     backToList: "العودة للقائمة",
     complianceSnapshotTitle: "بيانات الامتثال والتوقيع الإلكتروني",
@@ -214,7 +214,9 @@ export const ar = {
     submitDebitNote: "تأكيد وإصدار الإشعار المدين",
     issuingProgress: "جارٍ إنشاء المستند التصحيحي...",
     cancel: "إلغاء",
-    overCreditError: "الكمية أو المبلغ المطلوب إشعاره يتجاوز الحد الأقصى المتبقي المتاح للإشعار."
+    overCreditError: "الكمية أو المبلغ المطلوب إشعاره يتجاوز الحد الأقصى المتبقي المتاح للإشعار.",
+    reasonRequired: "مطلوب إدخال سبب الاعتماد والتصحيح.",
+    lineRequired: "يجب تحديد بند واحد على الأقل بكمية صالحة لإصدار الإشعار."
   },
   renderModel: {
     title: "معاينة الفاتورة للطباعة والمشاركة",
@@ -251,6 +253,22 @@ export const ar = {
     unauthorizedFinalize: "ليس لديك صلاحية اعتماد وترحيل الفواتير نهائياً.",
     unauthorizedPriceOverride: "ليس لديك صلاحية تعديل الأسعار يدوياً دون تسعير معتمد.",
     unauthorizedAccountingPreview: "ليس لديك صلاحية استعراض القيود المحاسبية التقديرية."
+  },
+  status: {
+    unsettled: "بانتظار السداد",
+    partiallySettled: "مسددة جزئياً",
+    settled: "مسددة بالكامل",
+    fullySettled: "مسددة بالكامل",
+    overSettled: "مسددة بزيادة",
+    notTracked: "غير متتبع",
+    approved: "معتمد ضريبياً",
+    cleared: "مفسوح ومكتمل",
+    reported: "مُبلّغ رسمياً",
+    submitted: "تم الإرسال",
+    pending: "قيد المراجعة",
+    rejected: "مرفوض",
+    warning: "يتطلب مراجعة",
+    notApplicable: "غير منطبق"
   },
   document: {
     loading: "جارٍ تحميل بيانات الفاتورة...",

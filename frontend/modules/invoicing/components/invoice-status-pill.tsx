@@ -11,6 +11,31 @@ export interface InvoiceStatusGroupProps {
   readonly journalEntryId?: string | null | undefined;
 }
 
+export function getSettlementStatus(summary: string | null | undefined, t: any): string {
+  if (!summary) return summary ?? "";
+  const s = summary.toLowerCase();
+  if (s === "unsettled" || s === "unpaid" || s === "open") return t("status.unsettled");
+  if (s === "partiallysettled" || s === "partially_settled") return t("status.partiallySettled");
+  if (s === "settled" || s === "fullysettled" || s === "paid") return t("status.settled");
+  if (s === "nottracked" || s === "not_tracked") return t("status.notTracked");
+  if (s === "oversettled") return t("status.overSettled");
+  return summary;
+}
+
+export function getRegulatoryStatus(summary: string | null | undefined, t: any): string {
+  if (!summary) return summary ?? "";
+  const r = summary.toLowerCase();
+  if (r === "approved") return t("status.approved");
+  if (r === "cleared") return t("status.cleared");
+  if (r === "reported") return t("status.reported");
+  if (r === "submitted") return t("status.submitted");
+  if (r === "pending") return t("status.pending");
+  if (r === "rejected") return t("status.rejected");
+  if (r === "warning") return t("status.warning");
+  if (r === "notapplicable" || r === "not_applicable" || r === "na") return t("status.notApplicable");
+  return summary;
+}
+
 export function InvoiceStatusGroup({
   lifecycle,
   documentType = "Invoice",
@@ -34,7 +59,7 @@ export function InvoiceStatusGroup({
 
   // Settlement status
   let settlementIntent: "neutral" | "warning" | "info" | "success" = "neutral";
-  let settlementLabel = settlementSummary;
+  const settlementDisplayLabel = getSettlementStatus(settlementSummary, t);
   if (settlementSummary) {
     const s = settlementSummary.toLowerCase();
     if (s.includes("paid") || s.includes("settled")) {
@@ -46,6 +71,7 @@ export function InvoiceStatusGroup({
 
   // Regulatory status
   let regulatoryIntent: "neutral" | "info" | "success" | "warning" | "danger" = "neutral";
+  const regulatoryDisplayLabel = getRegulatoryStatus(regulatorySummary, t);
   if (regulatorySummary) {
     const r = regulatorySummary.toLowerCase();
     if (r.includes("cleared")) regulatoryIntent = "success";
@@ -86,18 +112,18 @@ export function InvoiceStatusGroup({
         />
       )}
 
-      {settlementLabel && (
+      {settlementDisplayLabel && (
         <StatusBadge
           status={settlementSummary ?? "Settlement"}
-          label={settlementLabel}
+          label={settlementDisplayLabel}
           intent={settlementIntent}
         />
       )}
 
-      {regulatorySummary && (
+      {regulatoryDisplayLabel && (
         <StatusBadge
-          status={regulatorySummary}
-          label={regulatorySummary}
+          status={regulatorySummary ?? "Regulatory"}
+          label={regulatoryDisplayLabel}
           intent={regulatoryIntent}
         />
       )}

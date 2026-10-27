@@ -51,7 +51,7 @@ export function InvoiceCorrectionDialog({
     setErrorMessage(null);
 
     if (!reason.trim()) {
-      setErrorMessage(t("correction.reasonLabel") + ": مطلوب إدخال سبب الاعتماد والتصحيح.");
+      setErrorMessage(t("correction.reasonRequired"));
       return;
     }
 
@@ -68,7 +68,7 @@ export function InvoiceCorrectionDialog({
     }
 
     if (lines.length === 0) {
-      setErrorMessage("يجب تحديد بند واحد على الأقل بكمية صالحة لإصدار الإشعار.");
+      setErrorMessage(t("correction.lineRequired"));
       return;
     }
 
@@ -161,7 +161,7 @@ export function InvoiceCorrectionDialog({
               {t("correction.linesToCreditTitle")}
             </span>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
+              <table style={{ width: "100%", minWidth: "400px", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
                 <thead>
                   <tr style={{ backgroundColor: "#f1f5f9", borderBottom: "1px solid #cbd5e1" }}>
                     <th style={{ padding: "0.5rem" }}>{t("correction.itemColumn")}</th>

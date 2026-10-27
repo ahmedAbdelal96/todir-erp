@@ -5,7 +5,7 @@ export const ar = {
   cards: {
     users: { title: "المستخدمون", description: "إدارة حسابات الفريق والصلاحيات" },
     directory: { title: "دليل الأطراف", description: "العملاء والموردون وجهات الاتصال" },
-    invoicing: { title: "فواتير المبيعات", description: "الفواتير الضريبية والمطالبات" },
+    invoicing: { title: "الفواتير والمستندات", description: "فواتير المبيعات والمشتريات والمستندات الضريبية" },
     accounting: { title: "قيود اليومية", description: "المحاسبة العامة ودفتر الأستاذ" },
     import: { title: "معالج الاستيراد", description: "استيراد البيانات وتجهيز النظام" }
   }

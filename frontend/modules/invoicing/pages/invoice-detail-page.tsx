@@ -6,7 +6,7 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { FileTextIcon, ShieldCheckIcon, AlertCircleIcon } from "../../../components/primitives/icons.tsx";
-import { InvoiceStatusGroup } from "../components/invoice-status-pill.tsx";
+import { InvoiceStatusGroup, getSettlementStatus, getRegulatoryStatus } from "../components/invoice-status-pill.tsx";
 import { InvoiceTotalsCard } from "../components/invoice-totals-card.tsx";
 import { InvoiceScheduleTable } from "../components/invoice-schedule-table.tsx";
 import { InvoiceCorrectionDialog } from "../features/invoice-correction-dialog.tsx";
@@ -136,7 +136,7 @@ export function InvoiceDetailPage({ direction }: InvoiceDetailPageProps): React.
         </div>
 
         {/* Top Actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
           <Button variant="secondary" size="compact" onPress={() => navigate("/invoicing")}>
             {t("detail.backToList")}
           </Button>
@@ -237,7 +237,7 @@ export function InvoiceDetailPage({ direction }: InvoiceDetailPageProps): React.
       {/* 2. Line Items Table Surface */}
       <Surface title={t("detail.linesSectionTitle")}>
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
+          <table style={{ width: "100%", minWidth: "640px", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
             <thead>
               <tr style={{ backgroundColor: "#102a43", color: "#ffffff", borderBottom: "1px solid #0c1f31" }}>
                 <th style={{ padding: "0.625rem 0.75rem" }}>#</th>
@@ -303,7 +303,7 @@ export function InvoiceDetailPage({ direction }: InvoiceDetailPageProps): React.
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", fontSize: "0.875rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ color: "#64748b" }}>{t("detail.settlementStatusLabel")}:</span>
-              <span style={{ fontWeight: 700, color: "#102a43" }}>{detail.settlementSummary}</span>
+              <span style={{ fontWeight: 700, color: "#102a43" }}>{getSettlementStatus(detail.settlementSummary, t)}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ color: "#64748b" }}>{t("detail.remainingAmountLabel")}:</span>
@@ -351,7 +351,7 @@ export function InvoiceDetailPage({ direction }: InvoiceDetailPageProps): React.
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.875rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ color: "#64748b" }}>{t("detail.regulatoryStateLabel")}:</span>
-              <span style={{ fontWeight: 700 }}>{detail.regulatorySummary}</span>
+              <span style={{ fontWeight: 700 }}>{getRegulatoryStatus(detail.regulatorySummary, t)}</span>
             </div>
           </div>
         </Surface>

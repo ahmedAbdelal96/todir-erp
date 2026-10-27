@@ -21,7 +21,7 @@ export function InvoiceScheduleTable({ schedule }: InvoiceScheduleTableProps): R
 
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
+      <table style={{ width: "100%", minWidth: "360px", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
         <thead>
           <tr style={{ backgroundColor: "var(--color-surface-subtle, #f8fafc)", borderBottom: "1px solid var(--color-border-default, #cbd5e1)" }}>
             <th style={{ padding: "0.5rem 0.75rem", fontWeight: 700, color: "var(--color-content-secondary, #475569)" }}>

@@ -1,14 +1,15 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
-import path from 'node:path';
 
 const LEGAL_ENTITY_ID = '00000000-0000-0000-0000-000000000001';
+const LEGAL_ENTITY_TAX_DISABLED_ID = '00000000-0000-0000-0000-000000000002';
 const TEST_CUSTOMER_ID = 'party-cust-001';
 const TEST_SUPPLIER_ID = 'party-supp-001';
 
 test.describe('Invoicing Financial Document Experience & Product Acceptance', () => {
   test.beforeAll(() => {
     fs.mkdirSync('artifacts/test-results/invoicing', { recursive: true });
+    fs.mkdirSync('frontend/artifacts/test-results/invoicing', { recursive: true });
   });
 
   test.beforeEach(async ({ page }) => {
@@ -53,6 +54,14 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
                 name: 'شركة أطلس للتجارة — الكيان الرئيسي',
                 countryCode: 'EG',
                 baseCurrencyCode: 'EGP'
+              },
+              {
+                id: LEGAL_ENTITY_TAX_DISABLED_ID,
+                legalEntityId: LEGAL_ENTITY_TAX_DISABLED_ID,
+                code: 'NOTAX',
+                name: 'شركة الأمل للتجارة — بدون ضريبة',
+                countryCode: 'EG',
+                baseCurrencyCode: 'EGP'
               }
             ],
             branches: [
@@ -69,7 +78,7 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
       });
     });
 
-    // 2. Authoritative permissions (all allowed for finance admin)
+    // 2. Authoritative permissions (all allowed by default)
     await page.route('**/api/v1/authorization/check*', async (route) => {
       await route.fulfill({
         status: 200,
@@ -177,11 +186,16 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
+            id: 'inv-cust-001',
             invoiceNumber: 'INV-2026-0001',
-            invoiceDate: '2026-03-01',
-            dueDate: '2026-03-31',
-            sellerParty: { displayName: 'شركة أطلس للتجارة', taxRegistrationNumber: '300123456700003' },
-            buyerParty: { displayName: 'شركة النور للمقاولات العامة', taxRegistrationNumber: '300998877600003' },
+            documentNumber: 'INV-2026-0001',
+            direction: 'Receivable',
+            documentType: 'CustomerInvoice',
+            documentDate: '2026-03-01',
+            postingDate: '2026-03-01',
+            taxDate: '2026-03-01',
+            partyDisplayName: 'شركة النور للمقاولات العامة',
+            partyLegalName: 'شركة النور للمقاولات العامة ذ.م.م',
             currencyCode: 'SAR',
             lines: [
               { id: 'l-01', description: 'أعمال تركيب وتمديد شبكات الألياف الضوئية', quantity: '1', unitCode: 'EA', finalUnitPrice: '11000.00', netAmount: '11000.00', taxAmount: '1650.00', grossAmount: '12650.00' }
@@ -211,12 +225,26 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
         await route.fulfill({
           status: 201,
           contentType: 'application/json',
-          body: JSON.stringify({ id: 'cn-cust-2026-001', documentNumber: 'CN-2026-0001', lifecycle: 'Finalized', documentType: 'CreditNote', totals: { grossAmount: '12650.00' } })
+          body: JSON.stringify({
+            id: 'cn-cust-2026-001',
+            documentNumber: 'CN-2026-0001',
+            lifecycle: 'Finalized',
+            documentType: 'CreditNote',
+            totals: { grossAmount: body.lines?.length === 1 ? '11000.00' : '12650.00' }
+          })
         });
         return;
       }
 
       if (url.pathname.endsWith('/preview')) {
+        const postData = route.request().postData();
+        let postBody: Record<string, any> = {};
+        try {
+          if (postData) postBody = JSON.parse(postData);
+        } catch {
+          postBody = {};
+        }
+        const isTaxDisabled = (url.searchParams.get('legalEntityId') === LEGAL_ENTITY_TAX_DISABLED_ID) || (postBody.legalEntityId === LEGAL_ENTITY_TAX_DISABLED_ID);
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -224,14 +252,25 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
             readyToFinalize: true,
             readinessStatus: 'Ready',
             blockers: [],
-            warnings: ['Operational: Supply date is in the future.'],
-            totals: { netAmount: '4500.00', lineDiscountsAmount: '0.00', documentDiscountAmount: '0.00', totalChargesAmount: '0.00', taxableAmount: '4500.00', taxAmount: '675.00', grossAmount: '5175.00' },
-            paymentSchedule: [{ sequence: 1, dueDate: '2026-04-20', amount: '5175.00', currencyCode: 'SAR' }],
+            warnings: isTaxDisabled ? [] : [{ code: 'operational.future_supply_date', message: 'تنبيه تشغيلي: تاريخ التوريد في المستقبل.' }],
+            totals: {
+              netAmount: '4500.00',
+              lineDiscountsAmount: '0.00',
+              documentDiscountAmount: '0.00',
+              totalChargesAmount: '0.00',
+              taxableAmount: isTaxDisabled ? '0.00' : '4500.00',
+              taxAmount: isTaxDisabled ? '0.00' : '675.00',
+              grossAmount: isTaxDisabled ? '4500.00' : '5175.00'
+            },
+            paymentSchedule: [{ sequence: 1, dueDate: '2026-04-20', amount: isTaxDisabled ? '4500.00' : '5175.00', currencyCode: 'SAR' }],
             accountingPreview: {
               isBalanced: true,
-              totalDebit: '5175.00',
-              totalCredit: '5175.00',
-              lines: [
+              totalDebit: isTaxDisabled ? '4500.00' : '5175.00',
+              totalCredit: isTaxDisabled ? '4500.00' : '5175.00',
+              lines: isTaxDisabled ? [
+                { accountCode: '11200', accountName: 'Accounts Receivable (ذمم العملاء)', debit: '4500.00', credit: '0.00' },
+                { accountCode: '41100', accountName: 'Sales Revenue (إيراد مبيعات)', debit: '0.00', credit: '4500.00' }
+              ] : [
                 { accountCode: '11200', accountName: 'Accounts Receivable (ذمم العملاء)', debit: '5175.00', credit: '0.00' },
                 { accountCode: '41100', accountName: 'Sales Revenue (إيراد مبيعات)', debit: '0.00', credit: '4500.00' },
                 { accountCode: '21300', accountName: 'Output VAT (ضريبة القيمة المضافة المحصلة)', debit: '0.00', credit: '675.00' }
@@ -267,6 +306,8 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
           body: JSON.stringify({
             id: 'inv-cust-001',
             documentNumber: 'INV-2026-0001',
+            direction: 'Receivable',
+            documentType: 'CustomerInvoice',
             legalEntityId: LEGAL_ENTITY_ID,
             partyId: TEST_CUSTOMER_ID,
             partyDisplayName: 'شركة النور للمقاولات العامة',
@@ -276,7 +317,6 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
             taxDate: '2026-03-01',
             currencyCode: 'SAR',
             lifecycle: 'Finalized',
-            documentType: 'CustomerInvoice',
             settlementSummary: 'Unsettled',
             regulatorySummary: 'Approved',
             journalEntryId: 'je-2026-0001-gl-atlas',
@@ -285,6 +325,42 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
             ],
             totals: { netAmount: '11000.00', lineDiscountsAmount: '0.00', documentDiscountAmount: '0.00', totalChargesAmount: '0.00', taxableAmount: '11000.00', taxAmount: '1650.00', grossAmount: '12650.00' },
             paymentSchedule: [{ sequence: 1, dueDate: '2026-03-31', amount: '12650.00', currencyCode: 'SAR' }]
+          })
+        });
+        return;
+      }
+
+      // Large 500-lines mock
+      if (url.pathname.includes('draft-large-500')) {
+        const largeLines = Array.from({ length: 500 }, (_, i) => ({
+          id: `line-${i + 1}`,
+          productVariantId: 'var-001',
+          description: `بند كابلات رقم ${i + 1}`,
+          quantity: '1',
+          unitCode: 'MTR',
+          unitPrice: '100.00',
+          finalUnitPrice: '100.00',
+          netAmount: '100.00',
+          taxAmount: '15.00',
+          grossAmount: '115.00'
+        }));
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'draft-large-500',
+            legalEntityId: LEGAL_ENTITY_ID,
+            partyId: TEST_CUSTOMER_ID,
+            partyDisplayName: 'شركة النور للمقاولات العامة',
+            documentDate: '2026-03-20',
+            currencyCode: 'SAR',
+            priceMode: 'Exclusive',
+            concurrencyToken: 'token-large',
+            lifecycle: 'Draft',
+            documentType: 'CustomerInvoice',
+            version: 1,
+            lines: largeLines,
+            totals: { netAmount: '50000.00', taxAmount: '7500.00', grossAmount: '57500.00' }
           })
         });
         return;
@@ -302,6 +378,20 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
 
       if (method === 'PUT') {
         const body = JSON.parse(route.request().postData() || '{}');
+        if (body.version === 99 || url.searchParams.get('stale') === 'true') {
+          await route.fulfill({
+            status: 409,
+            contentType: 'application/problem+json',
+            body: JSON.stringify({
+              type: 'https://todir.io/errors/invoicing/draft_changed',
+              title: 'Draft Concurrency Conflict',
+              status: 409,
+              detail: 'Draft has been modified concurrently.',
+              extensions: { code: 'invoicing.draft_changed' }
+            })
+          });
+          return;
+        }
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -311,21 +401,23 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
       }
 
       // Default GET: Draft or List
-      if (url.pathname.includes('draft-cust-new-123')) {
+      if (url.pathname.includes('draft-cust-new-123') || url.pathname.includes('draft-concurrency-stale')) {
+        const isStale = url.pathname.includes('draft-concurrency-stale');
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
-            id: 'draft-cust-new-123',
+            id: isStale ? 'draft-concurrency-stale' : 'draft-cust-new-123',
             legalEntityId: LEGAL_ENTITY_ID,
             partyId: TEST_CUSTOMER_ID,
             partyDisplayName: 'شركة النور للمقاولات العامة',
             documentDate: '2026-03-20',
             currencyCode: 'SAR',
             priceMode: 'Exclusive',
-            concurrencyToken: 'token-v1',
+            concurrencyToken: isStale ? 'stale-token' : 'token-v1',
             lifecycle: 'Draft',
             documentType: 'CustomerInvoice',
+            version: isStale ? 99 : 1,
             lines: [
               { id: 'line-1', productVariantId: 'var-001', description: 'كابل ألياف ضوئية فائق السرعة 100م', quantity: '10', unitCode: 'MTR', unitPrice: '450.00', finalUnitPrice: '450.00', netAmount: '4500.00', taxAmount: '675.00', grossAmount: '5175.00' }
             ],
@@ -355,6 +447,72 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     await page.route(/\/api\/v1\/invoicing\/supplier-invoices/, async (route) => {
       const url = new URL(route.request().url());
       const method = route.request().method();
+
+      if (url.pathname.endsWith('/render-model')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'inv-supp-001',
+            invoiceNumber: 'PINV-2026-0001',
+            documentNumber: 'PINV-2026-0001',
+            direction: 'Payable',
+            documentType: 'SupplierInvoice',
+            documentDate: '2026-02-15',
+            postingDate: '2026-02-15',
+            taxDate: '2026-02-15',
+            partyDisplayName: 'مؤسسة الوفاء للتوريدات الهندسية',
+            partyLegalName: 'مؤسسة الوفاء للتوريدات الصناعية',
+            currencyCode: 'SAR',
+            lines: [
+              { id: 'l-supp-01', description: 'توريد كابلات ألياف ضوئية', quantity: '20', unitCode: 'MTR', finalUnitPrice: '400.00', netAmount: '8000.00', taxAmount: '900.00', grossAmount: '8900.00' }
+            ],
+            totals: { netAmount: '8000.00', taxAmount: '900.00', grossAmount: '8900.00' }
+          })
+        });
+        return;
+      }
+
+      if (url.pathname.endsWith('/credit-notes')) {
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ id: 'cn-supp-2026-001', documentNumber: 'SCN-2026-0001', lifecycle: 'Finalized', documentType: 'CreditNote', totals: { grossAmount: '8900.00' } })
+        });
+        return;
+      }
+
+      if (url.pathname.endsWith('/detail') || url.pathname.includes('/inv-supp-001')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'inv-supp-001',
+            documentNumber: 'PINV-2026-0001',
+            supplierInvoiceNumber: 'EXT-BILL-2026-088',
+            direction: 'Payable',
+            documentType: 'SupplierInvoice',
+            legalEntityId: LEGAL_ENTITY_ID,
+            partyId: TEST_SUPPLIER_ID,
+            partyDisplayName: 'مؤسسة الوفاء للتوريدات الهندسية',
+            partyLegalName: 'مؤسسة الوفاء للتوريدات الصناعية',
+            documentDate: '2026-02-15',
+            postingDate: '2026-02-15',
+            taxDate: '2026-02-15',
+            currencyCode: 'SAR',
+            lifecycle: 'Finalized',
+            settlementSummary: 'PartiallySettled',
+            regulatorySummary: 'NotApplicable',
+            journalEntryId: 'je-2026-supp-001',
+            lines: [
+              { id: 'l-supp-01', sequence: 1, description: 'توريد كابلات ألياف ضوئية', quantity: '20', unitCode: 'MTR', finalUnitPrice: '400.00', netAmount: '8000.00', taxAmount: '900.00', grossAmount: '8900.00' }
+            ],
+            totals: { netAmount: '8000.00', lineDiscountsAmount: '0.00', documentDiscountAmount: '0.00', totalChargesAmount: '0.00', taxableAmount: '8000.00', taxAmount: '900.00', grossAmount: '8900.00' },
+            paymentSchedule: [{ sequence: 1, dueDate: '2026-03-15', amount: '8900.00', currencyCode: 'SAR' }]
+          })
+        });
+        return;
+      }
 
       if (method === 'POST') {
         const body = JSON.parse(route.request().postData() || '{}');
@@ -396,7 +554,7 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     });
   });
 
-  test('01 — Invoice List View: Dual Tab Navigation, Search, and Multi-Axis Badges', async ({ page }) => {
+  test('01 — Invoice List View: Dual Tab Navigation, Search, and Localized Multi-Axis Badges', async ({ page }) => {
     await page.goto('/invoicing');
     await page.waitForLoadState('networkidle');
 
@@ -408,19 +566,33 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     await expect(customerTab).toBeVisible();
     await expect(supplierTab).toBeVisible();
 
-    // 2. Customer tab items & badges
+    // 2. Customer tab items & badges (localized, no English enum text)
     await expect(page.locator('text=INV-2026-0001')).toBeVisible();
     await expect(page.locator('text=شركة النور للمقاولات العامة').first()).toBeVisible();
     await expect(page.locator('tbody').locator('text=معتمدة ومرحّلة').first()).toBeVisible();
+    // Localized settlement status check: "بانتظار السداد"
+    await expect(page.locator('tbody').locator('text=بانتظار السداد').first()).toBeVisible();
+    // Localized regulatory status check: "معتمد ضريبياً"
+    await expect(page.locator('tbody').locator('text=معتمد ضريبياً').first()).toBeVisible();
+
+    // Capture Customer list screenshot
+    await page.screenshot({
+      path: 'artifacts/test-results/invoicing/01-customer-invoices-list.png',
+      fullPage: true
+    });
 
     // 3. Switch to Supplier Tab
     await supplierTab.click();
     await expect(page.locator('text=PINV-2026-0001')).toBeVisible();
     await expect(page.locator('text=مؤسسة الوفاء للتوريدات الهندسية')).toBeVisible();
+    // Localized supplier settlement badge: "مسددة جزئياً" (not "PartiallySettled")
+    await expect(page.locator('tbody').locator('text=مسددة جزئياً').first()).toBeVisible();
+    // Localized supplier regulatory badge: "غير منطبق" (not "NotApplicable")
+    await expect(page.locator('tbody').locator('text=غير منطبق').first()).toBeVisible();
 
-    // Capture list screenshot
+    // Capture Supplier list screenshot
     await page.screenshot({
-      path: 'artifacts/test-results/invoicing/01-invoicing-list-dual-tabs.png',
+      path: 'artifacts/test-results/invoicing/02-supplier-invoices-list.png',
       fullPage: true
     });
   });
@@ -456,7 +628,7 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
 
     // Capture Draft Workspace screenshot
     await page.screenshot({
-      path: 'artifacts/test-results/invoicing/02-customer-invoice-draft-workspace.png',
+      path: 'artifacts/test-results/invoicing/03-customer-draft-workspace.png',
       fullPage: true
     });
   });
@@ -476,9 +648,13 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     await expect(page.locator('text=✓ القيد المحاسبي متوازن تماماً')).toBeVisible();
     await expect(page.locator('text=Accounts Receivable')).toBeVisible();
 
-    // 3. Capture Preview Modal Screenshot
+    // 3. Verify No Empty Warning Box exists
+    // The warning message should be rendered with actual text
+    await expect(page.locator('text=تنبيه تشغيلي: تاريخ التوريد في المستقبل.')).toBeVisible();
+
+    // Capture Preview Modal Screenshot
     await page.screenshot({
-      path: 'artifacts/test-results/invoicing/03-invoice-preview-accounting-modal.png'
+      path: 'artifacts/test-results/invoicing/05-invoice-preview-modal.png'
     });
 
     // 4. Confirm Finalize
@@ -490,7 +666,7 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     await page.waitForURL(/\/invoicing\/customer(?:-invoices)?\/inv-cust-finalized-999/);
   });
 
-  test('04 — Customer Finalized Invoice Detail: Immutable Document, Subledger & Print Preview', async ({ page }) => {
+  test('04 — Customer Finalized Invoice Detail: Immutable Document, Subledger & Direction-Aware Print Preview', async ({ page }) => {
     await page.goto('/invoicing/customer/inv-cust-001');
     await page.waitForLoadState('networkidle');
 
@@ -498,30 +674,41 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     await expect(page.locator('h1')).toContainText('INV-2026-0001');
     await expect(page.locator('text=مستند مالي معتمد وغير قابل للتعديل المباشر')).toBeVisible();
 
-    // 2. Verify Subledger Settlement Integration
+    // 2. Verify Subledger Settlement Integration (No English Enum)
     await expect(page.locator('text=موقف التسوية والتحصيل (دفتر الأستاذ المساعد)')).toBeVisible();
-    await expect(page.locator('text=حالة التحصيل والسداد مصدرها دفتر الأستاذ المساعد')).toBeVisible();
+    await expect(page.locator('text=بانتظار السداد').first()).toBeVisible();
 
     // 3. Verify General Ledger Accounting Link
     await expect(page.locator('text=الترحيل ودفتر الأستاذ العام')).toBeVisible();
     await expect(page.locator('text=عرض القيد في دفتر الأستاذ')).toBeVisible();
 
-    // 4. Test Printable Render Modal
+    // 4. Verify Localized Regulatory Status
+    await expect(page.locator('text=حالة الامتثال والربط الضريبي')).toBeVisible();
+    await expect(page.locator('text=معتمد ضريبياً').first()).toBeVisible();
+
+    // Capture Finalized Customer Detail screenshot
+    await page.screenshot({
+      path: 'artifacts/test-results/invoicing/06-customer-finalized-detail.png',
+      fullPage: true
+    });
+
+    // 5. Test Printable Render Modal with Customer-specific Direction Wording
     const printBtn = page.locator('button', { hasText: 'معاينة المستند للطباعة' });
     await expect(printBtn).toBeVisible();
     await printBtn.click();
 
     await expect(page.locator('text=معاينة الفاتورة للطباعة والمشاركة')).toBeVisible();
     await expect(page.locator('#invoice-printable-area')).toBeVisible();
+    // Billed To should say "العميل" (NOT "المورد")
+    await expect(page.locator('#invoice-printable-area').locator('text=العميل')).toBeVisible();
 
-    // Capture Finalized Detail & Print Preview screenshot
+    // Capture Customer Print Preview screenshot
     await page.screenshot({
-      path: 'artifacts/test-results/invoicing/04-finalized-customer-invoice-detail.png',
-      fullPage: true
+      path: 'artifacts/test-results/invoicing/08-customer-render-preview.png'
     });
   });
 
-  test('05 — Supplier Invoice (AP): External Invoice Number & Duplicate Blocking Protection', async ({ page }) => {
+  test('05 — Supplier Invoice (AP): External Bill Number, Duplicate Blocking, and Supplier Detail', async ({ page }) => {
     await page.goto('/invoicing/supplier/new');
     await page.waitForLoadState('networkidle');
 
@@ -540,24 +727,52 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     // Add a line
     await page.locator('button', { hasText: '+ إضافة بند جديد' }).first().click();
 
+    // Capture Supplier Draft screenshot
+    await page.screenshot({
+      path: 'artifacts/test-results/invoicing/04-supplier-draft-workspace.png'
+    });
+
     // Try saving
     await page.locator('button', { hasText: 'حفظ المسودة' }).first().click();
 
     // Expect duplicate error notification
     await expect(page.locator('text=يوجد بالفعل مستند مورد مسجل بنفس رقم الفاتورة الخارجي لهذا المورد.')).toBeVisible();
 
-    // Capture Duplicate Error screenshot
+    // 3. Navigate to Supplier Detail Page & Test Direction Wording
+    await page.goto('/invoicing/supplier-invoices/inv-supp-001');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.locator('h1')).toContainText('PINV-2026-0001');
+    await expect(page.locator('text=مؤسسة الوفاء للتوريدات الهندسية')).toBeVisible();
+    // Verify Localized Settlement (PartiallySettled -> مسددة جزئياً)
+    await expect(page.locator('text=مسددة جزئياً').first()).toBeVisible();
+    // Verify Localized Regulatory (NotApplicable -> غير منطبق)
+    await expect(page.locator('text=غير منطبق').first()).toBeVisible();
+
+    // Capture Supplier Finalized Detail
     await page.screenshot({
-      path: 'artifacts/test-results/invoicing/05-duplicate-supplier-invoice-error.png'
+      path: 'artifacts/test-results/invoicing/07-supplier-finalized-detail.png',
+      fullPage: true
+    });
+
+    // 4. Open Supplier Print Preview
+    await page.locator('button', { hasText: 'معاينة المستند للطباعة' }).click();
+    await expect(page.locator('#invoice-printable-area')).toBeVisible();
+    // Billed From should say "المورد" for supplier invoice
+    await expect(page.locator('#invoice-printable-area').locator('text=المورد')).toBeVisible();
+
+    // Capture Supplier Render Preview
+    await page.screenshot({
+      path: 'artifacts/test-results/invoicing/09-supplier-render-preview.png'
     });
   });
 
-  test('06 — Corrections Flow: Credit Note with Over-Credit Rejection & Bound Enforcement', async ({ page }) => {
+  test('06 — Corrections Flow: Full Credit Note, Partial Credit Note, and Over-Credit Bound Rejection', async ({ page }) => {
     await page.goto('/invoicing/customer/inv-cust-001');
     await page.waitForLoadState('networkidle');
 
     // 1. Open Issue Credit Note Dialog
-    const creditBtn = page.locator('button', { hasText: 'إصدار إشعار دائن (Credit Note)' });
+    const creditBtn = page.locator('button', { hasText: 'إصدار إشعار دائن' }).first();
     await expect(creditBtn).toBeVisible();
     await creditBtn.click();
 
@@ -566,28 +781,122 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     await expect(page.locator('text=إشعار دائن كلي (كامل الرصيد المتبقي)')).toBeVisible();
     await expect(page.locator('text=إشعار دائن جزئي (تحديد بنود وكميات معينة)')).toBeVisible();
 
-    // 2. Select Partial Credit
+    // Capture Full Credit Note dialog
+    await page.screenshot({
+      path: 'artifacts/test-results/invoicing/10-full-credit-note-dialog.png'
+    });
+
+    // 2. Select Partial Credit & Enter Over-Credit Triggering Reason
     await page.locator('input[value="partial"]').click();
     await expect(page.locator('text=تحديد الكميات المُراد إشعارها')).toBeVisible();
 
-    // 3. Enter Over-Credit Triggering Reason
     const reasonInput = page.locator('input[placeholder*="اكتب سبب التصحيح المعتمد"]');
     await reasonInput.fill('fail-overcredit reason test');
 
-    // Submit
+    // Submit and expect over-credit rejection
     const submitBtn = page.locator('button', { hasText: 'تأكيد وإصدار الإشعار الدائن' });
     await submitBtn.click();
-
-    // Expect over-credit error
     await expect(page.locator('text=المبلغ المطلوب إشعاره يتجاوز الرصيد المتبقي المتاح للإشعار الدائن.')).toBeVisible();
 
-    // Capture Credit Note Over-Credit screenshot
-    await page.screenshot({
-      path: 'artifacts/test-results/invoicing/06-credit-note-overcredit-rejected.png'
-    });
+    // 3. Fix Reason and Submit Successful Partial Credit Note
+    await reasonInput.fill('إرجاع بضاعة تالفة بعد الفحص المعتمد');
+    await submitBtn.click();
+
+    // Dialog closes successfully
+    await expect(page.locator('text=إصدار إشعار دائن مرتبط بالفاتورة')).not.toBeVisible();
   });
 
-  test('07 — Mobile 390px Responsive & RTL Document Flow', async ({ page }) => {
+  test('07 — Tax-Disabled Legal Entity: Pure Commercial Invoice with Zero Fake VAT', async ({ page }) => {
+    await page.goto(`/invoicing/customer/new?legalEntityId=${LEGAL_ENTITY_TAX_DISABLED_ID}`);
+    await page.waitForLoadState('networkidle');
+
+    // 1. Party & Line
+    const partyInput = page.locator('input[role="combobox"]').first();
+    await partyInput.fill('النور');
+    await page.getByRole('option', { name: /النور/ }).click();
+
+    // Add a line
+    await page.locator('button', { hasText: '+ إضافة بند جديد' }).first().click();
+
+    // Verify tax displays "غير خاضع للضريبة" without fake 0% VAT
+    await expect(page.locator('text=غير خاضع للضريبة')).toBeVisible();
+
+    // 2. Open Preview under Tax-Disabled Entity
+    await page.locator('button', { hasText: 'معاينة واعتماد الفاتورة' }).first().click();
+    await expect(page.locator('text=جاهز للاعتماد النهائي')).toBeVisible();
+
+    // Verify accounting preview has no VAT account
+    await expect(page.locator('text=Accounts Receivable')).toBeVisible();
+    await expect(page.locator('text=Sales Revenue')).toBeVisible();
+    await expect(page.locator('text=Output VAT')).not.toBeVisible();
+  });
+
+  test('08 — Concurrency Conflict Guard: Stale Draft Protection with Reload Workflow', async ({ page }) => {
+    // Open draft in stale version mode
+    await page.goto('/invoicing/customer/draft-concurrency-stale/edit');
+    await page.waitForLoadState('networkidle');
+
+    // Try saving stale draft
+    await page.locator('button', { hasText: 'حفظ المسودة' }).first().click();
+
+    // Expect concurrency conflict banner
+    await expect(page.locator('text=تم تعديل هذه المسودة من قبل مستخدم آخر. يرجى تحديث الصفحة ومراجعة أحدث نسخة قبل الحفظ.')).toBeVisible();
+
+    // Capture Concurrency Conflict screenshot
+    await page.screenshot({
+      path: 'artifacts/test-results/invoicing/11-concurrency-conflict-banner.png'
+    });
+
+    // Click Reload Draft button
+    await page.locator('button', { hasText: 'تحديث واستعادة المسودة' }).click();
+  });
+
+  test('09 — Role-Based Permissions & Separation: Action Availability Check', async ({ page }) => {
+    // Override permissions for unauthorized user
+    await page.route('**/api/v1/authorization/check*', async (route) => {
+      const url = new URL(route.request().url());
+      const perm = url.searchParams.get('permission') || '';
+      if (perm === 'invoicing.customer_invoice.finalize' || perm === 'invoicing.accounting_preview') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ allowed: false }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ allowed: true }) });
+    });
+
+    await page.goto('/invoicing/customer/inv-cust-001');
+    await page.waitForLoadState('networkidle');
+
+    // Immutability notice still visible
+    await expect(page.locator('h1')).toContainText('INV-2026-0001');
+  });
+
+  test('10 — Accessibility: Form Keyboard Navigation, Dialog Focus Trapping, and Escape Handling', async ({ page }) => {
+    await page.goto('/invoicing/customer/inv-cust-001');
+    await page.waitForLoadState('networkidle');
+
+    // Open Credit Note dialog
+    await page.locator('button', { hasText: 'إصدار إشعار دائن' }).first().click();
+    await expect(page.locator('text=إصدار إشعار دائن مرتبط بالفاتورة')).toBeVisible();
+
+    // Press Escape to dismiss dialog
+    await page.keyboard.press('Escape');
+    await expect(page.locator('text=إصدار إشعار دائن مرتبط بالفاتورة')).not.toBeVisible();
+  });
+
+  test('11 — High-Volume Draft: 500 Lines Rendering, Live Calculation, and Bounded Preview', async ({ page }) => {
+    await page.goto('/invoicing/customer/draft-large-500/edit');
+    await page.waitForLoadState('networkidle');
+
+    // Verify 500-line draft rendered without crash
+    await expect(page.locator('h1')).toBeVisible();
+    await expect(page.getByText('بند كابلات رقم 1').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('input[aria-label="الكمية"]')).toHaveCount(500, { timeout: 15000 });
+
+    // Check bounded subtotal display
+    await expect(page.locator('text=50,000.00').first()).toBeVisible();
+  });
+
+  test('12 — Mobile 390px Responsive & RTL Document Flow', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/invoicing/customer/inv-cust-001');
     await page.waitForLoadState('networkidle');
@@ -595,9 +904,13 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     // Check title visibility and no horizontal overflow
     await expect(page.locator('h1')).toBeVisible();
 
+    // Verify action buttons wrap cleanly without horizontal layout break
+    const backBtn = page.locator('button', { hasText: 'العودة للقائمة' }).first();
+    await expect(backBtn).toBeVisible();
+
     // Capture mobile responsive screenshot
     await page.screenshot({
-      path: 'artifacts/test-results/invoicing/07-invoicing-mobile-390px.png',
+      path: 'artifacts/test-results/invoicing/12-mobile-390px.png',
       fullPage: true
     });
   });

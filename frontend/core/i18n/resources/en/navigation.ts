@@ -1,6 +1,6 @@
 export const en = {
   home: "Home", users: "Users", loginDomain: "Login settings", directory: "Directory",
-  catalog: "Catalog", invoicing: "Sales invoices", payments: "Payments", accounting: "General ledger",
+  catalog: "Catalog", invoicing: "Invoicing", payments: "Payments", accounting: "General ledger",
   import: "Import wizard", financeBase: "Financial foundation", pricing: "Pricing", subledger: "Subledger", tax: "Tax", preview: "System preview", settings: "Settings",
   settingsDescription: "Choose a setting from the available modules.",
   previewPage: { title: "Design system component preview", subtitle: "Inspect interactive components, fields, and tables", accountCode: "Account code", accountName: "Account name", currentBalance: "Current balance", moneyFieldTitle: "Precise money input (MoneyField)", amountDue: "Amount due", exactNumbersDescription: "Preserves exact decimal values", recordedValue: "Recorded value", comboBoxTitle: "Searchable selection (ComboBox)", cityBranch: "City / branch", chooseCity: "Choose a city...", riyadhHq: "Riyadh (head office)", jeddahBranch: "Jeddah (western region branch)", dammamBranch: "Dammam (eastern region branch)", openConfirmation: "Open sample confirmation", dataGridTitle: "High performance data grid (DataGrid)", confirmFinanceTitle: "Confirm financial action", confirmFinanceDescription: "Are you sure you want to post this journal entry?", cancel: "Cancel", confirmPosting: "Confirm posting" },

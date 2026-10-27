@@ -37,9 +37,31 @@ export function InvoicePreviewModal({
 
   if (!isOpen) return <></>;
 
-  const blockers = preview?.blockers ?? [];
-  const warnings = preview?.warnings ?? [];
-  const isReady = (preview?.readyToFinalize ?? false) && blockers.length === 0;
+  const rawBlockers = preview?.blockers ?? [];
+  const normalizedBlockers: { code: string; message: string }[] = rawBlockers
+    .map((b: unknown) => {
+      if (typeof b === "string") return { code: "", message: b };
+      if (b && typeof b === "object") {
+        const item = b as { code?: string; message?: string };
+        return { code: item.code ?? "", message: item.message ?? "" };
+      }
+      return { code: "", message: "" };
+    })
+    .filter((b) => Boolean(b.message.trim() || b.code.trim()));
+
+  const rawWarnings = preview?.warnings ?? [];
+  const normalizedWarnings: string[] = rawWarnings
+    .map((w: unknown) => {
+      if (typeof w === "string") return w;
+      if (w && typeof w === "object") {
+        const item = w as { code?: string; message?: string };
+        return item.message || item.code || "";
+      }
+      return "";
+    })
+    .filter((msg) => Boolean(msg && msg.trim()));
+
+  const isReady = (preview?.readyToFinalize ?? false) && normalizedBlockers.length === 0;
 
   const mapErrorMessage = (code: string, fallback: string): string => {
     switch (code) {
@@ -104,7 +126,7 @@ export function InvoicePreviewModal({
             </div>
 
             {/* Blockers Section */}
-            {blockers.length > 0 && (
+            {normalizedBlockers.length > 0 && (
               <div
                 style={{
                   padding: "0.875rem 1rem",
@@ -121,7 +143,7 @@ export function InvoicePreviewModal({
                   <span>{t("preview.blockersTitle")}</span>
                 </div>
                 <ul style={{ margin: 0, paddingInlineStart: "1.25rem", fontSize: "0.8125rem", color: "#881337" }}>
-                  {blockers.map((b, i) => (
+                  {normalizedBlockers.map((b, i) => (
                     <li key={i} style={{ marginBottom: "0.25rem" }}>
                       {mapErrorMessage(b.code, b.message)}
                     </li>
@@ -131,7 +153,7 @@ export function InvoicePreviewModal({
             )}
 
             {/* Warnings Section */}
-            {warnings.length > 0 && (
+            {normalizedWarnings.length > 0 && (
               <div
                 style={{
                   padding: "0.875rem 1rem",
@@ -148,9 +170,9 @@ export function InvoicePreviewModal({
                   <span>{t("preview.warningsTitle")}</span>
                 </div>
                 <ul style={{ margin: 0, paddingInlineStart: "1.25rem", fontSize: "0.8125rem", color: "#78350f" }}>
-                  {warnings.map((w, i) => (
+                  {normalizedWarnings.map((msg, i) => (
                     <li key={i} style={{ marginBottom: "0.25rem" }}>
-                      {w.message}
+                      {msg}
                     </li>
                   ))}
                 </ul>
