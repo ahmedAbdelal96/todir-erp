@@ -4,6 +4,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { PartyPicker } from "../../directory/public.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
+import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
 import { Select, SelectItem } from "../../../components/primitives/select.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { AlertCircleIcon, CheckIcon, RefreshIcon } from "../../../components/primitives/icons.tsx";
@@ -513,9 +514,8 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
             <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: "#334155", marginBottom: "0.25rem" }}>
               {t("draft.documentDate")} <span style={{ color: "#ef4444" }}>*</span>
             </label>
-            <TextField
+            <LocalDateField
               size="compact"
-              type="date"
               value={documentDate}
               onChange={setDocumentDate}
               aria-label={t("draft.documentDate")}
@@ -566,9 +566,8 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
                 <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "0.25rem" }}>
                   {t("draft.postingDate")}
                 </label>
-                <TextField
+                <LocalDateField
                   size="compact"
-                  type="date"
                   value={postingDate}
                   onChange={setPostingDate}
                   isDisabled={!perms.canOverrideDate}
@@ -579,9 +578,8 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
                 <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "0.25rem" }}>
                   {t("draft.taxDate")}
                 </label>
-                <TextField
+                <LocalDateField
                   size="compact"
-                  type="date"
                   value={taxDate}
                   onChange={setTaxDate}
                   isDisabled={!perms.canOverrideDate}
@@ -592,9 +590,8 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
                 <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "0.25rem" }}>
                   {t("draft.supplyDate")}
                 </label>
-                <TextField
+                <LocalDateField
                   size="compact"
-                  type="date"
                   value={supplyDate}
                   onChange={setSupplyDate}
                   aria-label={t("draft.supplyDate")}
@@ -614,9 +611,14 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
           </Button>
         }
       >
-        <p style={{ margin: "0 0 0.75rem", fontSize: "0.8125rem", color: "var(--color-content-secondary, #475569)" }}>
-          {t("draft.linesSubtitle")}
-        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+          <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-secondary, #475569)" }}>
+            {t("draft.linesSubtitle")}
+          </p>
+          <span className="ui-scroll-hint" style={{ fontSize: "0.75rem", color: "#64748b" }}>
+            ⟵ {t("draft.scrollHint")} ⟶
+          </span>
+        </div>
 
         {/* Lines Header & List with Responsive Horizontal Scroll */}
         <div style={{ overflowX: "auto", width: "100%" }}>

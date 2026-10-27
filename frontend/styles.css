@@ -747,3 +747,30 @@ a {
 .ui-field textarea:focus {
   outline: none;
 }
+
+/* Responsive Financial Data Presentation (Mobile 390px / Desktop) */
+@media (max-width: 639px) {
+  .ui-responsive-financial-desktop {
+    display: none !important;
+  }
+  .ui-responsive-financial-mobile {
+    display: flex !important;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .ui-scroll-hint {
+    display: inline-block !important;
+  }
+}
+
+@media (min-width: 640px) {
+  .ui-responsive-financial-desktop {
+    display: block !important;
+  }
+  .ui-responsive-financial-mobile {
+    display: none !important;
+  }
+  .ui-scroll-hint {
+    display: none !important;
+  }
+}

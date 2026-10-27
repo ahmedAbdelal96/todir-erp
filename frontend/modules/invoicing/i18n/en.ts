@@ -83,6 +83,7 @@ export const en = {
     taxAmount: "Tax Amount",
     totalAmount: "Total",
     removeLine: "Remove",
+    scrollHint: "Scroll horizontally to view all columns and prices",
     whyPrice: "Why this price?",
     priceExplanationTitle: "Pricing Determination Evidence",
     priceExplanationClose: "Close",

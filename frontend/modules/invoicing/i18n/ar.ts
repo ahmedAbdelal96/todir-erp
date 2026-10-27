@@ -83,6 +83,7 @@ export const ar = {
     taxAmount: "مبلغ الضريبة",
     totalAmount: "المجموع",
     removeLine: "حذف البند",
+    scrollHint: "اسحب أفقياً لعرض كافة الأعمدة والأسعار",
     whyPrice: "لماذا هذا السعر؟",
     priceExplanationTitle: "توضيح وتفاصيل التسعير المعتمد",
     priceExplanationClose: "إغلاق",

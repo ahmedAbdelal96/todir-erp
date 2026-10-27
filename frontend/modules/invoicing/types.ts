@@ -224,6 +224,16 @@ export interface InvoiceSourceTrace {
   readonly purpose: string;
 }
 
+export interface InvoiceRelatedDocument {
+  readonly id: string;
+  readonly documentNumber: string;
+  readonly documentType: InvoiceDocumentType;
+  readonly lifecycle: InvoiceLifecycle;
+  readonly amount: DecimalString;
+  readonly date: string;
+  readonly relationship?: string | undefined;
+}
+
 export interface InvoiceDetail {
   readonly id: string;
   readonly legalEntityId: string;
@@ -256,6 +266,7 @@ export interface InvoiceDetail {
   readonly priceMode: InvoicePriceMode;
   readonly addressEvidenceJson?: string | null | undefined;
   readonly source?: InvoiceSourceTrace | null | undefined;
+  readonly relatedDocuments?: readonly InvoiceRelatedDocument[] | undefined;
 }
 
 export interface InvoiceRenderModel {

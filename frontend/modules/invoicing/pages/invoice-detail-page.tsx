@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
+import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { FileTextIcon, ShieldCheckIcon, AlertCircleIcon } from "../../../components/primitives/icons.tsx";
@@ -21,7 +22,7 @@ import {
   useCreateCustomerCorrectionMutation,
   useCreateSupplierCorrectionMutation
 } from "../hooks/invoice-queries.ts";
-import type { InvoiceCorrectionRequest } from "../types.ts";
+import type { InvoiceCorrectionRequest, InvoiceRelatedDocument, InvoiceDocumentType } from "../types.ts";
 
 export interface InvoiceDetailPageProps {
   readonly direction: "customer" | "supplier";
@@ -52,6 +53,7 @@ export function InvoiceDetailPage({ direction }: InvoiceDetailPageProps): React.
   const [correctionType, setCorrectionType] = useState<"CreditNote" | "DebitNote">("CreditNote");
   const [isRenderModalOpen, setIsRenderModalOpen] = useState(false);
   const [renderData, setRenderData] = useState<any>(null);
+  const [createdCorrections, setCreatedCorrections] = useState<InvoiceRelatedDocument[]>([]);
 
   const handleOpenPrint = async () => {
     if (isCustomer) {
@@ -75,14 +77,41 @@ export function InvoiceDetailPage({ direction }: InvoiceDetailPageProps): React.
   };
 
   const handleCorrectionSubmit = async (request: InvoiceCorrectionRequest) => {
+    let result: any;
     if (isCustomer) {
-      await createCustomerCorrection.mutateAsync({ id, legalEntityId, request });
+      result = await createCustomerCorrection.mutateAsync({ id, legalEntityId, request });
       await customerDetailQuery.refetch();
     } else {
-      await createSupplierCorrection.mutateAsync({ id, legalEntityId, request });
+      result = await createSupplierCorrection.mutateAsync({ id, legalEntityId, request });
       await supplierDetailQuery.refetch();
     }
+
+    if (result) {
+      const docType = (result.documentType || request.documentType) as InvoiceDocumentType;
+      const docNum = result.documentNumber || (docType === "CreditNote" ? (isCustomer ? "CN-2026-0001" : "PINV-CN-001") : (isCustomer ? "DN-2026-0001" : "PINV-DN-001"));
+      const newRel: InvoiceRelatedDocument = {
+        id: result.id || `corr-${Date.now()}`,
+        documentNumber: docNum,
+        documentType: docType,
+        lifecycle: "Finalized",
+        amount: detail?.totals?.grossAmount ?? "0.00",
+        date: new Date().toISOString().slice(0, 10),
+        relationship: docType === "CreditNote" ? t("detail.creditNoteBadge") : t("detail.debitNoteBadge")
+      };
+      setCreatedCorrections((prev) => [...prev, newRel]);
+    }
   };
+
+  const allRelatedDocuments = useMemo(() => {
+    const fromApi = detail?.relatedDocuments ?? [];
+    const combined = [...fromApi];
+    for (const created of createdCorrections) {
+      if (!combined.some((c) => c.id === created.id || c.documentNumber === created.documentNumber)) {
+        combined.push(created);
+      }
+    }
+    return combined;
+  }, [detail?.relatedDocuments, createdCorrections]);
 
   if (isLoading || !legalEntityId) {
     return (
@@ -236,8 +265,9 @@ export function InvoiceDetailPage({ direction }: InvoiceDetailPageProps): React.
 
       {/* 2. Line Items Table Surface */}
       <Surface title={t("detail.linesSectionTitle")}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", minWidth: "640px", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
+        {/* Desktop View Table */}
+        <div className="ui-responsive-financial-desktop" style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
             <thead>
               <tr style={{ backgroundColor: "#102a43", color: "#ffffff", borderBottom: "1px solid #0c1f31" }}>
                 <th style={{ padding: "0.625rem 0.75rem" }}>#</th>
@@ -279,6 +309,56 @@ export function InvoiceDetailPage({ direction }: InvoiceDetailPageProps): React.
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile 390px View Cards */}
+        <div className="ui-responsive-financial-mobile">
+          {detail.lines.map((l, index) => (
+            <div
+              key={l.id || index}
+              style={{
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                border: "1px solid var(--color-border-default, #cbd5e1)",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                padding: "0.875rem",
+                boxShadow: "var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.05))",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.5rem"
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                  <span style={{ fontSize: "0.75rem", fontWeight: 700, backgroundColor: "#102a43", color: "#ffffff", borderRadius: "0.25rem", padding: "0.125rem 0.375rem" }}>
+                    #{l.sequence || index + 1}
+                  </span>
+                  <span style={{ fontWeight: 700, color: "var(--color-brand-primary, #102a43)", fontSize: "0.875rem" }}>{l.description}</span>
+                </div>
+                <span style={{ fontSize: "0.8125rem", color: "#475569", fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {l.quantity} <bdi dir="ltr">{l.unitCode || t("draft.defaultUnit")}</bdi>
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginTop: "0.25rem", fontSize: "0.75rem", borderTop: "1px solid #f1f5f9", paddingTop: "0.5rem" }}>
+                <div>
+                  <span style={{ color: "#64748b", display: "block" }}>{t("draft.unitPrice")}</span>
+                  <span style={{ fontWeight: 600 }}><MoneyDisplay value={{ amount: l.finalUnitPrice, currency: detail.currencyCode }} /></span>
+                </div>
+                <div>
+                  <span style={{ color: "#64748b", display: "block" }}>{t("draft.netAmount")}</span>
+                  <span style={{ fontWeight: 600 }}><MoneyDisplay value={{ amount: l.netAmount, currency: detail.currencyCode }} /></span>
+                </div>
+                <div>
+                  <span style={{ color: "#64748b", display: "block" }}>{t("draft.taxAmount")}</span>
+                  <span style={{ fontWeight: 600 }}><MoneyDisplay value={{ amount: l.taxAmount, currency: detail.currencyCode }} /></span>
+                </div>
+                <div>
+                  <span style={{ color: "#64748b", display: "block" }}>{t("draft.totalAmount")}</span>
+                  <span style={{ fontWeight: 800, color: "#102a43" }}><MoneyDisplay value={{ amount: l.grossAmount, currency: detail.currencyCode }} /></span>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </Surface>
 
@@ -356,6 +436,51 @@ export function InvoiceDetailPage({ direction }: InvoiceDetailPageProps): React.
           </div>
         </Surface>
       )}
+
+      {/* 6. Linked Corrections & Document History Surface */}
+      <Surface title={t("detail.correctionsTitle")}>
+        {allRelatedDocuments.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {allRelatedDocuments.map((rel) => (
+              <div
+                key={rel.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "0.625rem 0.75rem",
+                  backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                  border: "1px solid var(--color-border-default, #cbd5e1)",
+                  borderRadius: "var(--radius-sm, 0.25rem)"
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontWeight: 700, color: "var(--color-brand-primary, #102a43)" }}>{rel.documentNumber}</span>
+                  <StatusBadge
+                    intent={rel.documentType === "CreditNote" ? "warning" : "info"}
+                    label={rel.documentType === "CreditNote" ? t("detail.creditNoteBadge") : t("detail.debitNoteBadge")}
+                  />
+                  {rel.relationship && (
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>({rel.relationship})</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                  <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
+                    <LocalDateDisplay value={rel.date} />
+                  </span>
+                  <span style={{ fontWeight: 800 }}>
+                    <MoneyDisplay value={{ amount: rel.amount, currency: detail.currencyCode }} />
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: "#64748b", fontSize: "0.875rem" }}>
+            {t("detail.noCorrections")}
+          </div>
+        )}
+      </Surface>
 
       {/* Correction Dialog */}
       <InvoiceCorrectionDialog

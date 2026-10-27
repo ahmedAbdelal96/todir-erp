@@ -236,6 +236,21 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
         return;
       }
 
+      if (url.pathname.endsWith('/debit-notes')) {
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'dn-cust-2026-001',
+            documentNumber: 'DN-2026-0001',
+            lifecycle: 'Finalized',
+            documentType: 'DebitNote',
+            totals: { grossAmount: '2000.00' }
+          })
+        });
+        return;
+      }
+
       if (url.pathname.endsWith('/preview')) {
         const postData = route.request().postData();
         let postBody: Record<string, any> = {};
@@ -477,7 +492,16 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
         await route.fulfill({
           status: 201,
           contentType: 'application/json',
-          body: JSON.stringify({ id: 'cn-supp-2026-001', documentNumber: 'SCN-2026-0001', lifecycle: 'Finalized', documentType: 'CreditNote', totals: { grossAmount: '8900.00' } })
+          body: JSON.stringify({ id: 'cn-supp-2026-001', documentNumber: 'PINV-CN-001', lifecycle: 'Finalized', documentType: 'CreditNote', totals: { grossAmount: '8900.00' } })
+        });
+        return;
+      }
+
+      if (url.pathname.endsWith('/debit-notes')) {
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ id: 'dn-supp-2026-001', documentNumber: 'PINV-DN-001', lifecycle: 'Finalized', documentType: 'DebitNote', totals: { grossAmount: '1200.00' } })
         });
         return;
       }
@@ -608,6 +632,10 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     const partyInput = page.locator('input[role="combobox"]').first();
     await partyInput.fill('النور');
     await page.getByRole('option', { name: /النور/ }).click();
+
+    // Verify Localized Arabic Date Input Presentation (LocalDateField: ISO value + localized Arabic text)
+    await expect(page.locator('input[placeholder="2026-01-01"]').first()).toBeVisible();
+    await expect(page.locator('.ui-local-date-display').first()).toBeVisible();
 
     // 3. Add Line Item via Catalog Picker
     const addLineBtn = page.locator('button', { hasText: '+ إضافة بند جديد' }).first();
@@ -804,6 +832,55 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
 
     // Dialog closes successfully
     await expect(page.locator('text=إصدار إشعار دائن مرتبط بالفاتورة')).not.toBeVisible();
+
+    // Verify Credit Note appears in the relationships/history surface on original invoice
+    await expect(page.locator('text=سجل الإشعارات المرتبطة والتصحيحات')).toBeVisible();
+    await expect(page.locator('text=CN-2026-0001')).toBeVisible();
+  });
+
+  test('06B — Supplier Credit Note & Debit Note: Full Correction Lifecycle and History Surface', async ({ page }) => {
+    // 1. Supplier Credit Note Flow (AP)
+    await page.goto('/invoicing/supplier-invoices/inv-supp-001');
+    await page.waitForLoadState('networkidle');
+
+    // Click Issue Credit Note
+    const creditBtn = page.locator('button', { hasText: 'إصدار إشعار دائن' }).first();
+    await expect(creditBtn).toBeVisible();
+    await creditBtn.click();
+
+    await expect(page.locator('text=إصدار إشعار دائن مرتبط بالفاتورة')).toBeVisible();
+    const reasonInput = page.locator('input[placeholder*="اكتب سبب التصحيح المعتمد"]');
+    await reasonInput.fill('إشعار دائن لتسوية مردودات مشتريات');
+    await page.locator('button', { hasText: 'تأكيد وإصدار الإشعار الدائن' }).click();
+
+    // Verify dialog closes and correction appears in history surface
+    await expect(page.locator('text=إصدار إشعار دائن مرتبط بالفاتورة')).not.toBeVisible();
+    await expect(page.locator('text=سجل الإشعارات المرتبطة والتصحيحات')).toBeVisible();
+    await expect(page.locator('text=PINV-CN-001')).toBeVisible();
+
+    // Original supplier bill remains visible and immutable
+    await expect(page.locator('h1')).toContainText('PINV-2026-0001');
+    await expect(page.locator('text=مستند مالي معتمد وغير قابل للتعديل المباشر')).toBeVisible();
+    await expect(page.locator('text=مؤسسة الوفاء للتوريدات الهندسية')).toBeVisible();
+
+    // 2. Debit Note Flow on Customer Invoice (AR)
+    await page.goto('/invoicing/customer/inv-cust-001');
+    await page.waitForLoadState('networkidle');
+
+    const debitBtn = page.locator('button', { hasText: 'إصدار إشعار مدين' }).first();
+    await expect(debitBtn).toBeVisible();
+    await debitBtn.click();
+
+    // Verify Debit Note dialog title and wording
+    await expect(page.locator('text=إصدار إشعار مدين مرتبط بالفاتورة')).toBeVisible();
+    const debitReason = page.locator('input[placeholder*="اكتب سبب التصحيح المعتمد"]');
+    await debitReason.fill('فروقات أسعار وتكاليف شحن إضافية متفق عليها');
+    await page.locator('button', { hasText: 'تأكيد وإصدار الإشعار المدين' }).click();
+
+    // Verify dialog closes and Debit Note appears in history surface
+    await expect(page.locator('text=إصدار إشعار مدين مرتبط بالفاتورة')).not.toBeVisible();
+    await expect(page.locator('text=سجل الإشعارات المرتبطة والتصحيحات')).toBeVisible();
+    await expect(page.locator('text=DN-2026-0001')).toBeVisible();
   });
 
   test('07 — Tax-Disabled Legal Entity: Pure Commercial Invoice with Zero Fake VAT', async ({ page }) => {
@@ -824,6 +901,10 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     // 2. Open Preview under Tax-Disabled Entity
     await page.locator('button', { hasText: 'معاينة واعتماد الفاتورة' }).first().click();
     await expect(page.locator('text=جاهز للاعتماد النهائي')).toBeVisible();
+
+    // Verify preview totals displays "غير خاضع للضريبة" instead of fake VAT
+    await expect(page.locator('text=معاينة الفاتورة والتحقق المالي والضريبي')).toBeVisible();
+    await expect(page.locator('text=غير خاضع للضريبة').first()).toBeVisible();
 
     // Verify accounting preview has no VAT account
     await expect(page.locator('text=Accounts Receivable')).toBeVisible();
@@ -896,21 +977,54 @@ test.describe('Invoicing Financial Document Experience & Product Acceptance', ()
     await expect(page.locator('text=50,000.00').first()).toBeVisible();
   });
 
-  test('12 — Mobile 390px Responsive & RTL Document Flow', async ({ page }) => {
+  test('12 — Mobile 390px, 768px, and 1024px Responsive Financial Readability', async ({ page }) => {
+    // A. 390px Viewport
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/invoicing/customer/inv-cust-001');
     await page.waitForLoadState('networkidle');
 
-    // Check title visibility and no horizontal overflow
+    // Title and back button wrap
     await expect(page.locator('h1')).toBeVisible();
+    await expect(page.locator('button', { hasText: 'العودة للقائمة' }).first()).toBeVisible();
 
-    // Verify action buttons wrap cleanly without horizontal layout break
-    const backBtn = page.locator('button', { hasText: 'العودة للقائمة' }).first();
-    await expect(backBtn).toBeVisible();
+    // Verify Invoice Line critical financial items are readable on 390px:
+    // Description, Quantity, Unit Price, Net, Tax, Total
+    const mobileLineCard = page.locator('.ui-responsive-financial-mobile').first();
+    await expect(mobileLineCard).toBeVisible();
+    await expect(mobileLineCard.locator('text=أعمال تركيب وتمديد شبكات الألياف الضوئية')).toBeVisible();
+    await expect(mobileLineCard.locator('text=11,000.00 ر.س').first()).toBeVisible(); // Unit Price / Net
+    await expect(mobileLineCard.locator('text=1,650.00 ر.س')).toBeVisible(); // Tax
+    await expect(mobileLineCard.locator('text=12,650.00 ر.س').first()).toBeVisible(); // Total
+
+    // Verify Payment Schedule critical financial items on 390px:
+    // Installment, Due Date, Amount
+    const mobileScheduleCard = page.locator('.ui-responsive-financial-mobile').nth(1);
+    await expect(mobileScheduleCard).toBeVisible();
+    await expect(mobileScheduleCard.locator('text=القسط #1')).toBeVisible();
+    await expect(mobileScheduleCard.locator('text=12,650.00 ر.س')).toBeVisible();
 
     // Capture mobile responsive screenshot
     await page.screenshot({
       path: 'artifacts/test-results/invoicing/12-mobile-390px.png',
+      fullPage: true
+    });
+
+    // B. 768px Tablet Viewport
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await page.waitForTimeout(200);
+    const desktopTable = page.locator('.ui-responsive-financial-desktop').first();
+    await expect(desktopTable).toBeVisible();
+    await page.screenshot({
+      path: 'artifacts/test-results/invoicing/13-tablet-768px.png',
+      fullPage: true
+    });
+
+    // C. 1024px Desktop Viewport
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.waitForTimeout(200);
+    await expect(desktopTable).toBeVisible();
+    await page.screenshot({
+      path: 'artifacts/test-results/invoicing/14-desktop-1024px.png',
       fullPage: true
     });
   });

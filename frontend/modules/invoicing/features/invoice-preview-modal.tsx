@@ -201,7 +201,13 @@ export function InvoicePreviewModal({
                 <div>
                   <span style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("draft.totalTax")}</span>
                   <div style={{ fontWeight: 700, fontSize: "0.9375rem" }}>
-                    <MoneyDisplay value={{ amount: preview.totals.taxAmount, currency: currencyCode }} />
+                    {parseFloat(preview.totals.taxAmount) > 0 ? (
+                      <MoneyDisplay value={{ amount: preview.totals.taxAmount, currency: currencyCode }} />
+                    ) : (
+                      <span style={{ fontSize: "0.8125rem", color: "#64748b", fontStyle: "italic", fontWeight: 600 }}>
+                        {t("draft.nonTaxable")}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div>
