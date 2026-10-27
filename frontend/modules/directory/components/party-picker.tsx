@@ -46,6 +46,7 @@ export function PartyPicker({
   const [inputValue, setInputValue] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
+  const [quickCreateName, setQuickCreateName] = useState("");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounce input: only fire query after 350 ms of user inactivity
@@ -115,34 +116,19 @@ export function PartyPicker({
         isReadOnly={isReadOnly}
         isLocked={isLocked}
         lockedReason={lockedReason}
+        onCreateNew={showQuickCreateButton ? (term) => {
+          setQuickCreateName(term);
+          setIsQuickCreateOpen(true);
+        } : undefined}
+        createActionLabel={(term) => term ? t("partyPicker.createWithName", { name: term }) : t("partyPicker.createNewParty")}
       />
-
-      {showQuickCreateButton && (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button
-            type="button"
-            onClick={() => setIsQuickCreateOpen(true)}
-            style={{
-              border: 0,
-              background: "none",
-              color: "var(--color-brand-primary, #4f46e5)",
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              cursor: "pointer",
-              padding: "0.125rem 0.25rem",
-              textDecoration: "underline"
-            }}
-          >
-            + {t("partyPicker.quickCreate")}
-          </button>
-        </div>
-      )}
 
       {enableQuickCreate && (
         <QuickCreatePartyDialog
           isOpen={isQuickCreateOpen}
           onOpenChange={setIsQuickCreateOpen}
           defaultRole={roleFilter}
+          initialDisplayName={quickCreateName || inputValue}
           onCreated={(created) => {
             if (onChange) {
               onChange(created.id, created);

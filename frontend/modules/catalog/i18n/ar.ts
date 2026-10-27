@@ -358,7 +358,9 @@ export const ar = {
     searchFilterLabel: "البحث بالاسم أو الرمز التعريفي",
     dialogSearchPlaceholder: "اكتب الاسم أو الرمز لتصفية القائمة...",
     selectAction: "اختيار",
-    totalCount: "إجمالي النتائج: {{count}} صنف"
+    totalCount: "إجمالي النتائج: {{count}} صنف",
+    createWithName: '+ إضافة صنف جديد باسم "{{name}}"...',
+    createNewProduct: "+ إضافة صنف جديد في الكتالوج..."
   },
   audit: {
     events: {

@@ -18,6 +18,7 @@ export interface QuickCreateProductDialogProps {
   readonly isOpen: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly defaultNature?: ProductNature | undefined;
+  readonly initialDisplayName?: string | undefined;
   readonly onCreated?: ((product: ProductDetails) => void) | undefined;
 }
 
@@ -25,12 +26,19 @@ export function QuickCreateProductDialog({
   isOpen,
   onOpenChange,
   defaultNature = "Goods",
+  initialDisplayName,
   onCreated
 }: QuickCreateProductDialogProps): React.JSX.Element {
   const { t } = useTranslation("catalog");
   const { showToast } = useToast();
 
-  const [displayName, setDisplayName] = useState("");
+  const [displayName, setDisplayName] = useState(initialDisplayName ?? "");
+
+  React.useEffect(() => {
+    if (isOpen && initialDisplayName) {
+      setDisplayName(initialDisplayName);
+    }
+  }, [isOpen, initialDisplayName]);
   const [nature, setNature] = useState<ProductNature>(defaultNature);
   const [baseUomId, setBaseUomId] = useState("");
   const [sku, setSku] = useState("");

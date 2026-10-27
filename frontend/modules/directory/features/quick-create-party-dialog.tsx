@@ -14,6 +14,7 @@ export interface QuickCreatePartyDialogProps {
   readonly isOpen: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly defaultRole?: PartyRoleCode | undefined;
+  readonly initialDisplayName?: string | undefined;
   readonly onCreated?: ((party: Party) => void) | undefined;
   readonly onOpenFullForm?: (() => void) | undefined;
 }
@@ -35,11 +36,18 @@ export function QuickCreatePartyDialog({
   isOpen,
   onOpenChange,
   defaultRole,
+  initialDisplayName,
   onCreated,
   onOpenFullForm
 }: QuickCreatePartyDialogProps): React.JSX.Element {
   const { t } = useTranslation("directory");
-  const [displayName, setDisplayName] = useState("");
+  const [displayName, setDisplayName] = useState(initialDisplayName ?? "");
+
+  React.useEffect(() => {
+    if (isOpen && initialDisplayName) {
+      setDisplayName(initialDisplayName);
+    }
+  }, [isOpen, initialDisplayName]);
   const [partyType, setPartyType] = useState<PartyType>("Organization");
   const [phone, setPhone] = useState("");
   const [countryCode, setCountryCode] = useState("EG");

@@ -45,7 +45,8 @@ export const ar = {
     notifications: "إشعارات النظام", closeNotification: "إغلاق الإشعار",
     accountingPosted: "مرحّل محاسبياً", accountingUnposted: "غير مرحّل", approvalApproved: "معتمد إدارياً",
     approvalRejected: "مرفوض", approvalPending: "بانتظار الاعتماد", complianceValid: "مطابق ضريبياً",
-    settlementPaid: "مسدد بالكامل", settlementPartial: "مسدد جزئياً", settlementUnpaid: "غير مسدد", documentLocked: "مستند مقفل"
+    settlementPaid: "مسدد بالكامل", settlementPartial: "مسدد جزئياً", settlementUnpaid: "غير مسدد", documentLocked: "مستند مقفل",
+    createNewOption: "إنشاء {{name}} جديد...", noOptionsFound: "لا توجد نتائج مطابقة"
   }
   ,grid: {
     selectAll: "تحديد الكل", searchOoo: "بحث...", blanks: "فارغ", noMatches: "لا توجد خيارات مطابقة",

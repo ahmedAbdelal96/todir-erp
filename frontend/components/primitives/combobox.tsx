@@ -52,6 +52,9 @@ export interface ComboBoxProps<T extends object = ComboBoxOption>
   readonly defaultSelectedKey?: ComboBoxKey | null | undefined;
   readonly onSelectionChange?: ((key: ComboBoxKey | null) => void) | undefined;
   readonly options?: readonly T[] | undefined;
+  readonly onCreateNew?: ((searchTerm: string) => void) | undefined;
+  readonly createActionLabel?: string | ((searchTerm: string) => string) | undefined;
+  readonly noResultsMessage?: string | undefined;
   readonly children?: ReactNode | ((item: T) => ReactNode) | undefined;
   readonly className?: string | undefined;
 }
@@ -65,6 +68,9 @@ export function ComboBox<T extends object = ComboBoxOption>({
   isLocked = false,
   lockedReason,
   options,
+  onCreateNew,
+  createActionLabel,
+  noResultsMessage,
   children,
   className,
   isDisabled,
@@ -76,12 +82,21 @@ export function ComboBox<T extends object = ComboBoxOption>({
   ...props
 }: ComboBoxProps<T>): React.JSX.Element {
   const { t } = useTranslation("common");
+  const [internalInput, setInternalInput] = React.useState(props.inputValue ?? "");
+  const currentSearchTerm = props.inputValue !== undefined ? props.inputValue : internalInput;
+
+  const handleInputChange = (val: string) => {
+    setInternalInput(val);
+    props.onInputChange?.(val);
+  };
+
   const searchPlaceholder = placeholder ?? t("components.searchPlaceholder");
   const isEffectiveDisabled = isDisabled || isLocked;
 
   return (
     <AriaComboBox
       {...props}
+      onInputChange={handleInputChange}
       {...(isEffectiveDisabled !== undefined ? { isDisabled: isEffectiveDisabled } : {})}
       {...(isRequired !== undefined ? { isRequired } : {})}
       {...(isReadOnly !== undefined ? { isReadOnly } : {})}
@@ -217,6 +232,70 @@ export function ComboBox<T extends object = ComboBoxOption>({
             }
           )}
         </AriaListBox>
+
+        {options && options.length === 0 && (
+          <div
+            style={{
+              padding: "0.75rem 1rem",
+              textAlign: "center",
+              fontSize: "0.8125rem",
+              color: "var(--color-content-muted, #64748b)"
+            }}
+          >
+            {noResultsMessage ?? t("components.noOptionsFound")}
+          </div>
+        )}
+
+        {onCreateNew && (
+          <div
+            style={{
+              padding: "0.375rem 0.5rem",
+              borderTop: "1px solid var(--color-border-subtle, #e2e8f0)",
+              backgroundColor: "var(--color-surface-subtle, #f8fafc)"
+            }}
+          >
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+              }}
+              onClick={() => {
+                onCreateNew(currentSearchTerm);
+              }}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                padding: "0.5rem 0.75rem",
+                borderRadius: "var(--radius-sm, 0.25rem)",
+                border: "1px dashed var(--color-brand-primary, #102a43)",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                color: "var(--color-brand-primary, #102a43)",
+                fontSize: "0.8125rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                textAlign: "start",
+                transition: "all 150ms ease"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(16, 42, 67, 0.06)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--color-surface-card, #ffffff)";
+              }}
+            >
+              <span style={{ fontSize: "1rem", lineHeight: 1, fontWeight: 800 }}>+</span>
+              <span>
+                {createActionLabel
+                  ? typeof createActionLabel === "function"
+                    ? createActionLabel(currentSearchTerm)
+                    : createActionLabel
+                  : t("components.createNewOption", { name: currentSearchTerm ? `"${currentSearchTerm}"` : "" })}
+              </span>
+            </button>
+          </div>
+        )}
       </AriaPopover>
     </AriaComboBox>
   );

@@ -358,7 +358,9 @@ export const en = {
     searchFilterLabel: "Search by name or SKU",
     dialogSearchPlaceholder: "Filter product list by name or SKU...",
     selectAction: "Select",
-    totalCount: "Total results: {{count}} items"
+    totalCount: "Total results: {{count}} items",
+    createWithName: '+ Add new product named "{{name}}"...',
+    createNewProduct: "+ Add new product to catalog..."
   },
   audit: {
     events: {

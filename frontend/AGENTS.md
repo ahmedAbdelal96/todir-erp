@@ -204,6 +204,24 @@ TODIR ERP is built to rival top-tier global enterprise platforms (such as Odoo) 
      - **FAQs & Mistakes (`faqs`)**: Reassurance on common edge cases (e.g. "Can I delete this record?", "How to fix a typo?").
    - **Continuous Agent Synchronization**: Whenever an agent creates, refactors, or modifies a page, form, or workflow, the agent **MUST update the corresponding page help content** in module translations (`ar.ts` and `en.ts`) so in-app guidance always remains 100% accurate and synchronized with the latest UX.
 
+### 1.3 Mandatory Search-and-Select & Smart ComboBox with Quick Create (Select-or-Create Standard)
+
+Typing free-form text or IDs for relational business entities creates data corruption, spelling inconsistencies, and duplicate records (e.g. typing "شركة النور" vs "شركة النور للتجارة" or mistyping a product code).
+
+#### The Law of Selection over Free Typing:
+> **Any field referencing an existing domain entity (Customers, Suppliers, Products, Accounts, Currencies, Tax Rules, Units of Measure, Payment Terms) must use a searchable, keyboard-friendly ComboBox (`ComboBox` / domain pickers). Free-text `<input>` or raw string fields for relational entities are strictly prohibited.**
+
+#### Core Requirements:
+1. **Instant Search & Contextual Disambiguation**:
+   - The ComboBox must query or filter records instantly as the user types, displaying clarifying secondary attributes (e.g. Party code + tax ID + city; Product SKU + unit; Account code + dual-language name).
+2. **Create-on-the-Fly (`onCreateNew` Action)**:
+   - When the user types an entity name that does not exist yet, the ComboBox dropdown MUST provide a prominent, accessible quick-action row:
+     `+ إنشاء "[الاسم المدخل]" جديد...`
+   - Clicking this action MUST open a focused modal dialog prefilled with the typed term (e.g. `QuickCreatePartyDialog`, `QuickCreateProductDialog`).
+   - Upon saving the modal, the newly created record is immediately auto-selected in the form without losing the user's current draft or context.
+3. **Dedicated Domain Pickers**:
+   - Standard domain pickers (`PartyPicker`, `ProductPicker`, `AccountPicker`) must encapsulate this behavior and be reused across all forms. Rebuilding ad-hoc entity selectors inside individual screens is prohibited.
+
 ### The Sacred Boundary
 ```text
 DATABASE LANGUAGE != DOMAIN LANGUAGE != API LANGUAGE != USER-FACING LANGUAGE

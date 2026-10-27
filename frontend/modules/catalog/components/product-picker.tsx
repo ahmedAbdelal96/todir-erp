@@ -9,6 +9,7 @@ import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { SearchIcon, CheckIcon } from "../../../components/primitives/icons.tsx";
 import { catalogApi } from "../services/catalog-api.ts";
 import { useProductList } from "../hooks/catalog-queries.ts";
+import { QuickCreateProductDialog } from "../features/quick-create-product-dialog.tsx";
 import type { ProductSummary, ProductVariantSnapshot } from "../types.ts";
 
 export interface ProductPickerSelection {
@@ -26,6 +27,7 @@ export interface ProductPickerProps {
   readonly placeholder?: string | undefined;
   readonly isDisabled?: boolean | undefined;
   readonly isRequired?: boolean | undefined;
+  readonly enableQuickCreate?: boolean | undefined;
 }
 
 export function ProductPicker({
@@ -34,11 +36,14 @@ export function ProductPicker({
   label,
   placeholder,
   isDisabled = false,
-  isRequired = false
+  isRequired = false,
+  enableQuickCreate = true
 }: ProductPickerProps): React.JSX.Element {
   const { t } = useTranslation("catalog");
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
+  const [quickCreateName, setQuickCreateName] = useState("");
   const [dialogSearch, setDialogSearch] = useState("");
   const [dialogPage, setDialogPage] = useState(1);
   const [scannerInput, setScannerInput] = useState("");
@@ -123,6 +128,11 @@ export function ProductPicker({
           placeholder={isDropdownLoading ? t("productPicker.loading") : (placeholder ?? t("productPicker.placeholder"))}
           isDisabled={isDisabled}
           isRequired={isRequired}
+          onCreateNew={enableQuickCreate && !isDisabled ? (term) => {
+            setQuickCreateName(term);
+            setIsQuickCreateOpen(true);
+          } : undefined}
+          createActionLabel={(term) => term ? t("productPicker.createWithName", { name: term }) : t("productPicker.createNewProduct")}
         />
       </div>
 
@@ -241,6 +251,23 @@ export function ProductPicker({
           </div>
         </div>
       </Dialog>
+
+      {enableQuickCreate && (
+        <QuickCreateProductDialog
+          isOpen={isQuickCreateOpen}
+          onOpenChange={setIsQuickCreateOpen}
+          initialDisplayName={quickCreateName || searchTerm}
+          onCreated={(created) => {
+            onChange?.({
+              variantId: created.defaultVariantId,
+              templateId: created.id,
+              displayName: created.displayName,
+              sku: created.sku,
+              baseUomCode: created.baseUomCode
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
