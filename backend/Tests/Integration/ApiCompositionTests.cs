@@ -105,7 +105,11 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase {
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/provider-refunds", out _));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{refundPaymentId}/provider-refund-status", out _));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/reverse", out _));
-        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/fees", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/fees", out var paymentFees));
+        Assert.True(paymentFees.TryGetProperty("get", out _));
+        var reverseSchema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty("ReversePaymentRequest");
+        Assert.True(reverseSchema.GetProperty("properties").TryGetProperty("feeDispositions", out _));
+        Assert.True(document.RootElement.GetProperty("components").GetProperty("schemas").TryGetProperty("PaymentFeeDispositionRequest", out _));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/internal-transfers", out _));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/providers", out _));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/payment-requests", out _));

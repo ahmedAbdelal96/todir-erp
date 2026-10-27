@@ -7,6 +7,7 @@ public enum PaymentAccountType { Bank, Cashbox, ProviderClearing, Wallet, Intern
 public enum PaymentAccountStatus { Active, Suspended, Archived }
 public enum PaymentType { CustomerReceipt, SupplierPayment, CustomerAdvance, SupplierAdvance, CustomerRefund, SupplierRefund, ExpensePayment, Standalone, TransferLeg, ProviderFee }
 public enum PaymentFeeType { BankFee, ProviderFee, CardProcessingFee, FXFee, TransferFee, OtherApprovedFee }
+public enum PaymentFeeDisposition { Retain, Reverse }
 public enum PaymentLinkAmountPolicy { Fixed, PartialAllowed, CustomerEnteredWithinLimits }
 
 public sealed record PaymentAccount(Guid Id, Guid LegalEntityId, Guid? BranchId, string Code, string Name, PaymentAccountType Type,
@@ -30,7 +31,8 @@ public sealed record CreateRefundCommand(Guid LegalEntityId, Guid OriginalPaymen
     string Amount, DateOnly PaymentDate, DateOnly PostingDate, DateOnly? ValueDate, string ReasonCode, string? BankReference, string IdempotencyKey);
 
 public sealed record ReversePaymentCommand(Guid LegalEntityId, Guid PaymentId, DateOnly PaymentDate, DateOnly PostingDate,
-    string ReasonCode, string IdempotencyKey);
+    string ReasonCode, string IdempotencyKey, IReadOnlyList<PaymentFeeDispositionSelection>? FeeDispositions = null);
+public sealed record PaymentFeeDispositionSelection(Guid FeeId, PaymentFeeDisposition Disposition, string? EvidenceReference);
 
 public sealed record InternalTransferResult(Guid Id, PaymentRecord SourcePayment, PaymentRecord DestinationPayment,
     decimal SourceAmount, string SourceCurrencyCode, decimal DestinationAmount, string DestinationCurrencyCode,

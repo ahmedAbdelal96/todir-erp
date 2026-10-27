@@ -170,6 +170,17 @@ public static class PaymentsModuleExtensions
             try { return Results.Ok(await service.ReverseAsync(access.Tenant, access.ActorId, access.MembershipId, Correlation(http), request, entityId, paymentId, key, ct)); }
             catch (PaymentException exception) { return Render(exception); }
         }).Produces<PaymentRecord>(StatusCodes.Status200OK);
+        group.MapGet("/legal-entities/{entityId:guid}/{paymentId:guid}/fees", async (Guid entityId, Guid paymentId, Guid? branchId,
+            HttpContext http, PaymentsService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var access = await AuthorizeAsync(http, subjects, authorizer, "payments.read", entityId, branchId, ct);
+            if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            var payment = await service.GetAsync(access.Tenant, entityId, branchId, paymentId, ct);
+            if (payment is null) return Results.NotFound();
+            var scoped = await AuthorizeAsync(http, subjects, authorizer, "payments.read", entityId, payment.BranchId, ct);
+            if (scoped is null) return Results.Unauthorized(); if (!scoped.Allowed) return Results.Forbid();
+            return Results.Ok(await service.ListFeesAsync(access.Tenant, entityId, paymentId, ct));
+        }).Produces<IReadOnlyList<PaymentFeeResult>>(StatusCodes.Status200OK);
         group.MapPost("/legal-entities/{entityId:guid}/{paymentId:guid}/fees", async (Guid entityId, Guid paymentId, CreatePaymentFeeRequest request,
             HttpContext http, PaymentsService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
@@ -398,7 +409,7 @@ public sealed class PaymentsModuleManifestProvider : IModuleManifestProvider
 {
     public ModuleManifest Manifest { get; } = new("payments", "1.0.0", 1, "L3", "module", false, "tenant",
         new(["platform-kernel", "directory", "finbase", "ledger", "subledger"], ["platform.files"]),
-        new("finance_payments", ["payment", "payment_account", "payment_method_config", "payment_request", "payment_attempt", "payment_fee", "payment_refund", "payment_reversal", "payment_relationship", "internal_transfer", "provider_config", "provider_operation", "provider_webhook_inbox", "payment_attachment_ref", "payment_list_projection", "payment_idempotency", "payment_link"]),
+        new("finance_payments", ["payment", "payment_account", "payment_method_config", "payment_request", "payment_attempt", "payment_fee", "payment_fee_disposition", "payment_refund", "payment_reversal", "payment_relationship", "internal_transfer", "provider_config", "provider_operation", "provider_webhook_inbox", "payment_attachment_ref", "payment_list_projection", "payment_idempotency", "payment_link"]),
         ["payments.read", "payments.incoming.create", "payments.outgoing.create", "payments.internal_transfer.create", "payments.complete_manual", "payments.cancel_pending", "payments.reverse", "payments.refund.create", "payments.refund.approve", "payments.account.read", "payments.account.manage", "payments.provider.read", "payments.provider.manage", "payments.provider.retry", "payments.provider.reconcile", "payments.cashbox.read", "payments.cashbox.use", "payments.cashbox.manage", "payments.fee.override", "payments.fx.override", "payments.date.override", "payments.audit.view"],
         new(["payments.money-movement", "payments.payment-accounts", "payments.provider-adapter", "payments.provider-webhooks", "payments.refunds", "payments.internal-transfers", "payments.payment-links", "payments.payment-read-model"], ["directory.party", "finbase.money", "finbase.exchange-rate", "subledger.open-items", "ledger.semantic-facts", "platform.numbering", "platform.audit", "platform.transaction-coordination", "platform.outbox", "platform.files"]),
         new(["PaymentCompletedV1", "PaymentReversedV1", "PaymentRefundedV1", "InternalTransferCompletedV1", "PaymentProviderOperationRequestedV1"], []), new(false, "blocked_if_dependents"));

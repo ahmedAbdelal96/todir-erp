@@ -227,6 +227,7 @@ foreach (var script in scripts)
         "ledger-forward-fix-invoicing-debit-notes.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version" },
         "ledger-forward-fix-payment-fee-fact.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version" },
         "ledger-forward-fix-payment-fee-legs.sql" => new[] { "finance_ledger.posting_rule", "finance_ledger.posting_rule_version", "finance_ledger.posting_rule_leg" },
+        "ledger-forward-fix-payment-fee-reversal.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version", "finance_ledger.posting_rule_leg" },
         _ => null
     };
     if (Path.GetFileName(script) is "finbase-forward-fix-provider-history.sql" or "pricing-schema.sql")
@@ -449,6 +450,7 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("ledger-forward-fix-invoicing-debit-notes.sql", StringComparison.Ordinal) => 6,
     _ when fileName.Equals("ledger-forward-fix-payment-fee-fact.sql", StringComparison.Ordinal) => 7,
     _ when fileName.Equals("ledger-forward-fix-payment-fee-legs.sql", StringComparison.Ordinal) => 8,
+    _ when fileName.Equals("ledger-forward-fix-payment-fee-reversal.sql", StringComparison.Ordinal) => 9,
     // This index references write_off, which is introduced by the later-named Subledger pass-2 migration.
     _ when fileName.Equals("subledger-forward-fix-exposure-current-read.sql", StringComparison.Ordinal) => 6,
     _ => 5

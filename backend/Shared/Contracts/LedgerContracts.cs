@@ -19,6 +19,7 @@ public static class AccountingFactTypes
     public const string RefundPaid = "RefundPaid";
     public const string InternalTransferCompleted = "InternalTransferCompleted";
     public const string PaymentFeeRecognized = "PaymentFeeRecognized";
+    public const string PaymentFeeReversed = "PaymentFeeReversed";
     public const string InventoryReceiptValued = "InventoryReceiptValued";
     public const string InventoryIssueValued = "InventoryIssueValued";
     public const string InventoryCostAdjustment = "InventoryCostAdjustment";
@@ -34,7 +35,7 @@ public static class AccountingFactTypes
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         CustomerInvoicePosted, CustomerCreditNotePosted, VendorBillPosted, VendorCreditNotePosted, CustomerDebitNotePosted, VendorDebitNotePosted,
-        PaymentReceived, PaymentMade, RefundPaid, InternalTransferCompleted, PaymentFeeRecognized, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment,
+        PaymentReceived, PaymentMade, RefundPaid, InternalTransferCompleted, PaymentFeeRecognized, PaymentFeeReversed, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment,
         ExpenseRecognized, PayrollPosted, TaxAdjustment, SettlementFxDifference, SettlementWriteOff, UnrealizedFxRevaluation,
         OpeningBalancePosted, ManualGeneralJournalPosted
     };
@@ -89,6 +90,9 @@ public sealed record PaymentFactPayload(decimal Amount, string CurrencyCode, str
     decimal? FeeAmount = null, decimal? BaseFeeAmount = null) : IAccountingFactPayload;
 public sealed record PaymentFeeFactPayload(decimal Amount, string CurrencyCode, decimal BaseAmount, string BaseCurrencyCode,
     string PaymentAccountReference, string FeeType, string? ExchangeRateReference = null) : IAccountingFactPayload;
+public sealed record PaymentFeeReversalFactPayload(Guid OriginalFeeFactId, decimal Amount, string CurrencyCode, decimal BaseAmount,
+    string BaseCurrencyCode, string PaymentAccountReference, string FeeType, string EvidenceReference) : IAccountingFactPayload;
+public sealed record PaymentFeeReversalRequestPayload(Guid OriginalFeeFactId, string EvidenceReference) : IAccountingFactPayload;
 public sealed record InternalTransferFactPayload(decimal SourceAmount, string SourceCurrencyCode, decimal SourceBaseAmount,
     decimal DestinationAmount, string DestinationCurrencyCode, decimal DestinationBaseAmount, string BaseCurrencyCode,
     string SourcePaymentAccountReference, string DestinationPaymentAccountReference,

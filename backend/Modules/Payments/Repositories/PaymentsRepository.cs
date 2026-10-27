@@ -455,7 +455,40 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             if (!string.Equals(financialContext.TransactionCurrencyCode, original.CurrencyCode, StringComparison.OrdinalIgnoreCase))
                 throw new PaymentException("payments.currency_context_changed", "The approved currency context no longer matches this reversal.");
 
-            var hash = Hash(new { request.LegalEntityId, request.PaymentId, request.PaymentDate, request.PostingDate, reason });
+            var feeRows = new List<(Guid Id, string Type, decimal Amount, string Currency, string State)>();
+            await using (var loadFees = new NpgsqlCommand("select id,fee_type,amount,currency_code,recognition_state from finance_payments.payment_fee where tenant_id=$1 and legal_entity_id=$2 and payment_id=$3 order by id for update", context.Connection, context.Transaction))
+            {
+                Add(loadFees, tenant.Value, request.LegalEntityId, request.PaymentId);
+                await using var feeReader = await loadFees.ExecuteReaderAsync(token);
+                while (await feeReader.ReadAsync(token)) feeRows.Add((feeReader.GetGuid(0), feeReader.GetString(1), feeReader.GetDecimal(2), feeReader.GetString(3).Trim(), feeReader.GetString(4)));
+            }
+            if (feeRows.Count > 100) throw new PaymentException("payments.reversal_fee_limit", "This payment has too many fees to reverse in one operation.");
+            var dispositions = request.FeeDispositions ?? [];
+            if (feeRows.Count > 0 && dispositions.Count == 0)
+                throw new PaymentException("payments.reversal_fee_disposition_required", "Choose whether to retain or reverse each recognized fee.");
+            if (dispositions.Select(item => item.FeeId).Distinct().Count() != dispositions.Count
+                || dispositions.Count != feeRows.Count || feeRows.Any(fee => dispositions.All(item => item.FeeId != fee.Id)))
+                throw new PaymentException("payments.reversal_fee_disposition_invalid", "Provide exactly one disposition for every fee on this payment.");
+            var feesById = feeRows.ToDictionary(fee => fee.Id);
+            foreach (var disposition in dispositions)
+            {
+                if (!feesById.TryGetValue(disposition.FeeId, out var fee) || !Enum.IsDefined(disposition.Disposition))
+                    throw new PaymentException("payments.reversal_fee_disposition_invalid", "A fee disposition does not match this payment.");
+                if (fee.State != "Recognized") throw new PaymentException("payments.reversal_fee_state_invalid", "Only recognized fees can be disposed during payment reversal.");
+                if (disposition.Disposition == PaymentFeeDisposition.Reverse
+                    && (string.IsNullOrWhiteSpace(disposition.EvidenceReference) || disposition.EvidenceReference.Trim().Length > 500))
+                    throw new PaymentException("payments.reversal_fee_evidence_required", "Add the bank or provider evidence reference before reversing a fee.");
+                if (disposition.Disposition == PaymentFeeDisposition.Retain && !string.IsNullOrWhiteSpace(disposition.EvidenceReference)
+                    && disposition.EvidenceReference.Trim().Length > 500)
+                    throw new PaymentException("payments.reversal_fee_evidence_invalid", "The fee evidence reference is too long.");
+            }
+            var normalizedDispositions = dispositions.OrderBy(item => item.FeeId).Select(item => new
+            {
+                item.FeeId,
+                item.Disposition,
+                EvidenceReference = string.IsNullOrWhiteSpace(item.EvidenceReference) ? null : item.EvidenceReference.Trim()
+            }).ToArray();
+            var hash = Hash(new { request.LegalEntityId, request.PaymentId, request.PaymentDate, request.PostingDate, reason, FeeDispositions = normalizedDispositions });
             await using (var reserve = new NpgsqlCommand("insert into finance_payments.payment_idempotency(tenant_id,id,scope,idempotency_key,request_hash,created_at) values($1,$2,'reverse-payment',$3,$4,$5) on conflict(tenant_id,scope,idempotency_key) do nothing", context.Connection, context.Transaction))
             { Add(reserve, tenant.Value, Guid.CreateVersion7(), request.IdempotencyKey.Trim(), hash, clock.GetUtcNow()); await reserve.ExecuteNonQueryAsync(token); }
             await using (var key = new NpgsqlCommand("select request_hash,result_id from finance_payments.payment_idempotency where tenant_id=$1 and scope='reverse-payment' and idempotency_key=$2 for update", context.Connection, context.Transaction))
@@ -478,9 +511,6 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             { Add(priorReversal, tenant.Value, request.LegalEntityId, request.PaymentId); if ((bool?)await priorReversal.ExecuteScalarAsync(token) == true) throw new PaymentException("payments.reversal_already_exists", "This payment already has a reversal."); }
             await using (var refund = new NpgsqlCommand("select exists(select 1 from finance_payments.payment_refund where tenant_id=$1 and legal_entity_id=$2 and original_payment_id=$3 and status in ('Pending','Completed'))", context.Connection, context.Transaction))
             { Add(refund, tenant.Value, request.LegalEntityId, request.PaymentId); if ((bool?)await refund.ExecuteScalarAsync(token) == true) throw new PaymentException("payments.reversal_refund_exists", "Cancel pending refunds and resolve completed refunds before reversing this payment."); }
-            await using (var fees = new NpgsqlCommand("select exists(select 1 from finance_payments.payment_fee where tenant_id=$1 and legal_entity_id=$2 and payment_id=$3)", context.Connection, context.Transaction))
-            { Add(fees, tenant.Value, request.LegalEntityId, request.PaymentId); if ((bool?)await fees.ExecuteScalarAsync(token) == true) throw new PaymentException("payments.reversal_fees_unsupported", "Reverse the payment fee through its approved fee correction workflow before reversing the payment."); }
-
             var snapshot = financialContext.ExchangeRate;
             var rate = snapshot is null ? 1m : ParseRequired(snapshot.Rate);
             if (financialContext.BaseCurrencyCode != original.CurrencyCode && snapshot is null)
@@ -518,16 +548,51 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             { Add(relation, tenant.Value, request.LegalEntityId, Guid.CreateVersion7(), reversalId, original.Id, original.Amount, now); await relation.ExecuteNonQueryAsync(token); }
             await using (var reversal = new NpgsqlCommand("insert into finance_payments.payment_reversal(tenant_id,legal_entity_id,id,original_payment_id,reversal_payment_id,reason_code,status,created_by,created_at) values($1,$2,$3,$4,$5,$6,'Completed',$7,$8)", context.Connection, context.Transaction))
             { Add(reversal, tenant.Value, request.LegalEntityId, reversalRecordId, original.Id, reversalId, reason, actor, now); await reversal.ExecuteNonQueryAsync(token); }
+            var correctiveFactsByFeeId = new Dictionary<Guid, Guid>();
+            foreach (var disposition in normalizedDispositions)
+            {
+                var fee = feesById[disposition.FeeId];
+                var dispositionId = Guid.CreateVersion7();
+                var evidence = disposition.EvidenceReference;
+                await using (var saveDisposition = new NpgsqlCommand("insert into finance_payments.payment_fee_disposition(tenant_id,legal_entity_id,id,original_payment_id,reversal_payment_id,payment_fee_id,disposition,evidence_reference,reason_code,created_by,created_at,corrective_fact_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)", context.Connection, context.Transaction))
+                {
+                    var correctiveFactId = disposition.Disposition == PaymentFeeDisposition.Reverse ? dispositionId : (Guid?)null;
+                    Add(saveDisposition, tenant.Value, request.LegalEntityId, dispositionId, original.Id, reversalId, fee.Id,
+                        disposition.Disposition.ToString(), Db(evidence), reason, actor, now, Db(correctiveFactId));
+                    await saveDisposition.ExecuteNonQueryAsync(token);
+                }
+                if (disposition.Disposition == PaymentFeeDisposition.Reverse)
+                {
+                    correctiveFactsByFeeId.Add(fee.Id, dispositionId);
+                    var correctiveFact = new AccountingFactEnvelope<IAccountingFactPayload>(dispositionId, tenant,
+                        new(request.LegalEntityId), AccountingFactTypes.PaymentFeeReversed, 1, "payments",
+                        $"payment-fee-reversal:{fee.Id:D}", $"payment-fee-reversal:{fee.Id:D}", request.PaymentDate,
+                        request.PostingDate, new PaymentFeeReversalRequestPayload(fee.Id, evidence!), correlationId, actor);
+                    await ledger.PostPaymentFeeReversalAsync(context, correctiveFact, fee.Id, evidence!, token);
+                }
+                await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction, new(Guid.CreateVersion7(), tenant,
+                    request.LegalEntityId, original.BranchId, "User", actor, membership, "payments",
+                    disposition.Disposition == PaymentFeeDisposition.Retain ? "payment.fee_retained_on_reversal" : "payment.fee_reversed",
+                    "payment_fee", fee.Id, null, JsonSerializer.Serialize(new { originalPaymentId = original.Id,
+                        reversalPaymentId = reversalId, fee.Type, fee.Amount, fee.Currency, disposition = disposition.Disposition.ToString(), evidenceReference = evidence, reason }, JsonOptions),
+                    null, "api", correlationId, null, now, null), token);
+            }
             await using (var update = new NpgsqlCommand("update finance_payments.payment set business_state='Reversed',row_version=row_version+1,updated_at=$4 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and business_state='Completed'", context.Connection, context.Transaction))
             { Add(update, tenant.Value, request.LegalEntityId, original.Id, now); if (await update.ExecuteNonQueryAsync(token) != 1) throw new PaymentException("payments.payment_state_conflict", "The payment changed before reversal."); }
             await using (var updateKey = new NpgsqlCommand("update finance_payments.payment_idempotency set result_type='Payment',result_id=$4 where tenant_id=$1 and scope='reverse-payment' and idempotency_key=$2 and request_hash=$3", context.Connection, context.Transaction))
             { Add(updateKey, tenant.Value, request.IdempotencyKey.Trim(), hash, reversalId); await updateKey.ExecuteNonQueryAsync(token); }
             await UpsertProjectionAsync(context, tenant, request.LegalEntityId, reversalId, reversalNumber, original.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), original.CurrencyCode,
                 reversalDirection.ToString(), original.Method.ToString(), "Completed", original.BankReference, now, token);
+            var feeDispositionSummary = normalizedDispositions.Select(item => new
+            {
+                feeId = item.FeeId,
+                disposition = item.Disposition.ToString(),
+                correctiveFactId = correctiveFactsByFeeId.TryGetValue(item.FeeId, out var correctiveFactId) ? correctiveFactId : (Guid?)null
+            }).ToArray();
             await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction, new(Guid.CreateVersion7(), tenant, request.LegalEntityId, original.BranchId,
                 "User", actor, membership, "payments", "payment.reversed", "payment", original.Id, null,
-                JsonSerializer.Serialize(new { original.Number, reversalNumber, original.Amount, original.CurrencyCode, reason }, JsonOptions), null, "api", correlationId, null, now, null), token);
-            context.AddOutbox(new(Guid.CreateVersion7(), "PaymentReversedV1", JsonSerializer.Serialize(new { paymentId = original.Id, reversalPaymentId = reversalId, reversalNumber }, JsonOptions), tenant, now, correlationId, original.Id, "payments"));
+                JsonSerializer.Serialize(new { original.Number, reversalNumber, original.Amount, original.CurrencyCode, reason, feeDispositions = feeDispositionSummary }, JsonOptions), null, "api", correlationId, null, now, null), token);
+            context.AddOutbox(new(Guid.CreateVersion7(), "PaymentReversedV1", JsonSerializer.Serialize(new { paymentId = original.Id, reversalPaymentId = reversalId, reversalNumber, feeDispositions = feeDispositionSummary }, JsonOptions), tenant, now, correlationId, original.Id, "payments"));
             return new PaymentRecord(reversalId, request.LegalEntityId, reversalNumber, original.BranchId, reversalDirection, reversalType, partyId,
                 original.Amount, original.CurrencyCode, original.Method, original.PaymentAccountId, request.PaymentDate, request.PostingDate, original.ValueDate,
                 original.BankReference, original.CustomerReference, original.SupplierReference, "PaymentReversal", original.Id.ToString("D"), PaymentBusinessState.Completed, now, 1);
@@ -1101,6 +1166,18 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
         await using var command = new NpgsqlCommand($"select id,legal_entity_id,payment_number,branch_id,direction,payment_type,party_id,amount,currency_code,method,payment_account_id,payment_date,posting_date,value_date,bank_reference,customer_reference,supplier_reference,source_type,source_reference,business_state,completed_at,row_version from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and id=$3{branchFilter}", connection);
         Add(command, tenant.Value, legalEntityId, id); if (branchId is { } branch) Add(command, branch); await using var reader = await command.ExecuteReaderAsync(ct);
         return await reader.ReadAsync(ct) ? ReadPayment(reader) : null;
+    }
+
+    public async Task<IReadOnlyList<PaymentFeeResult>> ListFeesAsync(TenantId tenant, Guid legalEntityId, Guid paymentId, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select id,fee_type,amount,currency_code,recognition_state from finance_payments.payment_fee where tenant_id=$1 and legal_entity_id=$2 and payment_id=$3 order by created_at,id limit 101", connection);
+        Add(command, tenant.Value, legalEntityId, paymentId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var fees = new List<PaymentFeeResult>();
+        while (await reader.ReadAsync(ct)) fees.Add(new(reader.GetGuid(0), Enum.Parse<PaymentFeeType>(reader.GetString(1)), reader.GetDecimal(2), reader.GetString(3).Trim(), reader.GetString(4)));
+        if (fees.Count > 100) throw new PaymentException("payments.fee_limit_exceeded", "This payment has more than 100 fees; contact Finance before changing its reversal.");
+        return fees;
     }
 
     public Task<PaymentRecord> CompleteManualAsync(TenantId tenant, Guid actor, Guid membership, Guid legalEntityId, Guid paymentId,

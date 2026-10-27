@@ -332,11 +332,90 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         var feeRetry = await payments.AddFeeAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), fixture.LegalEntityId, feePayment.Id,
             new(PaymentFeeType.BankFee, "2.50", "EGP", "BANK-FEE-REF-1"), feeKey, CancellationToken.None);
         Assert.Equal(fee.Id, feeRetry.Id);
+        var providerFee = await payments.AddFeeAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), fixture.LegalEntityId, feePayment.Id,
+            new(PaymentFeeType.ProviderFee, "1.25", "EGP", "PROVIDER-FEE-REF-1"), "provider-fee-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None);
         await payments.CompleteManualAsync(tenant, fixture.ActorId, fixture.MembershipId, fixture.LegalEntityId, feePayment.Id,
             "fee-complete-" + Guid.CreateVersion7().ToString("N"), Guid.CreateVersion7(), CancellationToken.None);
         Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_fee where tenant_id=$1 and legal_entity_id=$2 and id=$3 and recognition_state='Recognized'", fixture.TenantId, fixture.LegalEntityId, fee.Id));
         Assert.Equal(2L, await CountAsync(admin, "select count(*) from finance_ledger.journal_entry_line line join finance_ledger.journal_entry entry on entry.tenant_id=line.tenant_id and entry.legal_entity_id=line.legal_entity_id and entry.id=line.journal_entry_id where entry.tenant_id=$1 and entry.legal_entity_id=$2 and entry.fact_id=$3", fixture.TenantId, fixture.LegalEntityId, feePayment.Id));
         Assert.Equal(2L, await CountAsync(admin, "select count(*) from finance_ledger.journal_entry_line line join finance_ledger.journal_entry entry on entry.tenant_id=line.tenant_id and entry.legal_entity_id=line.legal_entity_id and entry.id=line.journal_entry_id where entry.tenant_id=$1 and entry.legal_entity_id=$2 and entry.fact_id=$3 and entry.fact_type='PaymentFeeRecognized'", fixture.TenantId, fixture.LegalEntityId, fee.Id));
+        Assert.Equal(2L, (await payments.ListFeesAsync(tenant, fixture.LegalEntityId, feePayment.Id, CancellationToken.None)).Count);
+        var missingDispositions = await Assert.ThrowsAsync<PaymentException>(() => payments.ReverseAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+            new(new(2026, 10, 1), new(2026, 10, 1), "payment-cancelled", []), fixture.LegalEntityId, feePayment.Id,
+            "fee-reversal-missing-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None));
+        Assert.Equal("payments.reversal_fee_disposition_required", missingDispositions.Code);
+        var feeReversalKey = "fee-reversal-" + Guid.CreateVersion7().ToString("N");
+        var feeReversalRequest = new ReversePaymentRequest(new(2026, 10, 1), new(2026, 10, 1), "payment-cancelled",
+        [
+            new(fee.Id, PaymentFeeDisposition.Retain),
+            new(providerFee.Id, PaymentFeeDisposition.Reverse, "PROVIDER-REFUND-CASE-731")
+        ]);
+        var feeReversal = await payments.ReverseAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+            feeReversalRequest, fixture.LegalEntityId, feePayment.Id, feeReversalKey, CancellationToken.None);
+        var feeReversalRetry = await payments.ReverseAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+            feeReversalRequest, fixture.LegalEntityId, feePayment.Id, feeReversalKey, CancellationToken.None);
+        Assert.Equal(feeReversal.Id, feeReversalRetry.Id);
+        var changedDisposition = await Assert.ThrowsAsync<PaymentException>(() => payments.ReverseAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+            feeReversalRequest with { FeeDispositions = [new(fee.Id, PaymentFeeDisposition.Reverse, "BANK-REFUND-CASE"), new(providerFee.Id, PaymentFeeDisposition.Retain)] },
+            fixture.LegalEntityId, feePayment.Id, feeReversalKey, CancellationToken.None));
+        Assert.Equal("payments.idempotency_conflict", changedDisposition.Code);
+        Assert.Equal("Recognized", (string)(await ScalarAsync(admin, "select recognition_state from finance_payments.payment_fee where tenant_id=$1 and legal_entity_id=$2 and id=$3", fixture.TenantId, fixture.LegalEntityId, fee.Id))!);
+        Assert.Equal("Recognized", (string)(await ScalarAsync(admin, "select recognition_state from finance_payments.payment_fee where tenant_id=$1 and legal_entity_id=$2 and id=$3", fixture.TenantId, fixture.LegalEntityId, providerFee.Id))!);
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_fee_disposition where tenant_id=$1 and legal_entity_id=$2 and payment_fee_id=$3 and disposition='Retain' and corrective_fact_id is null", fixture.TenantId, fixture.LegalEntityId, fee.Id));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_fee_disposition where tenant_id=$1 and legal_entity_id=$2 and payment_fee_id=$3 and disposition='Reverse' and evidence_reference='PROVIDER-REFUND-CASE-731'", fixture.TenantId, fixture.LegalEntityId, providerFee.Id));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=(select corrective_fact_id from finance_payments.payment_fee_disposition where tenant_id=$1 and legal_entity_id=$2 and payment_fee_id=$3) and fact_type='PaymentFeeReversed' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, providerFee.Id));
+        Assert.Equal(2L, await CountAsync(admin, "select count(*) from finance_ledger.journal_entry_line line join finance_ledger.journal_entry entry on entry.tenant_id=line.tenant_id and entry.legal_entity_id=line.legal_entity_id and entry.id=line.journal_entry_id where entry.tenant_id=$1 and entry.legal_entity_id=$2 and entry.fact_type='PaymentFeeReversed' and entry.source_reference=$3", fixture.TenantId, fixture.LegalEntityId, $"payment-fee-reversal:{providerFee.Id:D}"));
+        Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_ledger.journal_entry_line line join finance_ledger.journal_entry entry on entry.tenant_id=line.tenant_id and entry.legal_entity_id=line.legal_entity_id and entry.id=line.journal_entry_id where entry.tenant_id=$1 and entry.legal_entity_id=$2 and entry.fact_id in ($3,(select corrective_fact_id from finance_payments.payment_fee_disposition where tenant_id=$1 and legal_entity_id=$2 and payment_fee_id=$4)) group by line.account_id having sum(line.base_debit-line.base_credit)<>0", fixture.TenantId, fixture.LegalEntityId, providerFee.Id, providerFee.Id));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=(select corrective_fact_id from finance_payments.payment_fee_disposition where tenant_id=$1 and legal_entity_id=$2 and payment_fee_id=$3) and payload_jsonb->>'evidenceReference'='PROVIDER-REFUND-CASE-731' and payload_jsonb->>'originalFeeFactId'=$3::text", fixture.TenantId, fixture.LegalEntityId, providerFee.Id));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_reversal where tenant_id=$1 and legal_entity_id=$2 and original_payment_id=$3 and reversal_payment_id=$4", fixture.TenantId, fixture.LegalEntityId, feePayment.Id, feeReversal.Id));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from platform.outbox_message where tenant_id=$1 and source_module='payments' and causation_id=$2 and message_type='PaymentReversedV1' and payload->'feeDispositions' @> jsonb_build_array(jsonb_build_object('feeId',$3::text,'disposition','Retain')) and payload->'feeDispositions' @> jsonb_build_array(jsonb_build_object('feeId',$4::text,'disposition','Reverse'))", fixture.TenantId, feePayment.Id, fee.Id, providerFee.Id));
+        await Assert.ThrowsAsync<PostgresException>(async () =>
+        {
+            await using var immutableFee = new NpgsqlCommand("update finance_payments.payment_fee set amount=amount+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3", admin);
+            immutableFee.Parameters.AddWithValue(fixture.TenantId); immutableFee.Parameters.AddWithValue(fixture.LegalEntityId); immutableFee.Parameters.AddWithValue(providerFee.Id);
+            await immutableFee.ExecuteNonQueryAsync();
+        });
+        await Assert.ThrowsAsync<PostgresException>(async () =>
+        {
+            await using var immutableDisposition = new NpgsqlCommand("update finance_payments.payment_fee_disposition set evidence_reference='altered' where tenant_id=$1 and legal_entity_id=$2 and payment_fee_id=$3", admin);
+            immutableDisposition.Parameters.AddWithValue(fixture.TenantId); immutableDisposition.Parameters.AddWithValue(fixture.LegalEntityId); immutableDisposition.Parameters.AddWithValue(providerFee.Id);
+            await immutableDisposition.ExecuteNonQueryAsync();
+        });
+
+        var failurePayment = await payments.CreateDraftAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), command with
+            { Amount = "12.00", BankReference = "REVERSAL-ATOMICITY-" + Guid.CreateVersion7().ToString("N") },
+            "reversal-atomicity-payment-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None);
+        var failureFee = await payments.AddFeeAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), fixture.LegalEntityId, failurePayment.Id,
+            new(PaymentFeeType.BankFee, "0.75", "EGP", "ATOMICITY-FEE-REF"), "reversal-atomicity-fee-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None);
+        await payments.CompleteManualAsync(tenant, fixture.ActorId, fixture.MembershipId, fixture.LegalEntityId, failurePayment.Id,
+            "reversal-atomicity-complete-" + Guid.CreateVersion7().ToString("N"), Guid.CreateVersion7(), CancellationToken.None);
+        var triggerSuffix = Guid.CreateVersion7().ToString("N");
+        var triggerName = $"reject_fee_correction_{triggerSuffix}";
+        var functionName = $"reject_fee_correction_fn_{triggerSuffix}";
+        var atomicityKey = "reversal-atomicity-key-" + Guid.CreateVersion7().ToString("N");
+        await using (var inject = new NpgsqlCommand($"create function public.{functionName}() returns trigger language plpgsql as $$ begin if new.fact_type='PaymentFeeReversed' then raise exception 'injected payment fee reversal failure'; end if; return new; end $$; create trigger {triggerName} before insert on finance_ledger.accounting_fact for each row execute function public.{functionName}()", admin))
+            await inject.ExecuteNonQueryAsync();
+        try
+        {
+            await Assert.ThrowsAsync<PostgresException>(() => payments.ReverseAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+                new(new(2026, 10, 1), new(2026, 10, 1), "bank-confirmed-reversal", [new(failureFee.Id, PaymentFeeDisposition.Reverse, "BANK-CASE-ATOMIC-15")]),
+                fixture.LegalEntityId, failurePayment.Id, atomicityKey, CancellationToken.None));
+            Assert.Equal(PaymentBusinessState.Completed, (await payments.GetAsync(tenant, fixture.LegalEntityId, null, failurePayment.Id, CancellationToken.None))!.State);
+            Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_payments.payment_reversal where tenant_id=$1 and legal_entity_id=$2 and original_payment_id=$3", fixture.TenantId, fixture.LegalEntityId, failurePayment.Id));
+            Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_payments.payment_fee_disposition where tenant_id=$1 and legal_entity_id=$2 and payment_fee_id=$3", fixture.TenantId, fixture.LegalEntityId, failureFee.Id));
+            Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and source_reference=$3 and fact_type='PaymentFeeReversed'", fixture.TenantId, fixture.LegalEntityId, $"payment-fee-reversal:{failureFee.Id:D}"));
+        }
+        finally
+        {
+            await using var removeInjection = new NpgsqlCommand($"drop trigger if exists {triggerName} on finance_ledger.accounting_fact; drop function if exists public.{functionName}()", admin);
+            await removeInjection.ExecuteNonQueryAsync();
+        }
+        var recoveredAtomicityReversal = await payments.ReverseAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+            new(new(2026, 10, 1), new(2026, 10, 1), "bank-confirmed-reversal", [new(failureFee.Id, PaymentFeeDisposition.Reverse, "BANK-CASE-ATOMIC-15")]),
+            fixture.LegalEntityId, failurePayment.Id, atomicityKey, CancellationToken.None);
+        Assert.Equal(PaymentBusinessState.Reversed, (await payments.GetAsync(tenant, fixture.LegalEntityId, null, failurePayment.Id, CancellationToken.None))!.State);
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and fact_type='PaymentFeeReversed' and source_reference=$3 and status='Posted'", fixture.TenantId, fixture.LegalEntityId, $"payment-fee-reversal:{failureFee.Id:D}"));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_fee_disposition where tenant_id=$1 and legal_entity_id=$2 and payment_fee_id=$3 and corrective_fact_id is not null", fixture.TenantId, fixture.LegalEntityId, failureFee.Id));
 
         var reversalSource = await payments.CreateDraftAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), command with
             { Amount = "15.00", BankReference = "INTEGRATION-REVERSAL-" + Guid.CreateVersion7().ToString("N") },

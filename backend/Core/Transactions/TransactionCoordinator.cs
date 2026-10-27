@@ -32,6 +32,8 @@ public interface ITransactionalPaymentLedgerPostingCapability
         PaymentFactPayload payload, CancellationToken cancellationToken = default);
     Task<LedgerPostingResult> PostPaymentFeeAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
         PaymentFeeFactPayload payload, CancellationToken cancellationToken = default);
+    Task<LedgerPostingResult> PostPaymentFeeReversalAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        Guid originalFeeFactId, string evidenceReference, CancellationToken cancellationToken = default);
     Task<LedgerPostingResult> PostInternalTransferAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
         InternalTransferFactPayload payload, CancellationToken cancellationToken = default);
 }

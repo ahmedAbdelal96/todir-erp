@@ -593,6 +593,54 @@
       }
     },
     "/api/v1/payments/legal-entities/{entityId}/{paymentId}/fees": {
+      "get": {
+        "tags": [
+          "Payments"
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "paymentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentFeeResult"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "Payments"
@@ -8581,8 +8629,45 @@
           },
           "reasonCode": {
             "type": "string"
+          },
+          "feeDispositions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PaymentFeeDispositionRequest"
+            }
           }
         }
+      },
+      "PaymentFeeDispositionRequest": {
+        "required": [
+          "feeId",
+          "disposition"
+        ],
+        "type": "object",
+        "properties": {
+          "feeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "disposition": {
+            "$ref": "#/components/schemas/PaymentFeeDisposition"
+          },
+          "evidenceReference": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PaymentFeeDisposition": {
+        "enum": [
+          "Retain",
+          "Reverse"
+        ]
       },
       "RoundingContext": {
         "enum": [

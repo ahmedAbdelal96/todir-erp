@@ -13,7 +13,7 @@
   },
   "owns": {
     "schema": "finance_payments",
-    "entities": ["payment", "payment_account", "payment_method_config", "payment_request", "payment_attempt", "payment_fee", "payment_refund", "payment_reversal", "payment_relationship", "internal_transfer", "provider_config", "provider_operation", "provider_webhook_inbox", "payment_attachment_ref", "payment_list_projection", "payment_idempotency", "payment_link"]
+    "entities": ["payment", "payment_account", "payment_method_config", "payment_request", "payment_attempt", "payment_fee", "payment_fee_disposition", "payment_refund", "payment_reversal", "payment_relationship", "internal_transfer", "provider_config", "provider_operation", "provider_webhook_inbox", "payment_attachment_ref", "payment_list_projection", "payment_idempotency", "payment_link"]
   },
   "permissions": ["payments.read", "payments.incoming.create", "payments.outgoing.create", "payments.internal_transfer.create", "payments.complete_manual", "payments.cancel_pending", "payments.reverse", "payments.refund.create", "payments.refund.approve", "payments.account.read", "payments.account.manage", "payments.provider.read", "payments.provider.manage", "payments.provider.retry", "payments.provider.reconcile", "payments.cashbox.read", "payments.cashbox.use", "payments.cashbox.manage", "payments.fee.override", "payments.fx.override", "payments.date.override", "payments.audit.view"],
   "capabilities": {

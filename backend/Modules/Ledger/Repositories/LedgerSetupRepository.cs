@@ -139,6 +139,7 @@ public sealed class LedgerSetupRepository(
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PaymentMade, "PAYMENT_MADE_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.RefundPaid, "PAYMENT_REFUND_PAID_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PaymentFeeRecognized, "PAYMENT_FEE_RECOGNIZED_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PaymentFeeReversed, "PAYMENT_FEE_REVERSED_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorDebitNotePosted, "VENDOR_DEBIT_NOTE_V1", token);
 
             var configWasCreated = existing is null;
@@ -281,6 +282,7 @@ public sealed class LedgerSetupRepository(
             AccountingFactTypes.PaymentMade => new[] { ("Payable", "BaseAmount", "Debit"), ("Cash", "BaseAmount", "Credit") },
             AccountingFactTypes.RefundPaid => new[] { ("Receivable", "BaseAmount", "Debit"), ("Cash", "BaseAmount", "Credit") },
             AccountingFactTypes.PaymentFeeRecognized => new[] { ("PaymentFeeExpense", "BaseAmount", "Debit"), ("Cash", "BaseAmount", "Credit") },
+            AccountingFactTypes.PaymentFeeReversed => new[] { ("Cash", "BaseAmount", "Debit"), ("PaymentFeeExpense", "BaseAmount", "Credit") },
             AccountingFactTypes.SettlementWriteOff => new[] { ("Receivable", "BaseAmount", "Credit"), ("BadDebtExpense", "BaseAmount", "Debit"), ("Payable", "BaseAmount", "Debit"), ("WriteOffIncome", "BaseAmount", "Credit") },
             AccountingFactTypes.SettlementFxDifference => new[] { ("Receivable", "BaseAmount", "Debit"), ("FXGain", "BaseAmount", "Credit"), ("FXLoss", "BaseAmount", "Debit") },
             _ => new[] { ("OpeningBalance", "BaseAmount", "Debit"), ("OpeningBalance", "BaseAmount", "Credit") }
@@ -298,7 +300,7 @@ public sealed class LedgerSetupRepository(
         ("invoicing", AccountingFactTypes.VendorBillPosted), ("invoicing", AccountingFactTypes.VendorCreditNotePosted),
         ("invoicing", AccountingFactTypes.CustomerDebitNotePosted), ("invoicing", AccountingFactTypes.VendorDebitNotePosted),
         ("sales", AccountingFactTypes.CustomerInvoicePosted), ("sales", AccountingFactTypes.CustomerCreditNotePosted),
-        ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade), ("payments", AccountingFactTypes.RefundPaid), ("payments", AccountingFactTypes.PaymentFeeRecognized),
+        ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade), ("payments", AccountingFactTypes.RefundPaid), ("payments", AccountingFactTypes.PaymentFeeRecognized), ("payments", AccountingFactTypes.PaymentFeeReversed),
         ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment),
         ("payroll", AccountingFactTypes.PayrollPosted), ("tax", AccountingFactTypes.TaxAdjustment),
         ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff)

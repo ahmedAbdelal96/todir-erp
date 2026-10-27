@@ -10,7 +10,9 @@ public sealed record UpdatePaymentAccountStatusRequest(Guid? BranchId, PaymentAc
 public sealed record CreateRefundRequest(Guid PaymentAccountId, PaymentMethod Method, string Amount, DateOnly PaymentDate,
     DateOnly PostingDate, DateOnly? ValueDate, string ReasonCode, string? BankReference);
 
-public sealed record ReversePaymentRequest(DateOnly PaymentDate, DateOnly PostingDate, string ReasonCode);
+public sealed record ReversePaymentRequest(DateOnly PaymentDate, DateOnly PostingDate, string ReasonCode,
+    IReadOnlyList<PaymentFeeDispositionRequest>? FeeDispositions = null);
+public sealed record PaymentFeeDispositionRequest(Guid FeeId, PaymentFeeDisposition Disposition, string? EvidenceReference = null);
 
 public sealed record CreatePaymentIntentRequest(Guid LegalEntityId, Guid? BranchId, Guid ProviderConfigId, Guid? PartyId,
     string Amount, string CurrencyCode, string? SourceType, string? SourceReference, DateTimeOffset? ExpiresAt);

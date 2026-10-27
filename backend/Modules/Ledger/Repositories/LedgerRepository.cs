@@ -458,11 +458,22 @@ public sealed class LedgerRepository(
     private sealed record ReversalLine(Guid AccountId, string Currency, decimal Amount, decimal? ExchangeRate, string Role, string? Description, decimal TransactionDebit, decimal TransactionCredit, decimal BaseDebit, decimal BaseCredit, string? Snapshot, string? Reference);
 
     /// <summary>Enlists Ledger posting in a caller-owned PostgreSQL transaction.</summary>
-    public async Task<LedgerPostingResult> PostExplicitInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, ExplicitLedgerPostingPayload payload, Guid? configurationVersionOverride = null, CancellationToken cancellationToken = default)
+    public Task<LedgerPostingResult> PostExplicitInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        ExplicitLedgerPostingPayload payload, Guid? configurationVersionOverride = null, CancellationToken cancellationToken = default) =>
+        PostExplicitCoreInTransactionAsync(context, fact, payload, configurationVersionOverride, null, cancellationToken);
+
+    public Task<LedgerPostingResult> PostSemanticExplicitInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, ExplicitLedgerPostingPayload posting, IAccountingFactPayload semanticPayload,
+        Guid? configurationVersionOverride = null, CancellationToken cancellationToken = default) =>
+        PostExplicitCoreInTransactionAsync(context, fact, posting, configurationVersionOverride, semanticPayload, cancellationToken);
+
+    private async Task<LedgerPostingResult> PostExplicitCoreInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+        ExplicitLedgerPostingPayload payload, Guid? configurationVersionOverride, IAccountingFactPayload? factPayloadOverride, CancellationToken cancellationToken)
     {
         if (payload.Lines.Count == 0) throw new LedgerDomainException("ledger.entry_unbalanced", "At least one journal line is required."); LedgerDomainRules.EnsureBalanced(payload.Lines.Sum(line => line.BaseDebit), payload.Lines.Sum(line => line.BaseCredit));
         var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, cancellationToken) ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable."); if (!string.Equals(baseCurrency, payload.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase)) throw new LedgerDomainException("ledger.currency_mismatch", "The posting base currency does not match the legal entity.");
-        var payloadJson = JsonSerializer.Serialize(payload, JsonOptions); var payloadHash = AccountingFactFingerprint.Compute(payload); var existing = await FindFactAsync(context, fact, cancellationToken); if (existing is not null) { if (!string.Equals(existing.Value.Hash, payloadHash, StringComparison.Ordinal)) throw new LedgerDomainException("ledger.fact_duplicate_conflict", "The source fact identity was already used with a different payload."); if (existing.Value.Entry is { } already) return new LedgerPostingResult(fact.FactId, already, existing.Value.EntryNumber!, "Posted", true); } else await ExecuteAsync(context, "insert into finance_ledger.accounting_fact (tenant_id,legal_entity_id,id,fact_type,fact_version,source_module,source_reference,idempotency_key,business_date,posting_date,payload_jsonb,payload_hash,status,correlation_id,actor_id,received_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'Received',$13,$14,$15)", cancellationToken, fact.TenantId.Value, fact.LegalEntityId.Value, fact.FactId, fact.FactType, fact.FactVersion, fact.SourceModule, fact.SourceReference, fact.IdempotencyKey, fact.BusinessDate, fact.PostingDate, new NpgsqlParameter { Value = payloadJson, NpgsqlDbType = NpgsqlDbType.Jsonb }, payloadHash, fact.CorrelationId, fact.ActorId, clock.GetUtcNow());
+        var storedFactPayload = factPayloadOverride ?? payload;
+        var payloadJson = JsonSerializer.Serialize(storedFactPayload, storedFactPayload.GetType(), JsonOptions); var payloadHash = AccountingFactFingerprint.Compute(storedFactPayload); var existing = await FindFactAsync(context, fact, cancellationToken); if (existing is not null) { if (!string.Equals(existing.Value.Hash, payloadHash, StringComparison.Ordinal)) throw new LedgerDomainException("ledger.fact_duplicate_conflict", "The source fact identity was already used with a different payload."); if (existing.Value.Entry is { } already) return new LedgerPostingResult(fact.FactId, already, existing.Value.EntryNumber!, "Posted", true); } else await ExecuteAsync(context, "insert into finance_ledger.accounting_fact (tenant_id,legal_entity_id,id,fact_type,fact_version,source_module,source_reference,idempotency_key,business_date,posting_date,payload_jsonb,payload_hash,status,correlation_id,actor_id,received_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'Received',$13,$14,$15)", cancellationToken, fact.TenantId.Value, fact.LegalEntityId.Value, fact.FactId, fact.FactType, fact.FactVersion, fact.SourceModule, fact.SourceReference, fact.IdempotencyKey, fact.BusinessDate, fact.PostingDate, new NpgsqlParameter { Value = payloadJson, NpgsqlDbType = NpgsqlDbType.Jsonb }, payloadHash, fact.CorrelationId, fact.ActorId, clock.GetUtcNow());
         var period = await ResolvePeriodAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, fact.PostingDate, cancellationToken); var rule = await ResolveRuleAsync(context, fact.FactType, fact.FactVersion, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, cancellationToken); var config = configurationVersionOverride ?? await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, cancellationToken); if (configurationVersionOverride is not null && !await ConfigurationExistsAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, config, cancellationToken)) throw new LedgerDomainException("ledger.configuration_missing", "The historical accounting configuration does not belong to this legal entity."); var entryId = Guid.CreateVersion7(); var entryNumber = $"JE-{fact.FactId:N}"; var now = clock.GetUtcNow(); await ExecuteAsync(context, "insert into finance_ledger.journal_entry (tenant_id,legal_entity_id,id,journal_id,fact_id,source_module,source_reference,entry_number,posting_date,accounting_period_id,fact_type,fact_version,currency_code,base_currency_code,posting_rule_version_id,accounting_configuration_version_id,description,correlation_id,actor_id,posted_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)", cancellationToken, fact.TenantId.Value, fact.LegalEntityId.Value, entryId, payload.JournalId, fact.FactId, fact.SourceModule, fact.SourceReference, entryNumber, fact.PostingDate, period, fact.FactType, fact.FactVersion, payload.Lines[0].TransactionCurrencyCode, payload.BaseCurrencyCode, rule, config, payload.Description, fact.CorrelationId, fact.ActorId, now);
         await EnsureExplicitAccountsAsync(context, fact, payload, cancellationToken);
         var dimensionRules = await LoadDimensionRulesAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, payload.Lines.Select(line => line.AccountId).Distinct().ToArray(), payload.JournalId, fact.FactType, cancellationToken);
@@ -539,6 +550,85 @@ public sealed class LedgerRepository(
         };
         return await PostExplicitInTransactionAsync(context, fact,
             new ExplicitLedgerPostingPayload(journal, $"Payment fee recognized: {payload.FeeType}", baseCurrency, lines), configuration, ct);
+    }
+
+    public async Task<LedgerPostingResult> PostPaymentFeeReversalInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, Guid originalFeeFactId, string evidenceReference, CancellationToken ct)
+    {
+        if (fact.SourceModule != "payments" || fact.FactType != AccountingFactTypes.PaymentFeeReversed
+            || originalFeeFactId == Guid.Empty || string.IsNullOrWhiteSpace(evidenceReference) || evidenceReference.Trim().Length > 500)
+            throw new LedgerDomainException("ledger.fact_invalid", "The payment fee correction requires its original fee and external evidence.");
+        if (fact.Payload is not PaymentFeeReversalRequestPayload request
+            || request.OriginalFeeFactId != originalFeeFactId
+            || string.IsNullOrWhiteSpace(request.EvidenceReference)
+            || !string.Equals(request.EvidenceReference.Trim(), evidenceReference.Trim(), StringComparison.Ordinal))
+            throw new LedgerDomainException("ledger.fact_invalid", "The payment fee correction request does not match its source fee evidence.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct))
+            throw new LedgerDomainException("ledger.fact_producer_unregistered", "Payments is not registered for this fee correction fact.");
+
+        Guid configurationId;
+        Guid journalId;
+        string baseCurrency;
+        string currency;
+        decimal amount;
+        decimal baseAmount;
+        string feeType;
+        string paymentAccountReference;
+        Guid originalExpenseAccountId;
+        Guid originalCashAccountId;
+        await using (var original = new NpgsqlCommand("""
+            select fact.source_module, fact.fact_type, fact.status, entry.accounting_configuration_version_id,
+                   entry.journal_id, entry.base_currency_code,
+                   expense.transaction_debit, expense.base_debit, expense.currency_code,
+                   expense.description, cash.line_reference, cash.transaction_credit, cash.base_credit,
+                   cash.currency_code, expense.account_id, cash.account_id
+            from finance_ledger.accounting_fact fact
+            join finance_ledger.journal_entry entry on entry.tenant_id=fact.tenant_id and entry.legal_entity_id=fact.legal_entity_id and entry.fact_id=fact.id
+            join finance_ledger.journal_entry_line expense on expense.tenant_id=entry.tenant_id and expense.legal_entity_id=entry.legal_entity_id and expense.journal_entry_id=entry.id and expense.transaction_debit>0
+            join finance_ledger.journal_entry_line cash on cash.tenant_id=entry.tenant_id and cash.legal_entity_id=entry.legal_entity_id and cash.journal_entry_id=entry.id and cash.transaction_credit>0
+            where fact.tenant_id=$1 and fact.legal_entity_id=$2 and fact.id=$3
+            """, context.Connection, context.Transaction))
+        {
+            original.Parameters.AddWithValue(fact.TenantId.Value);
+            original.Parameters.AddWithValue(fact.LegalEntityId.Value);
+            original.Parameters.AddWithValue(originalFeeFactId);
+            await using var reader = await original.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct) || reader.GetString(0) != "payments"
+                || reader.GetString(1) != AccountingFactTypes.PaymentFeeRecognized || reader.GetString(2) != "Posted")
+                throw new LedgerDomainException("ledger.payment_fee_original_missing", "The original recognized fee fact is not posted.");
+            configurationId = reader.GetGuid(3); journalId = reader.GetGuid(4); baseCurrency = reader.GetString(5).Trim();
+            amount = reader.GetDecimal(6); baseAmount = reader.GetDecimal(7); currency = reader.GetString(8).Trim();
+            feeType = reader.GetString(9).Replace("Recognized ", string.Empty, StringComparison.Ordinal);
+            paymentAccountReference = reader.IsDBNull(10) ? string.Empty : reader.GetString(10);
+            if (reader.GetDecimal(11) != amount || reader.GetDecimal(12) != baseAmount
+                || !string.Equals(reader.GetString(13).Trim(), currency, StringComparison.OrdinalIgnoreCase))
+                throw new LedgerDomainException("ledger.payment_fee_original_invalid", "The original fee journal lines do not balance to the same immutable amount.");
+            originalExpenseAccountId = reader.GetGuid(14); originalCashAccountId = reader.GetGuid(15);
+        }
+        if (amount <= 0m || baseAmount <= 0m || string.IsNullOrWhiteSpace(paymentAccountReference))
+            throw new LedgerDomainException("ledger.payment_fee_original_invalid", "The original fee journal does not contain a reversible payment fee.");
+        string[] feeTypes = ["BankFee", "ProviderFee", "CardProcessingFee", "FXFee", "TransferFee", "OtherApprovedFee"];
+        if (!feeTypes.Contains(feeType, StringComparer.Ordinal))
+            throw new LedgerDomainException("ledger.payment_fee_original_invalid", "The original fee journal does not contain a supported fee type.");
+
+        var cashAccount = await ResolveSemanticAccountIdAsync(context, fact, configurationId, "Cash", ct);
+        var expenseAccount = await ResolveSemanticAccountIdAsync(context, fact, configurationId, "PaymentFeeExpense", ct);
+        if (cashAccount != originalCashAccountId || expenseAccount != originalExpenseAccountId)
+            throw new LedgerDomainException("ledger.payment_fee_original_invalid", "The original fee was not posted to its historical semantic accounts.");
+        var rate = baseAmount / amount;
+        var lines = new[]
+        {
+            new LedgerPostingLinePayload(cashAccount, baseAmount, 0m, currency, amount, 0m, baseAmount, 0m, rate, [],
+                $"Reversed fee {originalFeeFactId:D}; evidence {evidenceReference.Trim()}", paymentAccountReference),
+            new LedgerPostingLinePayload(expenseAccount, 0m, baseAmount, currency, 0m, amount, 0m, baseAmount, rate, [],
+                $"Corrects recognized {feeType}", originalFeeFactId.ToString("D"))
+        };
+        var semanticPayload = new PaymentFeeReversalFactPayload(originalFeeFactId, amount, currency, baseAmount,
+            baseCurrency, paymentAccountReference, feeType, evidenceReference.Trim());
+        var semanticFact = fact with { Payload = semanticPayload };
+        return await PostSemanticExplicitInTransactionAsync(context, semanticFact,
+            new ExplicitLedgerPostingPayload(journalId, $"Payment fee reversed: {feeType}; evidence {evidenceReference.Trim()}", baseCurrency, lines),
+            semanticPayload, configurationId, ct);
     }
 
 

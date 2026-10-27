@@ -77,7 +77,7 @@ public static class LedgerSeed
             var entityConfigurationId = SeedIds.Child(context.Tenant.Id, $"ledger-entity-configuration:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.ledger_entity_configuration (tenant_id,legal_entity_id,id,mode,setup_template_code,active_configuration_version_id,initialized_at,version) values ($1,$2,$3,'Managed','development-core',$4,$5,1) on conflict (tenant_id,legal_entity_id) do nothing", cancellationToken, context.Tenant.Id, entityId, entityConfigurationId, configId, context.AsOf);
             var activeConfigId = await context.ScalarAsync<Guid>("select active_configuration_version_id from finance_ledger.ledger_entity_configuration where tenant_id=$1 and legal_entity_id=$2", cancellationToken, context.Tenant.Id, entityId);
-            foreach (var producer in new[] { ("sales", "CustomerInvoicePosted"), ("sales", "CustomerCreditNotePosted"), ("invoicing", "CustomerInvoicePosted"), ("invoicing", "CustomerCreditNotePosted"), ("invoicing", "VendorBillPosted"), ("invoicing", "VendorCreditNotePosted"), ("invoicing", "CustomerDebitNotePosted"), ("invoicing", "VendorDebitNotePosted"), ("payments", "PaymentReceived"), ("payments", "PaymentMade"), ("payments", "RefundPaid"), ("payments", "PaymentFeeRecognized"), ("payments", "InternalTransferCompleted"), ("inventory", "InventoryReceiptValued"), ("inventory", "InventoryIssueValued"), ("inventory", "InventoryCostAdjustment"), ("payroll", "PayrollPosted"), ("tax", "TaxAdjustment"), ("subledger", "SettlementFxDifference"), ("subledger", "SettlementWriteOff") })
+            foreach (var producer in new[] { ("sales", "CustomerInvoicePosted"), ("sales", "CustomerCreditNotePosted"), ("invoicing", "CustomerInvoicePosted"), ("invoicing", "CustomerCreditNotePosted"), ("invoicing", "VendorBillPosted"), ("invoicing", "VendorCreditNotePosted"), ("invoicing", "CustomerDebitNotePosted"), ("invoicing", "VendorDebitNotePosted"), ("payments", "PaymentReceived"), ("payments", "PaymentMade"), ("payments", "RefundPaid"), ("payments", "PaymentFeeRecognized"), ("payments", "PaymentFeeReversed"), ("payments", "InternalTransferCompleted"), ("inventory", "InventoryReceiptValued"), ("inventory", "InventoryIssueValued"), ("inventory", "InventoryCostAdjustment"), ("payroll", "PayrollPosted"), ("tax", "TaxAdjustment"), ("subledger", "SettlementFxDifference"), ("subledger", "SettlementWriteOff") })
             {
                 var producerId = SeedIds.Child(context.Tenant.Id, $"ledger-producer:{suffix}:{producer.Item1}:{producer.Item2}", 1);
                 await context.ExecuteAsync("insert into finance_ledger.fact_producer_registration (tenant_id,legal_entity_id,id,producer_module,fact_type,fact_version,status,registered_at) values ($1,$2,$3,$4,$5,1,'Active',$6) on conflict (tenant_id,legal_entity_id,producer_module,fact_type,fact_version) do nothing", cancellationToken, context.Tenant.Id, entityId, producerId, producer.Item1, producer.Item2, context.AsOf);
@@ -130,6 +130,7 @@ public static class LedgerSeed
             await AddSimpleRuleAsync(context, entityId, suffix, 12, "PaymentMade", "PAYMENT_MADE_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 13, "RefundPaid", "PAYMENT_REFUND_PAID_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 16, "PaymentFeeRecognized", "PAYMENT_FEE_RECOGNIZED_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 17, "PaymentFeeReversed", "PAYMENT_FEE_REVERSED_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 14, "InternalTransferCompleted", "INTERNAL_TRANSFER_COMPLETED_V1", cancellationToken);
         }
         return new SeedLedgerSummary(entities.Length, accountCount, periodCount, true);
@@ -148,6 +149,7 @@ public static class LedgerSeed
             "PaymentMade" => new[] { (1, "Payable", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
             "RefundPaid" => new[] { (1, "Receivable", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
             "PaymentFeeRecognized" => new[] { (1, "PaymentFeeExpense", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
+            "PaymentFeeReversed" => new[] { (1, "Cash", "BaseAmount", "Debit"), (2, "PaymentFeeExpense", "BaseAmount", "Credit") },
             "InternalTransferCompleted" => new[] { (1, "Cash", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
             _ => Array.Empty<(int, string, string, string)>()
         };

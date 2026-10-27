@@ -156,7 +156,8 @@ public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCap
             FinancialCalculationPurpose.Accounting, request.PostingDate, ct)
             ?? throw new PaymentException("payments.currency_not_enabled", "The payment currency is not enabled for this legal entity and date.");
         return await repository.ReversePaymentAsync(tenant, actor, membership, correlationId,
-            new(legalEntityId, paymentId, request.PaymentDate, request.PostingDate, request.ReasonCode, idempotencyKey), context, ct);
+            new(legalEntityId, paymentId, request.PaymentDate, request.PostingDate, request.ReasonCode, idempotencyKey,
+                request.FeeDispositions?.Select(item => new PaymentFeeDispositionSelection(item.FeeId, item.Disposition, item.EvidenceReference)).ToArray()), context, ct);
     }
 
     public async Task<PaymentIntentResult> CreatePaymentIntentAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId,
@@ -333,6 +334,8 @@ public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCap
 
     public Task<PaymentPage> ListAsync(TenantId tenant, PaymentListQuery query, CancellationToken ct) => repository.ListAsync(tenant, query, ct);
     public Task<PaymentRecord?> GetAsync(TenantId tenant, Guid legalEntityId, Guid? branchId, Guid id, CancellationToken ct) => repository.GetAsync(tenant, legalEntityId, branchId, id, ct);
+    public Task<IReadOnlyList<PaymentFeeResult>> ListFeesAsync(TenantId tenant, Guid legalEntityId, Guid paymentId, CancellationToken ct) =>
+        repository.ListFeesAsync(tenant, legalEntityId, paymentId, ct);
     public Task<PaymentRequestDetails?> GetPaymentRequestDetailsAsync(TenantId tenant, Guid legalEntityId, Guid requestId, CancellationToken ct) =>
         repository.GetPaymentRequestDetailsAsync(tenant, legalEntityId, requestId, ct);
     public Task<PaymentRequestPage> ListPaymentRequestsAsync(TenantId tenant, PaymentRequestListQuery query, CancellationToken ct) =>
