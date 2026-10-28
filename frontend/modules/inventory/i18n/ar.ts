@@ -19,13 +19,13 @@ export const ar = {
     scrollNext: "التمرير للأمام"
   },
   kpis: {
-    totalOnHand: "إجمالي الرصيد الفعلي",
-    reserved: "المحجوز للطلبات",
-    available: "المتاح للصرف والبيع",
-    inTransit: "بضاعة في الطريق",
-    attentionNeeded: "تنبيهات تتطلب المعالجة",
-    negativeConditions: "حالات الرصيد السالب",
-    noAttention: "المخزون سليم ولا توجد نواقص حرجة"
+    activeStockItems: "أصناف برصيد فعلي",
+    itemsWithReservations: "أصناف بها حجوزات",
+    lowOrCriticalItems: "أصناف منخفضة أو حرجة",
+    inTransitTransfers: "تحويلات في الطريق",
+    attentionNeeded: "تنبيهات المخزون",
+    negativeConditions: "حالات رصيد سالب تتطلب التدخل",
+    noAttention: "لا توجد نواقص حرجة"
   },
   quickActions: {
     receive: "استلام مخزني",
@@ -98,20 +98,20 @@ export const ar = {
     locationType: "نوع الموقع",
     barcode: "الباركود",
     locationTypes: {
-      Zone: "منطقة (Zone)",
-      Aisle: "ممر (Aisle)",
-      Rack: "حامل (Rack)",
-      Shelf: "رف (Shelf)",
-      Bin: "خانة (Bin)"
+      Zone: "منطقة",
+      Aisle: "ممر",
+      Rack: "حامل تخزيني",
+      Shelf: "رف تخزيني",
+      Bin: "خانة تخزين"
     },
     canHoldStock: "يقبل التخزين",
     canReceive: "يقبل الاستلام",
     canPick: "يقبل الصرف",
-    defaultLocationNote: "مستودع بسيط برصيد مباشر (بدون أرفف تفصيلية)",
+    defaultLocationNote: "مستودع بسيط برصيد مباشر بدون أرفف تفصيلية",
     modes: {
-      WarehouseOnly: "مستودع مباشر (بدون مواقع داخلية)",
+      WarehouseOnly: "مستودع مباشر بدون مواقع داخلية",
       Locations: "مواقع بسيطة مسطحة",
-      HierarchicalLocations: "هيكل هرمي متعدد المستويات (منطقة / ممر / رف / خانة)"
+      HierarchicalLocations: "هيكل هرمي متعدد المستويات"
     },
     statuses: {
       Active: "نشط ومتاح للعمليات",
@@ -208,10 +208,21 @@ export const ar = {
     currentLocation: "الموقع الحالي",
     expiryIndicators: {
       active: "سارية ومتاحة",
-      expiringSoon: "تنتهي قريباً (أقل من 30 يوماً)",
+      expiringSoon: "تنتهي قريباً - أقل من 30 يوماً",
       expired: "منتهية الصلاحية"
     },
-    lifecycleHistory: "سجل حركة دورة الحياة للقطعة"
+    lifecycleHistory: "سجل حركة دورة الحياة للقطعة",
+    lotDetailTitle: "تفاصيل التشغيلة والصلاحية",
+    lotDetailSubtitle: "بيانات التتبع المستودعي والكميات وتاريخ الحركات وتوزيع المواقع",
+    serialDetailTitle: "تفاصيل الرقم التسلسلي",
+    serialDetailSubtitle: "بيانات الوحدة الفردية ومسار استلامها وحالتها التشغيلية وتاريخ التحركات",
+    viewDetails: "عرض التفاصيل",
+    distributionTitle: "توزيع المخزون بالمستودعات والمواقع",
+    movementHistoryTitle: "سجل الحركات والتتبع",
+    lifecycleStage: "مرحلة دورة الحياة",
+    receivedSource: "مستند الاستلام الأصلي",
+    sampleWarehouse: "المستودع الرئيسي - الرياض",
+    sampleLocation: "موقع التخزين: الرف 1 الخانة 1"
   },
   counts: {
     title: "جلسات الجرد الفعلي للمستودع",
@@ -229,13 +240,13 @@ export const ar = {
     expectedQty: "الرصيد الدفتري المتوقع",
     countedQty: "الكمية المجرودة فعلياً",
     differenceQty: "الفارق (العجز / الزيادة)",
-    blindCountNote: "جرد أعمى (الكمية الدفترية محجوبة عن موظف العد لضمان النزاهة)",
+    blindCountNote: "جرد أعمى - الكمية الدفترية محجوبة عن موظف العد لضمان النزاهة",
     postConfirmNotice: "ترحيل الجرد سيقوم آلياً بإنشاء تسويات مخزنية بالفروقات وتحديث الأرصدة وسجل الحركات الدائم.",
     modes: {
       Simple: "جرد سريع مبسط",
       Full: "جرد شامل للمستودع",
       Cycle: "جرد دوري مجدول",
-      Blind: "جرد أعمى (محجوب الدفتري)"
+      Blind: "جرد أعمى بدون رصيد دفتري"
     },
     statuses: {
       Draft: "مسودة قيد الجرد",
@@ -257,11 +268,18 @@ export const ar = {
     reason: "سبب التسوية",
     approvalMode: "نظام الاعتماد",
     status: "الحالة",
+    creator: "المنشئ",
+    approver: "المعتمد",
+    stockEffect: "أثر المخزون",
+    stockEffectPending: "معلق - لا أثر على الرصيد",
+    stockEffectPosted: "مرحل - أثر على الرصيد الفعلي",
+    submitForApproval: "إرسال للاعتماد",
+    completed: "مكتمل",
     approve: "اعتماد التسوية",
     post: "ترحيل وتأثير المخزون",
     directions: {
-      Increase: "زيادة رصيد (عثور على بضاعة / تعديل)",
-      Decrease: "تخفيض رصيد (تلف / فقد / عجز)"
+      Increase: "زيادة رصيد",
+      Decrease: "تخفيض رصيد"
     },
     reasons: {
       CountDifference: "فروقات جرد فعلي",
@@ -313,7 +331,7 @@ export const ar = {
     actions: "الإجراءات",
     viewDetails: "تفاصيل العملية",
     reverseOperation: "عكس العملية",
-    asOfQueryTitle: "استعلام الأرصدة في تاريخ سابق (As-Of)",
+    asOfQueryTitle: "استعلام الأرصدة في تاريخ سابق",
     asOfDateLabel: "تاريخ ووقت الرصيد المطلوب",
     queryAsOfButton: "استعلام عن الرصيد التاريخي",
     historicalOnHand: "الرصيد الفعلي كما كان في هذا التاريخ",
@@ -332,11 +350,11 @@ export const ar = {
     asOfDate: "تاريخ التقييم",
     costRestrictedNotice: "بيانات التكلفة والتقييم المالي محجوبة لعدم وجود صلاحية قراءة التكلفة (inventory.cost.read).",
     methods: {
-      MovingAverage: "المتوسط المرجح المتحرك (Moving Average)",
-      FIFO: "الوارد أولاً يصرف أولاً (FIFO)"
+      MovingAverage: "المتوسط المرجح المتحرك",
+      FIFO: "الوارد أولاً يُصرف أولاً"
     },
     reconciliationCard: {
-      title: "مطابقة رصيد المخزون مع حساب الأستاذ العام (GL)",
+      title: "مطابقة رصيد المخزون مع حساب الأستاذ العام",
       inventoryValue: "قيمة المخزون المستودعي",
       ledgerValue: "رصيد حساب المخزون في الدفتر العام",
       difference: "فارق المطابقة",
@@ -402,6 +420,32 @@ export const ar = {
     negativeStockDisallowed: "الصرف بالسالب غير مسموح بموجب سياسة الكيان القانوني.",
     forbidden: "ليست لديك الصلاحية المطلوبة لتنفيذ هذه العملية المخزنية.",
     generic: "حدث خطأ أثناء تنفيذ العملية المخزنية."
+  },
+  movementTypes: {
+    Receipt: "استلام مخزني",
+    Issue: "صرف مخزني",
+    Transfer: "تحويل مخزني",
+    Return: "مرتجع مخزني",
+    Adjustment: "تسوية مخزنية",
+    Opening: "رصيد افتتاحي",
+    Reversal: "عكس عملية مخزنية",
+    StatusChange: "تعديل حالة المخزون"
+  },
+  locationTypes: {
+    Zone: "منطقة",
+    Aisle: "ممر",
+    Rack: "حامل أو رف تخزيني",
+    Bin: "خانة تخزين"
+  },
+  sourceModules: {
+    purchasing: "أمر شراء",
+    Purchasing: "أمر شراء",
+    sales: "أمر بيع",
+    Sales: "أمر بيع",
+    inventory: "إدارة المخزون",
+    Inventory: "إدارة المخزون",
+    manufacturing: "أمر تصنيع",
+    Manufacturing: "أمر تصنيع"
   },
   common: {
     cancel: "إلغاء",

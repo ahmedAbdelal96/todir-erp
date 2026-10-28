@@ -5,6 +5,7 @@ import { InventoryStatusBadge } from "../../components/inventory-status-badge.ts
 import { Button } from "../../../../components/primitives/button.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { CreateAdjustmentModal } from "./create-adjustment-modal.tsx";
 import { useInventoryPolicy, useInventoryMutations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
@@ -19,6 +20,8 @@ export interface AdjustmentItemView {
   readonly direction: AdjustmentDirection;
   readonly reason: AdjustmentReason;
   readonly status: string;
+  readonly creator?: string;
+  readonly approver?: string | null;
 }
 
 export interface AdjustmentsTabProps {
@@ -42,26 +45,65 @@ export function AdjustmentsTab({
   const [isNewAdjustmentOpen, setIsNewAdjustmentOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Seeded / active adjustments
+  // Seeded / active adjustments representing the full approval lifecycle
   const [adjustmentsList, setAdjustmentsList] = useState<readonly AdjustmentItemView[]>([
     {
-      id: "adj-seed-001",
+      id: "ADJ-2026-004",
       productVariantId: "a6315416-cffe-bf52-bcf0-d5e590d3bf94",
-      warehouseName: "المخزن الرئيسي (MAIN)",
+      warehouseName: "المستودع الرئيسي - الرياض (WH-MAIN)",
+      quantity: 5,
+      direction: "Increase",
+      reason: "FoundStock",
+      status: "Posted",
+      creator: "أحمد المحاسب",
+      approver: "مدير المستودع"
+    },
+    {
+      id: "ADJ-2026-003",
+      productVariantId: "SKU-ELEC-2002",
+      warehouseName: "مستودع التوزيع - جدة (WH-JED)",
+      quantity: 2,
+      direction: "Decrease",
+      reason: "Damage",
+      status: "Approved",
+      creator: "أحمد المحاسب",
+      approver: "مدير المستودع"
+    },
+    {
+      id: "ADJ-2026-002",
+      productVariantId: "a6315416-cffe-bf52-bcf0-d5e590d3bf94",
+      warehouseName: "المستودع الرئيسي - الرياض (WH-MAIN)",
       quantity: 1,
       direction: "Decrease",
       reason: "CountDifference",
-      status: "Posted"
+      status: "PendingApproval",
+      creator: "أحمد المحاسب",
+      approver: "—"
+    },
+    {
+      id: "ADJ-2026-001",
+      productVariantId: "SKU-OFFICE-1001",
+      warehouseName: "المستودع الرئيسي - الرياض (WH-MAIN)",
+      quantity: 3,
+      direction: "Increase",
+      reason: "DataCorrection",
+      status: "Draft",
+      creator: "أحمد المحاسب",
+      approver: "—"
     }
   ]);
 
   const { approveAdjustmentRequest, postAdjustmentRequest } = useInventoryMutations(legalEntityId);
 
+  const handleSubmitForApproval = (id: string) => {
+    setAdjustmentsList(prev => prev.map(a => a.id === id ? { ...a, status: "PendingApproval" } : a));
+  };
+
   const handleApprove = async (id: string) => {
     setErrorMessage(null);
     try {
       await approveAdjustmentRequest.mutateAsync(id);
-      setAdjustmentsList(prev => prev.map(a => a.id === id ? { ...a, status: "Approved" } : a));
+      setAdjustmentsList(prev => prev.map(a => a.id === id ? { ...a, status: "Approved", approver: "مدير المستودع" } : a));
     } catch (err) {
       const mapped = mapInventoryError(err);
       setErrorMessage(t(mapped.messageKey as any, { defaultValue: mapped.fallbackAr }));
@@ -88,7 +130,14 @@ export function AdjustmentsTab({
     reason: AdjustmentReason;
     status: string;
   }) => {
-    setAdjustmentsList(prev => [item, ...prev]);
+    setAdjustmentsList(prev => [
+      {
+        ...item,
+        creator: "أحمد المحاسب",
+        approver: item.status === "Posted" ? "مدير المستودع" : "—"
+      },
+      ...prev
+    ]);
   };
 
   return (
@@ -158,7 +207,7 @@ export function AdjustmentsTab({
       {adjustmentsList.length === 0 ? (
         <EmptyState title={t("adjustments.title")} description={t("common.empty")} />
       ) : (
-        <InventoryDataTable minWidth="850px" ariaLabel={t("adjustments.title")}>
+        <InventoryDataTable minWidth="1050px" ariaLabel={t("adjustments.title")}>
           <thead>
             <tr style={{ backgroundColor: "var(--color-surface-subtle, #f8fafc)", borderBottom: "1px solid var(--color-border-default)" }}>
               <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("adjustments.adjustmentNumber")}</th>
@@ -167,6 +216,9 @@ export function AdjustmentsTab({
               <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("adjustments.direction")}</th>
               <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("adjustments.reason")}</th>
               <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("adjustments.quantity")}</th>
+              <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("adjustments.creator")}</th>
+              <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("adjustments.approver")}</th>
+              <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("adjustments.stockEffect")}</th>
               <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>{t("adjustments.status")}</th>
               <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>{t("stock.actions")}</th>
             </tr>
@@ -177,7 +229,9 @@ export function AdjustmentsTab({
                 <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "var(--color-brand-primary)" }}>
                   {adj.id}
                 </td>
-                <td style={{ padding: "0.75rem 1rem" }}>{adj.productVariantId}</td>
+                <td style={{ padding: "0.75rem 1rem" }}>
+                  <InventoryProductDisplay productVariantId={adj.productVariantId} />
+                </td>
                 <td style={{ padding: "0.75rem 1rem" }}>{adj.warehouseName}</td>
                 <td style={{ padding: "0.75rem 1rem" }}>
                   <span style={{
@@ -197,11 +251,33 @@ export function AdjustmentsTab({
                 <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700 }}>
                   <QuantityDisplay value={toQty(adj.quantity)} />
                 </td>
+                <td style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                  {adj.creator ?? "—"}
+                </td>
+                <td style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                  {adj.approver ?? "—"}
+                </td>
+                <td style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem" }}>
+                  {adj.status === "Posted" ? (
+                    <span style={{ color: "var(--color-status-success)", fontWeight: 600 }}>
+                      <QuantityDisplay value={toQty(adj.direction === "Increase" ? adj.quantity : -adj.quantity)} /> {t("adjustments.stockEffectPosted")}
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--color-content-muted)", fontStyle: "italic" }}>
+                      {t("adjustments.stockEffectPending")}
+                    </span>
+                  )}
+                </td>
                 <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
                   <InventoryStatusBadge status={adj.status} type="adjustment" />
                 </td>
                 <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
                   <div style={{ display: "flex", gap: "0.375rem", justifyContent: "center" }}>
+                    {adj.status === "Draft" && (
+                      <Button variant="secondary" onPress={() => handleSubmitForApproval(adj.id)}>
+                        {t("adjustments.submitForApproval")}
+                      </Button>
+                    )}
                     {adj.status === "PendingApproval" && canApprove && (
                       <Button variant="primary" onPress={() => handleApprove(adj.id)}>
                         {t("adjustments.approve")}
@@ -211,6 +287,11 @@ export function AdjustmentsTab({
                       <Button variant="primary" onPress={() => handlePost(adj.id)}>
                         {t("adjustments.post")}
                       </Button>
+                    )}
+                    {adj.status === "Posted" && (
+                      <span style={{ color: "var(--color-status-success)", fontWeight: 600, fontSize: "0.8125rem" }}>
+                        ✓ {t("adjustments.completed")}
+                      </span>
                     )}
                   </div>
                 </td>

@@ -5,6 +5,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
+import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
 import { useInventoryMutations, useLocations, useStockBalances, usePickingSuggestions } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
 import { toQty } from "../../utils.ts";
@@ -126,7 +127,7 @@ export function IssueStockModal({
           </div>
         )}
 
-        <TextField
+        <InventoryProductPicker
           label={t("operations.product")}
           value={productId}
           onChange={setProductId}

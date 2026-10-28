@@ -19,11 +19,11 @@ export const en = {
     scrollNext: "Scroll next"
   },
   kpis: {
-    totalOnHand: "Total On Hand",
-    reserved: "Reserved for Orders",
-    available: "Available to Issue / Sell",
-    inTransit: "In Transit",
-    attentionNeeded: "Attention Required",
+    activeStockItems: "Active Stock Items",
+    itemsWithReservations: "Items with Reservations",
+    lowOrCriticalItems: "Low / Critical Stock Items",
+    inTransitTransfers: "In-Transit Shipments",
+    attentionNeeded: "Inventory Alerts",
     negativeConditions: "Negative Stock Conditions",
     noAttention: "Inventory is healthy with no critical discrepancies"
   },
@@ -211,7 +211,18 @@ export const en = {
       expiringSoon: "Expiring soon (under 30 days)",
       expired: "Expired"
     },
-    lifecycleHistory: "Serial Lifecycle History"
+    lifecycleHistory: "Serial Lifecycle History",
+    lotDetailTitle: "Lot & Expiry Details",
+    lotDetailSubtitle: "Traceability data, quantities, movement history, and warehouse distribution",
+    serialDetailTitle: "Serial Number Details",
+    serialDetailSubtitle: "Unit identification, operational status, receipt source, and movement history",
+    viewDetails: "View Details",
+    distributionTitle: "Warehouse & Location Distribution",
+    movementHistoryTitle: "Movement & Traceability History",
+    lifecycleStage: "Lifecycle Stage",
+    receivedSource: "Receipt Source Document",
+    sampleWarehouse: "Main Warehouse - Riyadh",
+    sampleLocation: "Storage Location: Rack 1 Bin 1"
   },
   counts: {
     title: "Physical Count Sessions",
@@ -257,6 +268,13 @@ export const en = {
     reason: "Reason",
     approvalMode: "Approval Policy",
     status: "Status",
+    creator: "Creator",
+    approver: "Approver",
+    stockEffect: "Stock Effect",
+    stockEffectPending: "Pending - No stock impact",
+    stockEffectPosted: "Posted - Stock updated",
+    submitForApproval: "Submit for Approval",
+    completed: "Completed",
     approve: "Approve Adjustment",
     post: "Post Adjustment to Stock",
     directions: {
@@ -402,6 +420,32 @@ export const en = {
     negativeStockDisallowed: "Negative stock is disallowed by entity policy.",
     forbidden: "You do not have permission to perform this inventory operation.",
     generic: "An error occurred during the inventory operation."
+  },
+  movementTypes: {
+    Receipt: "Stock Receipt",
+    Issue: "Stock Issue",
+    Transfer: "Stock Transfer",
+    Return: "Stock Return",
+    Adjustment: "Stock Adjustment",
+    Opening: "Opening Balance",
+    Reversal: "Operation Reversal",
+    StatusChange: "Status Change"
+  },
+  locationTypes: {
+    Zone: "Zone",
+    Aisle: "Aisle",
+    Rack: "Rack",
+    Bin: "Bin"
+  },
+  sourceModules: {
+    purchasing: "Purchase Order",
+    Purchasing: "Purchase Order",
+    sales: "Sales Order",
+    Sales: "Sales Order",
+    inventory: "Inventory Operation",
+    Inventory: "Inventory Operation",
+    manufacturing: "Manufacturing Order",
+    Manufacturing: "Manufacturing Order"
   },
   common: {
     cancel: "Cancel",

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { InventoryStatusBadge } from "../../components/inventory-status-badge.tsx";
 import { toQty } from "../../utils.ts";
 import type { StockBalance, Warehouse } from "../../types.ts";
@@ -66,14 +67,10 @@ export function ProductStockCardModal({
           }}
         >
           <div>
-            <h3 style={{ margin: 0, fontSize: "1.125rem", color: "var(--color-brand-primary, #102a43)" }}>
-              {productName ?? productVariantId}
-            </h3>
-            {sku && (
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
-                {t("stock.sku")}: {sku}
-              </span>
-            )}
+            <InventoryProductDisplay productVariantId={productVariantId} />
+            <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", display: "block", marginTop: "0.25rem" }}>
+              {t("stock.cardSubtitle")}
+            </span>
           </div>
           <div style={{ display: "flex", gap: "1rem" }}>
             <div style={{ textAlign: "center" }}>

@@ -4,6 +4,7 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
+import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
 import { useInventoryMutations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
 
@@ -77,7 +78,7 @@ export function CreateLotModal({
           </div>
         )}
 
-        <TextField
+        <InventoryProductPicker
           label={t("traceability.product")}
           value={productId}
           onChange={setProductId}

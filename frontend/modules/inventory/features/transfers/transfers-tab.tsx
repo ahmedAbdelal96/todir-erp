@@ -5,6 +5,7 @@ import { InventoryStatusBadge } from "../../components/inventory-status-badge.ts
 import { Button } from "../../../../components/primitives/button.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { TransferModal } from "./transfer-modal.tsx";
 import { ReceiveTransferModal } from "./receive-transfer-modal.tsx";
 import { useInventoryMutations } from "../../hooks/use-inventory-queries.ts";
@@ -123,7 +124,9 @@ export function TransfersTab({ legalEntityId, warehouses }: TransfersTabProps): 
               return (
                 <tr key={tr.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
                   <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "var(--color-brand-primary)" }}>{tr.id}</td>
-                  <td style={{ padding: "0.75rem 1rem" }}>{tr.productVariantId}</td>
+                  <td style={{ padding: "0.75rem 1rem" }}>
+                    <InventoryProductDisplay productVariantId={tr.productVariantId} />
+                  </td>
                   <td style={{ padding: "0.75rem 1rem" }}>{tr.sourceWarehouseName}</td>
                   <td style={{ padding: "0.75rem 1rem" }}>{tr.destWarehouseName}</td>
                   <td style={{ padding: "0.75rem 1rem" }}>

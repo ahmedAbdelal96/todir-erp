@@ -7,6 +7,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { ProductStockCardModal } from "../stock/product-stock-card-modal.tsx";
 import { toQty } from "../../utils.ts";
 import type { Warehouse, StockBalance, NegativeStockCondition } from "../../types.ts";
@@ -43,12 +44,16 @@ export function OverviewTab({
   const [search, setSearch] = useState("");
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
 
-  const totalOnHand = balances.reduce((sum, b) => sum + b.onHandBaseQuantity, 0);
-  const totalReserved = balances.reduce((sum, b) => sum + b.reservedBaseQuantity, 0);
-  const totalAvailable = balances.reduce((sum, b) => sum + b.availableBaseQuantity, 0);
-  const totalInTransit = balances
-    .filter(b => b.stockStatus === "InTransit")
-    .reduce((sum, b) => sum + b.onHandBaseQuantity, 0);
+  const itemsWithStockCount = new Set(balances.filter(b => b.onHandBaseQuantity > 0).map(b => b.productVariantId)).size;
+  const itemsWithReservationsCount = new Set(balances.filter(b => b.reservedBaseQuantity > 0).map(b => b.productVariantId)).size;
+  const lowOrCriticalCount = new Set(
+    balances
+      .filter(b => b.stockStatus === "Damaged" || b.stockStatus === "Quarantine" || b.availableBaseQuantity <= 0)
+      .map(b => b.productVariantId)
+  ).size;
+  const inTransitCount = new Set(
+    balances.filter(b => b.stockStatus === "InTransit").map(b => b.productVariantId)
+  ).size;
 
   const activeNegatives = negativeConditions.filter(n => n.status === "Active");
 
@@ -67,26 +72,26 @@ export function OverviewTab({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      {/* KPI Cards Row */}
+      {/* KPI Cards Row — Dimension-Safe Counts */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
         <InventoryKpiCard
-          title={t("kpis.totalOnHand")}
-          value={<QuantityDisplay value={toQty(totalOnHand)} />}
+          title={t("kpis.activeStockItems")}
+          value={itemsWithStockCount}
           tone="default"
         />
         <InventoryKpiCard
-          title={t("kpis.reserved")}
-          value={<QuantityDisplay value={toQty(totalReserved)} />}
+          title={t("kpis.itemsWithReservations")}
+          value={itemsWithReservationsCount}
           tone="warning"
         />
         <InventoryKpiCard
-          title={t("kpis.available")}
-          value={<QuantityDisplay value={toQty(totalAvailable)} />}
-          tone="success"
+          title={t("kpis.lowOrCriticalItems")}
+          value={lowOrCriticalCount}
+          tone="danger"
         />
         <InventoryKpiCard
-          title={t("kpis.inTransit")}
-          value={<QuantityDisplay value={toQty(totalInTransit)} />}
+          title={t("kpis.inTransitTransfers")}
+          value={inTransitCount}
           tone="info"
         />
         <InventoryKpiCard
@@ -209,10 +214,11 @@ export function OverviewTab({
                         cursor: "pointer",
                         textDecoration: "underline",
                         fontWeight: 600,
-                        fontSize: "0.875rem"
+                        fontSize: "0.875rem",
+                        textAlign: "start"
                       }}
                     >
-                      {b.productVariantId}
+                      <InventoryProductDisplay productVariantId={b.productVariantId} />
                     </button>
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>{warehouseName(b.warehouseId)}</td>

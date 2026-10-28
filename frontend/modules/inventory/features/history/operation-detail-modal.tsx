@@ -4,6 +4,7 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { InventoryStatusBadge } from "../../components/inventory-status-badge.tsx";
 import { toQty } from "../../utils.ts";
 import type { InventoryMovement } from "../../types.ts";
@@ -60,7 +61,9 @@ export function OperationDetailModal({
             <span style={{ color: "var(--color-content-muted)", display: "block", fontSize: "0.75rem" }}>
               {t("history.operationType")}
             </span>
-            <strong>{movement.movementType}</strong>
+            <strong style={{ color: "var(--color-brand-primary)" }}>
+              {t(`movementTypes.${movement.movementType}` as any, { defaultValue: movement.movementType })}
+            </strong>
           </div>
           <div>
             <span style={{ color: "var(--color-content-muted)", display: "block", fontSize: "0.75rem" }}>
@@ -78,7 +81,7 @@ export function OperationDetailModal({
             <span style={{ color: "var(--color-content-muted)", display: "block", fontSize: "0.75rem" }}>
               {t("stock.product")}
             </span>
-            <span>{movement.productVariantId}</span>
+            <InventoryProductDisplay productVariantId={movement.productVariantId} />
           </div>
           <div>
             <span style={{ color: "var(--color-content-muted)", display: "block", fontSize: "0.75rem" }}>
@@ -98,7 +101,10 @@ export function OperationDetailModal({
             <span style={{ color: "var(--color-content-muted)", display: "block", fontSize: "0.75rem" }}>
               {t("history.source")}
             </span>
-            <span>{movement.sourceModule} {movement.sourceDocumentId ?? ""}</span>
+            <span>
+              {t(`sourceModules.${movement.sourceModule}` as any, { defaultValue: movement.sourceModule })}{" "}
+              {movement.sourceDocumentId ?? ""}
+            </span>
           </div>
         </div>
 

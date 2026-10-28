@@ -4,6 +4,7 @@ import { InventoryDataTable } from "../../components/inventory-data-table.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { PostOpeningModal } from "./post-opening-modal.tsx";
 import { toQty } from "../../utils.ts";
 import type { Warehouse } from "../../types.ts";
@@ -108,7 +109,9 @@ export function OpeningTab({ legalEntityId, warehouses, canReadCost }: OpeningTa
                 <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "var(--color-brand-primary)" }}>
                   {op.id}
                 </td>
-                <td style={{ padding: "0.75rem 1rem" }}>{op.productVariantId}</td>
+                <td style={{ padding: "0.75rem 1rem" }}>
+                  <InventoryProductDisplay productVariantId={op.productVariantId} />
+                </td>
                 <td style={{ padding: "0.75rem 1rem" }}>{op.warehouseName}</td>
                 <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700, color: "var(--color-status-success)" }}>
                   <QuantityDisplay value={toQty(op.quantity)} />

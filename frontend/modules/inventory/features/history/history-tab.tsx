@@ -7,6 +7,7 @@ import { LocalDateDisplay } from "../../../../components/fields/local-date-displ
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { OperationDetailModal } from "./operation-detail-modal.tsx";
 import { useMovementHistory, useStockAsOf, useInventoryMutations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
@@ -117,8 +118,9 @@ export function HistoryTab({ legalEntityId, warehouses, canReverse = true }: His
             </div>
             <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
               {asOfResults.map((res, idx) => (
-                <div key={idx} style={{ padding: "0.5rem 0.75rem", backgroundColor: "#ffffff", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", fontSize: "0.8125rem" }}>
-                  <span>{res.productVariantId}: </span>
+                <div key={idx} style={{ padding: "0.5rem 0.75rem", backgroundColor: "#ffffff", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <InventoryProductDisplay productVariantId={res.productVariantId} inline />
+                  <span>: </span>
                   <strong style={{ color: "var(--color-status-success)" }}>
                     <QuantityDisplay value={toQty(res.onHandBaseQuantity)} />
                   </strong>
@@ -199,8 +201,12 @@ export function HistoryTab({ legalEntityId, warehouses, canReverse = true }: His
                       {m.operationId.slice(0, 18)}...
                     </button>
                   </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>{m.movementType}</td>
-                  <td style={{ padding: "0.75rem 1rem" }}>{m.productVariantId}</td>
+                  <td style={{ padding: "0.75rem 1rem" }}>
+                    {t(`movementTypes.${m.movementType}` as any, { defaultValue: m.movementType })}
+                  </td>
+                  <td style={{ padding: "0.75rem 1rem" }}>
+                    <InventoryProductDisplay productVariantId={m.productVariantId} />
+                  </td>
                   <td style={{ padding: "0.75rem 1rem" }}>{warehouseName(m.warehouseId)}</td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700, color: m.signedBaseQuantity >= 0 ? "var(--color-status-success)" : "var(--color-status-danger)" }}>
                     <QuantityDisplay value={toQty(m.signedBaseQuantity)} />

@@ -4,8 +4,11 @@ import { InventoryDataTable } from "../../components/inventory-data-table.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { CreateLotModal } from "./create-lot-modal.tsx";
 import { CreateSerialModal } from "./create-serial-modal.tsx";
+import { LotDetailModal } from "./lot-detail-modal.tsx";
+import { SerialDetailModal } from "./serial-detail-modal.tsx";
 
 export interface LotView {
   readonly id: string;
@@ -38,6 +41,8 @@ export function TraceabilityTab({ legalEntityId }: TraceabilityTabProps): React.
   const [activeSubTab, setActiveSubTab] = useState<"lots" | "serials">("lots");
   const [isAddLotOpen, setIsAddLotOpen] = useState(false);
   const [isAddSerialOpen, setIsAddSerialOpen] = useState(false);
+  const [selectedLot, setSelectedLot] = useState<LotView | null>(null);
+  const [selectedSerial, setSelectedSerial] = useState<SerialView | null>(null);
 
   // Seeded / active lots
   const [lots, setLots] = useState<readonly LotView[]>([
@@ -175,6 +180,7 @@ export function TraceabilityTab({ legalEntityId }: TraceabilityTabProps): React.
                   <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("traceability.expiryDate")}</th>
                   <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("traceability.supplierRef")}</th>
                   <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>{t("traceability.currentStatus")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>{t("stock.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -195,9 +201,26 @@ export function TraceabilityTab({ legalEntityId }: TraceabilityTabProps): React.
                   return (
                     <tr key={lot.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
                       <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "var(--color-brand-primary)" }}>
-                        {lot.lotNumber}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLot(lot)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            color: "var(--color-brand-primary)",
+                            cursor: "pointer",
+                            fontWeight: 700,
+                            fontSize: "0.875rem",
+                            textDecoration: "underline"
+                          }}
+                        >
+                          {lot.lotNumber}
+                        </button>
                       </td>
-                      <td style={{ padding: "0.75rem 1rem" }}>{lot.productVariantId}</td>
+                      <td style={{ padding: "0.75rem 1rem" }}>
+                        <InventoryProductDisplay productVariantId={lot.productVariantId} />
+                      </td>
                       <td style={{ padding: "0.75rem 1rem" }}>
                         {lot.manufacturedOn ? <LocalDateDisplay value={lot.manufacturedOn} /> : "—"}
                       </td>
@@ -218,6 +241,11 @@ export function TraceabilityTab({ legalEntityId }: TraceabilityTabProps): React.
                         }}>
                           {t(labelKey as any)}
                         </span>
+                      </td>
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
+                        <Button variant="secondary" onPress={() => setSelectedLot(lot)}>
+                          {t("traceability.viewDetails")}
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -243,15 +271,33 @@ export function TraceabilityTab({ legalEntityId }: TraceabilityTabProps): React.
                   <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("warehouses.locationName")}</th>
                   <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("traceability.currentStatus")}</th>
                   <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("traceability.lifecycleHistory")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>{t("stock.actions")}</th>
                 </tr>
               </thead>
               <tbody>
                 {serials.map(sn => (
                   <tr key={sn.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
                     <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "var(--color-brand-primary)" }}>
-                      {sn.serialNumber}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSerial(sn)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          padding: 0,
+                          color: "var(--color-brand-primary)",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          fontSize: "0.875rem",
+                          textDecoration: "underline"
+                        }}
+                      >
+                        {sn.serialNumber}
+                      </button>
                     </td>
-                    <td style={{ padding: "0.75rem 1rem" }}>{sn.productVariantId}</td>
+                    <td style={{ padding: "0.75rem 1rem" }}>
+                      <InventoryProductDisplay productVariantId={sn.productVariantId} />
+                    </td>
                     <td style={{ padding: "0.75rem 1rem" }}>{sn.warehouseName}</td>
                     <td style={{ padding: "0.75rem 1rem" }}>{sn.locationName}</td>
                     <td style={{ padding: "0.75rem 1rem" }}>
@@ -278,6 +324,11 @@ export function TraceabilityTab({ legalEntityId }: TraceabilityTabProps): React.
                         {sn.lifecycleStage} — {t("stockStatuses.Available")}
                       </span>
                     </td>
+                    <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
+                      <Button variant="secondary" onPress={() => setSelectedSerial(sn)}>
+                        {t("traceability.viewDetails")}
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -302,6 +353,22 @@ export function TraceabilityTab({ legalEntityId }: TraceabilityTabProps): React.
           onClose={() => setIsAddSerialOpen(false)}
           legalEntityId={legalEntityId}
           onSerialCreated={handleSerialCreated}
+        />
+      )}
+
+      {selectedLot && (
+        <LotDetailModal
+          isOpen={Boolean(selectedLot)}
+          onClose={() => setSelectedLot(null)}
+          lot={selectedLot}
+        />
+      )}
+
+      {selectedSerial && (
+        <SerialDetailModal
+          isOpen={Boolean(selectedSerial)}
+          onClose={() => setSelectedSerial(null)}
+          serial={selectedSerial}
         />
       )}
     </div>

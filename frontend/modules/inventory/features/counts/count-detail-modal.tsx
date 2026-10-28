@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { InventoryStatusBadge } from "../../components/inventory-status-badge.tsx";
 import { usePhysicalCountLines, useInventoryMutations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
@@ -165,7 +166,9 @@ export function CountDetailModal({
 
                   return (
                     <tr key={ln.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
-                      <td style={{ padding: "0.625rem 0.75rem", fontWeight: 600 }}>{ln.productVariantId}</td>
+                      <td style={{ padding: "0.625rem 0.75rem", fontWeight: 600 }}>
+                        <InventoryProductDisplay productVariantId={ln.productVariantId} />
+                      </td>
                       <td style={{ padding: "0.625rem 0.75rem" }}>
                         <InventoryStatusBadge status={ln.stockStatus} />
                       </td>

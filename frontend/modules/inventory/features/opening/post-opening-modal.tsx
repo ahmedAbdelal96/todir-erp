@@ -4,6 +4,7 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
+import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
 import { useInventoryMutations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
 import type { Warehouse } from "../../types.ts";
@@ -97,7 +98,7 @@ export function PostOpeningModal({
           </div>
         )}
 
-        <TextField
+        <InventoryProductPicker
           label={t("opening.product")}
           value={productId}
           onChange={setProductId}

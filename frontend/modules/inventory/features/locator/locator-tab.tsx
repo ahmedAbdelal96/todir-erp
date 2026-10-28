@@ -6,6 +6,8 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
+import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
 import {
   useProductLocator,
   usePutawaySuggestion,
@@ -21,19 +23,11 @@ export interface LocatorTabProps {
 export function LocatorTab({ legalEntityId }: LocatorTabProps): React.JSX.Element {
   const { t } = useTranslation("inventory");
 
-  const [inputVal, setInputVal] = useState("a6315416-cffe-bf52-bcf0-d5e590d3bf94");
   const [activeProductId, setActiveProductId] = useState("a6315416-cffe-bf52-bcf0-d5e590d3bf94");
 
   const { data: locations = [], isLoading } = useProductLocator(legalEntityId, activeProductId);
   const { data: putaway } = usePutawaySuggestion(legalEntityId, activeProductId);
   const { data: pickings = [] } = usePickingSuggestions(legalEntityId, activeProductId);
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (inputVal.trim()) {
-      setActiveProductId(inputVal.trim());
-    }
-  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -54,19 +48,13 @@ export function LocatorTab({ legalEntityId }: LocatorTabProps): React.JSX.Elemen
           {t("locator.subtitle")}
         </p>
 
-        <form onSubmit={handleSearch} style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ flexGrow: 1, minWidth: "260px" }}>
-            <TextField
-              label={t("locator.searchLabel")}
-              value={inputVal}
-              onChange={setInputVal}
-              placeholder={t("locator.searchPlaceholder")}
-            />
-          </div>
-          <Button variant="primary" type="submit" isLoading={isLoading}>
-            {t("locator.locateButton")}
-          </Button>
-        </form>
+        <div style={{ maxWidth: "550px" }}>
+          <InventoryProductPicker
+            label={t("locator.searchLabel")}
+            value={activeProductId}
+            onChange={setActiveProductId}
+          />
+        </div>
       </div>
 
       {/* Putaway & Picking suggestions row if available */}

@@ -6,6 +6,8 @@ import { LocalDateField } from "../../../../components/fields/local-date-field.t
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
+import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
 import { useValuation, useReconciliation } from "../../hooks/use-inventory-queries.ts";
 import { toQty, toMoneyVal } from "../../utils.ts";
 import type { Warehouse } from "../../types.ts";
@@ -94,14 +96,13 @@ export function ValuationTab({
         </div>
 
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ minWidth: "220px" }}>
-            <TextField
+          <div style={{ minWidth: "260px" }}>
+            <InventoryProductPicker
               value={productVariantId}
               onChange={setProductVariantId}
-              aria-label={t("stock.product")}
             />
           </div>
-          <div style={{ width: "160px" }}>
+          <div style={{ width: "160px", alignSelf: "flex-end" }}>
             <LocalDateField
               value={asOfDate}
               onChange={(val) => setAsOfDate(val ?? today)}
@@ -202,7 +203,7 @@ export function ValuationTab({
         }}
       >
         <h4 style={{ margin: "0 0 1rem", fontSize: "1rem", color: "var(--color-brand-primary)" }}>
-          {t("valuation.title")} - {productVariantId}
+          {t("valuation.title")} — <InventoryProductDisplay productVariantId={productVariantId} inline />
         </h4>
 
         {!valuation ? (
@@ -220,7 +221,9 @@ export function ValuationTab({
             </thead>
             <tbody>
               <tr style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
-                <td style={{ padding: "0.75rem 1rem", fontWeight: 600 }}>{valuation.productVariantId}</td>
+                <td style={{ padding: "0.75rem 1rem", fontWeight: 600 }}>
+                  <InventoryProductDisplay productVariantId={valuation.productVariantId} />
+                </td>
                 <td style={{ padding: "0.75rem 1rem" }}>
                   {t(`valuation.methods.${valuation.costingMethod}` as any, { defaultValue: valuation.costingMethod })}
                 </td>

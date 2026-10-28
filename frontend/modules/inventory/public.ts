@@ -6,6 +6,8 @@ export * from "./components/inventory-tab-nav.tsx";
 export * from "./components/inventory-status-badge.tsx";
 export * from "./components/inventory-data-table.tsx";
 export * from "./components/inventory-kpi-card.tsx";
+export * from "./components/inventory-product-display.tsx";
+export * from "./components/inventory-product-picker.tsx";
 export * from "./pages/inventory-page.tsx";
 export { inventoryRoutes } from "./routes.tsx";
 export { ar } from "./i18n/ar.ts";

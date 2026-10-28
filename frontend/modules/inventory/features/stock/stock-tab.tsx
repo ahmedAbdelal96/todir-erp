@@ -6,6 +6,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
+import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { ProductStockCardModal } from "./product-stock-card-modal.tsx";
 import { toQty } from "../../utils.ts";
 import type { Warehouse, StockBalance } from "../../types.ts";
@@ -156,10 +157,11 @@ export function StockTab({
                       cursor: "pointer",
                       textDecoration: "underline",
                       fontWeight: 600,
-                      fontSize: "0.875rem"
+                      fontSize: "0.875rem",
+                      textAlign: "start"
                     }}
                   >
-                    {b.productVariantId}
+                    <InventoryProductDisplay productVariantId={b.productVariantId} />
                   </button>
                 </td>
                 <td style={{ padding: "0.75rem 1rem" }}>{warehouseName(b.warehouseId)}</td>

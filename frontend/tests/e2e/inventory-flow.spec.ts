@@ -1,7 +1,22 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
+import * as path from 'path';
+import * as fs from 'fs';
 
 const MAIN_ENTITY_ID = '00000000-0000-0000-0000-000000000001';
 const SAMPLE_PRODUCT_ID = 'a6315416-cffe-bf52-bcf0-d5e590d3bf94';
+
+async function captureScreenshot(page: Page, filename: string, options?: { fullPage?: boolean }) {
+  const primaryPath = path.resolve(process.cwd(), 'artifacts/test-results/visual-acceptance', filename);
+  const rootPath = path.resolve(process.cwd(), '../artifacts/test-results/visual-acceptance', filename);
+  fs.mkdirSync(path.dirname(primaryPath), { recursive: true });
+  fs.mkdirSync(path.dirname(rootPath), { recursive: true });
+  await page.screenshot({ path: primaryPath, ...options });
+  try {
+    fs.copyFileSync(primaryPath, rootPath);
+  } catch {
+    // Ignore if root path is identical or inaccessible
+  }
+}
 
 const MOCK_WAREHOUSES = [
   {
@@ -168,7 +183,7 @@ const MOCK_PICKING = [
     locationId: 'loc-04',
     locationCode: 'A-01-01',
     availableQuantity: 50,
-    reason: 'أقدم دفعة واردة (FIFO)'
+    reason: 'أقدم دفعة واردة'
   }
 ];
 
@@ -473,116 +488,95 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
   });
 
   test('01 to 06: Overview, Stock Balances, Stock Card, Locator, Warehouses & Hierarchy', async ({ page }) => {
-    // 01-inventory-overview.png
+    // 01-inventory-overview-final.png
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/inventory');
     await expect(page.getByRole('heading', { name: 'المخزون المستودعي', level: 1 })).toBeVisible();
-    await expect(page.getByText('إجمالي الرصيد الفعلي')).toBeVisible();
-    await expect(page.getByText('290.00 EA').first()).toBeVisible();
+    await expect(page.getByText('أصناف برصيد فعلي')).toBeVisible();
+    await expect(page.getByText('أصناف بها حجوزات')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/01-inventory-overview.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '01-inventory-overview-final.png', { fullPage: true });
 
-    // 02-stock-list.png
+    // 02-stock-list-final.png
     await page.getByRole('tab', { name: 'أرصدة المخزون' }).click();
     await expect(page.getByRole('cell', { name: 'المستودع الرئيسي - الرياض' })).toBeVisible();
+    await expect(page.getByText('سائل تنظيف أرضيات 5 لتر').first()).toBeVisible();
+    await expect(page.getByText('SKU-CLEAN-005').first()).toBeVisible();
     await expect(page.getByText('225.00 EA')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/02-stock-list.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '02-stock-list-final.png', { fullPage: true });
 
-    // 03-product-stock-card.png
+    // 03-product-stock-card-final.png
     const cardBtn = page.getByRole('button', { name: 'بطاقة الصنف' }).first();
     await cardBtn.click();
     await expect(page.getByText('بطاقة حركة ورصيد الصنف')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
     await expect(page.getByRole('dialog').getByText('المستودع الرئيسي - الرياض')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/03-product-stock-card.png'
-    });
+    await captureScreenshot(page, '03-product-stock-card-final.png');
 
     // Close modal via Escape
     await page.keyboard.press('Escape');
 
-    // 04-product-locator.png
+    // 04-product-locator-final.png
     await page.getByRole('tab', { name: 'محدد مواقع الأصناف' }).click();
     await expect(page.getByText('ZONE-A / AISLE-01 / RACK-01 / A-01-01')).toBeVisible();
     await expect(page.getByText('مقترحات سحب الصنف (الالتقاط)')).toBeVisible();
+    await expect(page.getByText('سائل تنظيف أرضيات 5 لتر').first()).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/04-product-locator.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '04-product-locator-final.png', { fullPage: true });
 
-    // 05-warehouses.png
+    // 05-warehouses
     await page.getByRole('tab', { name: 'المستودعات والمواقع' }).click();
     await expect(page.getByText('WH-MAIN')).toBeVisible();
     await expect(page.getByText('WH-JED')).toBeVisible();
-    await expect(page.getByText('مستودع مباشر (بدون مواقع داخلية)')).toBeVisible();
+    await expect(page.getByText('مستودع مباشر بدون مواقع داخلية')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/05-warehouses.png',
-      fullPage: true
-    });
-
-    // 06-hierarchical-locations.png (select WH-JED to view its 5 hierarchical locations)
+    // 06-hierarchical-locations (select WH-JED to view its 5 hierarchical locations)
     await page.getByRole('button', { name: 'مستودع التوزيع - جدة' }).click();
     await expect(page.getByText('ZONE-A')).toBeVisible();
     await expect(page.getByText('A-01-01')).toBeVisible();
-
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/06-hierarchical-locations.png',
-      fullPage: true
-    });
   });
 
   test('07 to 10: Receive Stock, Issue Stock, Transfer In-Transit, Reservation', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/inventory');
 
-    // 07-receive-stock.png
+    // 07-receive-stock-final.png
     await page.getByRole('button', { name: '+ استلام مخزني' }).first().click();
     await expect(page.getByRole('heading', { name: 'استلام مخزني جديد' })).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'بحث / الصنف' })).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/07-receive-stock.png'
-    });
+    await captureScreenshot(page, '07-receive-stock-final.png');
 
     await page.keyboard.press('Escape');
 
-    // 08-issue-stock.png
+    // 08-issue-stock-final.png
     await page.getByRole('button', { name: 'صرف مخزني' }).first().click();
     await expect(page.getByRole('heading', { name: 'صرف مخزني جديد' })).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'بحث / الصنف' })).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/08-issue-stock.png'
-    });
+    await captureScreenshot(page, '08-issue-stock-final.png');
 
     await page.keyboard.press('Escape');
 
-    // 09-transfer-in-transit.png
+    // 09-transfer-final.png
     await page.getByRole('tab', { name: 'التحويلات المستودعية' }).click();
     await page.getByRole('button', { name: '+ إنشاء تحويل جديد' }).click();
     await expect(page.getByRole('heading', { name: 'إنشاء تحويل جديد' })).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/09-transfer-in-transit.png'
-    });
+    await captureScreenshot(page, '09-transfer-final.png');
 
     await page.keyboard.press('Escape');
 
-    // 10-reservation.png
+    // 10-reservation-final.png
     await page.getByRole('tab', { name: 'حجوزات المخزون' }).click();
     await page.getByRole('button', { name: '+ إنشاء حجز يدوي' }).click();
     await expect(page.getByRole('heading', { name: 'إنشاء حجز يدوي' })).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/10-reservation.png'
-    });
+    await captureScreenshot(page, '10-reservation-final.png');
 
     await page.keyboard.press('Escape');
   });
@@ -591,63 +585,65 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/inventory');
 
-    // 11-lot-detail.png
+    // 11-lot-detail-final.png
     await page.getByRole('tab', { name: 'التشغيلات والأرقام التسلسلية' }).click();
-    await page.getByRole('button', { name: '+ إضافة تشغيلة جديدة' }).click();
-    await expect(page.getByRole('heading', { name: 'إضافة تشغيلة جديدة' })).toBeVisible();
+    await expect(page.getByText('LOT-2026-MED-01')).toBeVisible();
+    // Open Lot Detail Modal via "عرض التفاصيل" button
+    await page.getByRole('button', { name: 'عرض التفاصيل' }).first().click();
+    await expect(page.getByRole('heading', { name: 'تفاصيل التشغيلة والصلاحية' })).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('LOT-2026-MED-01')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('توزيع المخزون بالمستودعات والمواقع')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/11-lot-detail.png'
-    });
+    await captureScreenshot(page, '11-lot-detail-final.png');
 
     await page.keyboard.press('Escape');
 
-    // 12-serial-detail.png (switch subtab to Serials)
+    // 12-serial-detail-final.png (switch subtab to Serials)
     await page.getByRole('button', { name: /الأرقام التسلسلية للقطع/ }).click();
-    await page.getByRole('button', { name: '+ تسجيل رقم تسلسلي جديد' }).click();
-    await expect(page.getByRole('heading', { name: 'تسجيل رقم تسلسلي جديد' })).toBeVisible();
+    await expect(page.getByText('SN-90081-A')).toBeVisible();
+    // Open Serial Detail Modal via "عرض التفاصيل" button
+    await page.getByRole('button', { name: 'عرض التفاصيل' }).first().click();
+    await expect(page.getByRole('heading', { name: 'تفاصيل الرقم التسلسلي' })).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('SN-90081-A')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('سجل الحركات والتتبع')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/12-serial-detail.png'
-    });
+    await captureScreenshot(page, '12-serial-detail-final.png');
 
     await page.keyboard.press('Escape');
 
-    // 13-physical-count.png
+    // 13-physical-count-final.png
     await page.getByRole('tab', { name: 'الجرد الفعلي' }).click();
     await expect(page.getByText('COUNT-SEED-001')).toBeVisible();
 
     // Open count detail modal
     await page.getByRole('button', { name: 'إدخال نتائج العد' }).first().click();
     await expect(page.getByRole('dialog').getByRole('heading', { name: 'جلسات الجرد الفعلي للمستودع' })).toBeVisible();
-    await expect(page.getByText(SAMPLE_PRODUCT_ID)).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('SKU-CLEAN-005')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/13-physical-count.png'
-    });
+    await captureScreenshot(page, '13-physical-count-final.png');
 
     await page.keyboard.press('Escape');
 
-    // 14-adjustment-approval.png
+    // 14-adjustment-approval-final.png (shows full lifecycle: Draft, PendingApproval, Approved, Posted)
     await page.getByRole('tab', { name: 'التسويات المخزنية' }).click();
-    await page.getByRole('button', { name: '+ إجراء تسوية جديدة' }).click();
-    await expect(page.getByRole('heading', { name: 'إجراء تسوية جديدة' })).toBeVisible();
-    await expect(page.getByText('يلزم اعتماد إداري مع فصل المهام')).toBeVisible();
+    await expect(page.getByText('ADJ-2026-004')).toBeVisible();
+    await expect(page.getByText('أحمد المحاسب').first()).toBeVisible();
+    await expect(page.getByText('مدير المستودع').first()).toBeVisible();
+    await expect(page.getByText('مرحل - أثر على الرصيد الفعلي').first()).toBeVisible();
+    await expect(page.getByText('معلق - لا أثر على الرصيد').first()).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/14-adjustment-approval.png'
-    });
+    await captureScreenshot(page, '14-adjustment-approval-final.png', { fullPage: true });
 
-    await page.keyboard.press('Escape');
-
-    // 15-opening-inventory.png
+    // 15-opening-inventory-final.png
     await page.getByRole('tab', { name: 'رصيد أول المدة' }).click();
     await page.getByRole('button', { name: '+ تسجيل رصيد بداية المدة' }).click();
     await expect(page.getByRole('heading', { name: 'تسجيل رصيد بداية المدة' })).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/15-opening-inventory.png'
-    });
+    await captureScreenshot(page, '15-opening-inventory-final.png');
 
     await page.keyboard.press('Escape');
   });
@@ -656,41 +652,35 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/inventory');
 
-    // 16-movement-history.png
+    // 16-movement-history-final.png
     await page.getByRole('tab', { name: 'سجل الحركات الدائم' }).click();
-    await expect(page.getByText('Receipt')).toBeVisible();
+    await expect(page.getByText('استلام مخزني').first()).toBeVisible();
+    await expect(page.getByText('صرف مخزني').first()).toBeVisible();
+    await expect(page.getByText('سائل تنظيف أرضيات 5 لتر').first()).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/16-movement-history.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '16-movement-history-final.png', { fullPage: true });
 
-    // 17-operation-detail.png
+    // 17-operation-detail-final.png
     await page.getByRole('button', { name: 'تفاصيل العملية' }).first().click();
     await expect(page.getByRole('heading', { name: /تفاصيل العملية المخزنية/ })).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/17-operation-detail.png'
-    });
+    await captureScreenshot(page, '17-operation-detail-final.png');
 
     await page.keyboard.press('Escape');
 
-    // 18-valuation.png
+    // 18-valuation-final.png
     await page.getByRole('tab', { name: 'التقييم ومطابقة الأستاذ العام' }).click();
+    await expect(page.getByText('المتوسط المرجح المتحرك').first()).toBeVisible();
     await expect(page.getByText('189,450.00').first()).toBeVisible();
+    await expect(page.getByText('سائل تنظيف أرضيات 5 لتر').first()).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/18-valuation.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '18-valuation-final.png', { fullPage: true });
 
-    // 19-inventory-gl-reconciliation.png
+    // 19-inventory-gl-reconciliation-final.png
     await expect(page.getByText('مطابق تماماً')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/19-inventory-gl-reconciliation.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '19-inventory-gl-reconciliation-final.png', { fullPage: true });
   });
 
   test('20 to 24: Responsive Viewports (390 Mobile, 768 Tablet, 1024 Desktop, 1280 Overview)', async ({ page }) => {
@@ -700,19 +690,14 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     await page.getByRole('tab', { name: 'محدد مواقع الأصناف' }).click();
     await expect(page.getByText('ZONE-A / AISLE-01 / RACK-01 / A-01-01')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/20-mobile-product-locator-390.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '20-mobile-product-locator-390.png', { fullPage: true });
 
     // 21-mobile-receive-390.png
     await page.getByRole('tab', { name: 'نظرة عامة والمؤشرات' }).click();
     await page.getByRole('button', { name: '+ استلام مخزني' }).first().click();
     await expect(page.getByRole('heading', { name: 'استلام مخزني جديد' })).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/21-mobile-receive-390.png'
-    });
+    await captureScreenshot(page, '21-mobile-receive-390.png');
 
     await page.keyboard.press('Escape');
 
@@ -722,10 +707,7 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     await page.getByRole('tab', { name: 'أرصدة المخزون' }).click();
     await expect(page.getByText('225.00 EA')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/22-tablet-stock-768.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '22-tablet-stock-768.png', { fullPage: true });
 
     // 23-desktop-stock-1024.png
     await page.setViewportSize({ width: 1024, height: 768 });
@@ -733,19 +715,14 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     await page.getByRole('tab', { name: 'أرصدة المخزون' }).click();
     await expect(page.getByText('225.00 EA')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/23-desktop-stock-1024.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '23-desktop-stock-1024.png', { fullPage: true });
 
     // 24-desktop-overview-1280.png
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/inventory');
     await expect(page.getByRole('heading', { name: 'المخزون المستودعي', level: 1 })).toBeVisible();
+    await expect(page.getByText('أصناف برصيد فعلي')).toBeVisible();
 
-    await page.screenshot({
-      path: 'artifacts/test-results/visual-acceptance/24-desktop-overview-1280.png',
-      fullPage: true
-    });
+    await captureScreenshot(page, '24-desktop-overview-1280.png', { fullPage: true });
   });
 });

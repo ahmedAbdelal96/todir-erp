@@ -4,6 +4,7 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
+import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
 import { useInventoryMutations, useLocations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
 import type { TransferMode, Warehouse } from "../../types.ts";
@@ -94,7 +95,7 @@ export function TransferModal({
           </div>
         )}
 
-        <TextField
+        <InventoryProductPicker
           label={t("operations.product")}
           value={productId}
           onChange={setProductId}
