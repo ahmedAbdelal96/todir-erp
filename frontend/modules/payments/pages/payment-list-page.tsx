@@ -9,6 +9,7 @@ import { LoadingState } from "../../../components/primitives/loading-state.tsx";
 import { EmptyState } from "../../../components/primitives/empty-state.tsx";
 import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
+import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { FloatingBatchBar } from "../../../components/pages/floating-batch-bar.tsx";
 import {
   PaymentStatusBadge,
@@ -286,7 +287,7 @@ export function PaymentListPage(): React.JSX.Element {
         title={t("title")}
         subtitle={t("subtitle")}
         breadcrumbs={[
-          { label: (t as any)("common:home"), href: "/" },
+          { label: t("actions.home"), href: "/" },
           { label: t("title") }
         ]}
         secondaryActions={primaryActions}
@@ -521,11 +522,11 @@ export function PaymentListPage(): React.JSX.Element {
               }
             />
           ) : (
-            <div style={{ overflowX: "auto", border: "1px solid #cbd5e1", borderRadius: "6px" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
+            <div style={{ overflowX: "auto", border: "1px solid #cbd5e1", borderRadius: "6px", width: "100%" }}>
+              <table style={{ width: "100%", minWidth: "960px", borderCollapse: "collapse", fontSize: "0.8125rem", textAlign: "start" }}>
                 <thead>
                   <tr style={{ backgroundColor: "#102a43", color: "#ffffff", borderBottom: "1px solid #0c1f31" }}>
-                    <th style={{ width: "40px", padding: "0.75rem", textAlign: "center" }}>
+                    <th style={{ width: "36px", padding: "0.625rem 0.5rem", textAlign: "center" }}>
                       <input
                         type="checkbox"
                         checked={payments.length > 0 && selectedPaymentIds.size === payments.length}
@@ -536,16 +537,27 @@ export function PaymentListPage(): React.JSX.Element {
                         aria-label={(t as any)("common:grid.selectAll")}
                       />
                     </th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("list.columnNumber")}</th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("list.columnDirection")}</th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("list.columnAmount")}</th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("list.columnMethod")}</th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("list.columnAccount")}</th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("list.columnDate")}</th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("list.columnState")}</th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("list.columnApplication")}</th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("list.columnReconciliation")}</th>
-                    <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>{t("list.columnActions")}</th>
+                    <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("list.columnNumber")}</th>
+                    <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("list.columnDirection")}</th>
+                    <th style={{ padding: "0.625rem 0.75rem", textAlign: "end" }}>{t("list.columnAmount")}</th>
+                    <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("list.columnMethod")}</th>
+                    <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("list.columnAccount")}</th>
+                    <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("list.columnDate")}</th>
+                    <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("list.columnState")}</th>
+                    <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("list.columnApplication")}</th>
+                    <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("list.columnReconciliation")}</th>
+                    <th
+                      style={{
+                        padding: "0.625rem 0.75rem",
+                        textAlign: "center",
+                        position: "sticky",
+                        left: 0,
+                        zIndex: 3,
+                        backgroundColor: "#102a43"
+                      }}
+                    >
+                      {t("list.columnActions")}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -562,7 +574,7 @@ export function PaymentListPage(): React.JSX.Element {
                         onClick={() => navigate(`/payments/${payment.id}`)}
                       >
                         {/* Checkbox */}
-                        <td style={{ width: "40px", padding: "0.75rem", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                        <td style={{ width: "36px", padding: "0.625rem 0.5rem", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={selectedPaymentIds.has(payment.id)}
@@ -579,12 +591,12 @@ export function PaymentListPage(): React.JSX.Element {
                         </td>
 
                         {/* Payment Number */}
-                        <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "#2563eb" }}>
+                        <td style={{ padding: "0.625rem 0.75rem", fontWeight: 700, color: "#2563eb", whiteSpace: "nowrap" }}>
                           <bdi>{payment.number}</bdi>
                         </td>
 
                         {/* Direction / Type */}
-                        <td style={{ padding: "0.75rem 1rem" }}>
+                        <td style={{ padding: "0.625rem 0.75rem", whiteSpace: "nowrap" }}>
                           <span style={{ fontWeight: 600 }}>{getDirectionLabel(payment.direction)}</span>
                           <span style={{ display: "block", fontSize: "0.6875rem", color: "#64748b" }}>
                             {getTypeLabel(payment.type)}
@@ -592,38 +604,52 @@ export function PaymentListPage(): React.JSX.Element {
                         </td>
 
                         {/* Amount */}
-                        <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700 }}>
+                        <td style={{ padding: "0.625rem 0.75rem", textAlign: "end", fontWeight: 700, whiteSpace: "nowrap" }}>
                           <MoneyDisplay value={{ amount: payment.amount, currency: payment.currencyCode }} />
                         </td>
 
                         {/* Method */}
-                        <td style={{ padding: "0.75rem 1rem" }}>{getMethodLabel(payment.method)}</td>
+                        <td style={{ padding: "0.625rem 0.75rem", whiteSpace: "nowrap" }}>{getMethodLabel(payment.method)}</td>
 
                         {/* Account */}
-                        <td style={{ padding: "0.75rem 1rem" }}>
+                        <td style={{ padding: "0.625rem 0.75rem", whiteSpace: "nowrap" }}>
                           {account?.name || payment.paymentAccountId}
                         </td>
 
                         {/* Date */}
-                        <td style={{ padding: "0.75rem 1rem" }}>{payment.paymentDate}</td>
+                        <td style={{ padding: "0.625rem 0.75rem", whiteSpace: "nowrap" }}>
+                          <LocalDateDisplay value={payment.paymentDate} />
+                        </td>
 
                         {/* Business State */}
-                        <td style={{ padding: "0.75rem 1rem" }}>
+                        <td style={{ padding: "0.625rem 0.75rem", whiteSpace: "nowrap" }}>
                           <PaymentStatusBadge state={payment.state} />
                         </td>
 
                         {/* Subledger Application */}
-                        <td style={{ padding: "0.75rem 1rem" }}>
+                        <td style={{ padding: "0.625rem 0.75rem", whiteSpace: "nowrap" }}>
                           <ApplicationStatusBadge status="Unapplied" />
                         </td>
 
                         {/* Reconciliation */}
-                        <td style={{ padding: "0.75rem 1rem" }}>
+                        <td style={{ padding: "0.625rem 0.75rem", whiteSpace: "nowrap" }}>
                           <ReconciliationStatusBadge status="Unmatched" />
                         </td>
 
                         {/* Actions */}
-                        <td style={{ padding: "0.75rem 1rem", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                        <td
+                          style={{
+                            padding: "0.625rem 0.75rem",
+                            textAlign: "center",
+                            position: "sticky",
+                            left: 0,
+                            zIndex: 2,
+                            backgroundColor: index % 2 === 0 ? "#ffffff" : "#f8fafc",
+                            boxShadow: "2px 0 4px -2px rgba(0,0,0,0.1)",
+                            whiteSpace: "nowrap"
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div style={{ display: "flex", gap: "0.25rem", justifyContent: "center" }}>
                             <Button
                               variant="secondary"

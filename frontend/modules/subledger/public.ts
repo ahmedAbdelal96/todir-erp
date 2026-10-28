@@ -1,6 +1,7 @@
 export * from "./types.ts";
 export * from "./routes.tsx";
 export { subledgerApi } from "./services/subledger-api.ts";
+export { useOpenItemsQuery, useOpenItemDetailQuery } from "./hooks/subledger-queries.ts";
 export { FinancialStatusBadge } from "./components/financial-status-badge.tsx";
 export { SubledgerBalanceCard } from "./components/subledger-balance-card.tsx";
 export { OpenItemDetailDrawer } from "./components/open-item-detail-drawer.tsx";

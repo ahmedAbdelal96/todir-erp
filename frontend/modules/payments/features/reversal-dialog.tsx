@@ -4,6 +4,7 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
+import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { usePaymentFees, useReversePayment } from "../hooks/payment-queries.ts";
 import type {
@@ -191,9 +192,8 @@ export function ReversalDialog({
             isRequired
           />
 
-          <TextField
+          <LocalDateField
             label={t("reversal.dateLabel")}
-            type="date"
             value={paymentDate}
             onChange={setPaymentDate}
             isRequired

@@ -16,7 +16,9 @@ export const paymentsRoutes: ModuleRouteRegistration = {
   routes: [
     { path: "payments", element: <PaymentListPage /> },
     { path: "payments/list", element: <PaymentListPage /> },
-    { path: "payments/:id", element: <PaymentDetailPage /> },
+    { path: "payments/:id", element: <PaymentDetailPage /> }
+  ],
+  publicRoutes: [
     { path: "payments/pay/:token", element: <PublicPaymentLinkPage /> }
   ]
 };

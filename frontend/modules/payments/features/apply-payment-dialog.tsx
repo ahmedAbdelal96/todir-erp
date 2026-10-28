@@ -4,7 +4,10 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
+import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
+import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { useApplyPayment } from "../hooks/payment-queries.ts";
+import { useOpenItemsQuery } from "../../subledger/public.ts";
 import type { PaymentRecord, ApplyPaymentRequest } from "../types.ts";
 
 export interface ApplyPaymentDialogProps {
@@ -32,6 +35,16 @@ export function ApplyPaymentDialog({
   const [errorMsg, setErrorMsg] = useState<string>("");
 
   const applyMutation = useApplyPayment();
+
+  const openItemsQuery = useOpenItemsQuery(
+    {
+      legalEntityId,
+      ...(payment?.partyId ? { partyId: payment.partyId } : {}),
+      openOnly: true
+    },
+    Boolean(isOpen && legalEntityId && payment)
+  );
+  const openItems = openItemsQuery.data?.items || [];
 
   if (!payment) return <></>;
 
@@ -139,14 +152,112 @@ export function ApplyPaymentDialog({
           </div>
         </div>
 
-        {/* Target Open Item */}
-        <TextField
-          label={t("apply.targetOpenItemLabel")}
-          value={targetOpenItemId}
-          onChange={setTargetOpenItemId}
-          placeholder={t("apply.targetOpenItemPlaceholder")}
-          isRequired
-        />
+        {/* Open Items Picker */}
+        <div>
+          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.5rem", color: "#102a43" }}>
+            {t("apply.selectOpenItemLabel")} <span style={{ color: "#ef4444" }}>*</span>
+          </label>
+
+          {openItemsQuery.isLoading ? (
+            <div style={{ padding: "1rem", textAlign: "center", color: "#64748b", fontSize: "0.875rem" }}>
+              {t("list.loading")}
+            </div>
+          ) : openItems.length === 0 ? (
+            <div
+              style={{
+                padding: "1rem",
+                borderRadius: "6px",
+                border: "1px dashed #cbd5e1",
+                backgroundColor: "#f8fafc",
+                textAlign: "center",
+                color: "#64748b",
+                fontSize: "0.875rem"
+              }}
+            >
+              {t("apply.noOpenItems")}
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.5rem",
+                maxHeight: "220px",
+                overflowY: "auto",
+                border: "1px solid #cbd5e1",
+                borderRadius: "6px",
+                padding: "0.5rem"
+              }}
+              role="radiogroup"
+              aria-label={t("apply.selectOpenItemLabel")}
+            >
+              {openItems.map((item) => {
+                const isSelected = targetOpenItemId === item.id;
+                const docNo = item.sourceDisplayNumber || item.sourceReference || item.id;
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      setTargetOpenItemId(item.id);
+                      if (!amount || Number(amount) <= 0) {
+                        setAmount(item.openTransactionAmount || payment.amount);
+                      }
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.75rem",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      border: isSelected ? "2px solid #2563eb" : "1px solid #e2e8f0",
+                      backgroundColor: isSelected ? "#eff6ff" : "#ffffff",
+                      transition: "all 0.15s ease"
+                    }}
+                    role="radio"
+                    aria-checked={isSelected}
+                    tabIndex={0}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <input
+                        type="radio"
+                        name="openItemSelection"
+                        checked={isSelected}
+                        onChange={() => {
+                          setTargetOpenItemId(item.id);
+                          if (!amount || Number(amount) <= 0) {
+                            setAmount(item.openTransactionAmount || payment.amount);
+                          }
+                        }}
+                        aria-label={docNo}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 700, color: "#102a43", fontSize: "0.875rem" }}>
+                          <bdi>{docNo}</bdi>
+                        </div>
+                        <div style={{ display: "flex", gap: "1rem", fontSize: "0.75rem", color: "#64748b", marginTop: "0.125rem" }}>
+                          <span>
+                            {t("apply.documentDate")}: <LocalDateDisplay value={item.documentDate} />
+                          </span>
+                          <span>
+                            {t("apply.dueDate")}: <LocalDateDisplay value={item.dueDate} />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: "end" }}>
+                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("apply.openAmount")}:</div>
+                      <div style={{ fontWeight: 700, color: "#047857", fontSize: "0.875rem" }}>
+                        <MoneyDisplay value={{ amount: item.openTransactionAmount, currency: (item.transactionCurrency || payment.currencyCode) as any }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Amount to Apply */}
         <TextField
@@ -159,9 +270,8 @@ export function ApplyPaymentDialog({
         />
 
         {/* Application Date */}
-        <TextField
+        <LocalDateField
           label={t("apply.dateLabel")}
-          type="date"
           value={applicationDate}
           onChange={setApplicationDate}
           isRequired
@@ -181,7 +291,7 @@ export function ApplyPaymentDialog({
           <Button variant="secondary" onPress={handleClose} isDisabled={applyMutation.isPending}>
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={applyMutation.isPending}>
+          <Button variant="primary" type="submit" isDisabled={applyMutation.isPending || !targetOpenItemId}>
             {applyMutation.isPending ? t("apply.submitting") : t("apply.submitAction")}
           </Button>
         </div>

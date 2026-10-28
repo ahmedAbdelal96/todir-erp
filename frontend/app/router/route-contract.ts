@@ -12,6 +12,7 @@ export type ModuleNavigationRegistration = Readonly<{
 export type ModuleRouteRegistration = Readonly<{
   navigation: ModuleNavigationRegistration;
   routes: readonly RouteObject[];
+  publicRoutes?: readonly RouteObject[] | undefined;
 }>;
 
 export type WorkspaceOutletContext = Readonly<{

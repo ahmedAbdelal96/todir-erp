@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
+import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
 import { AccountPicker } from "../components/account-picker.tsx";
 import { useCreateInternalTransfer } from "../hooks/payment-queries.ts";
 import type { PaymentAccount, CreateInternalTransferRequest } from "../types.ts";
@@ -190,9 +191,8 @@ export function InternalTransferDialog({
 
         {/* Date & Reference */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-          <TextField
+          <LocalDateField
             label={t("transfer.dateLabel")}
-            type="date"
             value={paymentDate}
             onChange={setPaymentDate}
             isRequired

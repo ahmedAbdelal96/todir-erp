@@ -4,6 +4,7 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
+import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
 import { PartyPicker } from "../../directory/public.ts";
 import { AccountPicker } from "../components/account-picker.tsx";
 import {
@@ -241,9 +242,8 @@ export function PaySupplierDialog({
 
         {/* Date & References */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-          <TextField
+          <LocalDateField
             label={t("pay.dateLabel")}
-            type="date"
             value={paymentDate}
             onChange={setPaymentDate}
             isRequired

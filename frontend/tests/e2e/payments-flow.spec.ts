@@ -656,6 +656,45 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
         })
       });
     });
+
+    // 13. Subledger Open Items for Invoice Picker
+    await page.route(/\/api\/v1\/subledger\/open-items(?:\?.*)?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            {
+              id: 'inv-open-item-88',
+              legalEntityId: LEGAL_ENTITY_ID,
+              partyId: TEST_CUSTOMER_ID,
+              direction: 'Receivable',
+              polarity: 'Debit',
+              sourceType: 'CustomerInvoice',
+              sourceReference: 'INV-2026-0088',
+              sourceDisplayNumber: 'INV-2026-0088',
+              documentDate: '2026-10-20',
+              postingDate: '2026-10-20',
+              dueDate: '2026-11-20',
+              transactionCurrency: 'EGP',
+              originalTransactionAmount: '10000.00',
+              settledTransactionAmount: '0.00',
+              openTransactionAmount: '10000.00',
+              baseCurrency: 'EGP',
+              originalBaseAmount: '10000.00',
+              settledBaseCarryingAmount: '0.00',
+              openBaseCarryingAmount: '10000.00',
+              controlAccountRole: 'ReceivableControl',
+              controlAccountReference: '121000',
+              status: 'Open',
+              rowVersion: 1
+            }
+          ],
+          totalCount: 1,
+          hasMore: false
+        })
+      });
+    });
   });
 
   test('1. RECEIVE PAYMENT + UNAPPLIED: Receive Customer Payment WITHOUT Invoice', async ({ page }) => {
@@ -685,7 +724,7 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
     // Verify payment is completed and available credit is visible without invoice
     await expect(page.getByText('10,000.00 ج.م').first()).toBeVisible();
     await expect(page.getByText('مكتمل')).toBeVisible();
-    await expect(page.getByText('غير مخصص (رصيد متاح)')).toBeVisible();
+    await expect(page.getByText(/غير مخصص.*رصيد متاح/)).toBeVisible();
   });
 
   test('2. RECEIVE + APPLY: Subledger settlement application', async ({ page }) => {
@@ -702,9 +741,10 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('تخصيص رصيد الدفعة على الفواتير')).toBeVisible();
 
-    // Fill target open item and partial amount
-    const itemInput = dialog.locator('input[placeholder*="معرف بند الفاتورة"]').first();
-    await itemInput.fill('inv-open-item-88');
+    // Select open invoice from picker
+    const invoiceOption = dialog.getByText('INV-2026-0088');
+    await expect(invoiceOption).toBeVisible();
+    await invoiceOption.click();
 
     // Submit application
     await dialog.getByRole('button', { name: 'تأكيد تسوية الفاتورة' }).click();
@@ -717,7 +757,7 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
     // Customer Advance
     await page.getByRole('button', { name: '+ استلام دفعة' }).click();
     let dialog = page.getByRole('dialog');
-    const custAdvanceCheck = dialog.getByLabel('استلام كدفعة مقدمة (Advance Payment)');
+    const custAdvanceCheck = dialog.getByLabel('استلام كدفعة مقدمة');
     await custAdvanceCheck.check();
     await expect(dialog.getByText('استلام دفعة مقدمة من عميل')).toBeVisible();
     await dialog.getByRole('button', { name: 'إلغاء' }).click();
@@ -726,7 +766,7 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
     // Supplier Advance
     await page.getByRole('button', { name: '+ سداد لمورد' }).click();
     dialog = page.getByRole('dialog');
-    const supAdvanceCheck = dialog.getByLabel('سداد كدفعة مقدمة للمورد (Supplier Advance)');
+    const supAdvanceCheck = dialog.getByLabel('سداد كدفعة مقدمة للمورد');
     await supAdvanceCheck.check();
     await expect(dialog.getByText('سداد دفعة مقدمة لمورد')).toBeVisible();
     await dialog.getByRole('button', { name: 'إلغاء' }).click();
@@ -767,10 +807,10 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
     await page.goto('/payments/pay-001');
 
     // Click Refund
-    await page.getByRole('button', { name: 'استرداد مالي (Refund)' }).click();
+    await page.getByRole('button', { name: 'استرداد مالي' }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText('استرداد مالي لعميل (Refund)')).toBeVisible();
+    await expect(dialog.getByText('استرداد مالي لعميل')).toBeVisible();
 
     // Over-refund rejection
     const amountInput = dialog.locator('input[type="number"]').first();
@@ -791,11 +831,11 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
   test('6. REVERSAL & FEE DISPOSITION: Retain vs Reverse Fee and Blocker behavior', async ({ page }) => {
     // Case B & C: Fee Dispositions on payment with fees
     await page.goto('/payments/pay-fees-test');
-    await page.getByRole('button', { name: 'عكس السند (Reverse)' }).click();
+    await page.getByRole('button', { name: 'عكس السند' }).click();
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText('عكس وإلغاء سند مالي (Payment Reversal)')).toBeVisible();
+    await expect(dialog.getByText('عكس وإلغاء سند مالي')).toBeVisible();
     await expect(dialog.getByText('المعالجة المحاسبية للرسوم البنكية والعمولات')).toBeVisible();
     await expect(dialog.getByText('رسوم بوابة الدفع')).toBeVisible();
 
@@ -815,7 +855,7 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
 
     // Case E: Applied payment reversal shows controlled blocker
     await page.goto('/payments/pay-applied');
-    await page.getByRole('button', { name: 'عكس السند (Reverse)' }).click();
+    await page.getByRole('button', { name: 'عكس السند' }).click();
     const appliedDialog = page.getByRole('dialog');
     await appliedDialog.getByRole('button', { name: 'تأكيد عكس السند المالي' }).click();
     await expect(appliedDialog.getByText(/لا يمكن عكس السند المالي لوجود فواتير مخصصة ومسددة منه بالفعل/)).toBeVisible();
@@ -844,7 +884,8 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
     // Inspect pending payment detail for recovery actions
     await page.goto('/payments/pay-004');
     await expect(page.locator('h1')).toContainText('PAY-2026-0004');
-    await expect(page.getByRole('button', { name: 'تأكيد واستكمال السند يدوياً' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'التحقق من حالة العملية' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'استكمال يدوي استثنائي' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'إلغاء السند المعلق' })).toBeVisible();
   });
 
@@ -885,7 +926,7 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
 
     // 4 distinct statuses
     await expect(page.getByText('مكتمل')).toBeVisible();
-    await expect(page.getByText('غير مخصص (رصيد متاح)')).toBeVisible();
+    await expect(page.getByText(/غير مخصص.*رصيد متاح/)).toBeVisible();
     await expect(page.getByText('مرحل في دفتر الأستاذ العام')).toBeVisible();
     await expect(page.getByText('غير مطابق بنكياً')).toBeVisible();
 

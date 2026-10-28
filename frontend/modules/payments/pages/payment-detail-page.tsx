@@ -7,6 +7,7 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { LoadingState } from "../../../components/primitives/loading-state.tsx";
 import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
+import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
@@ -53,6 +54,9 @@ export function PaymentDetailPage(): React.JSX.Element {
   const [isReversalOpen, setIsReversalOpen] = useState(false);
   const [isApplyOpen, setIsApplyOpen] = useState(false);
   const [isAddFeeOpen, setIsAddFeeOpen] = useState(false);
+  const [isManualRecoveryOpen, setIsManualRecoveryOpen] = useState(false);
+  const [manualRecoveryEvidence, setManualRecoveryEvidence] = useState("");
+  const [manualRecoveryError, setManualRecoveryError] = useState("");
 
   // Fee state
   const [feeType, setFeeType] = useState<PaymentFeeType>("BankFee");
@@ -136,18 +140,30 @@ export function PaymentDetailPage(): React.JSX.Element {
     }
   };
 
-  const handleCompleteManual = async () => {
+  const handleCompleteManual = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setActionError("");
+    setManualRecoveryError("");
+
+    if (!manualRecoveryEvidence.trim()) {
+      setManualRecoveryError(t("detail.manualRecoveryEvidenceRequired"));
+      return;
+    }
+
     try {
       await completeManualMutation.mutateAsync({
         legalEntityId,
         paymentId: payment.id,
         branchId
       });
+      setIsManualRecoveryOpen(false);
+      setManualRecoveryEvidence("");
     } catch (err: unknown) {
       const problem = err as { problemDetails?: { code?: string; detail?: string } };
       const code = problem?.problemDetails?.code;
-      setActionError(code ? (t as any)(`errors.${code}`) : (err as Error).message);
+      const msg = code ? (t as any)(`errors.${code}`) : (err as Error).message;
+      setManualRecoveryError(msg);
+      setActionError(msg);
     }
   };
 
@@ -211,16 +227,39 @@ export function PaymentDetailPage(): React.JSX.Element {
   // Actions bar
   const headerActions = (
     <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-      {payment.state === "Pending" && perms.canCompleteManual && (
-        <Button variant="primary" onPress={handleCompleteManual} isDisabled={completeManualMutation.isPending}>
-          {completeManualMutation.isPending ? t("detail.completing") : t("detail.completeManualAction")}
-        </Button>
-      )}
+      {payment.state === "Pending" && (
+        <>
+          <Button
+            variant="primary"
+            onPress={() => paymentQuery.refetch()}
+            isDisabled={paymentQuery.isFetching}
+          >
+            {paymentQuery.isFetching ? t("detail.checkingStatus") : t("detail.syncStatusAction")}
+          </Button>
 
-      {payment.state === "Pending" && perms.canCancelPending && (
-        <Button variant="danger" onPress={handleCancelPending} isDisabled={cancelPendingMutation.isPending}>
-          {t("detail.cancelPendingAction")}
-        </Button>
+          {perms.canCompleteManual && (
+            <Button
+              variant="secondary"
+              onPress={() => {
+                setManualRecoveryEvidence("");
+                setManualRecoveryError("");
+                setIsManualRecoveryOpen(true);
+              }}
+            >
+              {t("detail.completeManualAction")}
+            </Button>
+          )}
+
+          {perms.canCancelPending && (
+            <Button
+              variant="danger"
+              onPress={handleCancelPending}
+              isDisabled={cancelPendingMutation.isPending}
+            >
+              {t("detail.cancelPendingAction")}
+            </Button>
+          )}
+        </>
       )}
 
       {payment.state === "Completed" && (
@@ -254,7 +293,7 @@ export function PaymentDetailPage(): React.JSX.Element {
       <RecordPage
         title={payment.number}
         breadcrumbs={[
-          { label: (t as any)("common:home"), href: "/" },
+          { label: t("actions.home"), href: "/" },
           { label: t("title"), href: "/payments" },
           { label: payment.number }
         ]}
@@ -335,14 +374,14 @@ export function PaymentDetailPage(): React.JSX.Element {
                 <span style={{ color: "#64748b", display: "block", fontSize: "0.75rem" }}>
                   {t("detail.paymentDate")}:
                 </span>
-                <span>{payment.paymentDate}</span>
+                <LocalDateDisplay value={payment.paymentDate} />
               </div>
 
               <div>
                 <span style={{ color: "#64748b", display: "block", fontSize: "0.75rem" }}>
                   {t("detail.postingDate")}:
                 </span>
-                <span>{payment.postingDate}</span>
+                <LocalDateDisplay value={payment.postingDate} />
               </div>
 
               {payment.bankReference && (
@@ -566,6 +605,88 @@ export function PaymentDetailPage(): React.JSX.Element {
             </Button>
             <Button variant="primary" type="submit" isDisabled={addFeeMutation.isPending}>
               {addFeeMutation.isPending ? t("detail.addingFee") : t("detail.addFeeSubmit")}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      {/* Manual Recovery Dialog */}
+      <Dialog
+        isOpen={isManualRecoveryOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsManualRecoveryOpen(false);
+            setManualRecoveryError("");
+          }
+        }}
+        title={t("detail.manualRecoveryConfirmTitle")}
+        size="medium"
+      >
+        <form onSubmit={handleCompleteManual} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {manualRecoveryError && (
+            <div
+              style={{
+                padding: "0.75rem 1rem",
+                borderRadius: "6px",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                color: "#991b1b",
+                fontSize: "0.875rem"
+              }}
+            >
+              {manualRecoveryError}
+            </div>
+          )}
+
+          <div
+            style={{
+              padding: "0.75rem 1rem",
+              borderRadius: "6px",
+              backgroundColor: "#fffbeb",
+              border: "1px solid #fef08a",
+              color: "#854d0e",
+              fontSize: "0.875rem"
+            }}
+          >
+            {t("detail.manualRecoveryWarning")}
+          </div>
+
+          <TextField
+            label={t("detail.manualRecoveryEvidenceLabel")}
+            placeholder={t("detail.manualRecoveryEvidencePlaceholder")}
+            value={manualRecoveryEvidence}
+            onChange={setManualRecoveryEvidence}
+            isRequired
+          />
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: "0.75rem",
+              marginTop: "1rem",
+              borderTop: "1px solid #e2e8f0",
+              paddingTop: "1rem"
+            }}
+          >
+            <Button
+              variant="secondary"
+              onPress={() => {
+                setIsManualRecoveryOpen(false);
+                setManualRecoveryError("");
+              }}
+              isDisabled={completeManualMutation.isPending}
+            >
+              {t("actions.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              type="submit"
+              isDisabled={completeManualMutation.isPending || !manualRecoveryEvidence.trim()}
+            >
+              {completeManualMutation.isPending
+                ? t("detail.completing")
+                : t("detail.manualRecoverySubmit")}
             </Button>
           </div>
         </form>

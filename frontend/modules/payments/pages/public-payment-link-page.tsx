@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
+import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { LoadingState } from "../../../components/primitives/loading-state.tsx";
 import { ErrorState } from "../../../components/primitives/error-state.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -109,7 +110,7 @@ export function PublicPaymentLinkPage(): React.JSX.Element {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
               <span>{t("link.expiresAt")}:</span>
-              <span>{new Date(details.expiresAt).toLocaleDateString()}</span>
+              <LocalDateDisplay value={details.expiresAt} />
             </div>
           </div>
 

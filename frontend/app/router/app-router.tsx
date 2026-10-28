@@ -75,7 +75,17 @@ const workspaceRoutes: RouteObject = {
   ]
 };
 
-export const appRouter = createBrowserRouter([workspaceRoutes]);
+const publicRoutes: RouteObject[] = [
+  ...(paymentsRoutes.publicRoutes ?? []).map((route) => ({
+    ...route,
+    errorElement: <RouteErrorView />
+  }))
+];
+
+export const appRouter = createBrowserRouter([
+  workspaceRoutes,
+  ...publicRoutes
+]);
 
 export function RouterOutlet(): React.JSX.Element {
   return <Outlet />;
