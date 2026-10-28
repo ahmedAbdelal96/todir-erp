@@ -613,7 +613,7 @@ export function PaymentListPage(): React.JSX.Element {
 
                         {/* Account */}
                         <td style={{ padding: "0.625rem 0.75rem", whiteSpace: "nowrap" }}>
-                          {account?.name || payment.paymentAccountId}
+                          {account?.name || account?.code || t("detail.operationalAccountDefault")}
                         </td>
 
                         {/* Date */}

@@ -7,7 +7,7 @@ import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
 import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { useApplyPayment } from "../hooks/payment-queries.ts";
-import { useOpenItemsQuery } from "../../subledger/public.ts";
+import { useOpenItemsQuery, type PartyOpenItem } from "../../subledger/public.ts";
 import type { PaymentRecord, ApplyPaymentRequest } from "../types.ts";
 
 export interface ApplyPaymentDialogProps {
@@ -30,7 +30,7 @@ export function ApplyPaymentDialog({
   const { t } = useTranslation("payments");
 
   const [targetOpenItemId, setTargetOpenItemId] = useState<string>("");
-  const [amount, setAmount] = useState<string>(payment?.amount || "");
+  const [amount, setAmount] = useState<string>("");
   const [applicationDate, setApplicationDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [errorMsg, setErrorMsg] = useState<string>("");
 
@@ -45,13 +45,27 @@ export function ApplyPaymentDialog({
     Boolean(isOpen && legalEntityId && payment)
   );
   const openItems = openItemsQuery.data?.items || [];
+  const selectedItem = openItems.find((i) => i.id === targetOpenItemId);
+
+  const paymentTotal = payment ? Number(payment.amount) || 0 : 0;
+  const numAmount = Number(amount) || 0;
+  const residualCredit = Math.max(0, paymentTotal - numAmount);
 
   if (!payment) return <></>;
 
   const handleClose = () => {
     setErrorMsg("");
     setTargetOpenItemId("");
+    setAmount("");
     onOpenChange(false);
+  };
+
+  const handleSelectItem = (item: PartyOpenItem) => {
+    setTargetOpenItemId(item.id);
+    const itemRemaining = Number(item.openTransactionAmount) || 0;
+    const safeDefault = Math.min(paymentTotal, itemRemaining);
+    setAmount(safeDefault > 0 ? safeDefault.toFixed(2) : "0.00");
+    setErrorMsg("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,9 +77,21 @@ export function ApplyPaymentDialog({
       return;
     }
 
-    const numAmount = Number(amount);
     if (!amount || isNaN(numAmount) || numAmount <= 0) {
       setErrorMsg(t("errors.amount_invalid"));
+      return;
+    }
+
+    if (selectedItem) {
+      const itemRemaining = Number(selectedItem.openTransactionAmount) || 0;
+      if (numAmount > itemRemaining) {
+        setErrorMsg(t("apply.amountExceedsOpenItem"));
+        return;
+      }
+    }
+
+    if (numAmount > paymentTotal) {
+      setErrorMsg(t("apply.amountExceedsAvailableCredit"));
       return;
     }
 
@@ -76,7 +102,7 @@ export function ApplyPaymentDialog({
         lines: [
           {
             targetOpenItemId: targetOpenItemId.trim(),
-            amount: Number(amount).toFixed(2)
+            amount: numAmount.toFixed(2)
           }
         ]
       };
@@ -197,12 +223,7 @@ export function ApplyPaymentDialog({
                 return (
                   <div
                     key={item.id}
-                    onClick={() => {
-                      setTargetOpenItemId(item.id);
-                      if (!amount || Number(amount) <= 0) {
-                        setAmount(item.openTransactionAmount || payment.amount);
-                      }
-                    }}
+                    onClick={() => handleSelectItem(item)}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -223,12 +244,7 @@ export function ApplyPaymentDialog({
                         type="radio"
                         name="openItemSelection"
                         checked={isSelected}
-                        onChange={() => {
-                          setTargetOpenItemId(item.id);
-                          if (!amount || Number(amount) <= 0) {
-                            setAmount(item.openTransactionAmount || payment.amount);
-                          }
-                        }}
+                        onChange={() => handleSelectItem(item)}
                         aria-label={docNo}
                       />
                       <div>
@@ -257,6 +273,44 @@ export function ApplyPaymentDialog({
               })}
             </div>
           )}
+        </div>
+
+        {/* Safe Allocation Calculation & Residual Credit Box */}
+        {selectedItem && (
+          <div
+            style={{
+              backgroundColor: "#f0fdf4",
+              border: "1px solid #bbf7d0",
+              borderRadius: "6px",
+              padding: "0.875rem 1rem",
+              fontSize: "0.875rem",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "0.75rem"
+            }}
+          >
+            <div>
+              <span style={{ color: "#166534", display: "block", fontSize: "0.75rem" }}>
+                {t("apply.allocatedAmountLabel")}:
+              </span>
+              <span style={{ fontWeight: 800, fontSize: "1.125rem", color: "#166534" }}>
+                <MoneyDisplay value={{ amount: String(numAmount.toFixed(2)), currency: payment.currencyCode }} />
+              </span>
+            </div>
+
+            <div>
+              <span style={{ color: "#065f46", display: "block", fontSize: "0.75rem" }}>
+                {t("apply.residualCreditLabel")}:
+              </span>
+              <span style={{ fontWeight: 800, fontSize: "1.125rem", color: "#065f46" }}>
+                <MoneyDisplay value={{ amount: String(residualCredit.toFixed(2)), currency: payment.currencyCode }} />
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+          {t("apply.singleItemNotice")}
         </div>
 
         {/* Amount to Apply */}

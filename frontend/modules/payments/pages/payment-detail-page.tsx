@@ -362,10 +362,12 @@ export function PaymentDetailPage(): React.JSX.Element {
                 <span style={{ color: "#64748b", display: "block", fontSize: "0.75rem" }}>
                   {t("detail.account")}:
                 </span>
-                <span style={{ fontWeight: 600 }}>{account?.name || payment.paymentAccountId}</span>
+                <span style={{ fontWeight: 600 }}>
+                  {account?.name || account?.code || t("detail.operationalAccountDefault")}
+                </span>
                 {account?.maskedIdentifier && (
                   <span style={{ display: "block", fontSize: "0.75rem", color: "#64748b" }}>
-                    {account.maskedIdentifier}
+                    <bdi>{account.maskedIdentifier}</bdi>
                   </span>
                 )}
               </div>
@@ -415,7 +417,7 @@ export function PaymentDetailPage(): React.JSX.Element {
 
           {/* Section 2: Subledger Settlement & Available Balance */}
           <Surface title={t("detail.sectionSubledger")}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
               <div style={{ backgroundColor: "#f8fafc", padding: "1rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
                 <span style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("detail.subledgerStatus")}:</span>
                 <div style={{ marginTop: "0.25rem" }}>
@@ -454,7 +456,7 @@ export function PaymentDetailPage(): React.JSX.Element {
               ) : undefined
             }
           >
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
               <div style={{ backgroundColor: "#f8fafc", padding: "1rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
                 <span style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("detail.grossAmount")}:</span>
                 <div style={{ fontWeight: 700, fontSize: "1.125rem", color: "#0f172a" }}>
@@ -493,7 +495,7 @@ export function PaymentDetailPage(): React.JSX.Element {
                     <tr key={f.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
                       <td style={{ padding: "0.5rem 0.75rem" }}>{getFeeTypeLabel(f.type)}</td>
                       <td style={{ padding: "0.5rem 0.75rem", textAlign: "end", fontWeight: 700 }}>
-                        <MoneyDisplay value={{ amount: String(f.amount), currency: f.currencyCode as any }} />
+                        <MoneyDisplay value={{ amount: String(f.amount), currency: (f.currencyCode || payment.currencyCode) as any }} />
                       </td>
                       <td style={{ padding: "0.5rem 0.75rem" }}>{f.recognitionState}</td>
                     </tr>
