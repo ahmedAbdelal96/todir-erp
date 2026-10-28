@@ -140,6 +140,25 @@ export function PaymentDetailPage(): React.JSX.Element {
     }
   };
 
+  const getFeeRecognitionLabel = (state?: string) => {
+    switch (state?.toLowerCase()) {
+      case "recognizedimmediate":
+        return t("feeRecognitionState.recognizedImmediate");
+      case "recognized":
+        return t("feeRecognitionState.recognized");
+      case "pending":
+        return t("feeRecognitionState.pending");
+      case "reversed":
+        return t("feeRecognitionState.reversed");
+      case "deferred":
+        return t("feeRecognitionState.deferred");
+      case "estimated":
+        return t("feeRecognitionState.estimated");
+      default:
+        return state ? t("feeRecognitionState.recognizedImmediate") : "—";
+    }
+  };
+
   const handleCompleteManual = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setActionError("");
@@ -497,7 +516,7 @@ export function PaymentDetailPage(): React.JSX.Element {
                       <td style={{ padding: "0.5rem 0.75rem", textAlign: "end", fontWeight: 700 }}>
                         <MoneyDisplay value={{ amount: String(f.amount), currency: (f.currencyCode || payment.currencyCode) as any }} />
                       </td>
-                      <td style={{ padding: "0.5rem 0.75rem" }}>{f.recognitionState}</td>
+                      <td style={{ padding: "0.5rem 0.75rem" }}>{getFeeRecognitionLabel(f.recognitionState)}</td>
                     </tr>
                   ))}
                 </tbody>

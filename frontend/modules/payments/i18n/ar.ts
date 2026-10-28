@@ -428,6 +428,15 @@ export const ar = {
     otherapprovedfee: "رسوم تشغيلية معتمدة"
   },
 
+  feeRecognitionState: {
+    recognizedImmediate: "معترف به فورًا",
+    recognized: "معترف به",
+    pending: "قيد الإثبات",
+    reversed: "معكوس",
+    deferred: "مؤجل",
+    estimated: "تقديري"
+  },
+
   errors: {
     unknown: "حدث خطأ غير متوقع أثناء معالجة العملية المالية.",
     party_required: "يرجى اختيار العميل أو المورد المسؤول عن هذه الدفعة.",

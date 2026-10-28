@@ -428,6 +428,15 @@ export const en = {
     otherapprovedfee: "Approved Operational Fee"
   },
 
+  feeRecognitionState: {
+    recognizedImmediate: "Recognized Immediately",
+    recognized: "Recognized",
+    pending: "Pending",
+    reversed: "Reversed",
+    deferred: "Deferred",
+    estimated: "Estimated"
+  },
+
   errors: {
     unknown: "An unexpected error occurred while processing the financial operation.",
     party_required: "Please select the customer or supplier for this payment.",

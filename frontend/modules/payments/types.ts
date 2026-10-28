@@ -25,6 +25,14 @@ export type PaymentFeeType =
   | "TransferFee"
   | "OtherApprovedFee";
 
+export type PaymentFeeRecognitionState =
+  | "Pending"
+  | "Recognized"
+  | "RecognizedImmediate"
+  | "Reversed"
+  | "Deferred"
+  | "Estimated";
+
 export type PaymentFeeDisposition = "Retain" | "Reverse";
 export type PaymentLinkAmountPolicy = "Fixed" | "PartialAllowed" | "CustomerEnteredWithinLimits";
 
@@ -170,7 +178,7 @@ export interface PaymentFeeResult {
   readonly type: PaymentFeeType;
   readonly amount: number;
   readonly currencyCode: string;
-  readonly recognitionState: string;
+  readonly recognitionState: PaymentFeeRecognitionState | string;
 }
 
 export interface ApplyPaymentLineRequest {
