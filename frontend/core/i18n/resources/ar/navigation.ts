@@ -1,7 +1,7 @@
 export const ar = {
   home: "الرئيسية", users: "المستخدمون", loginDomain: "إعدادات تسجيل الدخول", directory: "دليل الأطراف",
   catalog: "الكتالوج", invoicing: "الفواتير والمستندات", payments: "المدفوعات", accounting: "المحاسبة العامة",
-  import: "معالج الاستيراد", financeBase: "الأساس المالي", pricing: "الأسعار والتسعير", subledger: "دفتر الأستاذ المساعد", tax: "الضرائب", preview: "معاينة النظام", settings: "الإعدادات",
+  import: "معالج الاستيراد", financeBase: "الأساس المالي", pricing: "الأسعار والتسعير", subledger: "دفتر الأستاذ المساعد", tax: "الضرائب", inventory: "المخزون المستودعي", preview: "معاينة النظام", settings: "الإعدادات",
   settingsDescription: "اختر إعدادًا من الوحدات المتاحة.",
   previewPage: { title: "معاينة عناصر التصميم ومكونات المنظومة", subtitle: "فحص مباشر للمكونات التفاعلية والحقول والجداول", accountCode: "كود الحساب", accountName: "اسم الحساب", currentBalance: "الرصيد الحالي", moneyFieldTitle: "حقل الإدخال النقدي الدقيق (MoneyField)", amountDue: "المبلغ المالي المستحق", exactNumbersDescription: "يدعم الأرقام الدقيقة بدون كسور عائمة", recordedValue: "القيمة المسجلة", comboBoxTitle: "قائمة الاختيار والبحث (ComboBox)", cityBranch: "المدينة / الفرع", chooseCity: "اختر المدينة...", riyadhHq: "الرياض (المقر الرئيسي)", jeddahBranch: "جدة (فرع المنطقة الغربية)", dammamBranch: "الدمام (فرع المنطقة الشرقية)", openConfirmation: "فتح نافذة تأكيد تجريبية", dataGridTitle: "جدول البيانات عالي الكفاءة (DataGrid)", confirmFinanceTitle: "تأكيد العملية المالية", confirmFinanceDescription: "هل أنت متأكد من رغبتك في إتمام ترحيل القيد المحاسبي؟", cancel: "إلغاء", confirmPosting: "تأكيد الترحيل" },
   notFound: { title: "الصفحة غير موجودة", description: "تحقق من الرابط أو عد إلى الصفحة الرئيسية.", backHome: "العودة للرئيسية" },

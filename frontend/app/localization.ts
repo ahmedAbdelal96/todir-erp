@@ -21,6 +21,8 @@ import { ar as taxAr } from "../modules/tax/i18n/ar.ts";
 import { en as taxEn } from "../modules/tax/i18n/en.ts";
 import { ar as subledgerAr } from "../modules/subledger/i18n/ar.ts";
 import { en as subledgerEn } from "../modules/subledger/i18n/en.ts";
+import { ar as inventoryAr } from "../modules/inventory/i18n/ar.ts";
+import { en as inventoryEn } from "../modules/inventory/i18n/en.ts";
 
 const resources = {
   ar: {
@@ -34,7 +36,8 @@ const resources = {
     payments: paymentsAr,
     pricing: pricingAr,
     tax: taxAr,
-    subledger: subledgerAr
+    subledger: subledgerAr,
+    inventory: inventoryAr
   },
   en: {
     accounting: accountingEn,
@@ -47,7 +50,8 @@ const resources = {
     payments: paymentsEn,
     pricing: pricingEn,
     tax: taxEn,
-    subledger: subledgerEn
+    subledger: subledgerEn,
+    inventory: inventoryEn
   }
 } as const;
 
