@@ -60,6 +60,8 @@ export const en = {
     sectionAccounting: "Accounting Projection & General Ledger",
     sectionReconciliation: "Banking Reconciliation Status",
     amount: "Net Amount",
+    type: "Payment Type",
+    direction: "Direction",
     state: "Voucher State",
     method: "Payment Method",
     account: "Operational Bank / Cashbox Account",

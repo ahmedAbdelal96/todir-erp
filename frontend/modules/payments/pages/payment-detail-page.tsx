@@ -200,12 +200,12 @@ export function PaymentDetailPage(): React.JSX.Element {
   };
 
   const feeTypeOptions = [
-    { value: "BankFee", label: t("feeType.bankfee") },
-    { value: "ProviderFee", label: t("feeType.providerfee") },
-    { value: "CardProcessingFee", label: t("feeType.cardprocessingfee") },
-    { value: "FXFee", label: t("feeType.fxfee") },
-    { value: "TransferFee", label: t("feeType.transferfee") },
-    { value: "OtherApprovedFee", label: t("feeType.otherapprovedfee") }
+    { id: "BankFee", label: t("feeType.bankfee") },
+    { id: "ProviderFee", label: t("feeType.providerfee") },
+    { id: "CardProcessingFee", label: t("feeType.cardprocessingfee") },
+    { id: "FXFee", label: t("feeType.fxfee") },
+    { id: "TransferFee", label: t("feeType.transferfee") },
+    { id: "OtherApprovedFee", label: t("feeType.otherapprovedfee") }
   ];
 
   // Actions bar
@@ -303,6 +303,13 @@ export function PaymentDetailPage(): React.JSX.Element {
                 <div style={{ marginTop: "0.25rem" }}>
                   <PaymentStatusBadge state={payment.state} />
                 </div>
+              </div>
+
+              <div>
+                <span style={{ color: "#64748b", display: "block", fontSize: "0.75rem" }}>
+                  {t("detail.type")}:
+                </span>
+                <span style={{ fontWeight: 600 }}>{getTypeLabel(payment.type)}</span>
               </div>
 
               <div>
@@ -531,8 +538,8 @@ export function PaymentDetailPage(): React.JSX.Element {
         <form onSubmit={handleAddFeeSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <Select
             label={t("detail.feeTypeLabel")}
-            value={feeType}
-            onChange={(val) => setFeeType(val as PaymentFeeType)}
+            selectedKey={feeType}
+            onSelectionChange={(val) => setFeeType(String(val ?? "") as PaymentFeeType)}
             options={feeTypeOptions}
             isRequired
           />

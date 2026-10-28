@@ -95,16 +95,16 @@ export function CreateAccountDialog({
   };
 
   const typeOptions = [
-    { value: "Bank", label: t("accountType.bank") },
-    { value: "Cashbox", label: t("accountType.cashbox") },
-    { value: "ProviderClearing", label: t("accountType.providerclearing") },
-    { value: "Wallet", label: t("accountType.wallet") },
-    { value: "InternalClearing", label: t("accountType.internalclearing") }
+    { id: "Bank", label: t("accountType.bank") },
+    { id: "Cashbox", label: t("accountType.cashbox") },
+    { id: "ProviderClearing", label: t("accountType.providerclearing") },
+    { id: "Wallet", label: t("accountType.wallet") },
+    { id: "InternalClearing", label: t("accountType.internalclearing") }
   ];
 
   const policyOptions = [
-    { value: "SingleCurrency", label: t("accountCreate.singleCurrency") },
-    { value: "MultiCurrency", label: t("accountCreate.multiCurrency") }
+    { id: "SingleCurrency", label: t("accountCreate.singleCurrency") },
+    { id: "MultiCurrency", label: t("accountCreate.multiCurrency") }
   ];
 
   return (
@@ -152,15 +152,15 @@ export function CreateAccountDialog({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <Select
             label={t("accountCreate.typeLabel")}
-            value={type}
-            onChange={(val) => setType(String(val ?? "") as PaymentAccountType)}
+            selectedKey={type}
+            onSelectionChange={(val) => setType(String(val ?? "") as PaymentAccountType)}
             options={typeOptions}
             isRequired
           />
           <Select
             label={t("accountCreate.currencyPolicyLabel")}
-            value={currencyPolicy}
-            onChange={(val) => setCurrencyPolicy(String(val ?? ""))}
+            selectedKey={currencyPolicy}
+            onSelectionChange={(val) => setCurrencyPolicy(String(val ?? ""))}
             options={policyOptions}
             isRequired
           />

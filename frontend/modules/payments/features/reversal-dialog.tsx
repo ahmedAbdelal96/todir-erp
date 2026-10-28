@@ -110,9 +110,12 @@ export function ReversalDialog({
       onSuccess?.();
     } catch (err: unknown) {
       const problem = err as { problemDetails?: { code?: string; detail?: string } };
-      const code = problem?.problemDetails?.code;
-      if (code && (t as any)(`errors.${code}`, { defaultValue: "" })) {
-        setErrorMsg((t as any)(`errors.${code}`));
+      const rawCode = problem?.problemDetails?.code;
+      const normalizedCode = rawCode?.replace(/^payments\./, "").replace("payment_has_applications", "reversal_has_applications");
+      if (normalizedCode && (t as any)(`errors.${normalizedCode}`, { defaultValue: "" })) {
+        setErrorMsg((t as any)(`errors.${normalizedCode}`));
+      } else if (problem?.problemDetails?.detail) {
+        setErrorMsg(problem.problemDetails.detail);
       } else {
         setErrorMsg((err as Error).message || t("errors.unknown"));
       }
@@ -120,11 +123,11 @@ export function ReversalDialog({
   };
 
   const reasonOptions = [
-    { value: "accounting-correction", label: t("reversal.reasonAccountingCorrection") },
-    { value: "wrong-account", label: t("reversal.reasonWrongAccount") },
-    { value: "bounced-cheque", label: t("reversal.reasonBouncedCheque") },
-    { value: "duplicate-posting", label: t("reversal.reasonDuplicatePosting") },
-    { value: "other", label: t("reversal.reasonOther") }
+    { id: "accounting-correction", label: t("reversal.reasonAccountingCorrection") },
+    { id: "wrong-account", label: t("reversal.reasonWrongAccount") },
+    { id: "bounced-cheque", label: t("reversal.reasonBouncedCheque") },
+    { id: "duplicate-posting", label: t("reversal.reasonDuplicatePosting") },
+    { id: "other", label: t("reversal.reasonOther") }
   ];
 
   return (
@@ -136,7 +139,7 @@ export function ReversalDialog({
       title={t("reversal.title")}
       size="medium"
     >
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form noValidate onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {errorMsg && (
           <div
             style={{
@@ -182,8 +185,8 @@ export function ReversalDialog({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <Select
             label={t("reversal.reasonLabel")}
-            value={reasonCode}
-            onChange={(val) => setReasonCode(String(val ?? ""))}
+            selectedKey={reasonCode}
+            onSelectionChange={(val) => setReasonCode(String(val ?? ""))}
             options={reasonOptions}
             isRequired
           />

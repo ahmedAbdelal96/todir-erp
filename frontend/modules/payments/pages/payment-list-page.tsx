@@ -216,13 +216,13 @@ export function PaymentListPage(): React.JSX.Element {
   };
 
   const stateOptions = [
-    { value: "", label: t("list.filterAllStates") },
-    { value: "Completed", label: t("state.completed") },
-    { value: "Pending", label: t("state.pending") },
-    { value: "Draft", label: t("state.draft") },
-    { value: "Failed", label: t("state.failed") },
-    { value: "Cancelled", label: t("state.cancelled") },
-    { value: "Reversed", label: t("state.reversed") }
+    { id: "", label: t("list.filterAllStates") },
+    { id: "Completed", label: t("state.completed") },
+    { id: "Pending", label: t("state.pending") },
+    { id: "Draft", label: t("state.draft") },
+    { id: "Failed", label: t("state.failed") },
+    { id: "Cancelled", label: t("state.cancelled") },
+    { id: "Reversed", label: t("state.reversed") }
   ];
 
   const tabs = [
@@ -356,8 +356,8 @@ export function PaymentListPage(): React.JSX.Element {
             <div style={{ minWidth: "160px" }}>
               <Select
                 aria-label={t("list.filterStateLabel")}
-                value={stateFilter || ""}
-                onChange={(val) => handleStateFilterChange(String(val ?? ""))}
+                selectedKey={stateFilter || ""}
+                onSelectionChange={(val) => handleStateFilterChange(String(val ?? ""))}
                 options={stateOptions}
               />
             </div>

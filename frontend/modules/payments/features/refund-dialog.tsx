@@ -99,19 +99,19 @@ export function RefundDialog({
   };
 
   const reasonOptions = [
-    { value: "customer-requested", label: t("refund.reasonCustomerRequested") },
-    { value: "duplicate-payment", label: t("refund.reasonDuplicatePayment") },
-    { value: "order-cancelled", label: t("refund.reasonOrderCancelled") },
-    { value: "goods-returned", label: t("refund.reasonGoodsReturned") },
-    { value: "other", label: t("refund.reasonOther") }
+    { id: "customer-requested", label: t("refund.reasonCustomerRequested") },
+    { id: "duplicate-payment", label: t("refund.reasonDuplicatePayment") },
+    { id: "order-cancelled", label: t("refund.reasonOrderCancelled") },
+    { id: "goods-returned", label: t("refund.reasonGoodsReturned") },
+    { id: "other", label: t("refund.reasonOther") }
   ];
 
   const methodOptions = [
-    { value: "BankTransfer", label: t("method.banktransfer") },
-    { value: "Cash", label: t("method.cash") },
-    { value: "Card", label: t("method.card") },
-    { value: "PaymentGateway", label: t("method.paymentgateway") },
-    { value: "Other", label: t("method.other") }
+    { id: "BankTransfer", label: t("method.banktransfer") },
+    { id: "Cash", label: t("method.cash") },
+    { id: "Card", label: t("method.card") },
+    { id: "PaymentGateway", label: t("method.paymentgateway") },
+    { id: "Other", label: t("method.other") }
   ];
 
   return (
@@ -123,7 +123,7 @@ export function RefundDialog({
       title={t("refund.title")}
       size="medium"
     >
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form noValidate onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {errorMsg && (
           <div
             style={{
@@ -174,8 +174,8 @@ export function RefundDialog({
         {/* Reason Code */}
         <Select
           label={t("refund.reasonLabel")}
-          value={reasonCode}
-          onChange={(val) => setReasonCode(String(val ?? ""))}
+          selectedKey={reasonCode}
+          onSelectionChange={(val) => setReasonCode(String(val ?? ""))}
           options={reasonOptions}
           isRequired
         />
@@ -184,8 +184,8 @@ export function RefundDialog({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <Select
             label={t("refund.methodLabel")}
-            value={method}
-            onChange={(val) => setMethod(String(val ?? "") as PaymentMethod)}
+            selectedKey={method}
+            onSelectionChange={(val) => setMethod(String(val ?? "") as PaymentMethod)}
             options={methodOptions}
             isRequired
           />

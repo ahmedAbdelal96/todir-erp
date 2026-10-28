@@ -137,13 +137,13 @@ export function ReceivePaymentDialog({
   };
 
   const methodOptions = [
-    { value: "BankTransfer", label: t("method.banktransfer") },
-    { value: "Cash", label: t("method.cash") },
-    { value: "Cheque", label: t("method.cheque") },
-    { value: "Card", label: t("method.card") },
-    { value: "PaymentGateway", label: t("method.paymentgateway") },
-    { value: "Wallet", label: t("method.wallet") },
-    { value: "Other", label: t("method.other") }
+    { id: "BankTransfer", label: t("method.banktransfer") },
+    { id: "Cash", label: t("method.cash") },
+    { id: "Cheque", label: t("method.cheque") },
+    { id: "Card", label: t("method.card") },
+    { id: "PaymentGateway", label: t("method.paymentgateway") },
+    { id: "Wallet", label: t("method.wallet") },
+    { id: "Other", label: t("method.other") }
   ];
 
   return (
@@ -220,8 +220,8 @@ export function ReceivePaymentDialog({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <Select
             label={t("receive.methodLabel")}
-            value={method}
-            onChange={(val) => setMethod(val as PaymentMethod)}
+            selectedKey={method}
+            onSelectionChange={(val) => setMethod(String(val ?? "") as PaymentMethod)}
             options={methodOptions}
             isRequired
           />

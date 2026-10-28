@@ -34,16 +34,16 @@ export function AccountPicker({
   });
 
   const options = filtered.map((acc) => ({
-    value: acc.id,
+    id: acc.id,
     label: `${acc.name} (${acc.currencyCode || acc.currencyPolicy}) ${acc.maskedIdentifier ? `[${acc.maskedIdentifier}]` : ""}`
   }));
 
   return (
     <Select
       label={label}
-      value={selectedId || ""}
-      onChange={(val) => {
-        const found = accounts.find((a) => a.id === val);
+      selectedKey={selectedId || null}
+      onSelectionChange={(val) => {
+        const found = accounts.find((a) => a.id === String(val ?? ""));
         onSelect(found);
       }}
       options={options}

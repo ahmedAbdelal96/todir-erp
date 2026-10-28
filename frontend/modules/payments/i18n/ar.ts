@@ -60,6 +60,8 @@ export const ar = {
     sectionAccounting: "التوجيه المحاسبي وأثر دفتر الأستاذ العام",
     sectionReconciliation: "حالة المطابقة المصرفية",
     amount: "المبلغ المالي الصافي",
+    type: "نوع العملية",
+    direction: "الاتجاه",
     state: "حالة السند",
     method: "وسيلة السداد",
     account: "الحساب التشغيلي المودع فيه/المسحوب منه",
