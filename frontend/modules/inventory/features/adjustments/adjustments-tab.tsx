@@ -207,33 +207,33 @@ export function AdjustmentsTab({
       {adjustmentsList.length === 0 ? (
         <EmptyState title={t("adjustments.title")} description={t("common.empty")} />
       ) : (
-        <InventoryDataTable minWidth="100%" ariaLabel={t("adjustments.title")}>
+        <InventoryDataTable minWidth="1180px" ariaLabel={t("adjustments.title")}>
           <thead>
             <tr style={{ backgroundColor: "var(--color-surface-subtle, #f8fafc)", borderBottom: "1px solid var(--color-border-default)" }}>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("adjustments.adjustmentNumber")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "start", fontSize: "0.8125rem" }}>{t("adjustments.product")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "start", fontSize: "0.8125rem" }}>{t("adjustments.warehouse")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("adjustments.direction")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("adjustments.reason")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "end", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("adjustments.quantity")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("adjustments.creator")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("adjustments.approver")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "start", fontSize: "0.8125rem" }}>{t("adjustments.stockEffect")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "center", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("adjustments.status")}</th>
-              <th style={{ padding: "0.625rem 0.5rem", textAlign: "center", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("stock.actions")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.adjustmentNumber")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem" }}>{t("adjustments.product")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem" }}>{t("adjustments.warehouse")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.direction")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.reason")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "end", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.quantity")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.creator")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.approver")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem" }}>{t("adjustments.stockEffect")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "center", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.status")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "center", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("stock.actions")}</th>
             </tr>
           </thead>
           <tbody>
             {adjustmentsList.map((adj) => (
               <tr key={adj.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
-                <td style={{ padding: "0.625rem 0.5rem", fontWeight: 700, color: "var(--color-brand-primary)", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.75rem 0.75rem", fontWeight: 700, color: "var(--color-brand-primary)", whiteSpace: "nowrap" }}>
                   {adj.id}
                 </td>
-                <td style={{ padding: "0.625rem 0.5rem" }}>
+                <td style={{ padding: "0.75rem 0.75rem" }}>
                   <InventoryProductDisplay productVariantId={adj.productVariantId} />
                 </td>
-                <td style={{ padding: "0.625rem 0.5rem", fontSize: "0.8125rem" }}>{adj.warehouseName}</td>
-                <td style={{ padding: "0.625rem 0.5rem", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem" }}>{adj.warehouseName}</td>
+                <td style={{ padding: "0.75rem 0.75rem", whiteSpace: "nowrap" }}>
                   <span style={{
                     padding: "0.25rem 0.5rem",
                     borderRadius: "var(--radius-sm)",
@@ -245,19 +245,19 @@ export function AdjustmentsTab({
                     {t(`adjustments.directions.${adj.direction}` as any)}
                   </span>
                 </td>
-                <td style={{ padding: "0.625rem 0.5rem", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem", whiteSpace: "nowrap" }}>
                   {t(`adjustments.reasons.${adj.reason}` as any)}
                 </td>
-                <td style={{ padding: "0.625rem 0.5rem", textAlign: "end", fontWeight: 700, whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.75rem 0.75rem", textAlign: "end", fontWeight: 700, whiteSpace: "nowrap" }}>
                   <QuantityDisplay value={toQty(adj.quantity)} />
                 </td>
-                <td style={{ padding: "0.625rem 0.5rem", fontSize: "0.8125rem", color: "var(--color-content-muted)", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem", color: "var(--color-content-muted)", whiteSpace: "nowrap" }}>
                   {adj.creator ?? "—"}
                 </td>
-                <td style={{ padding: "0.625rem 0.5rem", fontSize: "0.8125rem", color: "var(--color-content-muted)", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem", color: "var(--color-content-muted)", whiteSpace: "nowrap" }}>
                   {adj.approver ?? "—"}
                 </td>
-                <td style={{ padding: "0.625rem 0.5rem", fontSize: "0.8125rem" }}>
+                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem" }}>
                   {adj.status === "Posted" ? (
                     <span style={{ color: "var(--color-status-success)", fontWeight: 600 }}>
                       <QuantityDisplay value={toQty(adj.direction === "Increase" ? adj.quantity : -adj.quantity)} /> {t("adjustments.stockEffectPosted")}
@@ -268,10 +268,10 @@ export function AdjustmentsTab({
                     </span>
                   )}
                 </td>
-                <td style={{ padding: "0.625rem 0.5rem", textAlign: "center", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.75rem 0.75rem", textAlign: "center", whiteSpace: "nowrap" }}>
                   <InventoryStatusBadge status={adj.status} type="adjustment" />
                 </td>
-                <td style={{ padding: "0.625rem 0.5rem", textAlign: "center", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.75rem 0.75rem", textAlign: "center", whiteSpace: "nowrap" }}>
                   <div style={{ display: "flex", gap: "0.375rem", justifyContent: "center" }}>
                     {adj.status === "Draft" && (
                       <Button variant="secondary" onPress={() => handleSubmitForApproval(adj.id)}>

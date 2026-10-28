@@ -306,11 +306,11 @@ export const ar = {
     },
     statuses: {
       Draft: "مسودة",
-      PendingApproval: "بانتظار الاعتماد الإداري",
-      Approved: "معتمد وبانتظار الترحيل",
-      Posted: "مرحل بالكامل ومسجل في الحركات",
+      PendingApproval: "بانتظار الاعتماد",
+      Approved: "معتمد",
+      Posted: "مرحل",
       Rejected: "مرفوض",
-      Cancelled: "ملغي"
+      Cancelled: "ملغى"
     }
   },
   opening: {

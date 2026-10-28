@@ -307,8 +307,8 @@ export const en = {
     statuses: {
       Draft: "Draft",
       PendingApproval: "Pending Approval",
-      Approved: "Approved & Pending Post",
-      Posted: "Posted to Stock Ledger",
+      Approved: "Approved",
+      Posted: "Posted",
       Rejected: "Rejected",
       Cancelled: "Cancelled"
     }

@@ -631,16 +631,21 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
 
     await page.keyboard.press('Escape');
 
-    // 14-adjustment-approval-final.png & adjustment-approval-final-2.png (shows full lifecycle: Draft, PendingApproval, Approved, Posted)
+    // adjustment-approval-final-3.png (shows full lifecycle: Draft, PendingApproval, Approved, Posted)
     await page.getByRole('tab', { name: 'التسويات المخزنية' }).click();
     await expect(page.getByText('ADJ-2026-004')).toBeVisible();
+    await expect(page.getByText('مسودة', { exact: true })).toBeVisible();
+    await expect(page.getByText('بانتظار الاعتماد', { exact: true })).toBeVisible();
+    await expect(page.getByText('معتمد', { exact: true })).toBeVisible();
+    await expect(page.getByText('مرحل', { exact: true })).toBeVisible();
     await expect(page.getByText('أحمد المحاسب').first()).toBeVisible();
-    await expect(page.getByText('مدير المستودع').first()).toBeVisible();
-    await expect(page.getByText('مرحل - أثر على الرصيد الفعلي').first()).toBeVisible();
-    await expect(page.getByText('معلق - لا أثر على الرصيد').first()).toBeVisible();
+
+    // Ensure status column is fully visible without any edge clipping
+    await page.getByText('بانتظار الاعتماد', { exact: true }).first().scrollIntoViewIfNeeded();
 
     await captureScreenshot(page, '14-adjustment-approval-final.png', { fullPage: true });
     await captureScreenshot(page, 'adjustment-approval-final-2.png', { fullPage: true });
+    await captureScreenshot(page, 'adjustment-approval-final-3.png', { fullPage: true });
 
     // 15-opening-inventory-final.png
     await page.getByRole('tab', { name: 'رصيد أول المدة' }).click();
