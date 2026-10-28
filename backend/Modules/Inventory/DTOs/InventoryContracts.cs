@@ -22,6 +22,18 @@ public sealed record AdjustStockRequest(Guid ProductVariantId, Guid WarehouseId,
     Guid EnteredUomId, decimal Quantity, AdjustmentDirection Direction, AdjustmentReason Reason,
     DateOnly OperationalDate, DateOnly PostingDate, string IdempotencyKey, StockStatus Status = StockStatus.Available,
     Guid? LotId = null, Guid? SerialId = null, decimal? UnitCost = null, string? CurrencyCode = null);
+public sealed record UpdateInventoryPolicyRequest(AdjustmentApprovalMode AdjustmentApprovalMode = AdjustmentApprovalMode.DirectConfirm,
+    bool SeparationOfDuties = true, DateOnly? OperationalCutoffDate = null);
+public sealed record InventoryPolicyView(Guid LegalEntityId, AdjustmentApprovalMode AdjustmentApprovalMode,
+    bool SeparationOfDuties, DateOnly? OperationalCutoffDate, long Version);
+public sealed record CreateAdjustmentRequest(Guid ProductVariantId, Guid WarehouseId, Guid? LocationId,
+    Guid EnteredUomId, decimal Quantity, AdjustmentDirection Direction, AdjustmentReason Reason,
+    DateOnly OperationalDate, DateOnly PostingDate, string IdempotencyKey, StockStatus Status = StockStatus.Available,
+    Guid? LotId = null, Guid? SerialId = null, decimal? UnitCost = null, string? CurrencyCode = null);
+public sealed record AdjustmentRequestView(Guid Id, Guid LegalEntityId, Guid ProductVariantId, Guid WarehouseId,
+    Guid? LocationId, decimal Quantity, AdjustmentDirection Direction, AdjustmentReason Reason,
+    DateOnly OperationalDate, DateOnly PostingDate, AdjustmentApprovalMode ApprovalMode,
+    AdjustmentRequestStatus Status, Guid CreatedBy, Guid? ApprovedBy, Guid? PostedOperationId);
 public sealed record ReverseInventoryOperationRequest(Guid OperationId, DateOnly OperationalDate, DateOnly PostingDate,
     string IdempotencyKey);
 public sealed record ResolveInventoryScanRequest(string Code);

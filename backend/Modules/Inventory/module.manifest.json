@@ -13,7 +13,7 @@
   },
   "owns": {
     "schema": "business_inventory",
-    "entities": ["warehouse", "movement_sequence", "location", "product_inventory_profile", "inventory_operation", "stock_movement_entry", "stock_balance", "negative_stock_condition", "reservation", "reservation_allocation", "reservation_event", "inventory_transfer", "transfer_receipt", "transfer_event", "lot", "serial", "physical_count", "count_line", "valuation_entry", "cost_layer", "cost_layer_consumption", "cost_state", "inventory_audit"]
+    "entities": ["warehouse", "movement_sequence", "location", "product_inventory_profile", "inventory_operation", "stock_movement_entry", "stock_balance", "negative_stock_condition", "reservation", "reservation_allocation", "reservation_event", "inventory_transfer", "transfer_receipt", "transfer_event", "lot", "serial", "physical_count", "count_line", "valuation_entry", "cost_layer", "cost_layer_consumption", "cost_state", "inventory_audit", "inventory_policy", "inventory_adjustment_request"]
   },
   "permissions": [
     "inventory.stock.read", "inventory.history.read", "inventory.stock.status.change", "inventory.cost.read", "inventory.valuation.read",

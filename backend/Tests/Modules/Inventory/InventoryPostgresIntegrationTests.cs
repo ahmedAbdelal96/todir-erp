@@ -21,6 +21,64 @@ namespace Inventory.Tests;
 public sealed class InventoryPostgresIntegrationTests
 {
     [Fact]
+    public async Task AdjustmentApprovalAndOperationalCutoffDoNotMutateStockBeforePosting()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_INVENTORY_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_INVENTORY_TEST_CONNECTION to a migrated and seeded disposable PostgreSQL database.");
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var tenantId = Stable("tenant:atlas");
+        var tenant = new TenantId(tenantId);
+        var entityId = Stable($"{tenantId:D}:legal-entity");
+        var productVariantId = Stable($"{tenantId:D}:variant:0002:default");
+        var warehouseId = Stable($"{tenantId:D}:inventory:warehouse-structured");
+        var binId = Stable($"{tenantId:D}:inventory:location-bin-a-01");
+        var creatorId = Stable($"{tenantId:D}:identity:admin");
+        var approverId = Stable($"{tenantId:D}:identity:inventory-approver");
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var catalog = new CatalogCapabilities(new CatalogCapabilityRepository(dataSource));
+        var ledgerRepository = new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System);
+        var repository = new InventoryRepository(dataSource, coordinator, TimeProvider.System, catalog, catalog, new LedgerTransactionCapability(ledgerRepository));
+        var suffix = Guid.NewGuid().ToString("N");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        try
+        {
+            await repository.SavePolicyAsync(tenant, creatorId, entityId,
+                new UpdateInventoryPolicyRequest(AdjustmentApprovalMode.ApprovalRequired, true, today), Guid.CreateVersion7(), default);
+            var unitId = await FindBaseUomAsync(dataSource, tenantId, productVariantId);
+            var lot = await repository.CreateLotAsync(tenant, creatorId, entityId,
+                new CreateLotRequest(productVariantId, $"APP-{suffix}", today.AddDays(-1), today.AddDays(365), "approval-test"), Guid.CreateVersion7(), default);
+            var before = await ReadInventoryEffectCountsAsync(dataSource, tenantId);
+            var request = await repository.CreateAdjustmentRequestAsync(tenant, creatorId, entityId,
+                new CreateAdjustmentRequest(productVariantId, warehouseId, binId, unitId, 1m, AdjustmentDirection.Increase,
+                    AdjustmentReason.FoundStock, today.AddDays(-1), today, $"inventory-approval-{suffix}", LotId: lot.Id), Guid.CreateVersion7(), default);
+            Assert.Equal(AdjustmentRequestStatus.PendingApproval, request.Status);
+            var afterRequest = await ReadInventoryEffectCountsAsync(dataSource, tenantId);
+            Assert.Equal(before.Operations, afterRequest.Operations);
+            Assert.Equal(before.Movements, afterRequest.Movements);
+            Assert.Equal(before.Valuations, afterRequest.Valuations);
+            Assert.Equal(before.Outbox, afterRequest.Outbox);
+            Assert.Equal(before.Facts, afterRequest.Facts);
+            Assert.Equal(before.Entries, afterRequest.Entries);
+            await Assert.ThrowsAsync<InventoryException>(() => repository.ApproveAdjustmentRequestAsync(tenant, creatorId, entityId, request.Id, Guid.CreateVersion7(), default));
+            await repository.ApproveAdjustmentRequestAsync(tenant, approverId, entityId, request.Id, Guid.CreateVersion7(), default);
+            var cutoffError = await Assert.ThrowsAsync<InventoryException>(() => repository.PostAdjustmentRequestAsync(tenant, approverId, entityId, request.Id, Guid.CreateVersion7(), null, default));
+            Assert.Equal("inventory.before_operational_cutoff", cutoffError.Code);
+            var afterCutoff = await ReadInventoryEffectCountsAsync(dataSource, tenantId);
+            Assert.Equal(before.Operations, afterCutoff.Operations);
+            Assert.Equal(before.Movements, afterCutoff.Movements);
+            Assert.Equal(before.Valuations, afterCutoff.Valuations);
+            Assert.Equal(before.Outbox, afterCutoff.Outbox);
+            Assert.Equal(before.Facts, afterCutoff.Facts);
+            Assert.Equal(before.Entries, afterCutoff.Entries);
+        }
+        finally
+        {
+            await repository.SavePolicyAsync(tenant, creatorId, entityId,
+                new UpdateInventoryPolicyRequest(AdjustmentApprovalMode.DirectConfirm, true, null), Guid.CreateVersion7(), default);
+        }
+    }
+
+    [Fact]
     public async Task ReceiptReplayIssueAndBalanceUseRealPostgresAndCatalogConversions()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_INVENTORY_TEST_CONNECTION")

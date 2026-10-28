@@ -16,6 +16,8 @@ public enum TransferMode { Instant, InTransit }
 public enum PhysicalCountMode { Simple, Full, Cycle, Blind }
 public enum AdjustmentDirection { Increase, Decrease }
 public enum AdjustmentReason { CountDifference, Damage, Loss, FoundStock, DataCorrection, Scrap, UomCorrection, OtherApproved }
+public enum AdjustmentApprovalMode { DirectConfirm, ApprovalRequired }
+public enum AdjustmentRequestStatus { Draft, PendingApproval, Approved, Posted, Rejected, Cancelled }
 
 public sealed record InventoryProfile(
     Guid TenantId, Guid LegalEntityId, Guid ProductVariantId, InventoryState State,

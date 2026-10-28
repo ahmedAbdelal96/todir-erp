@@ -19,6 +19,8 @@ public static class InventorySeed
         var bin = Id(tenant, "location-bin-a-01");
         var now = context.AsOf;
 
+        await context.ExecuteAsync("insert into business_inventory.inventory_policy(tenant_id,legal_entity_id,adjustment_approval_mode,separation_of_duties,operational_cutoff_date,version,created_at,updated_at) values($1,$2,'DirectConfirm',true,null,1,$3,$3) on conflict(tenant_id,legal_entity_id) do update set adjustment_approval_mode='DirectConfirm',separation_of_duties=true,updated_at=excluded.updated_at", ct, tenant, entity, now);
+
         await context.ExecuteAsync("insert into business_inventory.warehouse(tenant_id,id,legal_entity_id,branch_id,code,name,location_mode,default_location_id,status,version,created_at,updated_at) values($1,$2,$3,$4,'MAIN','المخزن الرئيسي','WarehouseOnly',$5,'Active',1,$6,$6) on conflict(tenant_id,id) do update set name=excluded.name,location_mode=excluded.location_mode,default_location_id=excluded.default_location_id,status='Active',updated_at=excluded.updated_at", ct, tenant, simpleWarehouse, entity, SeedIds.TenantBranch(tenant), simpleDefault, now);
         await context.ExecuteAsync("insert into business_inventory.location(tenant_id,id,legal_entity_id,warehouse_id,parent_location_id,code,name,location_type,hidden,can_hold_stock,can_receive_into,can_pick_from,status,created_at) values($1,$2,$3,$4,null,'DEFAULT','موقع افتراضي','Default',true,true,true,true,'Active',$5) on conflict(tenant_id,id) do update set warehouse_id=excluded.warehouse_id,name=excluded.name,status='Active'", ct, tenant, simpleDefault, entity, simpleWarehouse, now);
 

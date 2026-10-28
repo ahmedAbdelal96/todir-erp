@@ -46,8 +46,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "array",
+                  "items": {
+                    "": "#/components/schemas/Warehouse"
+                  }
                 }
               }
             }
@@ -98,8 +100,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/Warehouse"
                 }
               }
             }
@@ -109,8 +110,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/Warehouse"
                 }
               }
             }
@@ -211,8 +211,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "array",
+                  "items": {
+                    "": "#/components/schemas/NegativeStockConditionView"
+                  }
                 }
               }
             }
@@ -274,8 +276,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -347,8 +348,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "array",
+                  "items": {
+                    "": "#/components/schemas/InventoryLocation"
+                  }
                 }
               }
             }
@@ -401,8 +404,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryLocation"
                 }
               }
             }
@@ -412,8 +414,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryLocation"
                 }
               }
             }
@@ -485,8 +486,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -558,8 +558,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -621,8 +620,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryProfile"
                 }
               }
             }
@@ -685,8 +683,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TraceabilityRecord"
                 }
               }
             }
@@ -696,8 +693,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TraceabilityRecord"
                 }
               }
             }
@@ -760,8 +756,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TraceabilityRecord"
                 }
               }
             }
@@ -771,8 +766,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TraceabilityRecord"
                 }
               }
             }
@@ -864,8 +858,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "array",
+                  "items": {
+                    "": "#/components/schemas/InventoryBalanceView"
+                  }
                 }
               }
             }
@@ -1017,8 +1013,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryMovementPage"
                 }
               }
             }
@@ -1109,8 +1104,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "array",
+                  "items": {
+                    "": "#/components/schemas/InventoryAsOfView"
+                  }
                 }
               }
             }
@@ -1172,8 +1169,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryReconciliation"
                 }
               }
             }
@@ -1244,8 +1240,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryValuation"
                 }
               }
             }
@@ -1313,8 +1308,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "array",
+                  "items": {
+                    "": "#/components/schemas/ProductLocatorView"
+                  }
                 }
               }
             }
@@ -1386,8 +1383,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventorySuggestion"
                 }
               }
             }
@@ -1468,8 +1464,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "array",
+                  "items": {
+                    "": "#/components/schemas/InventorySuggestion"
+                  }
                 }
               }
             }
@@ -1522,8 +1520,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryScanResult"
                 }
               }
             }
@@ -1533,8 +1530,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryScanResult"
                 }
               }
             }
@@ -1597,8 +1593,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1608,8 +1603,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1672,8 +1666,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1683,8 +1676,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1747,8 +1739,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1758,8 +1749,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1822,8 +1812,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1833,8 +1822,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1897,8 +1885,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1908,8 +1895,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1972,8 +1958,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -1983,8 +1968,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -2047,8 +2031,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TransferResult"
                 }
               }
             }
@@ -2058,8 +2041,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TransferResult"
                 }
               }
             }
@@ -2131,8 +2113,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TransferResult"
                 }
               }
             }
@@ -2142,8 +2123,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TransferResult"
                 }
               }
             }
@@ -2205,8 +2185,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TransferResult"
                 }
               }
             }
@@ -2216,8 +2195,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/TransferResult"
                 }
               }
             }
@@ -2280,8 +2258,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/ReservationResult"
                 }
               }
             }
@@ -2291,8 +2268,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/ReservationResult"
                 }
               }
             }
@@ -2364,8 +2340,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -2375,8 +2350,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -2438,8 +2412,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -2449,8 +2422,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -2512,8 +2484,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -2523,8 +2494,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -2586,8 +2556,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -2597,8 +2566,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/InventoryOperationResult"
                 }
               }
             }
@@ -2661,8 +2629,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/PhysicalCountView"
                 }
               }
             }
@@ -2672,8 +2639,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/PhysicalCountView"
                 }
               }
             }
@@ -2754,8 +2720,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "array",
+                  "items": {
+                    "": "#/components/schemas/PhysicalCountLineView"
+                  }
                 }
               }
             }
@@ -2815,8 +2783,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/PhysicalCountLineView"
                 }
               }
             }
@@ -2826,8 +2793,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/PhysicalCountLineView"
                 }
               }
             }
@@ -2908,8 +2874,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/PhysicalCountView"
                 }
               }
             }
@@ -2981,8 +2946,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/PhysicalCountView"
                 }
               }
             }
@@ -2992,8 +2956,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "": "#/components/schemas/PhysicalCountView"
                 }
               }
             }
@@ -3012,6 +2975,284 @@
           },
           "409": {
             "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/policy": {
+      "get": {
+        "operationId": "inventoryGetPolicy",
+        "summary": "Get inventory policy",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "": "#/components/schemas/InventoryPolicy"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "409": {
+            "description": "Inventory state conflict"
+          }
+        }
+      },
+      "put": {
+        "operationId": "inventoryPutPolicy",
+        "summary": "Update inventory policy",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "": "#/components/schemas/InventoryPolicy"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "409": {
+            "description": "Inventory state conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "": "#/components/schemas/UpdateInventoryPolicyRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/adjustment-requests": {
+      "post": {
+        "operationId": "inventoryCreateAdjustmentRequest",
+        "summary": "Create adjustment request",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "": "#/components/schemas/AdjustmentRequestView"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "": "#/components/schemas/AdjustmentRequestView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "409": {
+            "description": "Inventory state conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "": "#/components/schemas/CreateAdjustmentRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/adjustment-requests/{requestId}/approve": {
+      "post": {
+        "operationId": "inventoryApproveAdjustmentRequest",
+        "summary": "Approve adjustment request",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "": "#/components/schemas/AdjustmentRequestView"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "": "#/components/schemas/AdjustmentRequestView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "409": {
+            "description": "Inventory state conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/adjustment-requests/{requestId}/post": {
+      "post": {
+        "operationId": "inventoryPostAdjustmentRequest",
+        "summary": "Post approved adjustment request",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "": "#/components/schemas/InventoryOperationResult"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "": "#/components/schemas/InventoryOperationResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "409": {
+            "description": "Inventory state conflict"
           }
         }
       }
@@ -4037,6 +4278,458 @@
           },
           "idempotentReplay": {
             "type": "boolean"
+          }
+        }
+      },
+      "UpdateInventoryPolicyRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "adjustmentApprovalMode",
+          "separationOfDuties"
+        ],
+        "properties": {
+          "adjustmentApprovalMode": {
+            "type": "string",
+            "enum": [
+              "DirectConfirm",
+              "ApprovalRequired"
+            ]
+          },
+          "separationOfDuties": {
+            "type": "boolean"
+          },
+          "operationalCutoffDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          }
+        }
+      },
+      "Warehouse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "legalEntityId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "locationMode": {
+            "type": "string",
+            "enum": [
+              "WarehouseOnly",
+              "Locations",
+              "HierarchicalLocations"
+            ]
+          },
+          "defaultLocationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Active",
+              "Suspended",
+              "Archived"
+            ]
+          },
+          "branchId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "InventoryLocation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parentLocationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "canHoldStock": {
+            "type": "boolean"
+          },
+          "canReceiveInto": {
+            "type": "boolean"
+          },
+          "canPickFrom": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "InventoryPolicy": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "legalEntityId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "adjustmentApprovalMode": {
+            "type": "string",
+            "enum": [
+              "DirectConfirm",
+              "ApprovalRequired"
+            ]
+          },
+          "separationOfDuties": {
+            "type": "boolean"
+          },
+          "operationalCutoffDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "InventoryProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "legalEntityId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "NonStocked",
+              "StockTracked"
+            ]
+          },
+          "tracking": {
+            "type": "string",
+            "enum": [
+              "Quantity",
+              "Lot",
+              "Serial"
+            ]
+          },
+          "valuation": {
+            "type": "string",
+            "enum": [
+              "NonValuated",
+              "Perpetual"
+            ]
+          },
+          "costing": {
+            "type": "string",
+            "enum": [
+              "MovingAverage",
+              "FIFO"
+            ],
+            "nullable": true
+          },
+          "negativeStock": {
+            "type": "string",
+            "enum": [
+              "Disallow",
+              "AllowWithWarningAndPermission",
+              "Allow"
+            ]
+          },
+          "defaultWarehouseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "reservationMode": {
+            "type": "string",
+            "enum": [
+              "Disabled",
+              "Advisory",
+              "Enforced"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CreateAdjustmentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "productVariantId",
+          "warehouseId",
+          "enteredUomId",
+          "quantity",
+          "direction",
+          "reason",
+          "operationalDate",
+          "postingDate",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "enteredUomId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "Increase",
+              "Decrease"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "operationalDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "unitCost": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "currencyCode": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "AdjustmentRequestView": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "legalEntityId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "operationalDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "approvalMode": {
+            "type": "string",
+            "enum": [
+              "DirectConfirm",
+              "ApprovalRequired"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Draft",
+              "PendingApproval",
+              "Approved",
+              "Posted",
+              "Rejected",
+              "Cancelled"
+            ]
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approvedBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "postedOperationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "InventoryReconciliation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "asOfDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "inventoryValue": {
+            "type": "number"
+          },
+          "ledgerValue": {
+            "type": "number"
+          },
+          "difference": {
+            "type": "number"
+          },
+          "currencyCode": {
+            "type": "string"
+          }
+        }
+      },
+      "InventoryValuation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "carryingValue": {
+            "type": "number"
+          },
+          "averageUnitCost": {
+            "type": "number"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "costingMethod": {
+            "type": "string",
+            "enum": [
+              "MovingAverage",
+              "FIFO"
+            ]
+          }
+        }
+      },
+      "InventorySuggestion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "locationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "InventoryScanResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string"
           }
         }
       }

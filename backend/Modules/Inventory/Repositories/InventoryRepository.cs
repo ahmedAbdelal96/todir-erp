@@ -179,6 +179,80 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
         return new(id, request.ProductVariantId, number, "PendingReceipt");
     }
 
+    public async Task<InventoryPolicyView> GetPolicyAsync(TenantId tenant, Guid entity, CancellationToken ct)
+    {
+        await using var connection = await OpenTenantAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select adjustment_approval_mode,separation_of_duties,operational_cutoff_date,version from business_inventory.inventory_policy where tenant_id=$1 and legal_entity_id=$2", connection);
+        Add(command, tenant.Value, entity);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct)
+            ? new(entity, Enum.Parse<AdjustmentApprovalMode>(reader.GetString(0)), reader.GetBoolean(1), reader.IsDBNull(2) ? null : reader.GetFieldValue<DateOnly>(2), reader.GetInt64(3))
+            : new(entity, AdjustmentApprovalMode.DirectConfirm, true, null, 1);
+    }
+
+    public async Task<InventoryPolicyView> SavePolicyAsync(TenantId tenant, Guid actor, Guid entity, UpdateInventoryPolicyRequest request, Guid correlationId, CancellationToken ct)
+    {
+        if (!Enum.IsDefined(request.AdjustmentApprovalMode)) throw new InventoryException("inventory.policy_invalid");
+        var now = clock.GetUtcNow();
+        return await transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await using var command = new NpgsqlCommand("insert into business_inventory.inventory_policy(tenant_id,legal_entity_id,adjustment_approval_mode,separation_of_duties,operational_cutoff_date,version,created_at,updated_at) values($1,$2,$3,$4,$5,1,$6,$6) on conflict(tenant_id,legal_entity_id) do update set adjustment_approval_mode=excluded.adjustment_approval_mode,separation_of_duties=excluded.separation_of_duties,operational_cutoff_date=excluded.operational_cutoff_date,version=business_inventory.inventory_policy.version+1,updated_at=excluded.updated_at returning version", context.Connection, context.Transaction);
+            Add(command, tenant.Value, entity, request.AdjustmentApprovalMode.ToString(), request.SeparationOfDuties, request.OperationalCutoffDate ?? (object)DBNull.Value, now);
+            var version = (long)(await command.ExecuteScalarAsync(token) ?? 1L);
+            await AuditAsync(context, tenant.Value, entity, actor, "inventory.policy.saved", "InventoryPolicy", entity, correlationId, now, token);
+            return new InventoryPolicyView(entity, request.AdjustmentApprovalMode, request.SeparationOfDuties, request.OperationalCutoffDate, version);
+        }, ct);
+    }
+
+    public async Task<AdjustmentRequestView> CreateAdjustmentRequestAsync(TenantId tenant, Guid actor, Guid entity, CreateAdjustmentRequest request, Guid correlationId, CancellationToken ct)
+    {
+        if (!Enum.IsDefined(request.Direction) || !Enum.IsDefined(request.Reason) || request.Quantity <= 0m || request.Status == StockStatus.InTransit)
+            throw new InventoryException("inventory.adjustment_request_invalid");
+        var policy = await GetPolicyAsync(tenant, entity, ct);
+        var id = Guid.CreateVersion7(); var now = clock.GetUtcNow();
+        var status = policy.AdjustmentApprovalMode == AdjustmentApprovalMode.ApprovalRequired ? AdjustmentRequestStatus.PendingApproval : AdjustmentRequestStatus.Draft;
+        await transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await using var command = new NpgsqlCommand("insert into business_inventory.inventory_adjustment_request(tenant_id,id,legal_entity_id,product_variant_id,warehouse_id,location_id,entered_uom_id,quantity,direction,reason,status,approval_mode,stock_status,lot_id,serial_id,unit_cost,currency_code,operational_date,posting_date,idempotency_key,created_by,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22) on conflict(tenant_id,legal_entity_id,idempotency_key) do nothing", context.Connection, context.Transaction);
+            Add(command, tenant.Value, id, entity, request.ProductVariantId, request.WarehouseId, request.LocationId ?? (object)DBNull.Value, request.EnteredUomId, request.Quantity, request.Direction.ToString(), request.Reason.ToString(), status.ToString(), policy.AdjustmentApprovalMode.ToString(), request.Status.ToString(), request.LotId ?? (object)DBNull.Value, request.SerialId ?? (object)DBNull.Value, request.UnitCost ?? (object)DBNull.Value, request.CurrencyCode ?? (object)DBNull.Value, request.OperationalDate, request.PostingDate, request.IdempotencyKey, actor, now);
+            try { await command.ExecuteNonQueryAsync(token); }
+            catch (PostgresException ex) when (ex.SqlState == "23505") { throw new InventoryException("inventory.adjustment_duplicate"); }
+            await AuditAsync(context, tenant.Value, entity, actor, "adjustment.requested", "InventoryAdjustmentRequest", id, correlationId, now, token);
+            return true;
+        }, ct);
+        return new(id, entity, request.ProductVariantId, request.WarehouseId, request.LocationId, request.Quantity, request.Direction, request.Reason, request.OperationalDate, request.PostingDate, policy.AdjustmentApprovalMode, status, actor, null, null);
+    }
+
+    public async Task<AdjustmentRequestView> ApproveAdjustmentRequestAsync(TenantId tenant, Guid actor, Guid entity, Guid requestId, Guid correlationId, CancellationToken ct)
+    {
+        var now = clock.GetUtcNow();
+        return await transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await using var command = new NpgsqlCommand("select product_variant_id,warehouse_id,location_id,quantity,direction,reason,operational_date,posting_date,approval_mode,status,created_by,approved_by,posted_operation_id from business_inventory.inventory_adjustment_request where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction);
+            Add(command, tenant.Value, entity, requestId); await using var reader = await command.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token)) throw new InventoryException("inventory.adjustment_request_not_found");
+            var status = Enum.Parse<AdjustmentRequestStatus>(reader.GetString(9));
+            var createdBy = reader.GetGuid(10);
+            var mode = Enum.Parse<AdjustmentApprovalMode>(reader.GetString(8));
+            var view = ReadAdjustmentView(reader, requestId, entity, mode, status, createdBy);
+            await reader.DisposeAsync();
+            if (status != AdjustmentRequestStatus.PendingApproval) throw new InventoryException("inventory.adjustment_not_pending_approval");
+            if (mode == AdjustmentApprovalMode.ApprovalRequired && await SeparationOfDutiesAsync(context, tenant.Value, entity, token) && createdBy == actor)
+                throw new InventoryException("inventory.adjustment_creator_cannot_approve");
+            await using var update = new NpgsqlCommand("update business_inventory.inventory_adjustment_request set status='Approved',approved_by=$4,updated_at=$5,version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3", context.Connection, context.Transaction);
+            Add(update, tenant.Value, entity, requestId, actor, now); await update.ExecuteNonQueryAsync(token);
+            await AuditAsync(context, tenant.Value, entity, actor, "adjustment.approved", "InventoryAdjustmentRequest", requestId, correlationId, now, token);
+            return view with { Status = AdjustmentRequestStatus.Approved, ApprovedBy = actor };
+        }, ct);
+    }
+
+    public async Task<InventoryOperationResult> PostAdjustmentRequestAsync(TenantId tenant, Guid actor, Guid entity, Guid requestId, Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false)
+    {
+        var request = await LoadAdjustmentRequestAsync(tenant, entity, requestId, ct);
+        var adjustment = new AdjustStockRequest(request.ProductVariantId, request.WarehouseId, request.LocationId, request.EnteredUomId, request.Quantity, request.Direction, request.Reason, request.OperationalDate, request.PostingDate, request.IdempotencyKey, request.StockStatus, request.LotId, request.SerialId, request.UnitCost, request.CurrencyCode);
+        return await ConfirmMovementAsync(tenant, actor, entity, new ConfirmStockMovementRequest(adjustment.ProductVariantId, adjustment.WarehouseId, adjustment.LocationId, adjustment.EnteredUomId, adjustment.Quantity, adjustment.OperationalDate, adjustment.PostingDate, adjustment.IdempotencyKey, "inventory", null, adjustment.Status, adjustment.LotId, adjustment.SerialId, adjustment.UnitCost, adjustment.CurrencyCode), MovementKind.Adjustment, correlationId, traceParent, ct, canOverrideNegativeStock, adjustmentSign: adjustment.Direction == AdjustmentDirection.Increase ? 1 : -1, reasonCode: adjustment.Reason.ToString(), adjustmentRequestId: requestId);
+    }
+
     public Task<InventoryOperationResult> ReceiveAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) =>
         ConfirmMovementAsync(tenant, actor, entity, request, MovementKind.Receipt, correlationId, traceParent, ct);
 
@@ -191,15 +265,18 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
     public Task<InventoryOperationResult> OpenAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) =>
         ConfirmMovementAsync(tenant, actor, entity, request, MovementKind.Opening, correlationId, traceParent, ct);
 
-    public Task<InventoryOperationResult> AdjustAsync(TenantId tenant, Guid actor, Guid entity, AdjustStockRequest request,
+    public async Task<InventoryOperationResult> AdjustAsync(TenantId tenant, Guid actor, Guid entity, AdjustStockRequest request,
         Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false)
     {
         if (!Enum.IsDefined(request.Reason) || !Enum.IsDefined(request.Direction) || request.Quantity <= 0m || request.Status == StockStatus.InTransit)
             throw new InventoryException("inventory.adjustment_request_invalid");
+        var policy = await GetPolicyAsync(tenant, entity, ct);
+        if (policy.AdjustmentApprovalMode == AdjustmentApprovalMode.ApprovalRequired)
+            throw new InventoryException("inventory.adjustment_approval_required");
         var movement = new ConfirmStockMovementRequest(request.ProductVariantId, request.WarehouseId, request.LocationId,
             request.EnteredUomId, request.Quantity, request.OperationalDate, request.PostingDate, request.IdempotencyKey,
             "inventory", null, request.Status, request.LotId, request.SerialId, request.UnitCost, request.CurrencyCode);
-        return ConfirmMovementAsync(tenant, actor, entity, movement, MovementKind.Adjustment, correlationId, traceParent,
+        return await ConfirmMovementAsync(tenant, actor, entity, movement, MovementKind.Adjustment, correlationId, traceParent,
             ct, canOverrideNegativeStock, adjustmentSign: request.Direction == AdjustmentDirection.Increase ? 1 : -1,
             reasonCode: request.Reason.ToString());
     }
@@ -411,6 +488,14 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
         var result = new List<Warehouse>(); await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), tenant.Value, reader.GetGuid(1), reader.GetString(2), reader.GetString(3), Enum.Parse<LocationTrackingMode>(reader.GetString(4)), reader.GetGuid(5), Enum.Parse<WarehouseStatus>(reader.GetString(6)), reader.IsDBNull(7) ? null : reader.GetGuid(7)));
         return result;
+    }
+
+    public async Task<Guid?> GetWarehouseBranchAsync(TenantId tenant, Guid entity, Guid warehouseId, CancellationToken ct)
+    {
+        await using var connection = await OpenTenantAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select branch_id from business_inventory.warehouse where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection);
+        Add(command, tenant.Value, entity, warehouseId);
+        return await command.ExecuteScalarAsync(ct) is Guid branch ? branch : null;
     }
 
     public async Task<Warehouse> ChangeWarehouseStatusAsync(TenantId tenant, Guid actor, Guid entity, Guid warehouseId,
@@ -1157,7 +1242,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
 
     private async Task<InventoryOperationResult> ConfirmMovementAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request,
         MovementKind kind, Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false,
-        Guid? reservationId = null, int? adjustmentSign = null, string? reasonCode = null)
+        Guid? reservationId = null, int? adjustmentSign = null, string? reasonCode = null, Guid? adjustmentRequestId = null)
     {
         var sourceModule = string.IsNullOrWhiteSpace(request.SourceModule) ? "inventory" : request.SourceModule.Trim().ToLowerInvariant();
         if (request.IdempotencyKey.Length is < 1 or > 200) throw new InventoryException("inventory.idempotency_key_invalid");
@@ -1174,6 +1259,28 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
                 idempotencyLock.Parameters.AddWithValue($"inventory:{tenant.Value:D}:{entity:D}:{sourceModule}:{request.IdempotencyKey}");
                 await idempotencyLock.ExecuteNonQueryAsync(token);
             }
+            if (adjustmentRequestId is { } pendingRequestId)
+            {
+                await using var approval = new NpgsqlCommand("select status,approval_mode,created_by,posted_operation_id from business_inventory.inventory_adjustment_request where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction);
+                Add(approval, tenant.Value, entity, pendingRequestId); await using var approvalReader = await approval.ExecuteReaderAsync(token);
+                if (!await approvalReader.ReadAsync(token)) throw new InventoryException("inventory.adjustment_request_not_found");
+                var approvalStatus = Enum.Parse<AdjustmentRequestStatus>(approvalReader.GetString(0));
+                var approvalMode = Enum.Parse<AdjustmentApprovalMode>(approvalReader.GetString(1));
+                var creator = approvalReader.GetGuid(2);
+                var postedId = NullGuid(approvalReader, 3);
+                await approvalReader.DisposeAsync();
+                if (approvalStatus == AdjustmentRequestStatus.Posted && postedId is { } alreadyPosted)
+                {
+                    await using var replay = new NpgsqlCommand("select operation_number from business_inventory.inventory_operation where tenant_id=$1 and legal_entity_id=$2 and id=$3", context.Connection, context.Transaction);
+                    Add(replay, tenant.Value, entity, alreadyPosted);
+                    return new InventoryOperationResult(alreadyPosted, (string?)await replay.ExecuteScalarAsync(token) ?? string.Empty, "Confirmed", [], true);
+                }
+                if (approvalStatus == AdjustmentRequestStatus.PendingApproval) throw new InventoryException("inventory.adjustment_not_approved");
+                if (approvalStatus != AdjustmentRequestStatus.Approved && !(approvalMode == AdjustmentApprovalMode.DirectConfirm && approvalStatus == AdjustmentRequestStatus.Draft))
+                    throw new InventoryException("inventory.adjustment_request_not_postable");
+                if (approvalMode == AdjustmentApprovalMode.ApprovalRequired && await SeparationOfDutiesAsync(context, tenant.Value, entity, token) && creator == actor)
+                    throw new InventoryException("inventory.adjustment_creator_cannot_post");
+            }
             InventoryProfile? storedProfile = null;
             await using (var command = new NpgsqlCommand("select inventory_state,tracking_mode,valuation_mode,costing_method,negative_stock_policy,default_warehouse_id,reservation_mode,version from business_inventory.product_inventory_profile where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and status='Active' for share", context.Connection, context.Transaction))
             {
@@ -1185,6 +1292,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
                 throw new InventoryException("inventory.ledger_posting_capability_required");
             if (storedProfile.Valuation == ValuationMode.Perpetual && request.OperationalDate < request.PostingDate)
                 throw new InventoryException("inventory.valued_backdating_requires_revaluation");
+            await EnsureOperationalCutoffOpenAsync(context, tenant, entity, request.OperationalDate, token);
             await EnsurePostingDateOpenAsync(context, tenant, entity, request.OperationalDate, token);
             if (request.Status == StockStatus.InTransit)
                 throw new InventoryException("inventory.transit_requires_transfer");
@@ -1275,6 +1383,11 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
             {
                 Add(command, tenant.Value, operationId, entity, operationNumber, kind.ToString(), sourceModule, request.SourceDocumentId ?? (object)DBNull.Value, request.IdempotencyKey, hash, request.OperationalDate, request.PostingDate, reasonCode ?? (object)DBNull.Value, actor, correlationId, now); await command.ExecuteNonQueryAsync(token);
             }
+            if (adjustmentRequestId is { } postedRequestId)
+            {
+                await using var updateRequest = new NpgsqlCommand("update business_inventory.inventory_adjustment_request set status='Posted',posted_operation_id=$4,updated_at=$5,version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3", context.Connection, context.Transaction);
+                Add(updateRequest, tenant.Value, entity, postedRequestId, operationId, now); await updateRequest.ExecuteNonQueryAsync(token);
+            }
             long sequence;
             await using (var command = new NpgsqlCommand("insert into business_inventory.movement_sequence(tenant_id,legal_entity_id,last_value) values($1,$2,1) on conflict(tenant_id,legal_entity_id) do update set last_value=business_inventory.movement_sequence.last_value+1 returning last_value", context.Connection, context.Transaction))
             { Add(command, tenant.Value, entity); sequence = (long)(await command.ExecuteScalarAsync(token) ?? 0L); }
@@ -1332,11 +1445,42 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
         catch { await connection.DisposeAsync(); throw; }
     }
 
+    private async Task<AdjustmentRequestRecord> LoadAdjustmentRequestAsync(TenantId tenant, Guid entity, Guid requestId, CancellationToken ct)
+    {
+        await using var connection = await OpenTenantAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select product_variant_id,warehouse_id,location_id,entered_uom_id,quantity,direction,reason,status,operational_date,posting_date,stock_status,lot_id,serial_id,unit_cost,currency_code,idempotency_key from business_inventory.inventory_adjustment_request where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection);
+        Add(command, tenant.Value, entity, requestId); await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new InventoryException("inventory.adjustment_request_not_found");
+        return new(reader.GetGuid(0), reader.GetGuid(1), NullGuid(reader, 2), reader.GetGuid(3), reader.GetDecimal(4), Enum.Parse<AdjustmentDirection>(reader.GetString(5)), Enum.Parse<AdjustmentReason>(reader.GetString(6)), Enum.Parse<AdjustmentRequestStatus>(reader.GetString(7)), reader.GetFieldValue<DateOnly>(8), reader.GetFieldValue<DateOnly>(9), Enum.Parse<StockStatus>(reader.GetString(10)), NullGuid(reader, 11), NullGuid(reader, 12), reader.IsDBNull(13) ? null : reader.GetDecimal(13), reader.IsDBNull(14) ? null : reader.GetString(14), reader.GetString(15));
+    }
+
+    private static AdjustmentRequestView ReadAdjustmentView(NpgsqlDataReader reader, Guid id, Guid entity, AdjustmentApprovalMode mode, AdjustmentRequestStatus status, Guid createdBy)
+        => new(id, entity, reader.GetGuid(0), reader.GetGuid(1), NullGuid(reader, 2), reader.GetDecimal(3), Enum.Parse<AdjustmentDirection>(reader.GetString(4)), Enum.Parse<AdjustmentReason>(reader.GetString(5)), reader.GetFieldValue<DateOnly>(6), reader.GetFieldValue<DateOnly>(7), mode, status, createdBy, NullGuid(reader, 11), NullGuid(reader, 12));
+
+    private sealed record AdjustmentRequestRecord(Guid ProductVariantId, Guid WarehouseId, Guid? LocationId, Guid EnteredUomId,
+        decimal Quantity, AdjustmentDirection Direction, AdjustmentReason Reason, AdjustmentRequestStatus Status,
+        DateOnly OperationalDate, DateOnly PostingDate, StockStatus StockStatus, Guid? LotId, Guid? SerialId,
+        decimal? UnitCost, string? CurrencyCode, string IdempotencyKey);
+
     private async Task<string> EnsurePostingDateOpenAsync(ITransactionContext context, TenantId tenant, Guid entity, DateOnly postingDate, CancellationToken ct)
     {
         if (ledgerPosting is null) throw new InventoryException("inventory.ledger_period_capability_required");
         return await ledgerPosting.ValidateInventoryPostingDateAsync(context, tenant, new Shared.Primitives.Identifiers.LegalEntityId(entity), postingDate, ct)
             ?? throw new InventoryException("inventory.period_locked");
+    }
+
+    private static async Task EnsureOperationalCutoffOpenAsync(ITransactionContext context, TenantId tenant, Guid entity, DateOnly operationalDate, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select operational_cutoff_date from business_inventory.inventory_policy where tenant_id=$1 and legal_entity_id=$2 for share", context.Connection, context.Transaction);
+        Add(command, tenant.Value, entity);
+        var cutoff = await command.ExecuteScalarAsync(ct);
+        if (cutoff is DateOnly date && operationalDate < date) throw new InventoryException("inventory.before_operational_cutoff");
+    }
+
+    private static async Task<bool> SeparationOfDutiesAsync(ITransactionContext context, Guid tenant, Guid entity, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select coalesce(separation_of_duties,true) from business_inventory.inventory_policy where tenant_id=$1 and legal_entity_id=$2", context.Connection, context.Transaction);
+        Add(command, tenant, entity); return (bool?)await command.ExecuteScalarAsync(ct) ?? true;
     }
 
     private static async Task<InventoryProfile?> GetProfileInTransactionAsync(ITransactionContext context, Guid tenant, Guid entity, Guid variant, CancellationToken ct)
