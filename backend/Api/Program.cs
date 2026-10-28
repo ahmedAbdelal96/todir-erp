@@ -11,6 +11,7 @@ using Modules.Subledger;
 using Modules.Invoicing;
 using Modules.Invoicing.Controllers;
 using Modules.Payments;
+using Modules.Inventory;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -34,6 +35,7 @@ builder.Services.AddLedgerModule();
 builder.Services.AddSubledgerModule();
 builder.Services.AddInvoicingModule();
 builder.Services.AddPaymentsModule();
+builder.Services.AddInventoryModule();
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 var configuredOrigins = (builder.Configuration["TODIR_CORS_ORIGINS"] ?? string.Empty)
@@ -149,6 +151,7 @@ app.MapSubledgerModule();
 app.MapLedgerModule();
 app.MapInvoicingModule();
 app.MapPaymentsModule();
+app.MapInventoryModule();
 app.Run();
 
 public partial class Program;

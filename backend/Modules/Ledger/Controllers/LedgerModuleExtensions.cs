@@ -32,6 +32,7 @@ public static class LedgerModuleExtensions
         services.AddSingleton<ITransactionalLedgerPostingCapability>(sp => sp.GetRequiredService<LedgerTransactionCapability>());
         services.AddSingleton<ITransactionalPaymentLedgerPostingCapability>(sp => sp.GetRequiredService<LedgerTransactionCapability>());
         services.AddSingleton<ITransactionalInvoiceLedgerPostingCapability>(sp => sp.GetRequiredService<LedgerTransactionCapability>());
+        services.AddSingleton<ITransactionalInventoryLedgerPostingCapability>(sp => sp.GetRequiredService<LedgerTransactionCapability>());
         services.AddSingleton<ILedgerPostingEngine>(provider => provider.GetRequiredService<LedgerService>());
         services.AddSingleton<ILedgerControlBalanceRead>(provider => provider.GetRequiredService<LedgerService>());
         return services;

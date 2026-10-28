@@ -10,6 +10,7 @@ using Modules.Pricing;
 using Modules.Payments;
 using Modules.Ledger;
 using Modules.Subledger;
+using Modules.Inventory;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
@@ -33,8 +34,10 @@ builder.Services.AddPricingModule();
 builder.Services.AddLedgerModule();
 builder.Services.AddSubledgerModule();
 builder.Services.AddPaymentsModule();
+builder.Services.AddInventoryModule();
 builder.Services.AddScheduling(builder.Configuration);
 builder.Services.AddHostedService<OutboxDispatchWorker>();
 builder.Services.AddHostedService<FinanceBaseRateSyncWorker>();
 builder.Services.AddHostedService<PricingScheduledActivationWorker>();
+builder.Services.AddHostedService<InventoryReservationExpiryWorker>();
 await builder.Build().RunAsync();

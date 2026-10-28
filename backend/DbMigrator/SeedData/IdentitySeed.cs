@@ -32,7 +32,13 @@ public static class IdentitySeed
         "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize", "invoicing.customer_invoice.cancel_draft",
         "invoicing.supplier_invoice.read", "invoicing.supplier_invoice.create", "invoicing.supplier_invoice.edit", "invoicing.supplier_invoice.finalize",
         "invoicing.credit_note.create", "invoicing.debit_note.create", "invoicing.price_override", "invoicing.payment_term_override", "invoicing.date_override",
-        "invoicing.accounting_preview", "invoicing.regulatory_details", "invoicing.attachment.manage", "invoicing.delivery.send", "invoicing.audit.view"
+        "invoicing.accounting_preview", "invoicing.regulatory_details", "invoicing.attachment.manage", "invoicing.delivery.send", "invoicing.audit.view",
+        "inventory.stock.read", "inventory.history.read", "inventory.cost.read", "inventory.valuation.read",
+        "inventory.receipt.create", "inventory.receipt.confirm", "inventory.receipt.reverse", "inventory.operation.reverse", "inventory.issue.create", "inventory.issue.confirm", "inventory.issue.reverse", "inventory.stock.negative.override",
+        "inventory.transfer.create", "inventory.transfer.ship", "inventory.transfer.receive", "inventory.transfer.reverse",
+        "inventory.reservation.create", "inventory.reservation.release", "inventory.reservation.override", "inventory.count.create", "inventory.count.enter", "inventory.count.approve", "inventory.count.post",
+        "inventory.adjustment.create", "inventory.adjustment.approve", "inventory.adjustment.post", "inventory.revaluation.manage", "inventory.warehouse.manage", "inventory.location.manage",
+        "inventory.profile.manage", "inventory.policy.manage", "inventory.traceability.manage", "inventory.opening.manage", "inventory.opening.post", "inventory.reconciliation.read", "inventory.audit.view"
     ];
 
     public static async Task<SeedIdentitySummary> SeedAsync(SeedContext context, string defaultPassword, string? protectedMfaSecret, string[]? mfaRecoveryDigests, CancellationToken cancellationToken)

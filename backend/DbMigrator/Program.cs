@@ -6,6 +6,8 @@ using Npgsql;
 var seedDevelopment = args.Length == 2 && string.Equals(args[0], "--seed", StringComparison.OrdinalIgnoreCase) && string.Equals(args[1], "development", StringComparison.OrdinalIgnoreCase);
 var rebuildTenantId = Guid.Empty;
 var rebuildEntityId = Guid.Empty;
+var rebuildInventoryBalances = args.Length == 3 && string.Equals(args[0], "--rebuild-inventory-balances", StringComparison.OrdinalIgnoreCase)
+    && Guid.TryParse(args[1], out rebuildTenantId) && Guid.TryParse(args[2], out rebuildEntityId);
 var rebuildSubledger = args.Length == 3 && string.Equals(args[0], "--rebuild-subledger-cache", StringComparison.OrdinalIgnoreCase)
     && Guid.TryParse(args[1], out rebuildTenantId) && Guid.TryParse(args[2], out rebuildEntityId);
 if (args.Any(argument => string.Equals(argument, "--seed", StringComparison.OrdinalIgnoreCase)) && !seedDevelopment)
@@ -16,6 +18,11 @@ if (args.Any(argument => string.Equals(argument, "--seed", StringComparison.Ordi
 if (args.Any(argument => string.Equals(argument, "--rebuild-subledger-cache", StringComparison.OrdinalIgnoreCase)) && !rebuildSubledger)
 {
     Console.Error.WriteLine("Usage: --rebuild-subledger-cache <tenant-guid> <legal-entity-guid>");
+    return 2;
+}
+if (args.Any(argument => string.Equals(argument, "--rebuild-inventory-balances", StringComparison.OrdinalIgnoreCase)) && !rebuildInventoryBalances)
+{
+    Console.Error.WriteLine("Usage: --rebuild-inventory-balances <tenant-guid> <legal-entity-guid>");
     return 2;
 }
 if (seedDevelopment)
@@ -331,6 +338,8 @@ await using (var identityAccessContextOwnership = new NpgsqlCommand("alter funct
     await identityAccessContextOwnership.ExecuteNonQueryAsync();
 await using (var identityTenantResolverOwnership = new NpgsqlCommand("alter function platform.resolve_identity_tenant(uuid) owner to erp_dispatcher", connection))
     await identityTenantResolverOwnership.ExecuteNonQueryAsync();
+await using (var reservationExpiryScopeOwnership = new NpgsqlCommand("alter function business_inventory.due_reservation_scopes(integer,timestamptz) owner to erp_dispatcher", connection))
+    await reservationExpiryScopeOwnership.ExecuteNonQueryAsync();
 
 await using (var dispatcherOwnership = new NpgsqlCommand("alter function platform.claim_pending_outbox(integer) owner to erp_dispatcher", connection))
     await dispatcherOwnership.ExecuteNonQueryAsync();
@@ -352,6 +361,20 @@ if (rebuildSubledger)
     {
         Console.Error.WriteLine($"Subledger open-item cache rebuild rolled back: {exception.Message}");
         return 5;
+    }
+}
+
+if (rebuildInventoryBalances)
+{
+    try
+    {
+        var changedRows = await DbMigrator.InventoryBalanceRebuilder.RunAsync(ownedConnection, rebuildTenantId, rebuildEntityId);
+        Console.WriteLine($"Inventory stock balance rebuild committed; changed rows: {changedRows}.");
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Inventory stock balance rebuild rolled back: {exception.Message}");
+        return 6;
     }
 }
 

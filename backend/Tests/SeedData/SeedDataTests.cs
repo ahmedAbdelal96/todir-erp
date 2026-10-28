@@ -33,14 +33,14 @@ public sealed class DevelopmentSeedTests
         await using var admin = await adminDataSource.OpenConnectionAsync();
         try
         {
-            await using (var create = new NpgsqlCommand($"create database \"{databaseName}\"", admin))
+            await using (var create = new NpgsqlCommand($"create database \"{databaseName}\" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0", admin))
                 await create.ExecuteNonQueryAsync();
             databaseCreated = true;
 
             var firstRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
             Assert.True(firstRun.ExitCode == 0, firstRun.Output);
             Assert.Contains("Development Seed Ready", firstRun.Output, StringComparison.Ordinal);
-            Assert.Contains("Ledger: 2 legal entities, 28 accounts, 24 periods, invoice rule ready", firstRun.Output, StringComparison.Ordinal);
+            Assert.Contains("Ledger: 2 legal entities, 38 accounts, 24 periods, invoice rule ready", firstRun.Output, StringComparison.Ordinal);
             Assert.Contains("Invoicing: 120 drafts (60 customer, 60 supplier)", firstRun.Output, StringComparison.Ordinal);
 
             await using var acceptanceDataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
@@ -55,10 +55,11 @@ public sealed class DevelopmentSeedTests
             var secondRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
             Assert.True(secondRun.ExitCode == 0, secondRun.Output);
             Assert.Contains("Development Seed Ready", secondRun.Output, StringComparison.Ordinal);
-            Assert.Contains("Ledger: 2 legal entities, 28 accounts, 24 periods, invoice rule ready", secondRun.Output, StringComparison.Ordinal);
+            Assert.Contains("Ledger: 2 legal entities, 38 accounts, 24 periods, invoice rule ready", secondRun.Output, StringComparison.Ordinal);
             Assert.Contains("Invoicing: 120 drafts (60 customer, 60 supplier)", secondRun.Output, StringComparison.Ordinal);
             var secondCounts = await ReadCanonicalCountsAsync(acceptanceDataSource);
             Assert.Equal(firstCounts, secondCounts);
+            await AssertSingleActiveInventoryAssetMappingAsync(acceptanceDataSource);
             Assert.Equal(2, firstCounts.Tenants);
             Assert.Equal(205, firstCounts.AtlasUsers);
             Assert.Equal(180, firstCounts.AtlasParties);
@@ -97,6 +98,15 @@ public sealed class DevelopmentSeedTests
                 await drop.ExecuteNonQueryAsync();
             }
         }
+    }
+
+    private static async Task AssertSingleActiveInventoryAssetMappingAsync(NpgsqlDataSource dataSource)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand("select count(*) from finance_ledger.ledger_entity_configuration c join finance_ledger.account_role r on r.tenant_id=c.tenant_id and r.legal_entity_id=c.legal_entity_id and r.code='InventoryAsset' join finance_ledger.account_mapping m on m.tenant_id=r.tenant_id and m.legal_entity_id=r.legal_entity_id and m.role_id=r.id join finance_ledger.account_mapping_version v on v.tenant_id=m.tenant_id and v.legal_entity_id=m.legal_entity_id and v.mapping_id=m.id and v.accounting_configuration_version_id=c.active_configuration_version_id where c.tenant_id=$1 and c.legal_entity_id=$2 and m.status='Active' and v.status='Active' and v.effective_from <= current_date and (v.effective_to is null or v.effective_to >= current_date) and v.specificity_rank=0 and v.product_category_code is null and v.party_group_code is null and v.tax_code is null", connection);
+        command.Parameters.AddWithValue(SeedIds.AtlasTenant);
+        command.Parameters.AddWithValue(SeedIds.TenantEntity(SeedIds.AtlasTenant));
+        Assert.Equal(1L, (long)(await command.ExecuteScalarAsync())!);
     }
 
     private static async Task AssertCanonicalCurrencyPrecisionAsync(NpgsqlDataSource dataSource)

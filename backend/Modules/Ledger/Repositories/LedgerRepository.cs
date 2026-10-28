@@ -29,7 +29,7 @@ public sealed class LedgerRepository(
 
     public async Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default)
     {
-        if (controlRole is not ("Receivable" or "Payable") || configurationVersionId == Guid.Empty)
+        if (controlRole is not ("Receivable" or "Payable" or "Inventory") || configurationVersionId == Guid.Empty)
             throw new LedgerDomainException("ledger.control_balance_query_invalid", "A valid control role and accounting configuration are required.");
         await using var connection = await OpenAsync(tenantId, cancellationToken);
         const string sql = """
@@ -37,7 +37,7 @@ public sealed class LedgerRepository(
               select id,effective_from from finance_ledger.accounting_configuration_version
               where tenant_id=$1 and legal_entity_id=$2 and id=$3
             ), aliases as (
-              select case when $4='Receivable' then array['Receivable','AccountsReceivableControl']::text[] else array['Payable','AccountsPayableControl']::text[] end as codes
+              select case when $4='Receivable' then array['Receivable','AccountsReceivableControl']::text[] when $4='Payable' then array['Payable','AccountsPayableControl']::text[] else array['InventoryAsset']::text[] end as codes
             ), candidates as (
               select v.target_account_id,(r.code=$4) as exact_role,v.specificity_rank
               from finance_ledger.account_role r
@@ -466,6 +466,140 @@ public sealed class LedgerRepository(
         AccountingFactEnvelope<IAccountingFactPayload> fact, ExplicitLedgerPostingPayload posting, IAccountingFactPayload semanticPayload,
         Guid? configurationVersionOverride = null, CancellationToken cancellationToken = default) =>
         PostExplicitCoreInTransactionAsync(context, fact, posting, configurationVersionOverride, semanticPayload, cancellationToken);
+
+    public async Task<LedgerPostingResult> PostInventoryValuationInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, InventoryValuationFactPayload payload, CancellationToken ct)
+    {
+        if (fact.SourceModule != "inventory" || fact.FactType is not (AccountingFactTypes.InventoryReceiptValued or AccountingFactTypes.InventoryIssueValued or AccountingFactTypes.InventoryCostAdjustment)
+            || payload.Amount <= 0m || payload.Quantity <= 0m || payload.UnitCost < 0m || payload.ProductVariantId is null || payload.MovementId is null
+            || string.IsNullOrWhiteSpace(payload.InventoryGroup) || string.IsNullOrWhiteSpace(payload.ValuationRole))
+            throw new LedgerDomainException("ledger.inventory_fact_invalid", "The Inventory valuation fact is missing its immutable quantity, cost or source identity.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct))
+            throw new LedgerDomainException("ledger.fact_producer_unregistered", "Inventory is not registered for this accounting fact type.");
+
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var transactionCurrency = payload.CurrencyCode.Trim().ToUpperInvariant();
+        var factBaseCurrency = payload.BaseCurrencyCode?.Trim().ToUpperInvariant() ?? transactionCurrency;
+        var baseAmount = payload.BaseAmount ?? payload.Amount;
+        if (transactionCurrency.Length != 3 || factBaseCurrency != baseCurrency || baseAmount <= 0m
+            || transactionCurrency != baseCurrency && (payload.BaseAmount is null || string.IsNullOrWhiteSpace(payload.BaseCurrencyCode)))
+            throw new LedgerDomainException("ledger.currency_mismatch", "Inventory valuation requires an immutable base-currency snapshot for this legal entity.");
+
+        var configuration = await GetActiveConfigurationVersionIdAsync(context, fact.TenantId, fact.LegalEntityId, ct);
+        var asset = await ResolveSemanticAccountIdAsync(context, fact, configuration, "InventoryAsset", ct);
+        var counterpartRole = fact.FactType switch
+        {
+            AccountingFactTypes.InventoryReceiptValued => payload.ValuationRole == "Opening" ? "RetainedEarnings" : "InventoryOffset",
+            AccountingFactTypes.InventoryIssueValued => "COGS",
+            AccountingFactTypes.InventoryCostAdjustment => payload.ValuationRole == "Increase" ? "InventoryAdjustmentGain" : "InventoryAdjustmentLoss",
+            _ => throw new LedgerDomainException("ledger.inventory_fact_invalid", "This Inventory valuation fact type is not supported.")
+        };
+        var counterpart = await ResolveSemanticAccountIdAsync(context, fact, configuration, counterpartRole, ct);
+        var journalId = await ScalarGuidAsync(context,
+            "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'",
+            ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var exchangeRate = baseAmount / payload.Amount;
+        LedgerPostingLinePayload Debit(Guid account, decimal amount, decimal baseValue, string description) =>
+            new(account, baseValue, 0m, transactionCurrency, amount, 0m, baseValue, 0m, exchangeRate, [], description, payload.MovementId.Value.ToString("D"));
+        LedgerPostingLinePayload Credit(Guid account, decimal amount, decimal baseValue, string description) =>
+            new(account, 0m, baseValue, transactionCurrency, 0m, amount, 0m, baseValue, exchangeRate, [], description, payload.MovementId.Value.ToString("D"));
+        var description = $"Inventory {payload.ValuationRole}: {payload.Quantity} units at {payload.UnitCost} {transactionCurrency}";
+        var lines = fact.FactType switch
+        {
+            AccountingFactTypes.InventoryReceiptValued => new[] { Debit(asset, payload.Amount, baseAmount, description), Credit(counterpart, payload.Amount, baseAmount, description) },
+            AccountingFactTypes.InventoryIssueValued => new[] { Debit(counterpart, payload.Amount, baseAmount, description), Credit(asset, payload.Amount, baseAmount, description) },
+            _ when payload.ValuationRole == "Increase" => new[] { Debit(asset, payload.Amount, baseAmount, description), Credit(counterpart, payload.Amount, baseAmount, description) },
+            _ => new[] { Debit(counterpart, payload.Amount, baseAmount, description), Credit(asset, payload.Amount, baseAmount, description) }
+        };
+        var semanticFact = fact with { Payload = payload };
+        return await PostSemanticExplicitInTransactionAsync(context, semanticFact,
+            new ExplicitLedgerPostingPayload(journalId, description, baseCurrency, lines), payload, configuration, ct);
+    }
+
+    public async Task<LedgerPostingResult> ReverseInventoryValuationInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, InventoryValuationReversalPayload payload, CancellationToken ct)
+    {
+        if (fact.SourceModule != "inventory" || fact.FactType != AccountingFactTypes.InventoryValuationReversal
+            || payload.OriginalFactId == Guid.Empty || payload.OriginalMovementId == Guid.Empty || payload.ReversalMovementId == Guid.Empty
+            || string.IsNullOrWhiteSpace(payload.Reason))
+            throw new LedgerDomainException("ledger.inventory_reversal_invalid", "The Inventory valuation reversal is missing its original or corrective movement identity.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct))
+            throw new LedgerDomainException("ledger.fact_producer_unregistered", "Inventory is not registered for this accounting fact type.");
+
+        var originalEntryId = await ScalarGuidAsync(context,
+            "select posted_entry_id from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 and source_module='inventory' and status='Posted'",
+            ct, fact.TenantId.Value, fact.LegalEntityId.Value, payload.OriginalFactId)
+            ?? throw new LedgerDomainException("ledger.inventory_original_fact_missing", "The original Inventory valuation fact has no posted Ledger entry.");
+        await using var original = new NpgsqlCommand("select journal_id,entry_number,currency_code,base_currency_code,posting_rule_version_id,accounting_configuration_version_id from finance_ledger.journal_entry where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction);
+        original.Parameters.AddWithValue(fact.TenantId.Value); original.Parameters.AddWithValue(fact.LegalEntityId.Value); original.Parameters.AddWithValue(originalEntryId);
+        Guid journalId; string originalNumber; string currency; string baseCurrency; Guid ruleVersionId; Guid? configurationId;
+        await using (var reader = await original.ExecuteReaderAsync(ct))
+        {
+            if (!await reader.ReadAsync(ct)) throw new LedgerDomainException("ledger.inventory_original_fact_missing", "The original Inventory Ledger entry no longer exists.");
+            journalId = reader.GetGuid(0); originalNumber = reader.GetString(1); currency = reader.GetString(2); baseCurrency = reader.GetString(3);
+            ruleVersionId = reader.GetGuid(4); configurationId = reader.IsDBNull(5) ? null : reader.GetGuid(5);
+        }
+        if (await ScalarGuidAsync(context, "select reversal_entry_id from finance_ledger.journal_entry_reversal where tenant_id=$1 and legal_entity_id=$2 and original_entry_id=$3", ct,
+            fact.TenantId.Value, fact.LegalEntityId.Value, originalEntryId) is not null)
+            throw new LedgerDomainException("ledger.already_reversed", "The original Inventory valuation entry has already been reversed.");
+
+        var now = clock.GetUtcNow();
+        var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
+        await ExecuteAsync(context, "insert into finance_ledger.accounting_fact(tenant_id,legal_entity_id,id,fact_type,fact_version,source_module,source_reference,idempotency_key,business_date,posting_date,payload_jsonb,payload_hash,status,correlation_id,actor_id,received_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'Received',$13,$14,$15)", ct,
+            fact.TenantId.Value, fact.LegalEntityId.Value, fact.FactId, fact.FactType, fact.FactVersion, fact.SourceModule, fact.SourceReference,
+            fact.IdempotencyKey, fact.BusinessDate, fact.PostingDate, new NpgsqlParameter { Value = payloadJson, NpgsqlDbType = NpgsqlDbType.Jsonb },
+            AccountingFactFingerprint.Compute(payload), fact.CorrelationId, fact.ActorId, now);
+        var periodId = await ResolvePeriodAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, fact.PostingDate, ct);
+        var reversalEntryId = Guid.CreateVersion7();
+        var entryNumber = $"REV-{originalEntryId:N}";
+        var sourceReference = $"inventory-reversal:{payload.ReversalMovementId:D}";
+        await ExecuteAsync(context, "insert into finance_ledger.journal_entry(tenant_id,legal_entity_id,id,journal_id,fact_id,source_module,source_reference,entry_number,posting_date,accounting_period_id,fact_type,fact_version,currency_code,base_currency_code,posting_rule_version_id,accounting_configuration_version_id,description,correlation_id,actor_id,posted_at) values($1,$2,$3,$4,$5,'inventory',$6,$7,$8,$9,'InventoryValuationReversal',1,$10,$11,$12,$13,$14,$15,$16,$17)", ct,
+            fact.TenantId.Value, fact.LegalEntityId.Value, reversalEntryId, journalId, fact.FactId, sourceReference, entryNumber, fact.PostingDate,
+            periodId, currency, baseCurrency, ruleVersionId, configurationId ?? (object)DBNull.Value,
+            $"Inventory correction for {originalNumber}: {payload.Reason.Trim()}", fact.CorrelationId, fact.ActorId, now);
+
+        var lines = new List<(int Sequence, Guid AccountId, string Currency, decimal Amount, decimal? Rate, string Role, string? Description,
+            decimal TxDebit, decimal TxCredit, decimal BaseDebit, decimal BaseCredit, string? Snapshot, string? Reference)>();
+        await using (var command = new NpgsqlCommand("select sequence_no,account_id,debit,credit,currency_code,amount,exchange_rate,semantic_role,description,transaction_debit,transaction_credit,base_debit,base_credit,exchange_rate_snapshot,line_reference from finance_ledger.journal_entry_line where tenant_id=$1 and legal_entity_id=$2 and journal_entry_id=$3 order by sequence_no", context.Connection, context.Transaction))
+        {
+            command.Parameters.AddWithValue(fact.TenantId.Value); command.Parameters.AddWithValue(fact.LegalEntityId.Value); command.Parameters.AddWithValue(originalEntryId);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                lines.Add((reader.GetInt32(0), reader.GetGuid(1), reader.GetString(4), reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6),
+                    reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.IsDBNull(9) ? reader.GetDecimal(2) : reader.GetDecimal(9),
+                    reader.IsDBNull(10) ? reader.GetDecimal(3) : reader.GetDecimal(10), reader.IsDBNull(11) ? reader.GetDecimal(2) : reader.GetDecimal(11),
+                    reader.IsDBNull(12) ? reader.GetDecimal(3) : reader.GetDecimal(12), reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14)));
+        }
+        if (lines.Count == 0) throw new LedgerDomainException("ledger.inventory_original_fact_missing", "The original Inventory Ledger entry has no journal lines.");
+        foreach (var line in lines)
+            await ExecuteAsync(context, "insert into finance_ledger.journal_entry_line(tenant_id,legal_entity_id,id,journal_entry_id,sequence_no,account_id,debit,credit,currency_code,amount,exchange_rate,semantic_role,description,transaction_debit,transaction_credit,base_debit,base_credit,exchange_rate_snapshot,line_reference) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)", ct,
+                fact.TenantId.Value, fact.LegalEntityId.Value, Guid.CreateVersion7(), reversalEntryId, line.Sequence, line.AccountId, line.BaseCredit, line.BaseDebit,
+                line.Currency, line.Amount, (object?)line.Rate ?? DBNull.Value, line.Role, (object?)line.Description ?? DBNull.Value,
+                line.TxCredit, line.TxDebit, line.BaseCredit, line.BaseDebit,
+                new NpgsqlParameter { Value = (object?)line.Snapshot ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Jsonb }, (object?)line.Reference ?? DBNull.Value);
+
+        await ExecuteAsync(context, "insert into finance_ledger.journal_entry_reversal(tenant_id,legal_entity_id,id,original_entry_id,reversal_entry_id,reason,actor_id,reversal_date,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9)", ct,
+            fact.TenantId.Value, fact.LegalEntityId.Value, Guid.CreateVersion7(), originalEntryId, reversalEntryId, payload.Reason.Trim(), fact.ActorId, fact.PostingDate, now);
+        await ExecuteAsync(context, "update finance_ledger.accounting_fact set status='Posted',posted_entry_id=$3,posted_at=$4 where tenant_id=$1 and id=$2", ct,
+            fact.TenantId.Value, fact.FactId, reversalEntryId, now);
+        await RefreshAccountPeriodBalancesAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, reversalEntryId, ct);
+        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), LedgerEventTypes.JournalEntryReversedV1,
+            JsonSerializer.Serialize(new JournalEntryReversedEvent(originalEntryId, reversalEntryId, fact.LegalEntityId.Value, payload.Reason)),
+            fact.TenantId, now, fact.CorrelationId, originalEntryId, "ledger"));
+        return new LedgerPostingResult(fact.FactId, reversalEntryId, entryNumber, "Posted", false);
+    }
+
+    public async Task<string?> ValidateInventoryPostingDateInTransactionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity,
+        DateOnly postingDate, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select count(*) from finance_ledger.accounting_period p where p.tenant_id=$1 and p.legal_entity_id=$2 and p.start_date <= $3 and p.end_date >= $3 and p.status='Open' and not exists (select 1 from finance_ledger.financial_lock l where l.tenant_id=p.tenant_id and l.legal_entity_id=p.legal_entity_id and l.status='Active' and l.start_date <= $3 and (l.end_date is null or l.end_date >= $3))", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(entity.Value); command.Parameters.AddWithValue(postingDate);
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+        if (count != 1) return null;
+        return await financialRead.GetBaseCurrencyCodeAsync(tenant, entity, ct);
+    }
 
     private async Task<LedgerPostingResult> PostExplicitCoreInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
         ExplicitLedgerPostingPayload payload, Guid? configurationVersionOverride, IAccountingFactPayload? factPayloadOverride, CancellationToken cancellationToken)

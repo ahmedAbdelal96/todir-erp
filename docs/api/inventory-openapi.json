@@ -1,0 +1,4045 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TODIR Inventory API",
+    "version": "1.0.0",
+    "description": "Frozen Build-Now Inventory HTTP contract."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Inventory"
+    }
+  ],
+  "paths": {
+    "/api/v1/inventory/legal-entities/{entityId}/warehouses": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidWarehouses",
+        "summary": "Get warehouses",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      },
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidWarehouses",
+        "summary": "Post warehouses",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWarehouseRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/negative-stock-conditions": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidNegativestockconditions",
+        "summary": "Get negative-stock-conditions",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "beforeOpenedAt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/warehouses/{warehouseId}/status": {
+      "put": {
+        "operationId": "inventoryPutLegalentitiesEntityIdguidWarehousesWarehouseIdguidStatus",
+        "summary": "Put status",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "warehouseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeWarehouseStatusRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/warehouses/{warehouseId}/locations": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidWarehousesWarehouseIdguidLocations",
+        "summary": "Get locations",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "warehouseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/locations": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidLocations",
+        "summary": "Post locations",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/locations/{locationId}/parent": {
+      "put": {
+        "operationId": "inventoryPutLegalentitiesEntityIdguidLocationsLocationIdguidParent",
+        "summary": "Put parent",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "locationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveLocationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/locations/{locationId}": {
+      "delete": {
+        "operationId": "inventoryDeleteLegalentitiesEntityIdguidLocationsLocationIdguid",
+        "summary": "Delete locationId:guid",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "locationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/profiles/{productVariantId}": {
+      "put": {
+        "operationId": "inventoryPutLegalentitiesEntityIdguidProfilesProductVariantIdguid",
+        "summary": "Put productVariantId:guid",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "productVariantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInventoryProfileRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/lots": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidLots",
+        "summary": "Post lots",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLotRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/serials": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidSerials",
+        "summary": "Post serials",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSerialRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/balances": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidBalances",
+        "summary": "Get balances",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "productVariantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "warehouseId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/history": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidHistory",
+        "summary": "Get history",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "productVariantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "warehouseId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "lotId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "serialId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "sourceDocumentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "beforeEffectiveAt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          },
+          {
+            "name": "beforeSequence",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/stock-as-of": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidStockasof",
+        "summary": "Get stock-as-of",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "asOf",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "productVariantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "warehouseId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/reconciliation": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidReconciliation",
+        "summary": "Get reconciliation",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "asOfDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/products/{productVariantId}/valuation": {
+      "get": {
+        "operationId": "inventoryGetProductValuation",
+        "summary": "Get product valuation",
+        "description": "Requires inventory.valuation.read and inventory.cost.read. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "productVariantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "asOfDate",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Historical quantity and carrying value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory cost permission is required"
+          },
+          "404": {
+            "description": "Valuation was not found"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/products/{productVariantId}/locator": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidProductsProductVariantIdguidLocator",
+        "summary": "Get locator",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "productVariantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/products/{productVariantId}/putaway-suggestion": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidProductsProductVariantIdguidPutawaysuggestion",
+        "summary": "Get putaway-suggestion",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "productVariantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "warehouseId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/products/{productVariantId}/picking-suggestions": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidProductsProductVariantIdguidPickingsuggestions",
+        "summary": "Get picking-suggestions",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "productVariantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "warehouseId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/scan/resolve": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidScanResolve",
+        "summary": "Post resolve",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveInventoryScanRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/receipts/confirm": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidReceiptsConfirm",
+        "summary": "Post confirm",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmStockMovementRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/issues/confirm": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidIssuesConfirm",
+        "summary": "Post confirm",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmStockMovementRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/opening-stock/post": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidOpeningstockPost",
+        "summary": "Post post",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmStockMovementRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/stock-status/change": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidStockstatusChange",
+        "summary": "Post change",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeStockStatusRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/adjustments": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidAdjustments",
+        "summary": "Post adjustments",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustStockRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/operations/reverse": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidOperationsReverse",
+        "summary": "Post reverse",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReverseInventoryOperationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/transfers": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidTransfers",
+        "summary": "Post transfers",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTransferRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/transfers/{transferId}/ship": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidTransfersTransferIdguidShip",
+        "summary": "Post ship",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/transfers/{transferId}/receipts": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidTransfersTransferIdguidReceipts",
+        "summary": "Post receipts",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "transferId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReceiveTransferRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/reservations": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidReservations",
+        "summary": "Post reservations",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReserveStockRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/reservations/{reservationId}/release": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidReservationsReservationIdguidRelease",
+        "summary": "Post release",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "reservationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/reservations/{reservationId}/cancel": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidReservationsReservationIdguidCancel",
+        "summary": "Post cancel",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "reservationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/reservations/expire": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidReservationsExpire",
+        "summary": "Post expire",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/reservations/{reservationId}/consume": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidReservationsReservationIdguidConsume",
+        "summary": "Post consume",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "reservationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmStockMovementRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/counts": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidCounts",
+        "summary": "Post counts",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePhysicalCountRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/counts/{countId}/lines": {
+      "get": {
+        "operationId": "inventoryGetLegalentitiesEntityIdguidCountsCountIdguidLines",
+        "summary": "Get lines",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "countId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      },
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidCountsCountIdguidLines",
+        "summary": "Post lines",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "countId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCountLineRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/counts/{countId}/lines/{lineId}": {
+      "put": {
+        "operationId": "inventoryPutLegalentitiesEntityIdguidCountsCountIdguidLinesLineIdguid",
+        "summary": "Put lineId:guid",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "countId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "lineId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnterCountLineRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inventory/legal-entities/{entityId}/counts/{countId}/post": {
+      "post": {
+        "operationId": "inventoryPostLegalentitiesEntityIdguidCountsCountIdguidPost",
+        "summary": "Post post",
+        "description": "Requires authentication and the Inventory permission mapped to this operation. Data is scoped to the tenant and legal entity.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entityId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "countId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Inventory operation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inventory request"
+          },
+          "401": {
+            "description": "Authentication is required"
+          },
+          "403": {
+            "description": "Inventory permission is required"
+          },
+          "404": {
+            "description": "Inventory record was not found"
+          },
+          "409": {
+            "description": "Inventory state conflicts with this operation"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "CreateWarehouseRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "locationMode": {
+            "type": "string"
+          },
+          "branchId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "ChangeWarehouseStatusRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateLocationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parentLocationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "locationType": {
+            "type": "string"
+          },
+          "barcode": {
+            "type": "string",
+            "nullable": true
+          },
+          "canHoldStock": {
+            "type": "boolean"
+          },
+          "canReceiveInto": {
+            "type": "boolean"
+          },
+          "canPickFrom": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MoveLocationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parentLocationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "CreateInventoryProfileRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string"
+          },
+          "tracking": {
+            "type": "string"
+          },
+          "valuation": {
+            "type": "string"
+          },
+          "costing": {
+            "type": "string",
+            "nullable": true
+          },
+          "negativeStock": {
+            "type": "string"
+          },
+          "defaultWarehouseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "reservationMode": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfirmStockMovementRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "enteredUomId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enteredQuantity": {
+            "type": "number"
+          },
+          "operationalDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "sourceModule": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceDocumentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "unitCost": {
+            "type": "number",
+            "nullable": true
+          },
+          "currencyCode": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ChangeStockStatusRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "enteredUomId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enteredQuantity": {
+            "type": "number"
+          },
+          "fromStatus": {
+            "type": "string"
+          },
+          "toStatus": {
+            "type": "string"
+          },
+          "operationalDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "AdjustStockRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "enteredUomId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "operationalDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "unitCost": {
+            "type": "number",
+            "nullable": true
+          },
+          "currencyCode": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ReverseInventoryOperationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationalDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          }
+        }
+      },
+      "ResolveInventoryScanRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "InventoryOperationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationNumber": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "idempotentReplay": {
+            "type": "boolean"
+          }
+        }
+      },
+      "InventoryBalanceView": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stockStatus": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "onHandBaseQuantity": {
+            "type": "number"
+          },
+          "reservedBaseQuantity": {
+            "type": "number"
+          },
+          "availableBaseQuantity": {
+            "type": "number"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lastMovementSequence": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "InventoryMovementView": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stockStatus": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "enteredQuantity": {
+            "type": "number"
+          },
+          "enteredUomId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversionFactorSnapshot": {
+            "type": "number"
+          },
+          "baseQuantity": {
+            "type": "number"
+          },
+          "signedBaseQuantity": {
+            "type": "number"
+          },
+          "movementType": {
+            "type": "string"
+          },
+          "sourceModule": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "operationalDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "effectiveAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InventoryMovementPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          }
+        }
+      },
+      "InventoryAsOfView": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stockStatus": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "onHandBaseQuantity": {
+            "type": "number"
+          }
+        }
+      },
+      "NegativeStockConditionView": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stockStatus": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "shortfallBaseQuantity": {
+            "type": "number"
+          },
+          "openedByMovementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lastSeenMovementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resolvedByMovementId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "ProductLocatorView": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseCode": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationPath": {
+            "type": "string"
+          },
+          "stockStatus": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "onHand": {
+            "type": "number"
+          },
+          "reserved": {
+            "type": "number"
+          },
+          "available": {
+            "type": "number"
+          }
+        }
+      },
+      "CreatePhysicalCountRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mode": {
+            "type": "string"
+          }
+        }
+      },
+      "EnterCountLineRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "countedBaseQuantity": {
+            "type": "number"
+          },
+          "countedUnitCost": {
+            "type": "number",
+            "nullable": true
+          }
+        }
+      },
+      "AddCountLineRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stockStatus": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "PhysicalCountLineView": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stockStatus": {
+            "type": "string"
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "expected": {
+            "type": "number"
+          },
+          "counted": {
+            "type": "number",
+            "nullable": true
+          },
+          "difference": {
+            "type": "number",
+            "nullable": true
+          },
+          "enteredBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "enteredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "PhysicalCountView": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "integer"
+          },
+          "countedLines": {
+            "type": "integer"
+          },
+          "varianceQuantity": {
+            "type": "number"
+          }
+        }
+      },
+      "CreateLotRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lotNumber": {
+            "type": "string"
+          },
+          "manufacturedOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierReference": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CreateSerialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serialNumber": {
+            "type": "string"
+          }
+        }
+      },
+      "TraceabilityRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateTransferRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceWarehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceLocationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "destinationWarehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "destinationLocationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "enteredUomId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enteredQuantity": {
+            "type": "number"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "operationalDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "sourceDocumentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "ReceiveTransferRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "quantity": {
+            "type": "number"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "operationalDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "postingDate": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      },
+      "ReserveStockRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "sourceModule": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceLineId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lotId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "serialId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
+      "ReservationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reservationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productVariantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warehouseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestedQuantity": {
+            "type": "number"
+          },
+          "reservedQuantity": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "idempotentReplay": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TransferResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transferId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "requestedQuantity": {
+            "type": "number"
+          },
+          "shippedQuantity": {
+            "type": "number"
+          },
+          "receivedQuantity": {
+            "type": "number"
+          },
+          "idempotentReplay": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

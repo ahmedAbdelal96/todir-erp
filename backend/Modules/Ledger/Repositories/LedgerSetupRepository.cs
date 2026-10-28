@@ -18,7 +18,7 @@ public sealed class LedgerSetupRepository(
 {
     private static readonly string[][] InvoiceRequiredRoles = [["AccountsReceivableControl", "Receivable"], ["AccountsPayableControl", "Payable"], ["SalesRevenue"], ["PurchaseExpense"], ["OutputTaxPayable", "OutputTax"], ["InputTaxRecoverable", "InputTax"]];
     private static readonly string[][] PaymentRequiredRoles = [["AccountsReceivableControl", "Receivable"], ["AccountsPayableControl"], ["Cash"], ["FXGain"], ["FXLoss"]];
-    private static readonly string[][] InventoryRequiredRoles = [["InventoryAsset"], ["COGS"]];
+    private static readonly string[][] InventoryRequiredRoles = [["InventoryAsset"], ["COGS"], ["InventoryOffset"], ["InventoryAdjustmentGain"], ["InventoryAdjustmentLoss"]];
     private static readonly string[][] PayrollRequiredRoles = [["PayrollExpense"], ["PayrollPayable"]];
 
     private static readonly (string Code, string Ar, string En, string Type, string Subtype, bool Postable, string? ParentCode)[] Accounts =
@@ -29,6 +29,7 @@ public sealed class LedgerSetupRepository(
         ("130000", "المخزون", "Inventory", "Asset", "InventoryAsset", true, "100000"),
         ("200000", "الالتزامات", "Liabilities", "Liability", "Other", false, null),
         ("210000", "الموردون", "Accounts Payable", "Liability", "PayableControl", true, "200000"),
+        ("215000", "بضاعة مستلمة غير مفوترة", "Goods Received Not Invoiced", "Liability", "InventoryClearing", true, "200000"),
         ("220000", "ضريبة المخرجات", "Output Tax Payable", "Liability", "Tax", true, "200000"),
         ("221000", "ضريبة المدخلات القابلة للاسترداد", "Recoverable Input Tax", "Asset", "Tax", true, "100000"),
         ("230000", "التزامات الرواتب", "Payroll Payable", "Liability", "Payroll", true, "200000"),
@@ -36,8 +37,10 @@ public sealed class LedgerSetupRepository(
         ("310000", "الأرباح المحتجزة", "Retained Earnings", "Equity", "RetainedEarnings", true, "300000"),
         ("400000", "الإيرادات", "Revenue", "Revenue", "Revenue", false, null),
         ("410000", "إيرادات المبيعات", "Sales Revenue", "Revenue", "Revenue", true, "400000"),
+        ("430000", "أرباح تسويات المخزون", "Inventory Adjustment Gains", "Revenue", "InventoryVariance", true, "400000"),
         ("500000", "المصروفات", "Expenses", "Expense", "Other", false, null),
         ("510000", "تكلفة المبيعات", "Cost of Goods Sold", "Expense", "COGS", true, "500000"),
+        ("550000", "خسائر وتسويات المخزون", "Inventory Adjustment Losses", "Expense", "InventoryVariance", true, "500000"),
         ("520000", "مصروف الرواتب", "Payroll Expense", "Expense", "Payroll", true, "500000"),
         ("530000", "ديون معدومة", "Bad Debt Expense", "Expense", "BadDebt", true, "500000"),
         ("540000", "مصروفات المشتريات", "Purchase Expenses", "Expense", "Purchases", true, "500000"),
@@ -62,6 +65,9 @@ public sealed class LedgerSetupRepository(
         ("Cash", "النقدية", "Cash", "110000"),
         ("InventoryAsset", "مخزون", "Inventory Asset", "130000"),
         ("COGS", "تكلفة المبيعات", "Cost of Goods Sold", "510000"),
+        ("InventoryOffset", "بضاعة مستلمة غير مفوترة", "Goods Received Not Invoiced", "215000"),
+        ("InventoryAdjustmentGain", "أرباح تسويات المخزون", "Inventory Adjustment Gains", "430000"),
+        ("InventoryAdjustmentLoss", "خسائر وتسويات المخزون", "Inventory Adjustment Losses", "550000"),
         ("PayrollExpense", "مصروف الرواتب", "Payroll Expense", "520000"),
         ("PayrollPayable", "التزام الرواتب", "Payroll Payable", "230000"),
         ("BadDebtExpense", "مصروف الديون المعدومة", "Bad Debt Expense", "530000"),
@@ -301,7 +307,7 @@ public sealed class LedgerSetupRepository(
         ("invoicing", AccountingFactTypes.CustomerDebitNotePosted), ("invoicing", AccountingFactTypes.VendorDebitNotePosted),
         ("sales", AccountingFactTypes.CustomerInvoicePosted), ("sales", AccountingFactTypes.CustomerCreditNotePosted),
         ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade), ("payments", AccountingFactTypes.RefundPaid), ("payments", AccountingFactTypes.PaymentFeeRecognized), ("payments", AccountingFactTypes.PaymentFeeReversed),
-        ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment),
+        ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment), ("inventory", AccountingFactTypes.InventoryValuationReversal),
         ("payroll", AccountingFactTypes.PayrollPosted), ("tax", AccountingFactTypes.TaxAdjustment),
         ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff)
     ];

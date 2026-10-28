@@ -1,5 +1,5 @@
 import fs from "node:fs";
-const files = ["docs/api/platform-openapi.json", "docs/api/ledger-openapi.json", "docs/api/subledger-openapi.json", "docs/api/invoicing-openapi.json", "docs/api/payments-openapi.json"];
+const files = ["docs/api/platform-openapi.json", "docs/api/ledger-openapi.json", "docs/api/subledger-openapi.json", "docs/api/invoicing-openapi.json", "docs/api/payments-openapi.json", "docs/api/inventory-openapi.json"];
 for (const file of files) {
   const document = JSON.parse(fs.readFileSync(file, "utf8"));
   if (document.openapi !== "3.1.0" || !document.info?.title || !document.paths || Object.keys(document.paths).length === 0) {
@@ -25,5 +25,16 @@ for (const file of files) {
     }
   };
   validateReferences(document);
+  if (file === "docs/api/inventory-openapi.json") {
+    const source = fs.readFileSync("backend/Modules/Inventory/Controllers/InventoryModuleExtensions.cs", "utf8");
+    const actual = new Set([...source.matchAll(/group\.Map(Get|Post|Put|Delete)\("([^\"]+)"/g)]
+      .map(([, method, route]) => `${method.toLowerCase()} /api/v1/inventory${route.replace(/:guid/g, "")}`));
+    const frozen = new Set(Object.entries(document.paths).flatMap(([path, item]) => Object.keys(item)
+      .filter(method => /^(get|post|put|delete)$/i.test(method)).map(method => `${method.toLowerCase()} ${path}`)));
+    for (const operation of actual) if (!frozen.has(operation)) throw new Error(`${file}: missing Inventory endpoint ${operation}`);
+    for (const operation of frozen) if (!actual.has(operation)) throw new Error(`${file}: endpoint is not implemented: ${operation}`);
+    if ([...frozen].some(operation => /\b(setstock|setquantity|setbalance|setcost)\b/i.test(operation)))
+      throw new Error(`${file}: direct stock or cost mutation endpoint is prohibited`);
+  }
   console.log(`Validated OpenAPI ${document.openapi} contract in ${file} with ${Object.keys(document.paths).length} paths.`);
 }

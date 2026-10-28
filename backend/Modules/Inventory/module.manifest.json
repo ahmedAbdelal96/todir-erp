@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "inventory",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L2",
+  "type": "module",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": {
+    "hard": ["platform-kernel", "catalog", "finbase"],
+    "optionalCapabilities": ["ledger.semantic-facts", "platform.transaction-coordination", "platform.outbox"]
+  },
+  "owns": {
+    "schema": "business_inventory",
+    "entities": ["warehouse", "movement_sequence", "location", "product_inventory_profile", "inventory_operation", "stock_movement_entry", "stock_balance", "negative_stock_condition", "reservation", "reservation_allocation", "reservation_event", "inventory_transfer", "transfer_receipt", "transfer_event", "lot", "serial", "physical_count", "count_line", "valuation_entry", "cost_layer", "cost_layer_consumption", "cost_state", "inventory_audit"]
+  },
+  "permissions": [
+    "inventory.stock.read", "inventory.history.read", "inventory.stock.status.change", "inventory.cost.read", "inventory.valuation.read",
+    "inventory.receipt.create", "inventory.receipt.confirm", "inventory.receipt.reverse", "inventory.operation.reverse",
+    "inventory.issue.create", "inventory.issue.confirm", "inventory.issue.reverse", "inventory.stock.negative.override",
+    "inventory.transfer.create", "inventory.transfer.ship", "inventory.transfer.receive", "inventory.transfer.reverse",
+    "inventory.reservation.create", "inventory.reservation.release", "inventory.reservation.override",
+    "inventory.count.create", "inventory.count.enter", "inventory.count.approve", "inventory.count.post",
+    "inventory.adjustment.create", "inventory.adjustment.approve", "inventory.adjustment.post",
+    "inventory.revaluation.manage", "inventory.warehouse.manage", "inventory.location.manage",
+    "inventory.profile.manage", "inventory.policy.manage", "inventory.traceability.manage", "inventory.opening.manage", "inventory.opening.post",
+    "inventory.reconciliation.read", "inventory.audit.view"
+  ],
+  "capabilities": {
+    "provides": ["inventory.availability", "inventory.reservations", "inventory.receipts", "inventory.issues", "inventory.transfers", "inventory.history", "inventory.valuation", "inventory.reconciliation", "inventory.scan-resolution", "inventory.read-models"],
+    "consumes": ["catalog.product", "catalog.quantity-conversion", "finbase.money", "ledger.semantic-facts", "platform.transaction-coordination", "platform.outbox"]
+  },
+  "messaging": {
+    "publishes": ["StockReceivedV1", "StockIssuedV1", "StockOpeningPostedV1", "StockStatusChangedV1", "StockTransferredV1", "StockReversedV1", "ReservationCreatedV1", "ReservationReleasedV1", "ReservationCancelledV1", "ReservationExpiredV1", "ReservationConsumedV1", "StockAdjustedV1", "PhysicalCountPostedV1", "InventoryProfileChangedV1", "WarehouseStatusChangedV1", "InventoryLocationArchivedV1", "NegativeStockConditionRaisedV1", "NegativeStockConditionUpdatedV1", "NegativeStockConditionResolvedV1"],
+    "consumes": []
+  },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}

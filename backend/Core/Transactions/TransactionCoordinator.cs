@@ -38,6 +38,19 @@ public interface ITransactionalPaymentLedgerPostingCapability
         InternalTransferFactPayload payload, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Posts Inventory-owned valuation facts using Ledger-owned account determination.</summary>
+public interface ITransactionalInventoryLedgerPostingCapability
+{
+    Task<string?> ValidateInventoryPostingDateAsync(ITransactionContext context, TenantId tenantId, LegalEntityId legalEntityId,
+        DateOnly postingDate, CancellationToken cancellationToken = default);
+    Task<LedgerPostingResult> PostInventoryValuationAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, InventoryValuationFactPayload payload,
+        CancellationToken cancellationToken = default);
+    Task<LedgerPostingResult> ReverseInventoryValuationAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, InventoryValuationReversalPayload payload,
+        CancellationToken cancellationToken = default);
+}
+
 public interface ITransactionalInvoiceLedgerPostingCapability
 {
     Task<Guid> GetActiveConfigurationVersionIdAsync(ITransactionContext context, TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default);

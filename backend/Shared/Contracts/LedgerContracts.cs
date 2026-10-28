@@ -23,6 +23,7 @@ public static class AccountingFactTypes
     public const string InventoryReceiptValued = "InventoryReceiptValued";
     public const string InventoryIssueValued = "InventoryIssueValued";
     public const string InventoryCostAdjustment = "InventoryCostAdjustment";
+    public const string InventoryValuationReversal = "InventoryValuationReversal";
     public const string ExpenseRecognized = "ExpenseRecognized";
     public const string PayrollPosted = "PayrollPosted";
     public const string TaxAdjustment = "TaxAdjustment";
@@ -35,7 +36,7 @@ public static class AccountingFactTypes
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         CustomerInvoicePosted, CustomerCreditNotePosted, VendorBillPosted, VendorCreditNotePosted, CustomerDebitNotePosted, VendorDebitNotePosted,
-        PaymentReceived, PaymentMade, RefundPaid, InternalTransferCompleted, PaymentFeeRecognized, PaymentFeeReversed, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment,
+        PaymentReceived, PaymentMade, RefundPaid, InternalTransferCompleted, PaymentFeeRecognized, PaymentFeeReversed, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment, InventoryValuationReversal,
         ExpenseRecognized, PayrollPosted, TaxAdjustment, SettlementFxDifference, SettlementWriteOff, UnrealizedFxRevaluation,
         OpeningBalancePosted, ManualGeneralJournalPosted
     };
@@ -98,7 +99,11 @@ public sealed record InternalTransferFactPayload(decimal SourceAmount, string So
     string SourcePaymentAccountReference, string DestinationPaymentAccountReference,
     string? SourceExchangeRateReference, string? DestinationExchangeRateReference,
     string? SourceExchangeRateSnapshot, string? DestinationExchangeRateSnapshot) : IAccountingFactPayload;
-public sealed record InventoryValuationFactPayload(decimal Amount, string CurrencyCode, string InventoryGroup, string ValuationRole) : IAccountingFactPayload;
+public sealed record InventoryValuationFactPayload(decimal Amount, string CurrencyCode, string InventoryGroup, string ValuationRole,
+    decimal Quantity = 0m, decimal UnitCost = 0m, Guid? ProductVariantId = null, Guid? MovementId = null,
+    string? BaseCurrencyCode = null, decimal? BaseAmount = null) : IAccountingFactPayload;
+public sealed record InventoryValuationReversalPayload(Guid OriginalFactId, Guid OriginalMovementId, Guid ReversalMovementId,
+    string Reason) : IAccountingFactPayload;
 public sealed record ExpenseRecognizedPayload(decimal Amount, string CurrencyCode, string ExpenseCategory) : IAccountingFactPayload;
 public sealed record PayrollPostedPayload(decimal GrossAmount, decimal PayableAmount, string CurrencyCode) : IAccountingFactPayload;
 public sealed record TaxAdjustmentPayload(decimal Amount, string CurrencyCode, string TaxCode, string AdjustmentRole) : IAccountingFactPayload;
