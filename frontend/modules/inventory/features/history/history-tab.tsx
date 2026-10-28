@@ -164,26 +164,26 @@ export function HistoryTab({ legalEntityId, warehouses, canReverse = true }: His
         {movements.length === 0 ? (
           <EmptyState title={t("history.title")} description={t("common.empty")} />
         ) : (
-          <InventoryDataTable minWidth="950px" ariaLabel={t("history.title")}>
+          <InventoryDataTable minWidth="100%" ariaLabel={t("history.title")}>
             <thead>
               <tr style={{ backgroundColor: "var(--color-surface-subtle, #f8fafc)", borderBottom: "1px solid var(--color-border-default)" }}>
-                <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("history.date")}</th>
-                <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("history.operationNumber")}</th>
-                <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("history.operationType")}</th>
-                <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("history.product")}</th>
-                <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("history.warehouseLocation")}</th>
-                <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("history.quantity")}</th>
-                <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("history.stockStatus")}</th>
-                <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>{t("history.actions")}</th>
+                <th style={{ padding: "0.625rem 0.625rem", textAlign: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("history.date")}</th>
+                <th style={{ padding: "0.625rem 0.625rem", textAlign: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("history.operationNumber")}</th>
+                <th style={{ padding: "0.625rem 0.625rem", textAlign: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("history.operationType")}</th>
+                <th style={{ padding: "0.625rem 0.625rem", textAlign: "start", fontSize: "0.8125rem" }}>{t("history.product")}</th>
+                <th style={{ padding: "0.625rem 0.625rem", textAlign: "start", fontSize: "0.8125rem" }}>{t("history.warehouseLocation")}</th>
+                <th style={{ padding: "0.625rem 0.625rem", textAlign: "end", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("history.quantity")}</th>
+                <th style={{ padding: "0.625rem 0.625rem", textAlign: "start", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("history.stockStatus")}</th>
+                <th style={{ padding: "0.625rem 0.625rem", textAlign: "center", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{t("history.actions")}</th>
               </tr>
             </thead>
             <tbody>
               {movements.map((m) => (
                 <tr key={m.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
-                  <td style={{ padding: "0.75rem 1rem" }}>
+                  <td style={{ padding: "0.625rem 0.625rem", whiteSpace: "nowrap" }}>
                     <LocalDateDisplay value={m.operationalDate} />
                   </td>
-                  <td style={{ padding: "0.75rem 1rem", fontWeight: 600 }}>
+                  <td style={{ padding: "0.625rem 0.625rem", fontWeight: 600, whiteSpace: "nowrap" }}>
                     <button
                       type="button"
                       onClick={() => setSelectedMovement(m)}
@@ -194,27 +194,27 @@ export function HistoryTab({ legalEntityId, warehouses, canReverse = true }: His
                         color: "var(--color-brand-primary)",
                         cursor: "pointer",
                         fontWeight: 600,
-                        fontSize: "0.875rem",
+                        fontSize: "0.8125rem",
                         textDecoration: "underline"
                       }}
                     >
                       {m.operationId.slice(0, 18)}...
                     </button>
                   </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>
+                  <td style={{ padding: "0.625rem 0.625rem", fontSize: "0.8125rem", whiteSpace: "nowrap" }}>
                     {t(`movementTypes.${m.movementType}` as any, { defaultValue: m.movementType })}
                   </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>
+                  <td style={{ padding: "0.625rem 0.625rem" }}>
                     <InventoryProductDisplay productVariantId={m.productVariantId} />
                   </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>{warehouseName(m.warehouseId)}</td>
-                  <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700, color: m.signedBaseQuantity >= 0 ? "var(--color-status-success)" : "var(--color-status-danger)" }}>
+                  <td style={{ padding: "0.625rem 0.625rem", fontSize: "0.8125rem" }}>{warehouseName(m.warehouseId)}</td>
+                  <td style={{ padding: "0.625rem 0.625rem", textAlign: "end", fontWeight: 700, whiteSpace: "nowrap", color: m.signedBaseQuantity >= 0 ? "var(--color-status-success)" : "var(--color-status-danger)" }}>
                     <QuantityDisplay value={toQty(m.signedBaseQuantity)} />
                   </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>
+                  <td style={{ padding: "0.625rem 0.625rem", whiteSpace: "nowrap" }}>
                     <InventoryStatusBadge status={m.stockStatus} />
                   </td>
-                  <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
+                  <td style={{ padding: "0.625rem 0.625rem", textAlign: "center", whiteSpace: "nowrap" }}>
                     <Button variant="secondary" onPress={() => setSelectedMovement(m)}>
                       {t("history.viewDetails")}
                     </Button>

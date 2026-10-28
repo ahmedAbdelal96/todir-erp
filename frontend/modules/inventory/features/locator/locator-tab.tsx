@@ -127,31 +127,46 @@ export function LocatorTab({ legalEntityId }: LocatorTabProps): React.JSX.Elemen
             </tr>
           </thead>
           <tbody>
-            {locations.map((loc, idx) => (
-              <tr
-                key={`${loc.warehouseId}-${loc.locationId}-${idx}`}
-                style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}
-              >
-                <td style={{ padding: "0.75rem 1rem", fontWeight: 600 }}>{loc.warehouseCode}</td>
-                <td style={{ padding: "0.75rem 1rem" }}>
-                  <span style={{ padding: "0.25rem 0.5rem", backgroundColor: "var(--color-surface-subtle)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
-                    {loc.locationPath || loc.locationId}
-                  </span>
-                </td>
-                <td style={{ padding: "0.75rem 1rem" }}>
-                  <InventoryStatusBadge status={loc.stockStatus} />
-                </td>
-                <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700 }}>
-                  <QuantityDisplay value={toQty(loc.onHand)} />
-                </td>
-                <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700, color: "var(--color-status-success)" }}>
-                  <QuantityDisplay value={toQty(loc.available)} />
-                </td>
-                <td style={{ padding: "0.75rem 1rem", color: "var(--color-content-muted)" }}>
-                  {loc.lotId || loc.serialId ? `${loc.lotId ?? ""}${loc.serialId ?? ""}` : "—"}
-                </td>
-              </tr>
-            ))}
+            {locations.map((loc, idx) => {
+              const isInternalDefault =
+                !loc.locationPath ||
+                loc.locationPath.trim().toUpperCase() === "DEFAULT" ||
+                loc.locationPath.trim().toUpperCase() === "DEFAULTLOCATION" ||
+                loc.locationId === "loc-main" ||
+                loc.locationId?.toLowerCase().includes("default");
+
+              return (
+                <tr
+                  key={`${loc.warehouseId}-${loc.locationId}-${idx}`}
+                  style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}
+                >
+                  <td style={{ padding: "0.75rem 1rem", fontWeight: 600 }}>{loc.warehouseCode}</td>
+                  <td style={{ padding: "0.75rem 1rem" }}>
+                    {isInternalDefault ? (
+                      <span style={{ color: "var(--color-content-muted)", fontStyle: "italic", fontSize: "0.8125rem" }}>
+                        {t("locator.noInternalLocation")}
+                      </span>
+                    ) : (
+                      <span style={{ padding: "0.25rem 0.5rem", backgroundColor: "var(--color-surface-subtle)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)", fontFamily: "monospace", fontSize: "0.8125rem" }}>
+                        {loc.locationPath || loc.locationId}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "0.75rem 1rem" }}>
+                    <InventoryStatusBadge status={loc.stockStatus} />
+                  </td>
+                  <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700 }}>
+                    <QuantityDisplay value={toQty(loc.onHand)} />
+                  </td>
+                  <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700, color: "var(--color-status-success)" }}>
+                    <QuantityDisplay value={toQty(loc.available)} />
+                  </td>
+                  <td style={{ padding: "0.75rem 1rem", color: "var(--color-content-muted)" }}>
+                    {loc.lotId || loc.serialId ? `${loc.lotId ?? ""}${loc.serialId ?? ""}` : "—"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </InventoryDataTable>
       )}

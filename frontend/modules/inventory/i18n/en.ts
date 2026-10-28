@@ -74,7 +74,8 @@ export const en = {
     suggestedPutaway: "Suggested Putaway Location",
     suggestedPicking: "Suggested Picking Source",
     suggestedReason: "Suggestion Reason",
-    takeQuantity: "Suggested Pick Quantity"
+    takeQuantity: "Suggested Pick Quantity",
+    noInternalLocation: "No internal location"
   },
   warehouses: {
     title: "Warehouses & Storage Locations",
@@ -220,6 +221,14 @@ export const en = {
     distributionTitle: "Warehouse & Location Distribution",
     movementHistoryTitle: "Movement & Traceability History",
     lifecycleStage: "Lifecycle Stage",
+    lifecycleStages: {
+      Received: "Received",
+      Reserved: "Reserved",
+      Issued: "Issued",
+      Returned: "Returned",
+      Adjusted: "Adjusted",
+      InTransit: "In Transit"
+    },
     receivedSource: "Receipt Source Document",
     sampleWarehouse: "Main Warehouse - Riyadh",
     sampleLocation: "Storage Location: Rack 1 Bin 1"

@@ -74,7 +74,8 @@ export const ar = {
     suggestedPutaway: "الموقع المقترح للإيداع / التخزين",
     suggestedPicking: "مقترحات سحب الصنف (الالتقاط)",
     suggestedReason: "سبب الاقتراح",
-    takeQuantity: "الكمية المقترحة للسحب"
+    takeQuantity: "الكمية المقترحة للسحب",
+    noInternalLocation: "بدون موقع تخزين داخلي"
   },
   warehouses: {
     title: "المستودعات ومواقع التخزين",
@@ -220,6 +221,14 @@ export const ar = {
     distributionTitle: "توزيع المخزون بالمستودعات والمواقع",
     movementHistoryTitle: "سجل الحركات والتتبع",
     lifecycleStage: "مرحلة دورة الحياة",
+    lifecycleStages: {
+      Received: "تم الاستلام",
+      Reserved: "محجوز",
+      Issued: "تم الصرف",
+      Returned: "مرتجع",
+      Adjusted: "تمت التسوية",
+      InTransit: "في الطريق"
+    },
     receivedSource: "مستند الاستلام الأصلي",
     sampleWarehouse: "المستودع الرئيسي - الرياض",
     sampleLocation: "موقع التخزين: الرف 1 الخانة 1"

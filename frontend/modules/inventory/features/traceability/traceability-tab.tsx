@@ -321,7 +321,7 @@ export function TraceabilityTab({ legalEntityId }: TraceabilityTabProps): React.
                         border: "1px solid var(--color-border-subtle)",
                         color: "var(--color-content-primary)"
                       }}>
-                        {sn.lifecycleStage} — {t("stockStatuses.Available")}
+                        {t(`traceability.lifecycleStages.${sn.lifecycleStage}` as any, { defaultValue: sn.lifecycleStage })} — {t("stockStatuses.Available")}
                       </span>
                     </td>
                     <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>

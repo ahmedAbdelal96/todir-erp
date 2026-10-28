@@ -73,7 +73,7 @@ export function SerialDetailModal({
               {t("traceability.lifecycleStage")}
             </span>
             <strong style={{ color: "var(--color-status-success)" }}>
-              {serial.lifecycleStage}
+              {t(`traceability.lifecycleStages.${serial.lifecycleStage}` as any, { defaultValue: serial.lifecycleStage })}
             </strong>
           </div>
           <div>

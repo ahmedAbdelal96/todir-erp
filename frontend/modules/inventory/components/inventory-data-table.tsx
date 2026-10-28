@@ -8,7 +8,7 @@ export interface InventoryDataTableProps {
 
 export function InventoryDataTable({
   children,
-  minWidth = "900px",
+  minWidth = "100%",
   ariaLabel
 }: InventoryDataTableProps): React.JSX.Element {
   return (
@@ -30,7 +30,7 @@ export function InventoryDataTable({
           width: "100%",
           minWidth,
           borderCollapse: "collapse",
-          fontSize: "0.875rem",
+          fontSize: "0.8125rem",
           textAlign: "start"
         }}
       >

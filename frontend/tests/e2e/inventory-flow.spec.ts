@@ -518,13 +518,15 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     // Close modal via Escape
     await page.keyboard.press('Escape');
 
-    // 04-product-locator-final.png
+    // 04-product-locator-final.png & product-locator-final-2.png
     await page.getByRole('tab', { name: 'محدد مواقع الأصناف' }).click();
     await expect(page.getByText('ZONE-A / AISLE-01 / RACK-01 / A-01-01')).toBeVisible();
+    await expect(page.getByText('بدون موقع تخزين داخلي')).toBeVisible();
     await expect(page.getByText('مقترحات سحب الصنف (الالتقاط)')).toBeVisible();
     await expect(page.getByText('سائل تنظيف أرضيات 5 لتر').first()).toBeVisible();
 
     await captureScreenshot(page, '04-product-locator-final.png', { fullPage: true });
+    await captureScreenshot(page, 'product-locator-final-2.png', { fullPage: true });
 
     // 05-warehouses
     await page.getByRole('tab', { name: 'المستودعات والمواقع' }).click();
@@ -599,7 +601,7 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
 
     await page.keyboard.press('Escape');
 
-    // 12-serial-detail-final.png (switch subtab to Serials)
+    // 12-serial-detail-final.png & serial-detail-final-2.png (switch subtab to Serials)
     await page.getByRole('button', { name: /الأرقام التسلسلية للقطع/ }).click();
     await expect(page.getByText('SN-90081-A')).toBeVisible();
     // Open Serial Detail Modal via "عرض التفاصيل" button
@@ -607,9 +609,11 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     await expect(page.getByRole('heading', { name: 'تفاصيل الرقم التسلسلي' })).toBeVisible();
     await expect(page.getByRole('dialog').getByText('SN-90081-A')).toBeVisible();
     await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('تم الاستلام')).toBeVisible();
     await expect(page.getByRole('dialog').getByText('سجل الحركات والتتبع')).toBeVisible();
 
     await captureScreenshot(page, '12-serial-detail-final.png');
+    await captureScreenshot(page, 'serial-detail-final-2.png');
 
     await page.keyboard.press('Escape');
 
@@ -627,7 +631,7 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
 
     await page.keyboard.press('Escape');
 
-    // 14-adjustment-approval-final.png (shows full lifecycle: Draft, PendingApproval, Approved, Posted)
+    // 14-adjustment-approval-final.png & adjustment-approval-final-2.png (shows full lifecycle: Draft, PendingApproval, Approved, Posted)
     await page.getByRole('tab', { name: 'التسويات المخزنية' }).click();
     await expect(page.getByText('ADJ-2026-004')).toBeVisible();
     await expect(page.getByText('أحمد المحاسب').first()).toBeVisible();
@@ -636,6 +640,7 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     await expect(page.getByText('معلق - لا أثر على الرصيد').first()).toBeVisible();
 
     await captureScreenshot(page, '14-adjustment-approval-final.png', { fullPage: true });
+    await captureScreenshot(page, 'adjustment-approval-final-2.png', { fullPage: true });
 
     // 15-opening-inventory-final.png
     await page.getByRole('tab', { name: 'رصيد أول المدة' }).click();
@@ -652,13 +657,14 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/inventory');
 
-    // 16-movement-history-final.png
+    // 16-movement-history-final.png & movement-history-final-2.png
     await page.getByRole('tab', { name: 'سجل الحركات الدائم' }).click();
     await expect(page.getByText('استلام مخزني').first()).toBeVisible();
     await expect(page.getByText('صرف مخزني').first()).toBeVisible();
     await expect(page.getByText('سائل تنظيف أرضيات 5 لتر').first()).toBeVisible();
 
     await captureScreenshot(page, '16-movement-history-final.png', { fullPage: true });
+    await captureScreenshot(page, 'movement-history-final-2.png', { fullPage: true });
 
     // 17-operation-detail-final.png
     await page.getByRole('button', { name: 'تفاصيل العملية' }).first().click();
