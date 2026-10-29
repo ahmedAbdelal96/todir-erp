@@ -9,6 +9,7 @@ using Modules.Inventory.Repositories;
 using Modules.Inventory.Services;
 using Todir.Inventory.Contracts;
 using Todir.Sales.Contracts;
+using Shared.Contracts.Accounting;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Inventory;
@@ -22,6 +23,7 @@ public static class InventoryModuleExtensions
         services.AddSingleton<InventoryService>();
         services.AddSingleton<IInventoryCapabilities>(provider => provider.GetRequiredService<InventoryService>());
         services.AddSingleton<Shared.Contracts.Inventory.IInventoryPurchasingCapabilities>(provider => provider.GetRequiredService<InventoryService>());
+        services.AddSingleton<IInventoryAccountingRead>(provider => provider.GetRequiredService<InventoryService>());
         services.AddSingleton<ISalesInventoryCapabilities, SalesInventoryCapabilities>();
         return services;
     }

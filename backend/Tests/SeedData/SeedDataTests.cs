@@ -50,6 +50,7 @@ public sealed class DevelopmentSeedTests
             await AssertFinBaseCanonicalScenariosAsync(acceptanceDataSource);
             await AssertForcedRlsAndRoleBoundaryAsync(acceptanceDataSource);
             await AssertInvoicingPermissionsAsync(acceptanceDataSource);
+            await AssertAccountingSeedAsync(acceptanceDataSource);
             await AssertRuntimeTenantIsolationAsync(appBuilder.ConnectionString);
 
             var secondRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
@@ -146,6 +147,17 @@ public sealed class DevelopmentSeedTests
             Assert.DoesNotContain("invoicing.supplier_invoice.create", rolePermissions["sales"]);
             Assert.DoesNotContain("invoicing.accounting_preview", rolePermissions["sales"]);
         }
+    }
+
+    private static async Task AssertAccountingSeedAsync(NpgsqlDataSource dataSource)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand("select (select count(*) from business_accounting.accounting_setup where go_live_status='Ready'), (select count(*) from business_accounting.financial_statement_definition where status='Active'), (select count(*) from platform.role_permission p join platform.role r on r.tenant_id=p.tenant_id and r.id=p.role_id where r.code='administrator' and p.permission_code='accounting.close.execute')", connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(2L, reader.GetInt64(0));
+        Assert.Equal(4L, reader.GetInt64(1));
+        Assert.Equal(2L, reader.GetInt64(2));
     }
 
     private static async Task AssertPricingEntityIsolationAsync(NpgsqlDataSource dataSource)

@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "accounting",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L3",
+  "type": "module",
+  "purchasable": true,
+  "scope": "tenant",
+  "dependencies": {
+    "hard": ["platform-kernel", "finbase", "ledger", "subledger"],
+    "optionalCapabilities": ["inventory.valuation", "payments.operational-balance"]
+  },
+  "owns": {
+    "schema": "business_accounting",
+    "entities": ["accounting_setup", "reconciliation_run", "reconciliation_issue", "close_run", "close_check", "financial_statement_definition", "financial_statement_version", "financial_statement_line", "report_snapshot_ref"]
+  },
+  "permissions": ["accounting.home.read", "accounting.owner.read", "accounting.health.read", "accounting.reconciliation.read", "accounting.reconciliation.run", "accounting.close.preview", "accounting.close.execute", "accounting.close.reopen", "accounting.statement.read", "accounting.statement.manage"],
+  "capabilities": {
+    "provides": ["accounting.health", "accounting.reconciliation-evidence", "accounting.financial-statements", "accounting.period-close"],
+    "consumes": ["ledger.reports", "ledger.control-balance-read", "subledger.control-reconciliation", "inventory.valuation"]
+  },
+  "messaging": {
+    "publishes": ["AccountingCloseCompletedV1", "AccountingReconciliationCompletedV1"],
+    "consumes": ["JournalEntryPostedV1", "PeriodClosedV1", "PeriodReopenedV1"]
+  },
+  "lifecycle": {"supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents"}
+}

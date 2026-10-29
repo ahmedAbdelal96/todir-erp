@@ -2,11 +2,12 @@ using Modules.Ledger.DTOs;
 using Modules.Ledger.Entities;
 using Modules.Ledger.Repositories;
 using Shared.Contracts.Ledger;
+using Shared.Contracts.Accounting;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Ledger.Services;
 
-public sealed class LedgerService(LedgerRepository repository, LedgerOperationsRepository operations, LedgerSetupRepository setup, LedgerMappingConfigurationRepository mappings, LedgerUxRepository ux, LedgerPreviewService preview) : ILedgerPostingEngine, ILedgerControlBalanceRead
+public sealed class LedgerService(LedgerRepository repository, LedgerOperationsRepository operations, LedgerSetupRepository setup, LedgerMappingConfigurationRepository mappings, LedgerUxRepository ux, LedgerPreviewService preview) : ILedgerPostingEngine, ILedgerControlBalanceRead, ILedgerAccountingWorkspaceCapabilities
 {
     public Task<Guid> GetActiveConfigurationVersionIdAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default) => repository.GetActiveConfigurationVersionIdAsync(tenantId, legalEntityId, cancellationToken);
     public Task<MappingConfigurationDto> CreateMappingConfigurationDraftAsync(TenantId tenant, LegalEntityId entity, CreateMappingConfigurationDraftRequest request, Guid actor, Guid correlationId, CancellationToken ct) => mappings.CreateDraftAsync(tenant, entity, request, actor, correlationId, ct);
@@ -59,4 +60,41 @@ public sealed class LedgerService(LedgerRepository repository, LedgerOperationsR
     public Task<AccountWorkspaceDto> GetAccountWorkspaceAsync(TenantId tenant, LegalEntityId entity, Guid accountId, CancellationToken ct) => ux.GetAccountWorkspaceAsync(tenant, entity, accountId, ct);
     public Task<PeriodCloseCheckDto> GetPeriodCloseReadinessAsync(TenantId tenant, LegalEntityId entity, Guid periodId, CancellationToken ct) => ux.GetPeriodCloseReadinessAsync(tenant, entity, periodId, ct);
     public Task<PostingPreviewDto> PreviewExplicitAsync(TenantId tenant, LegalEntityId entity, PostingPreviewRequest request, Guid actor, Guid correlation, CancellationToken ct) => preview.PreviewExplicitAsync(tenant, entity, request, actor, correlation, ct);
+
+    async Task<LedgerTrialBalanceSnapshot> ILedgerAccountingWorkspaceCapabilities.GetTrialBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, DateOnly? fromDate, DateOnly? toDate, CancellationToken cancellationToken)
+    {
+        var mapped = await operations.GetAccountingTrialBalanceAsync(tenantId, legalEntityId, fromDate, toDate, cancellationToken);
+        var currency = mapped.Select(row => row.BaseCurrencyCode).Where(code => !string.IsNullOrWhiteSpace(code)).Distinct(StringComparer.OrdinalIgnoreCase).SingleOrDefault() ?? string.Empty;
+        return new LedgerTrialBalanceSnapshot(legalEntityId.Value, fromDate, toDate, currency, mapped, mapped.Sum(row => row.PeriodDebit), mapped.Sum(row => row.PeriodCredit));
+    }
+
+    async Task<LedgerGeneralLedgerPage> ILedgerAccountingWorkspaceCapabilities.GetGeneralLedgerAsync(TenantId tenantId, LegalEntityId legalEntityId, DateOnly? fromDate, DateOnly? toDate, Guid? accountId, string? cursor, int pageSize, CancellationToken cancellationToken)
+    {
+        return await operations.GetAccountingGeneralLedgerAsync(tenantId, legalEntityId, fromDate, toDate, accountId, cursor, pageSize, cancellationToken);
+    }
+
+    async Task<LedgerReadinessSnapshot> ILedgerAccountingWorkspaceCapabilities.GetReadinessAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken)
+    {
+        var readiness = await GetReadinessAsync(tenantId, legalEntityId, cancellationToken);
+        return new LedgerReadinessSnapshot(readiness.State.ToString(), readiness.Mode.ToString(), readiness.Version,
+            readiness.Capabilities.Where(capability => capability.State == LedgerReadinessState.Blocked).SelectMany(capability => capability.Reasons).Select(reason => reason.Code).ToArray());
+    }
+
+    public async Task<LedgerPeriodSnapshot?> GetPeriodAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, CancellationToken cancellationToken = default)
+    {
+        var period = (await ListPeriodsAsync(tenantId, legalEntityId, cancellationToken)).SingleOrDefault(item => item.Id == periodId);
+        return period is null ? null : new LedgerPeriodSnapshot(period.Id, period.StartDate, period.EndDate, period.Status.ToString(), period.Version);
+    }
+
+    public async Task<LedgerCloseReadinessSnapshot> GetCloseReadinessAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, CancellationToken cancellationToken = default)
+    {
+        var readiness = await GetPeriodCloseReadinessAsync(tenantId, legalEntityId, periodId, cancellationToken);
+        return new LedgerCloseReadinessSnapshot(periodId, readiness.Ready, readiness.Blockers.Select(blocker => blocker.Code).ToArray());
+    }
+
+    public Task SetPeriodStatusAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, string status, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default)
+    {
+        if (!Enum.TryParse<PeriodStatus>(status, true, out var parsed)) throw new LedgerDomainException("ledger.period_status_invalid", "The accounting period status is invalid.");
+        return SetPeriodStatusAsync(tenantId, legalEntityId, periodId, parsed, actorId, correlationId, cancellationToken);
+    }
 }

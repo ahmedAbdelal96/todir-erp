@@ -4,6 +4,7 @@ using Modules.Inventory.Repositories;
 using Shared.Primitives.Identifiers;
 using Todir.Inventory.Contracts;
 using Shared.Contracts.Ledger;
+using Shared.Contracts.Accounting;
 using Shared.Contracts.Catalog;
 using System.Globalization;
 using System.Text;
@@ -12,7 +13,7 @@ namespace Modules.Inventory.Services;
 
 /// <summary>Application boundary for Inventory workflows exposed to the API host.</summary>
 public sealed class InventoryService(InventoryRepository repository, ILedgerPostingEngine? ledgerPosting = null,
-    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities, Shared.Contracts.Inventory.IInventoryPurchasingCapabilities
+    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities, Shared.Contracts.Inventory.IInventoryPurchasingCapabilities, IInventoryAccountingRead
 {
     public Task<IReadOnlyList<InventoryAvailabilityLine>> GetBatchAvailabilityAsync(Guid tenantId, InventoryAvailabilityRequest request, CancellationToken cancellationToken = default) => repository.GetBatchAvailabilityAsync(new TenantId(tenantId), request, cancellationToken);
     public async Task<Guid> ReserveAsync(Guid tenantId, Guid actorId, InventoryReservationRequest request, CancellationToken cancellationToken = default)
@@ -86,6 +87,19 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
         if (difference != 0m && diagnostics.Count == 0) diagnostics.Add("inventory_ledger_balance_difference");
         return new InventoryReconciliationSnapshot(legalEntityId, asOfDate, inventoryValue, ledger.SignedBaseBalance,
             difference, ledger.BaseCurrencyCode, difference == 0m ? "Reconciled" : "Difference", diagnostics);
+    }
+    public async Task<InventoryAccountingReconciliation> ReconcileInventoryAsync(TenantId tenantId, LegalEntityId legalEntityId, DateOnly asOfDate, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await ReconcileAsync(tenantId.Value, legalEntityId.Value, asOfDate, cancellationToken);
+            return new(result.LegalEntityId, result.AsOfDate, result.InventoryValue, result.LedgerValue, result.Difference,
+                result.CurrencyCode, result.Status, result.Diagnostics, true);
+        }
+        catch (InventoryException exception) when (exception.Code is "inventory.ledger_read_capability_required" or "inventory.valuation_currency_mismatch")
+        {
+            return new(legalEntityId.Value, asOfDate, 0m, 0m, 0m, string.Empty, "NotReady", [exception.Code], false);
+        }
     }
     public async Task<InventoryScanResult?> ResolveScanAsync(Guid tenantId, Guid legalEntityId, string code, CancellationToken cancellationToken = default)
     {
