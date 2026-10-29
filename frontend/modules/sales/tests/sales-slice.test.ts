@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ApiError } from "../../../core/api/http-client.ts";
-import { toQty, toMoneyVal } from "../utils.ts";
+import { computeQuotationValidUntil, toQty, toMoneyVal } from "../utils.ts";
 import { mapSalesError } from "../services/sales-error-map.ts";
 import { resolveSalesCustomer } from "../components/sales-customer-resolver.ts";
 import { resolveSalesProduct } from "../components/sales-product-resolver.ts";
@@ -171,6 +171,12 @@ describe("Sales Domain Invariants & Frontend Slice Contracts", () => {
 
     const isValid = validValidUntil >= quoteDate;
     assert.equal(isValid, true);
+  });
+
+  it("does not invent a quotation validity duration when no configured value is supplied", () => {
+    assert.equal(computeQuotationValidUntil("2026-10-29"), "");
+    assert.equal(computeQuotationValidUntil("2026-10-29", null), "");
+    assert.equal(computeQuotationValidUntil("2026-10-29", 30), "2026-11-28");
   });
 
 });

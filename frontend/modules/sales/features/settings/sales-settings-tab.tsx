@@ -13,7 +13,7 @@ export interface SalesSettingsTabProps {
 export function SalesSettingsTab({ legalEntityId }: SalesSettingsTabProps): React.JSX.Element {
   const { t } = useTranslation("sales");
   const [selectedPartyId, setSelectedPartyId] = useState("");
-  const [quoteValidityDays, setQuoteValidityDays] = useState("30");
+  const [quoteValidityDays, setQuoteValidityDays] = useState("");
   const [poRequired, setPoRequired] = useState(false);
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export function SalesSettingsTab({ legalEntityId }: SalesSettingsTabProps): Reac
       await saveMutation.mutateAsync({
         legalEntityId,
         partyId: selectedPartyId,
-        defaultQuoteValidityDays: Number(quoteValidityDays) || 30,
+        defaultQuoteValidityDays: Number(quoteValidityDays) > 0 ? Number(quoteValidityDays) : null,
         customerPoRequired: poRequired
       });
       setStatusMessage(t("settings.savedSuccess"));

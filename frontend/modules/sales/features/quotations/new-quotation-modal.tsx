@@ -1,16 +1,3 @@
-function computeDefaultValidUntil(quoteDateStr: string, validityDays: number = 30): string {
-  try {
-    const d = new Date(quoteDateStr);
-    if (!isNaN(d.getTime())) {
-      d.setDate(d.getDate() + validityDays);
-      return d.toISOString().slice(0, 10);
-    }
-  } catch {
-    // fallback
-  }
-  return "";
-}
-
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
@@ -23,11 +10,13 @@ import { SalesDataTable } from "../../components/sales-data-table.tsx";
 import { useCreateQuotationMutation } from "../../hooks/use-sales-queries.ts";
 import { mapSalesError } from "../../services/sales-error-map.ts";
 import type { QuotationLineRequest } from "../../types.ts";
+import { computeQuotationValidUntil } from "../../utils.ts";
 
 export interface NewQuotationModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly legalEntityId: string;
+  readonly defaultQuoteValidityDays?: number | null;
   readonly onCreated?: (id: string) => void;
 }
 
@@ -39,6 +28,7 @@ export function NewQuotationModal({
   isOpen,
   onClose,
   legalEntityId,
+  defaultQuoteValidityDays,
   onCreated
 }: NewQuotationModalProps): React.JSX.Element {
   const { t } = useTranslation("sales");
@@ -48,13 +38,13 @@ export function NewQuotationModal({
   const [currencyCode, setCurrencyCode] = useState<string>("EGP");
   const initialQuoteDate = new Date().toISOString().slice(0, 10);
   const [quoteDate, setQuoteDate] = useState<string>(initialQuoteDate);
-  const [validUntil, setValidUntil] = useState<string>(() => computeDefaultValidUntil(initialQuoteDate, 30));
+  const [validUntil, setValidUntil] = useState<string>(() => computeQuotationValidUntil(initialQuoteDate, defaultQuoteValidityDays));
   const [isManualValidUntil, setIsManualValidUntil] = useState(false);
 
   const handleQuoteDateChange = (newDate: string) => {
     setQuoteDate(newDate);
     if (!isManualValidUntil || (validUntil && validUntil < newDate)) {
-      setValidUntil(computeDefaultValidUntil(newDate, 30));
+      setValidUntil(computeQuotationValidUntil(newDate, defaultQuoteValidityDays));
       if (errorMessage === t("errors.validUntilBeforeQuoteDate")) {
         setErrorMessage(null);
       }
