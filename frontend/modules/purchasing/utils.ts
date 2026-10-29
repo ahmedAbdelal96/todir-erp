@@ -1,4 +1,5 @@
 import type { QuantityValue, MoneyValue } from "../../components/contracts/domain-values.ts";
+import { resolvePurchasingProduct } from "./components/purchasing-product-resolver.ts";
 
 export function toMoneyVal(amount: number | string | undefined | null, currency = "SAR"): MoneyValue {
   if (amount == null) return { amount: "0.00", currency };
@@ -49,4 +50,80 @@ export function addDaysToIsoDate(isoDate: string, days: number): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
+}
+
+export interface ReceiptEligibilityCandidate {
+  readonly productVariantId?: string | null | undefined;
+  readonly receiptEligible?: boolean | null | undefined;
+  readonly isInventoryTracked?: boolean | null | undefined;
+  readonly isStocked?: boolean | null | undefined;
+  readonly requiresInventoryMovement?: boolean | null | undefined;
+  readonly stockBehavior?: string | null | undefined;
+  readonly inventoryTrackingMode?: string | null | undefined;
+  readonly lineType?: string | null | undefined;
+  readonly productType?: string | null | undefined;
+}
+
+/**
+ * Authoritative Goods Receipt Eligibility Invariant:
+ * ProductVariantId existence != Inventory Tracking.
+ * A line is physical receipt eligible ONLY when backed by authoritative Catalog/Inventory
+ * classification (StockTracked). Non-stock goods, services (even with a valid ProductVariantId),
+ * and ad-hoc lines must NEVER be received into inventory.
+ */
+export function isReceiptEligibleLine(line?: ReceiptEligibilityCandidate | null): boolean {
+  if (!line) return false;
+
+  // 1. Authoritative explicit boolean flags on line contract take precedence
+  if (typeof line.receiptEligible === "boolean") return line.receiptEligible;
+  if (typeof line.isInventoryTracked === "boolean") return line.isInventoryTracked;
+  if (typeof line.requiresInventoryMovement === "boolean") return line.requiresInventoryMovement;
+  if (typeof line.isStocked === "boolean") return line.isStocked;
+
+  // 2. Authoritative string enums / classifications on line
+  if (line.stockBehavior) {
+    const sb = line.stockBehavior.toLowerCase();
+    return sb === "stocktracked" || sb === "stocked";
+  }
+  if (line.inventoryTrackingMode) {
+    const tm = line.inventoryTrackingMode.toLowerCase();
+    return tm !== "none" && tm !== "nonstocked";
+  }
+  if (line.lineType) {
+    const lt = line.lineType.toLowerCase();
+    return lt === "stocked" || lt === "stocktracked";
+  }
+  if (line.productType) {
+    return line.productType.toLowerCase() === "goods";
+  }
+
+  // 3. Authoritative Catalog Product resolution if a variant ID is present
+  if (line.productVariantId) {
+    const product = resolvePurchasingProduct(line.productVariantId);
+    return Boolean(product.isStocked);
+  }
+
+  // 4. Ad-hoc service/expense lines without productVariantId or classification
+  return false;
+}
+
+/**
+ * Authoritative configured lead time resolver:
+ * Default priority:
+ * 1. Supplier Purchase Profile leadTimeDays
+ * 2. Backend / Purchasing configured default lead time (settings.defaultLeadTimeDays)
+ * 3. otherwise null (leave empty / optional).
+ * React must NOT own 7 days or any arbitrary default.
+ */
+export function resolveConfiguredLeadTimeDays(
+  supplierLeadTime?: number | null | undefined,
+  settingsDefaultLeadTime?: number | null | undefined
+): number | null {
+  if (typeof supplierLeadTime === "number" && !isNaN(supplierLeadTime) && supplierLeadTime >= 0) {
+    return supplierLeadTime;
+  }
+  if (typeof settingsDefaultLeadTime === "number" && !isNaN(settingsDefaultLeadTime) && settingsDefaultLeadTime >= 0) {
+    return settingsDefaultLeadTime;
+  }
+  return null;
 }

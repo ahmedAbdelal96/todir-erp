@@ -8,7 +8,7 @@ import { LocalDateDisplay } from "../../../../components/fields/local-date-displ
 import { PurchasingStatusBadge } from "../../components/purchasing-status-badge.tsx";
 import { PurchasingSupplierDisplay } from "../../components/purchasing-supplier-display.tsx";
 import { PurchasingProductDisplay } from "../../components/purchasing-product-display.tsx";
-import { formatPoNumber, toMoneyVal, generateIdempotencyKey } from "../../utils.ts";
+import { formatPoNumber, toMoneyVal, generateIdempotencyKey, isReceiptEligibleLine } from "../../utils.ts";
 import { mapPurchasingError } from "../../services/purchasing-error-map.ts";
 import {
   useApprovePurchaseOrderMutation,
@@ -79,7 +79,7 @@ export function PurchaseOrderDetailModal({
   const isApproved = localApproved || order.state === "Approved" || order.state === "Open" || order.state === "PartiallyCompleted";
   const isFullyInvoiced = order.invoicingState === "Invoiced" || localInvoiceNumber != null;
   const isFullyReceived = order.receiptState === "Received";
-  const hasPhysicalLines = order.lines.some((l) => Boolean(l.productVariantId));
+  const hasPhysicalLines = order.lines.some(isReceiptEligibleLine);
 
   const handleApprove = async () => {
     try {

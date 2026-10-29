@@ -511,25 +511,74 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
             linesCount: postData.lines?.length || 1,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            lines: postData.lines?.map((l: any, idx: number) => ({
-              id: `line-${idx + 1}`,
-              purchaseOrderId: 'po-new',
-              lineIndex: idx,
-              productVariantId: l.productVariantId,
-              description: l.description,
-              lineType: l.productVariantId ? 'Stocked' : 'Service',
-              orderedQuantity: l.quantity,
-              receivedQuantity: 0,
-              invoicedQuantity: 0,
-              cancelledQuantity: 0,
-              shortQuantity: 0,
-              closedShortQuantity: 0,
-              unitCode: l.unitCode || 'EA',
-              unitPrice: l.unitPrice || 1000,
-              discountRate: 0.0,
-              discountAmount: 0.0,
-              lineTotal: l.quantity * (l.unitPrice || 1000)
-            })) || []
+            lines: [
+              {
+                id: 'line-1',
+                purchaseOrderId: 'po-new',
+                lineIndex: 0,
+                productVariantId: 'a6315416-cffe-bf52-bcf0-d5e590d3bf94',
+                description: 'ورق تصوير مقاس A4 ممتاز (80 جم)',
+                lineType: 'Stocked',
+                isInventoryTracked: true,
+                receiptEligible: true,
+                isStocked: true,
+                orderedQuantity: 10,
+                receivedQuantity: 0,
+                invoicedQuantity: 0,
+                cancelledQuantity: 0,
+                shortQuantity: 0,
+                closedShortQuantity: 0,
+                unitCode: 'CTN',
+                unitPrice: 1000,
+                discountRate: 0.0,
+                discountAmount: 0.0,
+                lineTotal: 10000
+              },
+              {
+                id: 'line-2',
+                purchaseOrderId: 'po-new',
+                lineIndex: 1,
+                productVariantId: 'prod-equipment-maintenance',
+                description: 'صيانة وقائية ربع سنوية للمعدات',
+                lineType: 'Service',
+                isInventoryTracked: false,
+                receiptEligible: false,
+                isStocked: false,
+                orderedQuantity: 1,
+                receivedQuantity: 0,
+                invoicedQuantity: 0,
+                cancelledQuantity: 0,
+                shortQuantity: 0,
+                closedShortQuantity: 0,
+                unitCode: 'JOB',
+                unitPrice: 1500,
+                discountRate: 0.0,
+                discountAmount: 0.0,
+                lineTotal: 1500
+              },
+              {
+                id: 'line-3',
+                purchaseOrderId: 'po-new',
+                lineIndex: 2,
+                productVariantId: null,
+                description: 'خدمات صيانة وتركيب معتمدة',
+                lineType: 'Service',
+                isInventoryTracked: false,
+                receiptEligible: false,
+                isStocked: false,
+                orderedQuantity: 1,
+                receivedQuantity: 0,
+                invoicedQuantity: 0,
+                cancelledQuantity: 0,
+                shortQuantity: 0,
+                closedShortQuantity: 0,
+                unitCode: 'EA',
+                unitPrice: 50,
+                discountRate: 0.0,
+                discountAmount: 0.0,
+                lineTotal: 50
+              }
+            ]
           };
           mockOrders.unshift(newPo as any);
           await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(newPo.id) });
@@ -740,6 +789,7 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
       // Screenshot 17: Goods Receipt Modal
       await captureScreenshot(page, '17-goods-receipt-modal.png');
       await captureScreenshot(page, '17-goods-receipt-modal-final.png');
+      await captureScreenshot(page, '17-goods-receipt-nonstock-variant-final.png');
       await page.locator('[role="dialog"]').locator('button:has-text("إلغاء")').click();
       await page.waitForSelector('[role="dialog"]', { state: 'detached' });
       await page.waitForTimeout(200);

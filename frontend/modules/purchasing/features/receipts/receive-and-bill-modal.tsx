@@ -6,7 +6,7 @@ import { LocalDateField } from "../../../../components/fields/local-date-field.t
 import { PurchasingProductDisplay } from "../../components/purchasing-product-display.tsx";
 import { useReceiveAndBillMutation } from "../../hooks/use-purchasing-queries.ts";
 import { mapPurchasingError } from "../../services/purchasing-error-map.ts";
-import { generateIdempotencyKey } from "../../utils.ts";
+import { generateIdempotencyKey, isReceiptEligibleLine } from "../../utils.ts";
 import type { PurchaseOrderView } from "../../types.ts";
 
 const DEFAULT_UOM = "EA";
@@ -36,9 +36,9 @@ export function ReceiveAndBillModal({
   const [resultReceiptId, setResultReceiptId] = useState<string | null>(null);
   const [resultInvoiceId, setResultInvoiceId] = useState<string | null>(null);
 
-  // Split lines into stock-tracked physical items vs non-stock services
-  const stockLines = order.lines.filter((l) => Boolean(l.productVariantId));
-  const serviceLines = order.lines.filter((l) => !l.productVariantId);
+  // Split lines into authoritative stock-tracked physical items vs non-stock/service items
+  const stockLines = order.lines.filter(isReceiptEligibleLine);
+  const serviceLines = order.lines.filter((l) => !isReceiptEligibleLine(l));
 
   const receiveAndBillMutation = useReceiveAndBillMutation(order.legalEntityId, order.id);
 

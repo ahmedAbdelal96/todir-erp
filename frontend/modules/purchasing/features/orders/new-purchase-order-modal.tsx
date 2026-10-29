@@ -7,12 +7,13 @@ import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { PurchasingSupplierPicker } from "../../components/purchasing-supplier-picker.tsx";
 import { PurchasingProductPicker } from "../../components/purchasing-product-picker.tsx";
 import { resolvePurchasingProduct } from "../../components/purchasing-product-resolver.ts";
-import { toMoneyVal, generateIdempotencyKey, addDaysToIsoDate } from "../../utils.ts";
+import { toMoneyVal, generateIdempotencyKey, addDaysToIsoDate, resolveConfiguredLeadTimeDays } from "../../utils.ts";
 import { mapPurchasingError } from "../../services/purchasing-error-map.ts";
 import {
   useCreatePurchaseOrderMutation,
   useApproveAndBillMutation,
-  useSupplierProfile
+  useSupplierProfile,
+  usePurchasingSettings
 } from "../../hooks/use-purchasing-queries.ts";
 import type { PurchaseOrderLineRequest } from "../../types.ts";
 
@@ -55,13 +56,25 @@ export function NewPurchaseOrderModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const { data: supplierProfile } = useSupplierProfile(legalEntityId, supplierPartyId);
+  const { data: settings } = usePurchasingSettings(legalEntityId);
 
-  // Auto-default expected delivery date based on supplier profile lead time or fallback (7 days)
+  // Authoritative configured lead time priority:
+  // 1. Supplier Purchase Profile leadTimeDays
+  // 2. Backend Purchasing configured default lead time (settings.defaultLeadTimeDays)
+  // 3. Otherwise null (Expected Delivery remains empty/optional without arbitrary hardcoded business defaults)
+  const configuredLeadTime = resolveConfiguredLeadTimeDays(
+    supplierProfile?.leadTimeDays,
+    settings?.defaultLeadTimeDays
+  );
+
   useEffect(() => {
     if (!supplierPartyId || isDeliveryDateManual) return;
-    const leadTime = supplierProfile?.leadTimeDays ?? 7;
-    setExpectedDeliveryDate(addDaysToIsoDate(orderDate, leadTime));
-  }, [supplierPartyId, supplierProfile?.leadTimeDays, orderDate, isDeliveryDateManual]);
+    if (configuredLeadTime !== null) {
+      setExpectedDeliveryDate(addDaysToIsoDate(orderDate, configuredLeadTime));
+    } else {
+      setExpectedDeliveryDate("");
+    }
+  }, [supplierPartyId, configuredLeadTime, orderDate, isDeliveryDateManual]);
 
   const handleSupplierChange = (id: string) => {
     setSupplierPartyId(id);

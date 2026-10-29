@@ -6,7 +6,7 @@ import { LocalDateField } from "../../../../components/fields/local-date-field.t
 import { PurchasingProductDisplay } from "../../components/purchasing-product-display.tsx";
 import { useReceivePurchaseOrderMutation } from "../../hooks/use-purchasing-queries.ts";
 import { mapPurchasingError } from "../../services/purchasing-error-map.ts";
-import { generateIdempotencyKey } from "../../utils.ts";
+import { generateIdempotencyKey, isReceiptEligibleLine } from "../../utils.ts";
 import type { PurchaseOrderView } from "../../types.ts";
 
 const DEFAULT_UOM = "EA";
@@ -30,8 +30,8 @@ export function ReceiveOrderModal({
   const [operationalDate, setOperationalDate] = useState(today);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Physical stock-tracked lines only (services and non-stock lines are excluded from inventory receipt)
-  const physicalLines = order.lines.filter((l) => Boolean(l.productVariantId));
+  // Authoritative physical stock-tracked lines only (services, non-stock goods, and ad-hoc lines are excluded from inventory receipt)
+  const physicalLines = order.lines.filter(isReceiptEligibleLine);
 
   // Line receipt quantities
   const [lineQuantities, setLineQuantities] = useState<Record<string, number>>(() => {

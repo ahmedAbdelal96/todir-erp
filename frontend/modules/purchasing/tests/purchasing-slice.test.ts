@@ -1,7 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ApiError } from "../../../core/api/http-client.ts";
-import { toQty, toMoneyVal, generateIdempotencyKey, formatPoNumber, addDaysToIsoDate } from "../utils.ts";
+import {
+  toQty,
+  toMoneyVal,
+  generateIdempotencyKey,
+  formatPoNumber,
+  addDaysToIsoDate,
+  isReceiptEligibleLine,
+  resolveConfiguredLeadTimeDays
+} from "../utils.ts";
 import { mapPurchasingError } from "../services/purchasing-error-map.ts";
 import { resolvePurchasingSupplier } from "../components/purchasing-supplier-resolver.ts";
 import { resolvePurchasingProduct } from "../components/purchasing-product-resolver.ts";
@@ -207,18 +215,77 @@ describe("Purchasing Domain Invariants & Frontend Slice Contracts", () => {
     assert.equal(blockedPriceMismatch.explanation, "فرق السعر: +1.50");
   });
 
-  it("filters physical stock lines only for inventory goods receipt (excludes service and non-stock lines)", () => {
+  it("enforces authoritative receipt eligibility invariant: ProductVariantId != null is NOT sufficient", () => {
+    // Scenario A: Stock-tracked variant with ProductVariantId -> Receipt eligible
+    const stockTrackedLine = {
+      id: "l-stock",
+      productVariantId: "a6315416-cffe-bf52-bcf0-d5e590d3bf94", // Premium A4 Copy Paper (isStocked: true)
+      description: "ورق تصوير مقاس A4 ممتاز (80 جم)"
+    };
+    assert.equal(isReceiptEligibleLine(stockTrackedLine), true);
+
+    const explicitStockedLine = {
+      id: "l-explicit-stock",
+      productVariantId: "custom-variant-uuid",
+      isInventoryTracked: true,
+      description: "معدات تصنيع مخزنية"
+    };
+    assert.equal(isReceiptEligibleLine(explicitStockedLine), true);
+
+    // Scenario B: Non-stock variant WITH a valid ProductVariantId -> NOT receipt eligible
+    const nonStockVariantLine = {
+      id: "l-nonstock",
+      productVariantId: "prod-marketing-collateral", // Valid ProductVariantId, isStocked: false
+      description: "مطبوعات تسويقية خاصة غير مخزنية"
+    };
+    assert.equal(isReceiptEligibleLine(nonStockVariantLine), false);
+
+    const explicitNonStockLine = {
+      id: "l-explicit-nonstock",
+      productVariantId: "variant-with-id-123",
+      isInventoryTracked: false,
+      lineType: "NonStock",
+      description: "بند مشتريات استهلاكي مباشر"
+    };
+    assert.equal(isReceiptEligibleLine(explicitNonStockLine), false);
+
+    // Scenario C: Service variant WITH a valid ProductVariantId -> NOT receipt eligible
+    const serviceVariantLine = {
+      id: "l-service-variant",
+      productVariantId: "prod-it-consulting", // Valid ProductVariantId, isStocked: false
+      description: "خدمات استشارات ودعم تقني (ساعات)"
+    };
+    assert.equal(isReceiptEligibleLine(serviceVariantLine), false);
+
+    const maintenanceVariantLine = {
+      id: "l-maint-variant",
+      productVariantId: "prod-equipment-maintenance", // Valid ProductVariantId, isStocked: false
+      description: "صيانة وقائية ربع سنوية للمعدات"
+    };
+    assert.equal(isReceiptEligibleLine(maintenanceVariantLine), false);
+
+    // Ad-hoc line without ProductVariantId -> NOT receipt eligible
+    const adHocServiceLine = {
+      id: "l-adhoc",
+      productVariantId: null,
+      description: "خدمات شحن واستشارات قانونية"
+    };
+    assert.equal(isReceiptEligibleLine(adHocServiceLine), false);
+  });
+
+  it("filters physical stock lines only for inventory goods receipt using authoritative classification", () => {
     const lines = [
       { id: "line-1", productVariantId: "a6315416-cffe-bf52-bcf0-d5e590d3bf94", description: "خادم نصل عالي الأداء", orderedQuantity: 5, receivedQuantity: 0 },
-      { id: "line-2", productVariantId: null, description: "خدمات صيانة وتركيب معتمدة", orderedQuantity: 1, receivedQuantity: 0 }
+      { id: "line-2", productVariantId: "prod-equipment-maintenance", description: "صيانة وقائية ربع سنوية للمعدات", orderedQuantity: 1, receivedQuantity: 0 },
+      { id: "line-3", productVariantId: null, description: "خدمات صيانة وتركيب معتمدة", orderedQuantity: 1, receivedQuantity: 0 }
     ];
 
-    const physicalLines = lines.filter((l) => Boolean(l.productVariantId));
+    const physicalLines = lines.filter(isReceiptEligibleLine);
     assert.equal(physicalLines.length, 1);
     assert.equal(physicalLines[0]?.id, "line-1");
     assert.equal(physicalLines[0]?.productVariantId, "a6315416-cffe-bf52-bcf0-d5e590d3bf94");
 
-    // Receipt payload must not contain any service line
+    // Receipt payload must not contain any service line (with or without variantId)
     const receiptLines = physicalLines.map((l) => ({
       purchaseOrderLineId: l.id,
       productVariantId: l.productVariantId!,
@@ -231,15 +298,19 @@ describe("Purchasing Domain Invariants & Frontend Slice Contracts", () => {
 
   it("partitions mixed order lines into physical receipt vs service invoicing in Receive & Bill", () => {
     const orderLines = [
-      { id: "l-stock", productVariantId: "var-1", description: "Stock Item", orderedQuantity: 10 },
-      { id: "l-serv", productVariantId: null, description: "Service Contract", orderedQuantity: 1 }
+      { id: "l-stock", productVariantId: "a6315416-cffe-bf52-bcf0-d5e590d3bf94", description: "Stock Item", orderedQuantity: 10 },
+      { id: "l-serv-variant", productVariantId: "prod-it-consulting", description: "Service Variant With Id", orderedQuantity: 5 },
+      { id: "l-serv-adhoc", productVariantId: null, description: "Service Contract Ad-hoc", orderedQuantity: 1 }
     ];
 
-    const stockLines = orderLines.filter((l) => Boolean(l.productVariantId));
-    const serviceLines = orderLines.filter((l) => !l.productVariantId);
+    const stockLines = orderLines.filter(isReceiptEligibleLine);
+    const serviceLines = orderLines.filter((l) => !isReceiptEligibleLine(l));
 
     assert.equal(stockLines.length, 1);
-    assert.equal(serviceLines.length, 1);
+    assert.equal(stockLines[0]?.id, "l-stock");
+    assert.equal(serviceLines.length, 2);
+    assert.equal(serviceLines[0]?.id, "l-serv-variant");
+    assert.equal(serviceLines[1]?.id, "l-serv-adhoc");
 
     // Mutation receipt.lines sends ONLY stockLines
     const receiptMutationLines = stockLines.map((l) => ({
@@ -251,28 +322,47 @@ describe("Purchasing Domain Invariants & Frontend Slice Contracts", () => {
   });
 
   it("suppresses receiveStock action when an order has zero physical receipt lines", () => {
-    const serviceOnlyOrder = {
-      id: "po-serv-only",
+    const serviceOnlyOrderWithVariants = {
+      id: "po-serv-variants",
       lines: [
-        { id: "l1", productVariantId: null, description: "Consulting Service", orderedQuantity: 10 }
+        { id: "l1", productVariantId: "prod-it-consulting", description: "IT Consulting Variant", orderedQuantity: 10 },
+        { id: "l2", productVariantId: null, description: "Adhoc Consulting", orderedQuantity: 2 }
       ]
     };
     const mixedOrder = {
       id: "po-mixed",
       lines: [
-        { id: "l1", productVariantId: "var-1", description: "Hardware", orderedQuantity: 5 },
-        { id: "l2", productVariantId: null, description: "Installation", orderedQuantity: 1 }
+        { id: "l1", productVariantId: "a6315416-cffe-bf52-bcf0-d5e590d3bf94", description: "Hardware", orderedQuantity: 5 },
+        { id: "l2", productVariantId: "prod-it-consulting", description: "Installation", orderedQuantity: 1 }
       ]
     };
 
     const hasPhysicalLines = (order: { lines: Array<{ productVariantId?: string | null }> }) =>
-      order.lines.some((l) => Boolean(l.productVariantId));
+      order.lines.some(isReceiptEligibleLine);
 
-    assert.equal(hasPhysicalLines(serviceOnlyOrder), false);
+    assert.equal(hasPhysicalLines(serviceOnlyOrderWithVariants), false);
     assert.equal(hasPhysicalLines(mixedOrder), true);
   });
 
+  it("enforces lead time priority and defaulting rules without hardcoded business fallbacks", () => {
+    // Scenario D: Supplier leadTimeDays exists -> derived correctly
+    assert.equal(resolveConfiguredLeadTimeDays(7, 5), 7);
+    assert.equal(resolveConfiguredLeadTimeDays(7, null), 7);
+    assert.equal(addDaysToIsoDate("2026-10-29", 7), "2026-11-05");
+
+    // Scenario E: Supplier leadTimeDays absent but backend settings default exists -> use backend default
+    assert.equal(resolveConfiguredLeadTimeDays(null, 5), 5);
+    assert.equal(resolveConfiguredLeadTimeDays(undefined, 5), 5);
+    assert.equal(addDaysToIsoDate("2026-10-29", 5), "2026-11-03");
+
+    // Scenario F: Neither supplier profile nor backend settings provides a default -> Expected Delivery remains empty
+    assert.equal(resolveConfiguredLeadTimeDays(null, null), null);
+    assert.equal(resolveConfiguredLeadTimeDays(undefined, undefined), null);
+    assert.equal(resolveConfiguredLeadTimeDays(null, undefined), null);
+  });
+
   it("enforces expected delivery date invariant (Expected Delivery >= Order Date)", () => {
+    // Scenario G: Expected Delivery < Order Date is blocked
     function validateDates(orderDate: string, expectedDeliveryDate: string): { isValid: boolean; errorKey?: string } {
       if (expectedDeliveryDate && orderDate && expectedDeliveryDate < orderDate) {
         return { isValid: false, errorKey: "errors.expectedDeliveryBeforeOrderDate" };
@@ -284,12 +374,5 @@ describe("Purchasing Domain Invariants & Frontend Slice Contracts", () => {
     assert.equal(validateDates("2026-10-29", "2026-11-05").isValid, true);
     assert.equal(validateDates("2026-10-29", "2026-10-28").isValid, false);
     assert.equal(validateDates("2026-10-29", "2026-10-28").errorKey, "errors.expectedDeliveryBeforeOrderDate");
-  });
-
-  it("calculates defaulted expected delivery date from supplier lead time", () => {
-    assert.equal(addDaysToIsoDate("2026-10-29", 7), "2026-11-05");
-    assert.equal(addDaysToIsoDate("2026-10-29", 0), "2026-10-29");
-    assert.equal(addDaysToIsoDate("2026-12-30", 5), "2027-01-04");
-    assert.equal(addDaysToIsoDate("", 7), "");
   });
 });

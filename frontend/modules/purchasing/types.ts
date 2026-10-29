@@ -107,6 +107,7 @@ export interface PurchaseSettingsView {
   pricePercentageTolerance: number;
   taxTolerance: number;
   invoiceEligibilityBasis: string;
+  defaultLeadTimeDays?: number | null | undefined;
 }
 
 export interface PurchaseReceiptLineRequest {
@@ -207,6 +208,14 @@ export interface PurchaseOrderLineView {
   closedShortQuantity: number;
   invoiceUnitPrice?: number | null | undefined;
   varianceNote?: string | null | undefined;
+  isInventoryTracked?: boolean | undefined;
+  receiptEligible?: boolean | undefined;
+  isStocked?: boolean | undefined;
+  requiresInventoryMovement?: boolean | undefined;
+  stockBehavior?: "StockTracked" | "NonStock" | "Service" | string | undefined;
+  inventoryTrackingMode?: "Quantity" | "Lot" | "Serial" | "None" | string | undefined;
+  lineType?: "Stocked" | "Service" | "NonStock" | string | undefined;
+  productType?: "Goods" | "Service" | string | undefined;
 }
 
 export interface PurchaseOrderView {

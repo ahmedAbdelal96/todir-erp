@@ -75,6 +75,16 @@ export const KNOWN_PURCHASING_PRODUCTS: Record<string, ResolvedPurchasingProduct
     uom: "JOB",
     defaultBuyPrice: 1500.0,
     isStocked: false
+  },
+  "prod-marketing-collateral": {
+    variantId: "prod-marketing-collateral",
+    name: "مطبوعات تسويقية خاصة غير مخزنية",
+    nameAr: "مطبوعات تسويقية خاصة غير مخزنية",
+    nameEn: "Custom Marketing Collateral (Non-Stock)",
+    sku: "NON-MKTG-COLL",
+    uom: "LOT",
+    defaultBuyPrice: 850.0,
+    isStocked: false
   }
 };
 
