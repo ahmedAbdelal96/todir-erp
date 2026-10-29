@@ -1,0 +1,50 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "TODIR Purchasing API", "version": "1.0.0", "description": "Typed tenant-scoped purchase order, approval and supplier-invoice source contract." },
+  "servers": [{ "url": "/" }],
+  "tags": [{ "name": "Purchasing" }],
+  "paths": {
+    "/api/v1/purchasing/legal-entities/{entityId}/purchase-orders": {
+      "get": { "$ref": "#/components/operations/listPurchaseOrders" },
+      "post": { "$ref": "#/components/operations/createPurchaseOrder" }
+    },
+    "/api/v1/purchasing/legal-entities/{entityId}/purchase-orders/{id}": {
+      "get": { "$ref": "#/components/operations/getPurchaseOrder" },
+      "put": { "$ref": "#/components/operations/updatePurchaseOrder" }
+    },
+    "/api/v1/purchasing/legal-entities/{entityId}/purchase-orders/{id}/amend": { "post": { "$ref": "#/components/operations/amendPurchaseOrder" } },
+    "/api/v1/purchasing/legal-entities/{entityId}/purchase-orders/{id}/approve": { "post": { "$ref": "#/components/operations/approvePurchaseOrder" } },
+    "/api/v1/purchasing/legal-entities/{entityId}/purchase-orders/{id}/reject": { "post": { "$ref": "#/components/operations/rejectPurchaseOrder" } },
+    "/api/v1/purchasing/legal-entities/{entityId}/purchase-orders/{id}/cancel-remaining": { "post": { "$ref": "#/components/operations/cancelPurchaseOrder" } },
+    "/api/v1/purchasing/legal-entities/{entityId}/purchase-orders/{id}/close": { "post": { "$ref": "#/components/operations/closePurchaseOrder" } },
+    "/api/v1/purchasing/legal-entities/{entityId}/purchase-orders/{id}/create-supplier-invoice": { "post": { "$ref": "#/components/operations/createSupplierInvoice" } }
+  },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer" } },
+    "operations": {
+      "listPurchaseOrders": { "operationId": "purchasingListPurchaseOrders", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Bounded tenant-scoped purchase order page." } } },
+      "getPurchaseOrder": { "operationId": "purchasingGetPurchaseOrder", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Purchase order detail." }, "404": { "description": "Not found." } } },
+      "createPurchaseOrder": { "operationId": "purchasingCreatePurchaseOrder", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "requestBody": { "$ref": "#/components/requestBodies/CreatePurchaseOrder" }, "responses": { "201": { "description": "Created." }, "422": { "description": "Business validation failed." } } },
+      "updatePurchaseOrder": { "operationId": "purchasingUpdatePurchaseOrder", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "requestBody": { "$ref": "#/components/requestBodies/UpdatePurchaseOrder" }, "responses": { "200": { "description": "Updated." }, "409": { "description": "Optimistic concurrency conflict." } } },
+      "amendPurchaseOrder": { "operationId": "purchasingAmendPurchaseOrder", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "requestBody": { "$ref": "#/components/requestBodies/UpdatePurchaseOrder" }, "responses": { "200": { "description": "Amendment recorded and sent for approval." }, "409": { "description": "Conflict." } } },
+      "approvePurchaseOrder": { "operationId": "purchasingApprovePurchaseOrder", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "requestBody": { "$ref": "#/components/requestBodies/Command" }, "responses": { "200": { "description": "Approved." }, "409": { "description": "Conflict." } } },
+      "rejectPurchaseOrder": { "operationId": "purchasingRejectPurchaseOrder", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "requestBody": { "$ref": "#/components/requestBodies/Command" }, "responses": { "200": { "description": "Rejected." } } },
+      "cancelPurchaseOrder": { "operationId": "purchasingCancelPurchaseOrder", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "requestBody": { "$ref": "#/components/requestBodies/Command" }, "responses": { "200": { "description": "Cancelled." } } },
+      "closePurchaseOrder": { "operationId": "purchasingClosePurchaseOrder", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "requestBody": { "$ref": "#/components/requestBodies/Command" }, "responses": { "200": { "description": "Closed." } } },
+      "createSupplierInvoice": { "operationId": "purchasingCreateSupplierInvoice", "tags": ["Purchasing"], "security": [{ "bearerAuth": [] }], "requestBody": { "$ref": "#/components/requestBodies/CreateSupplierInvoice" }, "responses": { "201": { "description": "Supplier invoice draft created through Invoicing." }, "409": { "description": "Idempotency or conversion conflict." } } }
+    },
+    "requestBodies": {
+      "CreatePurchaseOrder": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreatePurchaseOrderRequest" } } } },
+      "UpdatePurchaseOrder": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdatePurchaseOrderRequest" } } } },
+      "Command": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PurchaseOrderCommandRequest" } } } },
+      "CreateSupplierInvoice": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateSupplierInvoiceRequest" } } } }
+    },
+    "schemas": {
+      "PurchaseOrderLineRequest": { "type": "object", "required": ["description", "quantity"], "properties": { "productVariantId": { "type": ["string", "null"], "format": "uuid" }, "productTemplateId": { "type": ["string", "null"], "format": "uuid" }, "unitOfMeasureId": { "type": ["string", "null"], "format": "uuid" }, "unitCode": { "type": ["string", "null"] }, "description": { "type": "string", "minLength": 1, "maxLength": 1000 }, "quantity": { "type": "number", "exclusiveMinimum": 0 }, "unitPrice": { "type": ["number", "null"], "minimum": 0 }, "priceOverrideReason": { "type": ["string", "null"], "maxLength": 500 } } },
+      "CreatePurchaseOrderRequest": { "type": "object", "required": ["legalEntityId", "supplierPartyId", "currencyCode", "orderDate", "lines"], "properties": { "legalEntityId": { "type": "string", "format": "uuid" }, "branchId": { "type": ["string", "null"], "format": "uuid" }, "supplierPartyId": { "type": "string", "format": "uuid" }, "currencyCode": { "type": "string", "pattern": "^[A-Z]{3}$" }, "orderDate": { "type": "string", "format": "date" }, "priceListId": { "type": ["string", "null"], "format": "uuid" }, "approvalRequired": { "type": ["boolean", "null"] }, "lines": { "type": "array", "minItems": 1, "maxItems": 500, "items": { "$ref": "#/components/schemas/PurchaseOrderLineRequest" } } } },
+      "UpdatePurchaseOrderRequest": { "type": "object", "required": ["version", "supplierPartyId", "currencyCode", "orderDate", "lines"], "properties": { "version": { "type": "integer", "format": "int64", "minimum": 1 }, "supplierPartyId": { "type": "string", "format": "uuid" }, "currencyCode": { "type": "string", "pattern": "^[A-Z]{3}$" }, "orderDate": { "type": "string", "format": "date" }, "lines": { "type": "array", "minItems": 1, "maxItems": 500, "items": { "$ref": "#/components/schemas/PurchaseOrderLineRequest" } } } },
+      "PurchaseOrderCommandRequest": { "type": "object", "required": ["version", "idempotencyKey"], "properties": { "version": { "type": "integer", "format": "int64", "minimum": 1 }, "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 }, "reason": { "type": ["string", "null"], "maxLength": 1000 } } },
+      "CreateSupplierInvoiceRequest": { "type": "object", "required": ["version", "idempotencyKey", "documentDate", "postingDate", "taxDate"], "properties": { "version": { "type": "integer", "format": "int64", "minimum": 1 }, "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 }, "documentDate": { "type": "string", "format": "date" }, "postingDate": { "type": "string", "format": "date" }, "taxDate": { "type": "string", "format": "date" }, "supplierInvoiceNumber": { "type": ["string", "null"], "maxLength": 160 } } }
+    }
+  }
+}

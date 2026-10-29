@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "purchasing",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L3",
+  "type": "module",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": {
+    "hard": ["platform-kernel", "directory", "catalog", "finbase", "pricing", "tax", "invoicing"],
+    "optionalCapabilities": ["inventory.receipts", "platform.outbox"]
+  },
+  "owns": {
+    "schema": "business_purchasing",
+    "entities": ["supplier_purchase_profile", "purchase_settings", "purchase_order", "purchase_order_line", "purchase_order_state_history", "purchase_order_approval", "purchase_order_amendment", "purchase_order_invoice_link", "purchase_order_receipt_link", "purchase_order_match_result", "purchase_order_exception"]
+  },
+  "permissions": [
+    "purchasing.po.read", "purchasing.po.create", "purchasing.po.edit", "purchasing.po.approve", "purchasing.po.reject", "purchasing.po.amend", "purchasing.po.cancel", "purchasing.po.close", "purchasing.price.read", "purchasing.price.override", "purchasing.receipt.request", "purchasing.receipt.view", "purchasing.invoice.create_from_po", "purchasing.invoice.view_link", "purchasing.match.read", "purchasing.match.override", "purchasing.supplier_profile.manage", "purchasing.settings.manage", "purchasing.history.read", "purchasing.audit.read"
+  ],
+  "capabilities": {
+    "provides": ["purchasing.purchase-orders", "purchasing.supplier-profile", "purchasing.invoice-source"],
+    "consumes": ["directory.party", "catalog.product-uom", "pricing.batch-resolution", "tax.batch-calculation", "finbase.money", "invoicing.source-draft", "platform.audit", "platform.transaction-coordination", "platform.outbox"]
+  },
+  "messaging": { "publishes": ["PurchaseOrderApprovedV1", "PurchaseOrderAmendedV1", "PurchaseOrderCancelledV1", "PurchaseOrderClosedV1", "PurchaseInvoiceRequestedV1", "PurchaseInvoiceLinkedV1"], "consumes": [] },
+  "lifecycle": { "supportsGoLive": false, "deactivationPolicy": "blocked_if_dependents" }
+}

@@ -47,7 +47,8 @@ public static class SeedRunner
             var payments = await RunStageAsync(connection, tenant, context => PaymentsSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var inventory = await RunStageAsync(connection, tenant, context => InventorySeed.SeedAsync(context, cancellationToken), cancellationToken);
             var sales = await RunStageAsync(connection, tenant, context => SalesSeed.SeedAsync(context, cancellationToken), cancellationToken);
-            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory, sales));
+            var purchasing = await RunStageAsync(connection, tenant, context => PurchasingSeed.SeedAsync(context, cancellationToken), cancellationToken);
+            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory, sales, purchasing));
         }
         return new(SeedIds.Version, summaries);
     }
@@ -69,7 +70,7 @@ public static class SeedRunner
     }
 }
 
-public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory, SeedSalesSummary Sales);
+public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory, SeedSalesSummary Sales, SeedPurchasingSummary Purchasing);
 public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSummary> Tenants)
 {
     public void Print(TextWriter output)
@@ -92,6 +93,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  Payments: {tenant.Payments.PaymentAccounts} operational accounts, {tenant.Payments.MethodConfigurations} enabled method configurations, {tenant.Payments.PendingProviderRequests} reference-provider requests awaiting customer action");
             output.WriteLine($"  Inventory: {tenant.Inventory.Warehouses} warehouses, {tenant.Inventory.ProductProfiles} profiles, {tenant.Inventory.ConfirmedMovements} movements, {tenant.Inventory.ActiveReservations} reservation, {tenant.Inventory.PostedCountAdjustments} posted count adjustment");
             output.WriteLine($"  Sales: {tenant.Sales.Quotations} quotations ({tenant.Sales.Draft} draft, {tenant.Sales.Open} open, {tenant.Sales.Accepted} accepted)");
+            output.WriteLine($"  Purchasing: {tenant.Purchasing.PurchaseOrders} purchase orders ({tenant.Purchasing.PendingApproval} pending approval, {tenant.Purchasing.Approved} approved)");
         }
     }
 }
