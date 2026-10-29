@@ -19,5 +19,6 @@
     <ProjectReference Include="../Modules/Invoicing/Invoicing.csproj" />
     <ProjectReference Include="../Modules/Payments/Payments.csproj" />
     <ProjectReference Include="../Modules/Inventory/Inventory.csproj" />
+    <ProjectReference Include="../Modules/Sales/Sales.csproj" />
   </ItemGroup>
 </Project>

@@ -43,14 +43,16 @@ public sealed class SeedContext(NpgsqlConnection connection, NpgsqlTransaction t
     public async Task<int> ExecuteAsync(string sql, CancellationToken cancellationToken, params object?[] values)
     {
         await using var command = new NpgsqlCommand(sql, Connection, Transaction);
-        for (var index = 0; index < values.Length; index++) command.Parameters.AddWithValue(values[index] ?? DBNull.Value);
+        for (var index = 0; index < values.Length; index++)
+            if (values[index] is NpgsqlParameter parameter) command.Parameters.Add(parameter); else command.Parameters.AddWithValue(values[index] ?? DBNull.Value);
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<T> ScalarAsync<T>(string sql, CancellationToken cancellationToken, params object?[] values)
     {
         await using var command = new NpgsqlCommand(sql, Connection, Transaction);
-        for (var index = 0; index < values.Length; index++) command.Parameters.AddWithValue(values[index] ?? DBNull.Value);
+        for (var index = 0; index < values.Length; index++)
+            if (values[index] is NpgsqlParameter parameter) command.Parameters.Add(parameter); else command.Parameters.AddWithValue(values[index] ?? DBNull.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is null or DBNull) throw new InvalidOperationException("Development seed expected a database value but received none.");
         return (T)Convert.ChangeType(result, typeof(T), System.Globalization.CultureInfo.InvariantCulture);

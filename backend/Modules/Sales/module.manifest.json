@@ -1,0 +1,30 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "sales",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L3",
+  "type": "module",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": {
+    "hard": ["platform-kernel", "directory", "catalog", "finbase", "pricing", "tax", "invoicing", "subledger"],
+    "optionalCapabilities": ["inventory.availability", "inventory.reservations", "inventory.issue", "platform.transaction-coordination", "platform.outbox"]
+  },
+  "owns": {
+    "schema": "business_sales",
+    "entities": ["sales_customer_profile", "sales_channel", "sales_team", "quotation", "quotation_revision", "quotation_revision_line", "quotation_acceptance", "sales_order", "sales_order_line", "sales_order_reservation", "sales_fulfillment", "sales_fulfillment_line", "sales_credit_decision", "sales_conversion_link", "sales_return_request", "sales_return_request_line", "sales_document_state_history", "sales_number_sequence"]
+  },
+  "permissions": [
+    "sales.quotation.read", "sales.quotation.create", "sales.quotation.edit", "sales.quotation.open", "sales.quotation.accept", "sales.quotation.decline", "sales.quotation.revise", "sales.quotation.cancel", "sales.quotation.convert_invoice", "sales.quotation.convert_order", "sales.price_override", "sales.discount_override", "sales.acceptance.record", "sales.credit_override", "sales.order.read", "sales.order.create", "sales.order.edit", "sales.order.confirm", "sales.order.amend", "sales.order.cancel", "sales.order.fulfill", "sales.order.invoice", "sales.return.create", "sales.return.approve", "sales.return.execute", "sales.customer_profile.manage", "sales.channel.manage", "sales.team.manage", "sales.history.read", "sales.audit.read"
+  ],
+  "capabilities": {
+    "provides": ["sales.quotations", "sales.orders", "sales.conversions", "sales.returns", "sales.read-models", "sales.fulfillment", "sales.credit-control"],
+    "consumes": ["directory.party", "catalog.product-uom", "pricing.batch-resolution", "tax.batch-calculation", "invoicing.source-draft", "subledger.party-exposure", "inventory.availability", "inventory.reservation", "inventory.issue", "platform.transaction-coordination", "platform.outbox"]
+  },
+  "messaging": {
+    "publishes": ["QuotationOpenedV1", "QuotationAcceptedV1", "QuotationConvertedV1", "SalesOrderConfirmedV1", "SalesOrderAmendedV1", "SalesOrderCancelledV1", "SalesReturnRequestedV1"],
+    "consumes": ["StockIssuedV1", "ReservationReleasedV1"]
+  },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}

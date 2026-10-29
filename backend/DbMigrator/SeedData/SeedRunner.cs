@@ -46,7 +46,8 @@ public static class SeedRunner
             var invoicing = await RunStageAsync(connection, tenant, context => InvoicingSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var payments = await RunStageAsync(connection, tenant, context => PaymentsSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var inventory = await RunStageAsync(connection, tenant, context => InventorySeed.SeedAsync(context, cancellationToken), cancellationToken);
-            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory));
+            var sales = await RunStageAsync(connection, tenant, context => SalesSeed.SeedAsync(context, cancellationToken), cancellationToken);
+            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory, sales));
         }
         return new(SeedIds.Version, summaries);
     }
@@ -68,7 +69,7 @@ public static class SeedRunner
     }
 }
 
-public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory);
+public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory, SeedSalesSummary Sales);
 public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSummary> Tenants)
 {
     public void Print(TextWriter output)
@@ -90,6 +91,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  Invoicing: {tenant.Invoicing.Drafts} drafts ({tenant.Invoicing.CustomerDrafts} customer, {tenant.Invoicing.SupplierDrafts} supplier)");
             output.WriteLine($"  Payments: {tenant.Payments.PaymentAccounts} operational accounts, {tenant.Payments.MethodConfigurations} enabled method configurations, {tenant.Payments.PendingProviderRequests} reference-provider requests awaiting customer action");
             output.WriteLine($"  Inventory: {tenant.Inventory.Warehouses} warehouses, {tenant.Inventory.ProductProfiles} profiles, {tenant.Inventory.ConfirmedMovements} movements, {tenant.Inventory.ActiveReservations} reservation, {tenant.Inventory.PostedCountAdjustments} posted count adjustment");
+            output.WriteLine($"  Sales: {tenant.Sales.Quotations} quotations ({tenant.Sales.Draft} draft, {tenant.Sales.Open} open, {tenant.Sales.Accepted} accepted)");
         }
     }
 }

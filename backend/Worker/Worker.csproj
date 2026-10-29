@@ -16,5 +16,7 @@
     <ProjectReference Include="../Modules/Ledger/Ledger.csproj" />
     <ProjectReference Include="../Modules/Subledger/Subledger.csproj" />
     <ProjectReference Include="../Modules/Inventory/Inventory.csproj" />
+    <ProjectReference Include="../Modules/Sales/Sales.csproj" />
+    <ProjectReference Include="../Modules/Invoicing/Invoicing.csproj" />
   </ItemGroup>
 </Project>

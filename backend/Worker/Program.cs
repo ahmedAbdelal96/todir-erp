@@ -11,6 +11,8 @@ using Modules.Payments;
 using Modules.Ledger;
 using Modules.Subledger;
 using Modules.Inventory;
+using Modules.Sales;
+using Modules.Invoicing.Controllers;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
@@ -35,6 +37,8 @@ builder.Services.AddLedgerModule();
 builder.Services.AddSubledgerModule();
 builder.Services.AddPaymentsModule();
 builder.Services.AddInventoryModule();
+builder.Services.AddInvoicingModule();
+builder.Services.AddSalesModule();
 builder.Services.AddScheduling(builder.Configuration);
 builder.Services.AddHostedService<OutboxDispatchWorker>();
 builder.Services.AddHostedService<FinanceBaseRateSyncWorker>();
