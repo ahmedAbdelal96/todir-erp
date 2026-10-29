@@ -481,6 +481,7 @@ static int MigrationPriority(string fileName) => fileName switch
     // closure migration adds columns and therefore must run after that script.
     _ when fileName.Equals("purchasing-forward-fix-final-continuation.sql", StringComparison.Ordinal) => 10,
     _ when fileName.Equals("purchasing-forward-fix-closure.sql", StringComparison.Ordinal) => 11,
+    _ when fileName.Equals("purchasing-forward-fix-runtime-permissions.sql", StringComparison.Ordinal) => 12,
     _ => 5
 };
 
