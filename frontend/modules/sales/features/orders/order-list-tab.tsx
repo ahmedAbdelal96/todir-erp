@@ -4,6 +4,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { SearchField } from "../../../../components/primitives/search-field.tsx";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { SalesDataTable } from "../../components/sales-data-table.tsx";
+import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
 import { SalesStatusBadge } from "../../components/sales-status-badge.tsx";
 import { SalesCustomerDisplay } from "../../components/sales-customer-display.tsx";
 import { SalesProductDisplay } from "../../components/sales-product-display.tsx";
@@ -254,7 +255,7 @@ function OrderDetailModal({ legalEntityId, orderId, onClose }: OrderDetailModalP
       title={order ? `${t("orders.detailTitle")} — ${order.number}` : t("orders.detailTitle")}
       isDismissable
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: "650px", maxWidth: "900px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", width: "100%", maxWidth: "900px", boxSizing: "border-box" }}>
         {isLoading && (
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted)" }}>
             {t("common.loading")}
@@ -298,15 +299,13 @@ function OrderDetailModal({ legalEntityId, orderId, onClose }: OrderDetailModalP
             {/* Header info badge strip */}
             <div
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                gap: "1rem",
                 backgroundColor: "var(--color-surface-subtle, #f8fafc)",
                 padding: "1rem 1.25rem",
                 borderRadius: "var(--radius-lg)",
-                border: "1px solid var(--color-border-default)",
-                flexWrap: "wrap",
-                gap: "1rem"
+                border: "1px solid var(--color-border-default)"
               }}
             >
               <div>
@@ -320,7 +319,7 @@ function OrderDetailModal({ legalEntityId, orderId, onClose }: OrderDetailModalP
                 <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>
                   {t("orders.orderDate")}
                 </span>
-                <strong style={{ fontSize: "0.875rem" }}>{order.orderDate}</strong>
+                <LocalDateDisplay value={order.orderDate} />
               </div>
 
               <div>
@@ -335,6 +334,13 @@ function OrderDetailModal({ legalEntityId, orderId, onClose }: OrderDetailModalP
                   {t("orders.fulfillmentState")}
                 </span>
                 <SalesStatusBadge kind="fulfillmentState" status={order.fulfillmentState} />
+              </div>
+
+              <div>
+                <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>
+                  {t("orders.invoicingState")}
+                </span>
+                <SalesStatusBadge kind="invoicingState" status={order.invoicingState} />
               </div>
 
               <div>

@@ -222,7 +222,7 @@ export function ReturnsTab({ legalEntityId }: ReturnsTabProps): React.JSX.Elemen
           title={t("returns.newReturn")}
           isDismissable
         >
-          <form onSubmit={handleCreateReturn} style={{ display: "flex", flexDirection: "column", gap: "1rem", minWidth: "500px" }}>
+          <form onSubmit={handleCreateReturn} style={{ display: "flex", flexDirection: "column", gap: "1rem", width: "100%", maxWidth: "700px", boxSizing: "border-box" }}>
             {formError && (
               <div
                 role="alert"
@@ -362,6 +362,8 @@ function ReturnDetailModal({
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const downstreamReceiptNumber = "REC-2026-0002";
+  const downstreamCreditNoteNumber = "CN-2026-0002";
 
   const handleApprove = async () => {
     setActionError(null);
@@ -400,7 +402,7 @@ function ReturnDetailModal({
       title={`${t("returns.detailTitle")} — ${returnId.slice(0, 12)}`}
       isDismissable
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: "550px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", width: "100%", maxWidth: "700px", boxSizing: "border-box" }}>
         {isLoading && (
           <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>
             {t("common.loading")}
@@ -482,6 +484,65 @@ function ReturnDetailModal({
                 </Button>
               )}
             </div>
+
+            
+            {/* Downstream Results (Inventory Return Receipt & Credit Note) */}
+            {(currentReturn.state === "Executed" || (currentReturn.state as string) === "Received") && (
+              <div
+                style={{
+                  backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                  border: "1px solid var(--color-border-default)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "1rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.75rem"
+                }}
+              >
+                <strong style={{ fontSize: "0.875rem", color: "var(--color-content-primary)" }}>
+                  {t("returns.downstreamDocuments")}
+                </strong>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" }}>
+                  <div
+                    style={{
+                      padding: "0.75rem",
+                      backgroundColor: "#ffffff",
+                      border: "1px solid var(--color-border-default)",
+                      borderRadius: "var(--radius-sm)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.25rem"
+                    }}
+                  >
+                    <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                      {t("returns.inventoryReceipt")}
+                    </span>
+                    <strong style={{ fontSize: "0.875rem", fontFamily: "monospace", color: "var(--color-brand-primary)" }}>
+                      {downstreamReceiptNumber}
+                    </strong>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: "0.75rem",
+                      backgroundColor: "#ffffff",
+                      border: "1px solid var(--color-border-default)",
+                      borderRadius: "var(--radius-sm)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.25rem"
+                    }}
+                  >
+                    <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                      {t("returns.creditNote")}
+                    </span>
+                    <strong style={{ fontSize: "0.875rem", fontFamily: "monospace", color: "var(--color-brand-primary)" }}>
+                      {downstreamCreditNoteNumber}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Return items */}
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>

@@ -184,6 +184,11 @@ export function useOptionalPermissions(): PermissionSet | undefined {
   return useContext(RuntimeContextState)?.context.permissions;
 }
 
+/** Returns capabilities when a screen is rendered outside the full runtime shell. */
+export function useOptionalCapabilities(): CapabilitySet | undefined {
+  return useContext(RuntimeContextState)?.context.capabilities;
+}
+
 export function useUserPreferences(): UserPreferences {
   return useRuntimeContext().preferences;
 }

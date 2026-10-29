@@ -10,13 +10,14 @@ import { ReturnsTab } from "../features/returns/returns-tab.tsx";
 import { SalesHistoryTab } from "../features/history/sales-history-tab.tsx";
 import { SalesSettingsTab } from "../features/settings/sales-settings-tab.tsx";
 import { useSalesQuotations } from "../hooks/use-sales-queries.ts";
-import { useLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
-import { useOutletContext } from "react-router-dom";
+import { useLegalEntityContext, useOptionalPermissions, useOptionalCapabilities } from "../../../core/runtime/runtime-provider.tsx";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 
 export function SalesPage(): React.JSX.Element {
   const { t } = useTranslation("sales");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+  const [searchParams] = useSearchParams();
 
   let contextEntityId: string | undefined;
   try {
@@ -29,12 +30,31 @@ export function SalesPage(): React.JSX.Element {
   const legalEntityId = outletCtx?.legalEntityId ?? contextEntityId ?? "00000000-0000-0000-0000-000000000001";
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<SalesTabId>("overview");
+  const tabParam = searchParams.get("tab") as SalesTabId | null;
+  const [activeTab, setActiveTab] = useState<SalesTabId>(tabParam ?? "overview");
 
-  // Derive capability disclosure from backend authority / session permissions
+  // Derive capability disclosure from backend authority / session / query params
+  const distributionParam = searchParams.get("distribution");
+  const isDistributionOff = distributionParam === "false" ||
+    (typeof window !== "undefined" && window.sessionStorage?.getItem("erp.capability.sales.orders") === "false");
+
+  const capabilities = useOptionalCapabilities();
   const permissions = useOptionalPermissions();
-  const canViewOrders = permissions ? permissions.hasPermission("sales.order.read") : true;
-  const canViewReturns = permissions ? permissions.hasPermission("sales.return.read") : true;
+
+  const isOrderCapabilityActive = capabilities
+    ? capabilities.isActivated("sales.orders") && !isDistributionOff
+    : !isDistributionOff;
+
+  const isReturnCapabilityActive = capabilities
+    ? capabilities.isActivated("sales.returns") && !isDistributionOff
+    : !isDistributionOff;
+
+  const canViewOrders = isOrderCapabilityActive && (permissions ? permissions.hasPermission("sales.order.read") : true);
+  const canViewReturns = isReturnCapabilityActive && (permissions ? permissions.hasPermission("sales.return.read") : true);
+
+  const effectiveActiveTab = (!canViewOrders && activeTab === "orders") || (!canViewReturns && activeTab === "returns")
+    ? "overview"
+    : activeTab;
 
   // Quotation pagination & filter state
   const [page, setPage] = useState(1);
@@ -90,14 +110,14 @@ export function SalesPage(): React.JSX.Element {
 
       {/* Primary Tab Navigation */}
       <SalesTabNav
-        activeTab={activeTab}
+        activeTab={effectiveActiveTab}
         onTabChange={setActiveTab}
         tabs={tabs}
       />
 
       {/* Tab Panels */}
       <div>
-        {activeTab === "overview" && (
+        {effectiveActiveTab === "overview" && (
           <SalesOverviewTab
             quotations={quotations}
             isLoading={isQuotesLoading}
@@ -106,7 +126,7 @@ export function SalesPage(): React.JSX.Element {
           />
         )}
 
-        {activeTab === "quotations" && (
+        {effectiveActiveTab === "quotations" && (
           <QuotationListTab
             quotations={quotations}
             isLoading={isQuotesLoading}
@@ -120,15 +140,15 @@ export function SalesPage(): React.JSX.Element {
           />
         )}
 
-        {activeTab === "orders" && canViewOrders && (
+        {effectiveActiveTab === "orders" && canViewOrders && (
           <OrderListTab legalEntityId={legalEntityId} />
         )}
 
-        {activeTab === "returns" && canViewReturns && (
+        {effectiveActiveTab === "returns" && canViewReturns && (
           <ReturnsTab legalEntityId={legalEntityId} />
         )}
 
-        {activeTab === "history" && (
+        {effectiveActiveTab === "history" && (
           <SalesHistoryTab
             quotations={quotations}
             isLoading={isQuotesLoading}
@@ -136,7 +156,7 @@ export function SalesPage(): React.JSX.Element {
           />
         )}
 
-        {activeTab === "settings" && (
+        {effectiveActiveTab === "settings" && (
           <SalesSettingsTab legalEntityId={legalEntityId} />
         )}
       </div>

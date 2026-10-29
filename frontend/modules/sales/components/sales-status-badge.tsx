@@ -180,6 +180,14 @@ export function SalesStatusBadge({ kind, status }: SalesStatusBadgeProps): React
           intent = "success";
           label = t("status.executed");
           break;
+        case "Received":
+          intent = "success";
+          label = t("status.received");
+          break;
+        case "Completed":
+          intent = "success";
+          label = t("status.completed");
+          break;
         case "Rejected":
           intent = "danger";
           label = t("status.rejected");

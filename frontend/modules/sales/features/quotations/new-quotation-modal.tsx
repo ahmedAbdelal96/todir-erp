@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { SalesCustomerPicker } from "../../components/sales-customer-picker.tsx";
 import { SalesProductPicker } from "../../components/sales-product-picker.tsx";
@@ -133,7 +134,7 @@ export function NewQuotationModal({
       title={t("quotations.newQuotation")}
       isDismissable
     >
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: "600px", maxWidth: "850px", maxHeight: "82vh", overflowY: "auto", padding: "0.25rem" }}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem", width: "100%", maxWidth: "850px", boxSizing: "border-box", maxHeight: "82vh", overflowY: "auto", padding: "0.25rem" }}>
         {errorMessage && (
           <div
             role="alert"
@@ -151,7 +152,7 @@ export function NewQuotationModal({
         )}
 
         {/* Header Fields */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
           <div>
             <SalesCustomerPicker
               value={partyId}
@@ -171,24 +172,13 @@ export function NewQuotationModal({
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-          <TextField
-            label={t("quotations.quoteDate")}
-            type="date"
-            value={quoteDate}
-            onChange={setQuoteDate}
-            isRequired
-          />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
+          <LocalDateField label={t("quotations.quoteDate")} value={quoteDate} onChange={setQuoteDate} isRequired />
 
-          <TextField
-            label={t("quotations.validUntil")}
-            type="date"
-            value={validUntil}
-            onChange={setValidUntil}
-          />
+          <LocalDateField label={t("quotations.validUntil")} value={validUntil} onChange={setValidUntil} />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
           <TextField
             label={t("quotations.customerReference")}
             value={customerReference}
@@ -196,12 +186,7 @@ export function NewQuotationModal({
             placeholder={t("quotations.customerReferencePlaceholder")}
           />
 
-          <TextField
-            label={t("quotations.requestedDeliveryDate")}
-            type="date"
-            value={requestedDeliveryDate}
-            onChange={setRequestedDeliveryDate}
-          />
+          <LocalDateField label={t("quotations.requestedDeliveryDate")} value={requestedDeliveryDate} onChange={setRequestedDeliveryDate} />
         </div>
 
         {/* Lines Section */}

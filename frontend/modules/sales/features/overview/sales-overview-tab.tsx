@@ -2,6 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { SalesKpiCard } from "../../components/sales-kpi-card.tsx";
 import { SalesDataTable } from "../../components/sales-data-table.tsx";
+import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
 import { SalesStatusBadge } from "../../components/sales-status-badge.tsx";
 import { SalesCustomerDisplay } from "../../components/sales-customer-display.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
@@ -155,7 +156,7 @@ export function SalesOverviewTab({
                       <SalesCustomerDisplay partyId={q.partyId} />
                     </td>
                     <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", color: "var(--color-content-muted)" }}>
-                      {q.quoteDate}
+                      <LocalDateDisplay value={q.quoteDate} />
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <SalesStatusBadge kind="quotationState" status={q.state} />

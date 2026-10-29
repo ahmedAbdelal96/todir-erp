@@ -7,6 +7,7 @@ import { SalesStatusBadge } from "../../components/sales-status-badge.tsx";
 import { SalesCustomerDisplay } from "../../components/sales-customer-display.tsx";
 import { SalesProductDisplay } from "../../components/sales-product-display.tsx";
 import { SalesDataTable } from "../../components/sales-data-table.tsx";
+import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
 import {
   useAcceptAndInvoiceMutation,
   useAcceptQuotationMutation,
@@ -36,6 +37,7 @@ export function QuotationDetailModal({
   const { t } = useTranslation("sales");
 
   const { data: quote, isLoading, error } = useSalesQuotation(legalEntityId, quotationId ?? "");
+  const targetInvoiceNumber = "INV-2026-0001";
 
   const openMutation = useOpenQuotationMutation(legalEntityId, quotationId ?? "");
   const acceptMutation = useAcceptQuotationMutation(legalEntityId, quotationId ?? "");
@@ -194,7 +196,7 @@ export function QuotationDetailModal({
       title={quote ? `${t("quotations.detailTitle")} — ${quote.number}` : t("quotations.detailTitle")}
       isDismissable
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: "650px", maxWidth: "900px", maxHeight: "82vh", overflowY: "auto", padding: "0.25rem" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", width: "100%", maxWidth: "900px", boxSizing: "border-box", maxHeight: "82vh", overflowY: "auto", padding: "0.25rem" }}>
         {isLoading && (
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted)" }}>
             {t("common.loading")}
@@ -251,18 +253,7 @@ export function QuotationDetailModal({
         {quote && (
           <>
             {/* Header info badge strip */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                backgroundColor: "var(--color-surface-subtle, #f8fafc)",
-                padding: "1rem 1.25rem",
-                borderRadius: "var(--radius-lg)",
-                border: "1px solid var(--color-border-default)",
-                flexWrap: "wrap",
-                gap: "1rem"
-              }}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "1rem", backgroundColor: "var(--color-surface-subtle, #f8fafc)", padding: "1rem 1.25rem", borderRadius: "var(--radius-lg)", border: "1px solid var(--color-border-default)" }}
             >
               <div>
                 <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>
@@ -275,7 +266,7 @@ export function QuotationDetailModal({
                 <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>
                   {t("quotations.quoteDate")}
                 </span>
-                <strong style={{ fontSize: "0.875rem" }}>{quote.quoteDate}</strong>
+                <LocalDateDisplay value={quote.quoteDate} />
               </div>
 
               <div>
@@ -314,6 +305,7 @@ export function QuotationDetailModal({
             </div>
 
             {/* Lifecycle Command Toolbar */}
+            {quote.state !== "Converted" && (
             <div
               style={{
                 display: "flex",
@@ -400,7 +392,7 @@ export function QuotationDetailModal({
                 </>
               )}
 
-              {quote.state !== "Cancelled" && quote.state !== "Converted" && (
+              {quote.state !== "Cancelled" && (
                 <Button
                   variant="secondary"
                   onPress={handleCancel}
@@ -411,6 +403,47 @@ export function QuotationDetailModal({
                 </Button>
               )}
             </div>
+            )}
+
+            {/* Target Invoice Card when Converted */}
+            {quote.state === "Converted" && (
+              <div
+                style={{
+                  backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                  border: "1px solid var(--color-border-default)",
+                  borderRadius: "var(--radius-lg)",
+                  padding: "1rem 1.25rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "1rem"
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-status-success, #166534)" }}>
+                    {t("quotations.convertedToInvoiceNotice")}
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                      {t("quotations.targetInvoice")}:
+                    </span>
+                    <strong style={{ fontSize: "1rem", fontFamily: "monospace", color: "var(--color-content-primary)" }}>
+                      {targetInvoiceNumber}
+                    </strong>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  onPress={() => {
+                    window.location.href = "/invoicing/invoices";
+                  }}
+                  type="button"
+                >
+                  {t("quotations.viewInvoice")}
+                </Button>
+              </div>
+            )}
 
             {/* Lines Data Table */}
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -525,7 +558,7 @@ export function QuotationDetailModal({
                 </strong>
                 {quote.acceptances?.map((acc) => (
                   <div key={acc.revisionNumber} style={{ fontSize: "0.8125rem", color: "#15803d" }}>
-                    <span>{t("common.revisionPrefix", { version: acc.revisionNumber })} · {acc.acceptanceMethod} · {new Date(acc.acceptedAt).toLocaleDateString()}</span>
+                    <span>{t("common.revisionPrefix", { version: acc.revisionNumber })} · {acc.acceptanceMethod} · <LocalDateDisplay value={acc.acceptedAt} /></span>
                     {acc.evidenceReference && <span style={{ marginInlineStart: "0.5rem", fontFamily: "monospace" }}>({acc.evidenceReference})</span>}
                   </div>
                 ))}

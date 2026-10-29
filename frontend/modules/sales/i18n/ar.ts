@@ -45,6 +45,8 @@ export const ar = {
     requested: "مطلوب",
     approved: "معتمد",
     executed: "منفذ ومسوى",
+    received: "تم الاستلام",
+    completed: "مكتمل ومسوى",
     rejected: "مرفوض"
   },
   tabs: {
@@ -126,6 +128,9 @@ export const ar = {
     acceptedSuccess: "تم تسجيل قبول العميل وتوثيق المرجع بنجاح.",
     acceptAndInvoiceSuccess: "تم قبول العرض وتحويله إلى مسودة فاتورة مبيعات بنجاح.",
     convertedToInvoiceSuccess: "تم إنشاء مسودة فاتورة المبيعات بنجاح.",
+    convertedToInvoiceNotice: "تم تحويل عرض السعر إلى فاتورة مبيعات رسمية ومكتملة.",
+    targetInvoice: "رقم فاتورة المبيعات",
+    viewInvoice: "عرض فاتورة المبيعات",
     convertedToOrderSuccess: "تم تحويل عرض السعر إلى أمر بيع بنجاح.",
     revisedSuccess: "تم إصدار مراجعة جديدة بنجاح مع الاحتفاظ بسجل المراجعة السابقة.",
     declinedSuccess: "تم تسجيل رفض العرض وتحديث السجل التجاري.",
@@ -194,6 +199,9 @@ export const ar = {
     reasonRequired: "يرجى توضيح سبب الإرجاع قبل الحفظ",
     approvedSuccess: "تم اعتماد طلب الإرجاع بنجاح وجاهز للتنفيذ.",
     executedSuccess: "تم استلام المرتجع في المخزون وإصدار الإشعار الدائن بنجاح.",
+    downstreamDocuments: "المستندات الناتجة عن تسوية المرتجع",
+    inventoryReceipt: "إشعار استلام المخزون (RET)",
+    creditNote: "الإشعار الدائن التجاري (CN)",
     sourceSalesOrder: "أمر بيع",
     sourceInvoice: "فاتورة مبيعات",
     defaultReturnReason: "تلف جزئي أثناء النقل",

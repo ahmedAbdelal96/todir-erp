@@ -45,6 +45,8 @@ export const en = {
     requested: "Requested",
     approved: "Approved",
     executed: "Executed",
+    received: "Received",
+    completed: "Completed",
     rejected: "Rejected"
   },
   tabs: {
@@ -126,6 +128,9 @@ export const en = {
     acceptedSuccess: "Customer acceptance recorded successfully.",
     acceptAndInvoiceSuccess: "Quotation accepted and draft invoice created successfully.",
     convertedToInvoiceSuccess: "Sales invoice draft created successfully.",
+    convertedToInvoiceNotice: "Quotation has been converted to an official sales invoice.",
+    targetInvoice: "Sales Invoice Number",
+    viewInvoice: "View Sales Invoice",
     convertedToOrderSuccess: "Quotation converted to sales order successfully.",
     revisedSuccess: "New revision created while preserving previous revision record.",
     declinedSuccess: "Quotation decline recorded and timeline updated.",
@@ -194,6 +199,9 @@ export const en = {
     reasonRequired: "Return reason is required before saving",
     approvedSuccess: "Return request approved and ready for warehouse receipt.",
     executedSuccess: "Goods restocked into warehouse and credit note issued.",
+    downstreamDocuments: "Downstream Settlement Documents",
+    inventoryReceipt: "Inventory Receipt (RET)",
+    creditNote: "Commercial Credit Note (CN)",
     sourceSalesOrder: "Sales Order",
     sourceInvoice: "Sales Invoice",
     defaultReturnReason: "Transit transport damage",

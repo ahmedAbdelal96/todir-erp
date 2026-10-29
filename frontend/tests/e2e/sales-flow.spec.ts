@@ -745,7 +745,7 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
 
       if (action === 'accept-and-invoice') {
         const q = mockQuotationDetails[quoteId] || mockQuotationDetails['quote-001'];
-        q.state = 'Accepted';
+        q.state = 'Converted';
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -796,6 +796,8 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
       }
 
       if (action === 'convert-to-invoice') {
+        const q = mockQuotationDetails[quoteId] || mockQuotationDetails['quote-001'];
+        q.state = 'Converted';
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -1029,6 +1031,7 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
 
     // 11-quotation-converted.png
     await captureScreenshot(page, '11-quotation-converted.png');
+    await captureScreenshot(page, '11-quotation-converted-final.png');
 
     // 12-availability-preview.png
     await captureScreenshot(page, '12-availability-preview.png');
@@ -1051,27 +1054,32 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
     await expect(page.getByRole('heading', { name: /تفاصيل أمر البيع/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'تأكيد أمر البيع' })).toBeVisible();
     await captureScreenshot(page, '16-sales-order-detail.png');
+    await captureScreenshot(page, '16-sales-order-detail-final.png');
 
     // 17-reservation.png
     await page.getByRole('button', { name: 'تأكيد أمر البيع' }).click();
     await expect(page.getByRole('button', { name: 'صرف وتنفيذ الشحنة' })).toBeVisible();
     await captureScreenshot(page, '17-reservation.png');
+    await captureScreenshot(page, '17-reservation-final.png');
 
     // 18-partial-fulfillment-backorder.png
     await page.getByRole('button', { name: 'صرف وتنفيذ الشحنة' }).click();
     await expect(page.getByRole('status')).toBeVisible();
     await captureScreenshot(page, '18-partial-fulfillment-backorder.png');
+    await captureScreenshot(page, '18-partial-fulfillment-backorder-final.png');
 
     // 19-order-invoice-eligibility.png
     await page.getByRole('button', { name: 'إصدار فاتورة للأمر' }).click();
     await expect(page.getByRole('status')).toBeVisible();
     await captureScreenshot(page, '19-order-invoice-eligibility.png');
+    await captureScreenshot(page, '19-order-invoice-eligibility-final.png');
     await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
 
     // 20-credit-warning-or-block.png
     await page.getByRole('row', { name: /SO-2026-0002/ }).getByRole('button', { name: 'إدارة' }).click();
     await expect(page.getByText('تحذير ائتماني')).toBeVisible();
     await captureScreenshot(page, '20-credit-warning-or-block.png');
+    await captureScreenshot(page, '20-credit-warning-or-block-final.png');
 
     // 21-order-amendment.png
     await page.getByRole('button', { name: 'إلغاء الكميات المتبقية' }).click();
@@ -1092,6 +1100,7 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
     await page.getByRole('button', { name: 'تنفيذ المرتجع بالمستودع' }).click();
     await expect(page.getByRole('status')).toBeVisible();
     await captureScreenshot(page, '23-return-result-links.png');
+    await captureScreenshot(page, '23-return-result-links-final.png');
     await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
 
     // 24-sales-history.png
@@ -1099,10 +1108,14 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
     await expect(page.getByRole('heading', { name: 'السجل التجاري والزمني' })).toBeVisible();
     await captureScreenshot(page, '24-sales-history.png', { fullPage: true });
 
-    // 25-sales-settings-simple.png
-    await page.getByRole('tab', { name: 'إعدادات المبيعات' }).click();
+    // 25-sales-settings-simple.png (Capability-OFF simple screen: only 4 tabs)
+    await page.goto('/sales?distribution=false&tab=settings');
     await expect(page.getByText('إعدادات الحساب التجاري')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'أوامر البيع' })).not.toBeVisible();
+    await expect(page.getByRole('tab', { name: 'المرتجعات' })).not.toBeVisible();
     await captureScreenshot(page, '25-sales-settings-simple.png', { fullPage: true });
+    await captureScreenshot(page, '25-sales-settings-simple-final.png', { fullPage: true });
+    await page.goto('/sales');
 
     // 26-mobile-new-quotation-390.png
     await page.setViewportSize({ width: 390, height: 844 });
@@ -1110,12 +1123,14 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
     await page.getByRole('button', { name: '+ إنشاء عرض سعر جديد' }).click();
     await expect(page.getByRole('heading', { name: '+ إنشاء عرض سعر جديد' })).toBeVisible();
     await captureScreenshot(page, '26-mobile-new-quotation-390.png');
+    await captureScreenshot(page, '26-mobile-new-quotation-390-final.png');
     await page.getByRole('button', { name: 'إلغاء', exact: true }).click();
 
     // 27-mobile-quotation-detail-390.png
     await page.getByRole('row', { name: /Q-2026-0001/ }).getByRole('button', { name: 'إدارة' }).click();
     await expect(page.getByRole('heading', { name: /تفاصيل عرض السعر/ })).toBeVisible();
     await captureScreenshot(page, '27-mobile-quotation-detail-390.png');
+    await captureScreenshot(page, '27-mobile-quotation-detail-390-final.png');
     await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
 
     // 28-tablet-sales-orders-768.png
@@ -1123,12 +1138,14 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
     await page.getByRole('tab', { name: 'أوامر البيع' }).click();
     await expect(page.getByRole('cell', { name: 'SO-2026-0001' })).toBeVisible();
     await captureScreenshot(page, '28-tablet-sales-orders-768.png');
+    await captureScreenshot(page, '28-tablet-sales-orders-768-final.png');
 
     // 29-desktop-quotation-1024.png
     await page.setViewportSize({ width: 1024, height: 768 });
     await page.getByRole('tab', { name: /عروض الأسعار/ }).click();
     await page.getByRole('row', { name: /Q-2026-0002/ }).getByRole('button', { name: 'إدارة' }).click();
     await captureScreenshot(page, '29-desktop-quotation-1024.png');
+    await captureScreenshot(page, '29-desktop-quotation-1024-final.png');
     await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
 
     // 30-desktop-sales-overview-1280.png
