@@ -10,6 +10,7 @@ import { pricingRoutes } from "@modules/pricing/public.ts";
 import { subledgerRoutes } from "@modules/subledger/public.ts";
 import { taxRoutes } from "@modules/tax/public.ts";
 import { inventoryRoutes } from "@modules/inventory/public.ts";
+import { salesRoutes } from "@modules/sales/public.ts";
 import { identityRoutes } from "@modules/identity/public.ts";
 import { invoicingRoutes } from "@modules/invoicing/public.ts";
 import { migrationRoutes } from "@modules/migration/public.ts";
@@ -71,6 +72,7 @@ const workspaceRoutes: RouteObject = {
     ...subledgerRoutes.routes,
     ...taxRoutes.routes,
     ...inventoryRoutes.routes,
+    ...salesRoutes.routes,
     { path: "preview", element: <PreviewPage /> },
     { path: "settings", element: <SettingsRoute /> },
     { path: "*", element: <NotFoundRoute /> }

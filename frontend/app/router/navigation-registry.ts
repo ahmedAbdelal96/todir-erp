@@ -6,6 +6,7 @@ import { pricingRoutes } from "@modules/pricing/public.ts";
 import { subledgerRoutes } from "@modules/subledger/public.ts";
 import { taxRoutes } from "@modules/tax/public.ts";
 import { inventoryRoutes } from "@modules/inventory/public.ts";
+import { salesRoutes } from "@modules/sales/public.ts";
 import { identityRoutes } from "@modules/identity/public.ts";
 import { invoicingRoutes } from "@modules/invoicing/public.ts";
 import { migrationRoutes } from "@modules/migration/public.ts";
@@ -41,6 +42,7 @@ export const navigationRegistry: readonly ModuleNavigationRegistration[] = [
   subledgerRoutes.navigation,
   taxRoutes.navigation,
   inventoryRoutes.navigation,
+  salesRoutes.navigation,
   previewNavigation,
   settingsNavigation
 ];
