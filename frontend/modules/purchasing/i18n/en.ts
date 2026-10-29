@@ -153,7 +153,14 @@ export const en = {
     pendingRecoveryDesc: "Inventory receipt succeeded; invoice generation step is completing automatically",
     receiptCompletedNumber: "Completed Receipt",
     retryInvoiceCreation: "Retry Invoice Generation Step",
-    noReceipts: "No purchase orders waiting for warehouse receipt"
+    noReceipts: "No purchase orders waiting for warehouse receipt",
+    noPhysicalLines: "No inventory-stockable lines available to receive for this order",
+    stockReceiptSectionTitle: "Inventory Receipt & Invoicing (Stocked Items)",
+    stockReceiptSectionDesc: "An inventory goods receipt and supplier invoice will be created for these items",
+    stockReceiptBadge: "Inventory Receipt + Supplier Invoice",
+    serviceInvoiceSectionTitle: "Invoicing Only (Services & Non-Stock Items)",
+    serviceInvoiceSectionDesc: "A supplier invoice will be created for these items without inventory movement",
+    serviceInvoiceBadge: "Invoice Only (No Inventory Receipt)"
   },
   matching: {
     title: "Supplier Invoice Matching",
@@ -317,6 +324,7 @@ export const en = {
     idempotencyConflict: "Duplicate transaction submitted with identical idempotency key",
     permissionDenied: "You lack sufficient permissions to perform this operation",
     linesInvalid: "At least one valid line with positive quantity and description is required",
+    expectedDeliveryBeforeOrderDate: "Expected delivery date cannot be before the order date",
     buyPriceMissing: "Automatic buy price could not be resolved for selected item",
     buyPriceRequired: "Buy price is mandatory for all purchase order lines",
     closeShortReasonRequired: "Reason is required to close short and acknowledge variance",

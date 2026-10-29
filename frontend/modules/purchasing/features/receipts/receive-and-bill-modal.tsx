@@ -36,6 +36,10 @@ export function ReceiveAndBillModal({
   const [resultReceiptId, setResultReceiptId] = useState<string | null>(null);
   const [resultInvoiceId, setResultInvoiceId] = useState<string | null>(null);
 
+  // Split lines into stock-tracked physical items vs non-stock services
+  const stockLines = order.lines.filter((l) => Boolean(l.productVariantId));
+  const serviceLines = order.lines.filter((l) => !l.productVariantId);
+
   const receiveAndBillMutation = useReceiveAndBillMutation(order.legalEntityId, order.id);
 
   const handleExecute = async (e?: React.FormEvent) => {
@@ -52,9 +56,9 @@ export function ReceiveAndBillModal({
           idempotencyKey,
           operationalDate,
           postingDate: operationalDate,
-          lines: order.lines.map((l) => ({
+          lines: stockLines.map((l) => ({
             purchaseOrderLineId: l.id,
-            productVariantId: l.productVariantId || "a6315416-cffe-bf52-bcf0-d5e590d3bf94",
+            productVariantId: l.productVariantId!,
             warehouseId: "00000000-0000-0000-0000-000000000001",
             unitOfMeasureId: l.unitOfMeasureId || "00000000-0000-0000-0000-000000000002",
             quantity: l.orderedQuantity
@@ -149,22 +153,99 @@ export function ReceiveAndBillModal({
               </div>
             </div>
 
-            {/* Lines Summary */}
-            <div style={{ border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", padding: "1rem" }}>
-              <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--color-content-primary)" }}>
-                {t("receipts.receiveAndBillLinesNotice")}:
-              </span>
-              <ul style={{ margin: "0.5rem 0 0", paddingInlineStart: "1.25rem", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-                {order.lines.map((l) => {
-                  const lineUom = l.unitCode || DEFAULT_UOM;
-                  return (
-                    <li key={l.id}>
-                      {l.description} — {l.orderedQuantity} {lineUom}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+            {/* Stocked Lines Section (Physical receipt + Invoicing) */}
+            {stockLines.length > 0 && (
+              <div
+                style={{
+                  border: "1px solid var(--color-border-default)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "1rem",
+                  backgroundColor: "var(--color-surface-card)"
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <div>
+                    <h5 style={{ margin: 0, fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-primary)" }}>
+                      {t("receipts.stockReceiptSectionTitle")}
+                    </h5>
+                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                      {t("receipts.stockReceiptSectionDesc")}
+                    </p>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      backgroundColor: "var(--color-brand-primary-light, #eff6ff)",
+                      color: "var(--color-brand-primary, #0284c7)",
+                      border: "1px solid #bfdbfe",
+                      padding: "0.25rem 0.625rem",
+                      borderRadius: "9999px",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    {t("receipts.stockReceiptBadge")}
+                  </span>
+                </div>
+                <ul style={{ margin: "0.5rem 0 0", paddingInlineStart: "1.25rem", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                  {stockLines.map((l) => {
+                    const lineUom = l.unitCode || DEFAULT_UOM;
+                    return (
+                      <li key={l.id} style={{ marginBottom: "0.25rem" }}>
+                        <strong style={{ color: "var(--color-content-primary)" }}>{l.description}</strong> — {l.orderedQuantity} {lineUom}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            {/* Service & Non-Stock Lines Section (Invoicing Only) */}
+            {serviceLines.length > 0 && (
+              <div
+                style={{
+                  border: "1px solid var(--color-border-default)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "1rem",
+                  backgroundColor: "var(--color-surface-card)"
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <div>
+                    <h5 style={{ margin: 0, fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-primary)" }}>
+                      {t("receipts.serviceInvoiceSectionTitle")}
+                    </h5>
+                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                      {t("receipts.serviceInvoiceSectionDesc")}
+                    </p>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      backgroundColor: "var(--color-status-warning-light, #fffbeb)",
+                      color: "var(--color-status-warning, #d97706)",
+                      border: "1px solid #fde68a",
+                      padding: "0.25rem 0.625rem",
+                      borderRadius: "9999px",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    {t("receipts.serviceInvoiceBadge")}
+                  </span>
+                </div>
+                <ul style={{ margin: "0.5rem 0 0", paddingInlineStart: "1.25rem", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                  {serviceLines.map((l) => {
+                    const lineUom = l.unitCode || DEFAULT_UOM;
+                    return (
+                      <li key={l.id} style={{ marginBottom: "0.25rem" }}>
+                        <strong style={{ color: "var(--color-content-primary)" }}>{l.description}</strong> — {l.orderedQuantity} {lineUom}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid var(--color-border-default)", paddingTop: "1rem" }}>
               <Button variant="secondary" onPress={onClose} type="button">

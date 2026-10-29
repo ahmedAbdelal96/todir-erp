@@ -560,6 +560,7 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
           taxRegistrationNumber: '300022334400003',
           paymentTerms: 'صافي 30 يوم (Net 30)',
           preferredCurrency: 'SAR',
+          leadTimeDays: 7,
           totalOrdersCount: 14,
           totalCommercialCommitment: 185000.0,
           deliveryPerformanceRating: 98.5,
@@ -630,6 +631,7 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
 
     // Screenshot 05: Supplier Selected
     await captureScreenshot(page, '05-new-po-supplier-selected.png');
+    await captureScreenshot(page, '05-new-po-supplier-selected-final.png');
 
     // 5. Fill line item
     const priceInput = newOrderDialog.locator('input[type="number"]').nth(1);
@@ -737,6 +739,7 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
       await page.waitForTimeout(300);
       // Screenshot 17: Goods Receipt Modal
       await captureScreenshot(page, '17-goods-receipt-modal.png');
+      await captureScreenshot(page, '17-goods-receipt-modal-final.png');
       await page.locator('[role="dialog"]').locator('button:has-text("إلغاء")').click();
       await page.waitForSelector('[role="dialog"]', { state: 'detached' });
       await page.waitForTimeout(200);
@@ -750,6 +753,7 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
       await page.waitForTimeout(300);
       // Screenshot 18: Immediate Receive & Bill Modal
       await captureScreenshot(page, '18-receive-and-bill-modal.png');
+      await captureScreenshot(page, '18-receive-and-bill-modal-final.png');
 
       // Execute Receive & Bill
       const invNumInput = page.locator('[role="dialog"]').locator('input[placeholder*="INV-"]');

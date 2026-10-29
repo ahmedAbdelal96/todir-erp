@@ -153,7 +153,14 @@ export const ar = {
     pendingRecoveryDesc: "تم إنجاز استلام المخزون بنجاح، وخطوة الفاتورة قيد الاستكمال التلقائي",
     receiptCompletedNumber: "إيصال الاستلام المنجز",
     retryInvoiceCreation: "إعادة محاولة خطوة الفوترة",
-    noReceipts: "لا توجد أوامر بانتظار الاستلام المستودعي"
+    noReceipts: "لا توجد أوامر بانتظار الاستلام المستودعي",
+    noPhysicalLines: "لا توجد بنود مخزنية قابلة للاستلام في هذا الأمر",
+    stockReceiptSectionTitle: "الاستلام المخزني والفوترة (البنود المخزنية)",
+    stockReceiptSectionDesc: "سيتم إنشاء إيصال استلام مستودعي وفاتورة مورد لهذه البنود",
+    stockReceiptBadge: "استلام مستودعي + فاتورة مورد",
+    serviceInvoiceSectionTitle: "الفوترة فقط (الخدمات والبنود غير المخزنية)",
+    serviceInvoiceSectionDesc: "سيتم إنشاء فاتورة مورد لهذه البنود دون حركة استلام مخزني",
+    serviceInvoiceBadge: "فاتورة فقط (بدون استلام مخزني)"
   },
   matching: {
     title: "مطابقة فواتير المشتريات",
@@ -317,6 +324,7 @@ export const ar = {
     idempotencyConflict: "تم إرسال عملية مطابقة مسبقاً بنفس المفتاح",
     permissionDenied: "ليس لديك الصلاحية الكافية لإتمام هذا الإجراء",
     linesInvalid: "يجب إدخال بند واحد على الأقل بكمية ووصف صالحين",
+    expectedDeliveryBeforeOrderDate: "تاريخ التسليم المتوقع لا يمكن أن يكون قبل تاريخ أمر الشراء",
     buyPriceMissing: "تعذر احتساب سعر الشراء التلقائي للصنف المحدد",
     buyPriceRequired: "سعر الشراء إلزامي لكل بند توريد",
     closeShortReasonRequired: "يجب بيان سبب إقرار النقص وإغلاق الأمر",

@@ -79,6 +79,7 @@ export function PurchaseOrderDetailModal({
   const isApproved = localApproved || order.state === "Approved" || order.state === "Open" || order.state === "PartiallyCompleted";
   const isFullyInvoiced = order.invoicingState === "Invoiced" || localInvoiceNumber != null;
   const isFullyReceived = order.receiptState === "Received";
+  const hasPhysicalLines = order.lines.some((l) => Boolean(l.productVariantId));
 
   const handleApprove = async () => {
     try {
@@ -282,13 +283,13 @@ export function PurchaseOrderDetailModal({
                 </Button>
               )}
 
-              {isInventoryCapabilityActive && !isFullyReceived && onOpenReceive && (
+              {isInventoryCapabilityActive && hasPhysicalLines && !isFullyReceived && onOpenReceive && (
                 <Button variant="secondary" onPress={() => onOpenReceive(order)} type="button">
                   {t("orders.receiveStock")}
                 </Button>
               )}
 
-              {isInventoryCapabilityActive && !isFullyReceived && !isFullyInvoiced && onOpenReceiveAndBill && (
+              {isInventoryCapabilityActive && hasPhysicalLines && !isFullyReceived && !isFullyInvoiced && onOpenReceiveAndBill && (
                 <Button variant="primary" onPress={() => onOpenReceiveAndBill(order)} type="button">
                   {t("orders.receiveAndBill")}
                 </Button>

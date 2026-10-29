@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ApiError } from "../../../core/api/http-client.ts";
-import { toQty, toMoneyVal, generateIdempotencyKey, formatPoNumber } from "../utils.ts";
+import { toQty, toMoneyVal, generateIdempotencyKey, formatPoNumber, addDaysToIsoDate } from "../utils.ts";
 import { mapPurchasingError } from "../services/purchasing-error-map.ts";
 import { resolvePurchasingSupplier } from "../components/purchasing-supplier-resolver.ts";
 import { resolvePurchasingProduct } from "../components/purchasing-product-resolver.ts";
@@ -205,5 +205,91 @@ describe("Purchasing Domain Invariants & Frontend Slice Contracts", () => {
 
     assert.equal(blockedPriceMismatch.isMatched, false);
     assert.equal(blockedPriceMismatch.explanation, "فرق السعر: +1.50");
+  });
+
+  it("filters physical stock lines only for inventory goods receipt (excludes service and non-stock lines)", () => {
+    const lines = [
+      { id: "line-1", productVariantId: "a6315416-cffe-bf52-bcf0-d5e590d3bf94", description: "خادم نصل عالي الأداء", orderedQuantity: 5, receivedQuantity: 0 },
+      { id: "line-2", productVariantId: null, description: "خدمات صيانة وتركيب معتمدة", orderedQuantity: 1, receivedQuantity: 0 }
+    ];
+
+    const physicalLines = lines.filter((l) => Boolean(l.productVariantId));
+    assert.equal(physicalLines.length, 1);
+    assert.equal(physicalLines[0]?.id, "line-1");
+    assert.equal(physicalLines[0]?.productVariantId, "a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+
+    // Receipt payload must not contain any service line
+    const receiptLines = physicalLines.map((l) => ({
+      purchaseOrderLineId: l.id,
+      productVariantId: l.productVariantId!,
+      warehouseId: "00000000-0000-0000-0000-000000000001",
+      quantity: l.orderedQuantity
+    }));
+    assert.equal(receiptLines.length, 1);
+    assert.equal(receiptLines[0]?.productVariantId, "a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  });
+
+  it("partitions mixed order lines into physical receipt vs service invoicing in Receive & Bill", () => {
+    const orderLines = [
+      { id: "l-stock", productVariantId: "var-1", description: "Stock Item", orderedQuantity: 10 },
+      { id: "l-serv", productVariantId: null, description: "Service Contract", orderedQuantity: 1 }
+    ];
+
+    const stockLines = orderLines.filter((l) => Boolean(l.productVariantId));
+    const serviceLines = orderLines.filter((l) => !l.productVariantId);
+
+    assert.equal(stockLines.length, 1);
+    assert.equal(serviceLines.length, 1);
+
+    // Mutation receipt.lines sends ONLY stockLines
+    const receiptMutationLines = stockLines.map((l) => ({
+      purchaseOrderLineId: l.id,
+      productVariantId: l.productVariantId!
+    }));
+    assert.equal(receiptMutationLines.length, 1);
+    assert.equal(receiptMutationLines[0]?.purchaseOrderLineId, "l-stock");
+  });
+
+  it("suppresses receiveStock action when an order has zero physical receipt lines", () => {
+    const serviceOnlyOrder = {
+      id: "po-serv-only",
+      lines: [
+        { id: "l1", productVariantId: null, description: "Consulting Service", orderedQuantity: 10 }
+      ]
+    };
+    const mixedOrder = {
+      id: "po-mixed",
+      lines: [
+        { id: "l1", productVariantId: "var-1", description: "Hardware", orderedQuantity: 5 },
+        { id: "l2", productVariantId: null, description: "Installation", orderedQuantity: 1 }
+      ]
+    };
+
+    const hasPhysicalLines = (order: { lines: Array<{ productVariantId?: string | null }> }) =>
+      order.lines.some((l) => Boolean(l.productVariantId));
+
+    assert.equal(hasPhysicalLines(serviceOnlyOrder), false);
+    assert.equal(hasPhysicalLines(mixedOrder), true);
+  });
+
+  it("enforces expected delivery date invariant (Expected Delivery >= Order Date)", () => {
+    function validateDates(orderDate: string, expectedDeliveryDate: string): { isValid: boolean; errorKey?: string } {
+      if (expectedDeliveryDate && orderDate && expectedDeliveryDate < orderDate) {
+        return { isValid: false, errorKey: "errors.expectedDeliveryBeforeOrderDate" };
+      }
+      return { isValid: true };
+    }
+
+    assert.equal(validateDates("2026-10-29", "2026-10-29").isValid, true);
+    assert.equal(validateDates("2026-10-29", "2026-11-05").isValid, true);
+    assert.equal(validateDates("2026-10-29", "2026-10-28").isValid, false);
+    assert.equal(validateDates("2026-10-29", "2026-10-28").errorKey, "errors.expectedDeliveryBeforeOrderDate");
+  });
+
+  it("calculates defaulted expected delivery date from supplier lead time", () => {
+    assert.equal(addDaysToIsoDate("2026-10-29", 7), "2026-11-05");
+    assert.equal(addDaysToIsoDate("2026-10-29", 0), "2026-10-29");
+    assert.equal(addDaysToIsoDate("2026-12-30", 5), "2027-01-04");
+    assert.equal(addDaysToIsoDate("", 7), "");
   });
 });

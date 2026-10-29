@@ -34,3 +34,19 @@ export function formatPoNumber(id: string, sequenceNumber?: number): string {
   const shortCode = cleanId.substring(cleanId.length - 4);
   return `PO-2026-${shortCode}`;
 }
+
+export function addDaysToIsoDate(isoDate: string, days: number): string {
+  if (!isoDate) return "";
+  const parts = isoDate.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return "";
+  const year = parts[0];
+  const month = parts[1];
+  const day = parts[2];
+  if (year === undefined || month === undefined || day === undefined) return "";
+  const d = new Date(Date.UTC(year, month - 1, day));
+  d.setUTCDate(d.getUTCDate() + days);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
@@ -7,9 +7,13 @@ import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { PurchasingSupplierPicker } from "../../components/purchasing-supplier-picker.tsx";
 import { PurchasingProductPicker } from "../../components/purchasing-product-picker.tsx";
 import { resolvePurchasingProduct } from "../../components/purchasing-product-resolver.ts";
-import { toMoneyVal, generateIdempotencyKey } from "../../utils.ts";
+import { toMoneyVal, generateIdempotencyKey, addDaysToIsoDate } from "../../utils.ts";
 import { mapPurchasingError } from "../../services/purchasing-error-map.ts";
-import { useCreatePurchaseOrderMutation, useApproveAndBillMutation } from "../../hooks/use-purchasing-queries.ts";
+import {
+  useCreatePurchaseOrderMutation,
+  useApproveAndBillMutation,
+  useSupplierProfile
+} from "../../hooks/use-purchasing-queries.ts";
 import type { PurchaseOrderLineRequest } from "../../types.ts";
 
 export interface NewPurchaseOrderModalProps {
@@ -47,7 +51,29 @@ export function NewPurchaseOrderModal({
   const [orderDate, setOrderDate] = useState<string>(today);
   const [currencyCode, setCurrencyCode] = useState<string>("SAR");
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState<string>("");
+  const [isDeliveryDateManual, setIsDeliveryDateManual] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const { data: supplierProfile } = useSupplierProfile(legalEntityId, supplierPartyId);
+
+  // Auto-default expected delivery date based on supplier profile lead time or fallback (7 days)
+  useEffect(() => {
+    if (!supplierPartyId || isDeliveryDateManual) return;
+    const leadTime = supplierProfile?.leadTimeDays ?? 7;
+    setExpectedDeliveryDate(addDaysToIsoDate(orderDate, leadTime));
+  }, [supplierPartyId, supplierProfile?.leadTimeDays, orderDate, isDeliveryDateManual]);
+
+  const handleSupplierChange = (id: string) => {
+    setSupplierPartyId(id);
+    setIsDeliveryDateManual(false);
+  };
+
+  const handleDeliveryDateChange = (val: string) => {
+    setIsDeliveryDateManual(true);
+    setExpectedDeliveryDate(val);
+  };
+
+  const isDeliveryDateInvalid = Boolean(expectedDeliveryDate && orderDate && expectedDeliveryDate < orderDate);
 
   const [lines, setLines] = useState<DraftLine[]>([
     {
@@ -96,6 +122,11 @@ export function NewPurchaseOrderModal({
 
     if (!supplierPartyId) {
       setErrorMessage(t("errors.supplierRequired"));
+      return;
+    }
+
+    if (isDeliveryDateInvalid) {
+      setErrorMessage(t("errors.expectedDeliveryBeforeOrderDate"));
       return;
     }
 
@@ -180,7 +211,7 @@ export function NewPurchaseOrderModal({
           <div>
             <PurchasingSupplierPicker
               value={supplierPartyId}
-              onChange={setSupplierPartyId}
+              onChange={handleSupplierChange}
               isRequired
             />
           </div>
@@ -221,8 +252,22 @@ export function NewPurchaseOrderModal({
             <LocalDateField
               label={t("orders.expectedDeliveryDate")}
               value={expectedDeliveryDate}
-              onChange={setExpectedDeliveryDate}
+              onChange={handleDeliveryDateChange}
             />
+            {isDeliveryDateInvalid && (
+              <span
+                role="alert"
+                style={{
+                  fontSize: "0.75rem",
+                  color: "var(--color-status-danger, #dc2626)",
+                  marginTop: "0.25rem",
+                  display: "block",
+                  fontWeight: 600
+                }}
+              >
+                {t("errors.expectedDeliveryBeforeOrderDate")}
+              </span>
+            )}
           </div>
         </div>
 
@@ -396,13 +441,13 @@ export function NewPurchaseOrderModal({
           <Button variant="secondary" onPress={onClose} type="button">
             {t("common.cancel")}
           </Button>
-          <Button variant="secondary" onPress={() => handleSubmit("draft")} type="button">
+          <Button variant="secondary" onPress={() => handleSubmit("draft")} isDisabled={isDeliveryDateInvalid} type="button">
             {t("orders.saveDraft")}
           </Button>
-          <Button variant="primary" onPress={() => handleSubmit("approve")} type="button">
+          <Button variant="primary" onPress={() => handleSubmit("approve")} isDisabled={isDeliveryDateInvalid} type="button">
             {t("orders.approve")}
           </Button>
-          <Button variant="primary" onPress={() => handleSubmit("approveAndBill")} type="button">
+          <Button variant="primary" onPress={() => handleSubmit("approveAndBill")} isDisabled={isDeliveryDateInvalid} type="button">
             {t("orders.approveAndBill")}
           </Button>
         </div>
