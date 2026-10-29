@@ -14,7 +14,9 @@ public sealed record OrderCommandRequest(long Version, string IdempotencyKey, st
 public sealed record FulfillOrderLineRequest(Guid OrderLineId, decimal Quantity, Guid? WarehouseId = null);
 public sealed record FulfillOrderRequest(long Version, string IdempotencyKey, IReadOnlyList<FulfillOrderLineRequest> Lines);
 public sealed record CreateReturnRequest(Guid LegalEntityId, Guid? BranchId, Guid PartyId, Guid? SourceDocumentId, string SourceDocumentType, IReadOnlyList<ReturnLineRequest> Lines, string Reason);
-public sealed record ReturnLineRequest(Guid? SourceLineId, Guid? ProductVariantId, decimal Quantity, string Description);
+public sealed record ReturnLineRequest(Guid? SourceLineId, Guid? ProductVariantId, decimal Quantity, string Description,
+    Guid? UnitOfMeasureId = null, Guid? WarehouseId = null, Guid? LocationId = null, string StockStatus = "Available",
+    Guid? LotId = null, Guid? SerialId = null);
 public sealed record ReturnCommandRequest(long Version, string IdempotencyKey, string? Reason = null);
 public sealed record SalesCustomerProfileRequest(Guid LegalEntityId, Guid PartyId, Guid? DefaultSalespersonId = null, Guid? DefaultSalesTeamId = null, Guid? DefaultSalesChannelId = null, Guid? DefaultWarehouseId = null, int? DefaultQuoteValidityDays = null, bool CustomerPoRequired = false);
 public sealed record SalesChannelRequest(Guid LegalEntityId, string Code, string Name);
@@ -33,7 +35,9 @@ public sealed record SalesOrderLineView(Guid Id, int Sequence, Guid? ProductVari
     public decimal InvoiceableQuantity => OrderedQuantity - InvoicedQuantity - CancelledQuantity;
 }
 public sealed record SalesOrderDetail(Guid Id, Guid LegalEntityId, Guid? BranchId, string Number, Guid PartyId, DateOnly OrderDate, string CurrencyCode, Guid? WarehouseId, string CommercialState, string FulfillmentState, string InvoicingState, string CreditState, long Version, IReadOnlyList<SalesOrderLineView> Lines);
-public sealed record SalesReservationView(Guid OrderLineId, Guid InventoryReservationId, decimal Quantity, string State);
+public sealed record SalesReservationView(Guid OrderLineId, Guid InventoryReservationId, decimal Quantity, string State,
+    decimal ConsumedQuantity = 0, decimal ReleasedQuantity = 0, decimal RemainingQuantity = 0);
 public sealed record SalesFulfillmentResult(Guid FulfillmentId, IReadOnlyList<SalesInventoryFulfillmentLine> Lines, string State);
 public sealed record SalesInventoryFulfillmentLine(Guid OrderLineId, decimal RequestedQuantity, decimal FulfilledQuantity, Guid? InventoryOperationId);
 public sealed record SalesReturnView(Guid Id, Guid LegalEntityId, Guid PartyId, string State, string SourceDocumentType, Guid? SourceDocumentId, string Reason, long Version, IReadOnlyList<ReturnLineRequest> Lines);
+public sealed record SalesReturnExecutionResult(Guid ReturnId, string State, Guid? InventoryReceiptId, Guid? CreditNoteId, long Version);

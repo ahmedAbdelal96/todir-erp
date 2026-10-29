@@ -135,6 +135,20 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
             Guid.CreateVersion7(), null, cancellationToken);
         return result.OperationId;
     }
+
+    public async Task<Guid> ReceiveReturnAsync(Guid tenantId, Guid actorId, InventoryReturnRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Enum.TryParse<StockStatus>(request.StockStatus, true, out var status))
+            throw new InventoryException("inventory.return_stock_status_invalid");
+        var result = await repository.ReceiveAsync(new TenantId(tenantId), actorId, request.LegalEntityId,
+            new ConfirmStockMovementRequest(request.ProductVariantId, request.WarehouseId, request.LocationId,
+                request.EnteredUomId, request.Quantity, request.OperationalDate, request.PostingDate,
+                request.IdempotencyKey, request.SourceModule, request.SourceDocumentId, status,
+                request.LotId, request.SerialId, request.UnitCost, request.CurrencyCode),
+            Guid.CreateVersion7(), null, cancellationToken);
+        return result.OperationId;
+    }
     public async Task<Guid> ReverseOperationAsync(Guid tenantId, Guid actorId, Guid legalEntityId, Guid operationId,
         DateOnly operationalDate, DateOnly postingDate, string idempotencyKey, CancellationToken cancellationToken = default)
     {

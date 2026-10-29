@@ -95,9 +95,19 @@ CREATE TABLE business_sales.sales_return_request_line (
 CREATE TABLE business_sales.sales_order_reservation (
   tenant_id uuid NOT NULL, id uuid NOT NULL, legal_entity_id uuid NOT NULL, order_id uuid NOT NULL,
   order_line_id uuid NOT NULL, inventory_reservation_id uuid NOT NULL, quantity numeric(20,6) NOT NULL CHECK (quantity > 0),
+  reserved_quantity numeric(20,6) NOT NULL CHECK (reserved_quantity > 0), consumed_quantity numeric(20,6) NOT NULL DEFAULT 0 CHECK (consumed_quantity >= 0),
+  released_quantity numeric(20,6) NOT NULL DEFAULT 0 CHECK (released_quantity >= 0), remaining_quantity numeric(20,6) NOT NULL CHECK (remaining_quantity >= 0),
   state varchar(16) NOT NULL DEFAULT 'Active' CHECK (state IN ('Active','Released','Consumed')),
   created_at timestamptz NOT NULL, released_at timestamptz,
   PRIMARY KEY (tenant_id,id), UNIQUE (tenant_id,order_line_id), UNIQUE (tenant_id,inventory_reservation_id),
+  FOREIGN KEY (tenant_id,legal_entity_id,order_id) REFERENCES business_sales.sales_order(tenant_id,legal_entity_id,id),
+  FOREIGN KEY (tenant_id,legal_entity_id,order_line_id) REFERENCES business_sales.sales_order_line(tenant_id,legal_entity_id,id)
+);
+CREATE TABLE business_sales.sales_reservation_consumption (
+  tenant_id uuid NOT NULL, id uuid NOT NULL, legal_entity_id uuid NOT NULL, order_id uuid NOT NULL,
+  order_line_id uuid NOT NULL, inventory_reservation_id uuid NOT NULL, inventory_operation_id uuid NOT NULL,
+  quantity numeric(20,6) NOT NULL CHECK (quantity > 0), idempotency_key varchar(200) NOT NULL, created_at timestamptz NOT NULL,
+  PRIMARY KEY (tenant_id,id), UNIQUE (tenant_id,order_line_id,idempotency_key), UNIQUE (tenant_id,inventory_operation_id),
   FOREIGN KEY (tenant_id,legal_entity_id,order_id) REFERENCES business_sales.sales_order(tenant_id,legal_entity_id,id),
   FOREIGN KEY (tenant_id,legal_entity_id,order_line_id) REFERENCES business_sales.sales_order_line(tenant_id,legal_entity_id,id)
 );
@@ -131,6 +141,7 @@ CREATE INDEX ix_sales_order_list ON business_sales.sales_order(tenant_id,legal_e
 CREATE INDEX ix_sales_history_document ON business_sales.sales_document_state_history(tenant_id,legal_entity_id,document_type,document_id,occurred_at DESC,id);
 CREATE INDEX ix_sales_return_party ON business_sales.sales_return_request(tenant_id,legal_entity_id,party_id,created_at DESC,id);
 CREATE INDEX ix_sales_order_reservation_order ON business_sales.sales_order_reservation(tenant_id,legal_entity_id,order_id,state);
+CREATE INDEX ix_sales_reservation_consumption_order ON business_sales.sales_reservation_consumption(tenant_id,legal_entity_id,order_id,created_at DESC,id);
 CREATE INDEX ix_sales_fulfillment_order ON business_sales.sales_fulfillment(tenant_id,legal_entity_id,order_id,created_at DESC,id);
 CREATE INDEX ix_sales_credit_decision_order ON business_sales.sales_credit_decision(tenant_id,legal_entity_id,order_id,decided_at DESC,id);
 
@@ -139,7 +150,7 @@ GRANT USAGE ON SCHEMA business_sales TO erp_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA business_sales TO erp_app;
 
 DO $$ DECLARE table_name text; BEGIN
-  FOREACH table_name IN ARRAY ARRAY['sales_number_sequence','sales_customer_profile','sales_channel','sales_team','quotation','quotation_revision','quotation_revision_line','quotation_acceptance','sales_document_state_history','sales_conversion_link','sales_order','sales_order_line','sales_return_request','sales_return_request_line','sales_order_reservation','sales_fulfillment','sales_fulfillment_line','sales_credit_decision'] LOOP
+  FOREACH table_name IN ARRAY ARRAY['sales_number_sequence','sales_customer_profile','sales_channel','sales_team','quotation','quotation_revision','quotation_revision_line','quotation_acceptance','sales_document_state_history','sales_conversion_link','sales_order','sales_order_line','sales_return_request','sales_return_request_line','sales_order_reservation','sales_reservation_consumption','sales_fulfillment','sales_fulfillment_line','sales_credit_decision'] LOOP
     EXECUTE format('ALTER TABLE business_sales.%I ENABLE ROW LEVEL SECURITY', table_name);
     EXECUTE format('ALTER TABLE business_sales.%I FORCE ROW LEVEL SECURITY', table_name);
     EXECUTE format('CREATE POLICY tenant_isolation ON business_sales.%I USING (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid) WITH CHECK (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid)', table_name);

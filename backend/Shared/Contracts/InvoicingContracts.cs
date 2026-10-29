@@ -21,6 +21,17 @@ public interface IInvoicingSourceCapabilities
         Guid correlationId, CancellationToken cancellationToken = default);
 }
 
+public sealed record InvoiceCreditNoteLineContract(Guid OriginalLineId, decimal Quantity);
+public sealed record InvoiceCreditNoteRequest(Guid OriginalInvoiceId, Guid LegalEntityId, DateOnly DocumentDate,
+    DateOnly PostingDate, DateOnly TaxDate, DateOnly? SupplyDate, string Reason, string IdempotencyKey,
+    IReadOnlyList<InvoiceCreditNoteLineContract> Lines);
+
+public interface IInvoicingCorrectionCapabilities
+{
+    Task<Guid> CreateCreditNoteDraftAsync(TenantId tenantId, Guid actorId, Guid membershipId,
+        InvoiceCreditNoteRequest request, Guid correlationId, CancellationToken cancellationToken = default);
+}
+
 public interface IInvoiceComplianceSnapshotCapability
 {
     Task<InvoiceComplianceSnapshotContract?> GetInvoiceComplianceSnapshotAsync(TenantId tenantId, Guid legalEntityId, Guid invoiceId,

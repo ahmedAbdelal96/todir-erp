@@ -24,7 +24,8 @@ public sealed partial class SalesService(
     ITaxCapabilities tax,
     IFinanceBaseCapabilities financeBase,
     ISubledgerCapabilities subledger,
-    ISalesInventoryCapabilities? inventory = null)
+    ISalesInventoryCapabilities? inventory = null,
+    IInvoicingCorrectionCapabilities? correction = null)
 {
     public async Task<Guid> CreateQuotationAsync(TenantId tenant, Guid actor, CreateQuotationRequest request, CancellationToken ct)
     {
@@ -149,6 +150,7 @@ public sealed partial class SalesService(
         if (order.WarehouseId is not { } warehouse) throw new SalesException("sales.warehouse_required");
         var reservations = (await repository.ListReservationsAsync(tenant, entity, id, ct)).ToDictionary(x => x.OrderLineId);
         var issued = new List<(Guid lineId, decimal requested, decimal fulfilled, Guid? operationId)>();
+        var consumption = new List<(Guid orderLineId, Guid inventoryReservationId, Guid inventoryOperationId, decimal quantity, string idempotencyKey)>();
         try
         {
             foreach (var requested in request.Lines)
@@ -156,9 +158,13 @@ public sealed partial class SalesService(
                 var line = order.Lines.SingleOrDefault(x => x.Id == requested.OrderLineId) ?? throw new SalesException("sales.order_line_not_found");
                 if (requested.Quantity <= 0 || requested.Quantity > line.RemainingQuantity) throw new SalesException("sales.fulfillment_quantity_invalid");
                 if (line.ProductVariantId is null || line.UnitOfMeasureId is null || !reservations.TryGetValue(line.Id, out var reservation)) throw new SalesException("sales.reservation_required");
+                if (requested.Quantity > reservation.RemainingQuantity) throw new SalesException("sales.fulfillment_quantity_invalid");
                 var operation = await inventory.IssueAsync(tenant.Value, actor, new SalesInventoryIssueRequest(entity, reservation.InventoryReservationId, line.ProductVariantId.Value, line.UnitOfMeasureId.Value, warehouse, requested.Quantity, id, line.Id, $"fulfill:{id:D}:{request.IdempotencyKey}:{line.Id:D}", DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow)), ct);
+                if (operation.FulfilledQuantity > 0)
+                    consumption.Add((line.Id, reservation.InventoryReservationId, operation.OperationId, operation.FulfilledQuantity, $"fulfill:{id:D}:{request.IdempotencyKey}:{line.Id:D}"));
                 issued.Add((line.Id, requested.Quantity, operation.FulfilledQuantity, operation.OperationId));
             }
+            await repository.RecordReservationConsumptionsAsync(tenant, entity, id, consumption, ct);
         }
         catch
         {
@@ -170,14 +176,69 @@ public sealed partial class SalesService(
 
     public async Task<Guid> CreateReturnAsync(TenantId tenant, Guid actor, CreateReturnRequest request, CancellationToken ct)
     {
+        if (request.LegalEntityId == Guid.Empty) throw new SalesException("sales.entity_required");
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 1000) throw new SalesException("sales.return_reason_required");
         if (request.Lines.Any(line => line.Quantity <= 0)) throw new SalesException("sales.return_quantity_invalid");
+        if (request.Lines.Select(line => line.SourceLineId).Where(id => id is not null).Distinct().Count() != request.Lines.Count(line => line.SourceLineId is not null)) throw new SalesException("sales.return_duplicate_source_line");
+        var sourceType = request.SourceDocumentType.Trim();
+        if (!sourceType.Equals("SalesOrder", StringComparison.OrdinalIgnoreCase) && !sourceType.Equals("Invoice", StringComparison.OrdinalIgnoreCase)) throw new SalesException("sales.return_source_invalid");
+        if (request.SourceDocumentId is null) throw new SalesException("sales.return_source_required");
         if (!await directory.IsActivePartyAsync(tenant, request.PartyId, request.LegalEntityId, ct)) throw new SalesException("sales.customer_not_found");
-        return await repository.CreateReturnAsync(tenant, actor, request, ct);
+        await repository.ValidateReturnableQuantitiesAsync(tenant, request, ct);
+        return await repository.CreateReturnAsync(tenant, actor, request with { SourceDocumentType = sourceType.Equals("Invoice", StringComparison.OrdinalIgnoreCase) ? "Invoice" : "SalesOrder" }, ct);
     }
     public Task<SalesReturnView?> GetReturnAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetReturnAsync(tenant, entity, id, ct);
     public Task<long> ApproveReturnAsync(TenantId tenant, Guid actor, Guid entity, Guid id, ReturnCommandRequest request, CancellationToken ct) => repository.TransitionReturnAsync(tenant, actor, entity, id, "Approved", request, ct);
-    public Task<long> ExecuteReturnAsync(TenantId tenant, Guid actor, Guid entity, Guid id, ReturnCommandRequest request, CancellationToken ct) => repository.TransitionReturnAsync(tenant, actor, entity, id, "Executed", request, ct);
+    public async Task<SalesReturnExecutionResult> ExecuteReturnAsync(TenantId tenant, Guid actor, Guid membership, Guid entity, Guid id, ReturnCommandRequest request, CancellationToken ct)
+    {
+        var work = await repository.PrepareReturnExecutionAsync(tenant, actor, entity, id, request, ct);
+        if (work.State == "Executed") return await repository.GetReturnExecutionResultAsync(tenant, entity, id, ct);
+        Guid? inventoryReceiptId = work.InventoryReceiptId;
+        Guid? creditNoteId = work.CreditNoteId;
+        try
+        {
+            foreach (var line in work.Lines.Where(line => line.ProductVariantId is not null))
+            {
+                if (line.SourceLineId is null || line.WarehouseId is null || line.UnitOfMeasureId is null)
+                    throw new SalesException("sales.return_inventory_context_required");
+                if (inventory is null) throw new SalesException("sales.inventory_capability_unavailable");
+                var sourceLineId = line.SourceLineId.Value;
+                var productVariantId = line.ProductVariantId ?? throw new SalesException("sales.return_inventory_context_required");
+                var warehouseId = line.WarehouseId.Value;
+                var unitOfMeasureId = line.UnitOfMeasureId.Value;
+                var operationId = await inventory.ReceiveReturnAsync(tenant.Value, actor,
+                    new SalesInventoryReturnRequest(entity, productVariantId, warehouseId, line.LocationId,
+                        unitOfMeasureId, line.Quantity, id, sourceLineId,
+                        $"return:{id:D}:{line.Id:D}", DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow),
+                        line.StockStatus, line.LotId, line.SerialId), ct);
+                await repository.RecordReturnInventoryOperationAsync(tenant, entity, id, line.Id, operationId, ct);
+                inventoryReceiptId ??= operationId;
+            }
+
+            if (work.SourceDocumentType.Equals("Invoice", StringComparison.OrdinalIgnoreCase))
+            {
+                if (work.SourceDocumentId is null || work.Lines.Any(line => line.SourceLineId is null)) throw new SalesException("sales.credit_note_source_required");
+                if (correction is null) throw new SalesException("sales.credit_note_capability_unavailable");
+                creditNoteId ??= await correction.CreateCreditNoteDraftAsync(tenant, actor, membership,
+                    new InvoiceCreditNoteRequest(work.SourceDocumentId.Value, entity, DateOnly.FromDateTime(DateTime.UtcNow),
+                        DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), null,
+                        work.Reason, $"return-credit:{id:D}", work.Lines.Select(line => new InvoiceCreditNoteLineContract(line.SourceLineId!.Value, line.Quantity)).ToArray()), id, ct);
+            }
+
+            await repository.CompleteReturnAsync(tenant, actor, entity, id, inventoryReceiptId, creditNoteId, ct);
+            return await repository.GetReturnExecutionResultAsync(tenant, entity, id, ct);
+        }
+        catch (SalesException)
+        {
+            await repository.FailReturnAsync(tenant, actor, entity, id, "sales.return_cross_module_failed", ct);
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await repository.FailReturnAsync(tenant, actor, entity, id, "sales.return_cross_module_failed", ct);
+            throw new SalesException("sales.return_cross_module_failed");
+        }
+    }
     public Task SaveCustomerProfileAsync(TenantId tenant, Guid actor, SalesCustomerProfileRequest request, CancellationToken ct) => repository.SaveProfileAsync(tenant, actor, request, ct);
 
     private async Task EvaluateCreditAsync(TenantId tenant, Guid actor, Guid entity, Guid partyId, Guid orderId, decimal proposed, string? overrideReason, bool overrideAllowed, CancellationToken ct)

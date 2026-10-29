@@ -24,6 +24,7 @@ public static class InvoicingModuleExtensions
         services.AddSingleton<InvoicingRepository>();
         services.AddSingleton<InvoicingService>();
         services.AddSingleton<Shared.Contracts.Invoicing.IInvoicingSourceCapabilities>(provider => provider.GetRequiredService<InvoicingService>());
+        services.AddSingleton<Shared.Contracts.Invoicing.IInvoicingCorrectionCapabilities>(provider => provider.GetRequiredService<InvoicingService>());
         services.AddSingleton<Shared.Contracts.Invoicing.IInvoiceComplianceSnapshotCapability>(provider => provider.GetRequiredService<InvoicingService>());
         services.AddSingleton<Shared.Contracts.Invoicing.IInvoiceFileReferenceCapability>(provider => provider.GetRequiredService<InvoicingService>());
         return services;

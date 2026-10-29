@@ -235,6 +235,7 @@ foreach (var script in scripts)
         "ledger-forward-fix-payment-fee-fact.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version" },
         "ledger-forward-fix-payment-fee-legs.sql" => new[] { "finance_ledger.posting_rule", "finance_ledger.posting_rule_version", "finance_ledger.posting_rule_leg" },
         "ledger-forward-fix-payment-fee-reversal.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version", "finance_ledger.posting_rule_leg" },
+        "sales-forward-fix-return-lifecycle.sql" => new[] { "business_sales.sales_order_reservation" },
         _ => null
     };
     if (Path.GetFileName(script) is "finbase-forward-fix-provider-history.sql" or "pricing-schema.sql")

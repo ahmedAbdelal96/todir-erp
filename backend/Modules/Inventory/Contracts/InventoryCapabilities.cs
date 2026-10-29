@@ -15,6 +15,10 @@ public sealed record InventoryMovementRequest(Guid ProductVariantId, Guid LegalE
     Guid? LocationId, decimal Quantity, Guid EnteredUomId, decimal ConversionFactorSnapshot,
     string SourceModule, Guid? SourceDocumentId, string IdempotencyKey, DateOnly OperationalDate,
     DateOnly PostingDate, string? ReasonCode = null, Guid? LotId = null, Guid? SerialId = null);
+public sealed record InventoryReturnRequest(Guid ProductVariantId, Guid LegalEntityId, Guid WarehouseId, Guid? LocationId,
+    Guid EnteredUomId, decimal Quantity, string SourceModule, Guid SourceDocumentId, Guid SourceLineId,
+    string IdempotencyKey, DateOnly OperationalDate, DateOnly PostingDate, string StockStatus = "Available",
+    Guid? LotId = null, Guid? SerialId = null, decimal? UnitCost = null, string? CurrencyCode = null);
 public sealed record InventoryTransferRequest(Guid ProductVariantId, Guid LegalEntityId, Guid SourceWarehouseId,
     Guid? SourceLocationId, Guid DestinationWarehouseId, Guid? DestinationLocationId, decimal Quantity,
     string Mode, string IdempotencyKey, DateOnly OperationalDate, DateOnly PostingDate);
@@ -52,6 +56,8 @@ public interface IInventoryCapabilities
         CancellationToken cancellationToken = default);
     Task<Guid> ConsumeReservationAsync(Guid tenantId, Guid actorId, Guid reservationId,
         InventoryMovementRequest issue, CancellationToken cancellationToken = default);
+    Task<Guid> ReceiveReturnAsync(Guid tenantId, Guid actorId, InventoryReturnRequest request,
+        CancellationToken cancellationToken = default);
     Task<Guid> AdjustAsync(Guid tenantId, Guid actorId, InventoryAdjustmentRequest request,
         CancellationToken cancellationToken = default);
     Task<Guid> ReverseOperationAsync(Guid tenantId, Guid actorId, Guid legalEntityId, Guid operationId,

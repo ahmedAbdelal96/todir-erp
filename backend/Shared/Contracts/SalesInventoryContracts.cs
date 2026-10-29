@@ -40,6 +40,24 @@ public sealed record SalesInventoryIssueRequest(
 
 public sealed record SalesInventoryIssueResult(Guid OperationId, decimal FulfilledQuantity);
 
+public sealed record SalesInventoryReturnRequest(
+    Guid LegalEntityId,
+    Guid ProductVariantId,
+    Guid WarehouseId,
+    Guid? LocationId,
+    Guid UnitOfMeasureId,
+    decimal Quantity,
+    Guid SourceDocumentId,
+    Guid SourceLineId,
+    string IdempotencyKey,
+    DateOnly OperationalDate,
+    DateOnly PostingDate,
+    string StockStatus = "Available",
+    Guid? LotId = null,
+    Guid? SerialId = null,
+    decimal? UnitCost = null,
+    string? CurrencyCode = null);
+
 /// <summary>
 /// Sales-facing capability boundary. Sales stores only references returned by Inventory;
 /// it never reads or writes Inventory tables.
@@ -56,6 +74,9 @@ public interface ISalesInventoryCapabilities
         CancellationToken cancellationToken = default);
 
     Task<SalesInventoryIssueResult> IssueAsync(Guid tenantId, Guid actorId, SalesInventoryIssueRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Guid> ReceiveReturnAsync(Guid tenantId, Guid actorId, SalesInventoryReturnRequest request,
         CancellationToken cancellationToken = default);
 
     Task ReverseAsync(Guid tenantId, Guid actorId, Guid legalEntityId, Guid operationId, DateOnly operationalDate,

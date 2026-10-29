@@ -42,4 +42,11 @@ public sealed class SalesInventoryCapabilities(IInventoryCapabilities inventory)
     public Task ReverseAsync(Guid tenantId, Guid actorId, Guid legalEntityId, Guid operationId, DateOnly operationalDate,
         DateOnly postingDate, string idempotencyKey, CancellationToken cancellationToken = default) => inventory.ReverseOperationAsync(
             tenantId, actorId, legalEntityId, operationId, operationalDate, postingDate, idempotencyKey, cancellationToken);
+
+    public Task<Guid> ReceiveReturnAsync(Guid tenantId, Guid actorId, SalesInventoryReturnRequest request,
+        CancellationToken cancellationToken = default) => inventory.ReceiveReturnAsync(tenantId, actorId,
+        new InventoryReturnRequest(request.ProductVariantId, request.LegalEntityId, request.WarehouseId, request.LocationId,
+            request.UnitOfMeasureId, request.Quantity, "sales", request.SourceDocumentId, request.SourceLineId,
+            request.IdempotencyKey, request.OperationalDate, request.PostingDate, request.StockStatus,
+            request.LotId, request.SerialId, request.UnitCost, request.CurrencyCode), cancellationToken);
 }

@@ -31,7 +31,7 @@ public sealed class InvoicingService(
     ITransactionalInvoiceLedgerPostingCapability ledgerPosting,
     ITransactionalSubledgerOpenItemCapability subledgerPosting,
     IPlatformOrganizationCapabilities organization,
-    TimeProvider clock) : IInvoicingSourceCapabilities, IInvoiceComplianceSnapshotCapability, IInvoiceFileReferenceCapability
+    TimeProvider clock) : IInvoicingSourceCapabilities, IInvoicingCorrectionCapabilities, IInvoiceComplianceSnapshotCapability, IInvoiceFileReferenceCapability
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -44,6 +44,15 @@ public sealed class InvoicingService(
         var mapped = InvoiceSourceRequestMapper.Map(request);
         return await CreateDraftCoreAsync(tenantId, actorId, membershipId, mapped.Draft, mapped.Direction, mapped.Reference, correlationId, cancellationToken);
     }
+
+    public Task<Guid> CreateCreditNoteDraftAsync(TenantId tenantId, Guid actorId, Guid membershipId,
+        InvoiceCreditNoteRequest request, Guid correlationId, CancellationToken cancellationToken = default)
+        => CreateCorrectionDraftAsync(tenantId, actorId, membershipId, request.OriginalInvoiceId, request.LegalEntityId,
+            new InvoiceCorrectionRequest("CreditNote", request.Reason, request.DocumentDate, request.PostingDate,
+                request.TaxDate, request.SupplyDate, request.IdempotencyKey,
+                request.Lines.Select(line => new InvoiceCorrectionLineInput(line.OriginalLineId,
+                    line.Quantity.ToString("0.######", CultureInfo.InvariantCulture))).ToArray()),
+            InvoiceDirection.Receivable, correlationId, cancellationToken);
 
     private async Task<Guid> CreateDraftCoreAsync(TenantId tenant, Guid actorId, Guid membershipId, CreateInvoiceDraftRequest request, InvoiceDirection direction,
         InvoiceSourceReferenceContract? source, Guid correlationId, CancellationToken ct)
