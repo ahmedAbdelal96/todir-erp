@@ -812,3 +812,13 @@ a {
     display: none !important;
   }
 }
+
+@media (max-width: 820px) {
+  .sales-orders-tablet-table th,
+  .sales-orders-tablet-table td {
+    padding: 0.625rem 0.5rem !important;
+  }
+  .sales-col-tablet-hide {
+    display: none !important;
+  }
+}

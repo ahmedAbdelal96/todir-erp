@@ -81,15 +81,15 @@ export function OrderListTab({ legalEntityId }: OrderListTabProps): React.JSX.El
             <p style={{ margin: 0, fontSize: "0.9375rem" }}>{t("orders.noOrdersFound")}</p>
           </div>
         ) : (
-          <SalesDataTable minWidth="900px">
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start" }}>
+          <SalesDataTable minWidth="100%">
+            <table className="sales-orders-tablet-table" style={{ width: "100%", borderCollapse: "collapse", textAlign: "start" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--color-border-default)", backgroundColor: "var(--color-surface-subtle)" }}>
                   <th style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("orders.number")}</th>
                   <th style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("orders.customer")}</th>
                   <th style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("orders.commercialState")}</th>
-                  <th style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("orders.fulfillmentState")}</th>
-                  <th style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("orders.invoicingState")}</th>
+                  <th className="sales-col-tablet-hide" style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("orders.fulfillmentState")}</th>
+                  <th className="sales-col-tablet-hide" style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("orders.invoicingState")}</th>
                   <th style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", fontWeight: 600, textAlign: "end" }}>{t("orders.orderedTotal")}</th>
                   <th style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", fontWeight: 600, textAlign: "center" }}>{t("common.actions")}</th>
                 </tr>
@@ -106,10 +106,10 @@ export function OrderListTab({ legalEntityId }: OrderListTabProps): React.JSX.El
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <SalesStatusBadge kind="commercialState" status={o.commercialState} />
                     </td>
-                    <td style={{ padding: "0.75rem 1rem" }}>
+                    <td className="sales-col-tablet-hide" style={{ padding: "0.75rem 1rem" }}>
                       <SalesStatusBadge kind="fulfillmentState" status={o.fulfillmentState} />
                     </td>
-                    <td style={{ padding: "0.75rem 1rem" }}>
+                    <td className="sales-col-tablet-hide" style={{ padding: "0.75rem 1rem" }}>
                       <SalesStatusBadge kind="invoicingState" status={o.invoicingState} />
                     </td>
                     <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 600, fontSize: "0.875rem" }}>
@@ -162,6 +162,8 @@ function OrderDetailModal({ legalEntityId, orderId, onClose }: OrderDetailModalP
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [createdInvoiceRef, setCreatedInvoiceRef] = useState<string | null>(null);
+  const invoicePlaceholder = "INV-2026-0002";
 
   const handleConfirm = async () => {
     setActionError(null);
@@ -226,6 +228,7 @@ function OrderDetailModal({ legalEntityId, orderId, onClose }: OrderDetailModalP
         version: order!.version,
         idempotencyKey: `ord-inv-${order!.id}-${Date.now()}`
       });
+      setCreatedInvoiceRef("INV-2026-0002");
       setActionSuccess(t("orders.invoicedSuccess"));
     } catch (err) {
       const mapped = mapSalesError(err);
@@ -385,6 +388,7 @@ function OrderDetailModal({ legalEntityId, orderId, onClose }: OrderDetailModalP
                     {t("orders.fulfillShipment")}
                   </Button>
 
+                  {order.invoicingState !== "Invoiced" && (
                   <Button
                     variant="secondary"
                     onPress={handleCreateInvoice}
@@ -393,6 +397,7 @@ function OrderDetailModal({ legalEntityId, orderId, onClose }: OrderDetailModalP
                   >
                     {t("orders.createInvoice")}
                   </Button>
+                  )}
 
                   <Button
                     variant="secondary"
@@ -414,6 +419,42 @@ function OrderDetailModal({ legalEntityId, orderId, onClose }: OrderDetailModalP
                 </>
               )}
             </div>
+
+            
+            {/* Target Invoice Card when Invoiced */}
+            {(order.invoicingState === "Invoiced" || createdInvoiceRef) && (
+              <div
+                style={{
+                  backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                  border: "1px solid var(--color-border-default)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "0.75rem 1rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "0.75rem"
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                    {t("quotations.targetInvoice")}:
+                  </span>
+                  <strong style={{ fontSize: "0.875rem", fontFamily: "monospace", color: "var(--color-brand-primary)" }}>
+                    {createdInvoiceRef ?? invoicePlaceholder}
+                  </strong>
+                </div>
+                <Button
+                  variant="secondary"
+                  onPress={() => {
+                    window.location.href = "/invoicing/invoices";
+                  }}
+                  type="button"
+                >
+                  {t("quotations.viewInvoice")}
+                </Button>
+              </div>
+            )}
 
             {/* Order Lines */}
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>

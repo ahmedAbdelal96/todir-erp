@@ -263,6 +263,7 @@ export const ar = {
     returnCrossModuleFailed: "فشلت المعاملة التبادلية بين المبيعات والمخزون",
     inventoryCapabilityUnavailable: "خدمة المخزون غير متاحة في السياق الحالي",
     unitOfMeasureRequired: "وحدة القياس مطلوبة لجميع البنود",
+    validUntilBeforeQuoteDate: "تاريخ الصلاحية يجب ألا يكون سابقاً لتاريخ عرض السعر",
     forbidden: "ليس لديك الصلاحية اللازمة لتنفيذ هذه العملية",
     notFound: "العنصر المطلوب غير موجود",
     generic: "حدث خطأ غير متوقع أثناء معالجة العملية"

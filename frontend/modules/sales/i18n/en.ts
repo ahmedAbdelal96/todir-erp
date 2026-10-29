@@ -263,6 +263,7 @@ export const en = {
     returnCrossModuleFailed: "Cross-module transaction between sales and inventory failed",
     inventoryCapabilityUnavailable: "Inventory service unavailable in current context",
     unitOfMeasureRequired: "Unit of measure is required for all line items",
+    validUntilBeforeQuoteDate: "Valid until date must be on or after the quotation date",
     forbidden: "You do not have permission to perform this action",
     notFound: "Requested resource was not found",
     generic: "An unexpected error occurred while processing the transaction"

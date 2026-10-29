@@ -1,3 +1,16 @@
+function computeDefaultValidUntil(quoteDateStr: string, validityDays: number = 30): string {
+  try {
+    const d = new Date(quoteDateStr);
+    if (!isNaN(d.getTime())) {
+      d.setDate(d.getDate() + validityDays);
+      return d.toISOString().slice(0, 10);
+    }
+  } catch {
+    // fallback
+  }
+  return "";
+}
+
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
@@ -33,8 +46,30 @@ export function NewQuotationModal({
 
   const [partyId, setPartyId] = useState<string>("");
   const [currencyCode, setCurrencyCode] = useState<string>("EGP");
-  const [quoteDate, setQuoteDate] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [validUntil, setValidUntil] = useState<string>("");
+  const initialQuoteDate = new Date().toISOString().slice(0, 10);
+  const [quoteDate, setQuoteDate] = useState<string>(initialQuoteDate);
+  const [validUntil, setValidUntil] = useState<string>(() => computeDefaultValidUntil(initialQuoteDate, 30));
+  const [isManualValidUntil, setIsManualValidUntil] = useState(false);
+
+  const handleQuoteDateChange = (newDate: string) => {
+    setQuoteDate(newDate);
+    if (!isManualValidUntil || (validUntil && validUntil < newDate)) {
+      setValidUntil(computeDefaultValidUntil(newDate, 30));
+      if (errorMessage === t("errors.validUntilBeforeQuoteDate")) {
+        setErrorMessage(null);
+      }
+    }
+  };
+
+  const handleValidUntilChange = (newDate: string) => {
+    setIsManualValidUntil(true);
+    setValidUntil(newDate);
+    if (newDate && newDate < quoteDate) {
+      setErrorMessage(t("errors.validUntilBeforeQuoteDate"));
+    } else if (errorMessage === t("errors.validUntilBeforeQuoteDate")) {
+      setErrorMessage(null);
+    }
+  };
   const [customerReference, setCustomerReference] = useState<string>("");
   const [requestedDeliveryDate, setRequestedDeliveryDate] = useState<string>("");
 
@@ -87,6 +122,11 @@ export function NewQuotationModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    if (validUntil && validUntil < quoteDate) {
+      setErrorMessage(t("errors.validUntilBeforeQuoteDate"));
+      return;
+    }
 
     if (!partyId) {
       setErrorMessage(t("quotations.customerRequired"));
@@ -173,9 +213,9 @@ export function NewQuotationModal({
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
-          <LocalDateField label={t("quotations.quoteDate")} value={quoteDate} onChange={setQuoteDate} isRequired />
+          <LocalDateField label={t("quotations.quoteDate")} value={quoteDate} onChange={handleQuoteDateChange} isRequired />
 
-          <LocalDateField label={t("quotations.validUntil")} value={validUntil} onChange={setValidUntil} />
+          <LocalDateField label={t("quotations.validUntil")} value={validUntil} onChange={handleValidUntilChange} minDate={quoteDate} />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>

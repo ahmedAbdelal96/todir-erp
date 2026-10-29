@@ -861,10 +861,19 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
       }
 
       if (action === 'create-invoice') {
+        const order = mockOrderDetails[orderId] || mockOrderDetails['so-001'];
+        order.invoicingState = 'Invoiced';
+        if (order.lines?.[0]) {
+          order.lines[0].invoicedQuantity = order.lines[0].fulfilledQuantity;
+        }
+        const listItem = mockOrders.find((o) => o.id === orderId);
+        if (listItem) {
+          listItem.invoicingState = 'Invoiced';
+        }
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ invoiceId: 'inv-so-001' })
+          body: JSON.stringify({ invoiceId: 'INV-2026-0002', quotationId: null, revisionNumber: 0, invoiceLifecycle: 'Draft', warnings: [] })
         });
         return;
       }
@@ -1071,8 +1080,11 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
     // 19-order-invoice-eligibility.png
     await page.getByRole('button', { name: 'إصدار فاتورة للأمر' }).click();
     await expect(page.getByRole('status')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('مفوتر بالكامل')).toBeVisible();
     await captureScreenshot(page, '19-order-invoice-eligibility.png');
     await captureScreenshot(page, '19-order-invoice-eligibility-final.png');
+    await captureScreenshot(page, '19-order-invoice-eligibility-final-2.png');
+    await captureScreenshot(page, '19-order-invoice-eligibility-final-2.png');
     await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
 
     // 20-credit-warning-or-block.png
@@ -1124,6 +1136,8 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
     await expect(page.getByRole('heading', { name: '+ إنشاء عرض سعر جديد' })).toBeVisible();
     await captureScreenshot(page, '26-mobile-new-quotation-390.png');
     await captureScreenshot(page, '26-mobile-new-quotation-390-final.png');
+    await captureScreenshot(page, '26-mobile-new-quotation-390-final-2.png');
+    await captureScreenshot(page, '26-mobile-new-quotation-390-final-2.png');
     await page.getByRole('button', { name: 'إلغاء', exact: true }).click();
 
     // 27-mobile-quotation-detail-390.png
@@ -1139,6 +1153,8 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
     await expect(page.getByRole('cell', { name: 'SO-2026-0001' })).toBeVisible();
     await captureScreenshot(page, '28-tablet-sales-orders-768.png');
     await captureScreenshot(page, '28-tablet-sales-orders-768-final.png');
+    await captureScreenshot(page, '28-tablet-sales-orders-768-final-2.png');
+    await captureScreenshot(page, '28-tablet-sales-orders-768-final-2.png');
 
     // 29-desktop-quotation-1024.png
     await page.setViewportSize({ width: 1024, height: 768 });

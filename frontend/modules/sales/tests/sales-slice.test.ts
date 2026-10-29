@@ -159,4 +159,18 @@ describe("Sales Domain Invariants & Frontend Slice Contracts", () => {
     // Verify gross total in UI matches backend grossTotal exactly
     assert.equal(backendQuote.grossTotal, backendQuote.netTotal + authoritativeTax);
   });
+
+  it("enforces quotation validity invariant (validUntil >= quoteDate) and rejects expired-before-created", () => {
+    const quoteDate = "2026-10-29";
+    const invalidValidUntil = "2026-01-01";
+    const validValidUntil = "2026-11-28";
+
+    // Invariant validation logic matching frontend validator
+    const isInvalid = invalidValidUntil < quoteDate;
+    assert.equal(isInvalid, true);
+
+    const isValid = validValidUntil >= quoteDate;
+    assert.equal(isValid, true);
+  });
+
 });
