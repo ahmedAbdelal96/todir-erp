@@ -97,9 +97,11 @@ public sealed partial class SalesService(
     public async Task<int> ConfirmOrderAsync(TenantId tenant, Guid actor, Guid entity, Guid id, OrderCommandRequest request, bool creditOverrideAllowed, CancellationToken ct)
     {
         var order = await repository.GetOrderAsync(tenant, entity, id, ct) ?? throw new SalesException("sales.order_not_found");
+        if (order.Version != request.Version) throw new SalesException("sales.stale_order");
         var proposed = order.Lines.Sum(line => line.RemainingQuantity * line.UnitPrice);
         await EvaluateCreditAsync(tenant, actor, entity, order.PartyId, id, proposed, request.CreditOverrideReason, creditOverrideAllowed, ct);
-        await repository.ConfirmOrderAsync(tenant, actor, entity, id, request, ct);
+        order = await repository.GetOrderAsync(tenant, entity, id, ct) ?? throw new SalesException("sales.order_not_found");
+        await repository.ConfirmOrderAsync(tenant, actor, entity, id, request with { Version = order.Version }, ct);
         if (inventory is not null && order.WarehouseId is { } warehouse)
         {
             var reserved = new List<Guid>();
@@ -288,7 +290,7 @@ public sealed partial class SalesService(
     {
         var financial = await financeBase.ResolveCalculationContextAsync(tenant, new LegalEntityId(entity), currency.Trim().ToUpperInvariant(), FinancialCalculationPurpose.Tax, date, ct);
         var baseCurrency = financial?.BaseCurrencyCode ?? currency.Trim().ToUpperInvariant();
-        var contexts = lines.Select(line => new TaxContextContract(tenant, new LegalEntityId(entity), "Receivable", "Quotation", "Sale", date, date, null, date, party, null, null, null, null, line.ProductVariantId, line.Quantity, line.UnitOfMeasureId, "Exclusive", (line.Quantity * (line.UnitPrice ?? 0m) - line.DiscountAmount).ToString(CultureInfo.InvariantCulture), line.DiscountAmount.ToString(CultureInfo.InvariantCulture), "0", currency.Trim().ToUpperInvariant(), baseCurrency, null)).ToArray();
+        var contexts = lines.Select(line => new TaxContextContract(tenant, new LegalEntityId(entity), "Sales", "Quotation", "Sale", date, date, null, date, party, null, null, null, null, line.ProductVariantId, line.Quantity, line.UnitOfMeasureId, "TaxExclusive", (line.Quantity * (line.UnitPrice ?? 0m) - line.DiscountAmount).ToString(CultureInfo.InvariantCulture), line.DiscountAmount.ToString(CultureInfo.InvariantCulture), "0", currency.Trim().ToUpperInvariant(), baseCurrency, null)).ToArray();
         var results = await tax.CalculateBatchAsync(contexts, ct);
         return JsonSerializer.Serialize(new { capturedAt = DateTimeOffset.UtcNow, results });
     }
@@ -297,17 +299,25 @@ public sealed partial class SalesService(
     {
         if (input is null || input.Count is < 1 or > 500) throw new SalesException("sales.lines_invalid");
         if (input.Any(line => line.Quantity <= 0 || line.Description.Trim().Length is < 1 or > 1000 || line.DiscountAmount < 0 || line.UnitPrice is < 0)) throw new SalesException("sales.line_values_invalid");
-        var priced = input.ToArray(); var contexts = new List<(int index, PricingContext context)>();
+        var priced = input.ToArray();
+        var variantIds = priced.Where(line => line.ProductVariantId is not null).Select(line => line.ProductVariantId!.Value).Distinct().ToArray();
+        var variants = variantIds.Length == 0 ? new Dictionary<Guid, CatalogVariantIdentity>() : new Dictionary<Guid, CatalogVariantIdentity>(await catalog.FindVariantsBatchAsync(tenant, variantIds, entity, ct));
+        var pricingVariantIds = priced.Where(line => line.ProductVariantId is not null && line.UnitOfMeasureId is not null && line.UnitPrice is null).Select(line => line.ProductVariantId!.Value).Distinct().ToArray();
+        var pricingContexts = pricingVariantIds.Length == 0 ? new Dictionary<Guid, CatalogVariantPricingContext>() : new Dictionary<Guid, CatalogVariantPricingContext>(await catalog.GetPricingContextsBatchAsync(tenant, pricingVariantIds, entity, ct));
+        var contexts = new List<(int index, PricingContext context)>();
         foreach (var (line, index) in priced.Select((line, index) => (line, index)))
         {
-            if (line.ProductVariantId is { } variant && line.UnitOfMeasureId is { } uom && line.UnitPrice is null)
+            if (line.ProductVariantId is { } productId)
             {
-                if (priceList is null) throw new SalesException("sales.price_required");
-                var product = await catalog.GetPricingContextAsync(tenant, variant, entity, ct) ?? throw new SalesException("sales.product_not_found");
-                contexts.Add((index, new PricingContext(tenant, new LegalEntityId(entity), PricingDirection.Selling, date, currency.Trim().ToUpperInvariant(), priceList, party, null, variant, product.ProductTemplateId, product.CategoryPath, product.BrandId, uom, line.Quantity)));
+                if (!variants.ContainsKey(productId)) throw new SalesException("sales.product_not_found");
+                if (line.UnitPrice is null)
+                {
+                    if (priceList is null) throw new SalesException("sales.price_required");
+                    if (line.UnitOfMeasureId is not { } uom || !pricingContexts.TryGetValue(productId, out var product)) throw new SalesException("sales.product_not_found");
+                    contexts.Add((index, new PricingContext(tenant, new LegalEntityId(entity), PricingDirection.Selling, date, currency.Trim().ToUpperInvariant(), priceList, party, null, productId, product.ProductTemplateId, product.CategoryPath, product.BrandId, uom, line.Quantity)));
+                }
             }
-            else if (line.ProductVariantId is { } productId && await catalog.FindVariantAsync(tenant, productId, entity, ct) is null) throw new SalesException("sales.product_not_found");
-            if (line.UnitPrice is null && line.ProductVariantId is null) throw new SalesException("sales.service_price_required");
+            else if (line.UnitPrice is null) throw new SalesException("sales.service_price_required");
         }
         if (contexts.Count > 0)
         {

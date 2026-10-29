@@ -152,19 +152,28 @@ public sealed partial class SalesRepository(NpgsqlDataSource dataSource, ITransa
             new Shared.Contracts.Invoicing.InvoiceSourceDocumentContract("sales", id, "Quotation", request.IdempotencyKey.Trim(), "Receivable", legalEntityId, quote.BranchId, quote.PartyId, null, quote.QuoteDate, quote.QuoteDate, quote.QuoteDate, quote.RequestedDeliveryDate, quote.CurrencyCode, "Exclusive", null, null,
                 null, quote.Lines.Select(line => new Shared.Contracts.Invoicing.InvoiceSourceLineContract(line.ProductVariantId, line.UnitOfMeasureId, line.UomCode, line.Description, line.Quantity.ToString("0.######", CultureInfo.InvariantCulture), line.UnitPrice.ToString("0.######", CultureInfo.InvariantCulture), null, null, line.Id.ToString("D"))).ToArray()), Guid.CreateVersion7(), ct);
         var now = clock.GetUtcNow();
-        await transactions.ExecuteAsync(tenant, async (context, token) =>
+        try
         {
-            var existing = await ReadConversionAsync(context, tenant.Value, legalEntityId, id, request.AcceptedRevision, token);
-            if (existing is not null && existing.Value.targetId != invoice) throw new SalesException("sales.conversion_conflict");
-            if (existing is null)
+            await transactions.ExecuteAsync(tenant, async (context, token) =>
             {
-                await ExecuteAsync(context, "insert into business_sales.sales_conversion_link(tenant_id,id,legal_entity_id,source_type,source_id,source_revision,target_module,target_type,target_id,purpose,idempotency_key,payload_hash,created_by,created_at) values($1,$2,$3,'Quotation',$4,$5,'invoicing','Invoice',$6,'DirectInvoice',$7,$8,$9,$10)", token, tenant.Value, Guid.CreateVersion7(), legalEntityId, id, request.AcceptedRevision, invoice, request.IdempotencyKey.Trim(), payloadHash, actor, now);
-                await ExecuteAsync(context, "update business_sales.quotation set state='Converted',version=version+1,updated_at=$4 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and state='Accepted'", token, tenant.Value, legalEntityId, id, now);
-                await AddHistoryAsync(context, tenant.Value, legalEntityId, "Quotation", id, request.AcceptedRevision, "Accepted", "Converted", actor, "invoice_created", now, token);
-                AddOutbox(context, tenant, "QuotationConvertedV1", new { quotationId = id, revisionNumber = request.AcceptedRevision, invoiceId = invoice }, now, id);
-            }
-            return 0;
-        }, ct);
+                var existing = await ReadConversionAsync(context, tenant.Value, legalEntityId, id, request.AcceptedRevision, token);
+                if (existing is not null && existing.Value.targetId != invoice) throw new SalesException("sales.conversion_conflict");
+                if (existing is null)
+                {
+                    await ExecuteAsync(context, "insert into business_sales.sales_conversion_link(tenant_id,id,legal_entity_id,source_type,source_id,source_revision,target_module,target_type,target_id,purpose,idempotency_key,payload_hash,created_by,created_at) values($1,$2,$3,'Quotation',$4,$5,'invoicing','Invoice',$6,'DirectInvoice',$7,$8,$9,$10)", token, tenant.Value, Guid.CreateVersion7(), legalEntityId, id, request.AcceptedRevision, invoice, request.IdempotencyKey.Trim(), payloadHash, actor, now);
+                    await ExecuteAsync(context, "update business_sales.quotation set state='Converted',version=version+1,updated_at=$4 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and state='Accepted'", token, tenant.Value, legalEntityId, id, now);
+                    await AddHistoryAsync(context, tenant.Value, legalEntityId, "Quotation", id, request.AcceptedRevision, "Accepted", "Converted", actor, "invoice_created", now, token);
+                    AddOutbox(context, tenant, "QuotationConvertedV1", new { quotationId = id, revisionNumber = request.AcceptedRevision, invoiceId = invoice }, now, id);
+                }
+                return 0;
+            }, ct);
+        }
+        catch (PostgresException exception) when (exception.SqlState == "23505" && exception.ConstraintName == "sales_conversion_link_tenant_id_source_type_source_id_sourc_key")
+        {
+            var raced = await ReadConversionAsync(tenant, legalEntityId, id, request.AcceptedRevision, request.IdempotencyKey, payloadHash, ct)
+                ?? throw new SalesException("sales.conversion_conflict");
+            return new(id, request.AcceptedRevision, raced.targetId, "Draft", []);
+        }
         return new(id, request.AcceptedRevision, invoice, "Draft", []);
     }
 
@@ -310,7 +319,7 @@ public sealed partial class SalesRepository(NpgsqlDataSource dataSource, ITransa
     private async Task<int> OrderStateAsync(TenantId tenant, Guid actor, Guid entity, Guid id, long version, string target, string? reason, string eventType, CancellationToken ct) => await transactions.ExecuteAsync(tenant, async (context, token) => { var row = await ReadOrderHeaderAsync(context, tenant.Value, entity, id, token) ?? throw new SalesException("sales.order_not_found"); if (row.version != version) throw new SalesException("sales.stale_order"); if (row.state == "Cancelled") throw new SalesException("sales.order_state_conflict"); var now = clock.GetUtcNow(); await ExecuteAsync(context, "update business_sales.sales_order set commercial_state=$4,version=version+1,updated_at=$5 where tenant_id=$1 and legal_entity_id=$2 and id=$3", token, tenant.Value, entity, id, target, now); AddOutbox(context, tenant, eventType, new { orderId = id, state = target }, now, id); return (int)row.version + 1; }, ct);
 
     private static async Task<string> NextNumberAsync(ITransactionContext context, Guid tenant, Guid entity, string kind, int year, CancellationToken ct)
-    { await ExecuteAsync(context, "insert into business_sales.sales_number_sequence(tenant_id,legal_entity_id) values($1,$2) on conflict do nothing", ct, tenant, entity); var column = kind == "order" ? "order_last" : "quote_last"; await using var command = new NpgsqlCommand($"update business_sales.sales_number_sequence set {column}={column}+1 where tenant_id=$1 and legal_entity_id=$2 returning {column}", context.Connection, context.Transaction); Add(command, tenant, entity); var value = Convert.ToInt64(await command.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture); return $"{(kind == "order" ? "SO" : "Q")}-{year}-{value:D6}"; }
+    { await ExecuteAsync(context, "insert into business_sales.sales_number_sequence(tenant_id,legal_entity_id,quote_last,order_last) values($1,$2,coalesce((select max(split_part(number,'-',3)::bigint) from business_sales.quotation where tenant_id=$1 and legal_entity_id=$2 and number ~ '^Q-[0-9]{4}-[0-9]+$'),0),coalesce((select max(split_part(number,'-',3)::bigint) from business_sales.sales_order where tenant_id=$1 and legal_entity_id=$2 and number ~ '^SO-[0-9]{4}-[0-9]+$'),0)) on conflict do nothing", ct, tenant, entity); var column = kind == "order" ? "order_last" : "quote_last"; await using var command = new NpgsqlCommand($"update business_sales.sales_number_sequence set {column}={column}+1 where tenant_id=$1 and legal_entity_id=$2 returning {column}", context.Connection, context.Transaction); Add(command, tenant, entity); var value = Convert.ToInt64(await command.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture); return $"{(kind == "order" ? "SO" : "Q")}-{year}-{value:D6}"; }
     private static async Task InsertRevisionAsync(ITransactionContext context, Guid tenant, Guid id, Guid entity, Guid quote, int revision, string status, IReadOnlyList<QuotationLineRequest> lines, (decimal net, decimal discount, decimal gross) totals, Guid actor, DateTimeOffset now, string taxEvidence, CancellationToken ct)
     { var revisionId = id; await ExecuteAsync(context, "insert into business_sales.quotation_revision(tenant_id,id,legal_entity_id,quotation_id,revision_number,status,snapshot,net_total,discount_total,gross_total,tax_preview_evidence,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", ct, tenant, revisionId, entity, quote, revision, status, Jsonb(JsonSerializer.Serialize(new { lines })), totals.net, totals.discount, totals.gross, Jsonb(taxEvidence), actor, now); await InsertRevisionLinesAsync(context, tenant, entity, revisionId, lines, ct); }
     private static async Task ReplaceLinesAsync(ITransactionContext context, Guid tenant, Guid entity, Guid revision, IReadOnlyList<QuotationLineRequest> lines, CancellationToken ct) { await ExecuteAsync(context, "delete from business_sales.quotation_revision_line where tenant_id=$1 and legal_entity_id=$2 and revision_id=$3", ct, tenant, entity, revision); await InsertRevisionLinesAsync(context, tenant, entity, revision, lines, ct); }
@@ -337,7 +346,8 @@ public sealed partial class SalesRepository(NpgsqlDataSource dataSource, ITransa
     private static async Task<object?> ExecuteScalarAsync(ITransactionContext context, string sql, CancellationToken ct, params object[] values) { await using var command = new NpgsqlCommand(sql, context.Connection, context.Transaction); Add(command, values); return await command.ExecuteScalarAsync(ct); }
     private static async Task<(Guid id, int revision)?> ReadAcceptanceByKeyAsync(ITransactionContext context, Guid tenant, Guid entity, Guid quote, string key, CancellationToken ct) { await using var command = new NpgsqlCommand("select id,revision_number from business_sales.quotation_acceptance where tenant_id=$1 and legal_entity_id=$2 and quotation_id=$3 and idempotency_key=$4 for update", context.Connection, context.Transaction); Add(command, tenant, entity, quote, key.Trim()); await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) return null; return (reader.GetGuid(0), reader.GetInt32(1)); }
     private static async Task<Guid?> ReadAcceptanceByRevisionAsync(ITransactionContext context, Guid tenant, Guid entity, Guid quote, int revision, CancellationToken ct) { await using var command = new NpgsqlCommand("select id from business_sales.quotation_acceptance where tenant_id=$1 and legal_entity_id=$2 and quotation_id=$3 and revision_number=$4 for update", context.Connection, context.Transaction); Add(command, tenant, entity, quote, revision); return await command.ExecuteScalarAsync(ct) is Guid id ? id : null; }
-    private static void Add(NpgsqlCommand command, params object[] values) { for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue($"p{i + 1}", values[i] ?? DBNull.Value); }
-    private static void Add(NpgsqlCommand command, Guid tenant, Guid entity, params object[] values) { command.Parameters.AddWithValue("p1", tenant); command.Parameters.AddWithValue("p2", entity); for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue($"p{i + 3}", values[i] ?? DBNull.Value); }
+    private static void Add(NpgsqlCommand command, params object[] values) { foreach (var value in values) AddValue(command, value); }
+    private static void Add(NpgsqlCommand command, Guid tenant, Guid entity, params object[] values) { command.Parameters.AddWithValue(tenant); command.Parameters.AddWithValue(entity); foreach (var value in values) AddValue(command, value); }
+    private static void AddValue(NpgsqlCommand command, object? value) { if (value is NpgsqlParameter parameter) command.Parameters.Add(parameter); else command.Parameters.AddWithValue(value ?? DBNull.Value); }
     private static NpgsqlParameter Jsonb(string value) => new() { Value = string.IsNullOrWhiteSpace(value) ? "{}" : value, NpgsqlDbType = NpgsqlDbType.Jsonb };
 }
