@@ -143,15 +143,52 @@ export function MatchOrderModal({
               {order.lines.map((line) => {
                 const uom = line.unitCode || DEFAULT_UOM;
                 const invoiceQty = line.invoicedQuantity > 0 ? line.invoicedQuantity : line.orderedQuantity;
-                const invoicePrice = line.unitPrice;
+                const invoicePrice = line.invoiceUnitPrice ?? (
+                  (matchResultState === "Blocked" || matchResultState === "Variance") && varianceAmount > 0 && order.lines.length === 1
+                    ? line.unitPrice + (varianceAmount / (line.orderedQuantity || 1))
+                    : line.unitPrice
+                );
+                const priceDiff = invoicePrice - line.unitPrice;
                 const qtyDiff = (basis === "ThreeWay" ? line.receivedQuantity : line.orderedQuantity) - invoiceQty;
-                const isExceptionEligible =
-    (matchResultState === "Variance" ||
-     matchResultState === "Blocked" ||
-     matchResultState === "ApprovalRequired") &&
-    varianceAmount > 0;
 
-  return (
+                let varianceText: string;
+                let isMismatch = false;
+
+                if (line.varianceNote) {
+                  varianceText = line.varianceNote;
+                  isMismatch = true;
+                } else if (Math.abs(priceDiff) > 0.001 && Math.abs(qtyDiff) > 0.001) {
+                  varianceText = t("matching.priceAndQtyDiffVal", {
+                    amount: priceDiff.toFixed(2),
+                    currency: order.currencyCode,
+                    qty: qtyDiff,
+                    uom
+                  });
+                  isMismatch = true;
+                } else if (Math.abs(priceDiff) > 0.001) {
+                  varianceText = t("matching.priceDiffVal", {
+                    amount: priceDiff.toFixed(2),
+                    currency: order.currencyCode
+                  });
+                  isMismatch = true;
+                } else if (Math.abs(qtyDiff) > 0.001) {
+                  varianceText = t("matching.qtyDiffVal", {
+                    qty: qtyDiff,
+                    uom
+                  });
+                  isMismatch = true;
+                } else if ((matchResultState === "Blocked" || matchResultState === "Variance") && varianceAmount > 0) {
+                  varianceText = t("matching.priceDiffVal", {
+                    amount: varianceAmount.toFixed(2),
+                    currency: order.currencyCode
+                  });
+                  isMismatch = true;
+                } else {
+                  varianceText = t("matching.matched");
+                  isMismatch = false;
+                }
+
+                return (
                   <TableRow key={line.id}>
                     <TableCell>{line.description}</TableCell>
                     <TableCell>{line.orderedQuantity} {uom}</TableCell>
@@ -160,8 +197,11 @@ export function MatchOrderModal({
                     <TableCell><MoneyDisplay value={toMoneyVal(line.unitPrice, order.currencyCode)} /></TableCell>
                     <TableCell><MoneyDisplay value={toMoneyVal(invoicePrice, order.currencyCode)} /></TableCell>
                     <TableCell>
-                      <span style={{ color: qtyDiff !== 0 ? "var(--color-status-warning)" : "var(--color-status-success)", fontWeight: 600 }}>
-                        {qtyDiff === 0 ? t("matching.matched") : `${qtyDiff} ${uom}`}
+                      <span style={{
+                        color: isMismatch ? "var(--color-status-danger, #ef4444)" : "var(--color-status-success)",
+                        fontWeight: 600
+                      }}>
+                        {varianceText}
                       </span>
                     </TableCell>
                   </TableRow>
@@ -192,13 +232,18 @@ export function MatchOrderModal({
             <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.125rem" }}>
               <span>{t("matching.priceToleranceSummary")}</span>
             </div>
+            {(matchResultState === "Blocked" || matchResultState === "Variance") && varianceAmount > 0 && (
+              <div style={{ fontSize: "0.8125rem", color: "var(--color-status-danger, #ef4444)", marginTop: "0.375rem", fontWeight: 600 }}>
+                {t("matching.priceDiffVal", { amount: varianceAmount.toFixed(2), currency: order.currencyCode })} · {t("matching.varianceExplanation")}
+              </div>
+            )}
           </div>
 
           <div style={{ textAlign: "right" }}>
             <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
               {t("matching.totalVariance")}:
             </span>
-            <div style={{ fontSize: "1.125rem", fontWeight: 700, color: varianceAmount > 0 ? "var(--color-status-warning)" : "var(--color-status-success)" }}>
+            <div style={{ fontSize: "1.125rem", fontWeight: 700, color: varianceAmount > 0 ? "var(--color-status-danger, #ef4444)" : "var(--color-status-success)" }}>
               <MoneyDisplay value={toMoneyVal(varianceAmount, order.currencyCode)} />
             </div>
           </div>

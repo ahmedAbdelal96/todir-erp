@@ -163,4 +163,47 @@ describe("Purchasing Domain Invariants & Frontend Slice Contracts", () => {
     assert.equal(isMatchingExceptionPermitted("Blocked", 500), true);
     assert.equal(isMatchingExceptionPermitted("ApprovalRequired", 25), true);
   });
+
+  it("enforces matching variance explainability: blocked or variance state with varianceAmount > 0 explains price or quantity differences and never claims fully matched", () => {
+    function computeMatchingLineDisplay(input: {
+      poUnitPrice: number;
+      invoiceUnitPrice?: number | null;
+      orderedQty: number;
+      receivedQty: number;
+      invoicedQty: number;
+      basis: "TwoWay" | "ThreeWay";
+      matchState: string;
+      totalVariance: number;
+    }) {
+      const invoicePrice = input.invoiceUnitPrice ?? input.poUnitPrice;
+      const priceDiff = invoicePrice - input.poUnitPrice;
+      const comparisonQty = input.basis === "ThreeWay" ? input.receivedQty : input.orderedQty;
+      const qtyDiff = comparisonQty - input.invoicedQty;
+
+      if (Math.abs(priceDiff) > 0.001) {
+        return { isMatched: false, explanation: `فرق السعر: ${priceDiff > 0 ? "+" : ""}${priceDiff.toFixed(2)}` };
+      }
+      if (Math.abs(qtyDiff) > 0.001) {
+        return { isMatched: false, explanation: `فرق الكمية: ${qtyDiff}` };
+      }
+      if ((input.matchState === "Blocked" || input.matchState === "Variance") && input.totalVariance > 0) {
+        return { isMatched: false, explanation: `فرق السعر: +${input.totalVariance.toFixed(2)}` };
+      }
+      return { isMatched: true, explanation: "مطابق تماماً" };
+    }
+
+    const blockedPriceMismatch = computeMatchingLineDisplay({
+      poUnitPrice: 115.0,
+      invoiceUnitPrice: 116.5,
+      orderedQty: 100,
+      receivedQty: 60,
+      invoicedQty: 100,
+      basis: "TwoWay",
+      matchState: "Blocked",
+      totalVariance: 150.0
+    });
+
+    assert.equal(blockedPriceMismatch.isMatched, false);
+    assert.equal(blockedPriceMismatch.explanation, "فرق السعر: +1.50");
+  });
 });

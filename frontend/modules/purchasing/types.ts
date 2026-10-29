@@ -205,6 +205,8 @@ export interface PurchaseOrderLineView {
   priceEvidence?: string | null;
   receivedQuantity: number;
   closedShortQuantity: number;
+  invoiceUnitPrice?: number | null | undefined;
+  varianceNote?: string | null | undefined;
 }
 
 export interface PurchaseOrderView {
@@ -240,6 +242,7 @@ export interface PurchaseOrderListItem {
   approvalState?: string;
   matchingState?: string;
   poNumber?: string;
+  lines?: PurchaseOrderLineView[] | undefined;
 }
 
 export interface PurchaseOrderPage {

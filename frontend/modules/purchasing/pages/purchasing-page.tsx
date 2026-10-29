@@ -29,13 +29,13 @@ export function PurchasingPage(): React.JSX.Element {
   const toOrderView = (item: PurchaseOrderListItem): PurchaseOrderView => ({
     ...item,
     legalEntityId: "00000000-0000-0000-0000-000000000001",
-    version: 1,
+    version: item.version || 1,
     approvalState: item.approvalState ?? "Approved",
     receiptState: item.receiptState ?? "NotReceived",
     invoicingState: item.invoicingState ?? "NotInvoiced",
     matchingState: item.matchingState ?? "Matched",
     createdAt: item.updatedAt || new Date().toISOString(),
-    lines: [
+    lines: item.lines && item.lines.length > 0 ? item.lines : [
       {
         id: "line-default",
         sequence: 1,

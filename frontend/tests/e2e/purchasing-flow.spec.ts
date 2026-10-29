@@ -90,11 +90,12 @@ let mockOrders = [
         lineType: 'Stocked',
         orderedQuantity: 100,
         receivedQuantity: 60,
-        invoicedQuantity: 0,
+        invoicedQuantity: 100,
         cancelledQuantity: 0,
         shortQuantity: 0,
         unitCode: 'BOX',
         unitPrice: 115.0,
+        invoiceUnitPrice: 116.5,
         discountRate: 0.0,
         discountAmount: 0.0,
         lineTotal: 11500.0
@@ -829,6 +830,7 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
       // Screenshot 25: Exception Approval Form
       await captureScreenshot(page, '25-matching-exception-approval.png');
       await captureScreenshot(page, '25-matching-exception-approval-final.png');
+      await captureScreenshot(page, '25-matching-exception-approval-final-2.png');
       await page.keyboard.press('Escape');
       await page.waitForTimeout(100);
       if (await page.locator('[role="dialog"]').isVisible()) {
@@ -949,11 +951,17 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
       window.sessionStorage.setItem('erp.permission.purchasing.price.read', 'false');
     });
     await page.goto('/purchasing?priceRead=false&tab=orders');
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(800);
+    const tableHeaderTexts = await page.locator('th').allInnerTexts();
+    expect(tableHeaderTexts).not.toContain('الإجمالي الصافي');
+    const tableBodyText = await page.locator('tbody').first().innerText();
+    expect(tableBodyText).not.toContain('10,050.00');
+    expect(tableBodyText).not.toContain('11,500.00');
 
     // Screenshot 33: Price Permission Hidden View
     await captureScreenshot(page, '33-price-permission-hidden-view.png');
     await captureScreenshot(page, '33-price-permission-hidden-view-final.png');
+    await captureScreenshot(page, '33-price-permission-hidden-view-final-2.png');
 
     await page.evaluate(() => {
       window.sessionStorage.removeItem('erp.permission.purchasing.price.read');
