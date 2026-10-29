@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { PurchasingProductDisplay } from "../../components/purchasing-product-display.tsx";
+import { PurchasingStatusBadge } from "../../components/purchasing-status-badge.tsx";
 import { useCreateSupplierReturnMutation, useExecuteSupplierReturnMutation } from "../../hooks/use-purchasing-queries.ts";
 import { mapPurchasingError } from "../../services/purchasing-error-map.ts";
 import type { PurchaseOrderView } from "../../types.ts";
@@ -115,7 +116,11 @@ export function NewSupplierReturnModal({
               <p style={{ margin: 0, fontSize: "0.875rem" }}>
                 {t("returns.executedSuccessDesc")}
               </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", fontSize: "0.875rem", marginTop: "0.5rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.875rem", marginTop: "0.5rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span>{t("returns.status")}:</span>
+                  <PurchasingStatusBadge state="Executed" kind="return" />
+                </div>
                 {executedLinks.inventoryOp && (
                   <div>
                     {t("returns.inventoryReturnOperation")}: <strong style={{ fontFamily: "monospace" }}>{executedLinks.inventoryOp}</strong>

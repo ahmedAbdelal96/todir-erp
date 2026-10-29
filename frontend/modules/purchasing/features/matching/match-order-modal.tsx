@@ -32,7 +32,9 @@ export function MatchOrderModal({
   const [isApprovingException, setIsApprovingException] = useState(false);
   const [exceptionReason, setExceptionReason] = useState("");
   const [matchResultState, setMatchResultState] = useState<string | null>(order.matchingState || null);
-  const [varianceAmount, setVarianceAmount] = useState<number>(order.matchingState === "Variance" ? 150.0 : 0);
+  const [varianceAmount, setVarianceAmount] = useState<number>(
+    (order.matchingState === "Variance" || order.matchingState === "Blocked" || order.matchingState === "ApprovalRequired") ? 150.0 : 0
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const matchMutation = useMatchPurchaseOrderMutation(order.legalEntityId, order.id);
@@ -62,6 +64,12 @@ export function MatchOrderModal({
       setErrorMessage(t(mapped.messageKey, { defaultValue: mapped.code }));
     }
   };
+
+  const isExceptionEligible =
+    (matchResultState === "Variance" ||
+     matchResultState === "Blocked" ||
+     matchResultState === "ApprovalRequired") &&
+    varianceAmount > 0;
 
   return (
     <Dialog isOpen={isOpen} onOpenChange={(open) => { if (!open) onClose(); }} title={t("matching.evaluateTitle")}>
@@ -137,7 +145,13 @@ export function MatchOrderModal({
                 const invoiceQty = line.invoicedQuantity > 0 ? line.invoicedQuantity : line.orderedQuantity;
                 const invoicePrice = line.unitPrice;
                 const qtyDiff = (basis === "ThreeWay" ? line.receivedQuantity : line.orderedQuantity) - invoiceQty;
-                return (
+                const isExceptionEligible =
+    (matchResultState === "Variance" ||
+     matchResultState === "Blocked" ||
+     matchResultState === "ApprovalRequired") &&
+    varianceAmount > 0;
+
+  return (
                   <TableRow key={line.id}>
                     <TableCell>{line.description}</TableCell>
                     <TableCell>{line.orderedQuantity} {uom}</TableCell>
@@ -190,8 +204,8 @@ export function MatchOrderModal({
           </div>
         </div>
 
-        {/* Exception Approval Form when Variance exists */}
-        {isApprovingException && (
+        {/* Exception Approval Form when Variance exists and eligible */}
+        {isApprovingException && isExceptionEligible && (
           <div style={{ border: "1px solid var(--color-status-warning)", backgroundColor: "var(--color-status-warning-light, #fffbeb)", borderRadius: "var(--radius-md)", padding: "1rem" }}>
             <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-status-warning)" }}>
               {t("matching.approveExceptionTitle")}
@@ -243,7 +257,7 @@ export function MatchOrderModal({
                 {t("matching.reevaluate")}
               </Button>
 
-              {hasMatchOverridePermission && (
+              {hasMatchOverridePermission && isExceptionEligible && (
                 <Button variant="primary" onPress={() => setIsApprovingException(true)} type="button">
                   {t("matching.approveException")}
                 </Button>

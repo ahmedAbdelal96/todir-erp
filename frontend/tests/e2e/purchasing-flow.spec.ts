@@ -73,7 +73,7 @@ let mockOrders = [
     state: 'Approved',
     receiptState: 'PartiallyReceived',
     invoicingState: 'NotInvoiced',
-    matchingState: 'WithinTolerance',
+    matchingState: 'Blocked',
     subtotal: 12000.0,
     discountTotal: 500.0,
     netTotal: 11500.0,
@@ -434,10 +434,14 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
-            matchResult: 'WithinTolerance',
-            priceVariance: 0.0,
-            quantityVariance: 0.0,
-            status: 'Matched'
+            id: 'match-001',
+            purchaseOrderId: 'po-002',
+            supplierInvoiceId: 'INV-SUP-2026-0002',
+            basis: 'ThreeWay',
+            state: 'Blocked',
+            varianceAmount: 500.0,
+            sourceVersion: 1,
+            detailsJson: '{}'
           })
         });
         return;
@@ -796,9 +800,11 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
 
     // Screenshot 21: Matching Tab List
     await captureScreenshot(page, '21-matching-tab-list.png');
+    await captureScreenshot(page, '21-matching-tab-list-final.png');
 
-    // 18. Open Matching Evaluation Modal (Three-Way)
-    const matchBtn = page.locator('button:has-text("فحص المطابقة")').first();
+    // 18. Open Matching Evaluation Modal (Three-Way) for PO-2026-0002 (Blocked with variance)
+    const blockedRow = page.locator('tr:has-text("PO-2026-0002")');
+    const matchBtn = blockedRow.locator('button:has-text("فحص المطابقة")');
     if (await matchBtn.isVisible()) {
       await matchBtn.click({ force: true });
       await page.waitForTimeout(300);
@@ -817,12 +823,12 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
 
       // Open Exception Approval
       const exBtn = page.locator('button:has-text("اعتماد الاستثناء")');
-      if (await exBtn.isVisible()) {
-        await exBtn.click();
-        await page.waitForTimeout(200);
-        // Screenshot 25: Exception Approval Form
-        await captureScreenshot(page, '25-matching-exception-approval.png');
-      }
+      await expect(exBtn).toBeVisible();
+      await exBtn.click();
+      await page.waitForTimeout(200);
+      // Screenshot 25: Exception Approval Form
+      await captureScreenshot(page, '25-matching-exception-approval.png');
+      await captureScreenshot(page, '25-matching-exception-approval-final.png');
       await page.keyboard.press('Escape');
       await page.waitForTimeout(100);
       if (await page.locator('[role="dialog"]').isVisible()) {
@@ -866,19 +872,48 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
         await returnQty.fill('5');
       }
 
-      // Screenshot 28: Physical Return Resolution Selected
+      // Execute physical return
+      await returnDialog.locator('button[type="submit"]').click();
+      await page.waitForTimeout(400);
+
+      // Screenshot 28: Physical Return Downstream Result
+      await captureScreenshot(page, '28-supplier-return-physical-result-final.png');
       await captureScreenshot(page, '28-supplier-return-physical-return.png');
 
-      // Switch to Credit Resolution
-      const resolutionSelect = returnDialog.locator('select');
-      if (await resolutionSelect.isVisible()) {
-        await resolutionSelect.selectOption('SupplierCredit');
-        await page.waitForTimeout(200);
-        // Screenshot 29: Credit Settlement Resolution
+      await returnDialog.getByRole('button', { name: 'إغلاق', exact: true }).click();
+      await page.waitForTimeout(300);
+
+      // Open return modal again for credit resolution
+      if (await returnFromOrderBtn.isVisible()) {
+        await returnFromOrderBtn.click({ force: true });
+        await page.waitForTimeout(300);
+
+        const creditDialog = page.locator('[role="dialog"]').last();
+        const resolutionSelect = creditDialog.locator('select');
+        if (await resolutionSelect.isVisible()) {
+          await resolutionSelect.selectOption('SupplierCredit');
+          await page.waitForTimeout(200);
+        }
+        const creditReason = creditDialog.locator('input[placeholder*="بيان سبب"]');
+        if (await creditReason.isVisible()) {
+          await creditReason.fill('تسوية عيوب مصنعية في كمية التوريد');
+        }
+        const creditQty = creditDialog.locator('input[type="number"]').first();
+        if (await creditQty.isVisible()) {
+          await creditQty.fill('2');
+        }
+
+        // Execute credit return
+        await creditDialog.locator('button[type="submit"]').click();
+        await page.waitForTimeout(400);
+
+        // Screenshot 29: Credit Settlement Downstream Result
+        await captureScreenshot(page, '29-supplier-return-credit-result-final.png');
         await captureScreenshot(page, '29-supplier-return-credit-settlement.png');
+
+        await creditDialog.getByRole('button', { name: 'إغلاق', exact: true }).click();
+        await page.waitForTimeout(200);
       }
-      await returnDialog.getByRole('button', { name: 'إلغاء', exact: true }).click();
-      await page.waitForTimeout(200);
     }
     if (await page.locator('[role="dialog"]').isVisible()) {
       await page.keyboard.press('Escape');
@@ -906,15 +941,26 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
 
     // Screenshot 32: Purchase Settings Tab
     await captureScreenshot(page, '32-purchase-settings-tab.png');
+    await captureScreenshot(page, '32-purchase-settings-tab-final.png');
 
     // 23. Test Price Privacy View (Revoke purchasing.price.read)
     hasPriceRead = false;
-    await page.click('button[role="tab"]:has-text("أوامر الشراء")');
+    await page.evaluate(() => {
+      window.sessionStorage.setItem('erp.permission.purchasing.price.read', 'false');
+    });
+    await page.goto('/purchasing?priceRead=false&tab=orders');
     await page.waitForTimeout(400);
 
     // Screenshot 33: Price Permission Hidden View
     await captureScreenshot(page, '33-price-permission-hidden-view.png');
+    await captureScreenshot(page, '33-price-permission-hidden-view-final.png');
+
+    await page.evaluate(() => {
+      window.sessionStorage.removeItem('erp.permission.purchasing.price.read');
+    });
     hasPriceRead = true; // restore
+    await page.goto('/purchasing?tab=overview');
+    await page.waitForTimeout(400);
 
     // 24. Mobile 390px Viewport Verification
     await page.setViewportSize({ width: 390, height: 844 });
@@ -923,6 +969,7 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
 
     // Screenshot 34: Mobile Purchasing Overview 390px
     await captureScreenshot(page, '34-mobile-purchasing-overview-390.png');
+    await captureScreenshot(page, '34-mobile-purchasing-overview-390-final.png');
 
     // Open PO detail modal on mobile
     await page.click('button[role="tab"]:has-text("أوامر الشراء")');
@@ -938,10 +985,12 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
 
     // 25. Tablet 768px Viewport Verification (strictly zero clipping)
     await page.setViewportSize({ width: 768, height: 1024 });
+    await page.click('button[role="tab"]:has-text("أوامر الشراء")');
     await page.waitForTimeout(400);
 
     // Screenshot 36: Tablet Purchase Orders 768px
     await captureScreenshot(page, '36-tablet-purchase-orders-768.png');
+    await captureScreenshot(page, '36-tablet-purchase-orders-768-final.png');
 
     // 26. Desktop 1280px High-Contrast Full Viewport
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -950,6 +999,7 @@ test.describe('Purchasing Module Frontend Acceptance & Visual Certification', ()
 
     // Screenshot 37: Desktop Purchasing Overview 1280px
     await captureScreenshot(page, '37-desktop-purchasing-overview-1280.png');
+    await captureScreenshot(page, '37-desktop-purchasing-overview-1280-final.png');
 
     // Final Assertion: Confirm all 37 screenshots exist on disk
     for (let i = 1; i <= 37; i++) {

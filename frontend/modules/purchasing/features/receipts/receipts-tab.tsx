@@ -41,7 +41,7 @@ export function ReceiptsTab({
         </div>
       </div>
 
-      <PurchasingDataTable minWidth="100%">
+      <PurchasingDataTable minWidth="56rem">
         <Table aria-label={t("receipts.title")}>
           <TableHeader>
             <TableRow>
@@ -50,7 +50,7 @@ export function ReceiptsTab({
               <TableHead>{t("orders.orderDate")}</TableHead>
               <TableHead>{t("orders.receiptState")}</TableHead>
               <TableHead>{t("orders.commercialState")}</TableHead>
-              <TableHead>{t("common.actions")}</TableHead>
+              <TableHead style={{ minWidth: "14rem", textAlign: "center" }}>{t("common.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -73,8 +73,8 @@ export function ReceiptsTab({
                 <TableCell>
                   <PurchasingStatusBadge state={order.state} kind="commercial" />
                 </TableCell>
-                <TableCell>
-                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                <TableCell style={{ minWidth: "14rem", whiteSpace: "nowrap" }}>
+                  <div style={{ display: "flex", gap: "0.5rem", whiteSpace: "nowrap" }}>
                     {order.receiptState !== "Received" && (
                       <Button
                         variant="primary"

@@ -105,18 +105,18 @@ export function OrderListTab({
 
       {/* Orders Table Container */}
       <PurchasingDataTable minWidth="100%">
-        <Table aria-label={t("tabs.orders")}>
+        <Table aria-label={t("tabs.orders")} className="purchasing-orders-tablet-table">
           <TableHeader>
             <TableRow>
               <TableHead>{t("orders.number")}</TableHead>
               <TableHead>{t("orders.supplier")}</TableHead>
-              <TableHead>{t("orders.orderDate")}</TableHead>
+              <TableHead className="purchasing-col-tablet-hide">{t("orders.orderDate")}</TableHead>
               {hasPriceReadPermission && <TableHead>{t("orders.netTotal")}</TableHead>}
               <TableHead>{t("orders.commercialState")}</TableHead>
-              <TableHead>{t("orders.receiptState")}</TableHead>
-              <TableHead>{t("orders.invoicingState")}</TableHead>
-              <TableHead>{t("orders.matchingState")}</TableHead>
-              <TableHead>{t("common.actions")}</TableHead>
+              <TableHead className="purchasing-col-tablet-hide">{t("orders.receiptState")}</TableHead>
+              <TableHead className="purchasing-col-tablet-hide">{t("orders.invoicingState")}</TableHead>
+              <TableHead className="purchasing-col-tablet-hide">{t("orders.matchingState")}</TableHead>
+              <TableHead style={{ textAlign: "center" }}>{t("common.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -130,7 +130,7 @@ export function OrderListTab({
                 <TableCell>
                   <PurchasingSupplierDisplay supplierPartyId={order.supplierPartyId} />
                 </TableCell>
-                <TableCell>
+                <TableCell className="purchasing-col-tablet-hide">
                   <LocalDateDisplay value={order.orderDate} />
                 </TableCell>
                 {hasPriceReadPermission && (
@@ -141,16 +141,16 @@ export function OrderListTab({
                 <TableCell>
                   <PurchasingStatusBadge state={order.state} kind="commercial" />
                 </TableCell>
-                <TableCell>
+                <TableCell className="purchasing-col-tablet-hide">
                   <PurchasingStatusBadge state={order.receiptState || "NotReceived"} kind="receipt" />
                 </TableCell>
-                <TableCell>
+                <TableCell className="purchasing-col-tablet-hide">
                   <PurchasingStatusBadge state={order.invoicingState || "NotInvoiced"} kind="invoicing" />
                 </TableCell>
-                <TableCell>
+                <TableCell className="purchasing-col-tablet-hide">
                   <PurchasingStatusBadge state={order.matchingState || "NotRequired"} kind="matching" />
                 </TableCell>
-                <TableCell>
+                <TableCell style={{ textAlign: "center" }}>
                   <Button
                     variant="secondary"
                     onPress={() => onSelectOrder(order.id)}

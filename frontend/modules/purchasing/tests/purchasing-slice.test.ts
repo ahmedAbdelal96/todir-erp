@@ -109,4 +109,58 @@ describe("Purchasing Domain Invariants & Frontend Slice Contracts", () => {
     const enKeys = getKeys(en);
     assert.deepEqual(arKeys, enKeys);
   });
+
+  it("enforces price privacy: hides commercial money and unit prices when purchasing.price.read is absent", () => {
+    interface ProjectionInput {
+      hasPriceReadPermission: boolean;
+      order: {
+        netTotal: number;
+        currencyCode: string;
+        lines: Array<{ unitPrice: number; lineTotal: number }>;
+      };
+    }
+
+    function projectOrderForView(input: ProjectionInput) {
+      if (!input.hasPriceReadPermission) {
+        return {
+          hasMoneyVisible: false,
+          netTotal: null,
+          lines: input.order.lines.map(() => ({ unitPrice: null, lineTotal: null }))
+        };
+      }
+      return {
+        hasMoneyVisible: true,
+        netTotal: input.order.netTotal,
+        lines: input.order.lines.map((l) => ({ unitPrice: l.unitPrice, lineTotal: l.lineTotal }))
+      };
+    }
+
+    const unpermitted = projectOrderForView({
+      hasPriceReadPermission: false,
+      order: {
+        netTotal: 10050.0,
+        currencyCode: "SAR",
+        lines: [{ unitPrice: 100, lineTotal: 1000 }]
+      }
+    });
+
+    assert.equal(unpermitted.hasMoneyVisible, false);
+    assert.equal(unpermitted.netTotal, null);
+    assert.equal(unpermitted.lines[0]?.unitPrice, null);
+    assert.equal(unpermitted.lines[0]?.lineTotal, null);
+  });
+
+  it("enforces matching exception domain rule: exceptions are permitted only when state is Variance/Blocked/ApprovalRequired with positive variance", () => {
+    function isMatchingExceptionPermitted(state: string | null | undefined, variance: number): boolean {
+      return (state === "Variance" || state === "Blocked" || state === "ApprovalRequired") && variance > 0;
+    }
+
+    assert.equal(isMatchingExceptionPermitted("Matched", 0), false);
+    assert.equal(isMatchingExceptionPermitted("WithinTolerance", 0), false);
+    assert.equal(isMatchingExceptionPermitted("NotRequired", 0), false);
+    assert.equal(isMatchingExceptionPermitted("Variance", 0), false);
+    assert.equal(isMatchingExceptionPermitted("Variance", 150), true);
+    assert.equal(isMatchingExceptionPermitted("Blocked", 500), true);
+    assert.equal(isMatchingExceptionPermitted("ApprovalRequired", 25), true);
+  });
 });

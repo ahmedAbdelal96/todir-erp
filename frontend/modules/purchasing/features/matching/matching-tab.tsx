@@ -65,7 +65,7 @@ export function MatchingTab({
         </div>
       </div>
 
-      <PurchasingDataTable minWidth="100%">
+      <PurchasingDataTable minWidth="56rem">
         <Table aria-label={t("matching.title")}>
           <TableHeader>
             <TableRow>
@@ -75,7 +75,7 @@ export function MatchingTab({
               <TableHead>{t("orders.matchingState")}</TableHead>
               <TableHead>{t("orders.invoicingState")}</TableHead>
               <TableHead>{t("orders.receiptState")}</TableHead>
-              <TableHead>{t("common.actions")}</TableHead>
+              <TableHead style={{ minWidth: "12rem", textAlign: "center" }}>{t("common.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -101,8 +101,8 @@ export function MatchingTab({
                 <TableCell>
                   <PurchasingStatusBadge state={order.receiptState || "NotReceived"} kind="receipt" />
                 </TableCell>
-                <TableCell>
-                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                <TableCell style={{ minWidth: "12rem", whiteSpace: "nowrap" }}>
+                  <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center", whiteSpace: "nowrap" }}>
                     <Button
                       variant="primary"
                       onPress={() => onOpenMatch(order)}

@@ -74,7 +74,7 @@ export function ReturnsTab({
         </div>
       </div>
 
-      <PurchasingDataTable minWidth="100%">
+      <PurchasingDataTable minWidth="56rem">
         <Table aria-label={t("returns.title")}>
           <TableHeader>
             <TableRow>

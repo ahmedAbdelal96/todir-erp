@@ -30,18 +30,22 @@ export function PurchasingTabNav({ activeTab, onTabChange, tabs }: PurchasingTab
   const activeTabRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (activeTabRef.current) {
-      activeTabRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "nearest"
-      });
+    // Only scroll if active tab is partially outside container on narrow viewports
+    if (activeTabRef.current && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const tab = activeTabRef.current;
+      const cRect = container.getBoundingClientRect();
+      const tRect = tab.getBoundingClientRect();
+      if (tRect.left < cRect.left || tRect.right > cRect.right) {
+        tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      }
     }
   }, [activeTab]);
 
   return (
     <nav
       aria-label={t("overview.title")}
+      className="purchasing-tab-nav"
       style={{
         position: "relative",
         width: "100%",
@@ -53,19 +57,21 @@ export function PurchasingTabNav({ activeTab, onTabChange, tabs }: PurchasingTab
         borderBottom: "1px solid var(--color-border-default)",
         backgroundColor: "var(--color-surface-card)",
         borderRadius: "var(--radius-md, 0.5rem) var(--radius-md, 0.5rem) 0 0",
-        padding: "0 0.5rem"
+        padding: "0 0.25rem"
       }}
     >
       <div
         ref={scrollContainerRef}
+        role="tablist"
+        aria-label={t("overview.title")}
         style={{
           display: "flex",
           gap: "0.25rem",
           overflowX: "auto",
-          scrollbarWidth: "none",
-          msOverflowStyle: "none",
+          scrollbarWidth: "thin",
+          WebkitOverflowScrolling: "touch",
           width: "100%",
-          padding: "0.5rem 0"
+          padding: "0.375rem 0.25rem"
         }}
       >
         {tabs.map((tab) => {
@@ -77,13 +83,14 @@ export function PurchasingTabNav({ activeTab, onTabChange, tabs }: PurchasingTab
               type="button"
               role="tab"
               aria-selected={isActive}
+              id={`purchasing-tab-${tab.id}`}
               onClick={() => onTabChange(tab.id)}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.5rem 1rem",
-                fontSize: "0.875rem",
+                gap: "0.375rem",
+                padding: "0.4375rem 0.75rem",
+                fontSize: "0.8125rem",
                 fontWeight: isActive ? 600 : 500,
                 color: isActive
                   ? "var(--color-brand-primary, #1d4ed8)"
@@ -92,9 +99,11 @@ export function PurchasingTabNav({ activeTab, onTabChange, tabs }: PurchasingTab
                   ? "var(--color-brand-primary-light, #eff6ff)"
                   : "transparent",
                 border: "none",
-                borderRadius: "var(--radius-md, 0.5rem)",
+                borderBottom: isActive ? "2px solid var(--color-brand-primary, #1d4ed8)" : "2px solid transparent",
+                borderRadius: "var(--radius-sm, 0.25rem) var(--radius-sm, 0.25rem) 0 0",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
+                flexShrink: 0,
                 transition: "all 0.15s ease"
               }}
             >
@@ -105,8 +114,8 @@ export function PurchasingTabNav({ activeTab, onTabChange, tabs }: PurchasingTab
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    padding: "0.125rem 0.375rem",
-                    fontSize: "0.75rem",
+                    padding: "0.0625rem 0.3125rem",
+                    fontSize: "0.6875rem",
                     fontWeight: 600,
                     borderRadius: "9999px",
                     backgroundColor: isActive
