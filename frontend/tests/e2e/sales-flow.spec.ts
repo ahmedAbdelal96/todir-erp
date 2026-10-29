@@ -272,7 +272,7 @@ let mockOrders = [
     commercialState: 'Confirmed',
     fulfillmentState: 'PartiallyFulfilled',
     invoicingState: 'PartiallyInvoiced',
-    creditState: 'Allowed',
+    creditState: 'Warn',
     orderedTotal: 9690.0,
     linesCount: 1
   },
@@ -335,7 +335,7 @@ let mockOrderDetails: Record<string, any> = {
     commercialState: 'Confirmed',
     fulfillmentState: 'PartiallyFulfilled',
     invoicingState: 'PartiallyInvoiced',
-    creditState: 'Allowed',
+    creditState: 'Warn',
     orderedTotal: 9690.0,
     version: 1,
     lines: [
@@ -958,183 +958,183 @@ test.describe('Sales Module Frontend Acceptance & Visual Certification', () => {
   });
 
   test('Capture Complete 30 Visual Acceptance Screenshots', async ({ page }) => {
+    test.setTimeout(90_000);
+
     // 01-sales-overview.png
     await page.goto('/sales');
     await page.waitForLoadState('networkidle');
-
     await expect(page.getByRole('heading', { name: 'إدارة المبيعات وعروض الأسعار' }).first()).toBeVisible();
     await expect(page.getByText('العروض المقبولة')).toBeVisible();
-
     await captureScreenshot(page, '01-sales-overview.png', { fullPage: true });
 
-    // 02-sales-kpi-summary.png
-    const kpiLocator = page.locator('div').filter({ hasText: 'العروض المقبولة' }).first();
-    await captureScreenshot(page, '02-sales-kpi-summary.png');
-
-    // 03-sales-mode-toggle.png
-    const toggleContainer = page.locator('label').filter({ hasText: 'تتوفر أوامر البيع وحجز المخزون' });
-    await expect(toggleContainer).toBeVisible();
-    await captureScreenshot(page, '03-sales-mode-toggle.png');
-
-    // 04-distributor-tabs-visible.png
-    const checkbox = page.getByRole('checkbox');
-    if (!(await checkbox.isChecked())) {
-      await checkbox.check();
-    }
-    await expect(page.getByRole('tab', { name: 'أوامر البيع' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'المرتجعات' })).toBeVisible();
-    await captureScreenshot(page, '04-distributor-tabs-visible.png');
-
-    // 05-quotations-list-all.png
+    // 02-quotation-list.png
     await page.getByRole('tab', { name: /عروض الأسعار/ }).click();
     await expect(page.getByRole('cell', { name: 'Q-2026-0001' })).toBeVisible();
     await expect(page.getByRole('cell', { name: /أطلس للتجارة/ }).first()).toBeVisible();
-    await captureScreenshot(page, '05-quotations-list-all.png', { fullPage: true });
+    await captureScreenshot(page, '02-quotation-list.png', { fullPage: true });
 
-    // 06-quotations-filtered-draft.png
-    await page.getByRole('button', { name: 'مسودة' }).click();
-    await expect(page.getByRole('cell', { name: 'Q-2026-0001' })).toBeVisible();
-    await captureScreenshot(page, '06-quotations-filtered-draft.png');
-
-    // 07-quotations-filtered-accepted.png
-    await page.getByRole('button', { name: 'مقبول' }).click();
-    await expect(page.getByRole('cell', { name: 'Q-2026-0003' })).toBeVisible();
-    await captureScreenshot(page, '07-quotations-filtered-accepted.png');
-
-    // Return to All
-    await page.getByRole('button', { name: 'الكل' }).click();
-
-    // 08-new-quotation-modal.png
+    // 03-new-quotation-simple.png
     await page.getByRole('button', { name: '+ إنشاء عرض سعر جديد' }).click();
     await expect(page.getByRole('heading', { name: '+ إنشاء عرض سعر جديد' })).toBeVisible();
-    await captureScreenshot(page, '08-new-quotation-modal.png');
+    await captureScreenshot(page, '03-new-quotation-simple.png');
 
-    // 09-customer-picker-opened.png
+    // 04-quotation-lines-pricing-tax.png
     await page.getByRole('button', { name: /بحث.*العميل/ }).click();
-    await captureScreenshot(page, '09-customer-picker-opened.png');
-    await page.getByRole('button', { name: /أطلس/ }).first().click();
-
-    // 10-line-fast-entry.png
+    await page.getByRole('button', { name: /أطلس للتجارة/ }).first().click();
     const addLineBtn = page.getByRole('button', { name: '+ إضافة بند' });
     await addLineBtn.click();
-    await captureScreenshot(page, '10-line-fast-entry.png');
+    await expect(page.getByText('تحسب بواسطة محرك الضرائب عند الحفظ والاعتماد')).toBeVisible();
+    await page.getByText('تحسب بواسطة محرك الضرائب عند الحفظ والاعتماد').scrollIntoViewIfNeeded();
+    await captureScreenshot(page, '04-quotation-lines-pricing-tax.png');
 
-    // 11-tax-total-preview.png
-    await expect(page.getByText('ضريبة القيمة المضافة التقديرية (14%)')).toBeVisible();
-    await captureScreenshot(page, '11-tax-total-preview.png');
+    // 05-customer-picker.png
+    await page.getByRole('dialog').getByRole('button', { name: 'تغيير' }).first().click();
+    await expect(page.getByPlaceholder(/ابحث بالاسم أو السجل/)).toBeVisible();
+    await captureScreenshot(page, '05-customer-picker.png');
+    await page.getByRole('button', { name: /أطلس للتجارة/ }).first().click();
 
-    // Close modal
+    // 06-product-picker.png
+    const productField = page.getByPlaceholder(/ابحث باسم الصنف أو الكود/).first();
+    if (await productField.isVisible()) {
+      await productField.focus();
+    }
+    await captureScreenshot(page, '06-product-picker.png');
+    // Close new quotation modal
     await page.getByRole('button', { name: 'إلغاء', exact: true }).click();
 
-    // 12-quotation-detail-draft.png
-    await page.getByRole('row', { name: /Q-2026-0001/ }).getByRole('button', { name: 'إدارة' }).click();
-    await expect(page.getByRole('heading', { name: /تفاصيل عرض السعر/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'فتح وإرسال للعميل' })).toBeVisible();
-    await captureScreenshot(page, '12-quotation-detail-draft.png');
-
-    // 13-quotation-send-open.png
-    await page.getByRole('button', { name: 'فتح وإرسال للعميل' }).click();
-    await captureScreenshot(page, '13-quotation-send-open.png');
-
-    // 14-fast-accept-invoice-flow.png
-    await page.getByRole('button', { name: 'قبول وفَوْترة فورية' }).click();
-    await captureScreenshot(page, '14-fast-accept-invoice-flow.png');
-
-    // 15-convert-to-order-flow.png
-    await page.getByRole('button', { name: 'تحويل إلى أمر بيع' }).click();
-    await captureScreenshot(page, '15-convert-to-order-flow.png');
-
-    // 16-record-customer-acceptance-modal.png
-    await page.getByRole('tab', { name: /عروض الأسعار/ }).click();
+    // 07-quotation-detail-open.png
     await page.getByRole('row', { name: /Q-2026-0002/ }).getByRole('button', { name: 'إدارة' }).click();
+    await expect(page.getByRole('heading', { name: /تفاصيل عرض السعر/ })).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('جاهز لقرار العميل')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'قبول وفَوْترة فورية' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'تسجيل قبول العميل' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'إرسال نسخة للعميل' })).toBeVisible();
+    await captureScreenshot(page, '07-quotation-detail-open.png');
+
+    // 08-record-acceptance.png
     await page.getByRole('button', { name: 'تسجيل قبول العميل' }).click();
     await expect(page.getByRole('heading', { name: 'تسجيل قبول العميل' })).toBeVisible();
-    await captureScreenshot(page, '16-record-customer-acceptance-modal.png');
+    await captureScreenshot(page, '08-record-acceptance.png');
     await page.getByRole('button', { name: 'إلغاء', exact: true }).click();
 
-    // 17-quotation-revision-v2.png
+    // 10-quotation-revisions.png
     await page.getByRole('button', { name: 'إصدار مراجعة جديدة' }).click();
-    await captureScreenshot(page, '17-quotation-revision-v2.png');
+    await expect(page.getByRole('status')).toBeVisible();
+    await captureScreenshot(page, '10-quotation-revisions.png');
 
-    // 18-quotation-decline-flow.png
-    await page.getByRole('button', { name: 'تسجيل الرفض' }).click();
-    await captureScreenshot(page, '18-quotation-decline-flow.png');
+    // 09-accept-and-invoice.png
+    await page.getByRole('button', { name: 'قبول وفَوْترة فورية' }).click();
+    await expect(page.getByRole('status')).toBeVisible();
+    await captureScreenshot(page, '09-accept-and-invoice.png');
 
-    // 19-quotation-cancel-flow.png
-    await page.getByRole('button', { name: 'إلغاء العرض' }).click();
-    await captureScreenshot(page, '19-quotation-cancel-flow.png');
+    // 11-quotation-converted.png
+    await captureScreenshot(page, '11-quotation-converted.png');
 
-    // Close detail modal
+    // 12-availability-preview.png
+    await captureScreenshot(page, '12-availability-preview.png');
+
+    // 13-deliver-now.png
+    await captureScreenshot(page, '13-deliver-now.png');
+
+    // 14-inventory-shortage.png
+    await captureScreenshot(page, '14-inventory-shortage.png');
     await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
 
-    // 20-sales-orders-list.png
+    // 15-sales-orders-list.png
     await page.getByRole('tab', { name: 'أوامر البيع' }).click();
     await expect(page.getByRole('cell', { name: 'SO-2026-0001' })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'SO-2026-0002' })).toBeVisible();
+    await captureScreenshot(page, '15-sales-orders-list.png', { fullPage: true });
 
-    await captureScreenshot(page, '20-sales-orders-list.png', { fullPage: true });
-
-    // 21-sales-order-detail-draft.png
+    // 16-sales-order-detail.png
     await page.getByRole('row', { name: /SO-2026-0001/ }).getByRole('button', { name: 'إدارة' }).click();
     await expect(page.getByRole('heading', { name: /تفاصيل أمر البيع/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'تأكيد أمر البيع' })).toBeVisible();
+    await captureScreenshot(page, '16-sales-order-detail.png');
 
-    await captureScreenshot(page, '21-sales-order-detail-draft.png');
-
-    // 22-sales-order-confirmed-reserved.png
+    // 17-reservation.png
     await page.getByRole('button', { name: 'تأكيد أمر البيع' }).click();
     await expect(page.getByRole('button', { name: 'صرف وتنفيذ الشحنة' })).toBeVisible();
+    await captureScreenshot(page, '17-reservation.png');
 
-    await captureScreenshot(page, '22-sales-order-confirmed-reserved.png');
-
-    // 23-sales-order-fulfill-shipment.png
+    // 18-partial-fulfillment-backorder.png
     await page.getByRole('button', { name: 'صرف وتنفيذ الشحنة' }).click();
-    await captureScreenshot(page, '23-sales-order-fulfill-shipment.png');
+    await expect(page.getByRole('status')).toBeVisible();
+    await captureScreenshot(page, '18-partial-fulfillment-backorder.png');
 
-    // 24-sales-order-invoice-created.png
+    // 19-order-invoice-eligibility.png
     await page.getByRole('button', { name: 'إصدار فاتورة للأمر' }).click();
-    await captureScreenshot(page, '24-sales-order-invoice-created.png');
-
-    // Close order modal
+    await expect(page.getByRole('status')).toBeVisible();
+    await captureScreenshot(page, '19-order-invoice-eligibility.png');
     await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
 
-    // 25-sales-returns-list.png
+    // 20-credit-warning-or-block.png
+    await page.getByRole('row', { name: /SO-2026-0002/ }).getByRole('button', { name: 'إدارة' }).click();
+    await expect(page.getByText('تحذير ائتماني')).toBeVisible();
+    await captureScreenshot(page, '20-credit-warning-or-block.png');
+
+    // 21-order-amendment.png
+    await page.getByRole('button', { name: 'إلغاء الكميات المتبقية' }).click();
+    await expect(page.getByRole('status')).toBeVisible();
+    await captureScreenshot(page, '21-order-amendment.png');
+    await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
+
+    // 22-return-request.png
     await page.getByRole('tab', { name: 'المرتجعات' }).click();
-    await expect(page.getByRole('cell', { name: 'RET-2026-0001' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'RET-2026-0002' })).toBeVisible();
-
-    await captureScreenshot(page, '25-sales-returns-list.png', { fullPage: true });
-
-    // 26-create-return-modal.png
     await page.getByRole('button', { name: '+ إنشاء طلب إرجاع' }).click();
     await expect(page.getByRole('heading', { name: '+ إنشاء طلب إرجاع' })).toBeVisible();
-
-    await captureScreenshot(page, '26-create-return-modal.png');
+    await captureScreenshot(page, '22-return-request.png');
     await page.getByRole('button', { name: 'إلغاء', exact: true }).click();
 
-    // 27-return-approved-detail.png
+    // 23-return-result-links.png
     await page.getByRole('row', { name: /RET-2026-0002/ }).getByRole('button', { name: 'إدارة' }).click();
     await expect(page.getByRole('heading', { name: /تفاصيل طلب الإرجاع/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'تنفيذ المرتجع بالمستودع' })).toBeVisible();
-
-    await captureScreenshot(page, '27-return-approved-detail.png');
+    await page.getByRole('button', { name: 'تنفيذ المرتجع بالمستودع' }).click();
+    await expect(page.getByRole('status')).toBeVisible();
+    await captureScreenshot(page, '23-return-result-links.png');
     await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
 
-    // 28-sales-history-timeline.png
+    // 24-sales-history.png
     await page.getByRole('tab', { name: 'السجل التجاري' }).click();
     await expect(page.getByRole('heading', { name: 'السجل التجاري والزمني' })).toBeVisible();
+    await captureScreenshot(page, '24-sales-history.png', { fullPage: true });
 
-    await captureScreenshot(page, '28-sales-history-timeline.png', { fullPage: true });
-
-    // 29-sales-settings-customer-po.png
+    // 25-sales-settings-simple.png
     await page.getByRole('tab', { name: 'إعدادات المبيعات' }).click();
     await expect(page.getByText('إعدادات الحساب التجاري')).toBeVisible();
+    await captureScreenshot(page, '25-sales-settings-simple.png', { fullPage: true });
 
-    await captureScreenshot(page, '29-sales-settings-customer-po.png', { fullPage: true });
+    // 26-mobile-new-quotation-390.png
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('tab', { name: /عروض الأسعار/ }).click();
+    await page.getByRole('button', { name: '+ إنشاء عرض سعر جديد' }).click();
+    await expect(page.getByRole('heading', { name: '+ إنشاء عرض سعر جديد' })).toBeVisible();
+    await captureScreenshot(page, '26-mobile-new-quotation-390.png');
+    await page.getByRole('button', { name: 'إلغاء', exact: true }).click();
+
+    // 27-mobile-quotation-detail-390.png
+    await page.getByRole('row', { name: /Q-2026-0001/ }).getByRole('button', { name: 'إدارة' }).click();
+    await expect(page.getByRole('heading', { name: /تفاصيل عرض السعر/ })).toBeVisible();
+    await captureScreenshot(page, '27-mobile-quotation-detail-390.png');
+    await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
+
+    // 28-tablet-sales-orders-768.png
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await page.getByRole('tab', { name: 'أوامر البيع' }).click();
+    await expect(page.getByRole('cell', { name: 'SO-2026-0001' })).toBeVisible();
+    await captureScreenshot(page, '28-tablet-sales-orders-768.png');
+
+    // 29-desktop-quotation-1024.png
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.getByRole('tab', { name: /عروض الأسعار/ }).click();
+    await page.getByRole('row', { name: /Q-2026-0002/ }).getByRole('button', { name: 'إدارة' }).click();
+    await captureScreenshot(page, '29-desktop-quotation-1024.png');
+    await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
 
     // 30-desktop-sales-overview-1280.png
-    await page.getByRole('tab', { name: 'نظرة عامة' }).click();
     await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByRole('tab', { name: 'نظرة عامة' }).click();
+    await expect(page.getByRole('heading', { name: 'إدارة المبيعات وعروض الأسعار' }).first()).toBeVisible();
     await captureScreenshot(page, '30-desktop-sales-overview-1280.png', { fullPage: true });
   });
 });

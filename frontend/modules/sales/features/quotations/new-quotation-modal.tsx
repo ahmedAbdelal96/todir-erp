@@ -80,8 +80,8 @@ export function NewQuotationModal({
   const subtotal = lines.reduce((acc, l) => acc + (l.quantity * (l.unitPrice ?? 0)), 0);
   const totalDiscount = lines.reduce((acc, l) => acc + (l.discountAmount ?? 0), 0);
   const netTotal = subtotal - totalDiscount;
-  const estimatedTax = netTotal * 0.14; // Egypt standard VAT reference for preview
-  const estimatedGross = netTotal + estimatedTax;
+
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,7 +133,7 @@ export function NewQuotationModal({
       title={t("quotations.newQuotation")}
       isDismissable
     >
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: "600px", maxWidth: "850px" }}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: "600px", maxWidth: "850px", maxHeight: "82vh", overflowY: "auto", padding: "0.25rem" }}>
         {errorMessage && (
           <div
             role="alert"
@@ -362,7 +362,7 @@ export function NewQuotationModal({
           )}
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
             <span style={{ color: "var(--color-content-muted)" }}>{t("quotations.estimatedTax")}:</span>
-            <span>{estimatedTax.toFixed(2)} {currencyCode}</span>
+            <span style={{ fontStyle: "italic", color: "var(--color-content-muted)", fontSize: "0.75rem" }}>{t("quotations.taxCalculatedByEngine")}</span>
           </div>
           <div
             style={{
@@ -375,8 +375,8 @@ export function NewQuotationModal({
               color: "var(--color-brand-primary)"
             }}
           >
-            <span>{t("quotations.estimatedTotal")}:</span>
-            <span>{estimatedGross.toFixed(2)} {currencyCode}</span>
+            <span>{t("quotations.netTotal")}:</span>
+            <span>{netTotal.toFixed(2)} {currencyCode}</span>
           </div>
         </div>
 

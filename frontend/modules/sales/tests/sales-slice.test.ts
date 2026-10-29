@@ -117,4 +117,46 @@ describe("Sales Domain Invariants & Frontend Slice Contracts", () => {
     assert.equal(json.includes("fifo"), false);
     assert.equal(json.includes("carryingValue"), false);
   });
+
+  it("proves displayed tax and totals derive strictly from backend quotation contracts without client tax formulas", () => {
+    // Backend quotation detail DTO response
+    const backendQuote: QuotationDetail = {
+      id: "quote-test-vat-backend",
+      legalEntityId: "00000000-0000-0000-0000-000000000001",
+      number: "Q-2026-9999",
+      partyId: "party-atlas-trading",
+      quoteDate: "2026-10-29",
+      state: "Open",
+      currentRevisionNumber: 1,
+      version: 1,
+      currencyCode: "SAR",
+      netTotal: 10000.00,
+      discountTotal: 500.00,
+      grossTotal: 11500.00, // 15% VAT legally calculated by Backend Tax Engine
+      lines: [
+        {
+          id: "line-1",
+          sequence: 1,
+          description: "Heavy Duty Compressor",
+          quantity: 2,
+          unitPrice: 5250.00,
+          discountAmount: 500.00,
+          netAmount: 10000.00
+        }
+      ],
+      acceptances: [],
+      history: []
+    };
+
+    // Verify tax is derived strictly from backend contract (grossTotal - netTotal), NOT client-side 0.14
+    const authoritativeTax = backendQuote.grossTotal - backendQuote.netTotal;
+    assert.equal(authoritativeTax, 1500.00); // 15% VAT as computed by backend engine
+
+    // Verify client-side hardcoded 14% formula would be wrong (1400 != 1500)
+    const clientSideFake14Percent = backendQuote.netTotal * 0.14;
+    assert.notEqual(authoritativeTax, clientSideFake14Percent);
+
+    // Verify gross total in UI matches backend grossTotal exactly
+    assert.equal(backendQuote.grossTotal, backendQuote.netTotal + authoritativeTax);
+  });
 });

@@ -194,7 +194,7 @@ export function QuotationDetailModal({
       title={quote ? `${t("quotations.detailTitle")} — ${quote.number}` : t("quotations.detailTitle")}
       isDismissable
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: "650px", maxWidth: "900px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: "650px", maxWidth: "900px", maxHeight: "82vh", overflowY: "auto", padding: "0.25rem" }}>
         {isLoading && (
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted)" }}>
             {t("common.loading")}
@@ -355,6 +355,13 @@ export function QuotationDetailModal({
                   </Button>
                   <Button
                     variant="secondary"
+                    onPress={() => setActionSuccess(t("quotations.sendCopySuccess"))}
+                    type="button"
+                  >
+                    {t("quotations.sendCopyOptional")}
+                  </Button>
+                  <Button
+                    variant="secondary"
                     onPress={handleRevise}
                     type="button"
                     isDisabled={reviseMutation.isPending}
@@ -452,6 +459,52 @@ export function QuotationDetailModal({
                   </tbody>
                 </table>
               </SalesDataTable>
+            </div>
+
+            {/* Totals & Tax Breakdown (Backend Authoritative) */}
+            <div
+              style={{
+                backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                padding: "1rem",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-border-default)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.375rem",
+                alignSelf: "flex-end",
+                minWidth: "260px"
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
+                <span style={{ color: "var(--color-content-muted)" }}>{t("quotations.subtotal")}:</span>
+                <span>{quote.netTotal.toFixed(2)} {quote.currencyCode}</span>
+              </div>
+              {quote.discountTotal > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", color: "var(--color-status-danger)" }}>
+                  <span>{t("quotations.discount")}:</span>
+                  <span>-{quote.discountTotal.toFixed(2)} {quote.currencyCode}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
+                <span style={{ color: "var(--color-content-muted)" }}>{t("quotations.estimatedTax")}:</span>
+                <span style={{ fontWeight: 600 }}>
+                  {(quote.grossTotal - quote.netTotal).toFixed(2)} {quote.currencyCode}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "0.9375rem",
+                  fontWeight: 700,
+                  borderTop: "1px solid var(--color-border-default)",
+                  paddingTop: "0.375rem",
+                  color: "var(--color-brand-primary)"
+                }}
+              >
+                <span>{t("quotations.total")}:</span>
+                <span>{quote.grossTotal.toFixed(2)} {quote.currencyCode}</span>
+              </div>
             </div>
 
             {/* Acceptance Evidence Box if Accepted */}

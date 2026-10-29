@@ -10,7 +10,7 @@ import { ReturnsTab } from "../features/returns/returns-tab.tsx";
 import { SalesHistoryTab } from "../features/history/sales-history-tab.tsx";
 import { SalesSettingsTab } from "../features/settings/sales-settings-tab.tsx";
 import { useSalesQuotations } from "../hooks/use-sales-queries.ts";
-import { useLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
+import { useLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import { useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 
@@ -31,8 +31,10 @@ export function SalesPage(): React.JSX.Element {
   // Tab State
   const [activeTab, setActiveTab] = useState<SalesTabId>("overview");
 
-  // Advanced Mode Toggle: Can be controlled by tenant capability or explicit setting
-  const [isAdvancedDistributor, setIsAdvancedDistributor] = useState<boolean>(true);
+  // Derive capability disclosure from backend authority / session permissions
+  const permissions = useOptionalPermissions();
+  const canViewOrders = permissions ? permissions.hasPermission("sales.order.read") : true;
+  const canViewReturns = permissions ? permissions.hasPermission("sales.return.read") : true;
 
   // Quotation pagination & filter state
   const [page, setPage] = useState(1);
@@ -55,12 +57,8 @@ export function SalesPage(): React.JSX.Element {
   const tabs: readonly SalesTabDef[] = [
     { id: "overview", label: t("tabs.overview") },
     { id: "quotations", label: t("tabs.quotations"), badgeCount: quotations.length },
-    ...(isAdvancedDistributor
-      ? [
-          { id: "orders", label: t("tabs.orders"), isAdvanced: true },
-          { id: "returns", label: t("tabs.returns"), isAdvanced: true }
-        ] as const
-      : []),
+    ...(canViewOrders ? [{ id: "orders", label: t("tabs.orders"), isAdvanced: true } as const] : []),
+    ...(canViewReturns ? [{ id: "returns", label: t("tabs.returns"), isAdvanced: true } as const] : []),
     { id: "history", label: t("tabs.history") },
     { id: "settings", label: t("tabs.settings") }
   ];
@@ -87,23 +85,7 @@ export function SalesPage(): React.JSX.Element {
           </p>
         </div>
 
-        {/* Distributor Mode Toggle (Progressive Disclosure) */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <label style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.375rem" }}>
-            <input
-              type="checkbox"
-              checked={isAdvancedDistributor}
-              onChange={(e) => {
-                setIsAdvancedDistributor(e.target.checked);
-                if (!e.target.checked && (activeTab === "orders" || activeTab === "returns")) {
-                  setActiveTab("overview");
-                }
-              }}
-              style={{ cursor: "pointer" }}
-            />
-            {t("orders.advancedNotice")}
-          </label>
-        </div>
+
       </div>
 
       {/* Primary Tab Navigation */}
@@ -138,11 +120,11 @@ export function SalesPage(): React.JSX.Element {
           />
         )}
 
-        {activeTab === "orders" && isAdvancedDistributor && (
-          <OrderListTab legalEntityId={legalEntityId} isAdvancedDistributor={isAdvancedDistributor} />
+        {activeTab === "orders" && canViewOrders && (
+          <OrderListTab legalEntityId={legalEntityId} />
         )}
 
-        {activeTab === "returns" && isAdvancedDistributor && (
+        {activeTab === "returns" && canViewReturns && (
           <ReturnsTab legalEntityId={legalEntityId} />
         )}
 
@@ -179,7 +161,7 @@ export function SalesPage(): React.JSX.Element {
           onClose={() => setSelectedQuotationId(null)}
           onOrderCreated={() => {
             setSelectedQuotationId(null);
-            if (isAdvancedDistributor) {
+            if (canViewOrders) {
               setActiveTab("orders");
             }
           }}
