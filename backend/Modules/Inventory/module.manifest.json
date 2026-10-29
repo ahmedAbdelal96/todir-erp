@@ -28,7 +28,7 @@
     "inventory.reconciliation.read", "inventory.audit.view"
   ],
   "capabilities": {
-    "provides": ["inventory.availability", "inventory.reservations", "inventory.receipts", "inventory.issues", "inventory.transfers", "inventory.history", "inventory.valuation", "inventory.reconciliation", "inventory.scan-resolution", "inventory.read-models"],
+    "provides": ["inventory.availability", "inventory.reservations", "inventory.receipts", "inventory.purchase-receipts", "inventory.purchase-returns", "inventory.issues", "inventory.transfers", "inventory.history", "inventory.valuation", "inventory.reconciliation", "inventory.scan-resolution", "inventory.read-models"],
     "consumes": ["catalog.product", "catalog.quantity-conversion", "finbase.money", "ledger.semantic-facts", "platform.transaction-coordination", "platform.outbox"]
   },
   "messaging": {

@@ -21,6 +21,7 @@ public static class InventoryModuleExtensions
         services.AddSingleton<InventoryRepository>();
         services.AddSingleton<InventoryService>();
         services.AddSingleton<IInventoryCapabilities>(provider => provider.GetRequiredService<InventoryService>());
+        services.AddSingleton<Shared.Contracts.Inventory.IInventoryPurchasingCapabilities>(provider => provider.GetRequiredService<InventoryService>());
         services.AddSingleton<ISalesInventoryCapabilities, SalesInventoryCapabilities>();
         return services;
     }

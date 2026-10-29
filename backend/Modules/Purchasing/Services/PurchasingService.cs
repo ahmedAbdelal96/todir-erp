@@ -8,6 +8,8 @@ using Modules.Purchasing.Repositories;
 using Shared.Contracts.Directory;
 using Shared.Contracts.Invoicing;
 using Shared.Contracts.Pricing;
+using Shared.Contracts.Tax;
+using Shared.Contracts.Inventory;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Purchasing.Services;
@@ -16,7 +18,11 @@ public sealed class PurchasingService(
     PurchasingRepository repository,
     IDirectoryPartyRoleCapabilities partyRoles,
     IPricingCapabilities pricing,
-    IInvoicingSourceCapabilities invoicing) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities
+    IInvoicingSourceCapabilities invoicing,
+    ITaxCapabilities tax,
+    IInvoiceComplianceSnapshotCapability invoiceSnapshots,
+    TimeProvider clock,
+    IInventoryPurchasingCapabilities? inventory = null) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities
 {
     public async Task<Guid> CreateAsync(TenantId tenant, Guid actor, CreatePurchaseOrderRequest request, bool canOverridePrice, Guid correlation, CancellationToken ct)
     {
@@ -35,34 +41,115 @@ public sealed class PurchasingService(
         return await repository.UpdateAsync(tenant, actor, legalEntityId, id, request with { CurrencyCode = request.CurrencyCode.Trim().ToUpperInvariant() }, lines, correlation, ct, amendment, reason);
     }
 
-    public Task<PurchaseOrderView?> GetAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetAsync(tenant, entity, id, ct);
+    public Task<PurchaseOrderView?> GetAsync(TenantId tenant, Guid entity, Guid id, bool includePrice, CancellationToken ct) => repository.GetAsync(tenant, entity, id, includePrice, ct);
     public Task<PurchaseOrderPage> ListAsync(TenantId tenant, Guid entity, string? state, int page, int pageSize, CancellationToken ct) => repository.ListAsync(tenant, entity, state, page, pageSize, ct);
-    public Task<long> ApproveAsync(TenantId tenant, Guid actor, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.ApproveAsync(tenant, actor, id, request, correlation, ct);
-    public Task<long> RejectAsync(TenantId tenant, Guid actor, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.RejectAsync(tenant, actor, id, request, correlation, ct);
-    public Task<long> CancelAsync(TenantId tenant, Guid actor, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CancelAsync(tenant, actor, id, request, correlation, ct);
-    public Task<long> CloseAsync(TenantId tenant, Guid actor, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CloseAsync(tenant, actor, id, request, correlation, ct);
+    public Task<long> ApproveAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.ApproveAsync(tenant, actor, entity, id, request, correlation, ct);
+    public Task<long> RejectAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.RejectAsync(tenant, actor, entity, id, request, correlation, ct);
+    public Task<long> CancelAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CancelAsync(tenant, actor, entity, id, request, correlation, ct);
+    public Task<long> CloseAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CloseAsync(tenant, actor, entity, id, request, correlation, ct);
+    public Task<long> CloseShortAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CloseShortAsync(tenant, actor, entity, id, request, correlation, ct);
     public Task<bool> IsPurchaseOrderApprovedAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default) => repository.IsApprovedAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
     public Task<Shared.Contracts.Purchasing.PurchaseOrderInvoiceSource?> GetInvoiceSourceAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default) => repository.GetInvoiceSourceAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
+
+    public async Task<Modules.Purchasing.DTOs.PurchaseReceiptResult> ReceiveAsync(TenantId tenant, Guid actor, Guid entity, Guid id, ReceivePurchaseOrderRequest request, Guid correlation, CancellationToken ct)
+    {
+        if (request.LegalEntityId != entity || request.Lines.Count == 0 || string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new PurchasingException("purchasing.receipt_request_invalid");
+        var replay = await repository.GetReceiptReplayAsync(tenant, entity, id, request.IdempotencyKey, ct); if (replay is not null) return replay;
+        var order = await repository.GetAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
+        if (order.State is PurchaseOrderStates.Draft or PurchaseOrderStates.PendingApproval or PurchaseOrderStates.Cancelled or PurchaseOrderStates.Closed) throw new PurchasingException("purchasing.receipt_not_allowed");
+        if (inventory is null) throw new PurchasingException("purchasing.inventory_not_available");
+        var result = await inventory.ReceivePurchaseAsync(tenant.Value, actor, new(request.LegalEntityId, id, request.IdempotencyKey, request.OperationalDate, request.PostingDate, request.Lines.Select(line => new Shared.Contracts.Inventory.PurchaseReceiptLine(line.PurchaseOrderLineId, line.ProductVariantId, line.WarehouseId, line.LocationId, line.UnitOfMeasureId, line.Quantity, line.LotId, line.SerialId)).ToArray()), ct);
+        return await repository.ApplyReceiptAsync(tenant, actor, entity, id, request, result, correlation, ct);
+    }
+
+    public async Task<Guid> ApproveAndBillAsync(TenantId tenant, Guid actor, Guid membership, Guid entity, Guid id, PurchaseOrderCommandRequest request, CreateSupplierInvoiceRequest invoice, Guid correlation, CancellationToken ct)
+    {
+        var order = await repository.GetAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
+        if (order.State is PurchaseOrderStates.Draft or PurchaseOrderStates.PendingApproval) await ApproveAsync(tenant, actor, entity, id, request, correlation, ct);
+        var approved = await repository.GetAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
+        return await CreateSupplierInvoiceAsync(tenant, actor, membership, entity, id, invoice with { Version = approved.Version }, correlation, ct);
+    }
+
+    public async Task<Guid> ReceiveAndBillAsync(TenantId tenant, Guid actor, Guid membership, Guid entity, Guid id, ReceivePurchaseOrderRequest receipt, CreateSupplierInvoiceRequest invoice, Guid correlation, CancellationToken ct)
+    {
+        await ReceiveAsync(tenant, actor, entity, id, receipt, correlation, ct);
+        var received = await repository.GetAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
+        return await CreateSupplierInvoiceAsync(tenant, actor, membership, entity, id, invoice with { Version = received.Version }, correlation, ct);
+    }
+
+    public async Task<PurchaseMatchView> MatchAsync(TenantId tenant, Guid actor, Guid entity, Guid id, MatchPurchaseOrderRequest request, Guid correlation, CancellationToken ct)
+    {
+        var order = await repository.GetAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
+        var invoice = await invoiceSnapshots.GetInvoiceComplianceSnapshotAsync(tenant, entity, request.SupplierInvoiceId, ct) ?? throw new PurchasingException("purchasing.invoice_not_found");
+        var quantityVariance = Math.Abs(order.Lines.Sum(x => x.OrderedQuantity) - invoice.Lines.Sum(x => decimal.Parse(x.Quantity, CultureInfo.InvariantCulture)));
+        var priceVariance = Math.Abs(order.Lines.Sum(x => x.OrderedQuantity * x.UnitPrice) - invoice.Lines.Sum(x => decimal.Parse(x.Quantity, CultureInfo.InvariantCulture) * decimal.Parse(x.FinalUnitPrice, CultureInfo.InvariantCulture)));
+        var taxVariance = Math.Abs(decimal.Parse(invoice.TaxAmount, CultureInfo.InvariantCulture));
+        var variance = quantityVariance + priceVariance + taxVariance;
+        var within = quantityVariance <= request.QuantityTolerance && (priceVariance <= request.PriceAbsoluteTolerance || (order.NetTotal == 0 || priceVariance / order.NetTotal * 100m <= request.PricePercentageTolerance)) && taxVariance <= request.TaxTolerance;
+        var state = request.Basis == "Disabled" ? "Matched" : within ? "WithinTolerance" : request.ApproveException && !string.IsNullOrWhiteSpace(request.Reason) ? "ApprovedException" : "Variance";
+        var details = JsonSerializer.Serialize(new { quantityVariance, priceVariance, taxVariance, request.Basis, request.QuantityTolerance, request.PriceAbsoluteTolerance, request.PricePercentageTolerance, request.TaxTolerance, invoice.SchemaVersion, invoice.CurrencyCode });
+        return await repository.SaveMatchAsync(tenant, actor, entity, id, request, state, variance, details, correlation, ct);
+    }
+
+    public Task<Guid> CreateReturnAsync(TenantId tenant, Guid actor, Guid entity, Guid orderId, CreateSupplierReturnRequest request, CancellationToken ct) => repository.CreateReturnAsync(tenant, actor, entity, orderId, request, ct);
+    public Task<SupplierReturnView?> GetReturnAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetReturnAsync(tenant, entity, id, ct);
+    public Task<long> ApproveReturnAsync(TenantId tenant, Guid actor, Guid entity, Guid id, long version, CancellationToken ct) => repository.ApproveReturnAsync(tenant, actor, entity, id, version, ct);
+    public async Task<SupplierReturnView> ExecuteReturnAsync(TenantId tenant, Guid actor, Guid entity, Guid id, CancellationToken ct)
+    {
+        var request = await repository.GetReturnAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.return_not_found");
+        if (request.State == "Executed") return request;
+        var operations = new List<Guid>();
+        if (request.Resolution == "PhysicalReturn")
+        {
+            if (inventory is null) throw new PurchasingException("purchasing.inventory_not_available");
+            var returnLines = await repository.GetReturnLinesAsync(tenant, entity, id, ct);
+            if (returnLines.Any(line => line.ProductVariantId is null || line.UnitOfMeasureId is null || line.WarehouseId is null)) throw new PurchasingException("purchasing.return_inventory_context_required");
+            operations.AddRange(await inventory.ReturnPurchaseAsync(tenant.Value, actor, new(entity, request.Id, "return:" + request.Id.ToString("D"), DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), returnLines.Select(line => new Shared.Contracts.Inventory.PurchaseReturnLine(line.PurchaseOrderLineId, line.ProductVariantId!.Value, line.WarehouseId!.Value, line.LocationId, line.UnitOfMeasureId!.Value, line.Quantity, line.LotId, line.SerialId)).ToArray()), ct));
+        }
+        await repository.CompleteReturnAsync(tenant, entity, id, operations, null, ct);
+        return await repository.GetReturnAsync(tenant, entity, id, ct) ?? request;
+    }
 
     public async Task<Guid> CreateSupplierInvoiceAsync(TenantId tenant, Guid actor, Guid membership, Guid legalEntityId, Guid id, CreateSupplierInvoiceRequest request, Guid correlation, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 200) throw new PurchasingException("purchasing.idempotency_key_invalid");
-        var order = await repository.GetAsync(tenant, legalEntityId, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
+        var order = await repository.GetAsync(tenant, legalEntityId, id, true, ct) ?? throw new PurchasingException("purchasing.po_not_found");
         if (order.State is not (PurchaseOrderStates.Approved or PurchaseOrderStates.Open or PurchaseOrderStates.PartiallyCompleted)) throw new PurchasingException("purchasing.po_not_approved");
-        var existing = await repository.GetLinkedInvoiceAsync(tenant, legalEntityId, id, request.IdempotencyKey, ct);
-        if (existing is { } existingInvoice) return existingInvoice;
+        if (order.Version != request.Version) throw new PurchasingException("purchasing.po_stale");
         var payloadHash = PayloadHash(order, request);
-        var source = new InvoiceSourceDocumentContract("purchasing", id, "SupplierInvoice", request.IdempotencyKey, "Payable", legalEntityId, order.BranchId, order.SupplierPartyId, null, request.DocumentDate, request.PostingDate, request.TaxDate, null, order.CurrencyCode, "Exclusive", null, request.SupplierInvoiceNumber, null, order.Lines.Select(line => new InvoiceSourceLineContract(line.ProductVariantId, line.UnitOfMeasureId, line.UnitCode, line.Description, line.OrderedQuantity.ToString(CultureInfo.InvariantCulture), line.UnitPrice.ToString(CultureInfo.InvariantCulture), null, null, line.Id.ToString("D"))).ToArray());
+        var existing = await repository.GetLinkedInvoiceAsync(tenant, legalEntityId, id, request.IdempotencyKey, ct);
+        if (existing is { } existingLink)
+        { if (!string.Equals(existingLink.PayloadHash, payloadHash, StringComparison.Ordinal)) throw new PurchasingException("purchasing.idempotency_conflict"); return existingLink.InvoiceId; }
+        var requestedLines = request.Lines is { Count: > 0 } ? request.Lines.ToDictionary(x => x.PurchaseOrderLineId, x => x.Quantity) : order.Lines.ToDictionary(x => x.Id, x => x.OrderedQuantity - x.InvoicedQuantity - x.CancelledQuantity);
+        if (requestedLines.Any(x => x.Value <= 0)) throw new PurchasingException("purchasing.invoice_quantity_invalid");
+        var source = new InvoiceSourceDocumentContract("purchasing", id, "SupplierInvoice", request.IdempotencyKey, "Payable", legalEntityId, order.BranchId, order.SupplierPartyId, null, request.DocumentDate, request.PostingDate, request.TaxDate, null, order.CurrencyCode, "Exclusive", null, request.SupplierInvoiceNumber, null, order.Lines.Where(line => requestedLines.ContainsKey(line.Id)).Select(line => new InvoiceSourceLineContract(line.ProductVariantId, line.UnitOfMeasureId, line.UnitCode, line.Description, requestedLines[line.Id].ToString(CultureInfo.InvariantCulture), line.UnitPrice.ToString(CultureInfo.InvariantCulture), null, null, line.Id.ToString("D"))).ToArray());
         var invoiceId = await invoicing.CreateDraftFromSourceAsync(tenant, actor, membership, source, correlation, ct);
-        await repository.LinkInvoiceAsync(tenant, actor, legalEntityId, id, invoiceId, "SupplierInvoice", request.IdempotencyKey, payloadHash, ct);
-        return invoiceId;
+        return await repository.LinkInvoiceAsync(tenant, actor, legalEntityId, id, invoiceId, "SupplierInvoice", request.IdempotencyKey, payloadHash, requestedLines, ct);
     }
+
+    public Task<long> SaveProfileAsync(TenantId tenant, Guid actor, SupplierPurchaseProfileRequest request, CancellationToken ct) => SaveProfileCheckedAsync(tenant, actor, request, ct);
+    private async Task<long> SaveProfileCheckedAsync(TenantId tenant, Guid actor, SupplierPurchaseProfileRequest request, CancellationToken ct)
+    { await EnsureSupplierAsync(tenant, request.SupplierPartyId, request.LegalEntityId, ct); return await repository.SaveProfileAsync(tenant, actor, request, ct); }
 
     private async Task<IReadOnlyList<PurchasingRepository.ResolvedLine>> ResolveLinesAsync(TenantId tenant, CreatePurchaseOrderRequest request, bool canOverridePrice, CancellationToken ct)
     {
         var result = new List<PurchasingRepository.ResolvedLine>(request.Lines.Count);
-        foreach (var line in request.Lines)
+        var resolvedPrices = new Dictionary<int, (decimal Price, string Evidence)>();
+        var pricingInputs = request.Lines.Select((line, index) => (line, index)).Where(x => x.line.UnitPrice is null && x.line.ProductVariantId is { } && x.line.ProductTemplateId is { } && x.line.UnitOfMeasureId is { }).ToArray();
+        var pricingContexts = pricingInputs.Select(x => new PricingContext(tenant, new(request.LegalEntityId), PricingDirection.Buying, request.OrderDate, request.CurrencyCode.Trim().ToUpperInvariant(), request.PriceListId, request.SupplierPartyId, null, x.line.ProductVariantId!.Value, x.line.ProductTemplateId!.Value, Array.Empty<Guid>(), null, x.line.UnitOfMeasureId!.Value, x.line.Quantity)).ToArray();
+        if (pricingContexts.Length > 0)
         {
+            var pricingResults = await pricing.ResolveBatchAsync(pricingContexts, ct);
+            for (var index = 0; index < pricingResults.Count; index++)
+            {
+                var snapshot = pricingResults[index].Snapshot;
+                if (snapshot is not null && decimal.TryParse(snapshot.FinalUnitPrice, NumberStyles.Number, CultureInfo.InvariantCulture, out var price)) resolvedPrices[pricingInputs[index].index] = (price, JsonSerializer.Serialize(snapshot));
+            }
+        }
+        var taxContexts = new List<TaxContextContract>();
+        for (var lineIndex = 0; lineIndex < request.Lines.Count; lineIndex++)
+        {
+            var line = request.Lines[lineIndex];
             if (line.Quantity <= 0 || line.Description.Trim().Length is < 1 or > 1000) throw new PurchasingException("purchasing.line_invalid");
             decimal unitPrice;
             string? evidence = null;
@@ -74,12 +161,17 @@ public sealed class PurchasingService(
             }
             else if (line.ProductVariantId is { } variant && line.ProductTemplateId is { } template && line.UnitOfMeasureId is { } uom)
             {
-                var resolution = await pricing.ResolveAsync(new(tenant, new(request.LegalEntityId), PricingDirection.Buying, request.OrderDate, request.CurrencyCode.Trim().ToUpperInvariant(), request.PriceListId, request.SupplierPartyId, null, variant, template, Array.Empty<Guid>(), null, uom, line.Quantity), ct);
-                if (resolution.Snapshot is null || !decimal.TryParse(resolution.Snapshot.FinalUnitPrice, NumberStyles.Number, CultureInfo.InvariantCulture, out unitPrice)) throw new PurchasingException("purchasing.buy_price_missing");
-                evidence = JsonSerializer.Serialize(resolution.Snapshot);
+                if (!resolvedPrices.TryGetValue(lineIndex, out var resolved)) throw new PurchasingException("purchasing.buy_price_missing");
+                unitPrice = resolved.Price; evidence = resolved.Evidence;
             }
             else throw new PurchasingException("purchasing.buy_price_required");
+            taxContexts.Add(new(tenant, new(request.LegalEntityId), "Payable", "PurchaseOrder", "Purchase", request.OrderDate, request.OrderDate, null, request.OrderDate, request.SupplierPartyId, "EG", "EG", null, line.ProductTemplateId, line.ProductVariantId, line.Quantity, line.UnitOfMeasureId, "Exclusive", (line.Quantity * unitPrice).ToString(CultureInfo.InvariantCulture), "0", "0", request.CurrencyCode.Trim().ToUpperInvariant(), request.CurrencyCode.Trim().ToUpperInvariant(), null, DocumentSemantics: "PurchaseOrder"));
             result.Add(new(line.ProductVariantId, line.UnitOfMeasureId, line.UnitCode, line.Description.Trim(), line.Quantity, unitPrice, evidence, line.PriceOverrideReason));
+        }
+        if (taxContexts.Count > 0)
+        {
+            var taxes = await tax.CalculateBatchAsync(taxContexts, ct);
+            for (var index = 0; index < result.Count && index < taxes.Count; index++) result[index] = result[index] with { TaxEvidence = JsonSerializer.Serialize(taxes[index]) };
         }
         return result;
     }

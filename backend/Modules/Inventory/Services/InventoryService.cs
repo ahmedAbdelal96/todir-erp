@@ -12,7 +12,7 @@ namespace Modules.Inventory.Services;
 
 /// <summary>Application boundary for Inventory workflows exposed to the API host.</summary>
 public sealed class InventoryService(InventoryRepository repository, ILedgerPostingEngine? ledgerPosting = null,
-    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities
+    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities, Shared.Contracts.Inventory.IInventoryPurchasingCapabilities
 {
     public Task<IReadOnlyList<InventoryAvailabilityLine>> GetBatchAvailabilityAsync(Guid tenantId, InventoryAvailabilityRequest request, CancellationToken cancellationToken = default) => repository.GetBatchAvailabilityAsync(new TenantId(tenantId), request, cancellationToken);
     public async Task<Guid> ReserveAsync(Guid tenantId, Guid actorId, InventoryReservationRequest request, CancellationToken cancellationToken = default)
@@ -116,6 +116,35 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
     public Task<IReadOnlyList<InventoryAsOfView>> GetStockAsOfAsync(TenantId tenant, Guid entity, DateTimeOffset asOf, Guid? variantId, Guid? warehouseId, int limit, CancellationToken ct) => repository.GetStockAsOfAsync(tenant, entity, asOf, variantId, warehouseId, limit, ct);
     public Task<IReadOnlyList<ProductLocatorView>> LocateProductAsync(TenantId tenant, Guid entity, Guid variantId, int limit, CancellationToken ct) => repository.LocateProductAsync(tenant, entity, variantId, limit, ct);
     public Task<InventoryOperationResult> ReceiveAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.ReceiveAsync(tenant, actor, entity, request, correlationId, traceParent, ct);
+    public async Task<Shared.Contracts.Inventory.PurchaseReceiptResult> ReceivePurchaseAsync(Guid tenantId, Guid actorId, Shared.Contracts.Inventory.PurchaseReceiptRequest request, CancellationToken cancellationToken = default)
+    {
+        var receipts = new List<Guid>();
+        var lines = new List<Shared.Contracts.Inventory.PurchaseReceiptLineResult>();
+        foreach (var line in request.Lines)
+        {
+            var result = await repository.ReceiveAsync(new TenantId(tenantId), actorId, request.LegalEntityId,
+                new ConfirmStockMovementRequest(line.ProductVariantId, line.WarehouseId, line.LocationId, line.UnitOfMeasureId, line.Quantity,
+                    request.OperationalDate, request.PostingDate, request.IdempotencyKey + ":" + line.PurchaseOrderLineId.ToString("D"), "purchasing", request.PurchaseOrderId,
+                    StockStatus.Available, line.LotId, line.SerialId), Guid.CreateVersion7(), null, cancellationToken);
+            receipts.Add(result.OperationId);
+            lines.Add(new(line.PurchaseOrderLineId, result.OperationId, line.Quantity));
+        }
+        return new(receipts, lines, false);
+    }
+
+    public async Task<IReadOnlyList<Guid>> ReturnPurchaseAsync(Guid tenantId, Guid actorId, Shared.Contracts.Inventory.PurchaseReturnRequest request, CancellationToken cancellationToken = default)
+    {
+        var operations = new List<Guid>();
+        foreach (var line in request.Lines)
+        {
+            var result = await repository.IssueAsync(new TenantId(tenantId), actorId, request.LegalEntityId,
+                new ConfirmStockMovementRequest(line.ProductVariantId, line.WarehouseId, line.LocationId, line.UnitOfMeasureId, line.Quantity,
+                    request.OperationalDate, request.PostingDate, request.IdempotencyKey + ":" + line.PurchaseOrderLineId.ToString("D"), "purchasing", request.ReturnRequestId,
+                    StockStatus.Available, line.LotId, line.SerialId), Guid.CreateVersion7(), null, cancellationToken);
+            operations.Add(result.OperationId);
+        }
+        return operations;
+    }
     public Task<InventoryOperationResult> IssueAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false) => repository.IssueAsync(tenant, actor, entity, request, correlationId, traceParent, ct, canOverrideNegativeStock);
     public Task<InventoryOperationResult> ConsumeReservationAsync(TenantId tenant, Guid actor, Guid entity, Guid reservationId, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.IssueAsync(tenant, actor, entity, request, correlationId, traceParent, ct, reservationId: reservationId);
     public Task<InventoryOperationResult> OpenAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.OpenAsync(tenant, actor, entity, request, correlationId, traceParent, ct);
