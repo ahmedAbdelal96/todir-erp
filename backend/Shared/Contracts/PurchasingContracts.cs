@@ -14,3 +14,11 @@ public interface IPurchasingReadCapabilities
 {
     Task<bool> IsPurchaseOrderApprovedAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default);
 }
+
+public sealed record PurchaseLandedCostLine(Guid PurchaseOrderLineId, Guid? ProductVariantId, decimal Quantity, decimal UnitPrice, string CurrencyCode);
+public sealed record PurchaseLandedCostContext(Guid PurchaseOrderId, Guid LegalEntityId, Guid SupplierPartyId, string CurrencyCode, IReadOnlyList<PurchaseLandedCostLine> Lines);
+
+public interface IPurchasingLandedCostCapabilities
+{
+    Task<PurchaseLandedCostContext?> GetLandedCostContextAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default);
+}

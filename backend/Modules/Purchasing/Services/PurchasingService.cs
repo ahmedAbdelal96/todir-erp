@@ -22,7 +22,8 @@ public sealed class PurchasingService(
     ITaxCapabilities tax,
     IInvoiceComplianceSnapshotCapability invoiceSnapshots,
     TimeProvider clock,
-    IInventoryPurchasingCapabilities? inventory = null) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities
+    IInventoryPurchasingCapabilities? inventory = null,
+    IInvoicingCorrectionCapabilities? corrections = null) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities, Shared.Contracts.Purchasing.IPurchasingLandedCostCapabilities
 {
     public async Task<Guid> CreateAsync(TenantId tenant, Guid actor, CreatePurchaseOrderRequest request, bool canOverridePrice, Guid correlation, CancellationToken ct)
     {
@@ -50,6 +51,11 @@ public sealed class PurchasingService(
     public Task<long> CloseShortAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CloseShortAsync(tenant, actor, entity, id, request, correlation, ct);
     public Task<bool> IsPurchaseOrderApprovedAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default) => repository.IsApprovedAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
     public Task<Shared.Contracts.Purchasing.PurchaseOrderInvoiceSource?> GetInvoiceSourceAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default) => repository.GetInvoiceSourceAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
+    public async Task<Shared.Contracts.Purchasing.PurchaseLandedCostContext?> GetLandedCostContextAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default)
+    {
+        var order = await repository.GetAsync(tenantId, legalEntityId, purchaseOrderId, true, cancellationToken);
+        return order is null ? null : new(order.Id, order.LegalEntityId, order.SupplierPartyId, order.CurrencyCode, order.Lines.Select(line => new Shared.Contracts.Purchasing.PurchaseLandedCostLine(line.Id, line.ProductVariantId, line.ReceivedQuantity, line.UnitPrice, order.CurrencyCode)).ToArray());
+    }
 
     public async Task<Modules.Purchasing.DTOs.PurchaseReceiptResult> ReceiveAsync(TenantId tenant, Guid actor, Guid entity, Guid id, ReceivePurchaseOrderRequest request, Guid correlation, CancellationToken ct)
     {
@@ -72,33 +78,68 @@ public sealed class PurchasingService(
 
     public async Task<Guid> ReceiveAndBillAsync(TenantId tenant, Guid actor, Guid membership, Guid entity, Guid id, ReceivePurchaseOrderRequest receipt, CreateSupplierInvoiceRequest invoice, Guid correlation, CancellationToken ct)
     {
-        await ReceiveAsync(tenant, actor, entity, id, receipt, correlation, ct);
-        var received = await repository.GetAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
-        return await CreateSupplierInvoiceAsync(tenant, actor, membership, entity, id, invoice with { Version = received.Version }, correlation, ct);
+        if (string.IsNullOrWhiteSpace(receipt.IdempotencyKey) || receipt.IdempotencyKey.Length > 200) throw new PurchasingException("purchasing.idempotency_key_invalid");
+        var workflowKey = receipt.IdempotencyKey;
+        var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { receipt, invoice }, Json)))).ToLowerInvariant();
+        var existing = await repository.GetWorkflowAsync(tenant, entity, id, workflowKey, ct);
+        var workflow = existing ?? await repository.StartWorkflowAsync(tenant, entity, id, workflowKey, payloadHash, JsonSerializer.Serialize(receipt, Json), JsonSerializer.Serialize(invoice, Json), ct);
+        if (!string.Equals(workflow.PayloadHash, payloadHash, StringComparison.Ordinal)) throw new PurchasingException("purchasing.idempotency_conflict");
+        if (workflow.State == "Completed" && workflow.InvoiceId is { } completed) return completed;
+        var receiptCompleted = workflow.State == "ReceiptCompleted" || workflow.State == "InvoicePending";
+        try
+        {
+            if (!receiptCompleted)
+            {
+                await ReceiveAsync(tenant, actor, entity, id, receipt, correlation, ct);
+                await repository.SetWorkflowStateAsync(tenant, entity, id, workflowKey, "ReceiptCompleted", null, null, ct);
+                receiptCompleted = true;
+            }
+            var received = await repository.GetAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
+            var invoiceId = await CreateSupplierInvoiceAsync(tenant, actor, membership, entity, id, invoice with { Version = received.Version }, correlation, ct);
+            await repository.SetWorkflowStateAsync(tenant, entity, id, workflowKey, "Completed", invoiceId, null, ct);
+            return invoiceId;
+        }
+        catch (Exception ex)
+        {
+            await repository.SetWorkflowStateAsync(tenant, entity, id, workflowKey, receiptCompleted ? "InvoicePending" : "Failed", null, ex.Message, ct);
+            throw;
+        }
     }
 
     public async Task<PurchaseMatchView> MatchAsync(TenantId tenant, Guid actor, Guid entity, Guid id, MatchPurchaseOrderRequest request, Guid correlation, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 200) throw new PurchasingException("purchasing.idempotency_key_invalid");
         var order = await repository.GetAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
         var invoice = await invoiceSnapshots.GetInvoiceComplianceSnapshotAsync(tenant, entity, request.SupplierInvoiceId, ct) ?? throw new PurchasingException("purchasing.invoice_not_found");
-        var quantityVariance = Math.Abs(order.Lines.Sum(x => x.OrderedQuantity) - invoice.Lines.Sum(x => decimal.Parse(x.Quantity, CultureInfo.InvariantCulture)));
-        var priceVariance = Math.Abs(order.Lines.Sum(x => x.OrderedQuantity * x.UnitPrice) - invoice.Lines.Sum(x => decimal.Parse(x.Quantity, CultureInfo.InvariantCulture) * decimal.Parse(x.FinalUnitPrice, CultureInfo.InvariantCulture)));
+        var quantityVariance = 0m; var priceVariance = 0m; var blocking = new List<string>();
+        if (!string.Equals(order.CurrencyCode, invoice.CurrencyCode, StringComparison.OrdinalIgnoreCase)) blocking.Add("currency_mismatch");
+        var invoiceBySource = invoice.Lines.Where(x => Guid.TryParse(x.SourceLineReference, out _)).ToDictionary(x => Guid.Parse(x.SourceLineReference!), x => x);
+        foreach (var line in order.Lines)
+        {
+            if (!invoiceBySource.TryGetValue(line.Id, out var invoiceLine)) { blocking.Add("line_missing:" + line.Id); continue; }
+            if (line.ProductVariantId != invoiceLine.ProductVariantId) blocking.Add("product_mismatch:" + line.Id);
+            if (line.UnitOfMeasureId != invoiceLine.UnitOfMeasureId) blocking.Add("uom_mismatch:" + line.Id);
+            var invoiceQuantity = decimal.Parse(invoiceLine.Quantity, CultureInfo.InvariantCulture);
+            var comparisonQuantity = request.Basis == "ThreeWay" ? line.ReceivedQuantity : line.OrderedQuantity;
+            quantityVariance += Math.Abs(comparisonQuantity - invoiceQuantity);
+            priceVariance += Math.Abs(line.UnitPrice * invoiceQuantity - decimal.Parse(invoiceLine.FinalUnitPrice, CultureInfo.InvariantCulture) * invoiceQuantity);
+        }
         var taxVariance = Math.Abs(decimal.Parse(invoice.TaxAmount, CultureInfo.InvariantCulture));
         var variance = quantityVariance + priceVariance + taxVariance;
-        var within = quantityVariance <= request.QuantityTolerance && (priceVariance <= request.PriceAbsoluteTolerance || (order.NetTotal == 0 || priceVariance / order.NetTotal * 100m <= request.PricePercentageTolerance)) && taxVariance <= request.TaxTolerance;
-        var state = request.Basis == "Disabled" ? "Matched" : within ? "WithinTolerance" : request.ApproveException && !string.IsNullOrWhiteSpace(request.Reason) ? "ApprovedException" : "Variance";
-        var details = JsonSerializer.Serialize(new { quantityVariance, priceVariance, taxVariance, request.Basis, request.QuantityTolerance, request.PriceAbsoluteTolerance, request.PricePercentageTolerance, request.TaxTolerance, invoice.SchemaVersion, invoice.CurrencyCode });
+        var within = blocking.Count == 0 && quantityVariance <= request.QuantityTolerance && (priceVariance <= request.PriceAbsoluteTolerance || (order.NetTotal == 0 || priceVariance / order.NetTotal * 100m <= request.PricePercentageTolerance)) && taxVariance <= request.TaxTolerance;
+        var state = request.Basis == "Disabled" && blocking.Count == 0 ? "Matched" : within ? "WithinTolerance" : request.ApproveException && !string.IsNullOrWhiteSpace(request.Reason) && blocking.Count == 0 ? "ApprovedException" : blocking.Count > 0 ? "Blocked" : "Variance";
+        var details = JsonSerializer.Serialize(new { quantityVariance, priceVariance, taxVariance, blocking, request.Basis, request.QuantityTolerance, request.PriceAbsoluteTolerance, request.PricePercentageTolerance, request.TaxTolerance, invoice.SchemaVersion, invoice.CurrencyCode });
         return await repository.SaveMatchAsync(tenant, actor, entity, id, request, state, variance, details, correlation, ct);
     }
 
     public Task<Guid> CreateReturnAsync(TenantId tenant, Guid actor, Guid entity, Guid orderId, CreateSupplierReturnRequest request, CancellationToken ct) => repository.CreateReturnAsync(tenant, actor, entity, orderId, request, ct);
     public Task<SupplierReturnView?> GetReturnAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetReturnAsync(tenant, entity, id, ct);
     public Task<long> ApproveReturnAsync(TenantId tenant, Guid actor, Guid entity, Guid id, long version, CancellationToken ct) => repository.ApproveReturnAsync(tenant, actor, entity, id, version, ct);
-    public async Task<SupplierReturnView> ExecuteReturnAsync(TenantId tenant, Guid actor, Guid entity, Guid id, CancellationToken ct)
+    public async Task<SupplierReturnView> ExecuteReturnAsync(TenantId tenant, Guid actor, Guid membership, Guid entity, Guid id, CancellationToken ct)
     {
         var request = await repository.GetReturnAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.return_not_found");
         if (request.State == "Executed") return request;
-        var operations = new List<Guid>();
+        var operations = new List<Guid>(); Guid? creditNoteId = null;
         if (request.Resolution == "PhysicalReturn")
         {
             if (inventory is null) throw new PurchasingException("purchasing.inventory_not_available");
@@ -106,7 +147,17 @@ public sealed class PurchasingService(
             if (returnLines.Any(line => line.ProductVariantId is null || line.UnitOfMeasureId is null || line.WarehouseId is null)) throw new PurchasingException("purchasing.return_inventory_context_required");
             operations.AddRange(await inventory.ReturnPurchaseAsync(tenant.Value, actor, new(entity, request.Id, "return:" + request.Id.ToString("D"), DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), returnLines.Select(line => new Shared.Contracts.Inventory.PurchaseReturnLine(line.PurchaseOrderLineId, line.ProductVariantId!.Value, line.WarehouseId!.Value, line.LocationId, line.UnitOfMeasureId!.Value, line.Quantity, line.LotId, line.SerialId)).ToArray()), ct));
         }
-        await repository.CompleteReturnAsync(tenant, entity, id, operations, null, ct);
+        if (request.Resolution is "SupplierCredit" or "ServiceCredit")
+        {
+            if (corrections is null) throw new PurchasingException("purchasing.invoicing_correction_unavailable");
+            var originalInvoiceId = await repository.GetReturnInvoiceAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.return_invoice_required");
+            var snapshot = await invoiceSnapshots.GetInvoiceComplianceSnapshotAsync(tenant, entity, originalInvoiceId, ct) ?? throw new PurchasingException("purchasing.invoice_not_found");
+            var returnLines = await repository.GetReturnLinesAsync(tenant, entity, id, ct);
+            var creditLines = returnLines.Select(line => snapshot.Lines.FirstOrDefault(invoiceLine => invoiceLine.SourceLineReference == line.PurchaseOrderLineId.ToString("D"))).ToArray();
+            if (creditLines.Any(line => line is null)) throw new PurchasingException("purchasing.return_invoice_line_not_found");
+            creditNoteId = await corrections.CreateCreditNoteDraftAsync(tenant, actor, membership, new InvoiceCreditNoteRequest(originalInvoiceId, entity, DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), null, request.Reason, "return-credit:" + id.ToString("D"), returnLines.Zip(creditLines!, (line, invoiceLine) => new InvoiceCreditNoteLineContract(invoiceLine!.LineId, line.Quantity)).ToArray()), Guid.CreateVersion7(), ct);
+        }
+        await repository.CompleteReturnAsync(tenant, entity, id, operations, creditNoteId, ct);
         return await repository.GetReturnAsync(tenant, entity, id, ct) ?? request;
     }
 

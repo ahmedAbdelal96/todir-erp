@@ -799,12 +799,12 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
             documentDate = reader.GetFieldValue<DateOnly>(0); postingDate = reader.GetFieldValue<DateOnly>(1); taxDate = reader.GetFieldValue<DateOnly>(2);
             supplyDate = NDate(reader, 3); currency = reader.GetString(4).Trim(); priceMode = reader.GetString(5);
         }
-        var lineFacts = new List<(Guid Id, int Sequence, Guid? Product, string Description, decimal Quantity, Guid? Unit, string? UnitCode)>();
-        await using (var lines = new NpgsqlCommand("select id,sequence,product_variant_id,description,quantity,unit_of_measure_id,unit_code_snapshot from business_invoicing.invoice_line where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3 order by sequence", context.Connection, context.Transaction))
+        var lineFacts = new List<(Guid Id, int Sequence, Guid? Product, string Description, decimal Quantity, Guid? Unit, string? UnitCode, string? SourceLineReference)>();
+        await using (var lines = new NpgsqlCommand("select id,sequence,product_variant_id,description,quantity,unit_of_measure_id,unit_code_snapshot,source_line_reference from business_invoicing.invoice_line where tenant_id=$1 and legal_entity_id=$2 and invoice_id=$3 order by sequence", context.Connection, context.Transaction))
         {
             Add(lines, tenant.Value, legalEntityId, invoiceId);
             await using var reader = await lines.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct)) lineFacts.Add((reader.GetGuid(0), reader.GetInt32(1), NGuid(reader, 2), reader.GetString(3), reader.GetDecimal(4), NGuid(reader, 5), NText(reader, 6)));
+            while (await reader.ReadAsync(ct)) lineFacts.Add((reader.GetGuid(0), reader.GetInt32(1), NGuid(reader, 2), reader.GetString(3), reader.GetDecimal(4), NGuid(reader, 5), NText(reader, 6), NText(reader, 7)));
         }
         var prices = data.Prices.ToDictionary(item => item.LineId);
         var amounts = data.LineAmounts.ToDictionary(item => item.LineId);
@@ -814,7 +814,7 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
             return new InvoiceFrozenLineContract(line.Id, line.Sequence, line.Product, line.Description, D(line.Quantity), line.Unit, line.UnitCode,
                 price.ResolvedUnitPrice, price.FinalUnitPrice, price.EvidenceJson, amount.NetAmount, amount.TaxAmount, amount.GrossAmount,
                 data.DiscountAllocations.Where(item => item.LineId == line.Id).Select(item => new InvoiceFrozenDiscountContract(item.DiscountType, item.SourceAmount, item.AllocatedAmount)).ToArray(),
-                data.Taxes.Where(item => item.LineId == line.Id).Select(item => new InvoiceFrozenTaxComponentContract(item.TaxCode, item.TaxTypeCode, item.Treatment, item.TaxableBase, item.TaxAmount, item.EvidenceJson)).ToArray());
+                data.Taxes.Where(item => item.LineId == line.Id).Select(item => new InvoiceFrozenTaxComponentContract(item.TaxCode, item.TaxTypeCode, item.Treatment, item.TaxableBase, item.TaxAmount, item.EvidenceJson)).ToArray(), line.SourceLineReference);
         }).ToArray();
         var charges = data.Charges.Select(charge => new InvoiceFrozenChargeContract(charge.Code, charge.Description, charge.Amount, charge.TaxTreatment,
             data.ChargeAllocations.Where(item => item.ChargeId == charge.Id).Select(item => new InvoiceFrozenChargeAllocationContract(item.LineId, item.Amount)).ToArray())).ToArray();

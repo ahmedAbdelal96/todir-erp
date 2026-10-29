@@ -477,6 +477,10 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("ledger-forward-fix-payment-fee-reversal.sql", StringComparison.Ordinal) => 9,
     // This index references write_off, which is introduced by the later-named Subledger pass-2 migration.
     _ when fileName.Equals("subledger-forward-fix-exposure-current-read.sql", StringComparison.Ordinal) => 6,
+    // Supplier return tables are introduced by the purchasing continuation; the
+    // closure migration adds columns and therefore must run after that script.
+    _ when fileName.Equals("purchasing-forward-fix-final-continuation.sql", StringComparison.Ordinal) => 10,
+    _ when fileName.Equals("purchasing-forward-fix-closure.sql", StringComparison.Ordinal) => 11,
     _ => 5
 };
 

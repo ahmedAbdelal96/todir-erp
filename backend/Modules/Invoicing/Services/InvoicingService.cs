@@ -52,7 +52,7 @@ public sealed class InvoicingService(
                 request.TaxDate, request.SupplyDate, request.IdempotencyKey,
                 request.Lines.Select(line => new InvoiceCorrectionLineInput(line.OriginalLineId,
                     line.Quantity.ToString("0.######", CultureInfo.InvariantCulture))).ToArray()),
-            InvoiceDirection.Receivable, correlationId, cancellationToken);
+            InvoiceDirection.Payable, correlationId, cancellationToken);
 
     private async Task<Guid> CreateDraftCoreAsync(TenantId tenant, Guid actorId, Guid membershipId, CreateInvoiceDraftRequest request, InvoiceDirection direction,
         InvoiceSourceReferenceContract? source, Guid correlationId, CancellationToken ct)

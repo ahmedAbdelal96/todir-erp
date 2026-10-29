@@ -72,7 +72,7 @@ public sealed record InvoiceFrozenFinancialContextContract(string BaseCurrencyCo
 public sealed record InvoiceFrozenLineContract(Guid LineId, int Sequence, Guid? ProductVariantId, string Description, string Quantity,
     Guid? UnitOfMeasureId, string? UnitCode, string? ResolvedUnitPrice, string FinalUnitPrice, string PriceEvidenceJson,
     string NetAmount, string TaxAmount, string GrossAmount, IReadOnlyList<InvoiceFrozenDiscountContract> Discounts,
-    IReadOnlyList<InvoiceFrozenTaxComponentContract> Taxes);
+    IReadOnlyList<InvoiceFrozenTaxComponentContract> Taxes, string? SourceLineReference = null);
 public sealed record InvoiceComplianceSnapshotContract(int SchemaVersion, Guid InvoiceId, Guid LegalEntityId, string Direction,
     string DocumentType, string DocumentNumber, DateOnly DocumentDate, DateOnly PostingDate, DateOnly TaxDate, DateOnly? SupplyDate,
     string CurrencyCode, string PriceMode, string PartyEvidenceJson, string? AddressEvidenceJson, string? PaymentTermEvidenceJson,

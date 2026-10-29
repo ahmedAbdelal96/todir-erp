@@ -78,10 +78,34 @@ public sealed class PurchasingDomainTests
     public void PurchaseSettingsExposeIndependentQuantityPriceAndTaxTolerances()
     {
         var entity = Guid.NewGuid();
-        var settings = new PurchaseSettingsRequest(entity, true, 10000m, "AllowWithinTolerance", 2m, false, true, true, 0.5m, 1m, 2m, 0.25m, "Receipt");
+        var settings = new PurchaseSettingsRequest(entity, true, 10000m, "Tolerance", 2m, false, true, true, 0.5m, 1m, 2m, 0.25m, "Receipt");
 
         Assert.Equal(entity, settings.LegalEntityId);
         Assert.Equal("Receipt", settings.InvoiceEligibilityBasis);
         Assert.Equal(0.25m, settings.TaxTolerance);
+    }
+
+    [Fact]
+    public void ReceiveAndBillUsesOneReplayKeyAndPreservesPartialInvoiceLines()
+    {
+        var lineId = Guid.NewGuid();
+        var receipt = new ReceivePurchaseOrderRequest(Guid.NewGuid(), 2, "workflow-2", new(2026, 10, 29), new(2026, 10, 29),
+            [new(lineId, Guid.NewGuid(), Guid.NewGuid(), null, Guid.NewGuid(), 3m)]);
+        var invoice = new CreateSupplierInvoiceRequest(2, "invoice-2", new(2026, 10, 29), new(2026, 10, 29), new(2026, 10, 29), null,
+            [new(lineId, 2m)]);
+
+        Assert.Equal("workflow-2", receipt.IdempotencyKey);
+        Assert.Equal(invoice.Lines![0].PurchaseOrderLineId, receipt.Lines[0].PurchaseOrderLineId);
+        Assert.Equal(2m, invoice.Lines[0].Quantity);
+    }
+
+    [Fact]
+    public void SupplierCreditCarriesTheOriginalInvoiceAndDoesNotAlterPhysicalResolution()
+    {
+        var invoiceId = Guid.NewGuid();
+        var request = new CreateSupplierReturnRequest(3, "SupplierCredit", "فرق جودة", [], invoiceId);
+
+        Assert.Equal(invoiceId, request.OriginalInvoiceId);
+        Assert.Equal("SupplierCredit", request.Resolution);
     }
 }
