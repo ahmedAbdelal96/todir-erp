@@ -125,6 +125,6 @@ export function resolvePurchasingProduct(variantId?: string | null, isArabic = t
     sku: derivedSku,
     uom: "EA",
     defaultBuyPrice: 100.0,
-    isStocked: true
+    isStocked: false // Safe invariant: unclassified / unknown items are NEVER assumed to be stock-tracked
   };
 }

@@ -271,6 +271,14 @@ describe("Purchasing Domain Invariants & Frontend Slice Contracts", () => {
       description: "خدمات شحن واستشارات قانونية"
     };
     assert.equal(isReceiptEligibleLine(adHocServiceLine), false);
+
+    // Unknown / unresolved classification without authoritative stock confirmation -> NOT receipt eligible
+    const unknownVariantLine = {
+      id: "l-unknown",
+      productVariantId: "unresolved-uuid-9999",
+      description: "بند غير مصنف في الكتالوج"
+    };
+    assert.equal(isReceiptEligibleLine(unknownVariantLine), false);
   });
 
   it("filters physical stock lines only for inventory goods receipt using authoritative classification", () => {
