@@ -134,6 +134,7 @@ public sealed class LedgerSetupRepository(
             foreach (var producer in Producers)
                 await EnsureProducerRegistrationAsync(context, tenant, entity, producer, token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.SettlementFxDifference, "SETTLEMENT_FX_DIFFERENCE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.UnrealizedFxRevaluation, "UNREALIZED_FX_REVALUATION_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.SettlementWriteOff, "SETTLEMENT_WRITE_OFF_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.OpeningBalancePosted, "OPENING_BALANCE_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.CustomerInvoicePosted, "CUSTOMER_INVOICE_V1", token);
@@ -291,6 +292,7 @@ public sealed class LedgerSetupRepository(
             AccountingFactTypes.PaymentFeeReversed => new[] { ("Cash", "BaseAmount", "Debit"), ("PaymentFeeExpense", "BaseAmount", "Credit") },
             AccountingFactTypes.SettlementWriteOff => new[] { ("Receivable", "BaseAmount", "Credit"), ("BadDebtExpense", "BaseAmount", "Debit"), ("Payable", "BaseAmount", "Debit"), ("WriteOffIncome", "BaseAmount", "Credit") },
             AccountingFactTypes.SettlementFxDifference => new[] { ("Receivable", "BaseAmount", "Debit"), ("FXGain", "BaseAmount", "Credit"), ("FXLoss", "BaseAmount", "Debit") },
+            AccountingFactTypes.UnrealizedFxRevaluation => new[] { ("Receivable", "BaseAmount", "Debit"), ("Payable", "BaseAmount", "Credit"), ("FXGain", "BaseAmount", "Credit"), ("FXLoss", "BaseAmount", "Debit") },
             _ => new[] { ("OpeningBalance", "BaseAmount", "Debit"), ("OpeningBalance", "BaseAmount", "Credit") }
         };
         for (var i = 0; i < legs.Length; i++)
@@ -309,7 +311,8 @@ public sealed class LedgerSetupRepository(
         ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade), ("payments", AccountingFactTypes.RefundPaid), ("payments", AccountingFactTypes.PaymentFeeRecognized), ("payments", AccountingFactTypes.PaymentFeeReversed),
         ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment), ("inventory", AccountingFactTypes.InventoryValuationReversal),
         ("payroll", AccountingFactTypes.PayrollPosted), ("tax", AccountingFactTypes.TaxAdjustment),
-        ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff)
+        ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff),
+        ("accounting", AccountingFactTypes.UnrealizedFxRevaluation)
     ];
 
     private async Task EnsureProducerRegistrationAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, (string Module, string FactType) producer, CancellationToken ct) => await ExecuteAsync(context, "insert into finance_ledger.fact_producer_registration (tenant_id,legal_entity_id,id,producer_module,fact_type,fact_version,status,registered_at) values ($1,$2,$3,$4,$5,1,'Active',$6) on conflict (tenant_id,legal_entity_id,producer_module,fact_type,fact_version) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), producer.Module, producer.FactType, clock.GetUtcNow());

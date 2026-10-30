@@ -13,15 +13,15 @@
   },
   "owns": {
     "schema": "business_accounting",
-    "entities": ["accounting_setup", "reconciliation_run", "reconciliation_issue", "close_run", "close_check", "financial_statement_definition", "financial_statement_version", "financial_statement_line", "report_snapshot_ref"]
+  "entities": ["accounting_setup", "reconciliation_run", "reconciliation_issue", "close_run", "close_check", "financial_statement_definition", "financial_statement_version", "financial_statement_line", "report_snapshot_ref", "fx_revaluation_run", "fx_revaluation_line"]
   },
-  "permissions": ["accounting.home.read", "accounting.owner.read", "accounting.health.read", "accounting.reconciliation.read", "accounting.reconciliation.run", "accounting.close.preview", "accounting.close.execute", "accounting.close.reopen", "accounting.statement.read", "accounting.statement.manage"],
+  "permissions": ["accounting.home.read", "accounting.owner.read", "accounting.health.read", "accounting.reconciliation.read", "accounting.reconciliation.run", "accounting.opening.approve", "accounting.close.preview", "accounting.close.execute", "accounting.close.reopen", "accounting.statement.read", "accounting.statement.manage", "accounting.fx-revaluation.read", "accounting.fx-revaluation.preview", "accounting.fx-revaluation.post", "accounting.fx-revaluation.reverse"],
   "capabilities": {
-    "provides": ["accounting.health", "accounting.reconciliation-evidence", "accounting.financial-statements", "accounting.period-close"],
-    "consumes": ["ledger.reports", "ledger.control-balance-read", "subledger.control-reconciliation", "inventory.valuation"]
+    "provides": ["accounting.health", "accounting.reconciliation-evidence", "accounting.financial-statements", "accounting.period-close", "accounting.go-live", "accounting.fx-revaluation"],
+    "consumes": ["ledger.reports", "ledger.control-balance-read", "ledger.opening-batch-read", "ledger.opening-batch-lock", "subledger.control-reconciliation", "subledger.opening-batch-read", "subledger.open-item-fx-read", "inventory.valuation"]
   },
   "messaging": {
-    "publishes": ["AccountingCloseCompletedV1", "AccountingReconciliationCompletedV1"],
+    "publishes": ["AccountingCloseCompletedV1", "AccountingReconciliationCompletedV1", "AccountingGoLiveApprovedV1"],
     "consumes": ["JournalEntryPostedV1", "PeriodClosedV1", "PeriodReopenedV1"]
   },
   "lifecycle": {"supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents"}

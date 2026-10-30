@@ -406,6 +406,13 @@ public sealed class SubledgerService(
         return await EvaluateOpeningBatchAsync(tenantId, legalEntityId, batch, lines, cancellationToken);
     }
 
+    public async Task<OpeningSubledgerBatchContext?> GetOpeningSubledgerBatchAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid batchId, CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(tenantId, legalEntityId, batchId);
+        await EnsureEntityAsync(tenantId, legalEntityId, cancellationToken);
+        return await repository.GetOpeningSubledgerBatchAsync(tenantId, legalEntityId, batchId, cancellationToken);
+    }
+
     private async Task<OpeningSubledgerValidationResult> EvaluateOpeningBatchAsync(TenantId tenantId, LegalEntityId legalEntityId, OpeningSubledgerBatchContext batch,
         IReadOnlyList<OpeningSubledgerStoredLine> lines, CancellationToken cancellationToken)
     {
@@ -459,6 +466,14 @@ public sealed class SubledgerService(
         var item = await repository.GetOpenItemAsync(tenantId, legalEntityId, openItemId, cancellationToken);
         if (item is not null) await EnsurePartyAsync(tenantId, legalEntityId, item.PartyId, cancellationToken);
         return item;
+    }
+
+    public async Task<IReadOnlyList<ForeignCurrencyOpenItemSnapshot>> ListForeignCurrencyOpenItemsForRevaluationAsync(TenantId tenantId, LegalEntityId legalEntityId, DateOnly asOfDate, CancellationToken cancellationToken = default)
+    {
+        ValidateScope(tenantId, legalEntityId);
+        if (asOfDate == DateOnly.MinValue) throw new SubledgerException("subledger.revaluation_date_invalid", "A valid revaluation date is required.");
+        _ = await EnsureEntityAsync(tenantId, legalEntityId, cancellationToken);
+        return await repository.ListForeignCurrencyOpenItemsForRevaluationAsync(tenantId, legalEntityId, asOfDate, cancellationToken);
     }
 
     public async Task<SourceSettlementSummaryContract?> GetSourceSettlementSummaryAsync(TenantId tenantId, LegalEntityId legalEntityId, string sourceType,
@@ -787,6 +802,10 @@ public sealed class SubledgerService(
     private static void ValidateIdentity(TenantId tenant, LegalEntityId entity, Guid partyId)
     {
         if (tenant.Value == Guid.Empty || entity.Value == Guid.Empty || partyId == Guid.Empty) throw new SubledgerException("subledger.scope_required", "Tenant, legal entity, and party scope are required.");
+    }
+    private static void ValidateScope(TenantId tenant, LegalEntityId entity)
+    {
+        if (tenant.Value == Guid.Empty || entity.Value == Guid.Empty) throw new SubledgerException("subledger.scope_required", "Tenant and legal entity scope are required.");
     }
     private static void EnsureActor(Guid actorId, Guid correlationId)
     {

@@ -15,6 +15,7 @@ public sealed record LedgerGeneralLedgerPage(IReadOnlyList<LedgerGeneralLedgerLi
 public sealed record LedgerReadinessSnapshot(string State, string Mode, long Version, IReadOnlyList<string> BlockingReasons);
 public sealed record LedgerPeriodSnapshot(Guid Id, DateOnly StartDate, DateOnly EndDate, string Status, long Version);
 public sealed record LedgerCloseReadinessSnapshot(Guid PeriodId, bool CanClose, IReadOnlyList<string> Blockers);
+public sealed record LedgerOpeningBatchSnapshot(Guid Id, DateOnly GoLiveDate, string Status, Guid? PostedEntryId);
 
 public interface ILedgerAccountingWorkspaceCapabilities
 {
@@ -24,7 +25,10 @@ public interface ILedgerAccountingWorkspaceCapabilities
     Task<LedgerReadinessSnapshot> GetReadinessAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default);
     Task<LedgerPeriodSnapshot?> GetPeriodAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, CancellationToken cancellationToken = default);
     Task<LedgerCloseReadinessSnapshot> GetCloseReadinessAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, CancellationToken cancellationToken = default);
+    Task<IReadOnlySet<Guid>> FindAccountsAsync(TenantId tenantId, LegalEntityId legalEntityId, IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken = default);
     Task SetPeriodStatusAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, string status, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default);
+    Task<LedgerOpeningBatchSnapshot?> GetOpeningBatchAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid batchId, CancellationToken cancellationToken = default);
+    Task LockOpeningBatchAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid batchId, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default);
 }
 
 public sealed record InventoryAccountingReconciliation(Guid LegalEntityId, DateOnly AsOfDate, decimal InventoryValue, decimal LedgerValue,

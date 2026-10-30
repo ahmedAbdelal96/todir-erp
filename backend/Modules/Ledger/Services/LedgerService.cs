@@ -32,6 +32,7 @@ public sealed class LedgerService(LedgerRepository repository, LedgerOperationsR
     public Task<IReadOnlyList<JournalEntryDto>> ListEntriesAsync(TenantId tenant, LegalEntityId entity, int limit, CancellationToken ct) => repository.ListEntriesAsync(tenant, entity, limit, ct);
     public Task<LedgerPostingResult> PostCustomerInvoiceAsync(AccountingFactEnvelope<CustomerInvoicePostedPayload> fact, CancellationToken cancellationToken = default) => repository.PostCustomerInvoiceAsync(fact, cancellationToken);
     public Task<LedgerPostingResult> PostAsync(AccountingFactEnvelope<IAccountingFactPayload> fact, CancellationToken cancellationToken = default) => repository.PostAsync(fact, cancellationToken);
+    public Task<LedgerPostingResult> PostUnrealizedFxRevaluationAsync(AccountingFactEnvelope<IAccountingFactPayload> fact, UnrealizedFxRevaluationPayload payload, CancellationToken cancellationToken = default) => repository.PostUnrealizedFxRevaluationAsync(fact, payload, cancellationToken);
     public Task<LedgerPostingResult> ReverseAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid originalEntryId, DateOnly reversalDate, DateOnly? autoReversalDate, string reason, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default) => repository.ReverseAsync(tenantId, legalEntityId, originalEntryId, reversalDate, autoReversalDate, reason, actorId, correlationId, cancellationToken);
     public Task<LedgerPostingResult> ReverseAsync(TenantId tenant, LegalEntityId entity, Guid entryId, ReverseEntryRequest request, Guid actor, Guid correlation, CancellationToken ct) => operations.ReverseAsync(tenant, entity, entryId, request, actor, correlation, ct);
     public Task<GeneralJournalDraftDto> CreateGeneralJournalDraftAsync(TenantId tenant, LegalEntityId entity, CreateGeneralJournalDraftRequest request, Guid actor, CancellationToken ct) => operations.CreateGeneralJournalDraftAsync(tenant, entity, request, actor, ct);
@@ -92,9 +93,20 @@ public sealed class LedgerService(LedgerRepository repository, LedgerOperationsR
         return new LedgerCloseReadinessSnapshot(periodId, readiness.Ready, readiness.Blockers.Select(blocker => blocker.Code).ToArray());
     }
 
+    public async Task<IReadOnlySet<Guid>> FindAccountsAsync(TenantId tenantId, LegalEntityId legalEntityId, IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken = default)
+    {
+        if (accountIds.Count == 0) return new HashSet<Guid>();
+        var requested = accountIds.ToHashSet();
+        var existing = await ListAccountsAsync(tenantId, legalEntityId, cancellationToken);
+        return existing.Where(account => requested.Contains(account.Id)).Select(account => account.Id).ToHashSet();
+    }
+
     public Task SetPeriodStatusAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, string status, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default)
     {
         if (!Enum.TryParse<PeriodStatus>(status, true, out var parsed)) throw new LedgerDomainException("ledger.period_status_invalid", "The accounting period status is invalid.");
         return SetPeriodStatusAsync(tenantId, legalEntityId, periodId, parsed, actorId, correlationId, cancellationToken);
     }
+
+    public Task<LedgerOpeningBatchSnapshot?> GetOpeningBatchAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid batchId, CancellationToken cancellationToken = default) => operations.GetOpeningBatchSnapshotAsync(tenantId, legalEntityId, batchId, cancellationToken);
+    public Task LockOpeningBatchAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid batchId, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default) => operations.LockOpeningBatchAsync(tenantId, legalEntityId, batchId, actorId, correlationId, cancellationToken);
 }

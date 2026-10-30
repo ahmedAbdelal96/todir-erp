@@ -13,6 +13,8 @@
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="../../Core/Core.csproj" />
     <ProjectReference Include="../../Modules/Sample/Sample.csproj" />
+    <ProjectReference Include="../../Modules/Accounting/Accounting.csproj" />
+    <ProjectReference Include="../../Modules/Ledger/Ledger.csproj" />
     <ProjectReference Include="../../Api/Api.csproj" />
   </ItemGroup>
 </Project>

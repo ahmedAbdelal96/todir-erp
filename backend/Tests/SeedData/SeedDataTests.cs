@@ -128,7 +128,7 @@ public sealed class DevelopmentSeedTests
         foreach (var tenantId in new[] { SeedIds.AtlasTenant, SeedIds.DeltaTenant })
         {
             var rolePermissions = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-            await using var command = new NpgsqlCommand("select r.code,rp.permission_code from platform.role r join platform.role_permission rp on rp.tenant_id=r.tenant_id and rp.role_id=r.id where r.tenant_id=$1 and r.code=any(array['administrator','accountant','sales'])", connection);
+            await using var command = new NpgsqlCommand("select r.code,rp.permission_code from platform.role r join platform.role_permission rp on rp.tenant_id=r.tenant_id and rp.role_id=r.id where r.tenant_id=$1 and r.code=any(array['administrator','accountant','sales','auditor'])", connection);
             command.Parameters.AddWithValue(tenantId);
             await using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
@@ -146,18 +146,23 @@ public sealed class DevelopmentSeedTests
             Assert.DoesNotContain("invoicing.customer_invoice.finalize", rolePermissions["sales"]);
             Assert.DoesNotContain("invoicing.supplier_invoice.create", rolePermissions["sales"]);
             Assert.DoesNotContain("invoicing.accounting_preview", rolePermissions["sales"]);
+            Assert.Contains("accounting.statement.read", rolePermissions["auditor"]);
+            Assert.DoesNotContain("accounting.close.execute", rolePermissions["auditor"]);
+            Assert.Contains("accounting.reconciliation.run", rolePermissions["accountant"]);
+            Assert.DoesNotContain("accounting.close.execute", rolePermissions["accountant"]);
         }
     }
 
     private static async Task AssertAccountingSeedAsync(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
-        await using var command = new NpgsqlCommand("select (select count(*) from business_accounting.accounting_setup where go_live_status='Ready'), (select count(*) from business_accounting.financial_statement_definition where status='Active'), (select count(*) from platform.role_permission p join platform.role r on r.tenant_id=p.tenant_id and r.id=p.role_id where r.code='administrator' and p.permission_code='accounting.close.execute')", connection);
+        await using var command = new NpgsqlCommand("select (select count(*) from business_accounting.accounting_setup where go_live_status='Ready'), (select count(*) from business_accounting.financial_statement_definition where status='Active'), (select count(*) from business_accounting.financial_statement_line), (select count(*) from platform.role_permission p join platform.role r on r.tenant_id=p.tenant_id and r.id=p.role_id where r.code='administrator' and p.permission_code='accounting.close.execute')", connection);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
         Assert.Equal(2L, reader.GetInt64(0));
         Assert.Equal(4L, reader.GetInt64(1));
-        Assert.Equal(2L, reader.GetInt64(2));
+        Assert.Equal(12L, reader.GetInt64(2));
+        Assert.Equal(2L, reader.GetInt64(3));
     }
 
     private static async Task AssertPricingEntityIsolationAsync(NpgsqlDataSource dataSource)
@@ -361,7 +366,7 @@ public sealed class DevelopmentSeedTests
                 context.Parameters.AddWithValue(tenant.Id.ToString("D"));
                 await context.ExecuteNonQueryAsync();
             }
-            await using var command = new NpgsqlCommand("select (select count(*) from platform.tenant)::int,(select count(*) from platform.legal_entity)::int,(select count(*) from platform.identity)::int,(select count(*) from foundation_directory.party)::int,(select count(*) from foundation_catalog.product_template)::int,(select count(*) from foundation_pricing.price_list)::int,(select count(*) from foundation_pricing.price_entry)::int,(select count(*) from business_invoicing.invoice)::int", connection, transaction);
+            await using var command = new NpgsqlCommand("select (select count(*) from platform.tenant)::int,(select count(*) from platform.legal_entity)::int,(select count(*) from platform.identity)::int,(select count(*) from foundation_directory.party)::int,(select count(*) from foundation_catalog.product_template)::int,(select count(*) from foundation_pricing.price_list)::int,(select count(*) from foundation_pricing.price_entry)::int,(select count(*) from business_invoicing.invoice)::int,(select count(*) from business_accounting.accounting_setup)::int,(select count(*) from business_accounting.financial_statement_definition)::int,(select count(*) from business_accounting.financial_statement_line)::int", connection, transaction);
             await using var reader = await command.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
             var expectedUsers = tenant.Id == SeedIds.AtlasTenant ? 205 : 105;
@@ -375,6 +380,9 @@ public sealed class DevelopmentSeedTests
             Assert.Equal(6, reader.GetInt32(5));
             Assert.Equal(151, reader.GetInt32(6));
             Assert.Equal(120, reader.GetInt32(7));
+            Assert.Equal(1, reader.GetInt32(8));
+            Assert.Equal(2, reader.GetInt32(9));
+            Assert.Equal(6, reader.GetInt32(10));
             await reader.DisposeAsync();
             await transaction.CommitAsync();
         }

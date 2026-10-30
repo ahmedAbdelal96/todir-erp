@@ -20,7 +20,7 @@ public static class IdentitySeed
         "finbase.payment_term.manage", "finbase.financial_policy.manage", "finbase.audit.view",
         "pricing.read", "pricing.list.manage", "pricing.version.create", "pricing.rule.manage", "pricing.version.activate", "pricing.simulate", "pricing.import", "pricing.export", "pricing.audit.view",
         "ledger.account.read", "ledger.account.manage", "ledger.journal.read", "ledger.journal.manage", "ledger.period.read", "ledger.period.manage", "ledger.period.soft_close", "ledger.period.close", "ledger.period.reopen", "ledger.lock.read", "ledger.lock.manage", "ledger.mapping.read", "ledger.mapping.manage", "ledger.mapping.activate", "ledger.entry.read", "ledger.entry.reverse", "ledger.entry.explain", "ledger.general_journal.create", "ledger.general_journal.edit", "ledger.general_journal.submit", "ledger.general_journal.approve", "ledger.general_journal.post", "ledger.dimension.read", "ledger.dimension.manage", "ledger.opening.read", "ledger.opening.manage", "ledger.opening.post", "ledger.reports.read", "ledger.audit.view", "ledger.configuration.read", "ledger.configuration.manage",
-        "accounting.home.read", "accounting.owner.read", "accounting.health.read", "accounting.reconciliation.read", "accounting.reconciliation.run", "accounting.close.preview", "accounting.close.execute", "accounting.close.reopen", "accounting.statement.read", "accounting.statement.manage",
+        "accounting.home.read", "accounting.owner.read", "accounting.health.read", "accounting.reconciliation.read", "accounting.reconciliation.run", "accounting.opening.approve", "accounting.close.preview", "accounting.close.execute", "accounting.close.reopen", "accounting.statement.read", "accounting.statement.manage", "accounting.fx-revaluation.read", "accounting.fx-revaluation.preview", "accounting.fx-revaluation.post", "accounting.fx-revaluation.reverse",
         "tax.read", "tax.registration.read", "tax.registration.manage", "tax.party_profile.read", "tax.party_profile.manage",
         "tax.product_profile.read", "tax.product_profile.manage", "tax.policy.read", "tax.policy.manage", "tax.rule.read",
         "tax.rule.manage", "tax.rule.activate", "tax.simulate", "tax.audit.view", "tax.import", "tax.export", "tax.capability.configure",
@@ -70,6 +70,7 @@ public static class IdentitySeed
         {
             ("administrator", "مدير النظام", Permissions),
             ("accountant", "محاسب", ["platform.identity.read", "platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read", "finbase.rate.read", "finbase.rounding_policy.read", "finbase.payment_term.read", "pricing.read",
+                "accounting.home.read", "accounting.owner.read", "accounting.health.read", "accounting.reconciliation.read", "accounting.reconciliation.run", "accounting.opening.approve", "accounting.close.preview", "accounting.statement.read", "accounting.fx-revaluation.read", "accounting.fx-revaluation.preview", "accounting.fx-revaluation.post", "accounting.fx-revaluation.reverse",
                 "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize", "invoicing.customer_invoice.cancel_draft",
                 "invoicing.supplier_invoice.read", "invoicing.supplier_invoice.create", "invoicing.supplier_invoice.edit", "invoicing.supplier_invoice.finalize",
                 "invoicing.credit_note.create", "invoicing.debit_note.create", "invoicing.price_override", "invoicing.payment_term_override", "invoicing.date_override",
@@ -77,6 +78,7 @@ public static class IdentitySeed
             ("sales", "مبيعات", ["platform.organization.read", "directory.party.read", "directory.party.create", "directory.party.edit", "catalog.product.read", "finbase.currency.read", "finbase.payment_term.read", "pricing.read", "pricing.simulate",
                 "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.cancel_draft"]),
             ("warehouse", "مخازن", ["platform.organization.read", "catalog.product.read", "catalog.product.edit", "catalog.uom.manage"]),
+            ("auditor", "مراجع مالي", ["platform.organization.read", "accounting.home.read", "accounting.owner.read", "accounting.health.read", "accounting.reconciliation.read", "accounting.statement.read", "accounting.fx-revaluation.read", "ledger.account.read", "ledger.journal.read", "ledger.period.read", "ledger.reports.read", "ledger.audit.view"]),
             ("office", "موظف إداري", ["platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read"])
         };
         var result = new Dictionary<string, Guid>(StringComparer.Ordinal);

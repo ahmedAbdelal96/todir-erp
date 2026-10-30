@@ -573,6 +573,23 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
         return await reader.ReadAsync(ct) ? ReadItem(reader) : null;
     }
 
+    public async Task<IReadOnlyList<ForeignCurrencyOpenItemSnapshot>> ListForeignCurrencyOpenItemsForRevaluationAsync(TenantId tenant, LegalEntityId entity, DateOnly asOfDate, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        const string sql = "select id,direction,transaction_currency,open_transaction_amount,base_currency,open_base_carrying_amount,control_account_role,control_configuration_reference,posting_date,row_version from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and is_open and posting_date <= $3 and transaction_currency <> base_currency and open_transaction_amount <> 0 order by id";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        Add(command, tenant.Value, entity.Value, asOfDate);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var rows = new List<ForeignCurrencyOpenItemSnapshot>();
+        while (await reader.ReadAsync(ct))
+            rows.Add(new(reader.GetGuid(0), Enum.Parse<SubledgerDirectionContract>(reader.GetString(1), true), reader.GetString(2).Trim(),
+                reader.GetDecimal(3).ToString(CultureInfo.InvariantCulture), reader.GetString(4).Trim(), reader.GetDecimal(5).ToString(CultureInfo.InvariantCulture),
+                reader.GetString(6), reader.GetString(7), DateOnly.FromDateTime(reader.GetDateTime(8)), reader.GetInt64(9)));
+        return rows;
+    }
+
     public async Task<SourceSettlementSummaryContract?> GetSourceSettlementSummaryAsync(TenantId tenant, LegalEntityId entity, string sourceType,
         Guid sourceDocumentId, CancellationToken ct)
     {

@@ -594,9 +594,10 @@ public sealed class LedgerRepository(
     public async Task<string?> ValidateInventoryPostingDateInTransactionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity,
         DateOnly postingDate, CancellationToken ct)
     {
-        await using var command = new NpgsqlCommand("select count(*) from finance_ledger.accounting_period p where p.tenant_id=$1 and p.legal_entity_id=$2 and p.start_date <= $3 and p.end_date >= $3 and p.status='Open' and not exists (select 1 from finance_ledger.financial_lock l where l.tenant_id=p.tenant_id and l.legal_entity_id=p.legal_entity_id and l.status='Active' and l.start_date <= $3 and (l.end_date is null or l.end_date >= $3))", context.Connection, context.Transaction);
+        await using var command = new NpgsqlCommand("select p.id from finance_ledger.accounting_period p where p.tenant_id=$1 and p.legal_entity_id=$2 and p.start_date <= $3 and p.end_date >= $3 and p.status='Open' and not exists (select 1 from finance_ledger.financial_lock l where l.tenant_id=p.tenant_id and l.legal_entity_id=p.legal_entity_id and l.status='Active' and l.start_date <= $3 and (l.end_date is null or l.end_date >= $3)) for update", context.Connection, context.Transaction);
         command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(entity.Value); command.Parameters.AddWithValue(postingDate);
-        var count = Convert.ToInt32(await command.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var count = 0; while (await reader.ReadAsync(ct)) count++;
         if (count != 1) return null;
         return await financialRead.GetBaseCurrencyCodeAsync(tenant, entity, ct);
     }
@@ -854,6 +855,51 @@ public sealed class LedgerRepository(
         return await PostExplicitInTransactionAsync(context, fact, payloadForPosting, configurationId, ct);
     }
 
+    public async Task<LedgerPostingResult> PostUnrealizedFxRevaluationAsync(AccountingFactEnvelope<IAccountingFactPayload> fact, UnrealizedFxRevaluationPayload payload, CancellationToken cancellationToken = default)
+    {
+        if (fact.FactType != AccountingFactTypes.UnrealizedFxRevaluation || fact.SourceModule != "accounting" || payload.RevaluationRunId == Guid.Empty || payload.OpenItemId == Guid.Empty
+            || payload.Direction is not ("Receivable" or "Payable") || payload.ControlAccountRole is not ("Receivable" or "Payable")
+            || payload.Direction != payload.ControlAccountRole || payload.DifferenceRole is not ("FXGain" or "FXLoss") || payload.DifferenceAmount == 0m
+            || payload.OpenTransactionAmount <= 0m || payload.CarryingBaseAmount < 0m || payload.RevaluedBaseAmount < 0m || payload.ExchangeRate <= 0m
+            || string.IsNullOrWhiteSpace(payload.ExchangeRateSnapshot))
+            throw new LedgerDomainException("ledger.fact_invalid", "The unrealized FX revaluation fact has invalid semantic details.");
+
+        return await transactions.ExecuteAsync(fact.TenantId, async (context, ct) =>
+        {
+            if (!await IsRegisteredProducerAsync(context, fact, ct))
+                throw new LedgerDomainException("ledger.fact_producer_unregistered", "Accounting is not registered for unrealized FX revaluation facts.");
+            var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+                ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+            if (!string.Equals(baseCurrency, payload.BaseCurrencyCode, StringComparison.OrdinalIgnoreCase))
+                throw new LedgerDomainException("ledger.currency_mismatch", "FX revaluation must use the legal entity base currency.");
+            try { using var _ = JsonDocument.Parse(payload.ExchangeRateSnapshot); }
+            catch (JsonException) { throw new LedgerDomainException("ledger.currency_mismatch", "FX revaluation requires a valid immutable exchange-rate snapshot."); }
+
+            var configurationId = payload.HistoricalConfigurationVersionId ?? await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, ct);
+            if (!await ConfigurationExistsAsync(context, fact.TenantId.Value, fact.LegalEntityId.Value, configurationId, ct))
+                throw new LedgerDomainException("ledger.configuration_missing", "The accounting configuration does not belong to this legal entity.");
+            var journalId = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='FX' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+                ?? throw new LedgerDomainException("ledger.journal_missing", "The foreign-exchange journal is not configured.");
+            var controlId = await ResolveSemanticAccountIdAsync(context, fact, configurationId, payload.ControlAccountRole, ct);
+            var differenceId = await ResolveSemanticAccountIdAsync(context, fact, configurationId, payload.DifferenceRole, ct);
+            var amount = decimal.Abs(payload.DifferenceAmount);
+            var lines = payload.DifferenceRole == "FXLoss"
+                ? new[]
+                {
+                    new LedgerPostingLinePayload(differenceId, amount, 0m, baseCurrency, amount, 0m, amount, 0m, 1m, [], "Unrealized FX loss", payload.OpenItemId.ToString("D")),
+                    new LedgerPostingLinePayload(controlId, 0m, amount, baseCurrency, 0m, amount, 0m, amount, 1m, [], "Subledger control remeasurement", payload.OpenItemId.ToString("D"))
+                }
+                : new[]
+                {
+                    new LedgerPostingLinePayload(controlId, amount, 0m, baseCurrency, amount, 0m, amount, 0m, 1m, [], "Subledger control remeasurement", payload.OpenItemId.ToString("D")),
+                    new LedgerPostingLinePayload(differenceId, 0m, amount, baseCurrency, 0m, amount, 0m, amount, 1m, [], "Unrealized FX gain", payload.OpenItemId.ToString("D"))
+                };
+            var semanticFact = fact with { Payload = payload };
+            return await PostSemanticExplicitInTransactionAsync(context, semanticFact,
+                new ExplicitLedgerPostingPayload(journalId, $"Unrealized FX revaluation for open item {payload.OpenItemId:N}", baseCurrency, lines), payload, configurationId, ct);
+        }, cancellationToken);
+    }
+
     public async Task<LedgerPostingResult> PostSettlementWriteOffInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementWriteOffPayload payload, CancellationToken ct)
     {
         if (fact.FactType != AccountingFactTypes.SettlementWriteOff || fact.SourceModule != "subledger" || payload.WriteOffId == Guid.Empty
@@ -971,7 +1017,7 @@ public sealed class LedgerRepository(
 
     private static async Task<Guid> ResolvePeriodAsync(ITransactionContext context, AccountingFactEnvelope<CustomerInvoicePostedPayload> fact, CancellationToken ct)
     {
-        await using var command = new NpgsqlCommand("select p.id from finance_ledger.accounting_period p where p.tenant_id=$1 and p.legal_entity_id=$2 and p.start_date <= $3 and p.end_date >= $3 and p.status='Open' and not exists (select 1 from finance_ledger.financial_lock l where l.tenant_id=p.tenant_id and l.legal_entity_id=p.legal_entity_id and l.status='Active' and l.start_date <= $3 and (l.end_date is null or l.end_date >= $3))", context.Connection, context.Transaction);
+        await using var command = new NpgsqlCommand("select p.id from finance_ledger.accounting_period p where p.tenant_id=$1 and p.legal_entity_id=$2 and p.start_date <= $3 and p.end_date >= $3 and p.status='Open' and not exists (select 1 from finance_ledger.financial_lock l where l.tenant_id=p.tenant_id and l.legal_entity_id=p.legal_entity_id and l.status='Active' and l.start_date <= $3 and (l.end_date is null or l.end_date >= $3)) for update", context.Connection, context.Transaction);
         command.Parameters.AddWithValue(fact.TenantId.Value); command.Parameters.AddWithValue(fact.LegalEntityId.Value); command.Parameters.AddWithValue(fact.PostingDate); var periods = new List<Guid>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) periods.Add(reader.GetGuid(0));
         if (periods.Count == 0) throw new LedgerDomainException("ledger.period_locked", "Posting date has no open, unlocked accounting period."); if (periods.Count > 1) throw new LedgerDomainException("ledger.period_ambiguous", "Posting date resolves to more than one accounting period."); return periods[0];
     }
@@ -1036,7 +1082,7 @@ public sealed class LedgerRepository(
 
     private static async Task<Guid> ResolvePeriodAsync(ITransactionContext context, Guid tenantId, Guid entityId, DateOnly postingDate, CancellationToken ct)
     {
-        await using var command = new NpgsqlCommand("select p.id from finance_ledger.accounting_period p where p.tenant_id=$1 and p.legal_entity_id=$2 and p.start_date <= $3 and p.end_date >= $3 and p.status='Open' and not exists (select 1 from finance_ledger.financial_lock l where l.tenant_id=p.tenant_id and l.legal_entity_id=p.legal_entity_id and l.status='Active' and l.start_date <= $3 and (l.end_date is null or l.end_date >= $3))", context.Connection, context.Transaction); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(entityId); command.Parameters.AddWithValue(postingDate); var ids = new List<Guid>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) ids.Add(reader.GetGuid(0)); if (ids.Count == 0) throw new LedgerDomainException("ledger.period_locked", "Posting date has no open, unlocked accounting period."); if (ids.Count > 1) throw new LedgerDomainException("ledger.period_ambiguous", "Posting date resolves to more than one accounting period."); return ids[0];
+        await using var command = new NpgsqlCommand("select p.id from finance_ledger.accounting_period p where p.tenant_id=$1 and p.legal_entity_id=$2 and p.start_date <= $3 and p.end_date >= $3 and p.status='Open' and not exists (select 1 from finance_ledger.financial_lock l where l.tenant_id=p.tenant_id and l.legal_entity_id=p.legal_entity_id and l.status='Active' and l.start_date <= $3 and (l.end_date is null or l.end_date >= $3)) for update", context.Connection, context.Transaction); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(entityId); command.Parameters.AddWithValue(postingDate); var ids = new List<Guid>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) ids.Add(reader.GetGuid(0)); if (ids.Count == 0) throw new LedgerDomainException("ledger.period_locked", "Posting date has no open, unlocked accounting period."); if (ids.Count > 1) throw new LedgerDomainException("ledger.period_ambiguous", "Posting date resolves to more than one accounting period."); return ids[0];
     }
 
     private static async Task<Guid> ResolveRuleAsync(ITransactionContext context, string factType, int factVersion, DateOnly postingDate, Guid tenantId, Guid entityId, CancellationToken ct)

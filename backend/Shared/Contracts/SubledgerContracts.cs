@@ -163,6 +163,21 @@ public sealed record PartyOpenItemResult(
     string ControlAccountReference,
     string Status,
     long RowVersion);
+/// <summary>
+/// Read-only monetary snapshot supplied to the Accounting module for an unrealized FX run.
+/// The Subledger remains the source of truth for the open item and its carrying amount.
+/// </summary>
+public sealed record ForeignCurrencyOpenItemSnapshot(
+    Guid Id,
+    SubledgerDirectionContract Direction,
+    string TransactionCurrency,
+    string OpenTransactionAmount,
+    string BaseCurrency,
+    string OpenBaseCarryingAmount,
+    string ControlAccountRole,
+    string ControlConfigurationReference,
+    DateOnly PostingDate,
+    long RowVersion);
 public sealed record SourceSettlementSummaryContract(string Status, string TransactionCurrency, string OriginalAmount,
     string SettledAmount, string OpenAmount, int ItemCount);
 
@@ -190,6 +205,7 @@ public interface ISubledgerCapabilities
     Task<IReadOnlyList<AgingBucketResult>> GetAgingAsync(TenantId tenantId, Guid membershipId, AgingQuery query, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ReconciliationSourceContext>> GetReconciliationControlAccountsAsync(TenantId tenantId, Guid membershipId, ReconciliationQuery query, CancellationToken cancellationToken = default);
     Task<ReconciliationResult?> GetReconciliationRunAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid runId, CancellationToken cancellationToken = default);
+    Task<OpeningSubledgerBatchContext?> GetOpeningSubledgerBatchAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid batchId, CancellationToken cancellationToken = default);
     Task<OpeningSubledgerValidationResult> ValidateOpeningSubledgerBatchAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid batchId, CancellationToken cancellationToken = default);
     Task<PartyStatementResult> GetStatementAsync(TenantId tenantId, Guid membershipId, PartyStatementQuery query, CancellationToken cancellationToken = default);
     Task<WriteOffPolicyResult> UpdateWriteOffPolicyAsync(TenantId tenantId, Guid membershipId, WriteOffPolicyCommand command, CancellationToken cancellationToken = default);
@@ -199,4 +215,5 @@ public interface ISubledgerCapabilities
     Task<Guid> CreateOpeningSubledgerBatchAsync(TenantId tenantId, Guid membershipId, CreateOpeningSubledgerBatchCommand command, CancellationToken cancellationToken = default);
     Task AddOpeningSubledgerLinesAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid batchId, IReadOnlyList<OpeningSubledgerLineCommand> lines, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default);
     Task<OpeningSubledgerBatchResult> FinalizeOpeningSubledgerBatchAsync(TenantId tenantId, Guid membershipId, LegalEntityId legalEntityId, Guid batchId, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ForeignCurrencyOpenItemSnapshot>> ListForeignCurrencyOpenItemsForRevaluationAsync(TenantId tenantId, LegalEntityId legalEntityId, DateOnly asOfDate, CancellationToken cancellationToken = default);
 }

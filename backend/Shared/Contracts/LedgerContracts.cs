@@ -109,6 +109,22 @@ public sealed record PayrollPostedPayload(decimal GrossAmount, decimal PayableAm
 public sealed record TaxAdjustmentPayload(decimal Amount, string CurrencyCode, string TaxCode, string AdjustmentRole) : IAccountingFactPayload;
 public sealed record FxDifferencePayload(decimal Amount, string CurrencyCode, string DifferenceRole) : IAccountingFactPayload;
 public sealed record SettlementFxDifferencePayload(decimal Amount, string BaseCurrencyCode, string ControlAccountRole, string DifferenceRole, Guid ApplicationId, Guid? HistoricalConfigurationVersionId = null) : IAccountingFactPayload;
+/// <summary>Immutable unrealized FX measurement for one still-open Subledger item.</summary>
+public sealed record UnrealizedFxRevaluationPayload(
+    Guid RevaluationRunId,
+    Guid OpenItemId,
+    string Direction,
+    decimal DifferenceAmount,
+    string BaseCurrencyCode,
+    string ControlAccountRole,
+    string DifferenceRole,
+    string TransactionCurrencyCode,
+    decimal OpenTransactionAmount,
+    decimal CarryingBaseAmount,
+    decimal RevaluedBaseAmount,
+    decimal ExchangeRate,
+    string ExchangeRateSnapshot,
+    Guid? HistoricalConfigurationVersionId = null) : IAccountingFactPayload;
 public sealed record SettlementWriteOffPayload(Guid WriteOffId, Guid PartyId, Guid OpenItemId, string Direction, string TransactionAmount,
     string TransactionCurrencyCode, decimal BaseAmount, string BaseCurrencyCode, string ReasonCode, string ReasonText, Guid? HistoricalConfigurationVersionId = null) : IAccountingFactPayload;
 
@@ -222,6 +238,11 @@ public interface ILedgerPostingEngine
 
     Task<LedgerPostingResult> PostAsync(
         AccountingFactEnvelope<IAccountingFactPayload> fact,
+        CancellationToken cancellationToken = default);
+
+    Task<LedgerPostingResult> PostUnrealizedFxRevaluationAsync(
+        AccountingFactEnvelope<IAccountingFactPayload> fact,
+        UnrealizedFxRevaluationPayload payload,
         CancellationToken cancellationToken = default);
 
     Task<LedgerPostingResult> ReverseAsync(
