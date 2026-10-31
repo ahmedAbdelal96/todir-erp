@@ -222,22 +222,22 @@ public sealed class FinanceBaseRepository(NpgsqlDataSource dataSource, ITransact
         if (lookupCache.TryGetRoundingPolicy(tenant, id, out var cached)) return cached;
         var policy = await WithTenantAsync(tenant, async (connection, token) =>
         {
-        Guid policyId; long version; int scale; var strategy = LineDocumentRoundingStrategy.RoundEachLineThenSum;
-        await using (var command = new NpgsqlCommand("select id,version,money_scale,line_document_strategy from foundation_finbase.financial_rounding_policy where tenant_id=$1 and id=$2 and status='Active'", connection))
-        {
-            Add(command, tenant.Value, id);
-            await using var reader = await command.ExecuteReaderAsync(token);
-            if (!await reader.ReadAsync(token)) return null;
-            policyId = reader.GetGuid(0); version = reader.GetInt64(1); scale = reader.GetInt16(2); strategy = Enum.Parse<LineDocumentRoundingStrategy>(reader.GetString(3));
-        }
-        var rules = new List<RoundingPolicyContextRule>();
-        await using (var command = new NpgsqlCommand("select rounding_context,mode from foundation_finbase.financial_rounding_policy_rule where tenant_id=$1 and rounding_policy_id=$2 order by rounding_context", connection))
-        {
-            Add(command, tenant.Value, id);
-            await using var reader = await command.ExecuteReaderAsync(token);
-            while (await reader.ReadAsync(token)) rules.Add(new(Enum.Parse<RoundingContext>(reader.GetString(0)), Enum.Parse<RoundingMode>(reader.GetString(1))));
-        }
-        return RoundingPolicySnapshot.Create(policyId, version, scale, strategy, rules);
+            Guid policyId; long version; int scale; var strategy = LineDocumentRoundingStrategy.RoundEachLineThenSum;
+            await using (var command = new NpgsqlCommand("select id,version,money_scale,line_document_strategy from foundation_finbase.financial_rounding_policy where tenant_id=$1 and id=$2 and status='Active'", connection))
+            {
+                Add(command, tenant.Value, id);
+                await using var reader = await command.ExecuteReaderAsync(token);
+                if (!await reader.ReadAsync(token)) return null;
+                policyId = reader.GetGuid(0); version = reader.GetInt64(1); scale = reader.GetInt16(2); strategy = Enum.Parse<LineDocumentRoundingStrategy>(reader.GetString(3));
+            }
+            var rules = new List<RoundingPolicyContextRule>();
+            await using (var command = new NpgsqlCommand("select rounding_context,mode from foundation_finbase.financial_rounding_policy_rule where tenant_id=$1 and rounding_policy_id=$2 order by rounding_context", connection))
+            {
+                Add(command, tenant.Value, id);
+                await using var reader = await command.ExecuteReaderAsync(token);
+                while (await reader.ReadAsync(token)) rules.Add(new(Enum.Parse<RoundingContext>(reader.GetString(0)), Enum.Parse<RoundingMode>(reader.GetString(1))));
+            }
+            return RoundingPolicySnapshot.Create(policyId, version, scale, strategy, rules);
         }, ct);
         if (policy is not null) lookupCache.SetRoundingPolicy(tenant, id, policy);
         return policy;

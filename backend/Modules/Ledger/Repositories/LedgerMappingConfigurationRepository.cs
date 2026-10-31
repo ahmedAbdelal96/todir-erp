@@ -144,12 +144,12 @@ public sealed class LedgerMappingConfigurationRepository(
             if (!items.Any(item => item.RoleCode == role)) errors.Add(new("ledger.account_mapping_missing", $"Role {role} has no mapping in the proposed configuration."));
         foreach (var item in items.Where(item => !item.AccountValid)) errors.Add(new("ledger.mapping_target_invalid", $"Mapping {item.MappingCode} targets an inactive or non-postable account."));
         for (var i = 0; i < items.Count; i++)
-        for (var j = i + 1; j < items.Count; j++)
-        {
-            var left = items[i]; var right = items[j];
-            if (left.RoleCode == right.RoleCode && left.SpecificityRank == right.SpecificityRank && OverlapDates(left, right) && Overlap(left.ProductCategoryCode, right.ProductCategoryCode) && Overlap(left.PartyGroupCode, right.PartyGroupCode) && Overlap(left.TaxCode, right.TaxCode) && Overlap(left.JournalCode, right.JournalCode))
-                errors.Add(new("ledger.account_mapping_conflict", $"Mappings {left.MappingCode} and {right.MappingCode} have overlapping conditions at the same specificity."));
-        }
+            for (var j = i + 1; j < items.Count; j++)
+            {
+                var left = items[i]; var right = items[j];
+                if (left.RoleCode == right.RoleCode && left.SpecificityRank == right.SpecificityRank && OverlapDates(left, right) && Overlap(left.ProductCategoryCode, right.ProductCategoryCode) && Overlap(left.PartyGroupCode, right.PartyGroupCode) && Overlap(left.TaxCode, right.TaxCode) && Overlap(left.JournalCode, right.JournalCode))
+                    errors.Add(new("ledger.account_mapping_conflict", $"Mappings {left.MappingCode} and {right.MappingCode} have overlapping conditions at the same specificity."));
+            }
         var hash = SnapshotHash(items);
         return new(config, errors.Count == 0, errors.DistinctBy(error => (error.Code, error.Message)).ToArray(), hash);
     }

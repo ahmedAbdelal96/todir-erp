@@ -100,7 +100,7 @@ await using (var ownerDatabaseGrant = new NpgsqlCommand("select format('grant cr
 // Databases restored from the pre-canonical layout can contain current
 // foundation tables owned by the restore administrator. Normalize ownership
 // before SET ROLE so the migration owner can perform the guarded consolidation.
-    await using (var normalizeCanonicalOwnership = new NpgsqlCommand("""
+await using (var normalizeCanonicalOwnership = new NpgsqlCommand("""
         do $$
         declare item record;
         begin

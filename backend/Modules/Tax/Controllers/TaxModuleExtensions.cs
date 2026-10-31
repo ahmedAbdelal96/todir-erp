@@ -132,7 +132,7 @@ public static class TaxModuleExtensions
             return await Execute(() => repository.ExportAsync(access.Tenant.Value, legalEntityId, kind, at, ct));
         });
         group.MapGet("/legal-entities/{entityId:guid}/capability", async (Guid entityId, DateOnly? at, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxService service, CancellationToken ct) =>
-            at is null ? Results.Problem(statusCode:400,title:"An effective date is required to read Tax Capability history.",extensions:new Dictionary<string,object?>{{"code","tax.effective_date_required"}}) :
+            at is null ? Results.Problem(statusCode: 400, title: "An effective date is required to read Tax Capability history.", extensions: new Dictionary<string, object?> { { "code", "tax.effective_date_required" } }) :
             await Authorized(http, subjects, authorizer, "tax.read", entityId, ct) is { Allowed: true } access
                 ? await Execute(() => service.GetCapabilityAsync(access.Tenant.Value, entityId, at.Value, ct))
                 : await ForbiddenOrUnauthorized(http, subjects, authorizer, "tax.read", entityId, ct));
@@ -146,7 +146,7 @@ public static class TaxModuleExtensions
                 : await ForbiddenOrUnauthorized(http, subjects, authorizer, "tax.simulate", request.LegalEntityId, ct));
         group.MapPost("/calculate-batch", async (TaxCalculationBatchRequest request, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, TaxService service, CancellationToken ct) =>
         {
-            if (request.Items.Count is < 1 or > 500) return Results.Problem(statusCode:400,title:"Tax batches must contain between one and five hundred lines.",extensions:new Dictionary<string,object?>{{"code","tax.batch_size_invalid"}});
+            if (request.Items.Count is < 1 or > 500) return Results.Problem(statusCode: 400, title: "Tax batches must contain between one and five hundred lines.", extensions: new Dictionary<string, object?> { { "code", "tax.batch_size_invalid" } });
             var accesses = new List<TaxAccess>();
             foreach (var item in request.Items)
             {
@@ -155,8 +155,8 @@ public static class TaxModuleExtensions
                 if (!access.Allowed) return Results.Forbid();
                 accesses.Add(access);
             }
-            if (accesses.Any(access => access.Tenant != accesses[0].Tenant)) return Results.Problem(statusCode:400,title:"A Tax batch must contain one tenant.",extensions:new Dictionary<string,object?>{{"code","tax.batch_tenant_mismatch"}});
-            return await Execute(() => service.CalculateBatchAsync(request.Items.Select(item => ToContract(accesses[0].Tenant,item)).ToArray(), ct));
+            if (accesses.Any(access => access.Tenant != accesses[0].Tenant)) return Results.Problem(statusCode: 400, title: "A Tax batch must contain one tenant.", extensions: new Dictionary<string, object?> { { "code", "tax.batch_tenant_mismatch" } });
+            return await Execute(() => service.CalculateBatchAsync(request.Items.Select(item => ToContract(accesses[0].Tenant, item)).ToArray(), ct));
         });
         group.MapPost("/rule-sets", async (TaxRuleSetRequest request, HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, Repositories.TaxLifecycleRepository repository, CancellationToken ct) =>
             await Authorized(http, subjects, authorizer, "tax.rule.manage", request.LegalEntityId ?? Guid.Empty, ct) is { Allowed: true } access
@@ -289,14 +289,14 @@ public static class TaxModuleExtensions
         return app;
     }
 
-    private static TaxContextContract ToContract(TenantId tenant, TaxCalculationRequest request) => new(tenant,new(request.LegalEntityId),request.Direction,request.DocumentKind,request.TransactionType,request.DocumentDate,request.TaxDate,request.SupplyDate,request.PostingDate,request.PartyId,request.PartyCountryCode,request.PlaceOfSupplyCountryCode,request.JurisdictionCode,request.ProductTemplateId,request.ProductVariantId,request.Quantity,request.UnitOfMeasureId,request.PriceMode,request.CommercialAmount,request.DiscountAmount,request.TaxableCharges,request.TransactionCurrency,request.BaseCurrency,request.RegistrationId,request.TaxSchemeCode,request.DocumentSemantics,request.Dimensions);
+    private static TaxContextContract ToContract(TenantId tenant, TaxCalculationRequest request) => new(tenant, new(request.LegalEntityId), request.Direction, request.DocumentKind, request.TransactionType, request.DocumentDate, request.TaxDate, request.SupplyDate, request.PostingDate, request.PartyId, request.PartyCountryCode, request.PlaceOfSupplyCountryCode, request.JurisdictionCode, request.ProductTemplateId, request.ProductVariantId, request.Quantity, request.UnitOfMeasureId, request.PriceMode, request.CommercialAmount, request.DiscountAmount, request.TaxableCharges, request.TransactionCurrency, request.BaseCurrency, request.RegistrationId, request.TaxSchemeCode, request.DocumentSemantics, request.Dimensions);
     private static Task<TaxAccess?> Authorized(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid entityId, CancellationToken ct)
         => TaxAuthorization.ResolveAsync(http.User, subjects, authorizer, permission, entityId, ct);
     private static Task<TaxAccess?> PackAuthorized(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, CancellationToken ct)
         => TaxAuthorization.ResolveTenantAsync(http.User, subjects, authorizer, permission, ct);
     private static async Task<IResult> ForbiddenOrUnauthorized(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid entityId, CancellationToken ct)
     {
-        var access = await Authorized(http,subjects,authorizer,permission,entityId,ct); return access is null ? Results.Unauthorized() : Results.Forbid();
+        var access = await Authorized(http, subjects, authorizer, permission, entityId, ct); return access is null ? Results.Unauthorized() : Results.Forbid();
     }
     private static async Task<IResult> PackForbiddenOrUnauthorized(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, CancellationToken ct)
     {
@@ -308,11 +308,11 @@ public static class TaxModuleExtensions
         catch (TaxException exception) { return TaxProblem(exception); }
     }
     private static IResult TaxProblem(TaxException exception)
-    { var code=exception.Code; var status=code.Contains("missing",StringComparison.Ordinal) || code.Contains("conflict",StringComparison.Ordinal) || code.Contains("not_found",StringComparison.Ordinal) ? 409 : 400; return Results.Problem(statusCode:status,title:exception.Message,extensions:new Dictionary<string,object?>{{"code",code}}); }
-    private static Guid Correlation(HttpContext http) => Guid.TryParse(http.Request.Headers["X-Correlation-Id"],out var value) ? value : Guid.CreateVersion7();
+    { var code = exception.Code; var status = code.Contains("missing", StringComparison.Ordinal) || code.Contains("conflict", StringComparison.Ordinal) || code.Contains("not_found", StringComparison.Ordinal) ? 409 : 400; return Results.Problem(statusCode: status, title: exception.Message, extensions: new Dictionary<string, object?> { { "code", code } }); }
+    private static Guid Correlation(HttpContext http) => Guid.TryParse(http.Request.Headers["X-Correlation-Id"], out var value) ? value : Guid.CreateVersion7();
 }
 
 public sealed class TaxModuleManifestProvider : IModuleManifestProvider
 {
-    public ModuleManifest Manifest { get; } = new("tax","1.0.0",1,"L1","foundation",false,"tenant",new(["platform-kernel"],["platform.organization","directory.party","catalog.product","catalog.quantity-conversion","finbase.money","pricing.resolve"]),new("foundation_tax",["tax_capability_state","tax_registration","tax_registration_member","tax_scheme","tax_type","tax_jurisdiction","tax_category","tax_policy","party_tax_profile","product_tax_profile","tax_rule_set","tax_rule","tax_rule_version","tax_stack_definition","tax_component_definition","tax_pack_activation","tax_audit","tax_import_batch","tax_import_row","tax_snapshot"]),["tax.read","tax.registration.read","tax.registration.manage","tax.party_profile.read","tax.party_profile.manage","tax.product_profile.read","tax.product_profile.manage","tax.policy.read","tax.policy.manage","tax.rule.read","tax.rule.manage","tax.rule.activate","tax.simulate","tax.audit.view","tax.import","tax.export","tax.capability.configure","tax.country_pack.read","tax.country_pack.manage","tax.country_pack.activate"],new(["tax.resolve","tax.resolve-batch","tax.snapshot","tax.invoice-document-validation"],["platform.organization","directory.party","catalog.product","finbase.money","pricing.resolve"]),new(["TaxCapabilityChangedV1","TaxRegistrationChangedV1","TaxCountryPackActivatedV1","TaxRuleSetActivatedV1","ProductTaxProfileChangedV1","PartyTaxProfileChangedV1"],[]),new(true,"blocked_if_dependents"));
+    public ModuleManifest Manifest { get; } = new("tax", "1.0.0", 1, "L1", "foundation", false, "tenant", new(["platform-kernel"], ["platform.organization", "directory.party", "catalog.product", "catalog.quantity-conversion", "finbase.money", "pricing.resolve"]), new("foundation_tax", ["tax_capability_state", "tax_registration", "tax_registration_member", "tax_scheme", "tax_type", "tax_jurisdiction", "tax_category", "tax_policy", "party_tax_profile", "product_tax_profile", "tax_rule_set", "tax_rule", "tax_rule_version", "tax_stack_definition", "tax_component_definition", "tax_pack_activation", "tax_audit", "tax_import_batch", "tax_import_row", "tax_snapshot"]), ["tax.read", "tax.registration.read", "tax.registration.manage", "tax.party_profile.read", "tax.party_profile.manage", "tax.product_profile.read", "tax.product_profile.manage", "tax.policy.read", "tax.policy.manage", "tax.rule.read", "tax.rule.manage", "tax.rule.activate", "tax.simulate", "tax.audit.view", "tax.import", "tax.export", "tax.capability.configure", "tax.country_pack.read", "tax.country_pack.manage", "tax.country_pack.activate"], new(["tax.resolve", "tax.resolve-batch", "tax.snapshot", "tax.invoice-document-validation"], ["platform.organization", "directory.party", "catalog.product", "finbase.money", "pricing.resolve"]), new(["TaxCapabilityChangedV1", "TaxRegistrationChangedV1", "TaxCountryPackActivatedV1", "TaxRuleSetActivatedV1", "ProductTaxProfileChangedV1", "PartyTaxProfileChangedV1"], []), new(true, "blocked_if_dependents"));
 }

@@ -15,7 +15,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task TaxProfileImportExportRunsAgainstDisposablePostgresAndPreservesAtomicity()
     {
@@ -53,7 +54,9 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
             var initialCounts = await ReadProfileCountsAsync(databaseAdmin, fixture.TenantId);
             var productPreview = await PostJsonAsync(client, "/api/v1/tax/imports/product-profiles/preview", new
             {
-                kind = "Product", legalEntityId = fixture.LegalEntityId, sourceReference = "tax-pass-3a-product-round-trip",
+                kind = "Product",
+                legalEntityId = fixture.LegalEntityId,
+                sourceReference = "tax-pass-3a-product-round-trip",
                 rows = new[]
                 {
                     ProductRow(1, fixture.TemplateCode, "Template", "2027-01-01"),
@@ -75,7 +78,9 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
 
             var productVersionPreview = await PostJsonAsync(client, "/api/v1/tax/imports/product-profiles/preview", new
             {
-                kind = "Product", legalEntityId = fixture.LegalEntityId, sourceReference = "tax-pass-3a-product-version",
+                kind = "Product",
+                legalEntityId = fixture.LegalEntityId,
+                sourceReference = "tax-pass-3a-product-version",
                 rows = new[]
                 {
                     ProductRow(1, fixture.TemplateCode, "Template", "2028-01-01"),
@@ -88,13 +93,15 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
 
             var duplicatePreview = await PostJsonAsync(client, "/api/v1/tax/imports/product-profiles/preview", new
             {
-                kind = "Product", legalEntityId = fixture.LegalEntityId,
+                kind = "Product",
+                legalEntityId = fixture.LegalEntityId,
                 rows = new[] { ProductRow(1, fixture.TemplateCode, "Template", "2029-01-01"), ProductRow(2, fixture.TemplateCode, "Template", "2029-01-01") }
             }, HttpStatusCode.OK);
             Assert.Equal("DuplicateInput", duplicatePreview.GetProperty("rows")[1].GetProperty("outcome").GetString());
             var overlapPreview = await PostJsonAsync(client, "/api/v1/tax/imports/product-profiles/preview", new
             {
-                kind = "Product", legalEntityId = fixture.LegalEntityId,
+                kind = "Product",
+                legalEntityId = fixture.LegalEntityId,
                 rows = new[] { ProductRow(1, fixture.TemplateCode, "Template", "2027-01-01") }
             }, HttpStatusCode.OK);
             Assert.Equal("EffectiveDateOverlap", overlapPreview.GetProperty("rows")[0].GetProperty("outcome").GetString());
@@ -102,7 +109,9 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
 
             var partyPreview = await PostJsonAsync(client, "/api/v1/tax/imports/party-profiles/preview", new
             {
-                kind = "Party", legalEntityId = fixture.LegalEntityId, sourceReference = "tax-pass-3a-party-round-trip",
+                kind = "Party",
+                legalEntityId = fixture.LegalEntityId,
+                sourceReference = "tax-pass-3a-party-round-trip",
                 rows = new[] { PartyRow(1, fixture.PartyReference, "2027-01-01", "TEST-REG-001") }
             }, HttpStatusCode.OK);
             Assert.Equal("Create", partyPreview.GetProperty("rows")[0].GetProperty("outcome").GetString());
@@ -113,7 +122,8 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
 
             var partyVersionPreview = await PostJsonAsync(client, "/api/v1/tax/imports/party-profiles/preview", new
             {
-                kind = "Party", legalEntityId = fixture.LegalEntityId,
+                kind = "Party",
+                legalEntityId = fixture.LegalEntityId,
                 rows = new[] { PartyRow(1, fixture.PartyReference, "2028-01-01", "TEST-REG-002") }
             }, HttpStatusCode.OK);
             Assert.Equal("CreateNewVersion", partyVersionPreview.GetProperty("rows")[0].GetProperty("outcome").GetString());
@@ -123,19 +133,22 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
 
             var invalidRegistration = await PostJsonAsync(client, "/api/v1/tax/imports/party-profiles/preview", new
             {
-                kind = "Party", legalEntityId = fixture.LegalEntityId,
+                kind = "Party",
+                legalEntityId = fixture.LegalEntityId,
                 rows = new[] { PartyRow(1, fixture.PartyReference, "2030-01-01", "TEST-REG-003") with { registrationCountryCode = "Eg" } }
             }, HttpStatusCode.OK);
             Assert.Equal("InvalidTaxNumberFormat", invalidRegistration.GetProperty("rows")[0].GetProperty("outcome").GetString());
             var unknownParty = await PostJsonAsync(client, "/api/v1/tax/imports/party-profiles/preview", new
             {
-                kind = "Party", legalEntityId = fixture.LegalEntityId,
+                kind = "Party",
+                legalEntityId = fixture.LegalEntityId,
                 rows = new[] { PartyRow(1, "directory-import:UNKNOWN-PARTY", "2030-01-01", "TEST-REG-004") }
             }, HttpStatusCode.OK);
             Assert.Equal("UnknownParty", unknownParty.GetProperty("rows")[0].GetProperty("outcome").GetString());
             var partyOverlap = await PostJsonAsync(client, "/api/v1/tax/imports/party-profiles/preview", new
             {
-                kind = "Party", legalEntityId = fixture.LegalEntityId,
+                kind = "Party",
+                legalEntityId = fixture.LegalEntityId,
                 rows = new[] { PartyRow(1, fixture.PartyReference, "2027-01-01", "TEST-REG-005") }
             }, HttpStatusCode.OK);
             Assert.Equal("EffectiveDateOverlap", partyOverlap.GetProperty("rows")[0].GetProperty("outcome").GetString());
@@ -181,7 +194,8 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
 
             var rollbackPreview = await PostJsonAsync(client, "/api/v1/tax/imports/product-profiles/preview", new
             {
-                kind = "Product", legalEntityId = fixture.LegalEntityId,
+                kind = "Product",
+                legalEntityId = fixture.LegalEntityId,
                 rows = new[] { ProductRow(1, fixture.TemplateCodeForRollback, "Template", "2031-01-01"), ProductRow(2, fixture.SecondTemplateCodeForRollback, "Template", "2031-01-01") }
             }, HttpStatusCode.OK);
             var rollbackBatchId = rollbackPreview.GetProperty("batchId").GetGuid();
@@ -262,8 +276,13 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
 
             var impact = await PostJsonAsync(client, "/api/v1/tax/draft-impact", new
             {
-                legalEntityId = fixture.LegalEntityId, taxDate = "2027-01-01", countryCode = "EG", schemeCode = (string?)null,
-                previousPackVersion = "1.0", previousRuleSetVersion = (int?)null, previousTaxFingerprint = "1.0:missing"
+                legalEntityId = fixture.LegalEntityId,
+                taxDate = "2027-01-01",
+                countryCode = "EG",
+                schemeCode = (string?)null,
+                previousPackVersion = "1.0",
+                previousRuleSetVersion = (int?)null,
+                previousTaxFingerprint = "1.0:missing"
             }, HttpStatusCode.OK);
             Assert.True(impact.GetProperty("taxRecalculationRequired").GetBoolean());
             Assert.Equal("CountryPackVersionChanged", impact.GetProperty("reason").GetString());
@@ -335,8 +354,15 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
 
     private static object ProductRow(int rowNumber, string reference, string scope, string from) => new
     {
-        rowNumber, reference, taxCategoryCode = "GENERAL", schemeCode = "DEVELOPMENT", legalEntityId = (Guid?)null,
-        countryCode = "EG", effectiveFrom = DateOnly.Parse(from, CultureInfo.InvariantCulture), effectiveTo = (DateOnly?)null, productScope = scope
+        rowNumber,
+        reference,
+        taxCategoryCode = "GENERAL",
+        schemeCode = "DEVELOPMENT",
+        legalEntityId = (Guid?)null,
+        countryCode = "EG",
+        effectiveFrom = DateOnly.Parse(from, CultureInfo.InvariantCulture),
+        effectiveTo = (DateOnly?)null,
+        productScope = scope
     };
 
     private static PartyRowModel PartyRow(int rowNumber, string reference, string from, string registrationNumber) => new(rowNumber, reference, "PARTY-GENERAL", "DEVELOPMENT", null, "EG", DateOnly.Parse(from, CultureInfo.InvariantCulture), null, "EG", registrationNumber, null, false, "Tax pass 3A synthetic fixture");
@@ -348,9 +374,20 @@ public sealed class TaxProfileImportIntegrationTests : DatabaseIntegrationTestBa
 
     private static object PackRequest(string code, string version, string effectiveFrom, string sourceKind, string sourceReference, int vectorCount, string vectorStatus) => new
     {
-        countryCode = "EG", packCode = code, packVersion = version, engineContractVersion = "tax_calculation_v1", effectiveFrom,
-        effectiveTo = (string?)null, sourceKind, sourceAuthority = sourceKind == "TestOnly" ? "Internal Test Authority" : "", sourceTitle = sourceKind == "TestOnly" ? "Technical Fixture" : "", sourceReference,
-        ruleSetReferences = new[] { "DEVELOPMENT" }, capabilities = new { vat = true, excise = false, withholding = false, taxGrouping = false, eInvoice = false }, goldenVectorCount = vectorCount, goldenVectorStatus = vectorStatus
+        countryCode = "EG",
+        packCode = code,
+        packVersion = version,
+        engineContractVersion = "tax_calculation_v1",
+        effectiveFrom,
+        effectiveTo = (string?)null,
+        sourceKind,
+        sourceAuthority = sourceKind == "TestOnly" ? "Internal Test Authority" : "",
+        sourceTitle = sourceKind == "TestOnly" ? "Technical Fixture" : "",
+        sourceReference,
+        ruleSetReferences = new[] { "DEVELOPMENT" },
+        capabilities = new { vat = true, excise = false, withholding = false, taxGrouping = false, eInvoice = false },
+        goldenVectorCount = vectorCount,
+        goldenVectorStatus = vectorStatus
     };
 
     private static async Task<Fixture> ReadFixtureAsync(string adminConnectionString, string databaseName)

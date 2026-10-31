@@ -179,11 +179,12 @@ public sealed class AccountingService(
         if (request.ReversalDate == DateOnly.MinValue || string.IsNullOrWhiteSpace(request.Reason)) throw new AccountingException("accounting.fx_revaluation_reversal_invalid");
         var run = await repository.GetFxRevaluationRunAsync(tenant, entity, runId, ct) ?? throw new AccountingException("accounting.fx_revaluation_not_found");
         if (run.Status == "Reversed") return run;
-        if (run.Status != "Posted" || request.ReversalDate <= run.AsOfDate) throw new AccountingException("accounting.fx_revaluation_reversal_invalid");
+        if ((run.Status != "Posted" && run.Status != "Invalidated") || request.ReversalDate <= run.AsOfDate || !run.Lines.Any(line => line.JournalEntryId is not null))
+            throw new AccountingException("accounting.fx_revaluation_reversal_invalid");
         foreach (var line in run.Lines)
         {
             if (line.ReversalEntryId is not null) continue;
-            if (line.JournalEntryId is null) throw new AccountingException("accounting.fx_revaluation_incomplete");
+            if (line.JournalEntryId is null) continue;
             var reversal = await ledgerPosting.ReverseAsync(tenant, new(entity), line.JournalEntryId.Value, request.ReversalDate, null, request.Reason.Trim(), actor, correlation, ct);
             await repository.SaveFxRevaluationReversalAsync(tenant, entity, runId, line.Id, reversal.JournalEntryId, ct);
         }

@@ -7,7 +7,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class EntitlementIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class EntitlementIntegrationTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task LatestTenantSnapshotLoadsThroughTheRlsBoundStore()
     {

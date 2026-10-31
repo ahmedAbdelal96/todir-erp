@@ -9,7 +9,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class CatalogReadinessContractTests : DatabaseIntegrationTestBase {
+public sealed class CatalogReadinessContractTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task ReadinessReturnsIdenticalNotFoundForAbsentAndCrossTenantProducts()
     {

@@ -8,7 +8,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class LedgerAuthorizationIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class LedgerAuthorizationIntegrationTests : DatabaseIntegrationTestBase
+{
     private static readonly Guid AtlasTenant = Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b");
     private static readonly Guid AtlasEntity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
 

@@ -412,7 +412,7 @@ public sealed class AccountingRepository(NpgsqlDataSource dataSource, TimeProvid
     public async Task CompleteFxRevaluationReversalAsync(TenantId tenant, Guid entity, Guid runId, CancellationToken ct)
     {
         await using var connection = await OpenAsync(tenant, ct);
-        await using var command = new NpgsqlCommand("update business_accounting.fx_revaluation_run set status='Reversed',reversed_at=$4,updated_at=$4,row_version=row_version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Posted' and not exists(select 1 from business_accounting.fx_revaluation_line where tenant_id=$1 and revaluation_run_id=$3 and reversal_entry_id is null)", connection);
+        await using var command = new NpgsqlCommand("update business_accounting.fx_revaluation_run set status='Reversed',reversed_at=$4,updated_at=$4,row_version=row_version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status in ('Posted','Invalidated') and not exists(select 1 from business_accounting.fx_revaluation_line where tenant_id=$1 and revaluation_run_id=$3 and journal_entry_id is not null and reversal_entry_id is null)", connection);
         Add(command, tenant.Value, entity, runId, clock.GetUtcNow());
         if (await command.ExecuteNonQueryAsync(ct) != 1) throw new AccountingRepositoryException("accounting.fx_revaluation_reversal_incomplete");
     }

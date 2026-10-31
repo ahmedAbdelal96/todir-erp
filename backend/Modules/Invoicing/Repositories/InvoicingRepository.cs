@@ -144,8 +144,14 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
             await InsertChargesAsync(context.Connection, context.Transaction, tenant, request.LegalEntityId, invoiceId, request.Charges, token);
             await UpsertProjectionAsync(context.Connection, context.Transaction, tenant, request.LegalEntityId, invoiceId, partyDisplayName, null, "Unknown", "Pending", token);
             await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction, new(Guid.CreateVersion7(), tenant, request.LegalEntityId, request.BranchId, "User", actorId, membershipId,
-                "invoicing", "invoice.draft_created", "invoice", invoiceId, null, JsonSerializer.Serialize(new { direction, request.PartyId, request.DocumentDate, request.CurrencyCode,
-                    priceOverrides = request.Lines.Where(line => line.UnitPrice is not null).Select(line => new { line.SourceLineReference, line.UnitPrice, line.PriceOverrideReason }).ToArray() }, JsonOptions), null, "api", correlationId, null, now, null), token);
+                "invoicing", "invoice.draft_created", "invoice", invoiceId, null, JsonSerializer.Serialize(new
+                {
+                    direction,
+                    request.PartyId,
+                    request.DocumentDate,
+                    request.CurrencyCode,
+                    priceOverrides = request.Lines.Where(line => line.UnitPrice is not null).Select(line => new { line.SourceLineReference, line.UnitPrice, line.PriceOverrideReason }).ToArray()
+                }, JsonOptions), null, "api", correlationId, null, now, null), token);
             context.AddOutbox(new(Guid.CreateVersion7(), "InvoiceDraftCreatedV1", JsonSerializer.Serialize(new { invoiceId, request.LegalEntityId, direction, partyId = request.PartyId }, JsonOptions), tenant, now, correlationId, invoiceId, "invoicing"));
             return invoiceId;
         }, ct);
@@ -271,8 +277,11 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
             await InsertChargesAsync(context.Connection, context.Transaction, tenant, legalEntityId, invoiceId, request.Charges, token);
             await UpsertProjectionAsync(context.Connection, context.Transaction, tenant, legalEntityId, invoiceId, partyDisplayName, null, "Unknown", "Pending", token);
             await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction, new(Guid.CreateVersion7(), tenant, legalEntityId, null, "User", actorId, membershipId,
-                "invoicing", "invoice.draft_updated", "invoice", invoiceId, null, JsonSerializer.Serialize(new { priceOverrides = request.Lines.Where(line => line.UnitPrice is not null)
-                    .Select(line => new { line.SourceLineReference, line.UnitPrice, line.PriceOverrideReason }).ToArray() }, JsonOptions), null, "api", correlationId, null, clock.GetUtcNow(), null), token);
+                "invoicing", "invoice.draft_updated", "invoice", invoiceId, null, JsonSerializer.Serialize(new
+                {
+                    priceOverrides = request.Lines.Where(line => line.UnitPrice is not null)
+                    .Select(line => new { line.SourceLineReference, line.UnitPrice, line.PriceOverrideReason }).ToArray()
+                }, JsonOptions), null, "api", correlationId, null, clock.GetUtcNow(), null), token);
             context.AddOutbox(new(Guid.CreateVersion7(), "InvoiceDraftUpdatedV1", JsonSerializer.Serialize(new { invoiceId, legalEntityId, version = (long)result }, JsonOptions), tenant, clock.GetUtcNow(), correlationId, invoiceId, "invoicing"));
             return (long)result;
         }, ct);
@@ -344,11 +353,25 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
             {
                 var header = new
                 {
-                    Id = reader.GetGuid(0), TenantId = reader.GetGuid(1), EntityId = reader.GetGuid(2), BranchId = NGuid(reader, 3),
-                    Direction = Enum.Parse<InvoiceDirection>(reader.GetString(4)), DocumentType = Enum.Parse<InvoiceDocumentType>(reader.GetString(5)),
-                    PartyId = reader.GetGuid(6), AddressId = NGuid(reader, 7), DocumentDate = reader.GetFieldValue<DateOnly>(8), PostingDate = reader.GetFieldValue<DateOnly>(9),
-                    TaxDate = reader.GetFieldValue<DateOnly>(10), SupplyDate = NDate(reader, 11), Currency = reader.GetString(12).Trim(), TermId = NGuid(reader, 13),
-                    DocumentDiscountAmount = reader.GetDecimal(14), SupplierNumber = NText(reader, 15), Version = reader.GetInt64(16), Lifecycle = Enum.Parse<InvoiceLifecycle>(reader.GetString(17)), PriceMode = reader.GetString(18),
+                    Id = reader.GetGuid(0),
+                    TenantId = reader.GetGuid(1),
+                    EntityId = reader.GetGuid(2),
+                    BranchId = NGuid(reader, 3),
+                    Direction = Enum.Parse<InvoiceDirection>(reader.GetString(4)),
+                    DocumentType = Enum.Parse<InvoiceDocumentType>(reader.GetString(5)),
+                    PartyId = reader.GetGuid(6),
+                    AddressId = NGuid(reader, 7),
+                    DocumentDate = reader.GetFieldValue<DateOnly>(8),
+                    PostingDate = reader.GetFieldValue<DateOnly>(9),
+                    TaxDate = reader.GetFieldValue<DateOnly>(10),
+                    SupplyDate = NDate(reader, 11),
+                    Currency = reader.GetString(12).Trim(),
+                    TermId = NGuid(reader, 13),
+                    DocumentDiscountAmount = reader.GetDecimal(14),
+                    SupplierNumber = NText(reader, 15),
+                    Version = reader.GetInt64(16),
+                    Lifecycle = Enum.Parse<InvoiceLifecycle>(reader.GetString(17)),
+                    PriceMode = reader.GetString(18),
                     Source = NText(reader, 19) is { } module ? new InvoiceSourceReferenceContract(module, reader.GetGuid(20), reader.GetString(21), reader.GetString(22), reader.GetString(23).Trim()) : null
                 };
                 var lines = new List<InvoiceLineDraft>();

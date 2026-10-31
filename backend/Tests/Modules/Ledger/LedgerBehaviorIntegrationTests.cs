@@ -85,7 +85,8 @@ public sealed class LedgerBehaviorIntegrationTests
         await LedgerTestSupport.SetTenantAsync(connection, LedgerTestSupport.AtlasTenant);
         await using var periods = new NpgsqlCommand("select p.start_date,p.end_date from finance_ledger.journal_entry e join finance_ledger.accounting_period p on p.tenant_id=e.tenant_id and p.legal_entity_id=e.legal_entity_id and p.id=e.accounting_period_id where e.tenant_id=$1 and e.id = any($2)", connection);
         periods.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); periods.Parameters.AddWithValue(new[] { backdated.JournalEntryId, future.JournalEntryId });
-        await using var reader = await periods.ExecuteReaderAsync(); var resolved = 0; while (await reader.ReadAsync()) { Assert.True(reader.GetDateTime(0) <= reader.GetDateTime(1)); resolved++; } Assert.Equal(2, resolved);
+        await using var reader = await periods.ExecuteReaderAsync(); var resolved = 0; while (await reader.ReadAsync()) { Assert.True(reader.GetDateTime(0) <= reader.GetDateTime(1)); resolved++; }
+        Assert.Equal(2, resolved);
     }
 
     [Fact]

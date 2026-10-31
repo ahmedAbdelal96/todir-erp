@@ -18,5 +18,6 @@
     <ProjectReference Include="../Modules/Inventory/Inventory.csproj" />
     <ProjectReference Include="../Modules/Sales/Sales.csproj" />
     <ProjectReference Include="../Modules/Invoicing/Invoicing.csproj" />
+    <ProjectReference Include="../Modules/Tax/Tax.csproj" />
   </ItemGroup>
 </Project>

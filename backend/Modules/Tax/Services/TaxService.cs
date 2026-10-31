@@ -71,12 +71,12 @@ public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities c
         if (domain.TaxDate is { } suppliedTaxDate) date = suppliedTaxDate;
         else
         {
-            var preliminaryPack = domain.PlaceOfSupplyCountryCode is null ? null : countryPacks.Find(domain.PlaceOfSupplyCountryCode,domain.DocumentDate);
+            var preliminaryPack = domain.PlaceOfSupplyCountryCode is null ? null : countryPacks.Find(domain.PlaceOfSupplyCountryCode, domain.DocumentDate);
             if (preliminaryPack is not null) date = preliminaryPack.ResolveTaxDate(domain).Date;
             else
             {
-                policy = await repository.GetPolicyAsync(context.TenantId.Value,context.LegalEntityId.Value,cancellationToken);
-                date = TaxDateResolver.Resolve(domain,policy.DatePolicy).Date;
+                policy = await repository.GetPolicyAsync(context.TenantId.Value, context.LegalEntityId.Value, cancellationToken);
+                date = TaxDateResolver.Resolve(domain, policy.DatePolicy).Date;
             }
         }
         var dateOnly = new DateOnly(date.Year, date.Month, date.Day);
@@ -87,12 +87,12 @@ public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities c
             return Map(disabled);
         }
 
-        policy ??= await repository.GetPolicyAsync(context.TenantId.Value,context.LegalEntityId.Value,cancellationToken);
+        policy ??= await repository.GetPolicyAsync(context.TenantId.Value, context.LegalEntityId.Value, cancellationToken);
 
-        var countryPack = domain.PlaceOfSupplyCountryCode is null ? null : countryPacks.Find(domain.PlaceOfSupplyCountryCode,date);
+        var countryPack = domain.PlaceOfSupplyCountryCode is null ? null : countryPacks.Find(domain.PlaceOfSupplyCountryCode, date);
         if (countryPack is not null)
         {
-            var jurisdiction = countryPack.ResolveJurisdiction(domain,date);
+            var jurisdiction = countryPack.ResolveJurisdiction(domain, date);
             domain = domain with { JurisdictionCode = jurisdiction.JurisdictionCode };
             placeOfSupplyReason = jurisdiction.PlaceOfSupplyReason;
         }
@@ -129,11 +129,11 @@ public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities c
         };
         if (domain.ProductTaxCategoryId is null)
             throw new TaxException("tax.product_classification_missing", "The product or service has no Tax Category for this Tax Date.");
-        var finance = await financeBase.ResolveCalculationContextAsync(context.TenantId,context.LegalEntityId,context.TransactionCurrency,FinancialCalculationPurpose.Tax,dateOnly,cancellationToken)
+        var finance = await financeBase.ResolveCalculationContextAsync(context.TenantId, context.LegalEntityId, context.TransactionCurrency, FinancialCalculationPurpose.Tax, dateOnly, cancellationToken)
             ?? throw new TaxException("tax.finbase_context_missing", "FinBase could not resolve the legal entity's financial policy for Tax.");
-        if (!string.Equals(finance.BaseCurrencyCode,context.BaseCurrency,StringComparison.Ordinal)) throw new TaxException("tax.base_currency_mismatch", "The supplied base currency does not match the Legal Entity's FinBase currency.");
+        if (!string.Equals(finance.BaseCurrencyCode, context.BaseCurrency, StringComparison.Ordinal)) throw new TaxException("tax.base_currency_mismatch", "The supplied base currency does not match the Legal Entity's FinBase currency.");
         var taxFxSnapshot = finance.ExchangeRate is null ? null : System.Text.Json.JsonSerializer.Serialize(finance.ExchangeRate);
-        if (!string.Equals(finance.BaseCurrencyCode,finance.TransactionCurrencyCode,StringComparison.Ordinal) && finance.ExchangeRate is null)
+        if (!string.Equals(finance.BaseCurrencyCode, finance.TransactionCurrencyCode, StringComparison.Ordinal) && finance.ExchangeRate is null)
             throw new TaxException("tax.fx_rate_missing", "FinBase did not provide an approved Tax-purpose exchange rate for the Tax Date.");
         var roundingContext = policy.RoundingStrategy switch { TaxRoundingStrategy.PerLine => FinancialRoundingContext.LineNetAmount, TaxRoundingStrategy.PerTaxComponent => FinancialRoundingContext.DocumentSubtotal, _ => FinancialRoundingContext.DocumentTotal };
         var roundingMode = finance.RoundingPolicy.ContextRules.FirstOrDefault(rule => rule.Context == roundingContext)?.Mode
@@ -157,7 +157,7 @@ public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities c
         var tenant = contexts[0].TenantId;
         if (contexts.Any(context => context.TenantId != tenant)) throw new TaxException("tax.batch_tenant_mismatch", "A Tax calculation batch must contain one tenant.");
         var output = new TaxResultContract[contexts.Count];
-        foreach (var group in contexts.Select((context,index)=>(context,index)).GroupBy(item => item.context.LegalEntityId))
+        foreach (var group in contexts.Select((context, index) => (context, index)).GroupBy(item => item.context.LegalEntityId))
         {
             var materialized = group.ToArray();
             TaxRepository.TaxPolicyResolution? policy = null;
@@ -174,17 +174,17 @@ public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities c
                     policy ??= await repository.GetPolicyAsync(tenant.Value, group.Key.Value, cancellationToken);
                     date = TaxDateResolver.Resolve(domain, policy.DatePolicy).Date;
                 }
-                dates.Add((item.index,item.context,domain,date));
+                dates.Add((item.index, item.context, domain, date));
             }
-            foreach (var dateGroup in dates.GroupBy(item => new DateOnly(item.date.Year,item.date.Month,item.date.Day)))
+            foreach (var dateGroup in dates.GroupBy(item => new DateOnly(item.date.Year, item.date.Month, item.date.Day)))
             {
                 var capability = await repository.GetCapabilityAsync(tenant.Value, group.Key.Value, dateGroup.Key, cancellationToken);
                 if (capability?.Capability != "Enabled")
                 {
-                    foreach (var item in dateGroup) output[item.index] = Map(TaxCalculator.Disabled(item.domain,FormatDate(item.date)));
+                    foreach (var item in dateGroup) output[item.index] = Map(TaxCalculator.Disabled(item.domain, FormatDate(item.date)));
                     continue;
                 }
-                policy ??= await repository.GetPolicyAsync(tenant.Value,group.Key.Value,cancellationToken);
+                policy ??= await repository.GetPolicyAsync(tenant.Value, group.Key.Value, cancellationToken);
                 var lines = dateGroup.ToArray();
                 var domainByIndex = lines.ToDictionary(item => item.index, item => item.domain);
                 var jurisdictionReasons = new Dictionary<int, string?>();
@@ -259,9 +259,9 @@ public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities c
                 {
                     if (!rules.TryGetValue(item.index, out var selected)) throw new TaxException("tax.rule_missing", "No approved tax rule matches this transaction and Tax Date.");
                     var finance = finances[item.context.TransactionCurrency];
-                    if (!string.Equals(finance.BaseCurrencyCode,item.context.BaseCurrency,StringComparison.Ordinal)) throw new TaxException("tax.base_currency_mismatch", "The supplied base currency does not match the Legal Entity's FinBase currency.");
+                    if (!string.Equals(finance.BaseCurrencyCode, item.context.BaseCurrency, StringComparison.Ordinal)) throw new TaxException("tax.base_currency_mismatch", "The supplied base currency does not match the Legal Entity's FinBase currency.");
                     var fx = finance.ExchangeRate is null ? null : System.Text.Json.JsonSerializer.Serialize(finance.ExchangeRate);
-                    if (!string.Equals(finance.BaseCurrencyCode,finance.TransactionCurrencyCode,StringComparison.Ordinal) && finance.ExchangeRate is null) throw new TaxException("tax.fx_rate_missing", "FinBase did not provide an approved Tax-purpose exchange rate for the Tax Date.");
+                    if (!string.Equals(finance.BaseCurrencyCode, finance.TransactionCurrencyCode, StringComparison.Ordinal) && finance.ExchangeRate is null) throw new TaxException("tax.fx_rate_missing", "FinBase did not provide an approved Tax-purpose exchange rate for the Tax Date.");
                     var roundingContext = policy.RoundingStrategy switch { TaxRoundingStrategy.PerLine => FinancialRoundingContext.LineNetAmount, TaxRoundingStrategy.PerTaxComponent => FinancialRoundingContext.DocumentSubtotal, _ => FinancialRoundingContext.DocumentTotal };
                     var roundingMode = finance.RoundingPolicy.ContextRules.FirstOrDefault(rule => rule.Context == roundingContext)?.Mode ?? throw new TaxException("tax.rounding_policy_missing", "FinBase has no rounding mode configured for the required Tax calculation context.");
                     var mode = roundingMode;
@@ -315,24 +315,24 @@ public sealed class TaxService(ITaxRepository repository, ICatalogCapabilities c
 
     private static TaxCalculationContext ToDomain(TaxContextContract input)
     {
-        if (!Enum.TryParse<TaxDirection>(input.Direction,true,out var direction) || !Enum.TryParse<TaxPriceMode>(input.PriceMode,true,out var priceMode))
+        if (!Enum.TryParse<TaxDirection>(input.Direction, true, out var direction) || !Enum.TryParse<TaxPriceMode>(input.PriceMode, true, out var priceMode))
             throw new TaxException("tax.context_invalid", "Direction and Price Mode must be supported values.");
         if (input.TenantId.Value == Guid.Empty || input.LegalEntityId.Value == Guid.Empty || input.Quantity <= 0m)
             throw new TaxException("tax.context_invalid", "Tenant, legal entity, and positive quantity are required.");
         decimal Parse(string value, string field)
         {
-            if (!decimal.TryParse(value,NumberStyles.AllowLeadingSign|NumberStyles.AllowDecimalPoint,CultureInfo.InvariantCulture,out var amount)) throw new TaxException("tax.amount_invalid", $"{field} must be an invariant decimal string.");
+            if (!decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount)) throw new TaxException("tax.amount_invalid", $"{field} must be an invariant decimal string.");
             return amount;
         }
-        var commercial = Parse(input.CommercialAmount,"Commercial Amount");
-        var discount = Parse(input.DiscountAmount,"Discount Amount");
-        var charges = Parse(input.TaxableCharges,"Taxable Charges");
+        var commercial = Parse(input.CommercialAmount, "Commercial Amount");
+        var discount = Parse(input.DiscountAmount, "Discount Amount");
+        var charges = Parse(input.TaxableCharges, "Taxable Charges");
         if (commercial < 0m || discount < 0m || charges < 0m || discount > commercial + charges) throw new TaxException("tax.amount_invalid", "Commercial amount, discount, and charges must be nonnegative and the discount cannot exceed the available amount.");
         if (input.TransactionCurrency.Length != 3 || input.BaseCurrency.Length != 3 || input.TransactionCurrency.Any(character => !char.IsAsciiLetterUpper(character)) || input.BaseCurrency.Any(character => !char.IsAsciiLetterUpper(character))) throw new TaxException("tax.currency_invalid", "Transaction and base currency must be three-letter uppercase codes.");
         var semantics = Enum.TryParse<TaxDocumentSemantics>(input.DocumentSemantics ?? input.DocumentKind, true, out var parsedSemantics) ? parsedSemantics : TaxDocumentSemantics.Invoice;
-        return new(input.TenantId.Value,input.LegalEntityId.Value,direction,input.DocumentKind,input.TransactionType,LocalDate.FromDateTime(input.DocumentDate.ToDateTime(TimeOnly.MinValue)),input.TaxDate is { } taxDate ? LocalDate.FromDateTime(taxDate.ToDateTime(TimeOnly.MinValue)) : null,input.SupplyDate is { } supplyDate ? LocalDate.FromDateTime(supplyDate.ToDateTime(TimeOnly.MinValue)) : null,input.PostingDate is { } postingDate ? LocalDate.FromDateTime(postingDate.ToDateTime(TimeOnly.MinValue)) : null,input.PartyId,input.PartyCountryCode,input.PlaceOfSupplyCountryCode,null,input.JurisdictionCode,input.ProductTemplateId,input.ProductVariantId,null,input.Quantity,input.UnitOfMeasureId,priceMode,commercial,discount,charges,input.TransactionCurrency,input.BaseCurrency,input.RegistrationId,null,input.TaxSchemeCode,semantics,null,input.Dimensions);
+        return new(input.TenantId.Value, input.LegalEntityId.Value, direction, input.DocumentKind, input.TransactionType, LocalDate.FromDateTime(input.DocumentDate.ToDateTime(TimeOnly.MinValue)), input.TaxDate is { } taxDate ? LocalDate.FromDateTime(taxDate.ToDateTime(TimeOnly.MinValue)) : null, input.SupplyDate is { } supplyDate ? LocalDate.FromDateTime(supplyDate.ToDateTime(TimeOnly.MinValue)) : null, input.PostingDate is { } postingDate ? LocalDate.FromDateTime(postingDate.ToDateTime(TimeOnly.MinValue)) : null, input.PartyId, input.PartyCountryCode, input.PlaceOfSupplyCountryCode, null, input.JurisdictionCode, input.ProductTemplateId, input.ProductVariantId, null, input.Quantity, input.UnitOfMeasureId, priceMode, commercial, discount, charges, input.TransactionCurrency, input.BaseCurrency, input.RegistrationId, null, input.TaxSchemeCode, semantics, null, input.Dimensions);
     }
 
-    private static TaxResultContract Map(TaxResult result) => new(result.EvaluationState.ToString(),result.Treatment?.ToString(),result.NetAmount,result.TaxTotal,result.GrossAmount,result.TaxLines.Select(line => new TaxLineContract(line.TaxTypeCode,line.TaxCode,line.TreatmentCode,line.Rate,line.FixedAmountPerUnit,line.TaxableBase,line.TaxAmount,line.Currency,line.Jurisdiction,line.LegalReasonCode,line.LegalReasonText,line.ReportingCode,line.RuleId,line.RuleVersion,line.Recoverability is null ? null : new(line.Recoverability.Kind.ToString(),line.Recoverability.RecoverablePercentage,line.Recoverability.RecoverableAmount,line.Recoverability.NonRecoverableAmount))).ToArray(),result.JurisdictionSnapshot,result.RegistrationSnapshot,result.RuleSetVersion,result.CalculationVersion,new(result.Explanation.CountryPackCode,result.Explanation.CountryPackVersion,result.Explanation.TaxDate,result.Explanation.Jurisdiction,result.Explanation.RegistrationStatus,result.Explanation.PartyTreatment,result.Explanation.ProductCategory,result.Explanation.MatchedRuleId,result.Explanation.ComponentCodes,result.Explanation.Rounding,result.Explanation.Summary,result.Explanation.PlaceOfSupplyReason,result.Explanation.PartyEvidence,result.Explanation.ProductEvidence,result.Explanation.LegalReasonCode,result.Explanation.LegalReasonText),result.TaxFxSnapshot,result.RoundingPolicyVersion,result.RoundingEvidence is null ? null : new(result.RoundingEvidence.Strategy,result.RoundingEvidence.MoneyScale,result.RoundingEvidence.Mode,result.RoundingEvidence.UnroundedTaxTotal,result.RoundingEvidence.PreReconciliationTotal,result.RoundingEvidence.Residual,result.RoundingEvidence.AllocationTarget,result.RoundingEvidence.FinalTotal),result.QuantitySnapshot);
-    private static string FormatDate(LocalDate date) => date.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture);
+    private static TaxResultContract Map(TaxResult result) => new(result.EvaluationState.ToString(), result.Treatment?.ToString(), result.NetAmount, result.TaxTotal, result.GrossAmount, result.TaxLines.Select(line => new TaxLineContract(line.TaxTypeCode, line.TaxCode, line.TreatmentCode, line.Rate, line.FixedAmountPerUnit, line.TaxableBase, line.TaxAmount, line.Currency, line.Jurisdiction, line.LegalReasonCode, line.LegalReasonText, line.ReportingCode, line.RuleId, line.RuleVersion, line.Recoverability is null ? null : new(line.Recoverability.Kind.ToString(), line.Recoverability.RecoverablePercentage, line.Recoverability.RecoverableAmount, line.Recoverability.NonRecoverableAmount))).ToArray(), result.JurisdictionSnapshot, result.RegistrationSnapshot, result.RuleSetVersion, result.CalculationVersion, new(result.Explanation.CountryPackCode, result.Explanation.CountryPackVersion, result.Explanation.TaxDate, result.Explanation.Jurisdiction, result.Explanation.RegistrationStatus, result.Explanation.PartyTreatment, result.Explanation.ProductCategory, result.Explanation.MatchedRuleId, result.Explanation.ComponentCodes, result.Explanation.Rounding, result.Explanation.Summary, result.Explanation.PlaceOfSupplyReason, result.Explanation.PartyEvidence, result.Explanation.ProductEvidence, result.Explanation.LegalReasonCode, result.Explanation.LegalReasonText), result.TaxFxSnapshot, result.RoundingPolicyVersion, result.RoundingEvidence is null ? null : new(result.RoundingEvidence.Strategy, result.RoundingEvidence.MoneyScale, result.RoundingEvidence.Mode, result.RoundingEvidence.UnroundedTaxTotal, result.RoundingEvidence.PreReconciliationTotal, result.RoundingEvidence.Residual, result.RoundingEvidence.AllocationTarget, result.RoundingEvidence.FinalTotal), result.QuantitySnapshot);
+    private static string FormatDate(LocalDate date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 }

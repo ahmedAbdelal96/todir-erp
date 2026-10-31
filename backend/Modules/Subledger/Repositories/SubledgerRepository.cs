@@ -326,33 +326,33 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
 
     public async Task<IReadOnlyList<Guid>> CreateOpenItemsInTransactionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid partyId, SubledgerDirection direction, OpenItemPolarity polarity, string sourceType, IReadOnlyList<OpenItemSnapshotContract> items, CancellationToken token, Guid? correlationId = null, Guid? actorId = null)
     {
-            var ids = new List<Guid>(items.Count);
-            foreach (var item in items)
+        var ids = new List<Guid>(items.Count);
+        foreach (var item in items)
+        {
+            var payloadHash = Hash(new { PartyId = partyId, Direction = direction, Polarity = polarity, SourceType = sourceType, Item = item });
+            var id = Guid.CreateVersion7();
+            await using var insert = new NpgsqlCommand("insert into finance_subledger.party_open_item(tenant_id,legal_entity_id,id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,open_transaction_amount,base_currency,original_base_amount,open_base_carrying_amount,control_account_role,control_account_reference,control_configuration_reference,historic_fx_snapshot,source_version,source_payload_hash,status,is_open,row_version,created_at,payment_term_snapshot) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$17,$18,$19,$20,$21::jsonb,$22,$23,'Open',true,1,$24,$25::jsonb) on conflict do nothing", context.Connection, context.Transaction);
+            Add(insert, tenant.Value, entity.Value, id, partyId, direction.ToString(), polarity.ToString(), sourceType, item.SourceReference.Trim(), Db(Clean(item.SourceScheduleReference)), Db(Clean(item.SourceDisplayNumber)), item.DocumentDate, item.PostingDate, item.DueDate, NormalizeCurrency(item.TransactionCurrency), ParseAmount(item.OriginalTransactionAmount), NormalizeCurrency(item.BaseCurrency), ParseAmount(item.OriginalBaseAmount), item.ControlAccountRole, item.ControlAccountReference.Trim(), item.ControlConfigurationReference.Trim(), Db(item.HistoricFxSnapshot), item.SourceVersion, payloadHash, clock.GetUtcNow(), Db(item.PaymentTermSnapshot));
+            if (await insert.ExecuteNonQueryAsync(token) == 1)
             {
-                var payloadHash = Hash(new { PartyId = partyId, Direction = direction, Polarity = polarity, SourceType = sourceType, Item = item });
-                var id = Guid.CreateVersion7();
-                await using var insert = new NpgsqlCommand("insert into finance_subledger.party_open_item(tenant_id,legal_entity_id,id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,open_transaction_amount,base_currency,original_base_amount,open_base_carrying_amount,control_account_role,control_account_reference,control_configuration_reference,historic_fx_snapshot,source_version,source_payload_hash,status,is_open,row_version,created_at,payment_term_snapshot) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$17,$18,$19,$20,$21::jsonb,$22,$23,'Open',true,1,$24,$25::jsonb) on conflict do nothing", context.Connection, context.Transaction);
-                Add(insert, tenant.Value, entity.Value, id, partyId, direction.ToString(), polarity.ToString(), sourceType, item.SourceReference.Trim(), Db(Clean(item.SourceScheduleReference)), Db(Clean(item.SourceDisplayNumber)), item.DocumentDate, item.PostingDate, item.DueDate, NormalizeCurrency(item.TransactionCurrency), ParseAmount(item.OriginalTransactionAmount), NormalizeCurrency(item.BaseCurrency), ParseAmount(item.OriginalBaseAmount), item.ControlAccountRole, item.ControlAccountReference.Trim(), item.ControlConfigurationReference.Trim(), Db(item.HistoricFxSnapshot), item.SourceVersion, payloadHash, clock.GetUtcNow(), Db(item.PaymentTermSnapshot));
-                if (await insert.ExecuteNonQueryAsync(token) == 1)
-                {
-                    ids.Add(id);
-                    var occurredAt = clock.GetUtcNow();
-                    EnqueueEvent(context, tenant, SubledgerEventTypes.OpenItemCreatedV1, new OpenItemCreatedEventV1(id, entity.Value, partyId, direction.ToString(), sourceType), id, correlationId ?? id, occurredAt);
-                    if (actorId is { } actor && actor != Guid.Empty)
-                        await AuditAsync(context, tenant, entity, actor, null, "open_item_created", "party_open_item", id, null,
-                            JsonSerializer.Serialize(new { partyId, direction, polarity, sourceType }), null,
-                            correlationId ?? id, occurredAt, token);
-                    continue;
-                }
-                await using var existing = new NpgsqlCommand("select id,source_payload_hash from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_type=$3 and source_reference=$4 and source_schedule_reference is not distinct from $5::text", context.Connection, context.Transaction);
-                Add(existing, tenant.Value, entity.Value, sourceType, item.SourceReference.Trim(), Db(Clean(item.SourceScheduleReference)));
-                await using var reader = await existing.ExecuteReaderAsync(token);
-                if (!await reader.ReadAsync(token)) throw new SubledgerException("subledger.open_item_conflict", "The source open item could not be created.");
-                var existingId = reader.GetGuid(0); var existingHash = reader.GetString(1).Trim(); await reader.CloseAsync();
-                if (!string.Equals(existingHash, payloadHash, StringComparison.Ordinal)) throw new SubledgerException("subledger.source_conflict", "The source identity already exists with different financial facts.");
-                ids.Add(existingId);
+                ids.Add(id);
+                var occurredAt = clock.GetUtcNow();
+                EnqueueEvent(context, tenant, SubledgerEventTypes.OpenItemCreatedV1, new OpenItemCreatedEventV1(id, entity.Value, partyId, direction.ToString(), sourceType), id, correlationId ?? id, occurredAt);
+                if (actorId is { } actor && actor != Guid.Empty)
+                    await AuditAsync(context, tenant, entity, actor, null, "open_item_created", "party_open_item", id, null,
+                        JsonSerializer.Serialize(new { partyId, direction, polarity, sourceType }), null,
+                        correlationId ?? id, occurredAt, token);
+                continue;
             }
-            return ids;
+            await using var existing = new NpgsqlCommand("select id,source_payload_hash from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_type=$3 and source_reference=$4 and source_schedule_reference is not distinct from $5::text", context.Connection, context.Transaction);
+            Add(existing, tenant.Value, entity.Value, sourceType, item.SourceReference.Trim(), Db(Clean(item.SourceScheduleReference)));
+            await using var reader = await existing.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token)) throw new SubledgerException("subledger.open_item_conflict", "The source open item could not be created.");
+            var existingId = reader.GetGuid(0); var existingHash = reader.GetString(1).Trim(); await reader.CloseAsync();
+            if (!string.Equals(existingHash, payloadHash, StringComparison.Ordinal)) throw new SubledgerException("subledger.source_conflict", "The source identity already exists with different financial facts.");
+            ids.Add(existingId);
+        }
+        return ids;
     }
 
     public async Task<IReadOnlyDictionary<Guid, (string TransactionCurrency, string BaseCurrency)>> GetApplicationCurrenciesAsync(TenantId tenant, LegalEntityId entity, IReadOnlyCollection<Guid> itemIds, CancellationToken ct)
@@ -1375,7 +1375,7 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
 
     private static WriteOffPolicyResult ReadWriteOffPolicy(NpgsqlDataReader reader) => new(reader.GetGuid(0), new LegalEntityId(reader.GetGuid(1)), Enum.Parse<SubledgerDirectionContract>(reader.GetString(2)), reader.GetString(3).Trim(), reader.GetDecimal(4).ToString(CultureInfo.InvariantCulture), reader.GetDecimal(5).ToString(CultureInfo.InvariantCulture), reader.GetBoolean(6), reader.GetInt64(7), reader.GetFieldValue<DateTimeOffset>(8));
 
-    private static PartyOpenItemResult ReadItem(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), Enum.Parse<SubledgerDirectionContract>(r.GetString(3)), Enum.Parse<SubledgerPolarityContract>(r.GetString(4)), r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7), r.IsDBNull(8) ? null : r.GetString(8), r.GetFieldValue<DateOnly>(9), r.GetFieldValue<DateOnly>(10), r.GetFieldValue<DateOnly>(11), r.GetString(12).Trim(), D(r,13), D(r,14), D(r,15), r.GetString(16).Trim(), D(r,17), D(r,18), D(r,19), r.GetString(20), r.GetString(21), r.GetString(22), r.GetInt64(23));
+    private static PartyOpenItemResult ReadItem(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), Enum.Parse<SubledgerDirectionContract>(r.GetString(3)), Enum.Parse<SubledgerPolarityContract>(r.GetString(4)), r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7), r.IsDBNull(8) ? null : r.GetString(8), r.GetFieldValue<DateOnly>(9), r.GetFieldValue<DateOnly>(10), r.GetFieldValue<DateOnly>(11), r.GetString(12).Trim(), D(r, 13), D(r, 14), D(r, 15), r.GetString(16).Trim(), D(r, 17), D(r, 18), D(r, 19), r.GetString(20), r.GetString(21), r.GetString(22), r.GetInt64(23));
     private static string D(NpgsqlDataReader r, int index) => r.GetDecimal(index).ToString(CultureInfo.InvariantCulture);
     private static string Hash<T>(T value) => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions))).ToLowerInvariant();
     private static decimal ParseAmount(string text) => decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value) ? value : throw new SubledgerException("subledger.amount_invalid", "Financial amounts must be invariant decimal values.");

@@ -10,7 +10,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class ApiCompositionTests : DatabaseIntegrationTestBase {
+public sealed class ApiCompositionTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public void ApiBuildsWithValidatedPostgresTransactionAndInboxServices()
     {

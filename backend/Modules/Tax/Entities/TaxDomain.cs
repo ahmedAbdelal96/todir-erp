@@ -21,19 +21,19 @@ public enum TaxDocumentSemantics { Invoice, PurchaseInvoice, CreditNote, Purchas
 
 public static class TaxRegistrationLifecycle
 {
-    public static void ValidateTransition(TaxRegistrationStatus current,TaxRegistrationStatus target)
+    public static void ValidateTransition(TaxRegistrationStatus current, TaxRegistrationStatus target)
     {
-        if(current==target)return;
-        var allowed=current switch
+        if (current == target) return;
+        var allowed = current switch
         {
-            TaxRegistrationStatus.NotRegistered=>target is TaxRegistrationStatus.PendingRegistration or TaxRegistrationStatus.Registered or TaxRegistrationStatus.RegistrationException,
-            TaxRegistrationStatus.PendingRegistration=>target is TaxRegistrationStatus.Registered or TaxRegistrationStatus.RegistrationException or TaxRegistrationStatus.Deregistered,
-            TaxRegistrationStatus.Registered=>target is TaxRegistrationStatus.RegistrationException or TaxRegistrationStatus.Deregistered,
-            TaxRegistrationStatus.RegistrationException=>target is TaxRegistrationStatus.PendingRegistration or TaxRegistrationStatus.Registered or TaxRegistrationStatus.Deregistered,
-            TaxRegistrationStatus.Deregistered=>false,
-            _=>false
+            TaxRegistrationStatus.NotRegistered => target is TaxRegistrationStatus.PendingRegistration or TaxRegistrationStatus.Registered or TaxRegistrationStatus.RegistrationException,
+            TaxRegistrationStatus.PendingRegistration => target is TaxRegistrationStatus.Registered or TaxRegistrationStatus.RegistrationException or TaxRegistrationStatus.Deregistered,
+            TaxRegistrationStatus.Registered => target is TaxRegistrationStatus.RegistrationException or TaxRegistrationStatus.Deregistered,
+            TaxRegistrationStatus.RegistrationException => target is TaxRegistrationStatus.PendingRegistration or TaxRegistrationStatus.Registered or TaxRegistrationStatus.Deregistered,
+            TaxRegistrationStatus.Deregistered => false,
+            _ => false
         };
-        if(!allowed)throw new TaxException("tax.registration_transition_invalid",$"A Tax Registration cannot transition from {current} to {target}. Create a new registration series after deregistration.");
+        if (!allowed) throw new TaxException("tax.registration_transition_invalid", $"A Tax Registration cannot transition from {current} to {target}. Create a new registration series after deregistration.");
     }
 }
 
@@ -81,7 +81,7 @@ public static class TaxProfileResolver
             && (profile.CountryCode is null || profile.CountryCode == countryCode)
             && (profile.SchemeCode is null || profile.SchemeCode == schemeCode)).ToArray();
         if (matching.Length == 0) return null;
-        static (int Variant, int Entity, int Country, int Scheme) Rank(TaxProfileCandidate p) => (p.VariantId is null ? 0 : 1,p.LegalEntityId is null ? 0 : 1,p.CountryCode is null ? 0 : 1,p.SchemeCode is null ? 0 : 1);
+        static (int Variant, int Entity, int Country, int Scheme) Rank(TaxProfileCandidate p) => (p.VariantId is null ? 0 : 1, p.LegalEntityId is null ? 0 : 1, p.CountryCode is null ? 0 : 1, p.SchemeCode is null ? 0 : 1);
         var rank = matching.Select(Rank).OrderByDescending(value => value.Variant).ThenByDescending(value => value.Entity).ThenByDescending(value => value.Country).ThenByDescending(value => value.Scheme).First();
         var best = matching.Where(profile => Rank(profile) == rank).ToArray();
         if (best.Length > 1 && best.Any(profile => profile.CategoryId != best[0].CategoryId)) throw new TaxException("tax.profile_conflict", "Several equally scoped Tax Profiles match this context.");

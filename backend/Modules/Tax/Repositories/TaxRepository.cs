@@ -53,11 +53,11 @@ public sealed class TaxRepository(NpgsqlDataSource dataSource, ITransactionCoord
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("select rounding_strategy,money_scale,tax_date_basis,timezone_id,version from foundation_tax.tax_policy where tenant_id=$1 and legal_entity_id=$2",connection,transaction);
+        await using var command = new NpgsqlCommand("select rounding_strategy,money_scale,tax_date_basis,timezone_id,version from foundation_tax.tax_policy where tenant_id=$1 and legal_entity_id=$2", connection, transaction);
         command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(legalEntityId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) throw new TaxException("tax.policy_missing", "Tax Policy must be configured for this legal entity before Tax can be evaluated.");
-        return new(new(Enum.Parse<TaxDateBasis>(reader.GetString(2)),reader.GetString(3),reader.GetInt64(4)),Enum.Parse<TaxRoundingStrategy>(reader.GetString(0)),reader.GetInt16(1));
+        return new(new(Enum.Parse<TaxDateBasis>(reader.GetString(2)), reader.GetString(3), reader.GetInt64(4)), Enum.Parse<TaxRoundingStrategy>(reader.GetString(0)), reader.GetInt16(1));
     }
 
     public async Task<TaxCapabilityDto?> GetCapabilityAsync(Guid tenantId, Guid legalEntityId, DateOnly at, CancellationToken cancellationToken)
@@ -80,8 +80,8 @@ public sealed class TaxRepository(NpgsqlDataSource dataSource, ITransactionCoord
         if (context.RegistrationId is { } requestedRegistration)
         {
             const string registrationSql = "select r.id,r.status,r.country_code,r.scheme_code,r.registration_number,r.version,r.effective_from,r.effective_to,r.evidence_reference from foundation_tax.tax_registration r join foundation_tax.tax_registration_member m on m.tenant_id=r.tenant_id and m.registration_id=r.id where r.tenant_id=$1 and r.id=$2 and m.legal_entity_id=$3 and m.membership_status='Active' and r.effective_from <= $4 and (r.effective_to is null or r.effective_to > $4) and m.effective_from <= $4 and (m.effective_to is null or m.effective_to > $4) and ($5::text is null or r.scheme_code=$5)";
-            await using var registration = new NpgsqlCommand(registrationSql,connection,transaction);
-            registration.Parameters.AddWithValue(tenantId); registration.Parameters.AddWithValue(requestedRegistration); registration.Parameters.AddWithValue(context.LegalEntityId); registration.Parameters.AddWithValue(taxDate); registration.Parameters.AddWithValue((object?)context.TaxSchemeCode??DBNull.Value);
+            await using var registration = new NpgsqlCommand(registrationSql, connection, transaction);
+            registration.Parameters.AddWithValue(tenantId); registration.Parameters.AddWithValue(requestedRegistration); registration.Parameters.AddWithValue(context.LegalEntityId); registration.Parameters.AddWithValue(taxDate); registration.Parameters.AddWithValue((object?)context.TaxSchemeCode ?? DBNull.Value);
             await using var reader = await registration.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken)) throw new TaxException("tax.registration_not_available", "The selected Tax Registration is not active for this legal entity and Tax Date.");
             registrationEvidence = ReadRegistrationEvidence(reader); registrationStatus = registrationEvidence.Status; resolvedRegistrationId = registrationEvidence.Id;
@@ -89,23 +89,23 @@ public sealed class TaxRepository(NpgsqlDataSource dataSource, ITransactionCoord
         else
         {
             const string registrationSql = "select r.id,r.status,r.country_code,r.scheme_code,r.registration_number,r.version,r.effective_from,r.effective_to,r.evidence_reference from foundation_tax.tax_registration r join foundation_tax.tax_registration_member m on m.tenant_id=r.tenant_id and m.registration_id=r.id where r.tenant_id=$1 and m.legal_entity_id=$2 and m.membership_status='Active' and r.effective_from <= $3 and (r.effective_to is null or r.effective_to > $3) and m.effective_from <= $3 and (m.effective_to is null or m.effective_to > $3) and ($4::text is null or r.scheme_code=$4) order by r.effective_from desc limit 2";
-            await using var registration = new NpgsqlCommand(registrationSql,connection,transaction);
-            registration.Parameters.AddWithValue(tenantId); registration.Parameters.AddWithValue(context.LegalEntityId); registration.Parameters.AddWithValue(taxDate); registration.Parameters.AddWithValue((object?)context.TaxSchemeCode??DBNull.Value);
+            await using var registration = new NpgsqlCommand(registrationSql, connection, transaction);
+            registration.Parameters.AddWithValue(tenantId); registration.Parameters.AddWithValue(context.LegalEntityId); registration.Parameters.AddWithValue(taxDate); registration.Parameters.AddWithValue((object?)context.TaxSchemeCode ?? DBNull.Value);
             await using var reader = await registration.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken)) { registrationEvidence = ReadRegistrationEvidence(reader); resolvedRegistrationId = registrationEvidence.Id; registrationStatus = registrationEvidence.Status; if (await reader.ReadAsync(cancellationToken)) throw new TaxException("tax.registration_conflict", "More than one Tax Registration is effective for this legal entity and Tax Date."); }
         }
         if (context.PartyId is { } partyId)
         {
             const string partySql = "select id,category_id,treatment,(legal_entity_id is not null),(country_code is not null),(scheme_code is not null),version,country_code,scheme_code,effective_from,effective_to,exemption_evidence_reference from foundation_tax.party_tax_profile where tenant_id=$1 and party_id=$2 and (legal_entity_id is null or legal_entity_id=$3) and (country_code=$4 or country_code is null) and (scheme_code=$6 or scheme_code is null) and effective_from <= $5 and (effective_to is null or effective_to > $5) order by (legal_entity_id is not null) desc,(country_code is not null) desc,(scheme_code is not null) desc limit 500";
-            await using var party = new NpgsqlCommand(partySql,connection,transaction);
-            party.Parameters.AddWithValue(tenantId); party.Parameters.AddWithValue(partyId); party.Parameters.AddWithValue(context.LegalEntityId); party.Parameters.AddWithValue((object?)context.PlaceOfSupplyCountryCode ?? (object?)context.PartyCountryCode ?? DBNull.Value); party.Parameters.AddWithValue(taxDate); party.Parameters.AddWithValue((object?)context.TaxSchemeCode??DBNull.Value);
+            await using var party = new NpgsqlCommand(partySql, connection, transaction);
+            party.Parameters.AddWithValue(tenantId); party.Parameters.AddWithValue(partyId); party.Parameters.AddWithValue(context.LegalEntityId); party.Parameters.AddWithValue((object?)context.PlaceOfSupplyCountryCode ?? (object?)context.PartyCountryCode ?? DBNull.Value); party.Parameters.AddWithValue(taxDate); party.Parameters.AddWithValue((object?)context.TaxSchemeCode ?? DBNull.Value);
             await using var reader = await party.ExecuteReaderAsync(cancellationToken);
-            var matches = new List<(TaxProfileEvidence Evidence,string? Treatment,(bool Entity,bool Country,bool Scheme) Rank)>();
-            while(await reader.ReadAsync(cancellationToken)) matches.Add((new(reader.GetGuid(0),reader.GetInt64(6),reader.IsDBNull(1)?null:reader.GetGuid(1),reader.IsDBNull(2)?null:reader.GetString(2),reader.IsDBNull(7)?null:reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8),reader.GetFieldValue<DateOnly>(9),reader.IsDBNull(10)?null:reader.GetFieldValue<DateOnly>(10),reader.IsDBNull(11)?null:reader.GetString(11)),reader.IsDBNull(2)?null:reader.GetString(2),(reader.GetBoolean(3),reader.GetBoolean(4),reader.GetBoolean(5))));
-            if (matches.Count>0)
+            var matches = new List<(TaxProfileEvidence Evidence, string? Treatment, (bool Entity, bool Country, bool Scheme) Rank)>();
+            while (await reader.ReadAsync(cancellationToken)) matches.Add((new(reader.GetGuid(0), reader.GetInt64(6), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetFieldValue<DateOnly>(9), reader.IsDBNull(10) ? null : reader.GetFieldValue<DateOnly>(10), reader.IsDBNull(11) ? null : reader.GetString(11)), reader.IsDBNull(2) ? null : reader.GetString(2), (reader.GetBoolean(3), reader.GetBoolean(4), reader.GetBoolean(5))));
+            if (matches.Count > 0)
             {
-                partyEvidence=matches[0].Evidence;partyCategory=partyEvidence.CategoryId;partyTreatment=matches[0].Treatment;var rank=matches[0].Rank;
-                if(matches.Any(match=>match.Rank==rank&&(match.Evidence.CategoryId!=partyCategory||match.Treatment!=partyTreatment)))
+                partyEvidence = matches[0].Evidence; partyCategory = partyEvidence.CategoryId; partyTreatment = matches[0].Treatment; var rank = matches[0].Rank;
+                if (matches.Any(match => match.Rank == rank && (match.Evidence.CategoryId != partyCategory || match.Treatment != partyTreatment)))
                     throw new TaxException("tax.party_profile_conflict", "More than one equally scoped Party Tax Profile matches this legal entity and Tax Date.");
             }
         }
@@ -113,19 +113,19 @@ public sealed class TaxRepository(NpgsqlDataSource dataSource, ITransactionCoord
         if (context.ProductTemplateId is { } templateId)
         {
             const string productSql = "select id,category_id,(product_variant_id is not null),(legal_entity_id is not null),(country_code is not null),(scheme_code is not null),version,country_code,scheme_code,effective_from,effective_to,null::text from foundation_tax.product_tax_profile where tenant_id=$1 and product_template_id=$2 and (product_variant_id is null or product_variant_id=$3) and (legal_entity_id is null or legal_entity_id=$4) and (country_code=$5 or country_code is null) and (scheme_code=$7 or scheme_code is null) and effective_from <= $6 and (effective_to is null or effective_to > $6) order by (product_variant_id is not null) desc,(legal_entity_id is not null) desc,(country_code is not null) desc,(scheme_code is not null) desc limit 500";
-            await using var product = new NpgsqlCommand(productSql,connection,transaction);
-            product.Parameters.AddWithValue(tenantId); product.Parameters.AddWithValue(templateId); product.Parameters.AddWithValue((object?)context.ProductVariantId ?? DBNull.Value); product.Parameters.AddWithValue(context.LegalEntityId); product.Parameters.AddWithValue((object?)context.PlaceOfSupplyCountryCode ?? (object?)context.PartyCountryCode ?? DBNull.Value); product.Parameters.AddWithValue(taxDate); product.Parameters.AddWithValue((object?)context.TaxSchemeCode??DBNull.Value);
+            await using var product = new NpgsqlCommand(productSql, connection, transaction);
+            product.Parameters.AddWithValue(tenantId); product.Parameters.AddWithValue(templateId); product.Parameters.AddWithValue((object?)context.ProductVariantId ?? DBNull.Value); product.Parameters.AddWithValue(context.LegalEntityId); product.Parameters.AddWithValue((object?)context.PlaceOfSupplyCountryCode ?? (object?)context.PartyCountryCode ?? DBNull.Value); product.Parameters.AddWithValue(taxDate); product.Parameters.AddWithValue((object?)context.TaxSchemeCode ?? DBNull.Value);
             await using var reader = await product.ExecuteReaderAsync(cancellationToken);
-            var matches = new List<(TaxProfileEvidence Evidence,(bool Variant,bool Entity,bool Country,bool Scheme) Rank)>();
-            while(await reader.ReadAsync(cancellationToken)) matches.Add((new(reader.GetGuid(0),reader.GetInt64(6),reader.IsDBNull(1)?null:reader.GetGuid(1),null,reader.IsDBNull(7)?null:reader.GetString(7),reader.IsDBNull(8)?null:reader.GetString(8),reader.GetFieldValue<DateOnly>(9),reader.IsDBNull(10)?null:reader.GetFieldValue<DateOnly>(10),reader.IsDBNull(11)?null:reader.GetString(11)),(reader.GetBoolean(2),reader.GetBoolean(3),reader.GetBoolean(4),reader.GetBoolean(5))));
-            if (matches.Count>0)
+            var matches = new List<(TaxProfileEvidence Evidence, (bool Variant, bool Entity, bool Country, bool Scheme) Rank)>();
+            while (await reader.ReadAsync(cancellationToken)) matches.Add((new(reader.GetGuid(0), reader.GetInt64(6), reader.IsDBNull(1) ? null : reader.GetGuid(1), null, reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetFieldValue<DateOnly>(9), reader.IsDBNull(10) ? null : reader.GetFieldValue<DateOnly>(10), reader.IsDBNull(11) ? null : reader.GetString(11)), (reader.GetBoolean(2), reader.GetBoolean(3), reader.GetBoolean(4), reader.GetBoolean(5))));
+            if (matches.Count > 0)
             {
-                productEvidence=matches[0].Evidence;productCategory=productEvidence.CategoryId;var rank=matches[0].Rank;
-                if(matches.Any(match=>match.Rank==rank&&match.Evidence.CategoryId!=productCategory))
+                productEvidence = matches[0].Evidence; productCategory = productEvidence.CategoryId; var rank = matches[0].Rank;
+                if (matches.Any(match => match.Rank == rank && match.Evidence.CategoryId != productCategory))
                     throw new TaxException("tax.product_profile_conflict", "More than one equally scoped Product Tax Profile matches this legal entity and Tax Date.");
             }
         }
-        return new(resolvedRegistrationId,productCategory,partyCategory,partyTreatment,registrationStatus,registrationEvidence,partyEvidence,productEvidence);
+        return new(resolvedRegistrationId, productCategory, partyCategory, partyTreatment, registrationStatus, registrationEvidence, partyEvidence, productEvidence);
     }
 
     public async Task<IReadOnlyDictionary<int, TaxProfileResolution>> ResolveProfilesBatchAsync(Guid tenantId, IReadOnlyList<TaxBatchContext> contexts, CancellationToken cancellationToken)
@@ -144,7 +144,7 @@ public sealed class TaxRepository(NpgsqlDataSource dataSource, ITransactionCoord
             var matches = new Dictionary<int, TaxRegistrationEvidence>();
             while (await reader.ReadAsync(cancellationToken))
             {
-                var index = reader.GetInt32(0); var match = new TaxRegistrationEvidence(reader.GetGuid(1),reader.GetString(3),reader.GetString(4),reader.IsDBNull(5)?null:reader.GetString(5),reader.GetString(2),reader.GetInt64(6),reader.GetFieldValue<DateOnly>(7),reader.IsDBNull(8)?null:reader.GetFieldValue<DateOnly>(8),reader.IsDBNull(9)?null:reader.GetString(9));
+                var index = reader.GetInt32(0); var match = new TaxRegistrationEvidence(reader.GetGuid(1), reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(2), reader.GetInt64(6), reader.GetFieldValue<DateOnly>(7), reader.IsDBNull(8) ? null : reader.GetFieldValue<DateOnly>(8), reader.IsDBNull(9) ? null : reader.GetString(9));
                 if (matches.ContainsKey(index)) throw new TaxException("tax.registration_conflict", "More than one Tax Registration is effective for this legal entity and Tax Date.");
                 matches[index] = match;
             }
@@ -159,7 +159,7 @@ public sealed class TaxRepository(NpgsqlDataSource dataSource, ITransactionCoord
             while (await reader.ReadAsync(cancellationToken))
             {
                 var index = reader.GetInt32(0); var rank = (reader.GetBoolean(3) ? 1 : 0, reader.GetBoolean(4) ? 1 : 0, reader.GetBoolean(5) ? 1 : 0);
-                var evidence = new TaxProfileEvidence(reader.GetGuid(6),reader.GetInt64(7),reader.IsDBNull(1)?null:reader.GetGuid(1),reader.IsDBNull(2)?null:reader.GetString(2),reader.IsDBNull(8)?null:reader.GetString(8),reader.IsDBNull(9)?null:reader.GetString(9),reader.GetFieldValue<DateOnly>(10),reader.IsDBNull(11)?null:reader.GetFieldValue<DateOnly>(11),reader.IsDBNull(12)?null:reader.GetString(12));
+                var evidence = new TaxProfileEvidence(reader.GetGuid(6), reader.GetInt64(7), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(8) ? null : reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetString(9), reader.GetFieldValue<DateOnly>(10), reader.IsDBNull(11) ? null : reader.GetFieldValue<DateOnly>(11), reader.IsDBNull(12) ? null : reader.GetString(12));
                 var value = (rank.Item1, rank.Item2, rank.Item3, evidence, reader.IsDBNull(2) ? null : reader.GetString(2));
                 if (best.TryGetValue(index, out var current))
                 {
@@ -178,7 +178,7 @@ public sealed class TaxRepository(NpgsqlDataSource dataSource, ITransactionCoord
             var best = new Dictionary<int, (int Variant, int Entity, int Country, int Scheme, TaxProfileEvidence Evidence)>();
             while (await reader.ReadAsync(cancellationToken))
             {
-                var index = reader.GetInt32(0); var rank = (reader.GetBoolean(2) ? 1 : 0, reader.GetBoolean(3) ? 1 : 0, reader.GetBoolean(4) ? 1 : 0, reader.GetBoolean(5) ? 1 : 0); var evidence = new TaxProfileEvidence(reader.GetGuid(6),reader.GetInt64(7),reader.IsDBNull(1)?null:reader.GetGuid(1),null,reader.IsDBNull(8)?null:reader.GetString(8),reader.IsDBNull(9)?null:reader.GetString(9),reader.GetFieldValue<DateOnly>(10),reader.IsDBNull(11)?null:reader.GetFieldValue<DateOnly>(11),null);
+                var index = reader.GetInt32(0); var rank = (reader.GetBoolean(2) ? 1 : 0, reader.GetBoolean(3) ? 1 : 0, reader.GetBoolean(4) ? 1 : 0, reader.GetBoolean(5) ? 1 : 0); var evidence = new TaxProfileEvidence(reader.GetGuid(6), reader.GetInt64(7), reader.IsDBNull(1) ? null : reader.GetGuid(1), null, reader.IsDBNull(8) ? null : reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetString(9), reader.GetFieldValue<DateOnly>(10), reader.IsDBNull(11) ? null : reader.GetFieldValue<DateOnly>(11), null);
                 if (best.TryGetValue(index, out var current))
                 {
                     if ((current.Variant, current.Entity, current.Country, current.Scheme) == rank && current.Evidence.CategoryId != evidence.CategoryId) throw new TaxException("tax.product_profile_conflict", "More than one equally scoped Product Tax Profile matches this legal entity and Tax Date.");
@@ -313,15 +313,15 @@ public sealed class TaxRepository(NpgsqlDataSource dataSource, ITransactionCoord
                 string? documentKind = reader.IsDBNull(10) ? null : reader.GetString(10); string? transactionType = reader.IsDBNull(11) ? null : reader.GetString(11); string? placeOfSupplyCountry = reader.IsDBNull(12) ? null : reader.GetString(12);
                 var source = reader.GetString(13); var version = reader.GetString(14); var reasonCode = reader.IsDBNull(15) ? null : reader.GetString(15); var reasonText = reader.IsDBNull(16) ? null : reader.GetString(16);
                 var packCode = reader.GetString(17); var packVersion = reader.GetString(18); Guid? stackId = reader.IsDBNull(19) ? null : reader.GetGuid(19);
-                rawCandidates.Add(new(ruleId,treatment,priority,from,to,registration,jurisdiction,direction,partyCategory,productCategory,documentKind,transactionType,placeOfSupplyCountry,source,version,reasonCode,reasonText,packCode,packVersion,stackId));
+                rawCandidates.Add(new(ruleId, treatment, priority, from, to, registration, jurisdiction, direction, partyCategory, productCategory, documentKind, transactionType, placeOfSupplyCountry, source, version, reasonCode, reasonText, packCode, packVersion, stackId));
             }
         }
         var candidates = new List<ResolvedTaxRuleCandidate>();
         foreach (var raw in rawCandidates)
         {
             var components = raw.StackId is null ? [] : await LoadComponentsAsync(connection, transaction, tenantId, raw.StackId.Value, cancellationToken);
-            var candidate = new TaxRuleCandidate(raw.Id,raw.Treatment,raw.Priority,raw.EffectiveFrom,raw.EffectiveTo,raw.RegistrationId,raw.JurisdictionCode,raw.Direction,raw.PartyCategoryId,raw.ProductCategoryId,raw.DocumentKind,raw.TransactionType,raw.PlaceOfSupplyCountryCode,raw.SourceKind == "CountryPack" ? TaxRuleMutability.CountryPack : TaxRuleMutability.TenantConfiguration,raw.RuleVersion,raw.LegalReasonCode,raw.LegalReasonText,components);
-            candidates.Add(new(candidate,raw.PackCode,raw.PackVersion));
+            var candidate = new TaxRuleCandidate(raw.Id, raw.Treatment, raw.Priority, raw.EffectiveFrom, raw.EffectiveTo, raw.RegistrationId, raw.JurisdictionCode, raw.Direction, raw.PartyCategoryId, raw.ProductCategoryId, raw.DocumentKind, raw.TransactionType, raw.PlaceOfSupplyCountryCode, raw.SourceKind == "CountryPack" ? TaxRuleMutability.CountryPack : TaxRuleMutability.TenantConfiguration, raw.RuleVersion, raw.LegalReasonCode, raw.LegalReasonText, components);
+            candidates.Add(new(candidate, raw.PackCode, raw.PackVersion));
         }
         return TaxRuleResolver.Select(candidates) is { } selected ? (selected.Rule, selected.PackCode, selected.PackVersion) : null;
     }
@@ -332,7 +332,7 @@ public sealed class TaxRepository(NpgsqlDataSource dataSource, ITransactionCoord
         var components = new List<TaxComponent>();
         await using var command = new NpgsqlCommand(sql, connection, transaction); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(stackId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) components.Add(new(reader.GetGuid(0),reader.GetString(1),reader.GetString(2),Enum.Parse<TaxTreatment>(reader.GetString(3)),Enum.Parse<TaxCalculationMethod>(reader.GetString(4)),reader.IsDBNull(5)?null:reader.GetDecimal(5),reader.IsDBNull(6)?null:reader.GetDecimal(6),reader.GetString(7),reader.GetInt32(8),reader.IsDBNull(9)?null:reader.GetInt32(9),reader.IsDBNull(10)?null:reader.GetString(10),reader.IsDBNull(11)?null:reader.GetString(11),reader.IsDBNull(12)?null:reader.GetDecimal(12)));
+        while (await reader.ReadAsync(cancellationToken)) components.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), Enum.Parse<TaxTreatment>(reader.GetString(3)), Enum.Parse<TaxCalculationMethod>(reader.GetString(4)), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6), reader.GetString(7), reader.GetInt32(8), reader.IsDBNull(9) ? null : reader.GetInt32(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetDecimal(12)));
         return components;
     }
 

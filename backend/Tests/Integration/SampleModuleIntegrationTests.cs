@@ -8,7 +8,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class SampleModuleIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class SampleModuleIntegrationTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task SampleCreateWritesModuleAuditAndOutboxAtomically()
     {

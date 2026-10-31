@@ -87,9 +87,9 @@ public sealed record TaxCountryPackPackage(TaxCountryPackManifest Manifest, IRea
             catch (TaxException exception) { issues.Add(new(exception.Code, exception.Message)); }
         }
         foreach (var rule in Rules)
-        foreach (var component in rule.Components)
-            if (component.BaseComponentSequence is { } dependency && (dependency >= component.Sequence || !rule.Components.Any(candidate => candidate.Sequence == dependency)))
-                issues.Add(new("tax.component_dependency_invalid", "Tax Stack dependencies must point to an existing earlier component.", component.TaxCode));
+            foreach (var component in rule.Components)
+                if (component.BaseComponentSequence is { } dependency && (dependency >= component.Sequence || !rule.Components.Any(candidate => candidate.Sequence == dependency)))
+                    issues.Add(new("tax.component_dependency_invalid", "Tax Stack dependencies must point to an existing earlier component.", component.TaxCode));
         return new(issues.Count == 0, issues);
     }
 }
@@ -118,9 +118,9 @@ public static class TaxCountryPackTimeline
 {
     public static void EnsureNoApprovedOverlap(IEnumerable<TaxCountryPackManifest> manifests)
     {
-        foreach (var group in manifests.Where(manifest => manifest.ReviewStatus == "Approved").GroupBy(manifest => (manifest.CountryCode,manifest.PackId)))
+        foreach (var group in manifests.Where(manifest => manifest.ReviewStatus == "Approved").GroupBy(manifest => (manifest.CountryCode, manifest.PackId)))
         {
-            var ordered = group.OrderBy(manifest => manifest.EffectiveFrom).ThenBy(manifest => manifest.PackVersion,StringComparer.Ordinal).ToArray();
+            var ordered = group.OrderBy(manifest => manifest.EffectiveFrom).ThenBy(manifest => manifest.PackVersion, StringComparer.Ordinal).ToArray();
             for (var index = 1; index < ordered.Length; index++)
                 if (ordered[index - 1].EffectiveTo is null || ordered[index - 1].EffectiveTo > ordered[index].EffectiveFrom)
                     throw new TaxException("tax.country_pack_overlap", "Approved Country Pack effective periods cannot overlap; activate a new version at a future boundary.");
@@ -248,17 +248,17 @@ public sealed class TaxCountryPackRegistry : ITaxCountryPackRegistry
     public TaxCountryPackRegistry(IEnumerable<ITaxCountryPack> packs)
     {
         reviewedPacks = packs.Where(pack => pack.Provenance.ReviewStatus == "Approved").ToArray();
-        var ordered = reviewedPacks.OrderBy(pack => pack.CountryCode,StringComparer.Ordinal).ThenBy(pack => pack.Provenance.EffectiveFrom).ToArray();
+        var ordered = reviewedPacks.OrderBy(pack => pack.CountryCode, StringComparer.Ordinal).ThenBy(pack => pack.Provenance.EffectiveFrom).ToArray();
         for (var index = 1; index < ordered.Length; index++)
         {
             var previous = ordered[index - 1]; var current = ordered[index];
-            if (string.Equals(previous.CountryCode,current.CountryCode,StringComparison.OrdinalIgnoreCase) && (previous.Provenance.EffectiveTo is null || previous.Provenance.EffectiveTo > current.Provenance.EffectiveFrom))
+            if (string.Equals(previous.CountryCode, current.CountryCode, StringComparison.OrdinalIgnoreCase) && (previous.Provenance.EffectiveTo is null || previous.Provenance.EffectiveTo > current.Provenance.EffectiveFrom))
                 throw new TaxException("tax.country_pack_overlap", "Reviewed Country Pack effective periods cannot overlap for one country.");
         }
     }
 
     public ITaxCountryPack? Find(string countryCode, LocalDate at) => reviewedPacks
-        .Where(pack => string.Equals(pack.CountryCode,countryCode,StringComparison.OrdinalIgnoreCase) && pack.Provenance.EffectiveFrom <= at && (pack.Provenance.EffectiveTo is null || at < pack.Provenance.EffectiveTo))
+        .Where(pack => string.Equals(pack.CountryCode, countryCode, StringComparison.OrdinalIgnoreCase) && pack.Provenance.EffectiveFrom <= at && (pack.Provenance.EffectiveTo is null || at < pack.Provenance.EffectiveTo))
         .OrderByDescending(pack => pack.Provenance.EffectiveFrom)
         .SingleOrDefault();
 

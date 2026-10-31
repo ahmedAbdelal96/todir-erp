@@ -34,8 +34,8 @@ internal static class SubledgerProjectionRebuilder
         {
             locks.Parameters.AddWithValue(tenantId);
             locks.Parameters.AddWithValue(legalEntityId);
-        await using (var reader = await locks.ExecuteReaderAsync(cancellationToken))
-            while (await reader.ReadAsync(cancellationToken)) { }
+            await using (var reader = await locks.ExecuteReaderAsync(cancellationToken))
+                while (await reader.ReadAsync(cancellationToken)) { }
         }
 
         const string stateSql = """

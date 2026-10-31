@@ -386,8 +386,11 @@ public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCap
         }
         var command = new ApplyOpenItemsCommand(new(legalEntityId), partyId, direction, idempotencyKey.Trim(), request.ApplicationDate,
             request.SettlementDate, lines, actor, correlationId);
-        try { return await repository.ApplyWhilePaymentLockedAsync(tenant, legalEntityId, paymentId,
-            token => subledger.ApplyAsync(tenant, membership, command, token), ct); }
+        try
+        {
+            return await repository.ApplyWhilePaymentLockedAsync(tenant, legalEntityId, paymentId,
+            token => subledger.ApplyAsync(tenant, membership, command, token), ct);
+        }
         catch (Exception exception) when (exception.GetType().FullName == "Modules.Subledger.Entities.SubledgerException")
         {
             var subledgerCode = exception.GetType().GetProperty("Code")?.GetValue(exception) as string;

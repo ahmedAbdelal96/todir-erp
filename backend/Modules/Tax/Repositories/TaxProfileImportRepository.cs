@@ -133,22 +133,22 @@ public sealed class TaxProfileImportRepository(
         }
         var acceptedRows = resolvedRows.Where(row => row.Outcome is "Create" or "CreateNewVersion").OrderBy(row => row.RowNumber).ToArray();
         for (var index = 0; index < acceptedRows.Length; index++)
-        for (var earlier = 0; earlier < index; earlier++)
-        {
-            var current = acceptedRows[index]; var previous = acceptedRows[earlier];
-            var sameScope = party
-                ? current.PartyId == previous.PartyId
-                : current.ProductTemplateId == previous.ProductTemplateId && current.ProductVariantId == previous.ProductVariantId;
-            sameScope &= current.CountryCode == previous.CountryCode && current.SchemeCode == previous.SchemeCode;
-            var overlaps = (previous.EffectiveTo is null || current.EffectiveFrom < previous.EffectiveTo.Value)
-                && (current.EffectiveTo is null || previous.EffectiveFrom < current.EffectiveTo.Value);
-            if (sameScope && overlaps)
+            for (var earlier = 0; earlier < index; earlier++)
             {
-                var position = resolvedRows.FindIndex(row => row.RowNumber == current.RowNumber);
-                resolvedRows[position] = resolvedRows[position] with { Outcome = "Conflict", Message = "Another row in this batch overlaps the same profile scope and effective period." };
-                break;
+                var current = acceptedRows[index]; var previous = acceptedRows[earlier];
+                var sameScope = party
+                    ? current.PartyId == previous.PartyId
+                    : current.ProductTemplateId == previous.ProductTemplateId && current.ProductVariantId == previous.ProductVariantId;
+                sameScope &= current.CountryCode == previous.CountryCode && current.SchemeCode == previous.SchemeCode;
+                var overlaps = (previous.EffectiveTo is null || current.EffectiveFrom < previous.EffectiveTo.Value)
+                    && (current.EffectiveTo is null || previous.EffectiveFrom < current.EffectiveTo.Value);
+                if (sameScope && overlaps)
+                {
+                    var position = resolvedRows.FindIndex(row => row.RowNumber == current.RowNumber);
+                    resolvedRows[position] = resolvedRows[position] with { Outcome = "Conflict", Message = "Another row in this batch overlaps the same profile scope and effective period." };
+                    break;
+                }
             }
-        }
         foreach (var group in resolvedRows.Where(row => row.Outcome is "Create" or "CreateNewVersion").GroupBy(row => party
                      ? $"P|{row.PartyId}|{request.LegalEntityId}|{row.CountryCode}|{row.SchemeCode}"
                      : $"C|{row.ProductTemplateId}|{row.ProductVariantId}|{request.LegalEntityId}|{row.CountryCode}|{row.SchemeCode}"))
@@ -264,9 +264,9 @@ public sealed class TaxProfileImportRepository(
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var tx = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tx, tenant, ct);
         await using var cmd = new NpgsqlCommand("select import_type,legal_entity_id from foundation_tax.tax_import_batch where tenant_id=$1 and id=$2 and created_by=$3 and status='Previewed'", connection, tx);
-        cmd.Parameters.AddWithValue(tenant); cmd.Parameters.AddWithValue(batchId); cmd.Parameters.AddWithValue(actor); await using var reader=await cmd.ExecuteReaderAsync(ct);
+        cmd.Parameters.AddWithValue(tenant); cmd.Parameters.AddWithValue(batchId); cmd.Parameters.AddWithValue(actor); await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw new TaxException("tax.import_batch_not_found", "The user's active import preview was not found.");
-        var result=(reader.GetString(0),reader.GetGuid(1)); await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
+        var result = (reader.GetString(0), reader.GetGuid(1)); await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
     }
 
     public async Task<TaxProfileExportDto> ExportAsync(Guid tenant, Guid entity, string kind, DateOnly? at, CancellationToken ct, bool includeRegistrationNumber = true)
@@ -280,12 +280,12 @@ public sealed class TaxProfileImportRepository(
             await using var connection = await dataSource.OpenConnectionAsync(ct); await using var tx = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tx, tenant, ct);
             const string sql = "select p.product_template_id,p.product_variant_id,c.code,p.country_code,p.scheme_code,p.effective_from,p.effective_to,p.version from foundation_tax.product_tax_profile p join foundation_tax.tax_category c on c.tenant_id=p.tenant_id and c.id=p.category_id where p.tenant_id=$1 and p.legal_entity_id=$2 and ($3::date is null or (p.effective_from<=$3 and (p.effective_to is null or p.effective_to>$3))) order by p.product_template_id,p.product_variant_id,p.effective_from";
             await using var cmd = new NpgsqlCommand(sql, connection, tx); cmd.Parameters.AddWithValue(tenant); cmd.Parameters.AddWithValue(entity); cmd.Parameters.AddWithValue((object?)at ?? DBNull.Value); await using var reader = await cmd.ExecuteReaderAsync(ct);
-            var rows = new List<(Guid Template,Guid? Variant,string Category,string? Country,string? Scheme,DateOnly From,DateOnly? To,long Version)>();
-            while (await reader.ReadAsync(ct)) rows.Add((reader.GetGuid(0),reader.IsDBNull(1)?null:reader.GetGuid(1),reader.GetString(2),Text(reader,3),Text(reader,4),reader.GetFieldValue<DateOnly>(5),reader.IsDBNull(6)?null:reader.GetFieldValue<DateOnly>(6),reader.GetInt64(7)));
+            var rows = new List<(Guid Template, Guid? Variant, string Category, string? Country, string? Scheme, DateOnly From, DateOnly? To, long Version)>();
+            while (await reader.ReadAsync(ct)) rows.Add((reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetString(2), Text(reader, 3), Text(reader, 4), reader.GetFieldValue<DateOnly>(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateOnly>(6), reader.GetInt64(7)));
             await reader.CloseAsync(); await tx.CommitAsync(ct);
-            var templates = rows.Count == 0 ? new Dictionary<Guid,CatalogProductTemplateReferences>() : await catalog.GetProductTemplateReferencesBatchAsync(new(tenant), rows.Select(row=>row.Template).Distinct().ToArray(), entity, ct);
+            var templates = rows.Count == 0 ? new Dictionary<Guid, CatalogProductTemplateReferences>() : await catalog.GetProductTemplateReferencesBatchAsync(new(tenant), rows.Select(row => row.Template).Distinct().ToArray(), entity, ct);
             var variantIds = rows.Where(row => row.Variant is not null).Select(row => row.Variant!.Value).Distinct().ToArray();
-            var variants = variantIds.Length == 0 ? new Dictionary<Guid,CatalogVariantReferences>() : await catalog.GetVariantReferencesBatchAsync(new(tenant), variantIds, entity, ct);
+            var variants = variantIds.Length == 0 ? new Dictionary<Guid, CatalogVariantReferences>() : await catalog.GetVariantReferencesBatchAsync(new(tenant), variantIds, entity, ct);
             var entityCode = await legalEntities.GetCodeAsync(new(tenant), new(entity), ct) ?? throw new TaxException("tax.legal_entity_not_found", "The selected Legal Entity has no active business code.");
             foreach (var row in rows)
             {
@@ -303,13 +303,13 @@ public sealed class TaxProfileImportRepository(
             await using var connection = await dataSource.OpenConnectionAsync(ct); await using var tx = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tx, tenant, ct);
             const string sql = "select p.party_id,p.registration_country_code,p.registration_number,p.treatment,c.code,p.scheme_code,p.effective_from,p.effective_to,p.version from foundation_tax.party_tax_profile p left join foundation_tax.tax_category c on c.tenant_id=p.tenant_id and c.id=p.category_id where p.tenant_id=$1 and p.legal_entity_id=$2 and ($3::date is null or (p.effective_from<=$3 and (p.effective_to is null or p.effective_to>$3))) order by p.party_id,p.effective_from";
             await using var cmd = new NpgsqlCommand(sql, connection, tx); cmd.Parameters.AddWithValue(tenant); cmd.Parameters.AddWithValue(entity); cmd.Parameters.AddWithValue((object?)at ?? DBNull.Value); await using var reader = await cmd.ExecuteReaderAsync(ct);
-            var rows = new List<(Guid Party,string? RegCountry,string? Registration,string? Treatment,string? Category,string? Scheme,DateOnly From,DateOnly? To,long Version)>();
-            while (await reader.ReadAsync(ct)) rows.Add((reader.GetGuid(0),Text(reader,1),Text(reader,2),Text(reader,3),Text(reader,4),Text(reader,5),reader.GetFieldValue<DateOnly>(6),reader.IsDBNull(7)?null:reader.GetFieldValue<DateOnly>(7),reader.GetInt64(8)));
+            var rows = new List<(Guid Party, string? RegCountry, string? Registration, string? Treatment, string? Category, string? Scheme, DateOnly From, DateOnly? To, long Version)>();
+            while (await reader.ReadAsync(ct)) rows.Add((reader.GetGuid(0), Text(reader, 1), Text(reader, 2), Text(reader, 3), Text(reader, 4), Text(reader, 5), reader.GetFieldValue<DateOnly>(6), reader.IsDBNull(7) ? null : reader.GetFieldValue<DateOnly>(7), reader.GetInt64(8)));
             await reader.CloseAsync(); await tx.CommitAsync(ct);
-            var references = rows.Count == 0 ? new Dictionary<Guid,string>() : await directoryImports.FindStablePartyReferencesAsync(new(tenant), rows.Select(row=>row.Party).Distinct().ToArray(), entity, ct);
+            var references = rows.Count == 0 ? new Dictionary<Guid, string>() : await directoryImports.FindStablePartyReferencesAsync(new(tenant), rows.Select(row => row.Party).Distinct().ToArray(), entity, ct);
             foreach (var row in rows)
             {
-                if (!references.TryGetValue(row.Party,out var reference)) continue;
+                if (!references.TryGetValue(row.Party, out var reference)) continue;
                 output.AppendJoin(',', Csv(reference), Csv(row.RegCountry), Csv(includeRegistrationNumber ? row.Registration : null), Csv(row.Treatment), Csv(row.Category), Csv(row.Scheme), Csv(entity.ToString("D")), Csv(row.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), Csv(row.To?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), Csv(row.Version.ToString(CultureInfo.InvariantCulture))).AppendLine();
             }
         }
@@ -335,12 +335,12 @@ public sealed class TaxProfileImportRepository(
         await using var reader = await cmd.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct))
         {
             await reader.CloseAsync();
-            var priorSql=$"select id,profile_series_id,version from foundation_tax.{table} where tenant_id=$1 and {identityFilter} and legal_entity_id is not distinct from ${entityParam} and " + (party ? $"country_code=${countryParam} and scheme_code is not distinct from ${schemeParam}" : $"country_code is not distinct from ${countryParam} and scheme_code is not distinct from ${schemeParam}") + $" and effective_from<${fromParam} order by effective_from desc limit 1";
-            await using var previous=new NpgsqlCommand(priorSql,c,tx);previous.Parameters.AddWithValue(tenant);previous.Parameters.AddWithValue(party?identity:template!.Value);if(!party)previous.Parameters.AddWithValue(variant??(object)DBNull.Value);previous.Parameters.AddWithValue(entity);previous.Parameters.AddWithValue(country??(object)DBNull.Value);previous.Parameters.AddWithValue(scheme??(object)DBNull.Value);previous.Parameters.AddWithValue(from);await using var previousReader=await previous.ExecuteReaderAsync(ct);return await previousReader.ReadAsync(ct)?(previousReader.GetGuid(0),previousReader.GetGuid(1),previousReader.GetInt64(2),false):(null,null,1,false);
+            var priorSql = $"select id,profile_series_id,version from foundation_tax.{table} where tenant_id=$1 and {identityFilter} and legal_entity_id is not distinct from ${entityParam} and " + (party ? $"country_code=${countryParam} and scheme_code is not distinct from ${schemeParam}" : $"country_code is not distinct from ${countryParam} and scheme_code is not distinct from ${schemeParam}") + $" and effective_from<${fromParam} order by effective_from desc limit 1";
+            await using var previous = new NpgsqlCommand(priorSql, c, tx); previous.Parameters.AddWithValue(tenant); previous.Parameters.AddWithValue(party ? identity : template!.Value); if (!party) previous.Parameters.AddWithValue(variant ?? (object)DBNull.Value); previous.Parameters.AddWithValue(entity); previous.Parameters.AddWithValue(country ?? (object)DBNull.Value); previous.Parameters.AddWithValue(scheme ?? (object)DBNull.Value); previous.Parameters.AddWithValue(from); await using var previousReader = await previous.ExecuteReaderAsync(ct); return await previousReader.ReadAsync(ct) ? (previousReader.GetGuid(0), previousReader.GetGuid(1), previousReader.GetInt64(2), false) : (null, null, 1, false);
         }
         var id = reader.GetGuid(0); var series = reader.GetGuid(1); var version = reader.GetInt64(2); var oldFrom = reader.GetFieldValue<DateOnly>(3); var oldTo = reader.IsDBNull(4) ? (DateOnly?)null : reader.GetFieldValue<DateOnly>(4);
-        if (reader.Read()) return (null,null,1,true);
-        return from > oldFrom ? (id,series,version,false) : (null,null,1,true);
+        if (reader.Read()) return (null, null, 1, true);
+        return from > oldFrom ? (id, series, version, false) : (null, null, 1, true);
     }
     private static async Task<(DateOnly From, DateOnly? To)?> ReadPriorForUpdateAsync(Core.Transactions.ITransactionContext c, Guid tenant, bool party, Guid id, CancellationToken ct)
     {
@@ -349,7 +349,7 @@ public sealed class TaxProfileImportRepository(
     private static async Task<bool> HasOverlapAsync(Core.Transactions.ITransactionContext c, Guid tenant, bool party, StoredRow row, Guid entity, CancellationToken ct)
     {
         var table = party ? "party_tax_profile" : "product_tax_profile"; var identitySql = party ? "party_id=$2" : "product_template_id=$2 and product_variant_id is not distinct from $3";
-        var entityIndex=party?3:4;var countryIndex=party?4:5;var schemeIndex=party?5:6;var fromIndex=party?6:7;var toIndex=party?7:8;var excludeIndex=party?8:9;
+        var entityIndex = party ? 3 : 4; var countryIndex = party ? 4 : 5; var schemeIndex = party ? 5 : 6; var fromIndex = party ? 6 : 7; var toIndex = party ? 7 : 8; var excludeIndex = party ? 8 : 9;
         var cmd = new NpgsqlCommand($"select exists(select 1 from foundation_tax.{table} where tenant_id=$1 and {identitySql} and id is distinct from ${excludeIndex} and legal_entity_id is not distinct from ${entityIndex} and country_code is not distinct from ${countryIndex} and scheme_code is not distinct from ${schemeIndex} and daterange(effective_from,effective_to,'[)') && daterange(${fromIndex},${toIndex},'[)'))", c.Connection, c.Transaction);
         cmd.Parameters.AddWithValue(tenant); cmd.Parameters.AddWithValue(party ? row.PartyId!.Value : row.ProductTemplateId!.Value); if (!party) cmd.Parameters.AddWithValue(row.ProductVariantId ?? (object)DBNull.Value); cmd.Parameters.AddWithValue(entity);
         cmd.Parameters.AddWithValue(row.CountryCode ?? (object)DBNull.Value); cmd.Parameters.AddWithValue(row.SchemeCode ?? (object)DBNull.Value);
@@ -361,15 +361,15 @@ public sealed class TaxProfileImportRepository(
     private static async Task<bool> SchemeStillActiveAsync(Core.Transactions.ITransactionContext c, Guid tenant, string? country, string? scheme, CancellationToken ct)
     { await using var cmd = new NpgsqlCommand("select exists(select 1 from foundation_tax.tax_scheme where tenant_id=$1 and code=$2 and country_code=$3 and status='Active')", c.Connection, c.Transaction); cmd.Parameters.AddWithValue(tenant); cmd.Parameters.AddWithValue(scheme ?? ""); cmd.Parameters.AddWithValue(country ?? ""); return (bool)(await cmd.ExecuteScalarAsync(ct) ?? false); }
     private static async Task InsertPartyAsync(Core.Transactions.ITransactionContext c, Guid tenant, Guid id, Guid series, StoredRow r, Guid entity, CancellationToken ct)
-    { await using var cmd = new NpgsqlCommand("insert into foundation_tax.party_tax_profile(tenant_id,id,profile_series_id,supersedes_id,party_id,legal_entity_id,country_code,scheme_code,category_id,treatment,registration_number,registration_country_code,reverse_charge_eligible,exemption_evidence_reference,effective_from,effective_to,version,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())",c.Connection,c.Transaction); cmd.Parameters.AddWithValue(tenant);cmd.Parameters.AddWithValue(id);cmd.Parameters.AddWithValue(series);cmd.Parameters.AddWithValue((object?)r.PriorId??DBNull.Value);cmd.Parameters.AddWithValue(r.PartyId!.Value);cmd.Parameters.AddWithValue(entity);cmd.Parameters.AddWithValue(r.CountryCode!);cmd.Parameters.AddWithValue((object?)r.SchemeCode??DBNull.Value);cmd.Parameters.AddWithValue(r.CategoryId);cmd.Parameters.AddWithValue((object?)r.Treatment??DBNull.Value);cmd.Parameters.AddWithValue((object?)r.RegistrationNumber??DBNull.Value);cmd.Parameters.AddWithValue((object?)r.RegistrationCountryCode??DBNull.Value);cmd.Parameters.AddWithValue(r.ReverseChargeEligible);cmd.Parameters.AddWithValue((object?)r.EvidenceReference??DBNull.Value);cmd.Parameters.AddWithValue(r.EffectiveFrom);cmd.Parameters.AddWithValue((object?)r.EffectiveTo??DBNull.Value);cmd.Parameters.AddWithValue(r.Version);await cmd.ExecuteNonQueryAsync(ct); }
+    { await using var cmd = new NpgsqlCommand("insert into foundation_tax.party_tax_profile(tenant_id,id,profile_series_id,supersedes_id,party_id,legal_entity_id,country_code,scheme_code,category_id,treatment,registration_number,registration_country_code,reverse_charge_eligible,exemption_evidence_reference,effective_from,effective_to,version,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())", c.Connection, c.Transaction); cmd.Parameters.AddWithValue(tenant); cmd.Parameters.AddWithValue(id); cmd.Parameters.AddWithValue(series); cmd.Parameters.AddWithValue((object?)r.PriorId ?? DBNull.Value); cmd.Parameters.AddWithValue(r.PartyId!.Value); cmd.Parameters.AddWithValue(entity); cmd.Parameters.AddWithValue(r.CountryCode!); cmd.Parameters.AddWithValue((object?)r.SchemeCode ?? DBNull.Value); cmd.Parameters.AddWithValue(r.CategoryId); cmd.Parameters.AddWithValue((object?)r.Treatment ?? DBNull.Value); cmd.Parameters.AddWithValue((object?)r.RegistrationNumber ?? DBNull.Value); cmd.Parameters.AddWithValue((object?)r.RegistrationCountryCode ?? DBNull.Value); cmd.Parameters.AddWithValue(r.ReverseChargeEligible); cmd.Parameters.AddWithValue((object?)r.EvidenceReference ?? DBNull.Value); cmd.Parameters.AddWithValue(r.EffectiveFrom); cmd.Parameters.AddWithValue((object?)r.EffectiveTo ?? DBNull.Value); cmd.Parameters.AddWithValue(r.Version); await cmd.ExecuteNonQueryAsync(ct); }
     private static async Task InsertProductAsync(Core.Transactions.ITransactionContext c, Guid tenant, Guid id, Guid series, StoredRow r, Guid entity, CancellationToken ct)
-    { await using var cmd = new NpgsqlCommand("insert into foundation_tax.product_tax_profile(tenant_id,id,profile_series_id,supersedes_id,product_template_id,product_variant_id,legal_entity_id,country_code,scheme_code,category_id,effective_from,effective_to,version,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())",c.Connection,c.Transaction); cmd.Parameters.AddWithValue(tenant);cmd.Parameters.AddWithValue(id);cmd.Parameters.AddWithValue(series);cmd.Parameters.AddWithValue((object?)r.PriorId??DBNull.Value);cmd.Parameters.AddWithValue(r.ProductTemplateId!.Value);cmd.Parameters.AddWithValue((object?)r.ProductVariantId??DBNull.Value);cmd.Parameters.AddWithValue(entity);cmd.Parameters.AddWithValue((object?)r.CountryCode??DBNull.Value);cmd.Parameters.AddWithValue((object?)r.SchemeCode??DBNull.Value);cmd.Parameters.AddWithValue(r.CategoryId);cmd.Parameters.AddWithValue(r.EffectiveFrom);cmd.Parameters.AddWithValue((object?)r.EffectiveTo??DBNull.Value);cmd.Parameters.AddWithValue(r.Version);await cmd.ExecuteNonQueryAsync(ct); }
+    { await using var cmd = new NpgsqlCommand("insert into foundation_tax.product_tax_profile(tenant_id,id,profile_series_id,supersedes_id,product_template_id,product_variant_id,legal_entity_id,country_code,scheme_code,category_id,effective_from,effective_to,version,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())", c.Connection, c.Transaction); cmd.Parameters.AddWithValue(tenant); cmd.Parameters.AddWithValue(id); cmd.Parameters.AddWithValue(series); cmd.Parameters.AddWithValue((object?)r.PriorId ?? DBNull.Value); cmd.Parameters.AddWithValue(r.ProductTemplateId!.Value); cmd.Parameters.AddWithValue((object?)r.ProductVariantId ?? DBNull.Value); cmd.Parameters.AddWithValue(entity); cmd.Parameters.AddWithValue((object?)r.CountryCode ?? DBNull.Value); cmd.Parameters.AddWithValue((object?)r.SchemeCode ?? DBNull.Value); cmd.Parameters.AddWithValue(r.CategoryId); cmd.Parameters.AddWithValue(r.EffectiveFrom); cmd.Parameters.AddWithValue((object?)r.EffectiveTo ?? DBNull.Value); cmd.Parameters.AddWithValue(r.Version); await cmd.ExecuteNonQueryAsync(ct); }
     private static async Task AuditAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid tenant, Guid actor, Guid correlation, string action, Guid id, Guid entity, object after, CancellationToken ct)
-    { await using var cmd = new NpgsqlCommand("insert into foundation_tax.tax_audit(tenant_id,id,legal_entity_id,actor_id,operation,entity_type,entity_id,after_state,occurred_at,correlation_id) values($1,$2,$3,$4,$5,'TaxProfileImportBatch',$6,$7::jsonb,now(),$8)",c,tx);cmd.Parameters.AddWithValue(tenant);cmd.Parameters.AddWithValue(Guid.CreateVersion7());cmd.Parameters.AddWithValue(entity);cmd.Parameters.AddWithValue(actor);cmd.Parameters.AddWithValue(action);cmd.Parameters.AddWithValue(id);cmd.Parameters.AddWithValue(JsonSerializer.Serialize(after));cmd.Parameters.AddWithValue(correlation);await cmd.ExecuteNonQueryAsync(ct); }
+    { await using var cmd = new NpgsqlCommand("insert into foundation_tax.tax_audit(tenant_id,id,legal_entity_id,actor_id,operation,entity_type,entity_id,after_state,occurred_at,correlation_id) values($1,$2,$3,$4,$5,'TaxProfileImportBatch',$6,$7::jsonb,now(),$8)", c, tx); cmd.Parameters.AddWithValue(tenant); cmd.Parameters.AddWithValue(Guid.CreateVersion7()); cmd.Parameters.AddWithValue(entity); cmd.Parameters.AddWithValue(actor); cmd.Parameters.AddWithValue(action); cmd.Parameters.AddWithValue(id); cmd.Parameters.AddWithValue(JsonSerializer.Serialize(after)); cmd.Parameters.AddWithValue(correlation); await cmd.ExecuteNonQueryAsync(ct); }
     private static async Task<T> ScalarAsync<T>(Core.Transactions.ITransactionContext c, string sql, CancellationToken ct, params object[] values)
-    { await using var cmd = new NpgsqlCommand(sql,c.Connection,c.Transaction); foreach(var value in values) cmd.Parameters.AddWithValue(value??DBNull.Value); var result=await cmd.ExecuteScalarAsync(ct); return result is null or DBNull ? default! : (T)Convert.ChangeType(result,typeof(T),CultureInfo.InvariantCulture); }
-    private static async Task SetTenantAsync(NpgsqlConnection c,NpgsqlTransaction tx,Guid tenant,CancellationToken ct)
-    { await using var cmd=new NpgsqlCommand("select set_config('app.tenant_id',$1,true)",c,tx);cmd.Parameters.AddWithValue(tenant.ToString("D"));await cmd.ExecuteNonQueryAsync(ct); }
-    private static string Csv(string? value) { var text=value??string.Empty; return "\""+text.Replace("\"","\"\"",StringComparison.Ordinal)+"\""; }
-    private static string? Text(NpgsqlDataReader reader,int ordinal)=>reader.IsDBNull(ordinal)?null:Convert.ToString(reader.GetValue(ordinal),CultureInfo.InvariantCulture);
+    { await using var cmd = new NpgsqlCommand(sql, c.Connection, c.Transaction); foreach (var value in values) cmd.Parameters.AddWithValue(value ?? DBNull.Value); var result = await cmd.ExecuteScalarAsync(ct); return result is null or DBNull ? default! : (T)Convert.ChangeType(result, typeof(T), CultureInfo.InvariantCulture); }
+    private static async Task SetTenantAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid tenant, CancellationToken ct)
+    { await using var cmd = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", c, tx); cmd.Parameters.AddWithValue(tenant.ToString("D")); await cmd.ExecuteNonQueryAsync(ct); }
+    private static string Csv(string? value) { var text = value ?? string.Empty; return "\"" + text.Replace("\"", "\"\"", StringComparison.Ordinal) + "\""; }
+    private static string? Text(NpgsqlDataReader reader, int ordinal) => reader.IsDBNull(ordinal) ? null : Convert.ToString(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
 }

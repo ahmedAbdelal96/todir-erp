@@ -491,63 +491,63 @@ public sealed class SubledgerService(
         var started = Stopwatch.GetTimestamp();
         try
         {
-        ValidateIdentity(tenantId, query.LegalEntityId, query.SourceOpenItemId);
-        await RequirePermissionAsync(tenantId, membershipId, "subledger.application.create", query.LegalEntityId, cancellationToken);
-        if (string.IsNullOrWhiteSpace(query.Policy)) throw new SubledgerException("subledger.match_policy_invalid", "A matching policy is required.");
-        var policy = query.Policy.Trim();
-        if (policy is not ("Manual" or "AutoOldestDue" or "AutoOldestDocument" or "ReferenceMatchFirst"))
-            throw new SubledgerException("subledger.match_policy_invalid", "The application matching policy is not supported.");
-        if (query.MaximumLines is < 1 or > 50) throw new SubledgerException("subledger.page_size_invalid", "A suggestion request may include between one and 50 lines.");
+            ValidateIdentity(tenantId, query.LegalEntityId, query.SourceOpenItemId);
+            await RequirePermissionAsync(tenantId, membershipId, "subledger.application.create", query.LegalEntityId, cancellationToken);
+            if (string.IsNullOrWhiteSpace(query.Policy)) throw new SubledgerException("subledger.match_policy_invalid", "A matching policy is required.");
+            var policy = query.Policy.Trim();
+            if (policy is not ("Manual" or "AutoOldestDue" or "AutoOldestDocument" or "ReferenceMatchFirst"))
+                throw new SubledgerException("subledger.match_policy_invalid", "The application matching policy is not supported.");
+            if (query.MaximumLines is < 1 or > 50) throw new SubledgerException("subledger.page_size_invalid", "A suggestion request may include between one and 50 lines.");
 
-        var manual = policy == "Manual";
-        var context = await repository.GetAutoApplyContextAsync(tenantId, query.LegalEntityId, query.SourceOpenItemId, query.Reference,
-            manual ? 0 : 500, policy == "ReferenceMatchFirst", policy == "AutoOldestDocument", cancellationToken);
-        _ = await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
-        await EnsurePartyAsync(tenantId, query.LegalEntityId, context.Source.PartyId, cancellationToken);
-        if (policy == "Manual")
-            return new(context.Source.Id, context.Source.OpenTransactionAmount, context.Source.TransactionCurrency, [], context.Source.OpenTransactionAmount, true);
+            var manual = policy == "Manual";
+            var context = await repository.GetAutoApplyContextAsync(tenantId, query.LegalEntityId, query.SourceOpenItemId, query.Reference,
+                manual ? 0 : 500, policy == "ReferenceMatchFirst", policy == "AutoOldestDocument", cancellationToken);
+            _ = await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
+            await EnsurePartyAsync(tenantId, query.LegalEntityId, context.Source.PartyId, cancellationToken);
+            if (policy == "Manual")
+                return new(context.Source.Id, context.Source.OpenTransactionAmount, context.Source.TransactionCurrency, [], context.Source.OpenTransactionAmount, true);
 
-        var reference = NormalizeMatchReference(query.Reference ?? context.Source.SourceDisplayNumber ?? context.Source.SourceReference);
-        var sourceAvailable = decimal.Parse(context.Source.OpenTransactionAmount, CultureInfo.InvariantCulture);
-        var ordered = context.Candidates
-            .Select(candidate => new
+            var reference = NormalizeMatchReference(query.Reference ?? context.Source.SourceDisplayNumber ?? context.Source.SourceReference);
+            var sourceAvailable = decimal.Parse(context.Source.OpenTransactionAmount, CultureInfo.InvariantCulture);
+            var ordered = context.Candidates
+                .Select(candidate => new
+                {
+                    Candidate = candidate,
+                    ReferenceMatch = reference.Length > 0 && (
+                        NormalizeMatchReference(candidate.Item.SourceDisplayNumber ?? "") == reference
+                        || NormalizeMatchReference(candidate.Item.SourceReference) == reference),
+                    AmountMatch = decimal.Parse(candidate.Item.OpenTransactionAmount, CultureInfo.InvariantCulture) == sourceAvailable
+                })
+                .OrderByDescending(item => policy == "ReferenceMatchFirst" && item.ReferenceMatch)
+                .ThenByDescending(item => policy == "ReferenceMatchFirst" && item.ReferenceMatch && item.AmountMatch)
+                .ThenBy(item => policy == "AutoOldestDocument" ? item.Candidate.Item.DocumentDate : item.Candidate.Item.DueDate)
+                .ThenBy(item => item.Candidate.Item.DocumentDate)
+                .ThenBy(item => item.Candidate.Item.Id)
+                .ToArray();
+
+            var suggestions = new List<AutoApplySuggestionLine>();
+            var remainingSource = sourceAvailable;
+            foreach (var candidate in ordered)
             {
-                Candidate = candidate,
-                ReferenceMatch = reference.Length > 0 && (
-                    NormalizeMatchReference(candidate.Item.SourceDisplayNumber ?? "") == reference
-                    || NormalizeMatchReference(candidate.Item.SourceReference) == reference),
-                AmountMatch = decimal.Parse(candidate.Item.OpenTransactionAmount, CultureInfo.InvariantCulture) == sourceAvailable
-            })
-            .OrderByDescending(item => policy == "ReferenceMatchFirst" && item.ReferenceMatch)
-            .ThenByDescending(item => policy == "ReferenceMatchFirst" && item.ReferenceMatch && item.AmountMatch)
-            .ThenBy(item => policy == "AutoOldestDocument" ? item.Candidate.Item.DocumentDate : item.Candidate.Item.DueDate)
-            .ThenBy(item => item.Candidate.Item.DocumentDate)
-            .ThenBy(item => item.Candidate.Item.Id)
-            .ToArray();
+                if (suggestions.Count >= query.MaximumLines || remainingSource <= 0m) break;
+                var target = candidate.Candidate.Item;
+                var targetRemaining = decimal.Parse(target.OpenTransactionAmount, CultureInfo.InvariantCulture);
+                var applied = Math.Min(remainingSource, targetRemaining);
+                var reason = candidate.ReferenceMatch
+                    ? candidate.AmountMatch ? "ExactAmountAndReference" : "ExactReference"
+                    : policy == "AutoOldestDocument" ? "OldestDocumentFallback" : "OldestDueFallback";
+                var confidence = candidate.ReferenceMatch ? "High" : "Low";
+                var debit = context.Source.Polarity == SubledgerPolarityContract.Debit ? context.Source : target;
+                var credit = context.Source.Polarity == SubledgerPolarityContract.Credit ? context.Source : target;
+                suggestions.Add(new(debit.Id, credit.Id, applied.ToString(CultureInfo.InvariantCulture), applied.ToString(CultureInfo.InvariantCulture),
+                    debit.RowVersion, credit.RowVersion, reason, confidence, context.Source.TransactionCurrency,
+                    (decimal.Parse(debit.OpenTransactionAmount, CultureInfo.InvariantCulture) - applied).ToString(CultureInfo.InvariantCulture),
+                    (decimal.Parse(credit.OpenTransactionAmount, CultureInfo.InvariantCulture) - applied).ToString(CultureInfo.InvariantCulture)));
+                remainingSource -= applied;
+            }
 
-        var suggestions = new List<AutoApplySuggestionLine>();
-        var remainingSource = sourceAvailable;
-        foreach (var candidate in ordered)
-        {
-            if (suggestions.Count >= query.MaximumLines || remainingSource <= 0m) break;
-            var target = candidate.Candidate.Item;
-            var targetRemaining = decimal.Parse(target.OpenTransactionAmount, CultureInfo.InvariantCulture);
-            var applied = Math.Min(remainingSource, targetRemaining);
-            var reason = candidate.ReferenceMatch
-                ? candidate.AmountMatch ? "ExactAmountAndReference" : "ExactReference"
-                : policy == "AutoOldestDocument" ? "OldestDocumentFallback" : "OldestDueFallback";
-            var confidence = candidate.ReferenceMatch ? "High" : "Low";
-            var debit = context.Source.Polarity == SubledgerPolarityContract.Debit ? context.Source : target;
-            var credit = context.Source.Polarity == SubledgerPolarityContract.Credit ? context.Source : target;
-            suggestions.Add(new(debit.Id, credit.Id, applied.ToString(CultureInfo.InvariantCulture), applied.ToString(CultureInfo.InvariantCulture),
-                debit.RowVersion, credit.RowVersion, reason, confidence, context.Source.TransactionCurrency,
-                (decimal.Parse(debit.OpenTransactionAmount, CultureInfo.InvariantCulture) - applied).ToString(CultureInfo.InvariantCulture),
-                (decimal.Parse(credit.OpenTransactionAmount, CultureInfo.InvariantCulture) - applied).ToString(CultureInfo.InvariantCulture)));
-            remainingSource -= applied;
-        }
-
-        return new(context.Source.Id, sourceAvailable.ToString(CultureInfo.InvariantCulture), context.Source.TransactionCurrency,
-            suggestions, remainingSource.ToString(CultureInfo.InvariantCulture), true);
+            return new(context.Source.Id, sourceAvailable.ToString(CultureInfo.InvariantCulture), context.Source.TransactionCurrency,
+                suggestions, remainingSource.ToString(CultureInfo.InvariantCulture), true);
         }
         finally { SubledgerObservability.AutoMatchDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds); }
     }
@@ -557,39 +557,39 @@ public sealed class SubledgerService(
         var started = Stopwatch.GetTimestamp();
         try
         {
-        ValidateIdentity(tenantId, query.LegalEntityId, query.PartyId);
-        _ = MapDirection(query.Direction);
-        if (query.AsOfDate == DateOnly.MinValue) throw new SubledgerException("subledger.as_of_date_required", "An as-of date is required.");
-        var baseCurrency = await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
-        await EnsurePartyAsync(tenantId, query.LegalEntityId, query.PartyId, cancellationToken);
-        var balance = await repository.GetPartyBalanceAsync(tenantId, query, cancellationToken);
-        if (balance.CreditLimitAmount is null || balance.CreditLimitCurrency is null) return balance;
-        var currencies = balance.Currencies.Select(item => item.CurrencyCode).Append(balance.CreditLimitCurrency).Distinct(StringComparer.Ordinal).ToArray();
-        var contexts = new Dictionary<string, FinancialCalculationContextSnapshotContract>(StringComparer.Ordinal);
-        foreach (var currency in currencies)
-        {
-            if (currency == baseCurrency) continue;
-            var context = await ResolveFinancialContextAsync(tenantId, query.LegalEntityId, currency, FinancialCalculationPurpose.Reporting, query.AsOfDate, cancellationToken);
-            if (context?.ExchangeRate is null) return balance with { AvailableCreditAmount = null };
-            contexts[currency] = context;
-        }
-        decimal ToBase(string currency, decimal amount)
-        {
-            if (currency == baseCurrency) return amount;
-            var rate = ParseAmount(contexts[currency].ExchangeRate!.Rate);
-            return amount * rate;
-        }
-        var netExposureBase = balance.Currencies.Sum(item => ToBase(item.CurrencyCode, ParseAmount(item.NetBalance)));
-        var creditLimit = ParseAmount(balance.CreditLimitAmount);
-        var limitBase = ToBase(balance.CreditLimitCurrency, creditLimit);
-        var limitRate = balance.CreditLimitCurrency == baseCurrency ? 1m : ParseAmount(contexts[balance.CreditLimitCurrency].ExchangeRate!.Rate);
-        var rounding = await ResolveFinancialContextAsync(tenantId, query.LegalEntityId, baseCurrency, FinancialCalculationPurpose.Reporting, query.AsOfDate, cancellationToken);
-        var roundingRule = rounding?.RoundingPolicy.ContextRules.SingleOrDefault(rule => rule.Context == FinancialRoundingContext.FxBaseAmount);
-        if (rounding is null || roundingRule is null || !Enum.TryParse<FinancialRoundingModeValue>(roundingRule.Mode.ToString(), out var mode))
-            return balance with { AvailableCreditAmount = null };
-        var availableBase = FinancialRounding.Round(limitBase - netExposureBase, rounding.RoundingPolicy.MoneyScale, mode);
-        var availableCredit = FinancialRounding.Round(availableBase / limitRate, rounding.RoundingPolicy.MoneyScale, mode);
-        return balance with { AvailableCreditAmount = availableCredit.ToString(CultureInfo.InvariantCulture) };
+            ValidateIdentity(tenantId, query.LegalEntityId, query.PartyId);
+            _ = MapDirection(query.Direction);
+            if (query.AsOfDate == DateOnly.MinValue) throw new SubledgerException("subledger.as_of_date_required", "An as-of date is required.");
+            var baseCurrency = await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
+            await EnsurePartyAsync(tenantId, query.LegalEntityId, query.PartyId, cancellationToken);
+            var balance = await repository.GetPartyBalanceAsync(tenantId, query, cancellationToken);
+            if (balance.CreditLimitAmount is null || balance.CreditLimitCurrency is null) return balance;
+            var currencies = balance.Currencies.Select(item => item.CurrencyCode).Append(balance.CreditLimitCurrency).Distinct(StringComparer.Ordinal).ToArray();
+            var contexts = new Dictionary<string, FinancialCalculationContextSnapshotContract>(StringComparer.Ordinal);
+            foreach (var currency in currencies)
+            {
+                if (currency == baseCurrency) continue;
+                var context = await ResolveFinancialContextAsync(tenantId, query.LegalEntityId, currency, FinancialCalculationPurpose.Reporting, query.AsOfDate, cancellationToken);
+                if (context?.ExchangeRate is null) return balance with { AvailableCreditAmount = null };
+                contexts[currency] = context;
+            }
+            decimal ToBase(string currency, decimal amount)
+            {
+                if (currency == baseCurrency) return amount;
+                var rate = ParseAmount(contexts[currency].ExchangeRate!.Rate);
+                return amount * rate;
+            }
+            var netExposureBase = balance.Currencies.Sum(item => ToBase(item.CurrencyCode, ParseAmount(item.NetBalance)));
+            var creditLimit = ParseAmount(balance.CreditLimitAmount);
+            var limitBase = ToBase(balance.CreditLimitCurrency, creditLimit);
+            var limitRate = balance.CreditLimitCurrency == baseCurrency ? 1m : ParseAmount(contexts[balance.CreditLimitCurrency].ExchangeRate!.Rate);
+            var rounding = await ResolveFinancialContextAsync(tenantId, query.LegalEntityId, baseCurrency, FinancialCalculationPurpose.Reporting, query.AsOfDate, cancellationToken);
+            var roundingRule = rounding?.RoundingPolicy.ContextRules.SingleOrDefault(rule => rule.Context == FinancialRoundingContext.FxBaseAmount);
+            if (rounding is null || roundingRule is null || !Enum.TryParse<FinancialRoundingModeValue>(roundingRule.Mode.ToString(), out var mode))
+                return balance with { AvailableCreditAmount = null };
+            var availableBase = FinancialRounding.Round(limitBase - netExposureBase, rounding.RoundingPolicy.MoneyScale, mode);
+            var availableCredit = FinancialRounding.Round(availableBase / limitRate, rounding.RoundingPolicy.MoneyScale, mode);
+            return balance with { AvailableCreditAmount = availableCredit.ToString(CultureInfo.InvariantCulture) };
         }
         finally { SubledgerObservability.ExposureQueryDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds); }
     }

@@ -19,7 +19,8 @@ using Xunit.Abstractions;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase
+{
     private readonly ITestOutputHelper output;
 
     public InvoicingApiIntegrationTests(ITestOutputHelper output) => this.output = output;
@@ -505,9 +506,17 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var invoicePreviewRequest = new
         {
-            legalEntityId = seed.LegalEntityId, branchId = (Guid?)null, partyId = seed.PartyId, addressId = (Guid?)null,
-            documentDate = today, postingDate = today, taxDate = today, supplyDate = (DateOnly?)null, currencyCode = seed.CurrencyCode,
-            paymentTermId = (Guid?)null, supplierInvoiceNumber = (string?)null,
+            legalEntityId = seed.LegalEntityId,
+            branchId = (Guid?)null,
+            partyId = seed.PartyId,
+            addressId = (Guid?)null,
+            documentDate = today,
+            postingDate = today,
+            taxDate = today,
+            supplyDate = (DateOnly?)null,
+            currencyCode = seed.CurrencyCode,
+            paymentTermId = (Guid?)null,
+            supplierInvoiceNumber = (string?)null,
             lines = new[] { new { productVariantId = seed.ProductVariantId, unitOfMeasureId = seed.UnitOfMeasureId, unitCode = seed.UnitCode,
                 description = "Permission proof", quantity = "1", unitPrice = (string?)null, discountAmount = "0", priceOverrideReason = (string?)null } },
             priceMode = "Exclusive"
@@ -515,9 +524,17 @@ public sealed class InvoicingApiIntegrationTests : DatabaseIntegrationTestBase {
         var unauthorizedAccountingPreview = await PostAsync(client, "/api/v1/invoicing/customer-invoices/preview", invoicePreviewRequest);
         var priceOverrideRequest = new
         {
-            legalEntityId = seed.LegalEntityId, branchId = (Guid?)null, partyId = seed.PartyId, addressId = (Guid?)null,
-            documentDate = today, postingDate = today, taxDate = today, supplyDate = (DateOnly?)null, currencyCode = seed.CurrencyCode,
-            paymentTermId = (Guid?)null, supplierInvoiceNumber = (string?)null,
+            legalEntityId = seed.LegalEntityId,
+            branchId = (Guid?)null,
+            partyId = seed.PartyId,
+            addressId = (Guid?)null,
+            documentDate = today,
+            postingDate = today,
+            taxDate = today,
+            supplyDate = (DateOnly?)null,
+            currencyCode = seed.CurrencyCode,
+            paymentTermId = (Guid?)null,
+            supplierInvoiceNumber = (string?)null,
             lines = new[] { new { productVariantId = seed.ProductVariantId, unitOfMeasureId = seed.UnitOfMeasureId, unitCode = seed.UnitCode,
                 description = "Permission proof price override", quantity = "1", unitPrice = "125.00", discountAmount = "0", priceOverrideReason = "Unauthorized override proof" } },
             priceMode = "Exclusive"

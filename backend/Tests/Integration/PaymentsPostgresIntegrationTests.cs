@@ -71,8 +71,14 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         var previousSecret = Environment.GetEnvironmentVariable(secretVariable); Environment.SetEnvironmentVariable(secretVariable, signingSecret);
         try
         {
-            var body = JsonSerializer.SerializeToUtf8Bytes(new { eventId = "declined-" + Guid.CreateVersion7().ToString("N"), merchantReference = request.MerchantReference,
-                transactionId, eventType = "payment.failed", occurredAt = DateTimeOffset.UtcNow });
+            var body = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                eventId = "declined-" + Guid.CreateVersion7().ToString("N"),
+                merchantReference = request.MerchantReference,
+                transactionId,
+                eventType = "payment.failed",
+                occurredAt = DateTimeOffset.UtcNow
+            });
             var signature = "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(signingSecret), body)).ToLowerInvariant();
             await payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, body, signature, CancellationToken.None);
         }
@@ -324,7 +330,7 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 and fact_type='RefundPaid' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, refund.Id));
 
         var feePayment = await payments.CreateDraftAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), command with
-            { Amount = "40.00", BankReference = "INTEGRATION-FEE-" + Guid.CreateVersion7().ToString("N") },
+        { Amount = "40.00", BankReference = "INTEGRATION-FEE-" + Guid.CreateVersion7().ToString("N") },
             "fee-payment-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None);
         var feeKey = "payment-fee-" + Guid.CreateVersion7().ToString("N");
         var fee = await payments.AddFeeAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), fixture.LegalEntityId, feePayment.Id,
@@ -383,7 +389,7 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         });
 
         var failurePayment = await payments.CreateDraftAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), command with
-            { Amount = "12.00", BankReference = "REVERSAL-ATOMICITY-" + Guid.CreateVersion7().ToString("N") },
+        { Amount = "12.00", BankReference = "REVERSAL-ATOMICITY-" + Guid.CreateVersion7().ToString("N") },
             "reversal-atomicity-payment-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None);
         var failureFee = await payments.AddFeeAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), fixture.LegalEntityId, failurePayment.Id,
             new(PaymentFeeType.BankFee, "0.75", "EGP", "ATOMICITY-FEE-REF"), "reversal-atomicity-fee-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None);
@@ -418,7 +424,7 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_fee_disposition where tenant_id=$1 and legal_entity_id=$2 and payment_fee_id=$3 and corrective_fact_id is not null", fixture.TenantId, fixture.LegalEntityId, failureFee.Id));
 
         var reversalSource = await payments.CreateDraftAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), command with
-            { Amount = "15.00", BankReference = "INTEGRATION-REVERSAL-" + Guid.CreateVersion7().ToString("N") },
+        { Amount = "15.00", BankReference = "INTEGRATION-REVERSAL-" + Guid.CreateVersion7().ToString("N") },
             "reversal-source-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None);
         await payments.CompleteManualAsync(tenant, fixture.ActorId, fixture.MembershipId, fixture.LegalEntityId, reversalSource.Id,
             "reversal-source-complete-" + Guid.CreateVersion7().ToString("N"), Guid.CreateVersion7(), CancellationToken.None);
@@ -519,53 +525,53 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         Environment.SetEnvironmentVariable(secretVariable, webhookSecret);
         try
         {
-        var invalidSignature = await Assert.ThrowsAsync<PaymentException>(() => payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, webhookBody,
-            "sha256=" + new string('0', 64), CancellationToken.None));
-        Assert.Equal("payments.webhook_signature_invalid", invalidSignature.Code);
-        Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_payments.provider_webhook_inbox where tenant_id=$1 and provider_config_id=$2 and provider_event_id=$3", fixture.TenantId, provider.Id, eventId));
-        await InstallFailureTriggerAsync(adminConnectionString, "finance_ledger.accounting_fact", "INSERT");
-        try
-        {
-            await Assert.ThrowsAsync<PostgresException>(() => payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, webhookBody, validSignature, CancellationToken.None));
-        }
-        finally { await RemoveFailureTriggerAsync(adminConnectionString, "finance_ledger.accounting_fact"); }
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.provider_webhook_inbox where tenant_id=$1 and provider_config_id=$2 and provider_event_id=$3 and processing_state='Received'", fixture.TenantId, provider.Id, eventId));
-        var recoveredIntent = await payments.SyncReferenceProviderStatusAsync(tenant, fixture.LegalEntityId, paymentIntent.Id, CancellationToken.None);
-        Assert.Equal("Succeeded", recoveredIntent.State);
-        await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, webhookBody, validSignature, CancellationToken.None)));
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3 and business_state='Completed' and provider_code='reference' and provider_transaction_id is not null", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_type='Payment' and source_reference=(select id::text from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3)", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=(select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3) and status='Posted'", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_attempt where tenant_id=$1 and legal_entity_id=$2 and payment_request_id=$3 and state='Succeeded' and provider_transaction_id is not null", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id));
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_request where tenant_id=$1 and legal_entity_id=$2 and id=$3 and workflow_state='Succeeded'", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id));
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from platform.outbox_message where tenant_id=$1 and source_module='payments' and message_type='PaymentCompletedV1' and causation_id=(select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3)", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.provider_webhook_inbox where tenant_id=$1 and provider_config_id=$2 and provider_event_id=$3 and signature_verified and processing_state='Processed'", fixture.TenantId, provider.Id, eventId));
-        Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_payments.payment_link where tenant_id=$1 and id=$2 and status<>'Completed'", fixture.TenantId, activePaymentLink.Id));
+            var invalidSignature = await Assert.ThrowsAsync<PaymentException>(() => payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, webhookBody,
+                "sha256=" + new string('0', 64), CancellationToken.None));
+            Assert.Equal("payments.webhook_signature_invalid", invalidSignature.Code);
+            Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_payments.provider_webhook_inbox where tenant_id=$1 and provider_config_id=$2 and provider_event_id=$3", fixture.TenantId, provider.Id, eventId));
+            await InstallFailureTriggerAsync(adminConnectionString, "finance_ledger.accounting_fact", "INSERT");
+            try
+            {
+                await Assert.ThrowsAsync<PostgresException>(() => payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, webhookBody, validSignature, CancellationToken.None));
+            }
+            finally { await RemoveFailureTriggerAsync(adminConnectionString, "finance_ledger.accounting_fact"); }
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.provider_webhook_inbox where tenant_id=$1 and provider_config_id=$2 and provider_event_id=$3 and processing_state='Received'", fixture.TenantId, provider.Id, eventId));
+            var recoveredIntent = await payments.SyncReferenceProviderStatusAsync(tenant, fixture.LegalEntityId, paymentIntent.Id, CancellationToken.None);
+            Assert.Equal("Succeeded", recoveredIntent.State);
+            await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, webhookBody, validSignature, CancellationToken.None)));
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3 and business_state='Completed' and provider_code='reference' and provider_transaction_id is not null", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_type='Payment' and source_reference=(select id::text from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3)", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=(select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3) and status='Posted'", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_attempt where tenant_id=$1 and legal_entity_id=$2 and payment_request_id=$3 and state='Succeeded' and provider_transaction_id is not null", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id));
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_request where tenant_id=$1 and legal_entity_id=$2 and id=$3 and workflow_state='Succeeded'", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id));
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from platform.outbox_message where tenant_id=$1 and source_module='payments' and message_type='PaymentCompletedV1' and causation_id=(select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3)", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.provider_webhook_inbox where tenant_id=$1 and provider_config_id=$2 and provider_event_id=$3 and signature_verified and processing_state='Processed'", fixture.TenantId, provider.Id, eventId));
+            Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_payments.payment_link where tenant_id=$1 and id=$2 and status<>'Completed'", fixture.TenantId, activePaymentLink.Id));
 
-        var providerRefundKey = "provider-refund-" + Guid.CreateVersion7().ToString("N");
-        var providerRefundRequest = new CreateRefundRequest(providerAccount.Id, PaymentMethod.PaymentGateway, "5.00", new(2026, 10, 1), new(2026, 10, 1), null, "provider-refund-test", null);
-        var originalProviderPaymentId = (Guid)(await ScalarAsync(admin, "select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")))!;
-        await InstallFailureTriggerAsync(adminConnectionString, "finance_ledger.accounting_fact", "INSERT");
-        try
-        {
-            await Assert.ThrowsAsync<PostgresException>(() => payments.CreateProviderRefundAsync(tenant, fixture.ActorId, fixture.MembershipId,
-                Guid.CreateVersion7(), fixture.LegalEntityId, originalProviderPaymentId, providerRefundRequest, providerRefundKey, CancellationToken.None));
-        }
-        finally { await RemoveFailureTriggerAsync(adminConnectionString, "finance_ledger.accounting_fact"); }
-        var pendingProviderRefundId = (Guid)(await ScalarAsync(admin, "select refund_payment_id from finance_payments.payment_refund where tenant_id=$1 and legal_entity_id=$2 and original_payment_id=(select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3) and idempotency_key=$4", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D"), providerRefundKey))!;
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.provider_operation operation join finance_payments.payment_refund refund on refund.tenant_id=operation.tenant_id and refund.legal_entity_id=operation.legal_entity_id and refund.id=operation.aggregate_id where operation.tenant_id=$1 and operation.legal_entity_id=$2 and refund.refund_payment_id=$3 and operation.operation_type='Refund' and operation.state='Succeeded'", fixture.TenantId, fixture.LegalEntityId, pendingProviderRefundId));
-        var recoveredProviderRefund = await payments.SyncProviderRefundStatusAsync(tenant, fixture.ActorId, fixture.MembershipId, fixture.LegalEntityId, pendingProviderRefundId, CancellationToken.None);
-        Assert.Equal("Succeeded", recoveredProviderRefund.ProviderState); Assert.Equal(PaymentBusinessState.Completed, recoveredProviderRefund.Refund.State);
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_type='Payment' and source_reference=$3", fixture.TenantId, fixture.LegalEntityId, pendingProviderRefundId.ToString("D")));
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 and fact_type='RefundPaid' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, pendingProviderRefundId));
+            var providerRefundKey = "provider-refund-" + Guid.CreateVersion7().ToString("N");
+            var providerRefundRequest = new CreateRefundRequest(providerAccount.Id, PaymentMethod.PaymentGateway, "5.00", new(2026, 10, 1), new(2026, 10, 1), null, "provider-refund-test", null);
+            var originalProviderPaymentId = (Guid)(await ScalarAsync(admin, "select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")))!;
+            await InstallFailureTriggerAsync(adminConnectionString, "finance_ledger.accounting_fact", "INSERT");
+            try
+            {
+                await Assert.ThrowsAsync<PostgresException>(() => payments.CreateProviderRefundAsync(tenant, fixture.ActorId, fixture.MembershipId,
+                    Guid.CreateVersion7(), fixture.LegalEntityId, originalProviderPaymentId, providerRefundRequest, providerRefundKey, CancellationToken.None));
+            }
+            finally { await RemoveFailureTriggerAsync(adminConnectionString, "finance_ledger.accounting_fact"); }
+            var pendingProviderRefundId = (Guid)(await ScalarAsync(admin, "select refund_payment_id from finance_payments.payment_refund where tenant_id=$1 and legal_entity_id=$2 and original_payment_id=(select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3) and idempotency_key=$4", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D"), providerRefundKey))!;
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.provider_operation operation join finance_payments.payment_refund refund on refund.tenant_id=operation.tenant_id and refund.legal_entity_id=operation.legal_entity_id and refund.id=operation.aggregate_id where operation.tenant_id=$1 and operation.legal_entity_id=$2 and refund.refund_payment_id=$3 and operation.operation_type='Refund' and operation.state='Succeeded'", fixture.TenantId, fixture.LegalEntityId, pendingProviderRefundId));
+            var recoveredProviderRefund = await payments.SyncProviderRefundStatusAsync(tenant, fixture.ActorId, fixture.MembershipId, fixture.LegalEntityId, pendingProviderRefundId, CancellationToken.None);
+            Assert.Equal("Succeeded", recoveredProviderRefund.ProviderState); Assert.Equal(PaymentBusinessState.Completed, recoveredProviderRefund.Refund.State);
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_type='Payment' and source_reference=$3", fixture.TenantId, fixture.LegalEntityId, pendingProviderRefundId.ToString("D")));
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 and fact_type='RefundPaid' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, pendingProviderRefundId));
 
-        var lateFailure = JsonSerializer.SerializeToUtf8Bytes(new { eventId = eventId + "-late-failure", merchantReference = paymentIntent.MerchantReference, transactionId = providerTransactionId, eventType = "payment.failed", occurredAt = eventTime.AddMinutes(-5) });
-        var lateFailureSignature = "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(webhookSecret), lateFailure)).ToLowerInvariant();
-        await payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, lateFailure, lateFailureSignature, CancellationToken.None);
-        var lateAuthorization = JsonSerializer.SerializeToUtf8Bytes(new { eventId = eventId + "-late-authorization", merchantReference = paymentIntent.MerchantReference, transactionId = providerTransactionId, eventType = "payment.authorized", occurredAt = eventTime.AddMinutes(-8) });
-        var lateAuthorizationSignature = "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(webhookSecret), lateAuthorization)).ToLowerInvariant();
-        await payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, lateAuthorization, lateAuthorizationSignature, CancellationToken.None);
-        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3 and business_state='Completed'", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
+            var lateFailure = JsonSerializer.SerializeToUtf8Bytes(new { eventId = eventId + "-late-failure", merchantReference = paymentIntent.MerchantReference, transactionId = providerTransactionId, eventType = "payment.failed", occurredAt = eventTime.AddMinutes(-5) });
+            var lateFailureSignature = "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(webhookSecret), lateFailure)).ToLowerInvariant();
+            await payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, lateFailure, lateFailureSignature, CancellationToken.None);
+            var lateAuthorization = JsonSerializer.SerializeToUtf8Bytes(new { eventId = eventId + "-late-authorization", merchantReference = paymentIntent.MerchantReference, transactionId = providerTransactionId, eventType = "payment.authorized", occurredAt = eventTime.AddMinutes(-8) });
+            var lateAuthorizationSignature = "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(webhookSecret), lateAuthorization)).ToLowerInvariant();
+            await payments.ReceiveReferenceWebhookAsync(tenant, provider.Id, lateAuthorization, lateAuthorizationSignature, CancellationToken.None);
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3 and business_state='Completed'", fixture.TenantId, fixture.LegalEntityId, paymentIntent.Id.ToString("D")));
         }
         finally { Environment.SetEnvironmentVariable(secretVariable, previousSecret); }
 

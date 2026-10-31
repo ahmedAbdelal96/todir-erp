@@ -104,8 +104,12 @@ public static class InventoryCosting
         ValidateReceipt(quantity, unitCost);
         var newQuantity = checked(state.Quantity + quantity);
         var newValue = checked(state.CarryingValue + quantity * unitCost);
-        return state with { Quantity = newQuantity, CarryingValue = newValue,
-            AverageUnitCost = newQuantity == 0m ? 0m : newValue / newQuantity };
+        return state with
+        {
+            Quantity = newQuantity,
+            CarryingValue = newValue,
+            AverageUnitCost = newQuantity == 0m ? 0m : newValue / newQuantity
+        };
     }
 
     public static (ValuationState State, CostConsumption Consumption) IssueMovingAverage(ValuationState state, decimal quantity)
@@ -115,8 +119,12 @@ public static class InventoryCosting
         var remainingQuantity = state.Quantity - quantity;
         var remainingValue = state.CarryingValue - value;
         if (remainingQuantity == 0m) remainingValue = 0m;
-        var updated = state with { Quantity = remainingQuantity, CarryingValue = remainingValue,
-            AverageUnitCost = remainingQuantity == 0m ? 0m : remainingValue / remainingQuantity };
+        var updated = state with
+        {
+            Quantity = remainingQuantity,
+            CarryingValue = remainingValue,
+            AverageUnitCost = remainingQuantity == 0m ? 0m : remainingValue / remainingQuantity
+        };
         return (updated, new CostConsumption(quantity, value, state.Layers));
     }
 
@@ -127,8 +135,13 @@ public static class InventoryCosting
             .OrderBy(layer => layer.EffectiveDate).ThenBy(layer => layer.Id).ToArray();
         var totalQuantity = checked(state.Quantity + quantity);
         var totalValue = checked(state.CarryingValue + quantity * unitCost);
-        return state with { Quantity = totalQuantity, CarryingValue = totalValue,
-            AverageUnitCost = totalQuantity == 0m ? 0m : totalValue / totalQuantity, Layers = layers };
+        return state with
+        {
+            Quantity = totalQuantity,
+            CarryingValue = totalValue,
+            AverageUnitCost = totalQuantity == 0m ? 0m : totalValue / totalQuantity,
+            Layers = layers
+        };
     }
 
     public static (ValuationState State, CostConsumption Consumption) IssueFifo(ValuationState state, decimal quantity)
@@ -148,8 +161,13 @@ public static class InventoryCosting
         var newQuantity = state.Quantity - quantity;
         var newValue = state.CarryingValue - consumedValue;
         if (newQuantity == 0m) newValue = 0m;
-        var updated = state with { Quantity = newQuantity, CarryingValue = newValue,
-            AverageUnitCost = newQuantity == 0m ? 0m : newValue / newQuantity, Layers = layers };
+        var updated = state with
+        {
+            Quantity = newQuantity,
+            CarryingValue = newValue,
+            AverageUnitCost = newQuantity == 0m ? 0m : newValue / newQuantity,
+            Layers = layers
+        };
         return (updated, new CostConsumption(quantity, consumedValue, layers));
     }
 

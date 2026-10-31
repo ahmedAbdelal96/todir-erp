@@ -34,10 +34,13 @@ public sealed class AccountingPostgresIntegrationTests
         Assert.Equal("Subtract", formula.ArithmeticOperator);
         Assert.Equal(["revenue", "expense"], formula.FormulaLineCodes);
 
-        var cycle = request with { Lines = [
+        var cycle = request with
+        {
+            Lines = [
             new("a", "أ", "A", 10, null, null, "Arithmetic", null, "Add", ["b", "c"]),
             new("b", "ب", "B", 20, null, null, "Arithmetic", null, "Add", ["a", "c"]),
-            new("c", "ج", "C", 30, "Revenue") ] };
+            new("c", "ج", "C", 30, "Revenue") ]
+        };
         var exception = await Assert.ThrowsAsync<AccountingRepositoryException>(() => repository.SaveStatementDefinitionAsync(AtlasTenant, AtlasEntity, cycle, Guid.CreateVersion7(), default));
         Assert.Equal("accounting.statement_formula_cycle", exception.Code);
     }

@@ -6,7 +6,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class AuthorizationIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class AuthorizationIntegrationTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task DatabaseSubjectAndBackendAuthorizerEnforceTenantAndBranchScopes()
     {

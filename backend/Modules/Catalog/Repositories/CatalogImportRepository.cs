@@ -220,7 +220,7 @@ public sealed class CatalogImportRepository(ITransactionCoordinator coordinator,
             var rows = 0;
             while (await reader.ReadAsync(cancellationToken))
             {
-                var values = new string?[] { reader.GetString(0), NullableString(reader,1), NullableString(reader,2), reader.GetString(3), NullableString(reader,4), NullableString(reader,5), NullableString(reader,6), NullableString(reader,7), NullableString(reader,8), reader.GetString(9), reader.GetString(10), reader.GetString(11), reader.GetString(12), reader.GetString(13) };
+                var values = new string?[] { reader.GetString(0), NullableString(reader, 1), NullableString(reader, 2), reader.GetString(3), NullableString(reader, 4), NullableString(reader, 5), NullableString(reader, 6), NullableString(reader, 7), NullableString(reader, 8), reader.GetString(9), reader.GetString(10), reader.GetString(11), reader.GetString(12), reader.GetString(13) };
                 await writer.WriteLineAsync(string.Join(',', values.Select(CsvCell)));
                 afterName = reader.GetString(14); afterSku = reader.GetString(15); afterVariantId = reader.GetGuid(16); rows++;
             }
@@ -367,7 +367,7 @@ public sealed class CatalogImportRepository(ITransactionCoordinator coordinator,
         const string sql = "select row_number,row_data::text,normalized_sku,normalized_barcode,match_template_id,match_variant_id,category_id,brand_id,base_uom_id,target_template_id,target_variant_id,classification,errors from foundation_catalog.catalog_import_row where tenant_id=$1 and batch_id=$2 and processed_at is null order by row_number";
         await using var command = new NpgsqlCommand(sql, connection); command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(batchId);
         var rows = new List<StoredRow>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) { var payload = JsonSerializer.Deserialize<StoredImportData>(reader.GetString(1), JsonOptions)!; rows.Add(new StoredRow(reader.GetInt32(0), payload.Source, payload.AdditionalUoms, payload.Attributes, reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3), NullableGuid(reader,4), NullableGuid(reader,5), NullableGuid(reader,6), NullableGuid(reader,7), NullableGuid(reader,8), reader.GetGuid(9), reader.GetGuid(10), reader.GetString(11), reader.GetFieldValue<string[]>(12))); }
+        while (await reader.ReadAsync(cancellationToken)) { var payload = JsonSerializer.Deserialize<StoredImportData>(reader.GetString(1), JsonOptions)!; rows.Add(new StoredRow(reader.GetInt32(0), payload.Source, payload.AdditionalUoms, payload.Attributes, reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3), NullableGuid(reader, 4), NullableGuid(reader, 5), NullableGuid(reader, 6), NullableGuid(reader, 7), NullableGuid(reader, 8), reader.GetGuid(9), reader.GetGuid(10), reader.GetString(11), reader.GetFieldValue<string[]>(12))); }
         return rows;
     }
 
@@ -410,14 +410,14 @@ public sealed class CatalogImportRepository(ITransactionCoordinator coordinator,
             }
         }
         foreach (var row in rows)
-        foreach (var (code, valueCode) in row.Source.Attributes ?? new Dictionary<string, string>())
-        {
-            var normalizedCode = CatalogNormalization.Text(code); var normalizedValue = CatalogNormalization.Text(valueCode);
-            if (!attributes.TryGetValue(normalizedCode, out var attribute)) { row.Issues.Add("unknown_attribute"); continue; }
-            if (!attribute.IsVariantDefining) { row.Issues.Add("attribute_not_variant_defining"); continue; }
-            if (!attribute.Values.TryGetValue(normalizedValue, out var valueId)) { row.Issues.Add("unknown_attribute_value"); continue; }
-            row.ResolvedAttributes[attribute.Id] = valueId;
-        }
+            foreach (var (code, valueCode) in row.Source.Attributes ?? new Dictionary<string, string>())
+            {
+                var normalizedCode = CatalogNormalization.Text(code); var normalizedValue = CatalogNormalization.Text(valueCode);
+                if (!attributes.TryGetValue(normalizedCode, out var attribute)) { row.Issues.Add("unknown_attribute"); continue; }
+                if (!attribute.IsVariantDefining) { row.Issues.Add("attribute_not_variant_defining"); continue; }
+                if (!attribute.Values.TryGetValue(normalizedValue, out var valueId)) { row.Issues.Add("unknown_attribute_value"); continue; }
+                row.ResolvedAttributes[attribute.Id] = valueId;
+            }
     }
 
     private static async Task<Dictionary<string, (Guid Id, string Dimension)>> ReadUomLookupAsync(NpgsqlConnection connection, TenantId tenantId, CancellationToken cancellationToken)
@@ -456,11 +456,11 @@ public sealed class CatalogImportRepository(ITransactionCoordinator coordinator,
         var periods = new List<(Guid VariantId, string Code, DateTimeOffset From, DateTimeOffset? To)>();
         await using (var command = new NpgsqlCommand(sql, connection)) { command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(matched); await using var reader = await command.ExecuteReaderAsync(cancellationToken); while (await reader.ReadAsync(cancellationToken)) periods.Add((reader.GetGuid(0), reader.GetString(1), reader.GetFieldValue<DateTimeOffset>(2), reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3))); }
         foreach (var row in rows.Where(row => row.MatchVariantId is not null))
-        foreach (var added in row.AdditionalUoms)
-        {
-            var normalizedCode = CatalogNormalization.Text(added.UomCode ?? string.Empty);
-            if (periods.Any(existing => existing.VariantId == row.MatchVariantId && CatalogNormalization.Text(existing.Code) == normalizedCode && IntervalsOverlap(existing.From, existing.To, added.EffectiveFrom, added.EffectiveTo))) row.Issues.Add("uom_effective_period_conflict");
-        }
+            foreach (var added in row.AdditionalUoms)
+            {
+                var normalizedCode = CatalogNormalization.Text(added.UomCode ?? string.Empty);
+                if (periods.Any(existing => existing.VariantId == row.MatchVariantId && CatalogNormalization.Text(existing.Code) == normalizedCode && IntervalsOverlap(existing.From, existing.To, added.EffectiveFrom, added.EffectiveTo))) row.Issues.Add("uom_effective_period_conflict");
+            }
     }
 
     private static bool IntervalsOverlap(DateTimeOffset firstFrom, DateTimeOffset? firstTo, DateTimeOffset secondFrom, DateTimeOffset? secondTo) => (firstTo is null || secondFrom < firstTo) && (secondTo is null || firstFrom < secondTo);
@@ -539,10 +539,16 @@ public sealed class CatalogImportRepository(ITransactionCoordinator coordinator,
     {
         source = source with
         {
-            TemplateKey = NullTrim(source.TemplateKey), DisplayName = source.DisplayName?.Trim() ?? string.Empty,
-            Sku = NullTrim(source.Sku), NameAr = NullTrim(source.NameAr), NameEn = NullTrim(source.NameEn),
-            Category = NullTrim(source.Category), Brand = NullTrim(source.Brand), BaseUomCode = source.BaseUomCode?.Trim() ?? string.Empty,
-            Barcode = NullTrim(source.Barcode), ExternalReference = NullTrim(source.ExternalReference)
+            TemplateKey = NullTrim(source.TemplateKey),
+            DisplayName = source.DisplayName?.Trim() ?? string.Empty,
+            Sku = NullTrim(source.Sku),
+            NameAr = NullTrim(source.NameAr),
+            NameEn = NullTrim(source.NameEn),
+            Category = NullTrim(source.Category),
+            Brand = NullTrim(source.Brand),
+            BaseUomCode = source.BaseUomCode?.Trim() ?? string.Empty,
+            Barcode = NullTrim(source.Barcode),
+            ExternalReference = NullTrim(source.ExternalReference)
         };
         var row = new PreviewRow(rowNumber, source);
         if (string.IsNullOrWhiteSpace(source.DisplayName) || string.IsNullOrWhiteSpace(source.BaseUomCode)) row.Issues.Add("required_value_missing");
@@ -573,7 +579,17 @@ public sealed class CatalogImportRepository(ITransactionCoordinator coordinator,
 
     private sealed class PreviewRow(int rowNumber, CatalogImportRowRequest source)
     {
-        public int RowNumber { get; } = rowNumber; public CatalogImportRowRequest Source { get; } = source; public ImportUom[] AdditionalUoms { get; } = (source.AdditionalUoms ?? []).Select(uom => new ImportUom(uom.UomCode?.Trim() ?? string.Empty, uom.FactorToBase, uom.EffectiveFrom, uom.EffectiveTo, NullTrim(uom.Barcode), uom.UsageFlags, uom.RoundingPrecision)).ToArray(); public Dictionary<Guid, Guid> ResolvedAttributes { get; } = []; public string? NormalizedSku { get; set; } public string? NormalizedBarcode { get; set; } public Guid? MatchTemplateId { get; set; } public Guid? MatchVariantId { get; set; } public Guid? CategoryId { get; set; } public Guid? BrandId { get; set; } public Guid? BaseUomId { get; set; } public string? BaseUomDimension { get; set; } public Guid TargetTemplateId { get; set; } public Guid TargetVariantId { get; set; } public string Classification { get; set; } = "Create"; public List<string> Issues { get; } = [];
+        public int RowNumber { get; } = rowNumber; public CatalogImportRowRequest Source { get; } = source; public ImportUom[] AdditionalUoms { get; } = (source.AdditionalUoms ?? []).Select(uom => new ImportUom(uom.UomCode?.Trim() ?? string.Empty, uom.FactorToBase, uom.EffectiveFrom, uom.EffectiveTo, NullTrim(uom.Barcode), uom.UsageFlags, uom.RoundingPrecision)).ToArray(); public Dictionary<Guid, Guid> ResolvedAttributes { get; } = []; public string? NormalizedSku { get; set; }
+        public string? NormalizedBarcode { get; set; }
+        public Guid? MatchTemplateId { get; set; }
+        public Guid? MatchVariantId { get; set; }
+        public Guid? CategoryId { get; set; }
+        public Guid? BrandId { get; set; }
+        public Guid? BaseUomId { get; set; }
+        public string? BaseUomDimension { get; set; }
+        public Guid TargetTemplateId { get; set; }
+        public Guid TargetVariantId { get; set; }
+        public string Classification { get; set; } = "Create"; public List<string> Issues { get; } = [];
     }
     private sealed class ImportUom(string uomCode, decimal factorToBase, DateTimeOffset effectiveFrom, DateTimeOffset? effectiveTo, string? barcode, IReadOnlyList<string>? usageFlags, int? roundingPrecision) { public string UomCode { get; } = uomCode; public decimal FactorToBase { get; } = factorToBase; public DateTimeOffset EffectiveFrom { get; } = effectiveFrom; public DateTimeOffset? EffectiveTo { get; } = effectiveTo; public string? Barcode { get; } = barcode; public IReadOnlyList<string>? UsageFlags { get; } = usageFlags; public int? RoundingPrecision { get; } = roundingPrecision; public string? NormalizedBarcode { get; set; } public Guid UomId { get; set; } }
     private sealed record StagedRow(Guid TenantId, Guid BatchId, int RowNumber, string RowData, string? NormalizedSku, string? NormalizedBarcode, Guid? MatchTemplateId, Guid? MatchVariantId, Guid? CategoryId, Guid? BrandId, Guid? BaseUomId, Guid TargetTemplateId, Guid TargetVariantId, string Classification, string[] Errors);

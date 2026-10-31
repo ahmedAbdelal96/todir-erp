@@ -6,7 +6,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class TransactionIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class TransactionIntegrationTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task CoordinatorCommitsDataAndOutboxAtomically()
     {

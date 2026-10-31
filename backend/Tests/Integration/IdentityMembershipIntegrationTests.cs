@@ -6,7 +6,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class IdentityMembershipIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class IdentityMembershipIntegrationTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task AccountHasOneTenantBoundAuthorizationSubject()
     {

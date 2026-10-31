@@ -21,8 +21,8 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
         await using (var scope = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction)) { scope.Parameters.AddWithValue(tenantId.Value.ToString("D")); await scope.ExecuteNonQueryAsync(cancellationToken); }
         const string sql = "select x.party_id,x.system_code,x.external_key from foundation_directory.external_reference x join foundation_directory.party p on p.tenant_id=x.tenant_id and p.id=x.party_id where x.tenant_id=$1 and x.party_id=any($2) and exists(select 1 from foundation_directory.party_visibility v where v.tenant_id=p.tenant_id and v.party_id=p.id and (v.scope_type='TenantWide' or (v.scope_type in ('SelectedLegalEntities','SingleLegalEntity','LegalEntity') and $3::uuid is not null and v.legal_entity_id=$3))) order by x.party_id,x.system_code,x.external_key";
         await using var command = new NpgsqlCommand(sql, connection, transaction); command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(partyIds.Distinct().ToArray()); command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
-        var result = new Dictionary<Guid,string>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) { var id=reader.GetGuid(0); if (!result.ContainsKey(id)) result[id]=$"{Uri.EscapeDataString(reader.GetString(1))}:{Uri.EscapeDataString(reader.GetString(2))}"; }
+        var result = new Dictionary<Guid, string>(); await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) { var id = reader.GetGuid(0); if (!result.ContainsKey(id)) result[id] = $"{Uri.EscapeDataString(reader.GetString(1))}:{Uri.EscapeDataString(reader.GetString(2))}"; }
         await reader.CloseAsync(); await transaction.CommitAsync(cancellationToken); return result;
     }
     public async Task<IReadOnlyDictionary<string, IReadOnlyList<Guid>>> ResolveExternalPartyReferencesAsync(TenantId tenantId, IReadOnlyCollection<string> references, Guid? legalEntityId, CancellationToken cancellationToken)
@@ -40,11 +40,11 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
         const string sql = "with requested as (select * from jsonb_to_recordset($2::jsonb) as x(reference text,systemcode text,externalkey text)) select requested.reference,x.party_id from requested join foundation_directory.external_reference x on x.tenant_id=$1 and x.external_key=requested.externalkey and (requested.systemcode is null or x.system_code=requested.systemcode) join foundation_directory.party p on p.tenant_id=x.tenant_id and p.id=x.party_id where p.status='Active' and exists(select 1 from foundation_directory.party_visibility v where v.tenant_id=p.tenant_id and v.party_id=p.id and (v.scope_type='TenantWide' or (v.scope_type in ('SelectedLegalEntities','SingleLegalEntity','LegalEntity') and $3::uuid is not null and v.legal_entity_id=$3))) order by requested.reference,x.party_id";
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(JsonSerializer.Serialize(parsed)); command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
-        var matches = new Dictionary<string,List<Guid>>(StringComparer.Ordinal);
+        var matches = new Dictionary<string, List<Guid>>(StringComparer.Ordinal);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) { var key=reader.GetString(0); if(!matches.TryGetValue(key,out var ids)) matches[key]=ids=[]; if (!ids.Contains(reader.GetGuid(1))) ids.Add(reader.GetGuid(1)); }
+        while (await reader.ReadAsync(cancellationToken)) { var key = reader.GetString(0); if (!matches.TryGetValue(key, out var ids)) matches[key] = ids = []; if (!ids.Contains(reader.GetGuid(1))) ids.Add(reader.GetGuid(1)); }
         await reader.CloseAsync(); await transaction.CommitAsync(cancellationToken);
-        return matches.ToDictionary(pair=>pair.Key,pair=>(IReadOnlyList<Guid>)pair.Value,StringComparer.Ordinal);
+        return matches.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<Guid>)pair.Value, StringComparer.Ordinal);
     }
     public async Task<IReadOnlySet<Guid>> FindActivePartiesAsync(TenantId tenantId, IReadOnlyCollection<Guid> partyIds, Guid? legalEntityId, CancellationToken cancellationToken)
     {
@@ -243,9 +243,15 @@ public sealed class DirectoryRepository(ITransactionCoordinator coordinator, Npg
         if (!await reader.ReadAsync(ct)) return null;
         return new Dictionary<string, object?>
         {
-            ["displayName"] = reader.GetString(0), ["legalName"] = Text(reader, 1), ["tradeName"] = Text(reader, 2),
-            ["nameAr"] = Text(reader, 3), ["nameEn"] = Text(reader, 4), ["firstName"] = Text(reader, 5),
-            ["middleName"] = Text(reader, 6), ["lastName"] = Text(reader, 7), ["countryCode"] = Text(reader, 8),
+            ["displayName"] = reader.GetString(0),
+            ["legalName"] = Text(reader, 1),
+            ["tradeName"] = Text(reader, 2),
+            ["nameAr"] = Text(reader, 3),
+            ["nameEn"] = Text(reader, 4),
+            ["firstName"] = Text(reader, 5),
+            ["middleName"] = Text(reader, 6),
+            ["lastName"] = Text(reader, 7),
+            ["countryCode"] = Text(reader, 8),
             ["primaryLanguage"] = Text(reader, 9)
         };
     }

@@ -112,7 +112,10 @@ public sealed class SubledgerPostgresIntegrationTests
 
         var advance = Snapshot($"SUBLEDGER-CURRENT-ADVANCE-{suffix}", 25m) with
         {
-            DocumentDate = today, PostingDate = today, DueDate = today, SourceDisplayNumber = $"ADV-{suffix}"
+            DocumentDate = today,
+            PostingDate = today,
+            DueDate = today,
+            SourceDisplayNumber = $"ADV-{suffix}"
         };
         await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
             Modules.Subledger.Entities.OpenItemPolarity.Credit, "Advance", [advance], default);
@@ -149,7 +152,9 @@ public sealed class SubledgerPostgresIntegrationTests
             Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [Snapshot($"SUBLEDGER-CREDIT-EGP-{Guid.NewGuid():N}", 10m)], default);
         var usdItem = Snapshot($"SUBLEDGER-CREDIT-USD-{Guid.NewGuid():N}", 1m) with
         {
-            TransactionCurrency = "USD", OriginalTransactionAmount = "1", OriginalBaseAmount = "50",
+            TransactionCurrency = "USD",
+            OriginalTransactionAmount = "1",
+            OriginalBaseAmount = "50",
             HistoricFxSnapshot = "{\"rate\":50,\"from\":\"USD\",\"to\":\"EGP\"}"
         };
         await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
@@ -281,8 +286,11 @@ public sealed class SubledgerPostgresIntegrationTests
         var exactInvoice = Isolated(Snapshot($"SUBLEDGER-MATCH-EXACT-{suffix}", 40m)) with { SourceDisplayNumber = exactReference, DocumentDate = new(2026, 11, 1), DueDate = new(2026, 12, 1) };
         var foreignInvoice = Isolated(Snapshot($"SUBLEDGER-MATCH-FOREIGN-{suffix}", 30m)) with
         {
-            TransactionCurrency = "USD", OriginalTransactionAmount = "30", OriginalBaseAmount = "1500",
-            HistoricFxSnapshot = "{\"rate\":50}", DueDate = new(2025, 1, 1)
+            TransactionCurrency = "USD",
+            OriginalTransactionAmount = "30",
+            OriginalBaseAmount = "1500",
+            HistoricFxSnapshot = "{\"rate\":50}",
+            DueDate = new(2025, 1, 1)
         };
         var debitIds = await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
             Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [oldInvoice, exactInvoice, foreignInvoice], default);
@@ -369,7 +377,9 @@ public sealed class SubledgerPostgresIntegrationTests
         var baselineEgpStatement = decimal.Parse(baselineStatement.ClosingBalances.GetValueOrDefault("EGP", "0"), System.Globalization.CultureInfo.InvariantCulture);
         var usdInvoice = Snapshot($"SUBLEDGER-FX-INVOICE-{suffix}", 100m) with
         {
-            TransactionCurrency = "USD", OriginalTransactionAmount = "100", OriginalBaseAmount = "5000",
+            TransactionCurrency = "USD",
+            OriginalTransactionAmount = "100",
+            OriginalBaseAmount = "5000",
             HistoricFxSnapshot = "{\"rate\":50,\"from\":\"USD\",\"to\":\"EGP\"}"
         };
         var egpPayment = Snapshot($"SUBLEDGER-FX-PAYMENT-{suffix}", 5000m);
@@ -410,8 +420,11 @@ public sealed class SubledgerPostgresIntegrationTests
         var configurationReference = $"configuration:{await ReadCurrentLedgerConfigurationAsync(dataSource):D}";
         var usdInvoice = Snapshot($"SUBLEDGER-FX-ROLLBACK-INVOICE-{suffix}", 100m) with
         {
-            TransactionCurrency = "USD", OriginalTransactionAmount = "100", OriginalBaseAmount = "5200",
-            HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}", ControlConfigurationReference = configurationReference
+            TransactionCurrency = "USD",
+            OriginalTransactionAmount = "100",
+            OriginalBaseAmount = "5200",
+            HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}",
+            ControlConfigurationReference = configurationReference
         };
         var egpPayment = Snapshot($"SUBLEDGER-FX-ROLLBACK-PAYMENT-{suffix}", 5000m) with { ControlConfigurationReference = configurationReference };
         var debitId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
@@ -445,8 +458,11 @@ public sealed class SubledgerPostgresIntegrationTests
         var configurationReference = $"configuration:{await ReadCurrentLedgerConfigurationAsync(dataSource):D}";
         var invoice = Snapshot($"SUBLEDGER-FX-LEDGER-INVOICE-{suffix}", 100m) with
         {
-            TransactionCurrency = "USD", OriginalTransactionAmount = "100", OriginalBaseAmount = "5200",
-            HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}", ControlConfigurationReference = configurationReference
+            TransactionCurrency = "USD",
+            OriginalTransactionAmount = "100",
+            OriginalBaseAmount = "5200",
+            HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}",
+            ControlConfigurationReference = configurationReference
         };
         var payment = Snapshot($"SUBLEDGER-FX-LEDGER-PAYMENT-{suffix}", 5000m) with { ControlConfigurationReference = configurationReference };
         var debitId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
@@ -489,8 +505,11 @@ public sealed class SubledgerPostgresIntegrationTests
         var configurationReference = $"configuration:{await ReadCurrentLedgerConfigurationAsync(dataSource):D}";
         var itemSnapshot = Snapshot($"SUBLEDGER-WRITEOFF-{suffix}", 10m) with
         {
-            TransactionCurrency = "USD", OriginalTransactionAmount = "10", OriginalBaseAmount = "500",
-            HistoricFxSnapshot = "{\"rate\":50,\"from\":\"USD\",\"to\":\"EGP\"}", ControlConfigurationReference = configurationReference
+            TransactionCurrency = "USD",
+            OriginalTransactionAmount = "10",
+            OriginalBaseAmount = "500",
+            HistoricFxSnapshot = "{\"rate\":50,\"from\":\"USD\",\"to\":\"EGP\"}",
+            ControlConfigurationReference = configurationReference
         };
         var itemId = (await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,
             Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [itemSnapshot], default)).Single();
@@ -677,7 +696,8 @@ public sealed class SubledgerPostgresIntegrationTests
 
         var failingBatch = await service.CreateOpeningSubledgerBatchAsync(Tenant, membership, command with
         {
-            BatchIdentity = $"SUBLEDGER-OPEN-FAIL-{Guid.NewGuid():N}", IdempotencyKey = $"opening-fail-{Guid.NewGuid():N}"
+            BatchIdentity = $"SUBLEDGER-OPEN-FAIL-{Guid.NewGuid():N}",
+            IdempotencyKey = $"opening-fail-{Guid.NewGuid():N}"
         }, default);
         await service.AddOpeningSubledgerLinesAsync(Tenant, membership, Entity, failingBatch, openingLines, Guid.CreateVersion7(), Guid.CreateVersion7(), default);
         var collisionReference = $"OB-{failingBatch:N}-e-ap-advance";
@@ -795,13 +815,17 @@ public sealed class SubledgerPostgresIntegrationTests
 
         var fxInvoice = Snapshot($"SL25-FX-INVOICE-{Guid.CreateVersion7():N}", 100m) with
         {
-            TransactionCurrency = "USD", OriginalTransactionAmount = "100", OriginalBaseAmount = "5200",
-            ControlAccountReference = "role:Receivable", ControlConfigurationReference = configurationReference,
+            TransactionCurrency = "USD",
+            OriginalTransactionAmount = "100",
+            OriginalBaseAmount = "5200",
+            ControlAccountReference = "role:Receivable",
+            ControlConfigurationReference = configurationReference,
             HistoricFxSnapshot = "{\"rate\":52,\"from\":\"USD\",\"to\":\"EGP\"}"
         };
         var fxPayment = Snapshot($"SL25-FX-PAYMENT-{Guid.CreateVersion7():N}", 5000m) with
         {
-            ControlAccountReference = "role:Receivable", ControlConfigurationReference = configurationReference
+            ControlAccountReference = "role:Receivable",
+            ControlConfigurationReference = configurationReference
         };
         var fxInvoiceId = (await repository.CreateOpenItemsAsync(Tenant, entityId, partyA, Modules.Subledger.Entities.SubledgerDirection.Receivable,
             Modules.Subledger.Entities.OpenItemPolarity.Debit, "Invoice", [fxInvoice], default)).Single();
@@ -1139,7 +1163,9 @@ public sealed class SubledgerPostgresIntegrationTests
         OpenItemSnapshotContract Item(string name, decimal amount, int dueOffset = 30) =>
             Snapshot($"SUBLEDGER-APP-PERF-{name}-{Guid.NewGuid():N}", amount) with
             {
-                DocumentDate = today, PostingDate = today, DueDate = today.AddDays(dueOffset)
+                DocumentDate = today,
+                PostingDate = today,
+                DueDate = today.AddDays(dueOffset)
             };
 
         var singleDebits = await repository.CreateOpenItemsAsync(Tenant, Entity, partyId, Modules.Subledger.Entities.SubledgerDirection.Receivable,

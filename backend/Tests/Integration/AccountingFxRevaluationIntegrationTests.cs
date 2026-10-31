@@ -28,8 +28,9 @@ public sealed class AccountingFxRevaluationIntegrationTests : DatabaseIntegratio
             .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
         var service = factory.Services.GetRequiredService<AccountingService>();
         var actor = Guid.CreateVersion7();
+        var asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
         var preview = await service.PreviewFxRevaluationAsync(AtlasTenant, AtlasEntity,
-            new FxRevaluationRequest(new DateOnly(2026, 10, 30), "fx-integration-" + Guid.CreateVersion7().ToString("N")), actor, default);
+            new FxRevaluationRequest(asOfDate, "fx-integration-" + Guid.CreateVersion7().ToString("N")), actor, default);
 
         Assert.Single(preview.Lines);
         Assert.Equal("Previewed", preview.Status);
@@ -41,9 +42,65 @@ public sealed class AccountingFxRevaluationIntegrationTests : DatabaseIntegratio
         Assert.Equal(posted.Lines.Single().JournalEntryId, retry.Lines.Single().JournalEntryId);
 
         var reversed = await service.ReverseFxRevaluationAsync(AtlasTenant, AtlasEntity, preview.Id,
-            new FxRevaluationReversalRequest(new DateOnly(2026, 10, 31), "next-period reversal"), actor, Guid.CreateVersion7(), default);
+            new FxRevaluationReversalRequest(asOfDate.AddDays(1), "next-period reversal"), actor, Guid.CreateVersion7(), default);
         Assert.Equal("Reversed", reversed.Status);
         Assert.All(reversed.Lines, line => Assert.NotNull(line.ReversalEntryId));
+    }
+
+    [Fact]
+    public async Task PartiallyPostedInvalidatedRevaluationCanReverseCommittedLines()
+    {
+        var runtimeConnection = Environment.GetEnvironmentVariable("TODIR_P04_RUNTIME_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_RUNTIME_CONNECTION for Accounting FX integration tests.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        var service = factory.Services.GetRequiredService<AccountingService>();
+        var actor = Guid.CreateVersion7();
+        var asOfDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var preview = await service.PreviewFxRevaluationAsync(AtlasTenant, AtlasEntity,
+            new FxRevaluationRequest(asOfDate, "fx-partial-recovery-" + Guid.CreateVersion7().ToString("N")), actor, default);
+
+        var posted = await service.PostFxRevaluationAsync(AtlasTenant, AtlasEntity, preview.Id, actor, Guid.CreateVersion7(), default);
+        Assert.Equal("Posted", posted.Status);
+        var postedLine = Assert.Single(posted.Lines);
+
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnection);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using (var tenant = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection))
+        {
+            tenant.Parameters.AddWithValue(AtlasTenant.Value.ToString("D"));
+            await tenant.ExecuteNonQueryAsync();
+        }
+        var pendingLineId = Guid.CreateVersion7();
+        await using (var insert = new NpgsqlCommand("""
+            insert into business_accounting.fx_revaluation_line
+                (tenant_id,revaluation_run_id,id,open_item_id,source_row_version,direction,transaction_currency,open_transaction_amount,base_currency,carrying_base_amount,revalued_base_amount,difference_amount,difference_role,exchange_rate,exchange_rate_snapshot,created_at)
+            values ($1,$2,$3,$4,1,'Receivable','USD',10,'EGP',500,510,10,'FXGain',51,'{}'::jsonb,now())
+            """, connection))
+        {
+            insert.Parameters.AddWithValue(AtlasTenant.Value);
+            insert.Parameters.AddWithValue(preview.Id);
+            insert.Parameters.AddWithValue(pendingLineId);
+            insert.Parameters.AddWithValue(Guid.CreateVersion7());
+            await insert.ExecuteNonQueryAsync();
+        }
+        await using (var invalidate = new NpgsqlCommand("update business_accounting.fx_revaluation_run set status='Invalidated' where tenant_id=$1 and id=$2", connection))
+        {
+            invalidate.Parameters.AddWithValue(AtlasTenant.Value);
+            invalidate.Parameters.AddWithValue(preview.Id);
+            await invalidate.ExecuteNonQueryAsync();
+        }
+
+        var recovered = await service.ReverseFxRevaluationAsync(AtlasTenant, AtlasEntity, preview.Id,
+            new FxRevaluationReversalRequest(asOfDate.AddDays(1), "recover partial revaluation"), actor, Guid.CreateVersion7(), default);
+
+        Assert.Equal("Reversed", recovered.Status);
+        Assert.Equal(postedLine.JournalEntryId, recovered.Lines.Single(line => line.Id == postedLine.Id).JournalEntryId);
+        Assert.NotNull(recovered.Lines.Single(line => line.Id == postedLine.Id).ReversalEntryId);
+        Assert.Null(recovered.Lines.Single(line => line.Id == pendingLineId).JournalEntryId);
+        Assert.Null(recovered.Lines.Single(line => line.Id == pendingLineId).ReversalEntryId);
     }
 
     [Fact]

@@ -112,9 +112,9 @@ public sealed class TaxBatchFastPathTests
         var entityId = Guid.Parse("20000000-0000-7000-8000-000000000001");
         var partyId = Guid.Parse("30000000-0000-7000-8000-000000000001");
         var categoryId = Guid.Parse("60000000-0000-7000-8000-000000000001");
-        var productIds = Enumerable.Range(1, 500).Select(index => Guid.Parse($"70000000-0000-7000-8000-{index:000000000000}" )).ToArray();
+        var productIds = Enumerable.Range(1, 500).Select(index => Guid.Parse($"70000000-0000-7000-8000-{index:000000000000}")).ToArray();
         var repository = new CountingRepository { Capability = "Enabled", CategoryId = categoryId };
-        repository.ProductTreatments = productIds.Select((id,index) => (id, (index % 4) switch { 0 => TaxTreatment.StandardRated, 1 => TaxTreatment.ZeroRated, 2 => TaxTreatment.Exempt, _ => TaxTreatment.OutOfScope })).ToDictionary(item => item.id, item => item.Item2);
+        repository.ProductTreatments = productIds.Select((id, index) => (id, (index % 4) switch { 0 => TaxTreatment.StandardRated, 1 => TaxTreatment.ZeroRated, 2 => TaxTreatment.Exempt, _ => TaxTreatment.OutOfScope })).ToDictionary(item => item.id, item => item.Item2);
         var catalog = DispatchProxy.Create<ICatalogCapabilities, CountingCatalogProxy>();
         ((CountingCatalogProxy)(object)catalog).Products = productIds.ToDictionary(id => id, id => new CatalogVariantPricingContext(id, Guid.Parse("80000000-0000-7000-8000-000000000001"), categoryId, [categoryId], null, "Active"));
         var directory = DispatchProxy.Create<IDirectoryCapabilities, CountingDirectoryProxy>();
@@ -122,7 +122,7 @@ public sealed class TaxBatchFastPathTests
         ((CountingFinanceProxy)(object)finance).Tenant = new TenantId(tenantId);
         ((CountingFinanceProxy)(object)finance).Entity = new LegalEntityId(entityId);
         var service = new TaxService(repository, catalog, DispatchProxy.Create<IQuantityConversion, ForbiddenCallProxy>(), directory, finance, new TaxCountryPackRegistry([]));
-        var inputs = productIds.Select((id,index) => ContextContract(tenantId, entityId, partyId, id, index)).ToArray();
+        var inputs = productIds.Select((id, index) => ContextContract(tenantId, entityId, partyId, id, index)).ToArray();
 
         var batch = await service.CalculateBatchAsync(inputs);
 
@@ -232,7 +232,7 @@ public sealed class TaxBatchFastPathTests
         {
             RuleReads++;
             if (Capability == "Disabled") throw new InvalidOperationException("Disabled calculations must bypass rule resolution.");
-            return Task.FromResult<(TaxRuleCandidate, string, string)?>( (TestRule(ProductTreatments.GetValueOrDefault(context.ProductVariantId ?? Guid.Empty, TaxTreatment.StandardRated)), "ENGINE-TEST", "fixture-v1"));
+            return Task.FromResult<(TaxRuleCandidate, string, string)?>((TestRule(ProductTreatments.GetValueOrDefault(context.ProductVariantId ?? Guid.Empty, TaxTreatment.StandardRated)), "ENGINE-TEST", "fixture-v1"));
         }
 
         public Task<TaxSnapshotContract?> FindSnapshotAsync(Guid tenantId, string sourceDocumentKind, Guid sourceDocumentId, Guid? sourceLineId, CancellationToken cancellationToken) =>

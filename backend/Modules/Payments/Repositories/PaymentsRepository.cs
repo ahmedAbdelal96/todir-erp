@@ -573,8 +573,17 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
                 await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction, new(Guid.CreateVersion7(), tenant,
                     request.LegalEntityId, original.BranchId, "User", actor, membership, "payments",
                     disposition.Disposition == PaymentFeeDisposition.Retain ? "payment.fee_retained_on_reversal" : "payment.fee_reversed",
-                    "payment_fee", fee.Id, null, JsonSerializer.Serialize(new { originalPaymentId = original.Id,
-                        reversalPaymentId = reversalId, fee.Type, fee.Amount, fee.Currency, disposition = disposition.Disposition.ToString(), evidenceReference = evidence, reason }, JsonOptions),
+                    "payment_fee", fee.Id, null, JsonSerializer.Serialize(new
+                    {
+                        originalPaymentId = original.Id,
+                        reversalPaymentId = reversalId,
+                        fee.Type,
+                        fee.Amount,
+                        fee.Currency,
+                        disposition = disposition.Disposition.ToString(),
+                        evidenceReference = evidence,
+                        reason
+                    }, JsonOptions),
                     null, "api", correlationId, null, now, null), token);
             }
             await using (var update = new NpgsqlCommand("update finance_payments.payment set business_state='Reversed',row_version=row_version+1,updated_at=$4 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and business_state='Completed'", context.Connection, context.Transaction))

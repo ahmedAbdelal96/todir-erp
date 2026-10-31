@@ -87,7 +87,7 @@ public sealed class PricingService(PricingRepository repository, ICatalogCapabil
         catch (TimeZoneNotFoundException exception) { throw new PricingException("pricing.timezone_invalid", $"The legal entity time zone '{timezone}' is not recognized: {exception.Message}"); }
         return await repository.ActivateVersionAsync(tenant, legalEntityId, actor, membership, versionId, correlationId, businessDate, cancellationToken);
     }
-    public Task<(int RuleCount,int EntryCount)> ValidateVersionAsync(TenantId tenant, Guid legalEntityId, Guid versionId, CancellationToken cancellationToken) => repository.ValidateVersionAsync(tenant, legalEntityId, versionId, cancellationToken);
+    public Task<(int RuleCount, int EntryCount)> ValidateVersionAsync(TenantId tenant, Guid legalEntityId, Guid versionId, CancellationToken cancellationToken) => repository.ValidateVersionAsync(tenant, legalEntityId, versionId, cancellationToken);
     public Task ArchiveListAsync(TenantId tenant, Guid legalEntityId, Guid actor, Guid membership, Guid listId, long expectedVersion, Guid correlationId, CancellationToken cancellationToken) => repository.ArchiveListAsync(tenant, legalEntityId, actor, membership, listId, expectedVersion, correlationId, cancellationToken);
     public Task<Guid> CreateGroupAsync(TenantId tenant, Guid actor, Guid membership, CreatePriceGroupRequest request, Guid correlationId, CancellationToken cancellationToken) => repository.CreateGroupAsync(tenant, actor, membership, request, correlationId, cancellationToken);
     public async Task AddGroupMemberAsync(TenantId tenant, Guid actor, Guid membership, Guid groupId, AddPriceGroupMemberRequest request, Guid legalEntityId, Guid correlationId, CancellationToken cancellationToken)
@@ -163,7 +163,7 @@ public sealed class PricingService(PricingRepository repository, ICatalogCapabil
             }
             rows.Add(new PricingImportRowDto(lineNumber, sku, variantId, uomId, amountText, currency.Length == 3 ? currency : null, code, message, partyId, priceGroupId, minQuantity, maxQuantity, validFrom, validTo, priority == int.MinValue ? 0 : priority, ruleType.Length == 0 ? null : Enum.TryParse<PricingResultKind>(ruleType, true, out var parsedKind) ? parsedKind.ToString() : ruleType));
         }
-        var duplicateKeys = rows.Where(row => row.ErrorCode is null).GroupBy(row => (row.VariantId,row.UomId,row.PartyId,row.PriceGroupId,row.MinQuantity,row.MaxQuantity,row.ValidFrom,row.ValidTo,row.Priority,row.RuleType)).Where(group => group.Count() > 1).SelectMany(group => group).Select(row => row.RowNumber).ToHashSet();
+        var duplicateKeys = rows.Where(row => row.ErrorCode is null).GroupBy(row => (row.VariantId, row.UomId, row.PartyId, row.PriceGroupId, row.MinQuantity, row.MaxQuantity, row.ValidFrom, row.ValidTo, row.Priority, row.RuleType)).Where(group => group.Count() > 1).SelectMany(group => group).Select(row => row.RowNumber).ToHashSet();
         rows = rows.Select(row => duplicateKeys.Contains(row.RowNumber) ? row with { ErrorCode = "pricing.import_duplicate_line", ErrorMessage = "This variant, unit, customer scope, quantity range, and date range appear more than once." } : row).ToList();
         var conflictRows = rows.Where(row => row.ErrorCode is null).Select(row => new PricingRuleCandidate(
             GuidFromRow(row.RowNumber), PricingProductScope.Variant, row.VariantId, null, null, 0, null,
@@ -270,59 +270,59 @@ public sealed class PricingService(PricingRepository repository, ICatalogCapabil
         var tenant = contexts[0].TenantId;
         if (contexts.Any(context => context.TenantId != tenant)) throw new PricingException("pricing.batch_tenant_mismatch", "A Pricing batch must contain one tenant.");
         var output = new PriceResolution[contexts.Count];
-        var contextsByEntity = contexts.Select((context,index)=>(context,index)).GroupBy(item => item.context.LegalEntityId);
+        var contextsByEntity = contexts.Select((context, index) => (context, index)).GroupBy(item => item.context.LegalEntityId);
         foreach (var entityGroup in contextsByEntity)
         {
             var entityId = entityGroup.Key.Value;
             var materialized = entityGroup.ToArray();
             var policy = await repository.GetPolicyAsync(tenant, entityId, cancellationToken);
-            var products = await catalog.GetPricingContextsBatchAsync(tenant, materialized.Select(item=>item.context.ProductVariantId).Distinct().ToArray(), entityId, cancellationToken);
+            var products = await catalog.GetPricingContextsBatchAsync(tenant, materialized.Select(item => item.context.ProductVariantId).Distinct().ToArray(), entityId, cancellationToken);
             if (materialized.Any(item => !products.ContainsKey(item.context.ProductVariantId))) throw new PricingException("pricing.variant_not_found", "An active product variant is not visible to this legal entity.");
-            var partyIds = materialized.Where(item=>item.context.PartyId is not null).Select(item=>item.context.PartyId!.Value).Distinct().ToArray();
+            var partyIds = materialized.Where(item => item.context.PartyId is not null).Select(item => item.context.PartyId!.Value).Distinct().ToArray();
             var activeParties = await directory.FindActivePartiesAsync(tenant, partyIds, entityId, cancellationToken);
-            if (partyIds.Any(id=>!activeParties.Contains(id))) throw new PricingException("pricing.party_not_found", "An active party is not visible to this legal entity.");
-            foreach (var dateGroup in materialized.GroupBy(item=>item.context.PricingDate))
+            if (partyIds.Any(id => !activeParties.Contains(id))) throw new PricingException("pricing.party_not_found", "An active party is not visible to this legal entity.");
+            foreach (var dateGroup in materialized.GroupBy(item => item.context.PricingDate))
             {
-                var allowedUoms = await catalog.GetAllowedUomsBatchAsync(tenant, dateGroup.Select(item=>item.context.ProductVariantId).Distinct().ToArray(), dateGroup.First().context.PricingDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), entityId, cancellationToken);
+                var allowedUoms = await catalog.GetAllowedUomsBatchAsync(tenant, dateGroup.Select(item => item.context.ProductVariantId).Distinct().ToArray(), dateGroup.First().context.PricingDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), entityId, cancellationToken);
                 var partyGroups = await repository.ResolvePartyGroupsAsync(tenant, partyIds, dateGroup.Key, cancellationToken);
-                if(dateGroup.Any(item=>!allowedUoms.TryGetValue(item.context.ProductVariantId,out var units)||!units.Any(unit=>unit.UnitId==item.context.UnitOfMeasureId)))throw new PricingException("pricing.uom_not_allowed","The unit is not valid for this product at the pricing date.");
+                if (dateGroup.Any(item => !allowedUoms.TryGetValue(item.context.ProductVariantId, out var units) || !units.Any(unit => unit.UnitId == item.context.UnitOfMeasureId))) throw new PricingException("pricing.uom_not_allowed", "The unit is not valid for this product at the pricing date.");
                 var hydrated = dateGroup.Select(item =>
                 {
-                    var product=products[item.context.ProductVariantId];
-                    Guid? groupId=item.context.PartyId is { } party && partyGroups.TryGetValue(party,out var assigned)?assigned:null;
-                    var context=item.context with { ProductTemplateId=product.ProductTemplateId, CategoryPath=product.CategoryPath, BrandId=product.BrandId, PriceGroupId=groupId, TransactionCurrencyCode=CurrencyCode.Normalize(item.context.TransactionCurrencyCode) };
-                    return (context,item.index);
+                    var product = products[item.context.ProductVariantId];
+                    Guid? groupId = item.context.PartyId is { } party && partyGroups.TryGetValue(party, out var assigned) ? assigned : null;
+                    var context = item.context with { ProductTemplateId = product.ProductTemplateId, CategoryPath = product.CategoryPath, BrandId = product.BrandId, PriceGroupId = groupId, TransactionCurrencyCode = CurrencyCode.Normalize(item.context.TransactionCurrencyCode) };
+                    return (context, item.index);
                 }).ToArray();
-                foreach(var selectionGroup in hydrated.GroupBy(item=>(item.context.Direction,item.context.PriceListId,item.context.PartyId,item.context.PriceGroupId,item.context.TransactionCurrencyCode)))
+                foreach (var selectionGroup in hydrated.GroupBy(item => (item.context.Direction, item.context.PriceListId, item.context.PartyId, item.context.PriceGroupId, item.context.TransactionCurrencyCode)))
                 {
-                    var first=selectionGroup.First().context;
-                    var (list,version)=await repository.ResolveListAndVersionAsync(tenant,first,cancellationToken);
-                    if(!string.Equals(list.CurrencyCode,first.TransactionCurrencyCode,StringComparison.Ordinal)&&(list.CurrencyPolicy!=PricingCurrencyPolicy.AllowFinBaseConversion||!Enum.TryParse<PricingCurrencyPolicy>(policy.CurrencyPolicy,out var tenantCurrencyPolicy)||tenantCurrencyPolicy!=PricingCurrencyPolicy.AllowFinBaseConversion))throw new PricingException("pricing.currency_mismatch","This price list and legal entity require an exact transaction currency.");
-                    var selectedContexts=selectionGroup.Select(item=>item.context).ToArray();
+                    var first = selectionGroup.First().context;
+                    var (list, version) = await repository.ResolveListAndVersionAsync(tenant, first, cancellationToken);
+                    if (!string.Equals(list.CurrencyCode, first.TransactionCurrencyCode, StringComparison.Ordinal) && (list.CurrencyPolicy != PricingCurrencyPolicy.AllowFinBaseConversion || !Enum.TryParse<PricingCurrencyPolicy>(policy.CurrencyPolicy, out var tenantCurrencyPolicy) || tenantCurrencyPolicy != PricingCurrencyPolicy.AllowFinBaseConversion)) throw new PricingException("pricing.currency_mismatch", "This price list and legal entity require an exact transaction currency.");
+                    var selectedContexts = selectionGroup.Select(item => item.context).ToArray();
                     var candidateContexts = selectedContexts.ToList();
-                    if(policy.AllowUomDerivedPrice)
-                        foreach(var context in selectedContexts)
-                            if(allowedUoms.TryGetValue(context.ProductVariantId,out var units)&&units.FirstOrDefault(unit=>unit.IsBase) is { } baseUnit&&baseUnit.UnitId!=context.UnitOfMeasureId)
-                                candidateContexts.Add(context with { UnitOfMeasureId=baseUnit.UnitId });
-                    var rules=await repository.GetCandidatesAsync(tenant,version.Id,candidateContexts,cancellationToken);
-                    decimal conversionFactor=1m;string? fxSnapshot=null;
-                    if(!string.Equals(list.CurrencyCode,first.TransactionCurrencyCode,StringComparison.Ordinal))
+                    if (policy.AllowUomDerivedPrice)
+                        foreach (var context in selectedContexts)
+                            if (allowedUoms.TryGetValue(context.ProductVariantId, out var units) && units.FirstOrDefault(unit => unit.IsBase) is { } baseUnit && baseUnit.UnitId != context.UnitOfMeasureId)
+                                candidateContexts.Add(context with { UnitOfMeasureId = baseUnit.UnitId });
+                    var rules = await repository.GetCandidatesAsync(tenant, version.Id, candidateContexts, cancellationToken);
+                    decimal conversionFactor = 1m; string? fxSnapshot = null;
+                    if (!string.Equals(list.CurrencyCode, first.TransactionCurrencyCode, StringComparison.Ordinal))
                     {
-                        var conversion=await financeBase.ConvertCommercialUnitPriceAsync(tenant,first.LegalEntityId,"1",list.CurrencyCode,first.TransactionCurrencyCode,first.Direction == PricingDirection.Buying ? FinancialCalculationPurpose.Purchase : FinancialCalculationPurpose.Sales,first.PricingDate,cancellationToken);
-                        if(!decimal.TryParse(conversion.TargetAmount,NumberStyles.AllowLeadingSign|NumberStyles.AllowDecimalPoint,CultureInfo.InvariantCulture,out conversionFactor)||conversionFactor<=0m)throw new PricingException("pricing.fx_invalid","FinBase returned an invalid commercial conversion factor.");
-                        fxSnapshot=conversion.ExchangeRate is null?null:JsonSerializer.Serialize(conversion.ExchangeRate);
+                        var conversion = await financeBase.ConvertCommercialUnitPriceAsync(tenant, first.LegalEntityId, "1", list.CurrencyCode, first.TransactionCurrencyCode, first.Direction == PricingDirection.Buying ? FinancialCalculationPurpose.Purchase : FinancialCalculationPurpose.Sales, first.PricingDate, cancellationToken);
+                        if (!decimal.TryParse(conversion.TargetAmount, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out conversionFactor) || conversionFactor <= 0m) throw new PricingException("pricing.fx_invalid", "FinBase returned an invalid commercial conversion factor.");
+                        fxSnapshot = conversion.ExchangeRate is null ? null : JsonSerializer.Serialize(conversion.ExchangeRate);
                     }
-                    foreach(var item in selectionGroup)
+                    foreach (var item in selectionGroup)
                     {
                         var candidates = rules;
-                        if(policy.AllowUomDerivedPrice&&allowedUoms.TryGetValue(item.context.ProductVariantId,out var units)&&units.FirstOrDefault(unit=>unit.IsBase) is { } baseUnit&&baseUnit.UnitId!=item.context.UnitOfMeasureId)
+                        if (policy.AllowUomDerivedPrice && allowedUoms.TryGetValue(item.context.ProductVariantId, out var units) && units.FirstOrDefault(unit => unit.IsBase) is { } baseUnit && baseUnit.UnitId != item.context.UnitOfMeasureId)
                         {
-                            var requestedUnit=units.FirstOrDefault(unit=>unit.UnitId==item.context.UnitOfMeasureId);
-                            if(requestedUnit is null)throw new PricingException("pricing.uom_not_allowed","The unit is not valid for this product at the pricing date.");
-                            var factor=requestedUnit.FactorToBase/baseUnit.FactorToBase;
-                            candidates=rules.SelectMany(rule=>rule.UomId==baseUnit.UnitId?new[]{rule with{UomId=item.context.UnitOfMeasureId,ResultValue=rule.ResultKind==PricingResultKind.PercentageDiscount?rule.ResultValue:rule.ResultValue*factor,IsDerivedUom=true}}:[rule]).ToArray();
+                            var requestedUnit = units.FirstOrDefault(unit => unit.UnitId == item.context.UnitOfMeasureId);
+                            if (requestedUnit is null) throw new PricingException("pricing.uom_not_allowed", "The unit is not valid for this product at the pricing date.");
+                            var factor = requestedUnit.FactorToBase / baseUnit.FactorToBase;
+                            candidates = rules.SelectMany(rule => rule.UomId == baseUnit.UnitId ? new[] { rule with { UomId = item.context.UnitOfMeasureId, ResultValue = rule.ResultKind == PricingResultKind.PercentageDiscount ? rule.ResultValue : rule.ResultValue * factor, IsDerivedUom = true } } : [rule]).ToArray();
                         }
-                        output[item.index]=PricingResolver.Resolve(item.context,list,version,candidates,conversionFactor,fxSnapshot);
+                        output[item.index] = PricingResolver.Resolve(item.context, list, version, candidates, conversionFactor, fxSnapshot);
                     }
                 }
             }

@@ -93,14 +93,14 @@ public static class PricingResolver
     {
         var conflicts = new List<PricingRuleCandidate>();
         for (var left = 0; left < rules.Count; left++)
-        for (var right = left + 1; right < rules.Count; right++)
-        {
-            if (SameScopeAndRank(rules[left], rules[right]) && rules[left].ResultKind == rules[right].ResultKind && DateRangesOverlap(rules[left], rules[right]) && QuantityRangesOverlap(rules[left], rules[right]) && rules[left].ResultValue != rules[right].ResultValue)
+            for (var right = left + 1; right < rules.Count; right++)
             {
-                conflicts.Add(rules[left]);
-                conflicts.Add(rules[right]);
+                if (SameScopeAndRank(rules[left], rules[right]) && rules[left].ResultKind == rules[right].ResultKind && DateRangesOverlap(rules[left], rules[right]) && QuantityRangesOverlap(rules[left], rules[right]) && rules[left].ResultValue != rules[right].ResultValue)
+                {
+                    conflicts.Add(rules[left]);
+                    conflicts.Add(rules[right]);
+                }
             }
-        }
         return conflicts.DistinctBy(rule => rule.Id).ToArray();
     }
 

@@ -7,7 +7,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class NotificationIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class NotificationIntegrationTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task NotificationIsClaimedAndRecordedAfterProviderDelivery()
     {

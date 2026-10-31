@@ -6,7 +6,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class AuthenticationIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class AuthenticationIntegrationTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task AuthenticationRoutesByDomainEnforcesLockoutAndUsesOpaqueSingleUseChallenges()
     {

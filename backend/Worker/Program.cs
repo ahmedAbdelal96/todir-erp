@@ -13,6 +13,7 @@ using Modules.Subledger;
 using Modules.Inventory;
 using Modules.Sales;
 using Modules.Invoicing.Controllers;
+using Modules.Tax;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
@@ -39,6 +40,7 @@ builder.Services.AddPaymentsModule();
 builder.Services.AddInventoryModule();
 builder.Services.AddInvoicingModule();
 builder.Services.AddSalesModule();
+builder.Services.AddTaxModule();
 builder.Services.AddScheduling(builder.Configuration);
 builder.Services.AddHostedService<OutboxDispatchWorker>();
 builder.Services.AddHostedService<FinanceBaseRateSyncWorker>();

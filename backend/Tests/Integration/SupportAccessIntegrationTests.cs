@@ -9,7 +9,8 @@ using Xunit;
 namespace KernelIntegrationTests;
 
 [Collection("database-integration")]
-public sealed class SupportAccessIntegrationTests : DatabaseIntegrationTestBase {
+public sealed class SupportAccessIntegrationTests : DatabaseIntegrationTestBase
+{
     [Fact]
     public async Task PersistentSupportAccessExpiresByBoundaryAndWritesAudit()
     {

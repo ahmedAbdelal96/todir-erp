@@ -124,8 +124,16 @@ public sealed class InvoicingService(
             ParseCharges(request.Charges), original.PriceMode);
         var payloadHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
-            originalInvoiceId, documentType = documentType.ToString(), reason = request.Reason.Trim(), request.DocumentDate, request.PostingDate,
-            request.TaxDate, request.SupplyDate, lines, request.DocumentDiscountAmount, charges = request.Charges
+            originalInvoiceId,
+            documentType = documentType.ToString(),
+            reason = request.Reason.Trim(),
+            request.DocumentDate,
+            request.PostingDate,
+            request.TaxDate,
+            request.SupplyDate,
+            lines,
+            request.DocumentDiscountAmount,
+            charges = request.Charges
         }, JsonOptions))).ToLowerInvariant();
         return await repository.CreateCorrectionDraftAsync(tenant, actorId, membershipId, originalInvoiceId, draft, expectedDirection.ToString(),
             documentType.ToString(), request.Reason, request.IdempotencyKey.Trim(), payloadHash, party.DisplayName, correlationId, ct);
@@ -286,47 +294,47 @@ public sealed class InvoicingService(
         {
             return await transactions.ExecuteAsync<InvoiceFinalizedResult>(tenant, async (context, token) =>
             {
-            var prior = await InvoicingRepository.LockForFinalizationAsync(context, tenant, legalEntityId, invoiceId, request, payloadHash,
-                ParseAmount(data.Totals.GrossAmount, "invoicing.amount_invalid"), token);
-            if (prior is not null)
-                return new(invoiceId, prior.DocumentNumber, "Finalized", prior.Totals, prior.Schedule, prior.JournalEntryId, prior.OpenItemIds,
-                    "Submit this finalized document through the configured compliance workflow.");
-            var documentNumber = await sequences.AllocateAsync(context,
-                new(sequenceKey, tenant, legalEntityId, draft.BranchId, draft.Direction.ToString(), periodKey, sequencePrefix, 6, 1), token);
-            var configurationId = await ledgerPosting.GetActiveConfigurationVersionIdAsync(context, tenant, new(legalEntityId), token);
-            var factType = InvoiceAccountingFactTypeResolver.Resolve(draft.Direction, draft.DocumentType);
-            var ledgerPayload = BuildLedgerPayload(calculation);
-            var fact = new AccountingFactEnvelope<IAccountingFactPayload>(Guid.CreateVersion7(), tenant, new(legalEntityId), factType, 1, "invoicing", invoiceId.ToString("D"),
-                request.IdempotencyKey, draft.DocumentDate, draft.PostingDate, ledgerPayload, correlationId, actorId);
-            var posted = await ledgerPosting.PostInvoiceAsync(context, fact, ledgerPayload, token);
-            var openItems = new List<Guid>();
-            if (data.Schedule.Count > 0)
-            {
-                var itemExchangeRate = calculation.Financial?.ExchangeRate is { } fx ? ParseAmount(fx.Rate, "invoicing.exchange_rate_invalid") : 1m;
-                var baseCurrency = calculation.Financial?.BaseCurrencyCode ?? draft.CurrencyCode;
-                var historicFx = calculation.Financial?.ExchangeRate is { } snapshot ? JsonSerializer.Serialize(snapshot) : JsonSerializer.Serialize(new { rate = "1", from = draft.CurrencyCode, to = baseCurrency });
-                var openItemSnapshots = data.Schedule.Select(line =>
+                var prior = await InvoicingRepository.LockForFinalizationAsync(context, tenant, legalEntityId, invoiceId, request, payloadHash,
+                    ParseAmount(data.Totals.GrossAmount, "invoicing.amount_invalid"), token);
+                if (prior is not null)
+                    return new(invoiceId, prior.DocumentNumber, "Finalized", prior.Totals, prior.Schedule, prior.JournalEntryId, prior.OpenItemIds,
+                        "Submit this finalized document through the configured compliance workflow.");
+                var documentNumber = await sequences.AllocateAsync(context,
+                    new(sequenceKey, tenant, legalEntityId, draft.BranchId, draft.Direction.ToString(), periodKey, sequencePrefix, 6, 1), token);
+                var configurationId = await ledgerPosting.GetActiveConfigurationVersionIdAsync(context, tenant, new(legalEntityId), token);
+                var factType = InvoiceAccountingFactTypeResolver.Resolve(draft.Direction, draft.DocumentType);
+                var ledgerPayload = BuildLedgerPayload(calculation);
+                var fact = new AccountingFactEnvelope<IAccountingFactPayload>(Guid.CreateVersion7(), tenant, new(legalEntityId), factType, 1, "invoicing", invoiceId.ToString("D"),
+                    request.IdempotencyKey, draft.DocumentDate, draft.PostingDate, ledgerPayload, correlationId, actorId);
+                var posted = await ledgerPosting.PostInvoiceAsync(context, fact, ledgerPayload, token);
+                var openItems = new List<Guid>();
+                if (data.Schedule.Count > 0)
                 {
-                    var transactionAmount = ParseAmount(line.Amount, "invoicing.amount_invalid");
-                    var baseAmount = RoundAmount(transactionAmount * itemExchangeRate, calculation.Financial?.RoundingPolicy.MoneyScale ?? 2,
-                        calculation.Financial?.RoundingPolicy.ContextRules.FirstOrDefault(rule => rule.Context == FinancialRoundingContext.FxBaseAmount)?.Mode ?? FinancialRoundingMode.HalfEven);
-                    return new OpenItemSnapshotContract(invoiceId.ToString("D"), line.Sequence.ToString(CultureInfo.InvariantCulture), documentNumber, draft.DocumentDate,
-                        draft.PostingDate, line.DueDate, draft.CurrencyCode, line.Amount, baseCurrency, D(baseAmount), draft.Direction == InvoiceDirection.Receivable ? "Receivable" : "Payable",
-                        draft.Direction == InvoiceDirection.Receivable ? "Receivable" : "Payable", configurationId.ToString("D"), historicFx, draft.Version,
-                        data.PaymentTermEvidenceJson);
-                }).ToArray();
-                var direction = draft.Direction == InvoiceDirection.Receivable ? SubledgerDirectionContract.Receivable : SubledgerDirectionContract.Payable;
-                var openItemCommand = new CreateOpenItemsCommand(new(legalEntityId), draft.PartyId, openItemSnapshots, actorId, correlationId);
-                if (draft.DocumentType == InvoiceDocumentType.CreditNote)
-                    openItems.AddRange(await subledgerPosting.CreateInvoiceCorrectionOpenItemsAsync(context, tenant, openItemCommand, direction,
-                        draft.Direction == InvoiceDirection.Receivable ? SubledgerPolarityContract.Credit : SubledgerPolarityContract.Debit, token));
-                else
-                    openItems.AddRange(await subledgerPosting.CreateInvoiceOpenItemsAsync(context, tenant, openItemCommand, direction, token));
-            }
-            await repository.FinalizeInTransactionAsync(context, tenant, invoiceId, legalEntityId, draft.Direction.ToString(), draft.DocumentType.ToString(), documentNumber,
-                request, payloadHash, data, posted.JournalEntryId, openItems, actorId, membershipId, correlationId, sequenceKey, periodKey, token);
-            return new(invoiceId, documentNumber, "Finalized", data.Totals, data.Schedule, posted.JournalEntryId, openItems,
-                "Submit this finalized document through the configured compliance workflow.");
+                    var itemExchangeRate = calculation.Financial?.ExchangeRate is { } fx ? ParseAmount(fx.Rate, "invoicing.exchange_rate_invalid") : 1m;
+                    var baseCurrency = calculation.Financial?.BaseCurrencyCode ?? draft.CurrencyCode;
+                    var historicFx = calculation.Financial?.ExchangeRate is { } snapshot ? JsonSerializer.Serialize(snapshot) : JsonSerializer.Serialize(new { rate = "1", from = draft.CurrencyCode, to = baseCurrency });
+                    var openItemSnapshots = data.Schedule.Select(line =>
+                    {
+                        var transactionAmount = ParseAmount(line.Amount, "invoicing.amount_invalid");
+                        var baseAmount = RoundAmount(transactionAmount * itemExchangeRate, calculation.Financial?.RoundingPolicy.MoneyScale ?? 2,
+                            calculation.Financial?.RoundingPolicy.ContextRules.FirstOrDefault(rule => rule.Context == FinancialRoundingContext.FxBaseAmount)?.Mode ?? FinancialRoundingMode.HalfEven);
+                        return new OpenItemSnapshotContract(invoiceId.ToString("D"), line.Sequence.ToString(CultureInfo.InvariantCulture), documentNumber, draft.DocumentDate,
+                            draft.PostingDate, line.DueDate, draft.CurrencyCode, line.Amount, baseCurrency, D(baseAmount), draft.Direction == InvoiceDirection.Receivable ? "Receivable" : "Payable",
+                            draft.Direction == InvoiceDirection.Receivable ? "Receivable" : "Payable", configurationId.ToString("D"), historicFx, draft.Version,
+                            data.PaymentTermEvidenceJson);
+                    }).ToArray();
+                    var direction = draft.Direction == InvoiceDirection.Receivable ? SubledgerDirectionContract.Receivable : SubledgerDirectionContract.Payable;
+                    var openItemCommand = new CreateOpenItemsCommand(new(legalEntityId), draft.PartyId, openItemSnapshots, actorId, correlationId);
+                    if (draft.DocumentType == InvoiceDocumentType.CreditNote)
+                        openItems.AddRange(await subledgerPosting.CreateInvoiceCorrectionOpenItemsAsync(context, tenant, openItemCommand, direction,
+                            draft.Direction == InvoiceDirection.Receivable ? SubledgerPolarityContract.Credit : SubledgerPolarityContract.Debit, token));
+                    else
+                        openItems.AddRange(await subledgerPosting.CreateInvoiceOpenItemsAsync(context, tenant, openItemCommand, direction, token));
+                }
+                await repository.FinalizeInTransactionAsync(context, tenant, invoiceId, legalEntityId, draft.Direction.ToString(), draft.DocumentType.ToString(), documentNumber,
+                    request, payloadHash, data, posted.JournalEntryId, openItems, actorId, membershipId, correlationId, sequenceKey, periodKey, token);
+                return new(invoiceId, documentNumber, "Finalized", data.Totals, data.Schedule, posted.JournalEntryId, openItems,
+                    "Submit this finalized document through the configured compliance workflow.");
             }, ct);
         }
         catch (Exception exception) when (InvoicingRepository.IsSupplierNumberConflict(exception))
@@ -467,8 +475,18 @@ public sealed class InvoicingService(
             var selectedUom = allowedUoms.Single(unit => unit.UnitId == unitId.Value);
             resolvedUnitCodes[index] = selectedUom.UnitCode;
             productEvidenceByLine[line.Id] = JsonSerializer.Serialize(new { variant.ProductTemplateId, variant.DisplayName, variant.Sku, variant.Nature });
-            unitEvidenceByLine[line.Id] = JsonSerializer.Serialize(new { selectedUom.UnitId, selectedUom.UnitCode, selectedUom.FactorToBase,
-                selectedUom.AllowFraction, selectedUom.Precision, selectedUom.RoundingPrecision, selectedUom.EffectiveFrom, selectedUom.EffectiveTo, selectedUom.UsageFlags });
+            unitEvidenceByLine[line.Id] = JsonSerializer.Serialize(new
+            {
+                selectedUom.UnitId,
+                selectedUom.UnitCode,
+                selectedUom.FactorToBase,
+                selectedUom.AllowFraction,
+                selectedUom.Precision,
+                selectedUom.RoundingPrecision,
+                selectedUom.EffectiveFrom,
+                selectedUom.EffectiveTo,
+                selectedUom.UsageFlags
+            });
             priceContexts[index] = new(tenant, new(draft.LegalEntityId), draft.Direction == InvoiceDirection.Receivable ? PricingDirection.Selling : PricingDirection.Buying,
                 draft.DocumentDate, draft.CurrencyCode, null, draft.PartyId, null, variantId, variant.ProductTemplateId, context.CategoryPath, context.BrandId, unitId.Value, line.Quantity);
         }
@@ -773,9 +791,14 @@ public sealed class InvoicingService(
         {
             calculation.Prices.TryGetValue(line.Id, out var resolution);
             return new InvoicePriceSnapshotData(line.Id, line.ResolvedUnitPrice, line.FinalUnitPrice,
-                JsonSerializer.Serialize(new { status = resolution?.Status ?? "Manual", explanation = line.PriceExplanation, snapshot = resolution?.Snapshot,
+                JsonSerializer.Serialize(new
+                {
+                    status = resolution?.Status ?? "Manual",
+                    explanation = line.PriceExplanation,
+                    snapshot = resolution?.Snapshot,
                     manualOverride = calculation.Draft.Lines.Single(input => input.Id == line.Id).ExplicitUnitPrice is not null,
-                    overrideReason = calculation.Draft.Lines.Single(input => input.Id == line.Id).PriceOverrideReason }));
+                    overrideReason = calculation.Draft.Lines.Single(input => input.Id == line.Id).PriceOverrideReason
+                }));
         }).ToArray();
         var units = calculation.Lines.Select(line => new InvoiceUnitSnapshotData(line.Id, line.UnitOfMeasureId, line.UnitCode,
             calculation.ProductEvidenceByLine.GetValueOrDefault(line.Id), calculation.UnitEvidenceByLine.GetValueOrDefault(line.Id))).ToArray();
@@ -808,10 +831,23 @@ public sealed class InvoicingService(
         }
         var taxes = calculation.Taxes.OrderBy(pair => pair.Key).SelectMany(pair => pair.Value.TaxLines.Select((line, index) =>
             new InvoiceTaxSnapshotData(calculation.Draft.Lines[pair.Key].Id, index + 1, line.TaxCode, line.TaxTypeCode, line.Treatment, line.TaxableBase, line.TaxAmount,
-                JsonSerializer.Serialize(new { line.RuleId, line.RuleVersion, line.Rate, line.JurisdictionCode, line.LegalReasonCode, line.LegalReasonText,
-                    line.ReportingCode, line.Recoverability, calculation = pair.Value.CalculationVersion, pair.Value.EvaluationState,
-                    countryDocumentValidation = calculation.CountryDocumentValidation, pair.Value.JurisdictionSnapshot, pair.Value.RegistrationSnapshot,
-                    result = pair.Value })))).ToArray();
+                JsonSerializer.Serialize(new
+                {
+                    line.RuleId,
+                    line.RuleVersion,
+                    line.Rate,
+                    line.JurisdictionCode,
+                    line.LegalReasonCode,
+                    line.LegalReasonText,
+                    line.ReportingCode,
+                    line.Recoverability,
+                    calculation = pair.Value.CalculationVersion,
+                    pair.Value.EvaluationState,
+                    countryDocumentValidation = calculation.CountryDocumentValidation,
+                    pair.Value.JurisdictionSnapshot,
+                    pair.Value.RegistrationSnapshot,
+                    result = pair.Value
+                })))).ToArray();
         var termEvidence = calculation.PaymentTerm is null
             ? JsonSerializer.Serialize(new { kind = "Immediate", source = "NoPaymentTerm", effectiveDate = calculation.Draft.DocumentDate, lines = calculation.Schedule })
             : JsonSerializer.Serialize(calculation.PaymentTerm);

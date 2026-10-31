@@ -158,6 +158,49 @@ public sealed class LedgerPass3AcceptanceTests
     }
 
     [Fact]
+    public async Task ConcurrentCloseAndPostSerializeOnTheAccountingPeriod()
+    {
+        await Gate.WaitAsync();
+        try
+        {
+            await using var dataSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection());
+            var posting = LedgerTestSupport.CreateRepository(dataSource);
+            var periodId = await GuidAsync(dataSource, "select id from finance_ledger.accounting_period where tenant_id=$1 and legal_entity_id=$2 and start_date='2026-11-01'");
+            var journalId = await GuidAsync(dataSource, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL'");
+            var cashAccountId = await GuidAsync(dataSource, "select id from finance_ledger.account where tenant_id=$1 and legal_entity_id=$2 and code='110200'");
+            var revenueAccountId = await GuidAsync(dataSource, "select id from finance_ledger.account where tenant_id=$1 and legal_entity_id=$2 and code='410100'");
+            await posting.SetPeriodStatusAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, periodId, PeriodStatus.Open, default);
+
+            var fact = new AccountingFactEnvelope<IAccountingFactPayload>(
+                Guid.CreateVersion7(), LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity,
+                AccountingFactTypes.ManualGeneralJournalPosted, 1, "ledger", $"ac31:{Guid.CreateVersion7():N}", $"ac31:{Guid.CreateVersion7():N}",
+                new(2026, 11, 15), new(2026, 11, 15),
+                new ExplicitLedgerPostingPayload(journalId, "AC31 close versus post", "EGP", [
+                    new(cashAccountId, 125m, 0m, "EGP", 125m, 0m, 125m, 0m, 1m, [], "debit", null),
+                    new(revenueAccountId, 0m, 125m, "EGP", 0m, 125m, 0m, 125m, 1m, [], "credit", null)
+                ]), Guid.CreateVersion7(), Guid.CreateVersion7());
+
+            var postTask = Task.Run(async () =>
+            {
+                try { return (Posted: true, Error: (string?)null, Result: await posting.PostAsync(fact)); }
+                catch (LedgerDomainException exception) { return (Posted: false, Error: exception.Code, Result: (LedgerPostingResult?)null); }
+            });
+            var closeTask = Task.Run(() => posting.SetPeriodStatusAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, periodId, PeriodStatus.Closed, default));
+            var postResult = await postTask;
+            await closeTask;
+
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await LedgerTestSupport.SetTenantAsync(connection, LedgerTestSupport.AtlasTenant);
+            Assert.Equal("Closed", await ScalarStringAsync(connection, "select status from finance_ledger.accounting_period where tenant_id=$1 and legal_entity_id=$2 and id=$3", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, periodId));
+            Assert.Equal(postResult.Posted ? 1 : 0, await ScalarAsync(connection, "select count(*) from finance_ledger.journal_entry where tenant_id=$1 and legal_entity_id=$2 and fact_id=$3", LedgerTestSupport.AtlasTenant.Value, LedgerTestSupport.AtlasEntity.Value, fact.FactId));
+            if (!postResult.Posted) Assert.Equal("ledger.period_locked", postResult.Error);
+
+            await posting.SetPeriodStatusAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, periodId, PeriodStatus.Open, default);
+        }
+        finally { Gate.Release(); }
+    }
+
+    [Fact]
     public void CrossModuleFactsAreSemanticVersionedAndFinanciallySafe()
     {
         IAccountingFactPayload[] samples =
@@ -437,6 +480,11 @@ public sealed class LedgerPass3AcceptanceTests
         await using var command = new NpgsqlCommand(sql, connection); foreach (var parameter in parameters) command.Parameters.AddWithValue(parameter); return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    private static async Task<string> ScalarStringAsync(NpgsqlConnection connection, string sql, params object[] parameters)
+    {
+        await using var command = new NpgsqlCommand(sql, connection); foreach (var parameter in parameters) command.Parameters.AddWithValue(parameter); return (string)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("Expected a Ledger value."));
+    }
+
     private static async Task<long> ScalarByIdAsync(NpgsqlDataSource dataSource, string sql, Guid factId)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
@@ -457,7 +505,10 @@ public sealed class LedgerPass3AcceptanceTests
         {
             StartInfo = new ProcessStartInfo("dotnet", "run --project backend/Worker/Worker.csproj --no-build --no-restore")
             {
-                WorkingDirectory = repository.FullName, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+                WorkingDirectory = repository.FullName,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 CreateNoWindow = true
             }
         };

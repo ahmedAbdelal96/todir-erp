@@ -59,7 +59,7 @@ test.describe('Ledger Real-Backend Full-Stack Acceptance Suite', () => {
     const accountsRes = await request.get(`${REAL_BACKEND_URL}/api/v1/ledger/legal-entities/${ATLAS_ENTITY_ID}/accounts`);
     const accounts = await accountsRes.json();
     const cashAcc = accounts.find((a: { code: string }) => a.code === '110200');
-    const assetAcc = accounts.find((a: { code: string }) => a.code === '9c85b095d2');
+    const assetAcc = accounts.find((a: { code: string }) => a.code === '130000');
     const revAcc = accounts.find((a: { code: string }) => a.code === '410100');
 
     expect(cashAcc).toBeDefined();
@@ -334,6 +334,7 @@ test.describe('Ledger Real-Backend Full-Stack Acceptance Suite', () => {
     const readinessRes = await request.get(`${REAL_BACKEND_URL}/api/v1/ledger/legal-entities/${ATLAS_ENTITY_ID}/readiness`);
     expect(readinessRes.status()).toBe(200);
     const readiness = await readinessRes.json();
-    expect(readiness.state).toBe('Ready');
+    const generalJournalCapability = readiness.capabilities.find((capability: { capability: string }) => capability.capability === 'CanPostGeneralJournal');
+    expect(generalJournalCapability?.state).toBe('Ready');
   });
 });
