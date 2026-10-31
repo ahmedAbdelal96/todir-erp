@@ -81,7 +81,18 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase {
         Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/accounts/{accountId}/workspace", out _));
         Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/periods/{periodId}/close-readiness", out _));
         Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/posting-preview", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/mapping-configurations/{configurationId}/simulate", out _));
         Assert.True(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/periods/{periodId}/reopen", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/health", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/owner-summary", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/reconciliations", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/reconciliations/{runId}", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/reconciliation-issues", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/close-runs/{periodId}", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/close-runs/{periodId}/issues", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/opening/approve-go-live", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/close/preview", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/accounting/legal-entities/{entityId}/close", out _));
         Assert.True(paths.TryGetProperty("/api/v1/subledger/open-items", out _));
         Assert.True(paths.TryGetProperty("/api/v1/subledger/parties/{partyId}/open-items", out _));
         Assert.True(paths.TryGetProperty("/api/v1/subledger/applications/suggest", out _));

@@ -71,7 +71,7 @@ public sealed class AccountingFxRevaluationIntegrationTests : DatabaseIntegratio
         await ledger.PostOpeningBatchAsync(AtlasTenant, entity, batchId, actor, Guid.CreateVersion7(), default);
 
         var approved = await accounting.ApproveGoLiveAsync(AtlasTenant, membership, AtlasEntity,
-            new ApproveGoLiveRequest(batchId, null, goLiveDate, "Opening migration accepted"), actor, Guid.CreateVersion7(), default);
+            new ApproveGoLiveRequest(batchId, null, goLiveDate, "Opening migration accepted", "go-live-" + Guid.CreateVersion7().ToString("N")), actor, Guid.CreateVersion7(), default);
 
         Assert.Equal("Approved", approved.Status);
         Assert.Contains(approved.Checks, check => check.Code == "reconciliation.cash_bank" && check.Status == "NotApplicable");

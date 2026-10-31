@@ -17,19 +17,45 @@ public sealed class AccountingRepository(NpgsqlDataSource dataSource, TimeProvid
     }
 
     public async Task<GoLiveApprovalView> ApproveGoLiveAsync(TenantId tenant, Guid entity, Guid openingBatchId, Guid? subledgerOpeningBatchId, DateOnly goLiveDate,
-        string reason, Guid actor, Guid correlation, IReadOnlyList<CloseCheckView> checks, CancellationToken ct)
+        string idempotencyKey, string payloadHash, string reason, Guid actor, Guid correlation, IReadOnlyList<CloseCheckView> checks, CancellationToken ct)
     {
         var now = clock.GetUtcNow();
         await using var connection = await OpenAsync(tenant, ct); await using var transaction = await connection.BeginTransactionAsync(ct);
+        await using (var setupLock = new NpgsqlCommand("select 1 from business_accounting.accounting_setup where tenant_id=$1 and legal_entity_id=$2 for update", connection, transaction))
+        {
+            Add(setupLock, tenant.Value, entity);
+            if (await setupLock.ExecuteScalarAsync(ct) is null) throw new AccountingRepositoryException("accounting.go_live_setup_not_ready");
+        }
+        await using (var existing = new NpgsqlCommand("select id,opening_batch_id,subledger_opening_batch_id,go_live_date,reason,checks,approved_at,payload_hash from business_accounting.go_live_approval where tenant_id=$1 and legal_entity_id=$2 and idempotency_key=$3 for update", connection, transaction))
+        {
+            Add(existing, tenant.Value, entity, idempotencyKey);
+            await using var reader = await existing.ExecuteReaderAsync(ct);
+            if (await reader.ReadAsync(ct))
+            {
+                var persistedHash = reader.GetString(7).Trim();
+                if (!string.Equals(persistedHash, payloadHash, StringComparison.Ordinal)) throw new AccountingRepositoryException("accounting.idempotency_conflict");
+                var persistedChecks = JsonSerializer.Deserialize<CloseCheckView[]>(reader.GetString(5)) ?? [];
+                var result = new GoLiveApprovalView(entity, reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), DateOnly.FromDateTime(reader.GetDateTime(3)), "Approved", persistedChecks, reader.GetFieldValue<DateTimeOffset>(6));
+                await reader.DisposeAsync();
+                await transaction.CommitAsync(ct);
+                return result;
+            }
+        }
         await using (var command = new NpgsqlCommand("update business_accounting.accounting_setup set go_live_status='Approved',updated_by=$3,updated_at=$4,row_version=row_version+1 where tenant_id=$1 and legal_entity_id=$2 and go_live_status in ('Ready','Approved')", connection, transaction))
         {
             Add(command, tenant.Value, entity, actor, now);
             if (await command.ExecuteNonQueryAsync(ct) != 1) throw new AccountingRepositoryException("accounting.go_live_setup_not_ready");
         }
+        var approvalId = Guid.CreateVersion7();
         var approval = new GoLiveApprovalView(entity, openingBatchId, subledgerOpeningBatchId, goLiveDate, "Approved", checks, now);
+        await using (var approvalCommand = new NpgsqlCommand("insert into business_accounting.go_live_approval(tenant_id,legal_entity_id,id,opening_batch_id,subledger_opening_batch_id,go_live_date,idempotency_key,payload_hash,reason,checks,approved_by,approved_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12)", connection, transaction))
+        {
+            Add(approvalCommand, tenant.Value, entity, approvalId, openingBatchId, subledgerOpeningBatchId, goLiveDate, idempotencyKey, payloadHash, reason, JsonSerializer.Serialize(checks), actor, now);
+            await approvalCommand.ExecuteNonQueryAsync(ct);
+        }
         await using (var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status,attempts) values($1,'AccountingGoLiveApprovedV1',$2::jsonb,$3,$4,$5,$6,'accounting','Pending',0)", connection, transaction))
         {
-            Add(outbox, Guid.CreateVersion7(), JsonSerializer.Serialize(new { legalEntityId = entity, openingBatchId, subledgerOpeningBatchId, goLiveDate, reason }), tenant.Value, now, correlation, openingBatchId);
+            Add(outbox, Guid.CreateVersion7(), JsonSerializer.Serialize(new { approvalId, legalEntityId = entity, openingBatchId, subledgerOpeningBatchId, goLiveDate, reason, idempotencyKey }), tenant.Value, now, correlation, approvalId);
             await outbox.ExecuteNonQueryAsync(ct);
         }
         await transaction.CommitAsync(ct);
@@ -130,21 +156,66 @@ public sealed class AccountingRepository(NpgsqlDataSource dataSource, TimeProvid
         await using var connection = await OpenAsync(tenant, ct); await using var transaction = await connection.BeginTransactionAsync(ct);
         await using (var command = new NpgsqlCommand("insert into business_accounting.reconciliation_run(tenant_id,legal_entity_id,id,reconciliation_type,as_of_date,source_balance,ledger_balance,difference,currency_code,status,source_version,diagnostics,created_by,correlation_id,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'live',$11::jsonb,$12,$13,$14)", connection, transaction))
         { Add(command, tenant.Value, entity, id, type, asOf, source, ledger, difference, currency, status, JsonSerializer.Serialize(diagnostics), actor, correlation, now); await command.ExecuteNonQueryAsync(ct); }
+        foreach (var diagnostic in diagnostics.Distinct(StringComparer.Ordinal))
+        {
+            await using var issue = new NpgsqlCommand("insert into business_accounting.reconciliation_issue(tenant_id,legal_entity_id,id,reconciliation_run_id,code,severity,status,details,created_at) values($1,$2,$3,$4,$5,$6,'Open',$7::jsonb,$8)", connection, transaction);
+            Add(issue, tenant.Value, entity, DeterministicGuid(id, diagnostic), id, diagnostic, status == "Difference" ? "Blocking" : "Attention", JsonSerializer.Serialize(new { reconciliationType = type, asOfDate = asOf }), now);
+            await issue.ExecuteNonQueryAsync(ct);
+        }
         await using (var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status,attempts) values($1,'AccountingReconciliationCompletedV1',$2::jsonb,$3,$4,$5,$6,'accounting','Pending',0)", connection, transaction))
         { Add(outbox, Guid.CreateVersion7(), JsonSerializer.Serialize(new { reconciliationRunId = id, legalEntityId = entity, type, asOf, status, difference }), tenant.Value, now, correlation, id); await outbox.ExecuteNonQueryAsync(ct); }
         await transaction.CommitAsync(ct);
         return new(id, type, asOf, source, ledger, difference, currency, status, diagnostics, now);
     }
 
+    public async Task<IReadOnlyList<ReconciliationView>> ListReconciliationsAsync(TenantId tenant, Guid entity, string? type, DateOnly? asOf, int limit, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select id,reconciliation_type,as_of_date,source_balance,ledger_balance,difference,currency_code,status,diagnostics::text,created_at from business_accounting.reconciliation_run where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or reconciliation_type=$3) and ($4::date is null or as_of_date=$4) order by created_at desc,id desc limit $5", connection);
+        Add(command, tenant.Value, entity, (object?)type ?? DBNull.Value, (object?)asOf ?? DBNull.Value, Math.Clamp(limit, 1, 200));
+        return await ReadReconciliationsAsync(command, ct);
+    }
+
+    public async Task<ReconciliationView?> GetReconciliationAsync(TenantId tenant, Guid entity, Guid runId, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select id,reconciliation_type,as_of_date,source_balance,ledger_balance,difference,currency_code,status,diagnostics::text,created_at from business_accounting.reconciliation_run where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection);
+        Add(command, tenant.Value, entity, runId);
+        return (await ReadReconciliationsAsync(command, ct)).SingleOrDefault();
+    }
+
+    public async Task<IReadOnlyList<ReconciliationIssueView>> ListReconciliationIssuesAsync(TenantId tenant, Guid entity, string? status, int limit, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select id,reconciliation_run_id,code,severity,status,created_at,resolved_at from business_accounting.reconciliation_issue where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or status=$3) order by created_at desc,id desc limit $4", connection);
+        Add(command, tenant.Value, entity, (object?)status ?? DBNull.Value, Math.Clamp(limit, 1, 200));
+        await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<ReconciliationIssueView>();
+        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetFieldValue<DateTimeOffset>(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6)));
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<ReconciliationView>> ReadReconciliationsAsync(NpgsqlCommand command, CancellationToken ct)
+    {
+        await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<ReconciliationView>();
+        while (await reader.ReadAsync(ct))
+        {
+            var diagnostics = JsonSerializer.Deserialize<string[]>(reader.GetString(8)) ?? [];
+            result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetFieldValue<DateOnly>(2), reader.IsDBNull(3) ? null : reader.GetDecimal(3), reader.IsDBNull(4) ? null : reader.GetDecimal(4), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetString(6).Trim(), reader.GetString(7), diagnostics, reader.GetFieldValue<DateTimeOffset>(9)));
+        }
+        return result;
+    }
+
     public async Task<CloseRunView> SaveCloseRunAsync(TenantId tenant, Guid entity, Guid periodId, string idempotencyKey, string payloadHash, string status, string? reason, Guid actor, IReadOnlyList<CloseCheckView> checks, CancellationToken ct)
     {
         await using var connection = await OpenAsync(tenant, ct); await using var transaction = await connection.BeginTransactionAsync(ct);
         var id = Guid.CreateVersion7(); var now = clock.GetUtcNow();
-        await using (var command = new NpgsqlCommand("insert into business_accounting.close_run(tenant_id,legal_entity_id,id,period_id,idempotency_key,payload_hash,status,requested_by,reason,completed_at,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,case when $7='Closed' then $10 else null end,$10,$10) on conflict(tenant_id,legal_entity_id,period_id,idempotency_key) do update set status=excluded.status,reason=excluded.reason,completed_at=case when excluded.status='Closed' then excluded.updated_at else business_accounting.close_run.completed_at end,updated_at=excluded.updated_at,row_version=business_accounting.close_run.row_version+1 where business_accounting.close_run.payload_hash=excluded.payload_hash returning id,created_at", connection, transaction))
+        var persistedStatus = status;
+        var existingTerminalEvidence = false;
+        await using (var command = new NpgsqlCommand("insert into business_accounting.close_run(tenant_id,legal_entity_id,id,period_id,idempotency_key,payload_hash,status,requested_by,reason,completed_at,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,case when $7='Closed' then $10 else null end,$10,$10) on conflict(tenant_id,legal_entity_id,period_id,idempotency_key) do update set status=case when business_accounting.close_run.status in ('Closed','Reopened') then business_accounting.close_run.status else excluded.status end,reason=case when business_accounting.close_run.status in ('Closed','Reopened') then business_accounting.close_run.reason else excluded.reason end,completed_at=case when business_accounting.close_run.status in ('Closed','Reopened') then business_accounting.close_run.completed_at when excluded.status='Closed' then excluded.updated_at else business_accounting.close_run.completed_at end,updated_at=excluded.updated_at,row_version=business_accounting.close_run.row_version+1 where business_accounting.close_run.payload_hash=excluded.payload_hash returning id,created_at,status", connection, transaction))
         {
             Add(command, tenant.Value, entity, id, periodId, idempotencyKey, payloadHash, status, actor, reason, now);
             await using var reader = await command.ExecuteReaderAsync(ct);
-            if (await reader.ReadAsync(ct)) { id = reader.GetGuid(0); now = reader.GetFieldValue<DateTimeOffset>(1); }
+            if (await reader.ReadAsync(ct)) { id = reader.GetGuid(0); now = reader.GetFieldValue<DateTimeOffset>(1); persistedStatus = reader.GetString(2); }
             else
             {
                 await reader.DisposeAsync();
@@ -156,20 +227,70 @@ public sealed class AccountingRepository(NpgsqlDataSource dataSource, TimeProvid
                 throw new AccountingRepositoryException("accounting.close_run_retry_required");
             }
         }
-        foreach (var check in checks)
+        if (persistedStatus is "Closed" or "Reopened")
+        {
+            await using var evidence = new NpgsqlCommand("select exists(select 1 from business_accounting.close_check where tenant_id=$1 and close_run_id=$2)", connection, transaction);
+            Add(evidence, tenant.Value, id);
+            existingTerminalEvidence = (bool)(await evidence.ExecuteScalarAsync(ct) ?? false);
+        }
+        foreach (var check in existingTerminalEvidence ? Array.Empty<CloseCheckView>() : checks)
         {
             // A retry must preserve a single auditable result for each deterministic
             // check, rather than deleting historical evidence before replacing it.
             await using var command = new NpgsqlCommand("insert into business_accounting.close_check(tenant_id,close_run_id,id,check_code,severity,status,details,created_at) values($1,$2,$3,$4,$5,$6,$7::jsonb,$8) on conflict(tenant_id,close_run_id,id) do update set severity=excluded.severity,status=excluded.status,details=excluded.details", connection, transaction);
             Add(command, tenant.Value, id, DeterministicGuid(id, check.Code), check.Code, check.Severity, check.Status, JsonSerializer.Serialize(new { check.Message }), now); await command.ExecuteNonQueryAsync(ct);
         }
-        if (status is "Closed" or "Reopened")
+        if (persistedStatus is "Closed" or "Reopened")
         {
             await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status,attempts) select $1,$2,$3::jsonb,$4,$5,$6,$7,'accounting','Pending',0 where not exists (select 1 from platform.outbox_message where tenant_id=$4 and causation_id=$7 and message_type=$2)", connection, transaction);
-            Add(outbox, Guid.CreateVersion7(), status == "Closed" ? "AccountingCloseCompletedV1" : "AccountingPeriodReopenedV1", JsonSerializer.Serialize(new { closeRunId = id, periodId, legalEntityId = entity, status }), tenant.Value, now, Guid.CreateVersion7(), id);
+            Add(outbox, Guid.CreateVersion7(), persistedStatus == "Closed" ? "AccountingCloseCompletedV1" : "AccountingPeriodReopenedV1", JsonSerializer.Serialize(new { closeRunId = id, periodId, legalEntityId = entity, status = persistedStatus }), tenant.Value, now, Guid.CreateVersion7(), id);
             await outbox.ExecuteNonQueryAsync(ct);
         }
-        await transaction.CommitAsync(ct); return new(id, periodId, status, checks, now);
+        var returnedChecks = existingTerminalEvidence ? await LoadCloseChecksAsync(connection, transaction, tenant, id, ct) : checks;
+        await transaction.CommitAsync(ct); return new(id, periodId, persistedStatus, returnedChecks, now);
+    }
+
+    private static async Task<IReadOnlyList<CloseCheckView>> LoadCloseChecksAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid closeRunId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select check_code,severity,status,details->>'Message' from business_accounting.close_check where tenant_id=$1 and close_run_id=$2 order by check_code", connection, transaction);
+        Add(command, tenant.Value, closeRunId);
+        await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<CloseCheckView>();
+        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? string.Empty : reader.GetString(3)));
+        return result;
+    }
+
+    public async Task<CloseRunView?> GetCloseRunAsync(TenantId tenant, Guid entity, Guid periodId, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(tenant, ct);
+        Guid id;
+        string status;
+        DateTimeOffset createdAt;
+        await using (var command = new NpgsqlCommand("select id,status,created_at from business_accounting.close_run where tenant_id=$1 and legal_entity_id=$2 and period_id=$3 order by updated_at desc,id desc limit 1", connection))
+        {
+            Add(command, tenant.Value, entity, periodId);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) return null;
+            id = reader.GetGuid(0);
+            status = reader.GetString(1);
+            createdAt = reader.GetFieldValue<DateTimeOffset>(2);
+        }
+        await using var checksCommand = new NpgsqlCommand("select check_code,severity,status,details->>'Message' from business_accounting.close_check where tenant_id=$1 and close_run_id=$2 order by check_code", connection);
+        Add(checksCommand, tenant.Value, id);
+        await using var checksReader = await checksCommand.ExecuteReaderAsync(ct);
+        var checks = new List<CloseCheckView>();
+        while (await checksReader.ReadAsync(ct)) checks.Add(new(checksReader.GetString(0), checksReader.GetString(1), checksReader.GetString(2), checksReader.IsDBNull(3) ? string.Empty : checksReader.GetString(3)));
+        return new(id, periodId, status, checks, createdAt);
+    }
+
+    public async Task<IReadOnlyList<CloseCheckView>> ListCloseRunIssuesAsync(TenantId tenant, Guid entity, Guid periodId, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select c.check_code,c.severity,c.status,c.details->>'Message' from business_accounting.close_check c join business_accounting.close_run r on r.tenant_id=c.tenant_id and r.id=c.close_run_id where c.tenant_id=$1 and r.legal_entity_id=$2 and r.period_id=$3 and c.status<>'Pass' order by r.updated_at desc,c.check_code", connection);
+        Add(command, tenant.Value, entity, periodId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var issues = new List<CloseCheckView>();
+        while (await reader.ReadAsync(ct)) issues.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? string.Empty : reader.GetString(3)));
+        return issues;
     }
 
     public async Task<FxRevaluationRunView> SaveFxRevaluationPreviewAsync(TenantId tenant, Guid entity, FxRevaluationRequest request, string payloadHash, IReadOnlyList<FxRevaluationLineDraft> lines, Guid actor, CancellationToken ct)

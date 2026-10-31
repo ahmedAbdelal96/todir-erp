@@ -26,6 +26,7 @@ public interface ILedgerAccountingWorkspaceCapabilities
     Task<LedgerPeriodSnapshot?> GetPeriodAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, CancellationToken cancellationToken = default);
     Task<LedgerCloseReadinessSnapshot> GetCloseReadinessAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, CancellationToken cancellationToken = default);
     Task<IReadOnlySet<Guid>> FindAccountsAsync(TenantId tenantId, LegalEntityId legalEntityId, IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Guid, string>> GetAccountTypesAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default);
     Task SetPeriodStatusAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, string status, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default);
     Task<LedgerOpeningBatchSnapshot?> GetOpeningBatchAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid batchId, CancellationToken cancellationToken = default);
     Task LockOpeningBatchAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid batchId, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default);

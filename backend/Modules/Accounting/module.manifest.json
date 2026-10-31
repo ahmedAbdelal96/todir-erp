@@ -13,7 +13,7 @@
   },
   "owns": {
     "schema": "business_accounting",
-  "entities": ["accounting_setup", "reconciliation_run", "reconciliation_issue", "close_run", "close_check", "financial_statement_definition", "financial_statement_version", "financial_statement_line", "report_snapshot_ref", "fx_revaluation_run", "fx_revaluation_line"]
+    "entities": ["accounting_setup", "go_live_approval", "reconciliation_run", "reconciliation_issue", "close_run", "close_check", "financial_statement_definition", "financial_statement_version", "financial_statement_line", "report_snapshot_ref", "fx_revaluation_run", "fx_revaluation_line"]
   },
   "permissions": ["accounting.home.read", "accounting.owner.read", "accounting.health.read", "accounting.reconciliation.read", "accounting.reconciliation.run", "accounting.opening.approve", "accounting.close.preview", "accounting.close.execute", "accounting.close.reopen", "accounting.statement.read", "accounting.statement.manage", "accounting.fx-revaluation.read", "accounting.fx-revaluation.preview", "accounting.fx-revaluation.post", "accounting.fx-revaluation.reverse"],
   "capabilities": {

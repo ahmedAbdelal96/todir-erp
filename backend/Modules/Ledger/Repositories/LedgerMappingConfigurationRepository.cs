@@ -108,6 +108,28 @@ public sealed class LedgerMappingConfigurationRepository(
         return new(configurationId, version, status, from, basedOn, mappings);
     }
 
+    public async Task<MappingSimulationResult> SimulateAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, MappingSimulationRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.RoleCode) || request.EffectiveDate == DateOnly.MinValue)
+            throw new LedgerDomainException("ledger.mapping_simulation_invalid", "A role and effective date are required for mapping simulation.");
+        await using var connection = await OpenAsync(tenant, ct);
+        var items = await LoadItemsAsync(connection, null, tenant, entity, configurationId, null, ct);
+        var candidates = items.Where(item => string.Equals(item.RoleCode, request.RoleCode.Trim(), StringComparison.OrdinalIgnoreCase)
+            && item.EffectiveFrom <= request.EffectiveDate && (item.EffectiveTo is null || item.EffectiveTo >= request.EffectiveDate)
+            && Matches(item.ProductCategoryCode, request.ProductCategoryCode)
+            && Matches(item.PartyGroupCode, request.PartyGroupCode)
+            && Matches(item.TaxCode, request.TaxCode)
+            && Matches(item.JournalCode, request.JournalCode))
+            .OrderByDescending(item => item.SpecificityRank).ThenBy(item => item.MappingCode, StringComparer.Ordinal).ToArray();
+        if (candidates.Length == 0) return new(configurationId, "NoMatch", false, null, null, null, null, null, [new("ledger.account_mapping_missing", "No mapping matched the supplied business context.", "ledger")]);
+        var highest = candidates[0].SpecificityRank;
+        var winners = candidates.Where(item => item.SpecificityRank == highest).ToArray();
+        if (winners.Length > 1) return new(configurationId, "Conflict", false, null, null, null, null, highest, [new("ledger.account_mapping_conflict", "More than one mapping matches at the same specificity.", "ledger")]);
+        var winner = winners[0];
+        return new(configurationId, winner.Status, winner.AccountValid, winner.MappingVersionId, winner.MappingCode, winner.TargetAccountId, winner.AccountCode, winner.SpecificityRank,
+            winner.AccountValid ? [] : [new("ledger.mapping_target_invalid", "The selected target account is inactive or not postable.", "ledger")]);
+    }
+
     private static async Task<MappingConfigurationValidationDto> ValidateDraftAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid config, CancellationToken ct)
     {
         var errors = new List<LedgerReadinessReason>();
@@ -163,6 +185,7 @@ public sealed class LedgerMappingConfigurationRepository(
     }
 
     private static bool Overlap(string? first, string? second) => first is null || second is null || string.Equals(first, second, StringComparison.Ordinal);
+    private static bool Matches(string? configured, string? requested) => configured is null || string.Equals(configured, requested, StringComparison.Ordinal);
     private static bool OverlapDates(MappingConfigurationItemDto first, MappingConfigurationItemDto second) =>
         (first.EffectiveTo is null || second.EffectiveFrom <= first.EffectiveTo)
         && (second.EffectiveTo is null || first.EffectiveFrom <= second.EffectiveTo);

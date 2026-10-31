@@ -54,8 +54,15 @@ public sealed class AccountingPostgresIntegrationTests
 
         var first = await repository.SaveCloseRunAsync(AtlasTenant, AtlasEntity, periodId, key, hash, "Closed", "test", Guid.CreateVersion7(), checks, default);
         var retry = await repository.SaveCloseRunAsync(AtlasTenant, AtlasEntity, periodId, key, hash, "Closed", "test", Guid.CreateVersion7(), checks, default);
+        var regression = await repository.SaveCloseRunAsync(AtlasTenant, AtlasEntity, periodId, key, hash, "Previewed", "test", Guid.CreateVersion7(), [new CloseCheckView("ledger.period", "Blocking", "Fail", "stale")], default);
 
         Assert.Equal(first.Id, retry.Id);
+        Assert.Equal("Closed", regression.Status);
+        Assert.Equal("Pass", Assert.Single(regression.Checks).Status);
+        var history = await repository.GetCloseRunAsync(AtlasTenant, AtlasEntity, periodId, default);
+        Assert.NotNull(history);
+        Assert.Equal("Closed", history!.Status);
+        Assert.Empty(await repository.ListCloseRunIssuesAsync(AtlasTenant, AtlasEntity, periodId, default));
         await using var tenantConnection = await source.OpenConnectionAsync();
         await SetTenantAsync(tenantConnection, AtlasTenant);
         Assert.Equal(1L, await ScalarAsync(tenantConnection, "select count(*) from platform.outbox_message where tenant_id=$1 and causation_id=$2 and message_type='AccountingCloseCompletedV1'", AtlasTenant.Value, first.Id));
@@ -76,6 +83,19 @@ public sealed class AccountingPostgresIntegrationTests
         await using var connection = await source.OpenConnectionAsync();
         await SetTenantAsync(connection, AtlasTenant);
         Assert.Equal(1L, await ScalarAsync(connection, "select count(*) from platform.outbox_message where tenant_id=$1 and causation_id=$2 and message_type='AccountingReconciliationCompletedV1'", AtlasTenant.Value, saved.Id));
+    }
+
+    [Fact]
+    public async Task ReconciliationDifferencePersistsQueryableIssueHistory()
+    {
+        await using var source = NpgsqlDataSource.Create(RequireConnection());
+        var repository = new AccountingRepository(source, TimeProvider.System);
+        var saved = await repository.SaveReconciliationAsync(AtlasTenant, AtlasEntity, "AP", new DateOnly(2026, 2, 1), 125m, 100m, 25m, "EGP", "Difference", ["control_balance_difference"], Guid.CreateVersion7(), Guid.CreateVersion7(), default);
+
+        var history = await repository.ListReconciliationsAsync(AtlasTenant, AtlasEntity, "AP", new DateOnly(2026, 2, 1), 10, default);
+        var issues = await repository.ListReconciliationIssuesAsync(AtlasTenant, AtlasEntity, "Open", 10, default);
+        Assert.Contains(history, item => item.Id == saved.Id && item.Status == "Difference");
+        Assert.Contains(issues, item => item.ReconciliationRunId == saved.Id && item.Code == "control_balance_difference" && item.Severity == "Blocking");
     }
 
     [Fact]
@@ -107,13 +127,54 @@ public sealed class AccountingPostgresIntegrationTests
         var correlation = Guid.CreateVersion7();
         var checks = new[] { new CloseCheckView("opening.ledger", "Info", "Pass", "Posted and ready to lock.") };
 
-        var approved = await repository.ApproveGoLiveAsync(AtlasTenant, AtlasEntity, openingBatchId, null, new DateOnly(2026, 1, 1), "migration accepted", Guid.CreateVersion7(), correlation, checks, default);
+        var approved = await repository.ApproveGoLiveAsync(AtlasTenant, AtlasEntity, openingBatchId, null, new DateOnly(2026, 1, 1), "go-live-test-" + Guid.CreateVersion7().ToString("N"), new string('c', 64), "migration accepted", Guid.CreateVersion7(), correlation, checks, default);
 
         Assert.Equal("Approved", approved.Status);
         await using var connection = await source.OpenConnectionAsync();
         await SetTenantAsync(connection, AtlasTenant);
         Assert.Equal(1L, await ScalarAsync(connection, "select count(*) from platform.outbox_message where tenant_id=$1 and correlation_id=$2 and message_type='AccountingGoLiveApprovedV1'", AtlasTenant.Value, correlation));
         Assert.Equal(1L, await ScalarAsync(connection, "select count(*) from business_accounting.accounting_setup where tenant_id=$1 and legal_entity_id=$2 and go_live_status='Approved'", AtlasTenant.Value, AtlasEntity));
+    }
+
+    [Fact]
+    public async Task GoLiveApprovalRetryIsIdempotentAndDoesNotDuplicateOutbox()
+    {
+        await using var source = NpgsqlDataSource.Create(RequireConnection());
+        var repository = new AccountingRepository(source, TimeProvider.System);
+        var openingBatchId = Guid.CreateVersion7();
+        var key = "go-live-retry-" + Guid.CreateVersion7().ToString("N");
+        var correlation = Guid.CreateVersion7();
+        var checks = new[] { new CloseCheckView("opening.ledger", "Info", "Pass", "Ready") };
+
+        var first = await repository.ApproveGoLiveAsync(AtlasTenant, AtlasEntity, openingBatchId, null, new DateOnly(2026, 1, 1), key, new string('d', 64), "migration accepted", Guid.CreateVersion7(), correlation, checks, default);
+        var retry = await repository.ApproveGoLiveAsync(AtlasTenant, AtlasEntity, openingBatchId, null, new DateOnly(2026, 1, 1), key, new string('d', 64), "migration accepted", Guid.CreateVersion7(), Guid.CreateVersion7(), checks, default);
+
+        Assert.Equal(first.OpeningBatchId, retry.OpeningBatchId);
+        await using var connection = await source.OpenConnectionAsync();
+        await SetTenantAsync(connection, AtlasTenant);
+        Assert.Equal(1L, await ScalarAsync(connection, "select count(*) from business_accounting.go_live_approval where tenant_id=$1 and legal_entity_id=$2 and idempotency_key=$3", AtlasTenant.Value, AtlasEntity, key));
+        Assert.Equal(1L, await ScalarAsync(connection, "select count(*) from platform.outbox_message where tenant_id=$1 and message_type='AccountingGoLiveApprovedV1' and payload->>'openingBatchId'=$2", AtlasTenant.Value, openingBatchId.ToString()));
+    }
+
+    [Fact]
+    public async Task ConcurrentGoLiveApprovalRequestsConvergeToOneApprovalAndEvent()
+    {
+        await using var source = NpgsqlDataSource.Create(RequireConnection());
+        var repository = new AccountingRepository(source, TimeProvider.System);
+        var openingBatchId = Guid.CreateVersion7();
+        var key = "go-live-concurrent-" + Guid.CreateVersion7().ToString("N");
+        var checks = new[] { new CloseCheckView("opening.ledger", "Info", "Pass", "Ready") };
+        var calls = Enumerable.Range(0, 2).Select(index => repository.ApproveGoLiveAsync(
+            AtlasTenant, AtlasEntity, openingBatchId, null, new DateOnly(2026, 1, 1), key, new string('e', 64),
+            "migration accepted", Guid.CreateVersion7(), Guid.CreateVersion7(), checks, default));
+
+        var approvals = await Task.WhenAll(calls);
+
+        Assert.All(approvals, approval => Assert.Equal(openingBatchId, approval.OpeningBatchId));
+        await using var connection = await source.OpenConnectionAsync();
+        await SetTenantAsync(connection, AtlasTenant);
+        Assert.Equal(1L, await ScalarAsync(connection, "select count(*) from business_accounting.go_live_approval where tenant_id=$1 and legal_entity_id=$2 and idempotency_key=$3", AtlasTenant.Value, AtlasEntity, key));
+        Assert.Equal(1L, await ScalarAsync(connection, "select count(*) from platform.outbox_message where tenant_id=$1 and message_type='AccountingGoLiveApprovedV1' and payload->>'idempotencyKey'=$2", AtlasTenant.Value, key));
     }
 
     private static string RequireConnection() => Environment.GetEnvironmentVariable("TODIR_ACCOUNTING_TEST_CONNECTION") is { Length: > 0 } value

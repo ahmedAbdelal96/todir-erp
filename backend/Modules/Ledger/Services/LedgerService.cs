@@ -13,6 +13,7 @@ public sealed class LedgerService(LedgerRepository repository, LedgerOperationsR
     public Task<MappingConfigurationDto> CreateMappingConfigurationDraftAsync(TenantId tenant, LegalEntityId entity, CreateMappingConfigurationDraftRequest request, Guid actor, Guid correlationId, CancellationToken ct) => mappings.CreateDraftAsync(tenant, entity, request, actor, correlationId, ct);
     public Task<MappingConfigurationDto> GetMappingConfigurationAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, CancellationToken ct) => mappings.GetConfigurationAsync(tenant, entity, configurationId, ct);
     public Task<MappingConfigurationItemDto> UpdateMappingConfigurationDraftAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, Guid mappingVersionId, UpdateMappingConfigurationDraftRequest request, Guid actor, Guid correlationId, CancellationToken ct) => mappings.UpdateDraftMappingAsync(tenant, entity, configurationId, mappingVersionId, request, actor, correlationId, ct);
+    public Task<MappingSimulationResult> SimulateMappingAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, MappingSimulationRequest request, CancellationToken ct) => mappings.SimulateAsync(tenant, entity, configurationId, request, ct);
     public Task<MappingConfigurationValidationDto> ValidateMappingConfigurationAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, Guid actor, Guid correlationId, CancellationToken ct) => mappings.ValidateAsync(tenant, entity, configurationId, actor, correlationId, ct);
     public Task<MappingConfigurationDto> ActivateMappingConfigurationAsync(TenantId tenant, LegalEntityId entity, Guid configurationId, Guid actor, Guid correlationId, CancellationToken ct) => mappings.ActivateAsync(tenant, entity, configurationId, actor, correlationId, ct);
     public Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default) => repository.GetControlBalanceAsync(tenantId, legalEntityId, controlRole, configurationVersionId, asOfDate, cancellationToken);
@@ -100,6 +101,9 @@ public sealed class LedgerService(LedgerRepository repository, LedgerOperationsR
         var existing = await ListAccountsAsync(tenantId, legalEntityId, cancellationToken);
         return existing.Where(account => requested.Contains(account.Id)).Select(account => account.Id).ToHashSet();
     }
+
+    public async Task<IReadOnlyDictionary<Guid, string>> GetAccountTypesAsync(TenantId tenantId, LegalEntityId legalEntityId, CancellationToken cancellationToken = default) =>
+        (await ListAccountsAsync(tenantId, legalEntityId, cancellationToken)).ToDictionary(account => account.Id, account => account.Type.ToString());
 
     public Task SetPeriodStatusAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid periodId, string status, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default)
     {

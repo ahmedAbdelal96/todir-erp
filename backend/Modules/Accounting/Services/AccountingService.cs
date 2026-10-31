@@ -48,7 +48,7 @@ public sealed class AccountingService(
                 ? new AccountingHealthItem("statement.unmapped_accounts", "Info", "Ready", "Every posted account is mapped to its required financial statement.", "accounting")
                 : new AccountingHealthItem("statement.unmapped_accounts", "Blocking", "Unmapped", string.Join(", ", unmapped), "accounting"));
         }
-        foreach (var reconciliation in await ReconcileAllAsync(tenant, membershipId, entity, asOf, actor, correlation, ct))
+        foreach (var reconciliation in await ReconcileAllReadOnlyAsync(tenant, membershipId, entity, asOf, ct))
             items.Add(new($"reconciliation.{reconciliation.Type.ToLowerInvariant()}", reconciliation.Status == "Reconciled" ? "Info" : reconciliation.Status is "NotReady" or "NotApplicable" ? "Attention" : "Blocking", reconciliation.Status, string.Join(", ", reconciliation.Diagnostics.DefaultIfEmpty("No differences found.")), reconciliation.Type));
         var status = items.Any(item => item.Severity == "Blocking") ? "Blocking" : items.Any(item => item.Severity == "Attention") ? "Attention" : "Healthy";
         return new(entity, asOf, status, items);
@@ -66,9 +66,16 @@ public sealed class AccountingService(
             var details = result.Details.Where(detail => detail.Direction == direction).ToArray();
             var sourceBalance = details.Sum(detail => decimal.Parse(detail.SubledgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture));
             var ledgerBalance = details.Sum(detail => decimal.Parse(detail.LedgerBaseBalance, System.Globalization.CultureInfo.InvariantCulture));
-            var difference = sourceBalance - ledgerBalance;
             var diagnostics = details.Where(detail => !detail.ContextResolved || decimal.Parse(detail.Variance, System.Globalization.CultureInfo.InvariantCulture) != 0m)
                 .Select(detail => !detail.ContextResolved ? "control_context_missing" : "control_balance_difference").Distinct().ToArray();
+            if (details.Length == 0)
+            {
+                var configuration = await ledgerPosting.GetActiveConfigurationVersionIdAsync(tenant, new(entity), ct);
+                var control = await ledgerControlBalances.GetControlBalanceAsync(tenant, new(entity), direction.ToString(), configuration, asOf, ct);
+                ledgerBalance = control.SignedBaseBalance;
+                if (ledgerBalance != 0m) diagnostics = ["ledger_control_without_source_context"];
+            }
+            var difference = sourceBalance - ledgerBalance;
             var saved = await repository.SaveReconciliationAsync(tenant, entity, type, asOf, sourceBalance, ledgerBalance, difference, result.BaseCurrencyCode, difference == 0m && details.All(detail => detail.ContextResolved) ? "Reconciled" : "Difference", diagnostics, actor, correlation, ct);
             await WriteAuditAsync(tenant, entity, actor, "reconciliation.completed", "AccountingReconciliation", saved.Id, null, JsonSerializer.Serialize(saved), null, ct);
             return saved;
@@ -88,6 +95,12 @@ public sealed class AccountingService(
         }
         throw new AccountingException("accounting.reconciliation_type_invalid");
     }
+
+    public Task<IReadOnlyList<ReconciliationView>> ListReconciliationsAsync(TenantId tenant, Guid entity, string? type, DateOnly? asOf, int limit, CancellationToken ct) => repository.ListReconciliationsAsync(tenant, entity, type, asOf, limit, ct);
+    public async Task<ReconciliationView> GetReconciliationAsync(TenantId tenant, Guid entity, Guid runId, CancellationToken ct) => await repository.GetReconciliationAsync(tenant, entity, runId, ct) ?? throw new AccountingException("accounting.reconciliation_not_found");
+    public Task<IReadOnlyList<ReconciliationIssueView>> ListReconciliationIssuesAsync(TenantId tenant, Guid entity, string? status, int limit, CancellationToken ct) => repository.ListReconciliationIssuesAsync(tenant, entity, status, limit, ct);
+    public async Task<CloseRunView> GetCloseRunAsync(TenantId tenant, Guid entity, Guid periodId, CancellationToken ct) => await repository.GetCloseRunAsync(tenant, entity, periodId, ct) ?? throw new AccountingException("accounting.close_run_not_found");
+    public Task<IReadOnlyList<CloseCheckView>> ListCloseRunIssuesAsync(TenantId tenant, Guid entity, Guid periodId, CancellationToken ct) => repository.ListCloseRunIssuesAsync(tenant, entity, periodId, ct);
 
     public async Task<FxRevaluationRunView> PreviewFxRevaluationAsync(TenantId tenant, Guid entity, FxRevaluationRequest request, Guid actor, CancellationToken ct)
     {
@@ -195,6 +208,9 @@ public sealed class AccountingService(
     {
         var preview = await PreviewCloseAsync(tenant, membershipId, entity, request, actor, correlation, ct);
         if (preview.Status == "Blocked") throw new AccountingException("accounting.close_blocked");
+        if (preview.Status == "Closed") return preview;
+        var finalReadiness = await ledgerWorkspace.GetCloseReadinessAsync(tenant, new(entity), request.PeriodId, ct);
+        if (!finalReadiness.CanClose) throw new AccountingException("accounting.close_blocked");
         await ledgerWorkspace.SetPeriodStatusAsync(tenant, new(entity), request.PeriodId, "Closed", actor, correlation, ct);
         var result = await repository.SaveCloseRunAsync(tenant, entity, request.PeriodId, request.IdempotencyKey, Hash(new { request.PeriodId, request.Reason }), "Closed", request.Reason, actor, preview.Checks, ct);
         await WriteAuditAsync(tenant, entity, actor, "period.closed", "AccountingPeriod", request.PeriodId, null, JsonSerializer.Serialize(result), request.Reason, ct);
@@ -213,7 +229,7 @@ public sealed class AccountingService(
 
     public async Task<GoLiveApprovalView> ApproveGoLiveAsync(TenantId tenant, Guid membershipId, Guid entity, ApproveGoLiveRequest request, Guid actor, Guid correlation, CancellationToken ct)
     {
-        if (request.OpeningBatchId == Guid.Empty || string.IsNullOrWhiteSpace(request.Reason)) throw new AccountingException("accounting.go_live_request_invalid");
+        if (request.OpeningBatchId == Guid.Empty || string.IsNullOrWhiteSpace(request.Reason) || string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Trim().Length > 200) throw new AccountingException("accounting.go_live_request_invalid");
         var opening = await ledgerWorkspace.GetOpeningBatchAsync(tenant, new(entity), request.OpeningBatchId, ct)
             ?? throw new AccountingException("accounting.opening_not_found");
         if (opening.Status is not ("Posted" or "Locked") || opening.PostedEntryId is null || request.FinancialGoLiveDate is { } date && date != opening.GoLiveDate)
@@ -247,7 +263,9 @@ public sealed class AccountingService(
         checks.Add(new("reconciliation.cash_bank", "Info", "NotApplicable", "Cash and bank opening reconciliation is deferred until the Banking capability is enabled."));
         if (checks.Any(check => check.Status == "Fail")) throw new AccountingException("accounting.go_live_reconciliation_blocked");
         if (opening.Status == "Posted") await ledgerWorkspace.LockOpeningBatchAsync(tenant, new(entity), opening.Id, actor, correlation, ct);
-        var approved = await repository.ApproveGoLiveAsync(tenant, entity, opening.Id, request.SubledgerOpeningBatchId, opening.GoLiveDate, request.Reason.Trim(), actor, correlation, checks, ct);
+        var idempotencyKey = request.IdempotencyKey.Trim();
+        var payloadHash = Hash(new { openingBatchId = opening.Id, request.SubledgerOpeningBatchId, goLiveDate = opening.GoLiveDate, reason = request.Reason.Trim() });
+        var approved = await repository.ApproveGoLiveAsync(tenant, entity, opening.Id, request.SubledgerOpeningBatchId, opening.GoLiveDate, idempotencyKey, payloadHash, request.Reason.Trim(), actor, correlation, checks, ct);
         await WriteAuditAsync(tenant, entity, actor, "go_live.approved", "AccountingGoLive", opening.Id, null, JsonSerializer.Serialize(approved), request.Reason.Trim(), ct);
         return approved;
     }
@@ -269,7 +287,7 @@ public sealed class AccountingService(
             if (line.LineKind == "MappedAccounts")
             {
                 var accounts = trial.Accounts.Where(account => (line.AccountIds?.Count ?? 0) > 0 ? line.AccountIds!.Contains(account.AccountId) : account.AccountType == line.AccountType).ToArray();
-                value = new(line.Code, line.NameEn, line.AccountType ?? "Mapped", accounts.Sum(PresentationAmount), accounts.Select(account => account.AccountId).ToArray(), line.LineKind, line.ParentLineCode);
+                value = new(line.Code, line.NameEn, line.AccountType ?? "Mapped", accounts.Sum(PresentationAmount), accounts.Select(account => account.AccountId).ToArray(), line.LineKind, line.ParentLineCode, line.NameAr, line.NameEn);
             }
             else
             {
@@ -280,7 +298,7 @@ public sealed class AccountingService(
                 var amount = line.LineKind == "Arithmetic" && line.ArithmeticOperator == "Subtract"
                     ? values[0].Amount - values.Skip(1).Sum(item => item.Amount)
                     : values.Sum(item => item.Amount);
-                value = new(line.Code, line.NameEn, "Formula", amount, values.SelectMany(item => item.AccountIds).Distinct().ToArray(), line.LineKind, line.ParentLineCode);
+                value = new(line.Code, line.NameEn, "Formula", amount, values.SelectMany(item => item.AccountIds).Distinct().ToArray(), line.LineKind, line.ParentLineCode, line.NameAr, line.NameEn);
             }
             computed.Add(code, value);
             return value;
@@ -296,7 +314,7 @@ public sealed class AccountingService(
             - trial.Accounts.Where(account => account.AccountType == "Expense").Sum(account => account.SignedBalance);
         if (kind == "BalanceSheet")
         {
-            lines = [.. lines, new StatementLineView("current-year-earnings", "Current year earnings", "CurrentYearEarnings", currentEarnings, [], "Derived")];
+            lines = [.. lines, new StatementLineView("current-year-earnings", "Current year earnings", "CurrentYearEarnings", currentEarnings, [], "Derived", null, "أرباح العام الحالي", "Current year earnings")];
             total += currentEarnings;
         }
         var balanced = kind != "BalanceSheet" || assets == liabilities + equity + currentEarnings;
@@ -308,6 +326,13 @@ public sealed class AccountingService(
         var selectedAccounts = request.Lines.SelectMany(line => line.AccountIds ?? []).Distinct().ToArray();
         if (selectedAccounts.Length > 0 && (await ledgerWorkspace.FindAccountsAsync(tenant, new(entity), selectedAccounts, ct)).Count != selectedAccounts.Length)
             throw new AccountingException("accounting.statement_mapping_account_invalid");
+        if (selectedAccounts.Length > 0)
+        {
+            var accountTypes = await ledgerWorkspace.GetAccountTypesAsync(tenant, new(entity), ct);
+            var mappedTypes = request.Lines.Where(line => line.LineKind == "MappedAccounts" && line.AccountType is not null).Select(line => line.AccountType!).ToHashSet(StringComparer.Ordinal);
+            if (request.Lines.Where(line => line.LineKind == "MappedAccounts").SelectMany(line => line.AccountIds ?? []).Any(accountId => accountTypes.TryGetValue(accountId, out var type) && mappedTypes.Contains(type)))
+                throw new AccountingException("accounting.statement_mapping_overlap");
+        }
         var saved = await repository.SaveStatementDefinitionAsync(tenant, entity, request, actor, ct);
         await WriteAuditAsync(tenant, entity, actor, "statement_definition.saved", "FinancialStatementDefinition", saved.Id, null, JsonSerializer.Serialize(saved), null, ct);
         return saved;
@@ -316,17 +341,65 @@ public sealed class AccountingService(
 
     public async Task<OwnerFinancialSummary> GetOwnerSummaryAsync(TenantId tenant, Guid membershipId, Guid entity, DateOnly asOf, Guid actor, Guid correlation, CancellationToken ct)
     {
-        var ar = await ReconcileAsync(tenant, membershipId, entity, "AR", asOf, actor, correlation, ct);
-        var ap = await ReconcileAsync(tenant, membershipId, entity, "AP", asOf, actor, correlation, ct);
-        var inventoryResult = await ReconcileAsync(tenant, membershipId, entity, "Inventory", asOf, actor, correlation, ct);
+        var readOnly = await ReconcileAllReadOnlyAsync(tenant, membershipId, entity, asOf, ct);
+        var ar = readOnly.Single(item => item.Type == "AR");
+        var ap = readOnly.Single(item => item.Type == "AP");
+        var inventoryResult = readOnly.Single(item => item.Type == "Inventory");
         var configuration = await ledgerPosting.GetActiveConfigurationVersionIdAsync(tenant, new(entity), ct);
         var cash = await ledgerControlBalances.GetControlBalanceAsync(tenant, new(entity), "Cash", configuration, asOf, ct);
         var pnl = await GetStatementAsync(tenant, entity, "ProfitAndLoss", new DateOnly(asOf.Year, 1, 1), asOf, ct);
-        var health = new[] { ar.Status, ap.Status, inventoryResult.Status }.Any(status => status == "Difference") ? "Attention" : "Healthy";
+        var health = new[] { ar.Status, ap.Status, inventoryResult.Status }.Any(status => status is "Difference" or "NotReady" or "Error") ? "Attention" : "Healthy";
         return new(entity, asOf, cash.BaseCurrencyCode, cash.SignedBaseBalance, ar.SourceBalance ?? 0m, ap.SourceBalance ?? 0m, inventoryResult.SourceBalance, pnl.Total, health);
     }
 
+    private async Task<IReadOnlyList<ReconciliationView>> ReconcileAllReadOnlyAsync(TenantId tenant, Guid membership, Guid entity, DateOnly asOf, CancellationToken ct) => [await EvaluateReconciliationReadOnlyAsync(tenant, membership, entity, "AR", asOf, ct), await EvaluateReconciliationReadOnlyAsync(tenant, membership, entity, "AP", asOf, ct), await EvaluateReconciliationReadOnlyAsync(tenant, membership, entity, "Inventory", asOf, ct)];
     private async Task<IReadOnlyList<ReconciliationView>> ReconcileAllAsync(TenantId tenant, Guid membership, Guid entity, DateOnly asOf, Guid actor, Guid correlation, CancellationToken ct) => [await ReconcileAsync(tenant, membership, entity, "AR", asOf, actor, correlation, ct), await ReconcileAsync(tenant, membership, entity, "AP", asOf, actor, correlation, ct), await ReconcileAsync(tenant, membership, entity, "Inventory", asOf, actor, correlation, ct)];
+
+    private async Task<ReconciliationView> EvaluateReconciliationReadOnlyAsync(TenantId tenant, Guid membership, Guid entity, string type, DateOnly asOf, CancellationToken ct)
+    {
+        if (type == "Inventory")
+        {
+            if (inventory is null) return new(Guid.CreateVersion7(), type, asOf, null, null, null, null, "NotApplicable", ["inventory_capability_unavailable"], clock.GetUtcNow());
+            var result = await inventory.ReconcileInventoryAsync(tenant, new(entity), asOf, ct);
+            return new(Guid.CreateVersion7(), type, asOf, result.InventoryValue, result.LedgerValue, result.Difference, result.CurrencyCode, result.Available ? result.Status : "NotReady", result.Diagnostics, clock.GetUtcNow());
+        }
+        var direction = type == "AR" ? SubledgerDirectionContract.Receivable : SubledgerDirectionContract.Payable;
+        var sources = await subledger.GetReconciliationControlAccountsAsync(tenant, membership, new(new(entity), asOf), ct);
+        var selected = sources.Where(source => source.Direction == direction).ToArray();
+        var sourceBalance = selected.Sum(source => source.SubledgerBaseBalance);
+        var ledgerBalance = 0m;
+        var diagnostics = new List<string>();
+        if (selected.Length == 0)
+        {
+            try
+            {
+                var configuration = await ledgerPosting.GetActiveConfigurationVersionIdAsync(tenant, new(entity), ct);
+                var control = await ledgerControlBalances.GetControlBalanceAsync(tenant, new(entity), direction.ToString(), configuration, asOf, ct);
+                ledgerBalance = control.SignedBaseBalance;
+                if (ledgerBalance != 0m) diagnostics.Add("ledger_control_without_source_context");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { diagnostics.Add("control_context_missing"); }
+        }
+        foreach (var source in selected)
+        {
+            var configurationId = Guid.Empty;
+            var resolved = source.ControlRole == source.Direction.ToString() && source.ControlConfigurationReference.StartsWith("configuration:", StringComparison.Ordinal) && Guid.TryParse(source.ControlConfigurationReference["configuration:".Length..], out configurationId);
+            if (!resolved) { diagnostics.Add("control_context_missing"); continue; }
+            try
+            {
+                var snapshot = await ledgerControlBalances.GetControlBalanceAsync(tenant, new(entity), source.ControlRole, configurationId, asOf, ct);
+                ledgerBalance += snapshot.SignedBaseBalance;
+                if (snapshot.BaseCurrencyCode != source.BaseCurrencyCode) diagnostics.Add("control_currency_mismatch");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { diagnostics.Add("control_context_missing"); }
+        }
+        var difference = sourceBalance - ledgerBalance;
+        if (difference != 0m) diagnostics.Add("control_balance_difference");
+        var status = diagnostics.Count == 0 ? "Reconciled" : selected.Length == 0 ? "NotReady" : "Difference";
+        return new(Guid.CreateVersion7(), type, asOf, sourceBalance, ledgerBalance, difference, selected.FirstOrDefault()?.BaseCurrencyCode, status, diagnostics.Distinct().ToArray(), clock.GetUtcNow());
+    }
     private static decimal PresentationAmount(LedgerAccountBalance account) => account.AccountType is "Liability" or "Equity" or "Revenue" ? -account.SignedBalance : account.SignedBalance;
     private static bool HasMovement(LedgerAccountBalance account) => account.OpeningDebit != 0m || account.OpeningCredit != 0m || account.PeriodDebit != 0m || account.PeriodCredit != 0m;
     private static bool IsMapped(LedgerAccountBalance account, IEnumerable<FinancialStatementDefinitionView> definitions) => definitions
