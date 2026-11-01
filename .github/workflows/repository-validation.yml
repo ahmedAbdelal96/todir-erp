@@ -79,6 +79,7 @@ jobs:
         run: dotnet run --project backend/DbMigrator/DbMigrator.csproj --no-build
         env:
           TODIR_MIGRATOR_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
+          TODIR_RUNTIME_PASSWORD: todir-app-dev
           TODIR_REPOSITORY_ROOT: ${{ github.workspace }}
 
       - name: Run .NET tests
@@ -87,13 +88,34 @@ jobs:
         # setup cannot race across test assemblies.
         run: dotnet test backend/Backend.sln --no-build -m:1
         env:
+          # Admin is used only for controlled setup; runtime variables must use
+          # erp_app so CI exercises the same non-bypass-RLS boundary as production.
+          TODIR_ACCOUNTING_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_CATALOG_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
+          TODIR_CATALOG_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_CATALOG_TEST_PASSWORD: TodirDev2026!
+          TODIR_DATABASE_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_DIRECTORY_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
+          TODIR_DIRECTORY_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_ENTITLEMENT_HMAC_KEY: ci-only-entitlement-hmac-key
+          TODIR_FINBASE_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
+          TODIR_FINBASE_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_INVENTORY_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_LEDGER_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_LEDGER_WORKER_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_MIGRATOR_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
           TODIR_P03_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
           TODIR_P04_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
+          TODIR_P04_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
           TODIR_RABBITMQ_HOST: localhost
           TODIR_RABBITMQ_PORT: 5672
+          TODIR_RABBITMQ_USER: todir
           TODIR_RABBITMQ_VHOST: /erp-dev
           TODIR_RABBITMQ_USERNAME: todir
           TODIR_RABBITMQ_PASSWORD: todir-dev-only
+          TODIR_REPOSITORY_ROOT: ${{ github.workspace }}
+          TODIR_RUNTIME_PASSWORD: todir-app-dev
+          TODIR_SUBLEDGER_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
 
       - name: Restore frontend tooling
         run: pnpm install --frozen-lockfile
