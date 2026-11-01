@@ -104,6 +104,115 @@ public sealed class AccountingFxRevaluationIntegrationTests : DatabaseIntegratio
     }
 
     [Fact]
+    public async Task PostingFailureAfterAnEarlierLineCommitsInvalidatesRunAndAllowsRecovery()
+    {
+        var fxTenant = new TenantId(Guid.Parse("3f93b180-d6a9-3e50-9c92-6be0607e96eb"));
+        var fxEntity = Guid.Parse("bbdcc188-1acc-805e-8721-f43308540a4d");
+        var runtimeConnection = Environment.GetEnvironmentVariable("TODIR_P04_RUNTIME_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_RUNTIME_CONNECTION for Accounting FX integration tests.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        var service = factory.Services.GetRequiredService<AccountingService>();
+        var actor = Guid.CreateVersion7();
+        var asOfDate = new DateOnly(2026, 1, 8);
+        var preview = await service.PreviewFxRevaluationAsync(fxTenant, fxEntity,
+            new FxRevaluationRequest(asOfDate, "fx-failure-recovery-" + Guid.CreateVersion7().ToString("N")), actor, default);
+        var firstLine = preview.Lines[0];
+        var secondOpenItemId = Guid.CreateVersion7();
+        var secondLineId = Guid.CreateVersion7();
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnection);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var adminDataSource = NpgsqlDataSource.Create(Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")!);
+        await using var adminConnection = await adminDataSource.OpenConnectionAsync();
+        await using (var tenant = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection))
+        {
+            tenant.Parameters.AddWithValue(fxTenant.Value.ToString("D"));
+            await tenant.ExecuteNonQueryAsync();
+        }
+        await using (var insertOpenItem = new NpgsqlCommand("""
+            insert into finance_subledger.party_open_item
+                (tenant_id,legal_entity_id,id,party_id,direction,polarity,source_type,source_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,settled_transaction_amount,open_transaction_amount,base_currency,original_base_amount,settled_base_carrying_amount,open_base_carrying_amount,control_account_role,control_account_reference,control_configuration_reference,historic_fx_snapshot,source_version,source_payload_hash,status,is_open,row_version,created_at)
+            select tenant_id,legal_entity_id,$3,party_id,direction,polarity,'Invoice',$4,$4,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,settled_transaction_amount,open_transaction_amount,base_currency,original_base_amount,settled_base_carrying_amount,open_base_carrying_amount,control_account_role,control_account_reference,control_configuration_reference,historic_fx_snapshot,source_version,$5,'Open',true,row_version,now()
+            from finance_subledger.party_open_item
+            where tenant_id=$1 and legal_entity_id=$2 and id=$6
+            """, adminConnection))
+        {
+            insertOpenItem.Parameters.AddWithValue(fxTenant.Value);
+            insertOpenItem.Parameters.AddWithValue(fxEntity);
+            insertOpenItem.Parameters.AddWithValue(secondOpenItemId);
+            insertOpenItem.Parameters.AddWithValue("fx-failure-source-" + Guid.CreateVersion7().ToString("N"));
+            insertOpenItem.Parameters.AddWithValue(new string('f', 64));
+            insertOpenItem.Parameters.AddWithValue(firstLine.OpenItemId);
+            await insertOpenItem.ExecuteNonQueryAsync();
+        }
+        await using (var trimLines = new NpgsqlCommand("delete from business_accounting.fx_revaluation_line where tenant_id=$1 and revaluation_run_id=$2 and id<>$3", adminConnection))
+        {
+            trimLines.Parameters.AddWithValue(fxTenant.Value);
+            trimLines.Parameters.AddWithValue(preview.Id);
+            trimLines.Parameters.AddWithValue(firstLine.Id);
+            await trimLines.ExecuteNonQueryAsync();
+        }
+        await using (var insert = new NpgsqlCommand("""
+            insert into business_accounting.fx_revaluation_line
+                (tenant_id,revaluation_run_id,id,open_item_id,source_row_version,direction,transaction_currency,open_transaction_amount,base_currency,carrying_base_amount,revalued_base_amount,difference_amount,difference_role,exchange_rate,exchange_rate_snapshot,created_at)
+            select tenant_id,revaluation_run_id,$3,$5,source_row_version,direction,transaction_currency,open_transaction_amount,base_currency,carrying_base_amount,revalued_base_amount,difference_amount,difference_role,exchange_rate,exchange_rate_snapshot,now()
+            from business_accounting.fx_revaluation_line
+            where tenant_id=$1 and revaluation_run_id=$2 and id=$4
+            """, connection))
+        {
+            insert.Parameters.AddWithValue(fxTenant.Value);
+            insert.Parameters.AddWithValue(preview.Id);
+            insert.Parameters.AddWithValue(secondLineId);
+            insert.Parameters.AddWithValue(firstLine.Id);
+            insert.Parameters.AddWithValue(secondOpenItemId);
+            await insert.ExecuteNonQueryAsync();
+        }
+
+        var triggerName = "test_fx_revaluation_failure_" + Guid.CreateVersion7().ToString("N");
+        var functionName = "test_fx_revaluation_failure_" + Guid.CreateVersion7().ToString("N");
+        try
+        {
+            await using (var function = new NpgsqlCommand($"""
+                create function public.{functionName}() returns trigger language plpgsql as $fn$
+                begin
+                    if new.source_reference like 'fx-revaluation:{preview.Id:N}:%'
+                       and exists (select 1 from finance_ledger.accounting_fact where tenant_id = new.tenant_id and legal_entity_id = new.legal_entity_id and source_reference like 'fx-revaluation:{preview.Id:N}:%') then
+                        raise exception 'deterministic FX revaluation failure after first line';
+                    end if;
+                    return new;
+                end
+                $fn$;
+                create trigger {triggerName} before insert on finance_ledger.accounting_fact for each row execute function public.{functionName}();
+                """, adminConnection))
+                await function.ExecuteNonQueryAsync();
+
+            var failure = await Assert.ThrowsAnyAsync<Exception>(() => service.PostFxRevaluationAsync(fxTenant, fxEntity, preview.Id, actor, Guid.CreateVersion7(), default));
+            Assert.NotNull(failure);
+
+            var failed = await service.GetFxRevaluationAsync(fxTenant, fxEntity, preview.Id, default);
+            Assert.Equal("Invalidated", failed.Status);
+            Assert.Single(failed.Lines, line => line.JournalEntryId is not null);
+            Assert.Single(failed.Lines, line => line.JournalEntryId is null);
+
+            await using (var drop = new NpgsqlCommand($"drop trigger if exists {triggerName} on finance_ledger.accounting_fact; drop function if exists public.{functionName}()", adminConnection))
+                await drop.ExecuteNonQueryAsync();
+
+            var recovered = await service.ReverseFxRevaluationAsync(fxTenant, fxEntity, preview.Id,
+                new FxRevaluationReversalRequest(asOfDate.AddDays(1), "recover after posting failure"), actor, Guid.CreateVersion7(), default);
+            Assert.Equal("Reversed", recovered.Status);
+            Assert.All(recovered.Lines.Where(line => line.JournalEntryId is not null), line => Assert.NotNull(line.ReversalEntryId));
+            Assert.All(recovered.Lines.Where(line => line.JournalEntryId is null), line => Assert.Null(line.ReversalEntryId));
+        }
+        finally
+        {
+            await using var drop = new NpgsqlCommand($"drop trigger if exists {triggerName} on finance_ledger.accounting_fact; drop function if exists public.{functionName}()", adminConnection);
+            await drop.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
     public async Task PostedOpeningBatchIsReconciledApprovedAndLockedForGoLive()
     {
         var runtimeConnection = Environment.GetEnvironmentVariable("TODIR_P04_RUNTIME_CONNECTION")

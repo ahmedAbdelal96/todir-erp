@@ -144,28 +144,35 @@ public sealed class AccountingService(
     {
         var run = await repository.StartFxRevaluationPostAsync(tenant, entity, runId, ct);
         if (run.Status == "Posted") return run;
-        var current = (await subledger.ListForeignCurrencyOpenItemsForRevaluationAsync(tenant, new(entity), run.AsOfDate, ct)).ToDictionary(item => item.Id);
-        foreach (var line in run.Lines)
+        try
         {
-            if (!current.TryGetValue(line.OpenItemId, out var source) || source.RowVersion != await SourceRowVersionAsync(tenant, entity, runId, line.Id, ct))
+            var current = (await subledger.ListForeignCurrencyOpenItemsForRevaluationAsync(tenant, new(entity), run.AsOfDate, ct)).ToDictionary(item => item.Id);
+            foreach (var line in run.Lines)
             {
-                await repository.InvalidateFxRevaluationAsync(tenant, entity, runId, ct);
-                throw new AccountingException("accounting.fx_revaluation_source_changed");
+                if (!current.TryGetValue(line.OpenItemId, out var source) || source.RowVersion != await SourceRowVersionAsync(tenant, entity, runId, line.Id, ct))
+                    throw new AccountingException("accounting.fx_revaluation_source_changed");
+                if (line.JournalEntryId is not null) continue;
+                Guid? configurationId = source.ControlConfigurationReference.StartsWith("configuration:", StringComparison.Ordinal)
+                    && Guid.TryParse(source.ControlConfigurationReference["configuration:".Length..], out var parsedConfiguration) ? parsedConfiguration : null;
+                var factId = DeterministicGuid(run.Id, line.Id);
+                var payload = new UnrealizedFxRevaluationPayload(run.Id, line.OpenItemId, line.Direction, line.DifferenceAmount, line.BaseCurrency,
+                    source.ControlAccountRole, line.DifferenceRole, line.TransactionCurrency, line.OpenTransactionAmount, line.CarryingBaseAmount,
+                    line.RevaluedBaseAmount, line.ExchangeRate, line.ExchangeRateSnapshot, configurationId);
+                IAccountingFactPayload semantic = payload;
+                var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(entity), AccountingFactTypes.UnrealizedFxRevaluation, 1, "accounting",
+                    $"fx-revaluation:{run.Id:N}:{line.Id:N}", $"accounting-fx-revaluation:{run.Id:N}:{line.Id:N}", run.AsOfDate, run.AsOfDate, semantic, correlation, actor);
+                var posted = await ledgerPosting.PostUnrealizedFxRevaluationAsync(fact, payload, ct);
+                await repository.SaveFxRevaluationPostingAsync(tenant, entity, run.Id, line.Id, factId, posted.JournalEntryId, ct);
             }
-            if (line.JournalEntryId is not null) continue;
-            Guid? configurationId = source.ControlConfigurationReference.StartsWith("configuration:", StringComparison.Ordinal)
-                && Guid.TryParse(source.ControlConfigurationReference["configuration:".Length..], out var parsedConfiguration) ? parsedConfiguration : null;
-            var factId = DeterministicGuid(run.Id, line.Id);
-            var payload = new UnrealizedFxRevaluationPayload(run.Id, line.OpenItemId, line.Direction, line.DifferenceAmount, line.BaseCurrency,
-                source.ControlAccountRole, line.DifferenceRole, line.TransactionCurrency, line.OpenTransactionAmount, line.CarryingBaseAmount,
-                line.RevaluedBaseAmount, line.ExchangeRate, line.ExchangeRateSnapshot, configurationId);
-            IAccountingFactPayload semantic = payload;
-            var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(entity), AccountingFactTypes.UnrealizedFxRevaluation, 1, "accounting",
-                $"fx-revaluation:{run.Id:N}:{line.Id:N}", $"accounting-fx-revaluation:{run.Id:N}:{line.Id:N}", run.AsOfDate, run.AsOfDate, semantic, correlation, actor);
-            var posted = await ledgerPosting.PostUnrealizedFxRevaluationAsync(fact, payload, ct);
-            await repository.SaveFxRevaluationPostingAsync(tenant, entity, run.Id, line.Id, factId, posted.JournalEntryId, ct);
+            await repository.CompleteFxRevaluationAsync(tenant, entity, run.Id, ct);
         }
-        await repository.CompleteFxRevaluationAsync(tenant, entity, run.Id, ct);
+        catch
+        {
+            // Each Ledger fact commits independently. If a later line fails, make
+            // the run explicitly recoverable so committed lines can be reversed.
+            await repository.InvalidateFxRevaluationAsync(tenant, entity, run.Id, CancellationToken.None);
+            throw;
+        }
         var complete = await repository.GetFxRevaluationRunAsync(tenant, entity, run.Id, ct) ?? throw new AccountingException("accounting.fx_revaluation_not_found");
         await WriteAuditAsync(tenant, entity, actor, "fx_revaluation.posted", "FxRevaluationRun", run.Id, null, JsonSerializer.Serialize(complete), null, ct);
         return complete;
