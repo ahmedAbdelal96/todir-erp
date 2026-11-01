@@ -79,6 +79,25 @@ public sealed class LedgerPass3AcceptanceTests
     }
 
     [Fact]
+    public async Task ManagedReadinessUsesCanonicalPayableRoleAndDoesNotBlockInactivePayroll()
+    {
+        await Gate.WaitAsync();
+        try
+        {
+            await using var dataSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection());
+            var setup = CreateSetup(dataSource);
+
+            var readiness = await setup.GetReadinessAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, default);
+
+            Assert.Equal(LedgerReadinessState.Ready, readiness.State);
+            Assert.DoesNotContain(readiness.Capabilities, item => item.Capability == "CanPostPayroll");
+            var payments = Assert.Single(readiness.Capabilities, item => item.Capability == "CanPostPayments");
+            Assert.Equal(LedgerReadinessState.Ready, payments.State);
+        }
+        finally { Gate.Release(); }
+    }
+
+    [Fact]
     public async Task AccountingWorkspaceSearchCloseReadinessAndPreviewAreBounded()
     {
         await Gate.WaitAsync();

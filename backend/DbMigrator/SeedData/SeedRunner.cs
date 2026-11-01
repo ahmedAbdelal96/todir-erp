@@ -43,6 +43,7 @@ public static class SeedRunner
             var tax = await RunStageAsync(connection, tenant, context => TaxSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var ledger = await RunStageAsync(connection, tenant, context => LedgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var subledger = await RunStageAsync(connection, tenant, context => SubledgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
+            _ = await RunStageAsync(connection, tenant, context => LedgerOpeningSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var invoicing = await RunStageAsync(connection, tenant, context => InvoicingSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var payments = await RunStageAsync(connection, tenant, context => PaymentsSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var inventory = await RunStageAsync(connection, tenant, context => InventorySeed.SeedAsync(context, cancellationToken), cancellationToken);

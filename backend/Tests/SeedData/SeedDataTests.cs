@@ -163,6 +163,44 @@ public sealed class DevelopmentSeedTests
         Assert.Equal(4L, reader.GetInt64(1));
         Assert.Equal(12L, reader.GetInt64(2));
         Assert.Equal(2L, reader.GetInt64(3));
+        await reader.DisposeAsync();
+
+        const string reconciliationSql = """
+            with source as (
+              select direction,
+                sum(case when (direction='Receivable' and polarity='Debit') or (direction='Payable' and polarity='Credit') then original_base_amount else -original_base_amount end) as balance
+              from finance_subledger.party_open_item
+              where tenant_id=$1 and legal_entity_id=$2 and posting_date <= date '2026-10-01'
+              group by direction
+            ), ledger as (
+              select 'Receivable' as direction, coalesce(sum(l.base_debit-l.base_credit),0) as balance
+              from finance_ledger.journal_entry e
+              join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id
+              join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id
+              where e.tenant_id=$1 and e.legal_entity_id=$2 and e.posting_date <= date '2026-10-01' and a.code='110100'
+              union all
+              select 'Payable', coalesce(-sum(l.base_debit-l.base_credit),0)
+              from finance_ledger.journal_entry e
+              join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id
+              join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id
+              where e.tenant_id=$1 and e.legal_entity_id=$2 and e.posting_date <= date '2026-10-01' and a.code='210200'
+            )
+            select s.direction,s.balance,l.balance
+            from source s join ledger l on l.direction=s.direction
+            order by s.direction
+            """;
+        await using var reconciliation = new NpgsqlCommand(reconciliationSql, connection);
+        reconciliation.Parameters.AddWithValue(SeedIds.AtlasTenant);
+        reconciliation.Parameters.AddWithValue(SeedIds.TenantEntity(SeedIds.AtlasTenant));
+        await using var reconciliationReader = await reconciliation.ExecuteReaderAsync();
+        var controlBalances = new Dictionary<string, (decimal Source, decimal Ledger)>(StringComparer.Ordinal);
+        while (await reconciliationReader.ReadAsync())
+            controlBalances[reconciliationReader.GetString(0)] = (reconciliationReader.GetDecimal(1), reconciliationReader.GetDecimal(2));
+        Assert.Equal(2, controlBalances.Count);
+        Assert.Equal(controlBalances["Receivable"].Source, controlBalances["Receivable"].Ledger);
+        Assert.Equal(controlBalances["Payable"].Source, controlBalances["Payable"].Ledger);
+        Assert.True(controlBalances["Receivable"].Source > 0m);
+        Assert.True(controlBalances["Payable"].Source > 0m);
     }
 
     private static async Task AssertPricingEntityIsolationAsync(NpgsqlDataSource dataSource)

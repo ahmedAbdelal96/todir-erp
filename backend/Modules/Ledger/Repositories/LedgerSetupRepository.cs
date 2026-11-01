@@ -17,9 +17,8 @@ public sealed class LedgerSetupRepository(
     TimeProvider clock)
 {
     private static readonly string[][] InvoiceRequiredRoles = [["AccountsReceivableControl", "Receivable"], ["AccountsPayableControl", "Payable"], ["SalesRevenue"], ["PurchaseExpense"], ["OutputTaxPayable", "OutputTax"], ["InputTaxRecoverable", "InputTax"]];
-    private static readonly string[][] PaymentRequiredRoles = [["AccountsReceivableControl", "Receivable"], ["AccountsPayableControl"], ["Cash"], ["FXGain"], ["FXLoss"]];
+    private static readonly string[][] PaymentRequiredRoles = [["AccountsReceivableControl", "Receivable"], ["AccountsPayableControl", "Payable"], ["Cash"], ["FXGain"], ["FXLoss"]];
     private static readonly string[][] InventoryRequiredRoles = [["InventoryAsset"], ["COGS"], ["InventoryOffset"], ["InventoryAdjustmentGain"], ["InventoryAdjustmentLoss"]];
-    private static readonly string[][] PayrollRequiredRoles = [["PayrollExpense"], ["PayrollPayable"]];
 
     private static readonly (string Code, string Ar, string En, string Type, string Subtype, bool Postable, string? ParentCode)[] Accounts =
     [
@@ -212,7 +211,6 @@ public sealed class LedgerSetupRepository(
             Capability("CanPostInvoices", baseCurrency is null || journal == 0 || period == 0 || !HasAllRoles(requiredRoles, InvoiceRequiredRoles), baseCurrency is null ? new("ledger.base_currency_missing", "Base currency is not configured.") : journal == 0 ? new("ledger.journal_missing", "The General journal is not configured.") : period == 0 ? new("ledger.period_missing", "No open accounting period exists.") : new("ledger.account_mapping_missing", "Required invoice account mappings are incomplete.")),
             Capability("CanPostPayments", baseCurrency is null || journal == 0 || period == 0 || !HasAllRoles(requiredRoles, PaymentRequiredRoles), baseCurrency is null ? new("ledger.base_currency_missing", "Base currency is not configured.") : new("ledger.payment_configuration_incomplete", "Payment control and FX account configuration is incomplete.")),
             Capability("CanPostInventory", baseCurrency is null || journal == 0 || period == 0 || !HasAllRoles(requiredRoles, InventoryRequiredRoles), baseCurrency is null ? new("ledger.base_currency_missing", "Base currency is not configured.") : new("ledger.inventory_configuration_incomplete", "Inventory account configuration is incomplete.")),
-            Capability("CanPostPayroll", baseCurrency is null || journal == 0 || period == 0 || !HasAllRoles(requiredRoles, PayrollRequiredRoles), baseCurrency is null ? new("ledger.base_currency_missing", "Base currency is not configured.") : new("ledger.payroll_configuration_incomplete", "Payroll account configuration is incomplete.")),
             Capability("CanPostGeneralJournal", journal == 0 || period == 0, journal == 0 ? new("ledger.journal_missing", "The General journal is not configured.") : new("ledger.period_missing", "No open accounting period exists.")),
             Capability("CanClosePeriod", baseCurrency is null || period == 0 || configurationId == Guid.Empty, baseCurrency is null ? new("ledger.base_currency_missing", "Base currency is not configured.") : new("ledger.period_missing", "No configured accounting period is available."))
         };
