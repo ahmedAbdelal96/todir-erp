@@ -21,11 +21,11 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: todir_p03
+          POSTGRES_DB: todir_invoice_p03
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d todir_p03"
+          --health-cmd "pg_isready -U postgres -d todir_invoice_p03"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -76,37 +76,69 @@ jobs:
         run: dotnet format backend/Backend.sln --verify-no-changes --no-restore
 
       - name: Apply controlled database bootstrap
-        run: dotnet run --project backend/DbMigrator/DbMigrator.csproj --no-build
+        run: dotnet run --project backend/DbMigrator/DbMigrator.csproj --no-build -- --seed development
         env:
-          TODIR_MIGRATOR_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
+          ASPNETCORE_ENVIRONMENT: Development
+          TODIR_MIGRATOR_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=postgres;Password=postgres
           TODIR_RUNTIME_PASSWORD: todir-app-dev
           TODIR_REPOSITORY_ROOT: ${{ github.workspace }}
+          SEED_DEFAULT_PASSWORD: TodirDev2026!
 
       - name: Run .NET tests
-        # Database and broker integration projects share the isolated CI
-        # services; run solution projects serially so per-test role/bootstrap
-        # setup cannot race across test assemblies.
-        run: dotnet test backend/Backend.sln --no-build -m:1
+        # Database and broker integration projects share isolated CI services.
+        # Run test projects serially and restore the canonical runtime-role
+        # password between assemblies because security tests intentionally
+        # rotate erp_app credentials to prove the admin/runtime boundary.
+        run: |
+          reset_runtime_role() {
+            PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "alter role erp_app password 'todir-app-dev';"
+          }
+          test_projects=(
+            backend/Tests/Architecture/ArchitectureTests.csproj
+            backend/Tests/Core/CoreTests.csproj
+            backend/Tests/Integration/IntegrationTests.csproj
+            backend/Tests/Modules/Accounting/AccountingTests.csproj
+            backend/Tests/Modules/Catalog/CatalogTests.csproj
+            backend/Tests/Modules/Directory/DirectoryTests.csproj
+            backend/Tests/Modules/FinanceBase/FinanceBaseTests.csproj
+            backend/Tests/Modules/Inventory/InventoryTests.csproj
+            backend/Tests/Modules/Invoicing/InvoicingTests.csproj
+            backend/Tests/Modules/Ledger/LedgerTests.csproj
+            backend/Tests/Modules/Payments/PaymentsTests.csproj
+            backend/Tests/Modules/Pricing/PricingTests.csproj
+            backend/Tests/Modules/Purchasing/PurchasingTests.csproj
+            backend/Tests/Modules/Sales/SalesTests.csproj
+            backend/Tests/Modules/Subledger/SubledgerTests.csproj
+            backend/Tests/Modules/Tax/TaxTests.csproj
+            backend/Tests/Observability/ObservabilityTests.csproj
+            backend/Tests/Primitives/PrimitivesTests.csproj
+            backend/Tests/Security/SecurityTests.csproj
+            backend/Tests/SeedData/SeedDataTests.csproj
+          )
+          for project in "${test_projects[@]}"; do
+            reset_runtime_role
+            dotnet test "$project" --no-build -m:1
+          done
         env:
           # Admin is used only for controlled setup; runtime variables must use
           # erp_app so CI exercises the same non-bypass-RLS boundary as production.
-          TODIR_ACCOUNTING_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
-          TODIR_CATALOG_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
-          TODIR_CATALOG_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_ACCOUNTING_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
+          TODIR_CATALOG_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=postgres;Password=postgres;Maximum Pool Size=32
+          TODIR_CATALOG_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
           TODIR_CATALOG_TEST_PASSWORD: TodirDev2026!
-          TODIR_DATABASE_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
-          TODIR_DIRECTORY_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
-          TODIR_DIRECTORY_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_DATABASE_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
+          TODIR_DIRECTORY_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=postgres;Password=postgres;Maximum Pool Size=32
+          TODIR_DIRECTORY_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
           TODIR_ENTITLEMENT_HMAC_KEY: ci-only-entitlement-hmac-key
-          TODIR_FINBASE_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
-          TODIR_FINBASE_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
-          TODIR_INVENTORY_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
-          TODIR_LEDGER_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
-          TODIR_LEDGER_WORKER_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
-          TODIR_MIGRATOR_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
-          TODIR_P03_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
-          TODIR_P04_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=postgres;Password=postgres
-          TODIR_P04_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_FINBASE_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=postgres;Password=postgres;Maximum Pool Size=32
+          TODIR_FINBASE_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
+          TODIR_INVENTORY_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
+          TODIR_LEDGER_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
+          TODIR_LEDGER_WORKER_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
+          TODIR_MIGRATOR_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=postgres;Password=postgres
+          TODIR_P03_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=postgres;Password=postgres;Maximum Pool Size=32
+          TODIR_P04_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=postgres;Password=postgres;Maximum Pool Size=32
+          TODIR_P04_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
           TODIR_RABBITMQ_HOST: localhost
           TODIR_RABBITMQ_PORT: 5672
           TODIR_RABBITMQ_USER: todir
@@ -115,7 +147,8 @@ jobs:
           TODIR_RABBITMQ_PASSWORD: todir-dev-only
           TODIR_REPOSITORY_ROOT: ${{ github.workspace }}
           TODIR_RUNTIME_PASSWORD: todir-app-dev
-          TODIR_SUBLEDGER_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_p03;Username=erp_app;Password=todir-app-dev
+          TODIR_SUBLEDGER_TEST_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
+          SEED_DEFAULT_PASSWORD: TodirDev2026!
 
       - name: Restore frontend tooling
         run: pnpm install --frozen-lockfile

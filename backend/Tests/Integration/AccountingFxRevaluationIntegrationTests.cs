@@ -32,14 +32,16 @@ public sealed class AccountingFxRevaluationIntegrationTests : DatabaseIntegratio
         var preview = await service.PreviewFxRevaluationAsync(AtlasTenant, AtlasEntity,
             new FxRevaluationRequest(asOfDate, "fx-integration-" + Guid.CreateVersion7().ToString("N")), actor, default);
 
-        Assert.Single(preview.Lines);
+        Assert.NotEmpty(preview.Lines);
         Assert.Equal("Previewed", preview.Status);
         var posted = await service.PostFxRevaluationAsync(AtlasTenant, AtlasEntity, preview.Id, actor, Guid.CreateVersion7(), default);
         Assert.Equal("Posted", posted.Status);
         Assert.All(posted.Lines, line => Assert.NotNull(line.JournalEntryId));
 
         var retry = await service.PostFxRevaluationAsync(AtlasTenant, AtlasEntity, preview.Id, actor, Guid.CreateVersion7(), default);
-        Assert.Equal(posted.Lines.Single().JournalEntryId, retry.Lines.Single().JournalEntryId);
+        Assert.Equal(posted.Lines.Count, retry.Lines.Count);
+        foreach (var line in posted.Lines)
+            Assert.Equal(line.JournalEntryId, retry.Lines.Single(retryLine => retryLine.Id == line.Id).JournalEntryId);
 
         var reversed = await service.ReverseFxRevaluationAsync(AtlasTenant, AtlasEntity, preview.Id,
             new FxRevaluationReversalRequest(asOfDate.AddDays(1), "next-period reversal"), actor, Guid.CreateVersion7(), default);
@@ -64,7 +66,7 @@ public sealed class AccountingFxRevaluationIntegrationTests : DatabaseIntegratio
 
         var posted = await service.PostFxRevaluationAsync(AtlasTenant, AtlasEntity, preview.Id, actor, Guid.CreateVersion7(), default);
         Assert.Equal("Posted", posted.Status);
-        var postedLine = Assert.Single(posted.Lines);
+        Assert.NotEmpty(posted.Lines);
 
         await using var dataSource = NpgsqlDataSource.Create(runtimeConnection);
         await using var connection = await dataSource.OpenConnectionAsync();
@@ -97,8 +99,12 @@ public sealed class AccountingFxRevaluationIntegrationTests : DatabaseIntegratio
             new FxRevaluationReversalRequest(asOfDate.AddDays(1), "recover partial revaluation"), actor, Guid.CreateVersion7(), default);
 
         Assert.Equal("Reversed", recovered.Status);
-        Assert.Equal(postedLine.JournalEntryId, recovered.Lines.Single(line => line.Id == postedLine.Id).JournalEntryId);
-        Assert.NotNull(recovered.Lines.Single(line => line.Id == postedLine.Id).ReversalEntryId);
+        foreach (var postedLine in posted.Lines)
+        {
+            var recoveredLine = recovered.Lines.Single(line => line.Id == postedLine.Id);
+            Assert.Equal(postedLine.JournalEntryId, recoveredLine.JournalEntryId);
+            Assert.NotNull(recoveredLine.ReversalEntryId);
+        }
         Assert.Null(recovered.Lines.Single(line => line.Id == pendingLineId).JournalEntryId);
         Assert.Null(recovered.Lines.Single(line => line.Id == pendingLineId).ReversalEntryId);
     }
