@@ -353,11 +353,11 @@ public sealed class AccountingService(
         var ar = readOnly.Single(item => item.Type == "AR");
         var ap = readOnly.Single(item => item.Type == "AP");
         var inventoryResult = readOnly.Single(item => item.Type == "Inventory");
-        var configuration = await ledgerPosting.GetActiveConfigurationVersionIdAsync(tenant, new(entity), ct);
-        var cash = await ledgerControlBalances.GetControlBalanceAsync(tenant, new(entity), "Cash", configuration, asOf, ct);
+        var trial = await ledgerWorkspace.GetTrialBalanceAsync(tenant, new(entity), null, asOf, ct);
+        var cashBalance = trial.Accounts.Where(account => account.AccountSubtype is "Cash" or "Bank" || account.AccountCode.StartsWith("1102", StringComparison.Ordinal)).Sum(account => account.SignedBalance);
         var pnl = await GetStatementAsync(tenant, entity, "ProfitAndLoss", new DateOnly(asOf.Year, 1, 1), asOf, ct);
         var health = new[] { ar.Status, ap.Status, inventoryResult.Status }.Any(status => status is "Difference" or "NotReady" or "Error") ? "Attention" : "Healthy";
-        return new(entity, asOf, cash.BaseCurrencyCode, cash.SignedBaseBalance, ar.SourceBalance ?? 0m, ap.SourceBalance ?? 0m, inventoryResult.SourceBalance, pnl.Total, health);
+        return new(entity, asOf, trial.BaseCurrencyCode, cashBalance, ar.SourceBalance ?? 0m, ap.SourceBalance ?? 0m, inventoryResult.SourceBalance, pnl.Total, health);
     }
 
     private async Task<IReadOnlyList<ReconciliationView>> ReconcileAllReadOnlyAsync(TenantId tenant, Guid membership, Guid entity, DateOnly asOf, CancellationToken ct) => [await EvaluateReconciliationReadOnlyAsync(tenant, membership, entity, "AR", asOf, ct), await EvaluateReconciliationReadOnlyAsync(tenant, membership, entity, "AP", asOf, ct), await EvaluateReconciliationReadOnlyAsync(tenant, membership, entity, "Inventory", asOf, ct)];

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { AccountingHeader } from "../features/accounting-header.tsx";
 import { AccountingReadiness } from "../features/accounting-readiness.tsx";
@@ -15,7 +15,13 @@ import { TrialBalanceView } from "../features/reports/trial-balance-view.tsx";
 import { GeneralLedgerView } from "../features/reports/general-ledger-view.tsx";
 import { ReconciliationView } from "../features/reports/reconciliation-view.tsx";
 import { DimensionsView } from "../features/dimensions/dimensions-view.tsx";
+import { AccountingHealthViewComponent } from "../features/health/accounting-health-view.tsx";
+import { OwnerFinancialView } from "../features/owner/owner-financial-view.tsx";
+import { FinancialStatementsView } from "../features/statements/financial-statements-view.tsx";
+import { ControlReconciliationsView } from "../features/reconciliations/control-reconciliations-view.tsx";
+import { FxRevaluationView } from "../features/fx/fx-revaluation-view.tsx";
 import { AccountingTabNav } from "../components/accounting-tab-nav.tsx";
+import { useAccountingPermissions } from "../hooks/use-accounting-queries.ts";
 import {
   useLedgerScope,
   useLedgerPermissions,
@@ -34,9 +40,21 @@ export function AccountingPage(): React.JSX.Element {
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const { legalEntityId, baseCurrency, today } = useLedgerScope({ legalEntityId: outletCtx?.legalEntityId });
   const permissions = useLedgerPermissions();
+  const accountingPermissions = useAccountingPermissions();
 
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") || "overview";
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
   const [selectedGlAccountCode, setSelectedGlAccountCode] = useState<string | undefined>(undefined);
+
+  const handleSelectTab = (tabId: string) => {
+    setActiveTab(tabId);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", tabId);
+      return next;
+    }, { replace: true });
+  };
 
   // Queries
   const { data: readiness, isLoading: isReadinessLoading } = useLedgerReadiness(legalEntityId);
@@ -55,6 +73,11 @@ export function AccountingPage(): React.JSX.Element {
   const tabs = currentMode === "Managed"
     ? [
         { id: "overview", label: t("tabs.overview") },
+        { id: "ownerSummary", label: t("tabs.ownerSummary") },
+        { id: "health", label: t("tabs.health") },
+        { id: "financialStatements", label: t("tabs.financialStatements") },
+        { id: "controlReconciliation", label: t("tabs.controlReconciliation") },
+        { id: "fxRevaluation", label: t("tabs.fxRevaluation") },
         { id: "entries", label: t("tabs.entries") },
         { id: "generalJournal", label: t("tabs.generalJournal") },
         { id: "trialBalance", label: t("tabs.trialBalance") },
@@ -62,6 +85,11 @@ export function AccountingPage(): React.JSX.Element {
       ]
     : [
         { id: "overview", label: t("tabs.overview") },
+        { id: "ownerSummary", label: t("tabs.ownerSummary") },
+        { id: "health", label: t("tabs.health") },
+        { id: "financialStatements", label: t("tabs.financialStatements") },
+        { id: "controlReconciliation", label: t("tabs.controlReconciliation") },
+        { id: "fxRevaluation", label: t("tabs.fxRevaluation") },
         { id: "chartOfAccounts", label: t("tabs.chartOfAccounts") },
         { id: "journals", label: t("tabs.journals") },
         { id: "periods", label: t("tabs.periods") },
@@ -77,7 +105,7 @@ export function AccountingPage(): React.JSX.Element {
 
   const handleOpenGeneralLedger = (accountCode: string) => {
     setSelectedGlAccountCode(accountCode);
-    setActiveTab("generalLedger");
+    handleSelectTab("generalLedger");
   };
 
   return (
@@ -94,12 +122,12 @@ export function AccountingPage(): React.JSX.Element {
       <AccountingTabNav
         tabs={tabs}
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={handleSelectTab}
       />
 
       {/* Tab Contents */}
       {activeTab === "overview" && (
-        <div>
+        <div className="space-y-6">
           <AccountingReadiness
             legalEntityId={legalEntityId}
             readiness={readiness}
@@ -115,6 +143,26 @@ export function AccountingPage(): React.JSX.Element {
             today={today}
           />
         </div>
+      )}
+
+      {activeTab === "ownerSummary" && (
+        <OwnerFinancialView onNavigateTab={handleSelectTab} />
+      )}
+
+      {activeTab === "health" && (
+        <AccountingHealthViewComponent onNavigateTab={handleSelectTab} />
+      )}
+
+      {activeTab === "financialStatements" && (
+        <FinancialStatementsView />
+      )}
+
+      {activeTab === "controlReconciliation" && (
+        <ControlReconciliationsView />
+      )}
+
+      {activeTab === "fxRevaluation" && (
+        <FxRevaluationView />
       )}
 
       {activeTab === "chartOfAccounts" && (
@@ -176,7 +224,7 @@ export function AccountingPage(): React.JSX.Element {
           today={today}
           canCreate={permissions.canCreateGeneralJournal}
           canPost={permissions.canPostGeneralJournal}
-          onEntryPosted={() => setActiveTab("entries")}
+          onEntryPosted={() => handleSelectTab("entries")}
         />
       )}
 

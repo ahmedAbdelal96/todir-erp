@@ -526,8 +526,202 @@ export interface DimensionPolicyRequest {
 }
 
 // ============================================================================
-// Legacy compatibility contracts (kept for backward compatibility)
+// Module Pack 16: Accounting Health, Reconciliations & Statements Contracts
 // ============================================================================
+
+export type HealthSeverity = "Info" | "Attention" | "Blocking";
+export type HealthOverallStatus = "Healthy" | "Attention" | "Blocking";
+
+export interface AccountingHealthItem {
+  readonly code: string;
+  readonly severity: HealthSeverity;
+  readonly status: string;
+  readonly message: string;
+  readonly source?: string | null;
+}
+
+export interface AccountingHealthView {
+  readonly legalEntityId: string;
+  readonly asOfDate: string;
+  readonly status: HealthOverallStatus;
+  readonly items: readonly AccountingHealthItem[];
+}
+
+export interface OwnerFinancialSummary {
+  readonly legalEntityId: string;
+  readonly asOfDate: string;
+  readonly currencyCode: string;
+  readonly cashBookValue: number;
+  readonly receivables: number;
+  readonly payables: number;
+  readonly inventoryValue?: number | null;
+  readonly profit: number;
+  readonly health: HealthOverallStatus;
+}
+
+export type ReconciliationType = "AR" | "AP" | "Inventory";
+export type ReconciliationStatus = "Reconciled" | "Difference" | "NotReady" | "NotApplicable";
+
+export interface SubledgerReconciliationView {
+  readonly id: string;
+  readonly type: string;
+  readonly asOfDate: string;
+  readonly sourceBalance?: number | null;
+  readonly ledgerBalance?: number | null;
+  readonly difference?: number | null;
+  readonly currencyCode?: string | null;
+  readonly status: ReconciliationStatus;
+  readonly diagnostics: readonly string[];
+  readonly createdAt: string;
+}
+
+export type ReconciliationRunView = SubledgerReconciliationView;
+
+export interface ReconciliationIssueView {
+  readonly id: string;
+  readonly reconciliationRunId: string;
+  readonly code: string;
+  readonly severity: string;
+  readonly status: string;
+  readonly createdAt: string;
+  readonly resolvedAt?: string | null;
+}
+
+export interface CloseCheckView {
+  readonly code: string;
+  readonly severity: string;
+  readonly status: string;
+  readonly message: string;
+}
+
+export interface ClosePreviewRequest {
+  readonly periodId: string;
+  readonly idempotencyKey: string;
+  readonly reason?: string | null | undefined;
+}
+
+export interface CloseRunView {
+  readonly id: string;
+  readonly periodId: string;
+  readonly status: string;
+  readonly checks: readonly CloseCheckView[];
+  readonly createdAt: string;
+}
+
+export interface ReopenPeriodRequest {
+  readonly reason: string;
+  readonly idempotencyKey: string;
+}
+
+export interface ApproveGoLiveRequest {
+  readonly openingBatchId: string;
+  readonly subledgerOpeningBatchId?: string | null;
+  readonly financialGoLiveDate?: string | null;
+  readonly reason: string;
+  readonly idempotencyKey: string;
+}
+
+export interface GoLiveApprovalView {
+  readonly legalEntityId: string;
+  readonly openingBatchId: string;
+  readonly subledgerOpeningBatchId?: string | null;
+  readonly financialGoLiveDate: string;
+  readonly status: string;
+  readonly checks: readonly CloseCheckView[];
+  readonly approvedAt: string;
+}
+
+export interface FxRevaluationRequest {
+  readonly asOfDate: string;
+  readonly idempotencyKey: string;
+  readonly autoReversalDate?: string | null;
+}
+
+export interface FxRevaluationLineView {
+  readonly id: string;
+  readonly openItemId: string;
+  readonly direction: string;
+  readonly transactionCurrency: string;
+  readonly openTransactionAmount: number;
+  readonly baseCurrency: string;
+  readonly carryingBaseAmount: number;
+  readonly revaluedBaseAmount: number;
+  readonly differenceAmount: number;
+  readonly differenceRole: string;
+  readonly exchangeRate: number;
+  readonly journalEntryId?: string | null;
+  readonly reversalEntryId?: string | null;
+  readonly exchangeRateSnapshot: string;
+}
+
+export interface FxRevaluationRunView {
+  readonly id: string;
+  readonly asOfDate: string;
+  readonly status: string;
+  readonly autoReversalDate?: string | null;
+  readonly lines: readonly FxRevaluationLineView[];
+  readonly createdAt: string;
+}
+
+export interface FxRevaluationReversalRequest {
+  readonly reversalDate: string;
+  readonly reason: string;
+}
+
+export interface StatementLineView {
+  readonly code: string;
+  readonly name: string;
+  readonly accountType: string;
+  readonly amount: number;
+  readonly accountIds: readonly string[];
+  readonly lineKind: string;
+  readonly parentLineCode?: string | null;
+  readonly nameAr?: string | null;
+  readonly nameEn?: string | null;
+}
+
+export type StatementKind = "ProfitAndLoss" | "BalanceSheet";
+
+export interface FinancialStatementView {
+  readonly kind: StatementKind;
+  readonly fromDate: string;
+  readonly toDate: string;
+  readonly currencyCode: string;
+  readonly total: number;
+  readonly lines: readonly StatementLineView[];
+  readonly isBalanced: boolean;
+  readonly diagnostic?: string | null;
+}
+
+export interface FinancialStatementDefinitionLineRequest {
+  readonly code: string;
+  readonly nameAr: string;
+  readonly nameEn: string;
+  readonly sequence: number;
+  readonly accountType?: string | null;
+  readonly accountIds?: readonly string[] | null;
+  readonly lineKind?: string;
+  readonly parentLineCode?: string | null;
+  readonly arithmeticOperator?: string | null;
+  readonly formulaLineCodes?: readonly string[] | null;
+}
+
+export interface FinancialStatementDefinitionRequest {
+  readonly code: string;
+  readonly kind: string;
+  readonly lines: readonly FinancialStatementDefinitionLineRequest[];
+  readonly effectiveFrom?: string | null;
+}
+
+export interface FinancialStatementDefinitionView {
+  readonly id: string;
+  readonly code: string;
+  readonly kind: string;
+  readonly status: string;
+  readonly version: number;
+  readonly lines: readonly FinancialStatementDefinitionLineRequest[];
+}
+
 
 export type JournalStatus = "Draft" | "Posted" | "Reversed";
 

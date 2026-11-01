@@ -5,6 +5,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { AccountPicker } from "../account-picker.tsx";
+import { ApproveGoLiveModal } from "./approve-go-live-modal.tsx";
 import {
   useCreateOpeningBatch,
   usePreviewOpeningBatch,
@@ -72,6 +73,7 @@ export function OpeningBalancesView({
   const [batchId, setBatchId] = useState<string | null>(null);
   const [previewResult, setPreviewResult] = useState<OpeningBalancePreviewDto | null>(null);
   const [postedSuccess, setPostedSuccess] = useState<string | null>(null);
+  const [isGoLiveModalOpen, setIsGoLiveModalOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const currentLang = i18n.language?.startsWith("ar") ? "ar" : "en";
@@ -235,12 +237,31 @@ export function OpeningBalancesView({
             borderRadius: "var(--radius-md, 0.5rem)",
             backgroundColor: "var(--color-status-success-subtle, #ecfdf5)",
             border: "1px solid var(--color-status-success, #10b981)",
-            color: "var(--color-status-success, #065f46)"
+            color: "var(--color-status-success, #065f46)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "1rem"
           }}
         >
-          <strong>{t("opening.postSuccess")}: </strong>
-          {t("journal.entryNumber")}: {postedSuccess}
+          <div>
+            <strong>{t("opening.postSuccess")}: </strong>
+            {t("journal.entryNumber")}: {postedSuccess}
+          </div>
+          <Button variant="primary" size="compact" onPress={() => setIsGoLiveModalOpen(true)}>
+            ✓ {t("opening.approveGoLiveButton")}
+          </Button>
         </div>
+      )}
+
+      {isGoLiveModalOpen && batchId && (
+        <ApproveGoLiveModal
+          isOpen={isGoLiveModalOpen}
+          openingBatchId={batchId}
+          goLiveDate={goLiveDate}
+          onClose={() => setIsGoLiveModalOpen(false)}
+        />
       )}
 
       {/* Batch Metadata */}

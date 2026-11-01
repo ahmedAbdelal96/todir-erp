@@ -8,6 +8,8 @@ import { LocalDateDisplay } from "../../../../components/fields/local-date-displ
 import { PeriodStatusBadge } from "../../components/ledger-status-badges.tsx";
 import { AccountingDataTable, type AccountingTableColumn } from "../../components/accounting-data-table.tsx";
 import { PeriodCloseReadinessModal } from "./period-close-readiness-modal.tsx";
+import { AccountingPeriodCloseModal } from "./accounting-period-close-modal.tsx";
+import { AccountingPeriodReopenModal } from "./accounting-period-reopen-modal.tsx";
 import {
   useCreateFiscalYear,
   useCreatePeriod,
@@ -52,6 +54,8 @@ export function PeriodsView({
 
   // Close Readiness Modal State
   const [readinessPeriod, setReadinessPeriod] = useState<PeriodDto | null>(null);
+  const [accountingClosePeriod, setAccountingClosePeriod] = useState<PeriodDto | null>(null);
+  const [accountingReopenPeriod, setAccountingReopenPeriod] = useState<PeriodDto | null>(null);
 
   // Year form
   const [yearCode, setYearCode] = useState("");
@@ -179,9 +183,8 @@ export function PeriodsView({
           {canClose && (item.status === "Open" || item.status === "SoftClosed") && (
             <Button
               size="compact"
-              variant="secondary"
-              isLoading={closeMutation.isPending}
-              onPress={() => closeMutation.mutate({ legalEntityId, periodId: item.id })}
+              variant="primary"
+              onPress={() => setAccountingClosePeriod(item)}
             >
               {t("period.close")}
             </Button>
@@ -191,8 +194,7 @@ export function PeriodsView({
             <Button
               size="compact"
               variant="secondary"
-              isLoading={reopenMutation.isPending}
-              onPress={() => reopenMutation.mutate({ legalEntityId, periodId: item.id })}
+              onPress={() => setAccountingReopenPeriod(item)}
             >
               {t("period.reopen")}
             </Button>
@@ -293,6 +295,24 @@ export function PeriodsView({
         periodId={readinessPeriod?.id ?? null}
         periodCode={readinessPeriod?.code}
       />
+
+      {/* Accounting Period Close Modal */}
+      {accountingClosePeriod && (
+        <AccountingPeriodCloseModal
+          isOpen={Boolean(accountingClosePeriod)}
+          period={accountingClosePeriod}
+          onClose={() => setAccountingClosePeriod(null)}
+        />
+      )}
+
+      {/* Accounting Period Reopen Modal */}
+      {accountingReopenPeriod && (
+        <AccountingPeriodReopenModal
+          isOpen={Boolean(accountingReopenPeriod)}
+          period={accountingReopenPeriod}
+          onClose={() => setAccountingReopenPeriod(null)}
+        />
+      )}
 
       {/* New Fiscal Year Dialog */}
       <Dialog
