@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
@@ -43,9 +43,15 @@ export function AccountingPage(): React.JSX.Element {
   const accountingPermissions = useAccountingPermissions();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = searchParams.get("tab") || "overview";
-  const [activeTab, setActiveTab] = useState<string>(initialTab);
+  const tabFromUrl = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<string>(tabFromUrl || "overview");
   const [selectedGlAccountCode, setSelectedGlAccountCode] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
 
   const handleSelectTab = (tabId: string) => {
     setActiveTab(tabId);
@@ -78,6 +84,7 @@ export function AccountingPage(): React.JSX.Element {
         { id: "financialStatements", label: t("tabs.financialStatements") },
         { id: "controlReconciliation", label: t("tabs.controlReconciliation") },
         { id: "fxRevaluation", label: t("tabs.fxRevaluation") },
+        { id: "periods", label: t("tabs.periods") },
         { id: "entries", label: t("tabs.entries") },
         { id: "generalJournal", label: t("tabs.generalJournal") },
         { id: "trialBalance", label: t("tabs.trialBalance") },
@@ -109,7 +116,7 @@ export function AccountingPage(): React.JSX.Element {
   };
 
   return (
-    <div style={{ padding: "1.25rem 1.5rem", width: "100%", maxWidth: "1600px", margin: "0 auto", boxSizing: "border-box", minWidth: 0 }}>
+    <div data-testid="accounting-page" style={{ padding: "1.25rem 1.5rem", width: "100%", maxWidth: "1600px", margin: "0 auto", boxSizing: "border-box", minWidth: 0 }}>
       {/* Accounting Header */}
       <AccountingHeader
         legalEntityId={legalEntityId}
@@ -127,7 +134,7 @@ export function AccountingPage(): React.JSX.Element {
 
       {/* Tab Contents */}
       {activeTab === "overview" && (
-        <div className="space-y-6">
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           <AccountingReadiness
             legalEntityId={legalEntityId}
             readiness={readiness}
@@ -146,23 +153,23 @@ export function AccountingPage(): React.JSX.Element {
       )}
 
       {activeTab === "ownerSummary" && (
-        <OwnerFinancialView onNavigateTab={handleSelectTab} />
+        <OwnerFinancialView legalEntityId={legalEntityId} onNavigateTab={handleSelectTab} />
       )}
 
       {activeTab === "health" && (
-        <AccountingHealthViewComponent onNavigateTab={handleSelectTab} />
+        <AccountingHealthViewComponent legalEntityId={legalEntityId} onNavigateTab={handleSelectTab} />
       )}
 
       {activeTab === "financialStatements" && (
-        <FinancialStatementsView />
+        <FinancialStatementsView legalEntityId={legalEntityId} />
       )}
 
       {activeTab === "controlReconciliation" && (
-        <ControlReconciliationsView />
+        <ControlReconciliationsView legalEntityId={legalEntityId} />
       )}
 
       {activeTab === "fxRevaluation" && (
-        <FxRevaluationView />
+        <FxRevaluationView legalEntityId={legalEntityId} />
       )}
 
       {activeTab === "chartOfAccounts" && (

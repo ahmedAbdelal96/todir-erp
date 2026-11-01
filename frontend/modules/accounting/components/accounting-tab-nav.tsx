@@ -128,6 +128,7 @@ export function AccountingTabNav({
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}
               type="button"
+              data-testid={`accounting-tab-${tab.id}`}
               onClick={() => onSelectTab(tab.id)}
               onKeyDown={(e) => handleKeyDown(e, idx)}
               style={{

@@ -1,235 +1,325 @@
 import React, { useState } from "react";
 import { useAccountingHealth } from "../../hooks/use-accounting-queries.ts";
-import { useAccountingI18n } from "../../i18n";
+import { Surface } from "../../../../components/pages/surface.tsx";
+import { Button } from "../../../../components/primitives/button.tsx";
+import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
+import { useAccountingI18n } from "../../i18n/index.ts";
 import type { AccountingHealthItem } from "../../types.ts";
 
 export interface AccountingHealthViewProps {
+  readonly legalEntityId?: string;
   readonly onNavigateTab?: (tab: string) => void;
 }
 
-export const AccountingHealthViewComponent: React.FC<AccountingHealthViewProps> = ({ onNavigateTab }) => {
+export const AccountingHealthViewComponent: React.FC<AccountingHealthViewProps> = ({ legalEntityId, onNavigateTab }) => {
   const { t } = useAccountingI18n();
   const [filterSeverity, setFilterSeverity] = useState<string>("ALL");
 
-  const { data: health, isLoading, isError, refetch } = useAccountingHealth();
+  const { data: health, isLoading, isError, refetch } = useAccountingHealth(undefined, legalEntityId);
 
   const getSeverityBadge = (severity: string) => {
     switch (severity) {
       case "Blocking":
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 border border-rose-300">
-            {t("health.severityBlocking")}
-          </span>
-        );
+        return <StatusBadge intent="danger" label={t("health.severityBlocking")} size="small" />;
       case "Attention":
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300">
-            {t("health.severityAttention")}
-          </span>
-        );
+        return <StatusBadge intent="warning" label={t("health.severityAttention")} size="small" />;
       case "Info":
       default:
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-            {t("health.severityInfo")}
-          </span>
-        );
+        return <StatusBadge intent="success" label={t("health.severityInfo")} size="small" />;
     }
   };
 
   const getOverallStatusBadge = (status?: string) => {
     switch (status) {
       case "Healthy":
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold text-sm">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-            {t("health.overallHealthy")}
-          </div>
-        );
+        return <StatusBadge intent="success" label={t("health.overallHealthy")} size="medium" />;
       case "Attention":
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-bold text-sm">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-            {t("health.overallAttention")}
-          </div>
-        );
+        return <StatusBadge intent="warning" label={t("health.overallAttention")} size="medium" />;
       case "Blocking":
       default:
-        return (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 font-bold text-sm">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-            {t("health.overallBlocking")}
-          </div>
-        );
+        return <StatusBadge intent="danger" label={t("health.overallBlocking")} size="medium" />;
     }
   };
 
-  const filteredItems = (health?.items ?? []).filter(item => {
+  const statBoxStyle: React.CSSProperties = {
+    backgroundColor: "var(--color-surface-card, #ffffff)",
+    border: "1px solid var(--color-border-default, #cbd5e1)",
+    borderRadius: "var(--radius-lg, 0.75rem)",
+    boxShadow: "var(--shadow-sm, 0 1px 3px 0 rgba(15, 23, 42, 0.08))",
+    padding: "1.25rem",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "1rem"
+  };
+
+  const filterBtnStyle = (active: boolean): React.CSSProperties => ({
+    padding: "0.375rem 0.875rem",
+    borderRadius: "var(--radius-md, 0.5rem)",
+    border: "1px solid var(--color-border-default, #cbd5e1)",
+    fontSize: "0.8125rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    backgroundColor: active ? "var(--color-brand-primary, #102a43)" : "var(--color-surface-card, #ffffff)",
+    color: active ? "#ffffff" : "var(--color-content-primary, #0f172a)",
+    transition: "background-color 150ms ease, color 150ms ease"
+  });
+
+  const filteredItems = (health?.items ?? []).filter((item: AccountingHealthItem) => {
     if (filterSeverity === "ALL") return true;
     return item.severity === filterSeverity;
   });
 
-  const blockingCount = health?.items.filter(i => i.severity === "Blocking").length ?? 0;
-  const attentionCount = health?.items.filter(i => i.severity === "Attention").length ?? 0;
-  const readyCount = health?.items.filter(i => i.severity === "Info").length ?? 0;
+  const blockingCount = (health?.items ?? []).filter((i: AccountingHealthItem) => i.severity === "Blocking").length;
+  const attentionCount = (health?.items ?? []).filter((i: AccountingHealthItem) => i.severity === "Attention").length;
+  const readyCount = (health?.items ?? []).filter((i: AccountingHealthItem) => i.severity === "Info").length;
 
   return (
-    <div className="space-y-6" data-testid="accounting-health-view">
-      {/* Top Banner & Overall Status */}
-      <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800">{t("health.title")}</h2>
-          <p className="text-sm text-slate-500 mt-1">{t("health.subtitle")}</p>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", width: "100%", minWidth: 0 }} data-testid="accounting-health-center">
+      {/* Header and Re-check Banner */}
+      <Surface variant="card" style={{ padding: "1.25rem 1.5rem" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "1rem"
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+              {t("health.title")}
+            </h2>
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-content-muted, #64748b)" }}>
+              {t("health.subtitle")}
+            </p>
+          </div>
 
-        <div className="flex items-center gap-4">
-          {getOverallStatusBadge(health?.status)}
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-semibold transition shadow-sm"
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+            {getOverallStatusBadge(health?.status)}
+            <Button variant="secondary" size="compact" onPress={() => void refetch()}>
+              {t("health.recheck")}
+            </Button>
+          </div>
+        </div>
+      </Surface>
+
+      {/* Loading / Error States */}
+      {isLoading ? (
+        <Surface variant="card" style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+          <p>{t("health.loading")}</p>
+        </Surface>
+      ) : isError || !health ? (
+        <Surface variant="card" style={{ padding: "1.5rem", border: "1px solid var(--color-status-danger, #dc2626)", backgroundColor: "var(--color-status-danger-subtle, #fef2f2)" }}>
+          <p style={{ margin: 0, color: "var(--color-status-danger, #dc2626)", fontWeight: 600 }}>{t("health.errorLoading")}</p>
+        </Surface>
+      ) : (
+        <>
+          {/* Status Metrics Cards Grid */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              gap: "1.25rem"
+            }}
           >
-            {t("health.recheck")}
-          </button>
-        </div>
-      </div>
-
-      {/* Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <button
-          type="button"
-          onClick={() => setFilterSeverity("Blocking")}
-          className={`p-4 rounded-lg border text-start transition ${
-            filterSeverity === "Blocking"
-              ? "bg-rose-50 border-rose-400 ring-2 ring-rose-200"
-              : "bg-white border-slate-200 hover:border-rose-200"
-          }`}
-        >
-          <div className="text-xs font-semibold text-rose-600 uppercase tracking-wider">
-            {t("health.countBlocking")}
-          </div>
-          <div className="text-2xl font-bold mt-1 text-rose-700">{blockingCount}</div>
-          <div className="text-xs text-slate-400 mt-1">{t("health.blockingDesc")}</div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setFilterSeverity("Attention")}
-          className={`p-4 rounded-lg border text-start transition ${
-            filterSeverity === "Attention"
-              ? "bg-amber-50 border-amber-400 ring-2 ring-amber-200"
-              : "bg-white border-slate-200 hover:border-amber-200"
-          }`}
-        >
-          <div className="text-xs font-semibold text-amber-600 uppercase tracking-wider">
-            {t("health.countAttention")}
-          </div>
-          <div className="text-2xl font-bold mt-1 text-amber-700">{attentionCount}</div>
-          <div className="text-xs text-slate-400 mt-1">{t("health.attentionDesc")}</div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setFilterSeverity("Info")}
-          className={`p-4 rounded-lg border text-start transition ${
-            filterSeverity === "Info"
-              ? "bg-emerald-50 border-emerald-400 ring-2 ring-emerald-200"
-              : "bg-white border-slate-200 hover:border-emerald-200"
-          }`}
-        >
-          <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">
-            {t("health.countReady")}
-          </div>
-          <div className="text-2xl font-bold mt-1 text-emerald-700">{readyCount}</div>
-          <div className="text-xs text-slate-400 mt-1">{t("health.readyDesc")}</div>
-        </button>
-      </div>
-
-      {isLoading && (
-        <div className="bg-white p-8 rounded-lg border border-slate-200 text-center text-slate-500">
-          <p className="animate-pulse">{t("health.loading")}</p>
-        </div>
-      )}
-
-      {isError && (
-        <div className="bg-rose-50 border border-rose-200 p-4 rounded-lg text-rose-700 text-sm">
-          {t("health.errorLoading")}
-        </div>
-      )}
-
-      {/* Health Diagnostic Items Table / Cards */}
-      {health && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-800">{t("health.diagnosticItemsTitle")}</h3>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">{t("health.filterLabel")}:</span>
-              <select
-                value={filterSeverity}
-                onChange={e => setFilterSeverity(e.target.value)}
-                className="text-xs border border-slate-300 rounded px-2 py-1 bg-white text-slate-700"
+            {/* Blocking Count */}
+            <div style={statBoxStyle}>
+              <div>
+                <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)" }}>
+                  {t("health.countBlocking")}
+                </span>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                  {t("health.blockingDesc")}
+                </p>
+              </div>
+              <span
+                style={{
+                  fontSize: "1.5rem",
+                  fontWeight: 800,
+                  fontFamily: "var(--font-mono, monospace)",
+                  color: blockingCount > 0 ? "var(--color-status-danger, #dc2626)" : "var(--color-content-muted, #64748b)",
+                  padding: "0.25rem 0.75rem",
+                  borderRadius: "var(--radius-md, 0.5rem)",
+                  backgroundColor: blockingCount > 0 ? "var(--color-status-danger-subtle, #fef2f2)" : "var(--color-surface-subtle, #f8fafc)",
+                  border: `1px solid ${blockingCount > 0 ? "var(--color-status-danger, #dc2626)" : "var(--color-border-subtle, #e2e8f0)"}`
+                }}
               >
-                <option value="ALL">{t("health.filterAll")}</option>
-                <option value="Blocking">{t("health.filterBlocking")}</option>
-                <option value="Attention">{t("health.filterAttention")}</option>
-                <option value="Info">{t("health.filterInfo")}</option>
-              </select>
+                {blockingCount}
+              </span>
+            </div>
+
+            {/* Attention Count */}
+            <div style={statBoxStyle}>
+              <div>
+                <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)" }}>
+                  {t("health.countAttention")}
+                </span>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                  {t("health.attentionDesc")}
+                </p>
+              </div>
+              <span
+                style={{
+                  fontSize: "1.5rem",
+                  fontWeight: 800,
+                  fontFamily: "var(--font-mono, monospace)",
+                  color: attentionCount > 0 ? "var(--color-status-warning, #d97706)" : "var(--color-content-muted, #64748b)",
+                  padding: "0.25rem 0.75rem",
+                  borderRadius: "var(--radius-md, 0.5rem)",
+                  backgroundColor: attentionCount > 0 ? "var(--color-status-warning-subtle, #fffbeb)" : "var(--color-surface-subtle, #f8fafc)",
+                  border: `1px solid ${attentionCount > 0 ? "var(--color-status-warning, #d97706)" : "var(--color-border-subtle, #e2e8f0)"}`
+                }}
+              >
+                {attentionCount}
+              </span>
+            </div>
+
+            {/* Ready Count */}
+            <div style={statBoxStyle}>
+              <div>
+                <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)" }}>
+                  {t("health.countReady")}
+                </span>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                  {t("health.readyDesc")}
+                </p>
+              </div>
+              <span
+                style={{
+                  fontSize: "1.5rem",
+                  fontWeight: 800,
+                  fontFamily: "var(--font-mono, monospace)",
+                  color: "var(--color-status-success, #059669)",
+                  padding: "0.25rem 0.75rem",
+                  borderRadius: "var(--radius-md, 0.5rem)",
+                  backgroundColor: "var(--color-status-success-subtle, #ecfdf5)",
+                  border: "1px solid var(--color-status-success, #059669)"
+                }}
+              >
+                {readyCount}
+              </span>
             </div>
           </div>
 
-          <div className="divide-y divide-slate-200">
+          {/* Diagnostic Invariants List */}
+          <Surface
+            variant="card"
+            title={t("health.diagnosticItemsTitle")}
+            headerActions={
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  style={filterBtnStyle(filterSeverity === "ALL")}
+                  onClick={() => setFilterSeverity("ALL")}
+                >
+                  {t("health.filterAll")} ({health.items.length})
+                </button>
+                <button
+                  type="button"
+                  style={filterBtnStyle(filterSeverity === "Blocking")}
+                  onClick={() => setFilterSeverity("Blocking")}
+                >
+                  {t("health.filterBlocking")} ({blockingCount})
+                </button>
+                <button
+                  type="button"
+                  style={filterBtnStyle(filterSeverity === "Attention")}
+                  onClick={() => setFilterSeverity("Attention")}
+                >
+                  {t("health.filterAttention")} ({attentionCount})
+                </button>
+                <button
+                  type="button"
+                  style={filterBtnStyle(filterSeverity === "Info")}
+                  onClick={() => setFilterSeverity("Info")}
+                >
+                  {t("health.filterInfo")} ({readyCount})
+                </button>
+              </div>
+            }
+            style={{ padding: "0" }}
+          >
             {filteredItems.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 text-sm">
-                {t("health.noItemsFound")}
+              <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+                <p style={{ margin: 0 }}>{t("health.noItemsFound")}</p>
               </div>
             ) : (
-              filteredItems.map((item: AccountingHealthItem) => (
-                <div
-                  key={item.code}
-                  className="p-4 hover:bg-slate-50/70 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                  data-testid={`health-item-${item.code}`}
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-800">{item.code}</span>
-                      {getSeverityBadge(item.severity)}
-                      {item.source && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                          {item.source}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-slate-600">{item.message}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2 self-end sm:self-center">
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded bg-slate-100 text-slate-700">
-                      {item.status}
-                    </span>
-                    {item.code.startsWith("reconciliation.") && (
-                      <button
-                        type="button"
-                        onClick={() => onNavigateTab?.("controlReconciliation")}
-                        className="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-1 rounded hover:bg-blue-50 transition"
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start" }}>
+                  <thead>
+                    <tr
+                      style={{
+                        backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                        borderBottom: "1px solid var(--color-border-default, #cbd5e1)",
+                        color: "var(--color-content-secondary, #334155)",
+                        fontSize: "0.8125rem",
+                        fontWeight: 700
+                      }}
+                    >
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("common.status")}</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("health.severityAttention")}</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>الكود والمصدر</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>البيان والتفاصيل</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("common.actions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredItems.map((item: AccountingHealthItem, idx: number) => (
+                      <tr
+                        key={item.code}
+                        style={{
+                          borderBottom: idx < filteredItems.length - 1 ? "1px solid var(--color-border-subtle, #e2e8f0)" : "none",
+                          backgroundColor: idx % 2 === 0 ? "var(--color-surface-card, #ffffff)" : "var(--color-surface-subtle, #f8fafc)"
+                        }}
                       >
-                        {t("health.actionReconcile")}
-                      </button>
-                    )}
-                    {item.code.startsWith("statement.") && (
-                      <button
-                        type="button"
-                        onClick={() => onNavigateTab?.("financialStatements")}
-                        className="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-1 rounded hover:bg-blue-50 transition"
-                      >
-                        {t("health.actionViewStatements")}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))
+                        <td style={{ padding: "0.75rem 1rem", whiteSpace: "nowrap" }}>
+                          {getSeverityBadge(item.severity)}
+                        </td>
+                        <td style={{ padding: "0.75rem 1rem", whiteSpace: "nowrap", fontSize: "0.8125rem", fontWeight: 600 }}>
+                          {item.status}
+                        </td>
+                        <td style={{ padding: "0.75rem 1rem", whiteSpace: "nowrap" }}>
+                          <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem", color: "var(--color-content-primary, #0f172a)", display: "block" }}>
+                            {item.code}
+                          </span>
+                          {item.source && (
+                            <span style={{ fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)" }}>
+                              {item.source}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", color: "var(--color-content-primary, #0f172a)", lineHeight: 1.5 }}>
+                          {item.message}
+                        </td>
+                        <td style={{ padding: "0.75rem 1rem", textAlign: "end", whiteSpace: "nowrap" }}>
+                          {item.code.includes("reconciliation") ? (
+                            <Button
+                              variant="secondary"
+                              size="compact"
+                              onPress={() => onNavigateTab?.("controlReconciliation")}
+                            >
+                              {t("health.actionReconcile")}
+                            </Button>
+                          ) : item.code.includes("trial_balance") || item.code.includes("statement") ? (
+                            <Button
+                              variant="secondary"
+                              size="compact"
+                              onPress={() => onNavigateTab?.("financialStatements")}
+                            >
+                              {t("health.actionViewStatements")}
+                            </Button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-          </div>
-        </div>
+          </Surface>
+        </>
       )}
     </div>
   );

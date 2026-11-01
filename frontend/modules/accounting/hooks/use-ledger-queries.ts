@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useOutletContext } from "react-router-dom";
+import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { useOptionalPermissions, useLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
 import { PermissionSet } from "../../../core/runtime/permissions.ts";
 import { loadSessionContext } from "../../../core/api/auth-service.ts";
@@ -131,7 +133,15 @@ export function useLedgerScope(props?: { legalEntityId?: string | undefined }) {
     // Rendered outside RuntimeProvider
   }
 
-  const legalEntityId = props?.legalEntityId || contextEntityId || "00000000-0000-0000-0000-000000000001";
+  let outletEntityId: string | undefined;
+  try {
+    const outlet = useOutletContext<WorkspaceOutletContext | undefined>();
+    outletEntityId = outlet?.legalEntityId;
+  } catch {
+    // Rendered outside Outlet context
+  }
+
+  const legalEntityId = props?.legalEntityId || outletEntityId || contextEntityId || "00000000-0000-0000-0000-000000000001";
   const countryCode = contextCountryCode || "EG";
   const baseCurrency = contextBaseCurrency || "EGP";
 

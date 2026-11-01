@@ -4,11 +4,19 @@ import {
   useReconciliationIssues,
   useRunReconciliationMutation
 } from "../../hooks/use-accounting-queries.ts";
-import { formatCurrency } from "../../utils/currency.ts";
-import { useAccountingI18n } from "../../i18n";
+import { Surface } from "../../../../components/pages/surface.tsx";
+import { Button } from "../../../../components/primitives/button.tsx";
+import { Dialog } from "../../../../components/primitives/dialog.tsx";
+import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
+import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
+import { useAccountingI18n } from "../../i18n/index.ts";
 import type { SubledgerReconciliationView, ReconciliationIssueView } from "../../types.ts";
 
-export const ControlReconciliationsView: React.FC = () => {
+export interface ControlReconciliationsViewProps {
+  readonly legalEntityId?: string;
+}
+
+export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProps> = ({ legalEntityId }) => {
   const { t } = useAccountingI18n();
 
   // Modal state
@@ -21,16 +29,16 @@ export const ControlReconciliationsView: React.FC = () => {
     data: reconciliations = [],
     isLoading: isListLoading,
     refetch: refetchList
-  } = useReconciliationsList({ limit: 50 });
+  } = useReconciliationsList({ limit: 50 }, legalEntityId);
 
   const {
     data: issues = [],
     isLoading: isIssuesLoading,
     refetch: refetchIssues
-  } = useReconciliationIssues({ limit: 50 });
+  } = useReconciliationIssues({ limit: 50 }, legalEntityId);
 
   // Mutation
-  const runMutation = useRunReconciliationMutation();
+  const runMutation = useRunReconciliationMutation(legalEntityId);
 
   const handleOpenRunModal = (type: "AR" | "AP" | "Inventory") => {
     setSelectedType(type);
@@ -45,216 +53,301 @@ export const ControlReconciliationsView: React.FC = () => {
       void refetchList();
       void refetchIssues();
     } catch {
-      // Handled by query mutation error state
+      // Handled by runMutation.isError
     }
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "Reconciled":
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-            {t("reconciliation.statusReconciled")}
-          </span>
-        );
+        return <StatusBadge intent="success" label={t("reconciliation.statusReconciled")} size="small" />;
       case "Difference":
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 border border-rose-300">
-            {t("reconciliation.statusDifference")}
-          </span>
-        );
+        return <StatusBadge intent="danger" label={t("reconciliation.statusDifference")} size="small" />;
       case "NotReady":
       default:
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300">
-            {status || t("reconciliation.statusNotReady")}
-          </span>
-        );
+        return <StatusBadge intent="warning" label={t("reconciliation.statusNotReady")} size="small" />;
     }
   };
 
+  const cardActionStyle: React.CSSProperties = {
+    backgroundColor: "var(--color-surface-card, #ffffff)",
+    border: "1px solid var(--color-border-default, #cbd5e1)",
+    borderRadius: "var(--radius-lg, 0.75rem)",
+    boxShadow: "var(--shadow-sm, 0 1px 3px 0 rgba(15, 23, 42, 0.08))",
+    padding: "1.25rem",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    gap: "1rem"
+  };
+
   return (
-    <div className="space-y-6" data-testid="control-reconciliations-view">
-      {/* Header and Action Triggers */}
-      <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800">{t("reconciliation.title")}</h2>
-          <p className="text-sm text-slate-500 mt-1">{t("reconciliation.subtitle")}</p>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", width: "100%", minWidth: 0 }} data-testid="control-reconciliations-view">
+      {/* Top Header Card */}
+      <Surface variant="card" style={{ padding: "1.25rem 1.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+              {t("reconciliation.title")}
+            </h2>
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-content-muted, #64748b)" }}>
+              {t("reconciliation.subtitle")}
+            </p>
+          </div>
+
+          <Button variant="secondary" size="compact" onPress={() => void refetchList()}>
+            {t("reconciliation.refresh")}
+          </Button>
+        </div>
+      </Surface>
+
+      {/* 3 Operational Reconciliation Action Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gap: "1.25rem"
+        }}
+      >
+        {/* AR Card */}
+        <div style={cardActionStyle}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+              <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                {t("reconciliation.runAr")}
+              </span>
+              <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
+                110100
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)", lineHeight: 1.5 }}>
+              مطابقة حساب مراقبة الذمم المدينة مع سجلات وفواتير مبيعات العملاء.
+            </p>
+          </div>
+          <div>
+            <Button variant="primary" data-testid="btn-reconcile-ar" onPress={() => handleOpenRunModal("AR")} style={{ width: "100%" }}>
+              تشغيل مطابقة العملاء (AR)
+            </Button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => handleOpenRunModal("AR")}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-semibold transition shadow-sm"
-            data-testid="btn-run-ar"
-          >
-            + {t("reconciliation.runAr")}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenRunModal("AP")}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-semibold transition shadow-sm"
-            data-testid="btn-run-ap"
-          >
-            + {t("reconciliation.runAp")}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenRunModal("Inventory")}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-semibold transition shadow-sm"
-            data-testid="btn-run-inventory"
-          >
-            + {t("reconciliation.runInventory")}
-          </button>
+        {/* AP Card */}
+        <div style={cardActionStyle}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+              <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                {t("reconciliation.runAp")}
+              </span>
+              <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-warning-subtle, #fffbeb)", color: "var(--color-status-warning, #d97706)", fontSize: "0.75rem", fontWeight: 700 }}>
+                210100
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)", lineHeight: 1.5 }}>
+              مطابقة حساب مراقبة الذمم الدائنة مع فواتير ومستحقات الموردين.
+            </p>
+          </div>
+          <div>
+            <Button variant="primary" onPress={() => handleOpenRunModal("AP")} style={{ width: "100%" }}>
+              تشغيل مطابقة الموردين (AP)
+            </Button>
+          </div>
+        </div>
+
+        {/* Inventory Card */}
+        <div style={cardActionStyle}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+              <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                {t("reconciliation.runInventory")}
+              </span>
+              <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
+                110400
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)", lineHeight: 1.5 }}>
+              مطابقة تقييم حركات المستودعات والبضاعة المتاحة مع حساب الأستاذ العام.
+            </p>
+          </div>
+          <div>
+            <Button variant="primary" onPress={() => handleOpenRunModal("Inventory")} style={{ width: "100%" }}>
+              تشغيل مطابقة المخزون (Inventory)
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Reconciliations Run History */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-          <h3 className="text-sm font-bold text-slate-800">{t("reconciliation.runsHistoryTitle")}</h3>
-          <button
-            type="button"
-            onClick={() => void refetchList()}
-            className="text-xs text-slate-600 hover:text-slate-900 font-semibold"
-          >
-            {t("reconciliation.refresh")}
-          </button>
-        </div>
-
+      {/* Historical Runs Register */}
+      <Surface
+        variant="card"
+        title={t("reconciliation.runsHistoryTitle")}
+        style={{ padding: "0" }}
+      >
         {isListLoading ? (
-          <div className="p-8 text-center text-slate-400 text-sm animate-pulse">
-            {t("reconciliation.loading")}
+          <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+            <p>{t("common.loading")}</p>
           </div>
         ) : reconciliations.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-sm">
-            {t("reconciliation.noRunsYet")}
+          <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+            <p>{t("reconciliation.noRunsYet")}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-start text-sm">
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start" }}>
               <thead>
-                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                  <th className="py-3 px-4 text-start">{t("reconciliation.colType")}</th>
-                  <th className="py-3 px-4 text-start">{t("reconciliation.colAsOfDate")}</th>
-                  <th className="py-3 px-4 text-end">{t("reconciliation.colSourceBalance")}</th>
-                  <th className="py-3 px-4 text-end">{t("reconciliation.colLedgerBalance")}</th>
-                  <th className="py-3 px-4 text-end">{t("reconciliation.colDifference")}</th>
-                  <th className="py-3 px-4 text-center">{t("reconciliation.colStatus")}</th>
-                  <th className="py-3 px-4 text-start">{t("reconciliation.colDiagnostics")}</th>
-                  <th className="py-3 px-4 text-start">{t("reconciliation.colCreatedAt")}</th>
+                <tr
+                  style={{
+                    backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                    borderBottom: "1px solid var(--color-border-default, #cbd5e1)",
+                    color: "var(--color-content-secondary, #334155)",
+                    fontSize: "0.8125rem",
+                    fontWeight: 700
+                  }}
+                >
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("reconciliation.colType")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("reconciliation.colAsOfDate")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("reconciliation.colSourceBalance")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("reconciliation.colLedgerBalance")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("reconciliation.colDifference")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>{t("reconciliation.colStatus")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("reconciliation.colDiagnostics")}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {reconciliations.map((run: SubledgerReconciliationView) => (
-                  <tr key={run.id} className="hover:bg-slate-50/60 transition" data-testid={`reconciliation-row-${run.id}`}>
-                    <td className="py-3 px-4 font-bold text-slate-800">
-                      <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-xs font-bold border border-blue-200">
-                        {run.type}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-700 text-xs font-mono">{run.asOfDate}</td>
-                    <td className="py-3 px-4 text-end font-semibold text-slate-800">
-                      {run.sourceBalance !== null && run.sourceBalance !== undefined
-                        ? formatCurrency(run.sourceBalance, run.currencyCode ?? "EGP")
-                        : "—"}
-                    </td>
-                    <td className="py-3 px-4 text-end font-semibold text-slate-800">
-                      {run.ledgerBalance !== null && run.ledgerBalance !== undefined
-                        ? formatCurrency(run.ledgerBalance, run.currencyCode ?? "EGP")
-                        : "—"}
-                    </td>
-                    <td
-                      className={`py-3 px-4 text-end font-bold ${
-                        (run.difference ?? 0) === 0 ? "text-emerald-600" : "text-rose-600"
-                      }`}
+              <tbody>
+                {reconciliations.map((run: SubledgerReconciliationView, idx: number) => {
+                  const hasDiff = (run.difference ?? 0) !== 0;
+                  return (
+                    <tr
+                      key={run.id}
+                      style={{
+                        borderBottom: idx < reconciliations.length - 1 ? "1px solid var(--color-border-subtle, #e2e8f0)" : "none",
+                        backgroundColor: idx % 2 === 0 ? "var(--color-surface-card, #ffffff)" : "var(--color-surface-subtle, #f8fafc)"
+                      }}
+                      data-testid={`reconciliation-row-${run.id}`}
                     >
-                      {run.difference !== null && run.difference !== undefined
-                        ? formatCurrency(run.difference, run.currencyCode ?? "EGP")
-                        : "—"}
-                    </td>
-                    <td className="py-3 px-4 text-center">{getStatusBadge(run.status)}</td>
-                    <td className="py-3 px-4 text-slate-500 text-xs">
-                      {run.diagnostics && run.diagnostics.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {run.diagnostics.map((diag: string, i: number) => (
-                            <span
-                              key={i}
-                              className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[11px] border border-amber-200"
-                            >
-                              {diag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-slate-400 text-xs">
-                      {new Date(run.createdAt).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
+                      <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                        <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", border: "1px solid var(--color-border-subtle, #e2e8f0)", fontSize: "0.75rem" }}>
+                          {run.type}
+                        </span>
+                      </td>
+                      <td style={{ padding: "0.75rem 1rem", fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem" }}>
+                        <bdi>{run.asOfDate}</bdi>
+                      </td>
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
+                        {run.sourceBalance !== null && run.sourceBalance !== undefined ? (
+                          <MoneyDisplay value={{ amount: run.sourceBalance.toFixed(2), currency: run.currencyCode ?? "EGP" }} />
+                        ) : "—"}
+                      </td>
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
+                        {run.ledgerBalance !== null && run.ledgerBalance !== undefined ? (
+                          <MoneyDisplay value={{ amount: run.ledgerBalance.toFixed(2), currency: run.currencyCode ?? "EGP" }} />
+                        ) : "—"}
+                      </td>
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700 }}>
+                        {run.difference !== null && run.difference !== undefined ? (
+                          <MoneyDisplay
+                            value={{ amount: run.difference.toFixed(2), currency: run.currencyCode ?? "EGP" }}
+                            coloredSign
+                          />
+                        ) : "—"}
+                      </td>
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
+                        {getStatusBadge(run.status)}
+                      </td>
+                      <td style={{ padding: "0.75rem 1rem", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                        {run.diagnostics && run.diagnostics.length > 0 ? (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
+                            {run.diagnostics.map((diag: string, i: number) => (
+                              <span
+                                key={i}
+                                style={{
+                                  padding: "0.125rem 0.375rem",
+                                  borderRadius: "var(--radius-sm, 0.25rem)",
+                                  backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
+                                  border: "1px solid var(--color-border-subtle, #e2e8f0)",
+                                  fontSize: "0.6875rem"
+                                }}
+                              >
+                                {diag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
-      </div>
+      </Surface>
 
-      {/* Reconciliation Issues Table */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">{t("reconciliation.issuesTitle")}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">{t("reconciliation.issuesSubtitle")}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => void refetchIssues()}
-            className="text-xs text-slate-600 hover:text-slate-900 font-semibold"
-          >
-            {t("reconciliation.refresh")}
-          </button>
-        </div>
-
+      {/* Issues Register */}
+      <Surface
+        variant="card"
+        title={t("reconciliation.issuesTitle")}
+        description={t("reconciliation.issuesSubtitle")}
+        style={{ padding: "0" }}
+      >
         {isIssuesLoading ? (
-          <div className="p-8 text-center text-slate-400 text-sm animate-pulse">
-            {t("reconciliation.loading")}
+          <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+            <p>{t("common.loading")}</p>
           </div>
         ) : issues.length === 0 ? (
-          <div className="p-6 text-center text-emerald-600 text-sm font-medium">
-            ✓ {t("reconciliation.noIssuesFound")}
+          <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-status-success, #059669)", fontWeight: 600 }}>
+            <p style={{ margin: 0 }}>✓ {t("reconciliation.noIssuesFound")}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-start text-sm">
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start" }}>
               <thead>
-                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                  <th className="py-3 px-4 text-start">{t("reconciliation.issueColCode")}</th>
-                  <th className="py-3 px-4 text-start">{t("reconciliation.issueColSeverity")}</th>
-                  <th className="py-3 px-4 text-start">{t("reconciliation.issueColStatus")}</th>
-                  <th className="py-3 px-4 text-start">{t("reconciliation.issueColCreatedAt")}</th>
-                  <th className="py-3 px-4 text-start">{t("reconciliation.issueColResolvedAt")}</th>
+                <tr
+                  style={{
+                    backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                    borderBottom: "1px solid var(--color-border-default, #cbd5e1)",
+                    color: "var(--color-content-secondary, #334155)",
+                    fontSize: "0.8125rem",
+                    fontWeight: 700
+                  }}
+                >
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("reconciliation.issueColCode")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("reconciliation.issueColSeverity")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("reconciliation.issueColStatus")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("reconciliation.issueColCreatedAt")}</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("reconciliation.issueColResolvedAt")}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {issues.map((issue: ReconciliationIssueView) => (
-                  <tr key={issue.id} className="hover:bg-slate-50/60 transition">
-                    <td className="py-3 px-4 font-mono text-xs font-bold text-slate-800">
-                      {issue.code}
+              <tbody>
+                {issues.map((issue: ReconciliationIssueView, idx: number) => (
+                  <tr
+                    key={issue.id}
+                    style={{
+                      borderBottom: idx < issues.length - 1 ? "1px solid var(--color-border-subtle, #e2e8f0)" : "none",
+                      backgroundColor: idx % 2 === 0 ? "var(--color-surface-card, #ffffff)" : "var(--color-surface-subtle, #f8fafc)"
+                    }}
+                  >
+                    <td style={{ padding: "0.75rem 1rem", fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem", fontWeight: 700 }}>
+                      <bdi>{issue.code}</bdi>
                     </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded text-xs font-semibold bg-rose-100 text-rose-800 border border-rose-200">
-                        {issue.severity}
-                      </span>
+                    <td style={{ padding: "0.75rem 1rem" }}>
+                      <StatusBadge
+                        intent={issue.severity === "Blocking" ? "danger" : issue.severity === "Attention" ? "warning" : "info"}
+                        label={issue.severity}
+                        size="small"
+                      />
                     </td>
-                    <td className="py-3 px-4 text-slate-700 text-xs font-semibold">{issue.status}</td>
-                    <td className="py-3 px-4 text-slate-400 text-xs">
-                      {new Date(issue.createdAt).toLocaleString()}
+                    <td style={{ padding: "0.75rem 1rem" }}>
+                      <StatusBadge
+                        intent={issue.status === "Resolved" ? "success" : "danger"}
+                        label={issue.status}
+                        size="small"
+                      />
                     </td>
-                    <td className="py-3 px-4 text-slate-400 text-xs">
-                      {issue.resolvedAt ? new Date(issue.resolvedAt).toLocaleString() : "—"}
+                    <td style={{ padding: "0.75rem 1rem", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                      {issue.createdAt.slice(0, 10)}
+                    </td>
+                    <td style={{ padding: "0.75rem 1rem", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                      {issue.resolvedAt ? issue.resolvedAt.slice(0, 10) : "—"}
                     </td>
                   </tr>
                 ))}
@@ -262,68 +355,60 @@ export const ControlReconciliationsView: React.FC = () => {
             </table>
           </div>
         )}
-      </div>
+      </Surface>
 
-      {/* Execute Reconciliation Modal Dialog */}
-      {isRunModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <h3 className="font-bold text-slate-800">
-                {t("reconciliation.modalRunTitle")} ({selectedType})
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsRunModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
-              >
-                &times;
-              </button>
-            </div>
-
-            <form onSubmit={handleExecuteRun} className="p-5 space-y-4">
-              <div>
-                <label htmlFor="reconciliation-as-of-date" className="block text-xs font-bold text-slate-700 mb-1">
-                  {t("reconciliation.modalAsOfLabel")}
-                </label>
-                <input
-                  id="reconciliation-as-of-date"
-                  type="date"
-                  required
-                  value={asOfDate}
-                  onChange={e => setAsOfDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <p className="text-xs text-slate-400 mt-1">{t("reconciliation.modalAsOfHelp")}</p>
-              </div>
-
-              {runMutation.isError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded">
-                  {t("reconciliation.modalRunError")}
-                </div>
-              )}
-
-              <div className="pt-2 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsRunModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-medium transition"
-                >
-                  {t("reconciliation.modalCancel")}
-                </button>
-                <button
-                  type="submit"
-                  disabled={runMutation.isPending}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-semibold transition shadow-sm disabled:opacity-50"
-                  data-testid="btn-confirm-reconcile"
-                >
-                  {runMutation.isPending ? t("reconciliation.modalRunning") : t("reconciliation.modalSubmit")}
-                </button>
-              </div>
-            </form>
+      {/* RUN RECONCILIATION MODAL (Using Approved Dialog Primitive) */}
+      <Dialog
+        isOpen={isRunModalOpen}
+        onOpenChange={(open) => !open && setIsRunModalOpen(false)}
+        title={`${t("reconciliation.modalRunTitle")} — ${selectedType}`}
+        size="medium"
+        footer={
+          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+            <Button variant="secondary" onPress={() => setIsRunModalOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              isLoading={runMutation.isPending}
+              onPress={handleExecuteRun as unknown as () => void}
+            >
+              {t("reconciliation.modalSubmit")}
+            </Button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form onSubmit={handleExecuteRun} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div>
+            <label htmlFor="rec-as-of" style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 600 }}>
+              {t("reconciliation.modalAsOfLabel")}
+            </label>
+            <input
+              id="rec-as-of"
+              type="date"
+              value={asOfDate}
+              onChange={(e) => setAsOfDate(e.target.value)}
+              required
+              style={{
+                width: "100%",
+                padding: "0.5rem 0.75rem",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                border: "1px solid var(--color-border-default, #cbd5e1)",
+                fontSize: "0.875rem"
+              }}
+            />
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+              {t("reconciliation.modalAsOfHelp")}
+            </p>
+          </div>
+
+          {runMutation.isError && (
+            <div style={{ padding: "0.75rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-danger-subtle, #fef2f2)", border: "1px solid var(--color-status-danger, #dc2626)", color: "var(--color-status-danger, #dc2626)", fontSize: "0.8125rem" }}>
+              {t("reconciliation.modalRunError")}
+            </div>
+          )}
+        </form>
+      </Dialog>
     </div>
   );
 };

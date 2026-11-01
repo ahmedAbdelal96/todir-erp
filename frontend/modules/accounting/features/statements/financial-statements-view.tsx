@@ -4,11 +4,41 @@ import {
   useStatementDefinition,
   useSaveStatementDefinitionMutation
 } from "../../hooks/use-accounting-queries.ts";
-import { formatCurrency } from "../../utils/currency.ts";
-import { useAccountingI18n } from "../../i18n";
+import { Surface } from "../../../../components/pages/surface.tsx";
+import { Button } from "../../../../components/primitives/button.tsx";
+import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
+import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
+import { useAccountingI18n } from "../../i18n/index.ts";
 import type { StatementKind, StatementLineView } from "../../types.ts";
 
-export const FinancialStatementsView: React.FC = () => {
+export interface FinancialStatementsViewProps {
+  readonly legalEntityId?: string;
+}
+
+function getLineLabel(line: StatementLineView, lang: string): string {
+  const raw = lang === "ar" ? line.nameAr || line.name : line.nameEn || line.name;
+  if (!raw || raw.includes("?")) {
+    switch (line.code) {
+      case "asset":
+        return lang === "ar" ? "الأصول (المتداولة وغير المتداولة)" : "Assets";
+      case "liability":
+        return lang === "ar" ? "الالتزامات (المتداولة والقصيرة/طويلة الأجل)" : "Liabilities";
+      case "equity":
+        return lang === "ar" ? "حقوق الملكية ورأس المال" : "Equity";
+      case "revenue":
+        return lang === "ar" ? "الإيرادات والمبيعات التشغيلية" : "Revenue";
+      case "expense":
+        return lang === "ar" ? "المصروفات والتكاليف التشغيلية" : "Expenses";
+      case "net-profit":
+        return lang === "ar" ? "صافي أرباح / (خسائر) الفترة" : "Net Profit / (Loss)";
+      default:
+        return line.code;
+    }
+  }
+  return raw;
+}
+
+export const FinancialStatementsView: React.FC<FinancialStatementsViewProps> = ({ legalEntityId }) => {
   const { t, language } = useAccountingI18n();
 
   const [statementKind, setStatementKind] = useState<StatementKind>("ProfitAndLoss");
@@ -23,235 +53,301 @@ export const FinancialStatementsView: React.FC = () => {
     isLoading: isStatementLoading,
     isError: isStatementError,
     refetch: refetchStatement
-  } = useFinancialStatement(statementKind, fromDate, toDate);
+  } = useFinancialStatement(statementKind, fromDate, toDate, legalEntityId);
 
   // Query Definition
   const {
     data: definition,
     isLoading: isDefLoading,
     refetch: refetchDefinition
-  } = useStatementDefinition(statementKind);
+  } = useStatementDefinition(statementKind, legalEntityId);
+
+  const navTabBtnStyle = (active: boolean): React.CSSProperties => ({
+    padding: "0.5rem 1rem",
+    borderRadius: "var(--radius-md, 0.5rem)",
+    border: "1px solid var(--color-border-default, #cbd5e1)",
+    fontSize: "0.875rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    backgroundColor: active ? "var(--color-brand-primary, #102a43)" : "var(--color-surface-card, #ffffff)",
+    color: active ? "#ffffff" : "var(--color-content-primary, #0f172a)",
+    transition: "background-color 150ms ease, color 150ms ease"
+  });
 
   return (
-    <div className="space-y-6" data-testid="financial-statements-view">
-      {/* Top Header & Statement Selector */}
-      <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800">{t("statements.title")}</h2>
-          <p className="text-sm text-slate-500 mt-1">{t("statements.subtitle")}</p>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", width: "100%", minWidth: 0 }} data-testid="financial-statements-view">
+      {/* Top Header Card & Selectors */}
+      <Surface variant="card" style={{ padding: "1.25rem 1.5rem" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "1rem",
+            marginBottom: "1rem"
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+              {t("statements.title")}
+            </h2>
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-content-muted, #64748b)" }}>
+              {t("statements.subtitle")}
+            </p>
+          </div>
 
-        {/* Kind Buttons */}
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
-          <button
-            type="button"
-            onClick={() => setStatementKind("ProfitAndLoss")}
-            className={`px-4 py-1.5 rounded-md text-sm font-semibold transition ${
-              statementKind === "ProfitAndLoss"
-                ? "bg-white text-blue-700 shadow-sm"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-            data-testid="tab-pnl"
-          >
-            {t("statements.tabPnl")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatementKind("BalanceSheet")}
-            className={`px-4 py-1.5 rounded-md text-sm font-semibold transition ${
-              statementKind === "BalanceSheet"
-                ? "bg-white text-blue-700 shadow-sm"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-            data-testid="tab-balance-sheet"
-          >
-            {t("statements.tabBalanceSheet")}
-          </button>
-        </div>
-      </div>
-
-      {/* Sub-Tabs: Statement View vs. Definitions */}
-      <div className="flex items-center justify-between border-b border-slate-200">
-        <div className="flex gap-4">
-          <button
-            type="button"
-            onClick={() => setActiveTab("statement")}
-            className={`pb-3 text-sm font-bold border-b-2 transition ${
-              activeTab === "statement"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            {t("statements.tabReport")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("definition")}
-            className={`pb-3 text-sm font-bold border-b-2 transition ${
-              activeTab === "definition"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            {t("statements.tabDefinitions")}
-          </button>
-        </div>
-
-        {/* Date Filter (for report view) */}
-        {activeTab === "statement" && (
-          <div className="flex items-center gap-3 pb-3">
-            <label htmlFor="statement-from-date" className="text-xs font-semibold text-slate-600">
-              {t("statements.from")}:
-            </label>
-            <input
-              id="statement-from-date"
-              type="date"
-              value={fromDate}
-              onChange={e => setFromDate(e.target.value)}
-              className="text-xs px-2.5 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500"
-            />
-            <label htmlFor="statement-to-date" className="text-xs font-semibold text-slate-600">
-              {t("statements.to")}:
-            </label>
-            <input
-              id="statement-to-date"
-              type="date"
-              value={toDate}
-              onChange={e => setToDate(e.target.value)}
-              className="text-xs px-2.5 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500"
-            />
+          {/* Statement Kind Toggle Buttons */}
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             <button
               type="button"
-              onClick={() => void refetchStatement()}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded transition"
+              style={navTabBtnStyle(statementKind === "ProfitAndLoss")}
+              onClick={() => setStatementKind("ProfitAndLoss")}
             >
-              {t("statements.refresh")}
+              {t("statements.tabPnl")}
+            </button>
+            <button
+              type="button"
+              style={navTabBtnStyle(statementKind === "BalanceSheet")}
+              onClick={() => setStatementKind("BalanceSheet")}
+            >
+              {t("statements.tabBalanceSheet")}
             </button>
           </div>
-        )}
-      </div>
+        </div>
+
+        {/* View Mode Toggle & Date Filters */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "1rem",
+            paddingTop: "0.75rem",
+            borderTop: "1px solid var(--color-border-subtle, #e2e8f0)"
+          }}
+        >
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              type="button"
+              style={{
+                padding: "0.375rem 0.75rem",
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                border: "none",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                cursor: "pointer",
+                backgroundColor: activeTab === "statement" ? "var(--color-surface-subtle, #f0f4f8)" : "transparent",
+                color: activeTab === "statement" ? "var(--color-brand-primary, #102a43)" : "var(--color-content-muted, #64748b)"
+              }}
+              onClick={() => setActiveTab("statement")}
+            >
+              {t("statements.tabReport")}
+            </button>
+            <button
+              type="button"
+              style={{
+                padding: "0.375rem 0.75rem",
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                border: "none",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                cursor: "pointer",
+                backgroundColor: activeTab === "definition" ? "var(--color-surface-subtle, #f0f4f8)" : "transparent",
+                color: activeTab === "definition" ? "var(--color-brand-primary, #102a43)" : "var(--color-content-muted, #64748b)"
+              }}
+              onClick={() => setActiveTab("definition")}
+            >
+              {t("statements.tabDefinitions")}
+            </button>
+          </div>
+
+          {activeTab === "statement" && (
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+              <label htmlFor="statement-from-date" style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--color-content-secondary, #334155)" }}>
+                {t("statements.from")}:
+              </label>
+              <input
+                id="statement-from-date"
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                style={{
+                  fontSize: "0.8125rem",
+                  padding: "0.375rem 0.5rem",
+                  border: "1px solid var(--color-border-default, #cbd5e1)",
+                  borderRadius: "var(--radius-md, 0.5rem)",
+                  backgroundColor: "var(--color-surface-card, #ffffff)",
+                  color: "var(--color-content-primary, #0f172a)"
+                }}
+              />
+
+              <label htmlFor="statement-to-date" style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--color-content-secondary, #334155)" }}>
+                {t("statements.to")}:
+              </label>
+              <input
+                id="statement-to-date"
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                style={{
+                  fontSize: "0.8125rem",
+                  padding: "0.375rem 0.5rem",
+                  border: "1px solid var(--color-border-default, #cbd5e1)",
+                  borderRadius: "var(--radius-md, 0.5rem)",
+                  backgroundColor: "var(--color-surface-card, #ffffff)",
+                  color: "var(--color-content-primary, #0f172a)"
+                }}
+              />
+
+              <Button variant="secondary" size="compact" onPress={() => void refetchStatement()}>
+                {t("statements.refresh")}
+              </Button>
+            </div>
+          )}
+        </div>
+      </Surface>
 
       {/* REPORT VIEW */}
       {activeTab === "statement" && (
-        <div className="space-y-4">
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           {isStatementLoading && (
-            <div className="bg-white p-8 rounded-lg border border-slate-200 text-center text-slate-500">
-              <p className="animate-pulse">{t("statements.loading")}</p>
-            </div>
+            <Surface variant="card" style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+              <p>{t("statements.loading")}</p>
+            </Surface>
           )}
 
           {isStatementError && (
-            <div className="bg-rose-50 border border-rose-200 p-4 rounded-lg text-rose-700 text-sm">
-              {t("statements.errorLoading")}
-            </div>
+            <Surface variant="card" style={{ padding: "1.5rem", border: "1px solid var(--color-status-danger, #dc2626)", backgroundColor: "var(--color-status-danger-subtle, #fef2f2)" }}>
+              <p style={{ margin: 0, color: "var(--color-status-danger, #dc2626)", fontWeight: 600 }}>{t("statements.errorLoading")}</p>
+            </Surface>
           )}
 
           {statement && (
             <>
-              {/* Balance Sheet Balanced Indicator */}
+              {/* Balance Sheet Integrity Indicator */}
               {statementKind === "BalanceSheet" && (
-                <div
-                  className={`p-4 rounded-lg border flex items-center justify-between ${
-                    statement.isBalanced
-                      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
-                      : "bg-rose-50 border-rose-300 text-rose-800"
-                  }`}
+                <Surface
+                  variant="card"
+                  style={{
+                    padding: "1rem 1.5rem",
+                    backgroundColor: statement.isBalanced ? "var(--color-status-success-subtle, #ecfdf5)" : "var(--color-status-danger-subtle, #fef2f2)",
+                    border: `1px solid ${statement.isBalanced ? "var(--color-status-success, #059669)" : "var(--color-status-danger, #dc2626)"}`
+                  }}
                   data-testid="balance-sheet-integrity-badge"
                 >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`w-3 h-3 rounded-full ${
-                        statement.isBalanced ? "bg-emerald-500" : "bg-rose-500"
-                      }`}
-                    />
-                    <span className="font-bold text-sm">
-                      {statement.isBalanced
-                        ? t("statements.balancedMessage")
-                        : t("statements.unbalancedMessage")}
-                    </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <StatusBadge
+                        intent={statement.isBalanced ? "success" : "danger"}
+                        label={statement.isBalanced ? t("statements.balancedMessage") : t("statements.unbalancedMessage")}
+                        size="medium"
+                      />
+                    </div>
+                    {statement.diagnostic && (
+                      <span style={{ fontSize: "0.8125rem", color: "var(--color-status-danger, #dc2626)" }}>
+                        {statement.diagnostic}
+                      </span>
+                    )}
                   </div>
-                  {statement.diagnostic && (
-                    <div className="text-xs text-rose-700">{statement.diagnostic}</div>
-                  )}
-                </div>
+                </Surface>
               )}
 
-              {/* Statement Statement Card & Lines Table */}
-              <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-800">
-                      {statementKind === "ProfitAndLoss"
-                        ? t("statements.pnlHeader")
-                        : t("statements.balanceSheetHeader")}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {statement.fromDate} → {statement.toDate} ({statement.currencyCode})
-                    </p>
-                  </div>
-                  <div className="text-end">
-                    <span className="text-xs text-slate-500 uppercase tracking-wider block">
-                      {statementKind === "ProfitAndLoss"
-                        ? t("statements.netProfitTotal")
-                        : t("statements.balanceTotal")}
+              {/* Statement Summary Card & Lines Table */}
+              <Surface
+                variant="card"
+                title={statementKind === "ProfitAndLoss" ? t("statements.pnlHeader") : t("statements.balanceSheetHeader")}
+                description={`${statement.fromDate} → ${statement.toDate} (${statement.currencyCode})`}
+                headerActions={
+                  <div style={{ textAlign: "end" }}>
+                    <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", display: "block" }}>
+                      {statementKind === "ProfitAndLoss" ? t("statements.netProfitTotal") : t("statements.balanceTotal")}
                     </span>
-                    <span
-                      className={`text-xl font-bold ${
-                        statement.total >= 0 ? "text-slate-800" : "text-rose-600"
-                      }`}
-                    >
-                      {formatCurrency(statement.total, statement.currencyCode)}
-                    </span>
+                    <MoneyDisplay
+                      value={{ amount: statement.total.toFixed(2), currency: statement.currencyCode }}
+                      size="large"
+                      coloredSign={statementKind === "ProfitAndLoss"}
+                    />
                   </div>
-                </div>
+                }
+                style={{ padding: "0" }}
+              >
+                <div style={{ width: "100%", boxSizing: "border-box" }}>
+                  {/* Header Row */}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "0.75rem 1rem",
+                      backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                      borderBottom: "1px solid var(--color-border-default, #cbd5e1)",
+                      color: "var(--color-content-secondary, #334155)",
+                      fontSize: "0.8125rem",
+                      fontWeight: 700
+                    }}
+                  >
+                    <span>{t("statements.colLineName")}</span>
+                    <span>{t("statements.colAmount")}</span>
+                  </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-start text-sm">
-                    <thead>
-                      <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                        <th className="py-3 px-4 text-start">{t("statements.colCode")}</th>
-                        <th className="py-3 px-4 text-start">{t("statements.colLineName")}</th>
-                        <th className="py-3 px-4 text-start">{t("statements.colAccountType")}</th>
-                        <th className="py-3 px-4 text-start">{t("statements.colLineKind")}</th>
-                        <th className="py-3 px-4 text-end">{t("statements.colAmount")}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {statement.lines.map((line: StatementLineView) => (
-                        <tr
+                  {/* Lines Rows */}
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    {statement.lines.map((line: StatementLineView, idx: number) => {
+                      const isHighlight = line.lineKind === "Subtotal" || line.lineKind === "Arithmetic" || line.code === "net-profit";
+                      return (
+                        <div
                           key={line.code}
-                          className={`hover:bg-slate-50/60 transition ${
-                            line.lineKind === "Arithmetic" || line.code === "net-profit"
-                              ? "bg-slate-50/80 font-bold"
-                              : ""
-                          }`}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "0.75rem 1rem",
+                            borderBottom: idx < statement.lines.length - 1 ? "1px solid var(--color-border-subtle, #e2e8f0)" : "none",
+                            backgroundColor: isHighlight
+                              ? "var(--color-surface-subtle, #f8fafc)"
+                              : idx % 2 === 0 ? "var(--color-surface-card, #ffffff)" : "var(--color-surface-subtle, #f8fafc)",
+                            gap: "0.75rem"
+                          }}
                           data-testid={`statement-line-${line.code}`}
                         >
-                          <td className="py-3 px-4 text-slate-600 font-mono text-xs">{line.code}</td>
-                          <td className="py-3 px-4 text-slate-800">
-                            {language === "ar"
-                              ? line.nameAr || line.name
-                              : line.nameEn || line.name}
-                          </td>
-                          <td className="py-3 px-4 text-slate-500 text-xs">{line.accountType}</td>
-                          <td className="py-3 px-4 text-slate-500 text-xs">
-                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                              {line.lineKind}
-                            </span>
-                          </td>
-                          <td
-                            className={`py-3 px-4 text-end font-semibold ${
-                              line.amount >= 0 ? "text-slate-800" : "text-rose-600"
-                            }`}
-                          >
-                            {formatCurrency(line.amount, statement.currencyCode)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          <div style={{ minWidth: 0, flex: "1 1 auto" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                              <span style={{ fontWeight: isHighlight ? 700 : 600, fontSize: "0.875rem", color: "var(--color-content-primary, #0f172a)" }}>
+                                {getLineLabel(line, language)}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "0.6875rem",
+                                  padding: "0.125rem 0.375rem",
+                                  borderRadius: "var(--radius-sm, 0.25rem)",
+                                  backgroundColor: "var(--color-surface-sunken, #e2e8f0)",
+                                  color: "var(--color-content-secondary, #475569)",
+                                  fontWeight: 500
+                                }}
+                              >
+                                {line.lineKind}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)", fontFamily: "var(--font-mono, monospace)", marginTop: "0.125rem" }}>
+                              <bdi>{line.code}</bdi> {line.accountType ? `• ${line.accountType}` : ""}
+                            </div>
+                          </div>
+
+                          <div style={{ flexShrink: 0, textAlign: "start", whiteSpace: "nowrap" }}>
+                            <MoneyDisplay
+                              value={{ amount: line.amount.toFixed(2), currency: statement.currencyCode }}
+                              size={isHighlight ? "large" : "medium"}
+                              coloredSign
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              </Surface>
             </>
           )}
         </div>
@@ -259,53 +355,72 @@ export const FinancialStatementsView: React.FC = () => {
 
       {/* DEFINITION VIEW */}
       {activeTab === "definition" && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-800">{t("statements.defTitle")}</h3>
-              <p className="text-xs text-slate-500 mt-1">{t("statements.defSubtitle")}</p>
+        <Surface
+          variant="card"
+          title={`${t("statements.defTitle")} (${statementKind})`}
+          description={t("statements.defSubtitle")}
+          style={{ padding: "0" }}
+        >
+          {isDefLoading ? (
+            <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+              <p>{t("common.loading")}</p>
             </div>
-            {definition && (
-              <div className="text-xs text-slate-600">
-                <span className="font-semibold">{t("statements.defVersion")}:</span> {definition.version} (
-                <span className="text-emerald-600 font-semibold">{definition.status}</span>)
-              </div>
-            )}
-          </div>
-
-          {isDefLoading && (
-            <div className="p-8 text-center text-slate-400 text-sm animate-pulse">
-              {t("statements.loading")}
+          ) : !definition ? (
+            <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+              <p>لا يوجد هيكل معتمد لهذه القائمة.</p>
             </div>
-          )}
-
-          {definition && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-start text-sm">
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start" }}>
                 <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                    <th className="py-3 px-4 text-start">{t("statements.defColSeq")}</th>
-                    <th className="py-3 px-4 text-start">{t("statements.defColCode")}</th>
-                    <th className="py-3 px-4 text-start">{t("statements.defColNameAr")}</th>
-                    <th className="py-3 px-4 text-start">{t("statements.defColNameEn")}</th>
-                    <th className="py-3 px-4 text-start">{t("statements.defColAccountType")}</th>
-                    <th className="py-3 px-4 text-start">{t("statements.defColKind")}</th>
-                    <th className="py-3 px-4 text-start">{t("statements.defColFormula")}</th>
+                  <tr
+                    style={{
+                      backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                      borderBottom: "1px solid var(--color-border-default, #cbd5e1)",
+                      color: "var(--color-content-secondary, #334155)",
+                      fontSize: "0.8125rem",
+                      fontWeight: 700
+                    }}
+                  >
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("statements.defColSeq")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("statements.defColCode")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("statements.defColNameAr")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("statements.defColNameEn")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("statements.defColAccountType")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("statements.defColKind")}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {definition.lines.map(line => (
-                    <tr key={line.code} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4 text-slate-500 text-xs font-mono">{line.sequence}</td>
-                      <td className="py-3 px-4 text-slate-700 font-mono text-xs">{line.code}</td>
-                      <td className="py-3 px-4 text-slate-800">{line.nameAr}</td>
-                      <td className="py-3 px-4 text-slate-800">{line.nameEn}</td>
-                      <td className="py-3 px-4 text-slate-500 text-xs">{line.accountType || "—"}</td>
-                      <td className="py-3 px-4 text-slate-500 text-xs">{line.lineKind}</td>
-                      <td className="py-3 px-4 text-slate-500 text-xs">
-                        {line.formulaLineCodes && line.formulaLineCodes.length > 0
-                          ? `${line.arithmeticOperator ?? "Op"}(${line.formulaLineCodes.join(", ")})`
-                          : "—"}
+                <tbody>
+                  {definition.lines.map((line, idx: number) => (
+                    <tr
+                      key={line.code}
+                      style={{
+                        borderBottom: idx < definition.lines.length - 1 ? "1px solid var(--color-border-subtle, #e2e8f0)" : "none",
+                        backgroundColor: idx % 2 === 0 ? "var(--color-surface-card, #ffffff)" : "var(--color-surface-subtle, #f8fafc)"
+                      }}
+                    >
+                      <td style={{ padding: "0.75rem 1rem", fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem" }}>
+                        {line.sequence}
+                      </td>
+                      <td style={{ padding: "0.75rem 1rem", fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem", fontWeight: 700 }}>
+                        <bdi>{line.code}</bdi>
+                      </td>
+                      <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", fontWeight: 600 }}>{line.nameAr}</td>
+                      <td style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>{line.nameEn}</td>
+                      <td style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem" }}>{line.accountType || "—"}</td>
+                      <td style={{ padding: "0.75rem 1rem" }}>
+                        <span
+                          style={{
+                            fontSize: "0.6875rem",
+                            padding: "0.1875rem 0.5rem",
+                            borderRadius: "var(--radius-md, 0.5rem)",
+                            backgroundColor: "var(--color-surface-subtle, #f1f5f9)",
+                            border: "1px solid var(--color-border-subtle, #e2e8f0)",
+                            color: "var(--color-content-secondary, #334155)"
+                          }}
+                        >
+                          {line.lineKind}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -313,7 +428,7 @@ export const FinancialStatementsView: React.FC = () => {
               </table>
             </div>
           )}
-        </div>
+        </Surface>
       )}
     </div>
   );

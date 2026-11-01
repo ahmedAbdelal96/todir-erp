@@ -1,9 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import { PermissionSet } from "../../../core/runtime/permissions.ts";
-import { loadSessionContext } from "../../../core/api/auth-service.ts";
-import { useLedgerScope } from "./use-ledger-queries.ts";
 import { accountingApi } from "../services/accounting-api.ts";
+import { useLedgerScope } from "./use-ledger-queries.ts";
 import type {
   ApproveGoLiveRequest,
   ClosePreviewRequest,
@@ -16,33 +15,26 @@ import type {
 
 export const accountingQueryKeys = {
   all: ["accounting"] as const,
-  health: (legalEntityId: string, asOf?: string) => ["accounting", "health", legalEntityId, asOf ?? ""] as const,
-  ownerSummary: (legalEntityId: string, asOf?: string) => ["accounting", "ownerSummary", legalEntityId, asOf ?? ""] as const,
+  health: (legalEntityId: string, asOf?: string) => ["accounting", "health", legalEntityId, asOf] as const,
+  ownerSummary: (legalEntityId: string, asOf?: string) => ["accounting", "owner-summary", legalEntityId, asOf] as const,
   reconciliations: (legalEntityId: string, params?: { type?: string; asOf?: string }) =>
-    ["accounting", "reconciliations", legalEntityId, params?.type ?? "", params?.asOf ?? ""] as const,
+    ["accounting", "reconciliations", legalEntityId, params] as const,
   reconciliation: (legalEntityId: string, runId: string) => ["accounting", "reconciliation", legalEntityId, runId] as const,
   reconciliationIssues: (legalEntityId: string, status?: string) =>
-    ["accounting", "reconciliationIssues", legalEntityId, status ?? ""] as const,
-  closeRun: (legalEntityId: string, periodId: string) => ["accounting", "closeRun", legalEntityId, periodId] as const,
-  closeRunIssues: (legalEntityId: string, periodId: string) => ["accounting", "closeRunIssues", legalEntityId, periodId] as const,
-  fxRevaluation: (legalEntityId: string, runId: string) => ["accounting", "fxRevaluation", legalEntityId, runId] as const,
-  statement: (legalEntityId: string, kind: StatementKind, from: string, to: string) =>
+    ["accounting", "reconciliation-issues", legalEntityId, status] as const,
+  statement: (legalEntityId: string, kind: string, from: string, to: string) =>
     ["accounting", "statement", legalEntityId, kind, from, to] as const,
   statementDefinition: (legalEntityId: string, kind: string) =>
-    ["accounting", "statementDefinition", legalEntityId, kind] as const
+    ["accounting", "statement-def", legalEntityId, kind] as const,
+  closeRun: (legalEntityId: string, periodId: string) => ["accounting", "close-run", legalEntityId, periodId] as const,
+  closeRunIssues: (legalEntityId: string, periodId: string) =>
+    ["accounting", "close-run-issues", legalEntityId, periodId] as const,
+  fxRevaluation: (legalEntityId: string, runId: string) =>
+    ["accounting", "fx-revaluation", legalEntityId, runId] as const
 };
 
 export function useAccountingPermissions() {
-  const permissions = useOptionalPermissions();
-  const sessionQuery = useQuery({
-    queryKey: ["session", "context"],
-    queryFn: loadSessionContext,
-    staleTime: 60_000
-  });
-
-  const sessionPerms = (sessionQuery.data as { permissions?: readonly string[] } | undefined)?.permissions;
-  const permSet = permissions ?? (sessionPerms ? new PermissionSet(sessionPerms) : undefined);
-
+  const permSet: PermissionSet | undefined = useOptionalPermissions();
   return {
     canReadHealth: permSet ? permSet.hasPermission("accounting.health.read") : true,
     canReadOwner: permSet ? permSet.hasPermission("accounting.owner.read") : true,
@@ -58,8 +50,8 @@ export function useAccountingPermissions() {
   };
 }
 
-export function useAccountingHealth(asOf?: string) {
-  const { legalEntityId } = useLedgerScope();
+export function useAccountingHealth(asOf?: string, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadHealth } = useAccountingPermissions();
 
   return useQuery({
@@ -69,8 +61,8 @@ export function useAccountingHealth(asOf?: string) {
   });
 }
 
-export function useOwnerFinancialSummary(asOf?: string) {
-  const { legalEntityId } = useLedgerScope();
+export function useOwnerFinancialSummary(asOf?: string, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadOwner } = useAccountingPermissions();
 
   return useQuery({
@@ -80,8 +72,8 @@ export function useOwnerFinancialSummary(asOf?: string) {
   });
 }
 
-export function useReconciliationsList(params?: { type?: string; asOf?: string; limit?: number }) {
-  const { legalEntityId } = useLedgerScope();
+export function useReconciliationsList(params?: { type?: string; asOf?: string; limit?: number }, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadReconciliation } = useAccountingPermissions();
 
   return useQuery({
@@ -91,8 +83,8 @@ export function useReconciliationsList(params?: { type?: string; asOf?: string; 
   });
 }
 
-export function useReconciliationDetails(runId: string) {
-  const { legalEntityId } = useLedgerScope();
+export function useReconciliationDetails(runId: string, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadReconciliation } = useAccountingPermissions();
 
   return useQuery({
@@ -102,8 +94,8 @@ export function useReconciliationDetails(runId: string) {
   });
 }
 
-export function useReconciliationIssues(params?: { status?: string; limit?: number }) {
-  const { legalEntityId } = useLedgerScope();
+export function useReconciliationIssues(params?: { status?: string; limit?: number }, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadReconciliation } = useAccountingPermissions();
 
   return useQuery({
@@ -113,8 +105,8 @@ export function useReconciliationIssues(params?: { status?: string; limit?: numb
   });
 }
 
-export function useFinancialStatement(kind: StatementKind, from: string, to: string) {
-  const { legalEntityId } = useLedgerScope();
+export function useFinancialStatement(kind: StatementKind, from: string, to: string, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadStatements } = useAccountingPermissions();
 
   return useQuery({
@@ -124,8 +116,8 @@ export function useFinancialStatement(kind: StatementKind, from: string, to: str
   });
 }
 
-export function useStatementDefinition(kind: string) {
-  const { legalEntityId } = useLedgerScope();
+export function useStatementDefinition(kind: string, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canManageStatements } = useAccountingPermissions();
 
   return useQuery({
@@ -135,8 +127,8 @@ export function useStatementDefinition(kind: string) {
   });
 }
 
-export function useCloseRun(periodId: string) {
-  const { legalEntityId } = useLedgerScope();
+export function useCloseRun(periodId: string, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
 
   return useQuery({
     queryKey: accountingQueryKeys.closeRun(legalEntityId, periodId),
@@ -145,8 +137,8 @@ export function useCloseRun(periodId: string) {
   });
 }
 
-export function useCloseRunIssues(periodId: string) {
-  const { legalEntityId } = useLedgerScope();
+export function useCloseRunIssues(periodId: string, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
 
   return useQuery({
     queryKey: accountingQueryKeys.closeRunIssues(legalEntityId, periodId),
@@ -155,8 +147,8 @@ export function useCloseRunIssues(periodId: string) {
   });
 }
 
-export function useFxRevaluation(runId: string) {
-  const { legalEntityId } = useLedgerScope();
+export function useFxRevaluation(runId: string, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadFx } = useAccountingPermissions();
 
   return useQuery({
@@ -166,8 +158,8 @@ export function useFxRevaluation(runId: string) {
   });
 }
 
-export function useRunReconciliationMutation() {
-  const { legalEntityId } = useLedgerScope();
+export function useRunReconciliationMutation(overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -179,16 +171,16 @@ export function useRunReconciliationMutation() {
   });
 }
 
-export function usePreviewCloseMutation() {
-  const { legalEntityId } = useLedgerScope();
+export function usePreviewCloseMutation(overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
 
   return useMutation({
     mutationFn: (request: ClosePreviewRequest) => accountingApi.previewClose(legalEntityId, request)
   });
 }
 
-export function useClosePeriodMutation() {
-  const { legalEntityId } = useLedgerScope();
+export function useClosePeriodMutation(overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -200,8 +192,8 @@ export function useClosePeriodMutation() {
   });
 }
 
-export function useReopenPeriodMutation() {
-  const { legalEntityId } = useLedgerScope();
+export function useReopenPeriodMutation(overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -214,29 +206,16 @@ export function useReopenPeriodMutation() {
   });
 }
 
-export function useApproveGoLiveMutation() {
-  const { legalEntityId } = useLedgerScope();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (request: ApproveGoLiveRequest) => accountingApi.approveGoLive(legalEntityId, request),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["accounting"] });
-      queryClient.invalidateQueries({ queryKey: ["ledger"] });
-    }
-  });
-}
-
-export function usePreviewFxRevaluationMutation() {
-  const { legalEntityId } = useLedgerScope();
+export function usePreviewFxRevaluationMutation(overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
 
   return useMutation({
     mutationFn: (request: FxRevaluationRequest) => accountingApi.previewFxRevaluation(legalEntityId, request)
   });
 }
 
-export function usePostFxRevaluationMutation() {
-  const { legalEntityId } = useLedgerScope();
+export function usePostFxRevaluationMutation(overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -248,8 +227,8 @@ export function usePostFxRevaluationMutation() {
   });
 }
 
-export function useReverseFxRevaluationMutation() {
-  const { legalEntityId } = useLedgerScope();
+export function useReverseFxRevaluationMutation(overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -262,8 +241,21 @@ export function useReverseFxRevaluationMutation() {
   });
 }
 
-export function useSaveStatementDefinitionMutation() {
-  const { legalEntityId } = useLedgerScope();
+export function useApproveGoLiveMutation(overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (request: ApproveGoLiveRequest) => accountingApi.approveGoLive(legalEntityId, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["accounting"] });
+      queryClient.invalidateQueries({ queryKey: ["ledger"] });
+    }
+  });
+}
+
+export function useSaveStatementDefinitionMutation(overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const queryClient = useQueryClient();
 
   return useMutation({

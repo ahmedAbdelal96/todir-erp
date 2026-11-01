@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { Dialog } from "../../../../components/primitives/dialog.tsx";
+import { Button } from "../../../../components/primitives/button.tsx";
 import { useReopenPeriodMutation } from "../../hooks/use-accounting-queries.ts";
 import { useAccountingI18n } from "../../i18n";
 import type { PeriodDto } from "../../types.ts";
@@ -21,10 +23,9 @@ export const AccountingPeriodReopenModal: React.FC<AccountingPeriodReopenModalPr
 
   const reopenMutation = useReopenPeriodMutation();
 
-  if (!isOpen) return null;
+  if (!isOpen || !period) return null;
 
-  const handleConfirmReopen = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleConfirmReopen = async () => {
     if (!reopenReason.trim()) return;
     try {
       await reopenMutation.mutateAsync({
@@ -42,70 +43,90 @@ export const AccountingPeriodReopenModal: React.FC<AccountingPeriodReopenModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" data-testid="period-reopen-modal">
-      <div className="bg-white rounded-lg border border-slate-200 shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-        <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-          <div>
-            <h3 className="font-bold text-slate-800">{t("reopen.modalTitle")}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {period.code} ({period.startDate} → {period.endDate})
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+    <Dialog
+      isOpen={isOpen}
+      onOpenChange={(open) => !open && onClose()}
+      title={`${t("reopen.modalTitle")}: ${period.code}`}
+      size="medium"
+      footer={
+        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+          <Button variant="secondary" onPress={onClose}>
+            {t("reopen.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            isLoading={reopenMutation.isPending}
+            isDisabled={reopenMutation.isPending || !reopenReason.trim()}
+            onPress={handleConfirmReopen}
+            data-testid="btn-confirm-period-reopen"
           >
-            &times;
-          </button>
+            {reopenMutation.isPending ? t("reopen.reopening") : t("reopen.confirmReopen")}
+          </Button>
+        </div>
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }} data-testid="period-reopen-modal">
+        <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>
+          {period.code} ({period.startDate} → {period.endDate})
         </div>
 
-        <form onSubmit={handleConfirmReopen} className="p-5 space-y-4">
-          <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded">
-            ⚠️ {t("reopen.warningMessage")}
-          </div>
+        <div
+          style={{
+            padding: "0.75rem 1rem",
+            borderRadius: "var(--radius-md, 0.5rem)",
+            backgroundColor: "rgba(245, 158, 11, 0.1)",
+            border: "1px solid rgba(245, 158, 11, 0.3)",
+            color: "var(--color-status-warning, #d97706)",
+            fontSize: "0.8125rem",
+            fontWeight: 600
+          }}
+        >
+          ⚠️ {t("reopen.warningMessage")}
+        </div>
 
-          <div>
-            <label htmlFor="period-reopen-reason" className="block text-xs font-bold text-slate-700 mb-1">
-              {t("reopen.requiredReasonLabel")} *
-            </label>
-            <textarea
-              id="period-reopen-reason"
-              required
-              rows={3}
-              value={reopenReason}
-              onChange={e => setReopenReason(e.target.value)}
-              placeholder={t("reopen.reasonPlaceholder")}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <p className="text-xs text-slate-400 mt-1">{t("reopen.reasonHelp")}</p>
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+          <label htmlFor="period-reopen-reason" style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--color-content-primary)" }}>
+            {t("reopen.requiredReasonLabel")} *
+          </label>
+          <textarea
+            id="period-reopen-reason"
+            required
+            rows={3}
+            value={reopenReason}
+            onChange={e => setReopenReason(e.target.value)}
+            placeholder={t("reopen.reasonPlaceholder")}
+            style={{
+              width: "100%",
+              padding: "0.5rem 0.75rem",
+              borderRadius: "var(--radius-md, 0.5rem)",
+              border: "1px solid var(--color-border-default)",
+              backgroundColor: "var(--color-surface-card)",
+              color: "var(--color-content-primary)",
+              fontSize: "0.875rem",
+              boxSizing: "border-box",
+              resize: "vertical"
+            }}
+          />
+          <p style={{ margin: "0.25rem 0 0", color: "var(--color-content-muted)", fontSize: "0.75rem" }}>
+            {t("reopen.reasonHelp")}
+          </p>
+        </div>
 
-          {reopenMutation.isError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded">
-              {t("reopen.errorReopening")}
-            </div>
-          )}
-
-          <div className="pt-2 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-medium transition"
-            >
-              {t("reopen.cancel")}
-            </button>
-            <button
-              type="submit"
-              disabled={reopenMutation.isPending || !reopenReason.trim()}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-sm font-semibold transition shadow-sm disabled:opacity-50"
-              data-testid="btn-confirm-period-reopen"
-            >
-              {reopenMutation.isPending ? t("reopen.reopening") : t("reopen.confirmReopen")}
-            </button>
+        {reopenMutation.isError && (
+          <div
+            style={{
+              padding: "0.75rem",
+              borderRadius: "var(--radius-md, 0.5rem)",
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              color: "var(--color-status-danger, #dc2626)",
+              fontSize: "0.875rem"
+            }}
+          >
+            {t("reopen.errorReopening")}
           </div>
-        </form>
+        )}
       </div>
-    </div>
+    </Dialog>
   );
 };

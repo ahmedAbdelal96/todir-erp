@@ -184,6 +184,7 @@ export function PeriodsView({
             <Button
               size="compact"
               variant="primary"
+              data-testid="btn-open-close-period"
               onPress={() => setAccountingClosePeriod(item)}
             >
               {t("period.close")}

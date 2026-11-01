@@ -4,11 +4,19 @@ import {
   usePostFxRevaluationMutation,
   useReverseFxRevaluationMutation
 } from "../../hooks/use-accounting-queries.ts";
-import { formatCurrency } from "../../utils/currency.ts";
-import { useAccountingI18n } from "../../i18n";
+import { Surface } from "../../../../components/pages/surface.tsx";
+import { Button } from "../../../../components/primitives/button.tsx";
+import { Dialog } from "../../../../components/primitives/dialog.tsx";
+import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
+import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
+import { useAccountingI18n } from "../../i18n/index.ts";
 import type { FxRevaluationRunView, FxRevaluationLineView } from "../../types.ts";
 
-export const FxRevaluationView: React.FC = () => {
+export interface FxRevaluationViewProps {
+  readonly legalEntityId?: string;
+}
+
+export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntityId }) => {
   const { t } = useAccountingI18n();
 
   const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
@@ -21,9 +29,9 @@ export const FxRevaluationView: React.FC = () => {
   const [reversalReason, setReversalReason] = useState<string>("");
 
   // Mutations
-  const previewMutation = usePreviewFxRevaluationMutation();
-  const postMutation = usePostFxRevaluationMutation();
-  const reverseMutation = useReverseFxRevaluationMutation();
+  const previewMutation = usePreviewFxRevaluationMutation(legalEntityId);
+  const postMutation = usePostFxRevaluationMutation(legalEntityId);
+  const reverseMutation = useReverseFxRevaluationMutation(legalEntityId);
 
   const handlePreview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +43,7 @@ export const FxRevaluationView: React.FC = () => {
       });
       setCurrentRun(res);
     } catch {
-      // Handled by mutation error
+      // Handled by previewMutation.isError
     }
   };
 
@@ -45,212 +53,217 @@ export const FxRevaluationView: React.FC = () => {
       const res = await postMutation.mutateAsync(currentRun.id);
       setCurrentRun(res);
     } catch {
-      // Handled by mutation error
+      // Handled by postMutation.isError
     }
   };
 
   const handleReverse = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentRun) return;
+    if (!currentRun || !reversalReason.trim()) return;
     try {
       const res = await reverseMutation.mutateAsync({
         runId: currentRun.id,
         request: {
           reversalDate,
-          reason: reversalReason
+          reason: reversalReason.trim()
         }
       });
       setCurrentRun(res);
       setIsReverseModalOpen(false);
     } catch {
-      // Handled by mutation error
+      // Handled by reverseMutation.isError
     }
   };
 
   const totalGainLoss = (currentRun?.lines ?? []).reduce(
-    (sum, l) => sum + (l.differenceAmount ?? 0),
+    (sum, line) => sum + (line.differenceAmount || 0),
     0
   );
 
   return (
-    <div className="space-y-6" data-testid="fx-revaluation-view">
-      {/* Top Header */}
-      <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800">{t("fx.title")}</h2>
-          <p className="text-sm text-slate-500 mt-1">{t("fx.subtitle")}</p>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", width: "100%", minWidth: 0 }} data-testid="fx-revaluation-view">
+      {/* Top Header & Parameters Card */}
+      <Surface variant="card" style={{ padding: "1.25rem 1.5rem" }}>
+        <div style={{ marginBottom: "1.25rem" }}>
+          <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+            {t("fx.title")}
+          </h2>
+          <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-content-muted, #64748b)" }}>
+            {t("fx.subtitle")}
+          </p>
         </div>
 
-        {currentRun && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">{t("fx.runStatus")}:</span>
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                currentRun.status === "Posted"
-                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                  : currentRun.status === "Reversed"
-                  ? "bg-slate-100 text-slate-700 border-slate-300"
-                  : "bg-blue-100 text-blue-800 border-blue-300"
-              }`}
-              data-testid="fx-run-status-badge"
-            >
-              {currentRun.status}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Revaluation Parameters & Form */}
-      <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
-        <form onSubmit={handlePreview} className="flex flex-wrap items-end gap-4">
+        <form onSubmit={handlePreview} style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: "1rem" }}>
           <div>
-            <label htmlFor="fx-as-of-date" className="block text-xs font-bold text-slate-700 mb-1">
+            <label htmlFor="fx-as-of" style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.8125rem", fontWeight: 600, color: "var(--color-content-secondary, #334155)" }}>
               {t("fx.asOfDateLabel")}
             </label>
             <input
-              id="fx-as-of-date"
+              id="fx-as-of"
               type="date"
-              required
               value={asOfDate}
-              onChange={e => setAsOfDate(e.target.value)}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setAsOfDate(e.target.value)}
+              required
+              style={{
+                fontSize: "0.875rem",
+                padding: "0.4375rem 0.625rem",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                border: "1px solid var(--color-border-default, #cbd5e1)",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                color: "var(--color-content-primary, #0f172a)"
+              }}
             />
           </div>
 
           <div>
-            <label htmlFor="fx-auto-reversal-date" className="block text-xs font-bold text-slate-700 mb-1">
+            <label htmlFor="fx-auto-rev" style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.8125rem", fontWeight: 600, color: "var(--color-content-secondary, #334155)" }}>
               {t("fx.autoReversalDateLabel")} ({t("fx.optional")})
             </label>
             <input
-              id="fx-auto-reversal-date"
+              id="fx-auto-rev"
               type="date"
               value={autoReversalDate}
-              onChange={e => setAutoReversalDate(e.target.value)}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setAutoReversalDate(e.target.value)}
+              style={{
+                fontSize: "0.875rem",
+                padding: "0.4375rem 0.625rem",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                border: "1px solid var(--color-border-default, #cbd5e1)",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                color: "var(--color-content-primary, #0f172a)"
+              }}
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={previewMutation.isPending}
-            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-semibold transition shadow-sm disabled:opacity-50"
-            data-testid="btn-fx-preview"
-          >
-            {previewMutation.isPending ? t("fx.previewing") : t("fx.btnPreview")}
-          </button>
+          <div>
+            <Button
+              variant="primary"
+              isLoading={previewMutation.isPending}
+              onPress={handlePreview as unknown as () => void}
+            >
+              {t("fx.btnPreview")}
+            </Button>
+          </div>
         </form>
 
         {previewMutation.isError && (
-          <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded">
+          <div style={{ marginTop: "1rem", padding: "0.75rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-danger-subtle, #fef2f2)", border: "1px solid var(--color-status-danger, #dc2626)", color: "var(--color-status-danger, #dc2626)", fontSize: "0.8125rem" }}>
             {t("fx.previewError")}
           </div>
         )}
-      </div>
+      </Surface>
 
-      {/* Preview Lines Results Table */}
+      {/* Revaluation Lines & Actions View */}
       {currentRun && (
-        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden space-y-0">
-          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 bg-slate-50/50">
-            <div>
-              <h3 className="text-sm font-bold text-slate-800">{t("fx.previewLinesTitle")}</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {t("fx.totalItems")}: {currentRun.lines.length} | {t("fx.totalGainLoss")}:{" "}
-                <span
-                  className={`font-bold ${
-                    totalGainLoss >= 0 ? "text-emerald-600" : "text-rose-600"
-                  }`}
-                >
-                  {formatCurrency(totalGainLoss, "EGP")}
+        <Surface
+          variant="card"
+          title={t("fx.previewLinesTitle")}
+          description={`${currentRun.asOfDate} — ${t("fx.totalItems")}: ${currentRun.lines.length}`}
+          headerActions={
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+              <div style={{ textAlign: "end" }}>
+                <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", display: "block" }}>
+                  {t("fx.totalGainLoss")}
                 </span>
-              </p>
-            </div>
+                <MoneyDisplay
+                  value={{ amount: totalGainLoss.toFixed(2), currency: "EGP" }}
+                  size="large"
+                  coloredSign
+                />
+              </div>
 
-            {/* Post & Reverse Triggers */}
-            <div className="flex items-center gap-3">
-              {currentRun.status !== "Posted" && currentRun.status !== "Reversed" && (
-                <button
-                  type="button"
-                  onClick={handlePost}
-                  disabled={postMutation.isPending || currentRun.lines.length === 0}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-semibold transition shadow-sm disabled:opacity-50"
-                  data-testid="btn-post-fx"
+              {currentRun.status === "Preview" && currentRun.lines.length > 0 && (
+                <Button
+                  variant="primary"
+                  isLoading={postMutation.isPending}
+                  onPress={handlePost}
                 >
-                  {postMutation.isPending ? t("fx.posting") : t("fx.btnPost")}
-                </button>
+                  ✓ {t("fx.btnPost")}
+                </Button>
               )}
 
               {currentRun.status === "Posted" && (
-                <button
-                  type="button"
-                  onClick={() => setIsReverseModalOpen(true)}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-sm font-semibold transition shadow-sm"
-                  data-testid="btn-open-reverse-fx"
+                <Button
+                  variant="danger"
+                  onPress={() => setIsReverseModalOpen(true)}
                 >
                   {t("fx.btnReverse")}
-                </button>
+                </Button>
               )}
             </div>
-          </div>
-
+          }
+          style={{ padding: "0" }}
+        >
           {postMutation.isError && (
-            <div className="p-3 bg-rose-50 border-b border-rose-200 text-rose-700 text-xs">
+            <div style={{ padding: "0.75rem 1rem", backgroundColor: "var(--color-status-danger-subtle, #fef2f2)", borderBottom: "1px solid var(--color-status-danger, #dc2626)", color: "var(--color-status-danger, #dc2626)", fontSize: "0.8125rem" }}>
               {t("fx.postError")}
             </div>
           )}
 
           {currentRun.lines.length === 0 ? (
-            <div className="p-8 text-center text-slate-400 text-sm">
-              {t("fx.noOpenItemsToRevalue")}
+            <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+              <p style={{ margin: 0 }}>{t("fx.noOpenItemsToRevalue")}</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-start text-sm">
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start" }}>
                 <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                    <th className="py-3 px-4 text-start">{t("fx.colDirection")}</th>
-                    <th className="py-3 px-4 text-end">{t("fx.colTxAmount")}</th>
-                    <th className="py-3 px-4 text-end">{t("fx.colCarryingAmount")}</th>
-                    <th className="py-3 px-4 text-end">{t("fx.colRate")}</th>
-                    <th className="py-3 px-4 text-end">{t("fx.colRevaluedAmount")}</th>
-                    <th className="py-3 px-4 text-end">{t("fx.colDifference")}</th>
-                    <th className="py-3 px-4 text-center">{t("fx.colRole")}</th>
+                  <tr
+                    style={{
+                      backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                      borderBottom: "1px solid var(--color-border-default, #cbd5e1)",
+                      color: "var(--color-content-secondary, #334155)",
+                      fontSize: "0.8125rem",
+                      fontWeight: 700
+                    }}
+                  >
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("fx.colDirection")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("fx.colTxAmount")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("fx.colCarryingAmount")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("fx.colRate")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("fx.colRevaluedAmount")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("fx.colDifference")}</th>
+                    <th style={{ padding: "0.75rem 1rem", textAlign: "center" }}>{t("fx.colRole")}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {currentRun.lines.map((line: FxRevaluationLineView) => (
-                    <tr key={line.id} className="hover:bg-slate-50/60 transition">
-                      <td className="py-3 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                            line.direction === "Receivable"
-                              ? "bg-blue-100 text-blue-800"
-                              : "bg-indigo-100 text-indigo-800"
-                          }`}
-                        >
-                          {line.direction}
-                        </span>
+                <tbody>
+                  {currentRun.lines.map((line: FxRevaluationLineView, idx: number) => (
+                    <tr
+                      key={line.id}
+                      style={{
+                        borderBottom: idx < currentRun.lines.length - 1 ? "1px solid var(--color-border-subtle, #e2e8f0)" : "none",
+                        backgroundColor: idx % 2 === 0 ? "var(--color-surface-card, #ffffff)" : "var(--color-surface-subtle, #f8fafc)"
+                      }}
+                    >
+                      <td style={{ padding: "0.75rem 1rem" }}>
+                        <StatusBadge
+                          intent={line.direction === "Receivable" ? "info" : "warning"}
+                          label={line.direction}
+                          size="small"
+                        />
                       </td>
-                      <td className="py-3 px-4 text-end font-mono text-xs text-slate-700">
-                        {formatCurrency(line.openTransactionAmount, line.transactionCurrency)}
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
+                        <MoneyDisplay value={{ amount: line.openTransactionAmount.toFixed(2), currency: line.transactionCurrency }} />
                       </td>
-                      <td className="py-3 px-4 text-end font-semibold text-slate-800">
-                        {formatCurrency(line.carryingBaseAmount, line.baseCurrency)}
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
+                        <MoneyDisplay value={{ amount: line.carryingBaseAmount.toFixed(2), currency: line.baseCurrency }} />
                       </td>
-                      <td className="py-3 px-4 text-end font-mono text-xs text-slate-600">
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem" }}>
                         {line.exchangeRate.toFixed(4)}
                       </td>
-                      <td className="py-3 px-4 text-end font-semibold text-slate-800">
-                        {formatCurrency(line.revaluedBaseAmount, line.baseCurrency)}
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
+                        <MoneyDisplay value={{ amount: line.revaluedBaseAmount.toFixed(2), currency: line.baseCurrency }} />
                       </td>
-                      <td
-                        className={`py-3 px-4 text-end font-bold ${
-                          line.differenceAmount >= 0 ? "text-emerald-600" : "text-rose-600"
-                        }`}
-                      >
-                        {formatCurrency(line.differenceAmount, line.baseCurrency)}
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700 }}>
+                        <MoneyDisplay
+                          value={{ amount: line.differenceAmount.toFixed(2), currency: line.baseCurrency }}
+                          coloredSign
+                        />
                       </td>
-                      <td className="py-3 px-4 text-center text-xs text-slate-500">
-                        {line.differenceRole}
+                      <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
+                        <span style={{ fontSize: "0.75rem", padding: "0.125rem 0.375rem", borderRadius: "var(--radius-sm, 0.25rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", border: "1px solid var(--color-border-subtle, #e2e8f0)", color: "var(--color-content-secondary, #334155)" }}>
+                          {line.differenceRole}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -258,81 +271,80 @@ export const FxRevaluationView: React.FC = () => {
               </table>
             </div>
           )}
-        </div>
+        </Surface>
       )}
 
-      {/* Reversal Modal Dialog */}
-      {isReverseModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-xl max-w-md w-full overflow-hidden">
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <h3 className="font-bold text-slate-800">{t("fx.modalReverseTitle")}</h3>
-              <button
-                type="button"
-                onClick={() => setIsReverseModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
-              >
-                &times;
-              </button>
-            </div>
-
-            <form onSubmit={handleReverse} className="p-5 space-y-4">
-              <div>
-                <label htmlFor="fx-reversal-date" className="block text-xs font-bold text-slate-700 mb-1">
-                  {t("fx.modalReversalDateLabel")}
-                </label>
-                <input
-                  id="fx-reversal-date"
-                  type="date"
-                  required
-                  value={reversalDate}
-                  onChange={e => setReversalDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="fx-reversal-reason" className="block text-xs font-bold text-slate-700 mb-1">
-                  {t("fx.modalReversalReasonLabel")}
-                </label>
-                <textarea
-                  id="fx-reversal-reason"
-                  required
-                  rows={3}
-                  value={reversalReason}
-                  onChange={e => setReversalReason(e.target.value)}
-                  placeholder={t("fx.modalReversalReasonPlaceholder")}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {reverseMutation.isError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded">
-                  {t("fx.modalReverseError")}
-                </div>
-              )}
-
-              <div className="pt-2 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsReverseModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-sm font-medium transition"
-                >
-                  {t("fx.modalCancel")}
-                </button>
-                <button
-                  type="submit"
-                  disabled={reverseMutation.isPending}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-sm font-semibold transition shadow-sm disabled:opacity-50"
-                  data-testid="btn-confirm-reverse-fx"
-                >
-                  {reverseMutation.isPending ? t("fx.modalReversing") : t("fx.modalConfirmReverse")}
-                </button>
-              </div>
-            </form>
+      {/* REVERSAL MODAL (Using Approved Dialog Primitive) */}
+      <Dialog
+        isOpen={isReverseModalOpen}
+        onOpenChange={(open) => !open && setIsReverseModalOpen(false)}
+        title={t("fx.modalReverseTitle")}
+        size="medium"
+        footer={
+          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+            <Button variant="secondary" onPress={() => setIsReverseModalOpen(false)}>
+              {t("fx.modalCancel")}
+            </Button>
+            <Button
+              variant="danger"
+              isLoading={reverseMutation.isPending}
+              onPress={handleReverse as unknown as () => void}
+            >
+              {t("fx.modalConfirmReverse")}
+            </Button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form onSubmit={handleReverse} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div>
+            <label htmlFor="fx-rev-date" style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 600 }}>
+              {t("fx.modalReversalDateLabel")}
+            </label>
+            <input
+              id="fx-rev-date"
+              type="date"
+              value={reversalDate}
+              onChange={(e) => setReversalDate(e.target.value)}
+              required
+              style={{
+                width: "100%",
+                padding: "0.5rem 0.75rem",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                border: "1px solid var(--color-border-default, #cbd5e1)",
+                fontSize: "0.875rem"
+              }}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="fx-rev-reason" style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 600 }}>
+              {t("fx.modalReversalReasonLabel")} *
+            </label>
+            <textarea
+              id="fx-rev-reason"
+              rows={3}
+              value={reversalReason}
+              onChange={(e) => setReversalReason(e.target.value)}
+              placeholder={t("fx.modalReversalReasonPlaceholder")}
+              required
+              style={{
+                width: "100%",
+                padding: "0.5rem 0.75rem",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                border: "1px solid var(--color-border-default, #cbd5e1)",
+                fontSize: "0.875rem",
+                resize: "vertical"
+              }}
+            />
+          </div>
+
+          {reverseMutation.isError && (
+            <div style={{ padding: "0.75rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-danger-subtle, #fef2f2)", border: "1px solid var(--color-status-danger, #dc2626)", color: "var(--color-status-danger, #dc2626)", fontSize: "0.8125rem" }}>
+              {t("fx.modalReverseError")}
+            </div>
+          )}
+        </form>
+      </Dialog>
     </div>
   );
 };

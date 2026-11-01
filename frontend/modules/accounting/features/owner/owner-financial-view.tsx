@@ -1,219 +1,346 @@
 import React, { useState } from "react";
 import { useOwnerFinancialSummary } from "../../hooks/use-accounting-queries.ts";
-import { formatCurrency } from "../../utils/currency.ts";
-import { useAccountingI18n } from "../../i18n";
+import { Surface } from "../../../../components/pages/surface.tsx";
+import { Button } from "../../../../components/primitives/button.tsx";
+import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
+import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
+import { useAccountingI18n } from "../../i18n/index.ts";
 
 export interface OwnerFinancialViewProps {
+  readonly legalEntityId?: string;
   readonly onNavigateTab?: (tab: string) => void;
 }
 
-export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ onNavigateTab }) => {
+export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ legalEntityId, onNavigateTab }) => {
   const { t } = useAccountingI18n();
   const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
-  const { data: summary, isLoading, isError, refetch } = useOwnerFinancialSummary(asOfDate);
+  const { data: summary, isLoading, isError, refetch } = useOwnerFinancialSummary(asOfDate, legalEntityId);
 
   const getHealthBadge = (health?: string) => {
     switch (health) {
       case "Healthy":
-        return (
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 me-2" />
-            {t("owner.healthHealthy")}
-          </span>
-        );
+        return <StatusBadge intent="success" label={t("owner.healthHealthy")} />;
       case "Attention":
-        return (
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300">
-            <span className="w-2 h-2 rounded-full bg-amber-500 me-2" />
-            {t("owner.healthAttention")}
-          </span>
-        );
+        return <StatusBadge intent="warning" label={t("owner.healthAttention")} />;
       case "Blocking":
       default:
-        return (
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 border border-rose-300">
-            <span className="w-2 h-2 rounded-full bg-rose-500 me-2" />
-            {t("owner.healthBlocking")}
-          </span>
-        );
+        return <StatusBadge intent="danger" label={t("owner.healthBlocking")} />;
     }
   };
 
+  const kpiCardStyle: React.CSSProperties = {
+    backgroundColor: "var(--color-surface-card, #ffffff)",
+    border: "1px solid var(--color-border-default, #cbd5e1)",
+    borderRadius: "var(--radius-lg, 0.75rem)",
+    boxShadow: "var(--shadow-sm, 0 1px 3px 0 rgba(15, 23, 42, 0.08))",
+    padding: "1.25rem",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    minWidth: 0,
+    transition: "box-shadow 150ms ease, transform 150ms ease"
+  };
+
+  const quickActionCardStyle: React.CSSProperties = {
+    backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+    border: "1px solid var(--color-border-default, #cbd5e1)",
+    borderRadius: "var(--radius-md, 0.5rem)",
+    padding: "1rem",
+    textAlign: "start",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+    transition: "background-color 150ms ease, border-color 150ms ease, transform 150ms ease"
+  };
+
   return (
-    <div className="space-y-6" data-testid="owner-financial-view">
-      {/* Control / Filter Bar */}
-      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800">{t("owner.title")}</h2>
-          <p className="text-sm text-slate-500 mt-1">{t("owner.subtitle")}</p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <label htmlFor="owner-as-of-date" className="text-sm font-medium text-slate-700">
-            {t("owner.asOfDateLabel")}:
-          </label>
-          <input
-            id="owner-as-of-date"
-            type="date"
-            value={asOfDate}
-            onChange={e => setAsOfDate(e.target.value)}
-            className="px-3 py-1.5 border border-slate-300 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-sm font-medium transition"
-          >
-            {t("owner.refresh")}
-          </button>
-        </div>
-      </div>
-
-      {isLoading && (
-        <div className="bg-white p-8 rounded-lg border border-slate-200 text-center text-slate-500">
-          <p className="animate-pulse">{t("owner.loading")}</p>
-        </div>
-      )}
-
-      {isError && (
-        <div className="bg-rose-50 border border-rose-200 p-4 rounded-lg text-rose-700 text-sm">
-          {t("owner.errorLoading")}
-        </div>
-      )}
-
-      {summary && (
-        <>
-          {/* Executive Integrity Banner */}
-          <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-slate-600">{t("owner.integrityStatus")}:</span>
-              {getHealthBadge(summary.health)}
-            </div>
-            <div className="text-xs text-slate-500">
-              {t("owner.lastUpdated")}: {summary.asOfDate} ({summary.currencyCode})
-            </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", width: "100%", minWidth: 0 }} data-testid="owner-financial-summary">
+      {/* Header and Filter Control Bar */}
+      <Surface
+        variant="card"
+        style={{
+          padding: "1.25rem 1.5rem"
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "1rem"
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+              {t("owner.title")}
+            </h2>
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-content-muted, #64748b)" }}>
+              {t("owner.subtitle")}
+            </p>
           </div>
 
-          {/* 5 KPI Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            {/* 1. Cash Book Value */}
-            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {t("owner.cashBook")}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            <label htmlFor="owner-as-of-date" style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-secondary, #334155)" }}>
+              {t("owner.asOfDateLabel")}:
+            </label>
+            <input
+              id="owner-as-of-date"
+              type="date"
+              value={asOfDate}
+              onChange={(e) => setAsOfDate(e.target.value)}
+              style={{
+                fontSize: "0.875rem",
+                padding: "0.375rem 0.625rem",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                border: "1px solid var(--color-border-default, #cbd5e1)",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                color: "var(--color-content-primary, #0f172a)"
+              }}
+            />
+            <Button variant="secondary" size="compact" onPress={() => void refetch()}>
+              {t("owner.refresh")}
+            </Button>
+          </div>
+        </div>
+      </Surface>
+
+      {/* Loading / Error / Content */}
+      {isLoading ? (
+        <Surface variant="card" style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+          <p>{t("owner.loading")}</p>
+        </Surface>
+      ) : isError || !summary ? (
+        <Surface variant="card" style={{ padding: "1.5rem", border: "1px solid var(--color-status-danger, #dc2626)", backgroundColor: "var(--color-status-danger-subtle, #fef2f2)" }}>
+          <p style={{ margin: 0, color: "var(--color-status-danger, #dc2626)", fontWeight: 600 }}>{t("owner.errorLoading")}</p>
+        </Surface>
+      ) : (
+        <>
+          {/* Health Summary Banner */}
+          <Surface
+            variant="card"
+            style={{
+              padding: "1rem 1.5rem",
+              backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "1rem"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                {t("owner.integrityStatus")}:
+              </span>
+              {getHealthBadge(summary.health)}
+            </div>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontFamily: "var(--font-mono, monospace)" }}>
+              {t("owner.lastUpdated")}: {summary.asOfDate} ({summary.currencyCode})
+            </span>
+          </Surface>
+
+          {/* 5 Executive KPI Cards Grid */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: "1.25rem",
+              width: "100%",
+              boxSizing: "border-box"
+            }}
+          >
+            {/* 1. Cash & Bank */}
+            <div style={kpiCardStyle} data-testid="owner-kpi-cash">
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)" }}>
+                    {t("owner.cashBook")}
+                  </span>
+                  <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
+                    1102
+                  </span>
+                </div>
+                <div style={{ margin: "0.5rem 0" }}>
+                  <MoneyDisplay
+                    value={{ amount: summary.cashBookValue.toFixed(2), currency: summary.currencyCode }}
+                    size="large"
+                  />
+                </div>
               </div>
-              <div
-                className={`text-2xl font-bold mt-2 ${
-                  summary.cashBookValue >= 0 ? "text-slate-800" : "text-rose-600"
-                }`}
-                data-testid="owner-kpi-cash"
-              >
-                {formatCurrency(summary.cashBookValue, summary.currencyCode)}
-              </div>
-              <div className="text-xs text-slate-400 mt-2">{t("owner.cashBookDesc")}</div>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                {t("owner.cashBookDesc")}
+              </p>
             </div>
 
             {/* 2. Receivables */}
-            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {t("owner.receivables")}
+            <div style={kpiCardStyle} data-testid="owner-kpi-receivables">
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)" }}>
+                    {t("owner.receivables")}
+                  </span>
+                  <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
+                    AR
+                  </span>
+                </div>
+                <div style={{ margin: "0.5rem 0" }}>
+                  <MoneyDisplay
+                    value={{ amount: summary.receivables.toFixed(2), currency: summary.currencyCode }}
+                    size="large"
+                  />
+                </div>
               </div>
-              <div className="text-2xl font-bold mt-2 text-slate-800" data-testid="owner-kpi-receivables">
-                {formatCurrency(summary.receivables, summary.currencyCode)}
-              </div>
-              <div className="text-xs text-slate-400 mt-2">{t("owner.receivablesDesc")}</div>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                {t("owner.receivablesDesc")}
+              </p>
             </div>
 
             {/* 3. Payables */}
-            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {t("owner.payables")}
+            <div style={kpiCardStyle} data-testid="owner-kpi-payables">
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)" }}>
+                    {t("owner.payables")}
+                  </span>
+                  <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-warning-subtle, #fffbeb)", color: "var(--color-status-warning, #d97706)", fontSize: "0.75rem", fontWeight: 700 }}>
+                    AP
+                  </span>
+                </div>
+                <div style={{ margin: "0.5rem 0" }}>
+                  <MoneyDisplay
+                    value={{ amount: summary.payables.toFixed(2), currency: summary.currencyCode }}
+                    size="large"
+                  />
+                </div>
               </div>
-              <div className="text-2xl font-bold mt-2 text-slate-800" data-testid="owner-kpi-payables">
-                {formatCurrency(summary.payables, summary.currencyCode)}
-              </div>
-              <div className="text-xs text-slate-400 mt-2">{t("owner.payablesDesc")}</div>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                {t("owner.payablesDesc")}
+              </p>
             </div>
 
-            {/* 4. Inventory Value */}
-            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {t("owner.inventoryValue")}
+            {/* 4. Inventory */}
+            <div style={kpiCardStyle} data-testid="owner-kpi-inventory">
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)" }}>
+                    {t("owner.inventoryValue")}
+                  </span>
+                  <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
+                    1104
+                  </span>
+                </div>
+                <div style={{ margin: "0.5rem 0" }}>
+                  {summary.inventoryValue !== null && summary.inventoryValue !== undefined ? (
+                    <MoneyDisplay
+                      value={{ amount: summary.inventoryValue.toFixed(2), currency: summary.currencyCode }}
+                      size="large"
+                    />
+                  ) : (
+                    <span style={{ fontSize: "1.125rem", color: "var(--color-content-muted, #64748b)" }}>
+                      {t("owner.notAvailable")}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="text-2xl font-bold mt-2 text-slate-800" data-testid="owner-kpi-inventory">
-                {summary.inventoryValue !== null && summary.inventoryValue !== undefined
-                  ? formatCurrency(summary.inventoryValue, summary.currencyCode)
-                  : t("owner.notAvailable")}
-              </div>
-              <div className="text-xs text-slate-400 mt-2">{t("owner.inventoryValueDesc")}</div>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                {t("owner.inventoryValueDesc")}
+              </p>
             </div>
 
-            {/* 5. Net Profit */}
-            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm hover:border-slate-300 transition">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {t("owner.profit")}
+            {/* 5. Profit */}
+            <div style={kpiCardStyle} data-testid="owner-kpi-profit">
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)" }}>
+                    {t("owner.profit")}
+                  </span>
+                  <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-success-subtle, #ecfdf5)", color: "var(--color-status-success, #059669)", fontSize: "0.75rem", fontWeight: 700 }}>
+                    P&L
+                  </span>
+                </div>
+                <div style={{ margin: "0.5rem 0" }}>
+                  <MoneyDisplay
+                    value={{ amount: summary.profit.toFixed(2), currency: summary.currencyCode }}
+                    size="large"
+                    coloredSign
+                  />
+                </div>
               </div>
-              <div
-                className={`text-2xl font-bold mt-2 ${
-                  summary.profit >= 0 ? "text-emerald-600" : "text-rose-600"
-                }`}
-                data-testid="owner-kpi-profit"
-              >
-                {formatCurrency(summary.profit, summary.currencyCode)}
-              </div>
-              <div className="text-xs text-slate-400 mt-2">{t("owner.profitDesc")}</div>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                {t("owner.profitDesc")}
+              </p>
             </div>
           </div>
 
-          {/* Quick Shortcuts */}
-          <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-800 mb-4">{t("owner.quickLinksTitle")}</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Quick Deep Drilldown Navigation Links */}
+          <Surface
+            variant="card"
+            title={t("owner.quickLinksTitle")}
+            style={{ padding: "1.25rem 1.5rem" }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                gap: "1rem"
+              }}
+            >
               <button
                 type="button"
+                style={quickActionCardStyle}
                 onClick={() => onNavigateTab?.("financialStatements")}
-                className="p-4 text-start border border-slate-200 rounded-lg hover:border-blue-400 hover:bg-blue-50/50 transition group"
               >
-                <div className="text-sm font-bold text-slate-800 group-hover:text-blue-700">
-                  {t("owner.linkIncomeStatement")}
-                </div>
-                <div className="text-xs text-slate-500 mt-1">{t("owner.linkIncomeStatementDesc")}</div>
+                <strong style={{ fontSize: "0.9375rem", color: "var(--color-brand-primary, #102a43)" }}>
+                  {t("owner.linkIncomeStatement")} →
+                </strong>
+                <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                  {t("owner.linkIncomeStatementDesc")}
+                </span>
               </button>
 
               <button
                 type="button"
+                style={quickActionCardStyle}
                 onClick={() => onNavigateTab?.("financialStatements")}
-                className="p-4 text-start border border-slate-200 rounded-lg hover:border-blue-400 hover:bg-blue-50/50 transition group"
               >
-                <div className="text-sm font-bold text-slate-800 group-hover:text-blue-700">
-                  {t("owner.linkBalanceSheet")}
-                </div>
-                <div className="text-xs text-slate-500 mt-1">{t("owner.linkBalanceSheetDesc")}</div>
+                <strong style={{ fontSize: "0.9375rem", color: "var(--color-brand-primary, #102a43)" }}>
+                  {t("owner.linkBalanceSheet")} →
+                </strong>
+                <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                  {t("owner.linkBalanceSheetDesc")}
+                </span>
               </button>
 
               <button
                 type="button"
+                style={quickActionCardStyle}
                 onClick={() => onNavigateTab?.("controlReconciliation")}
-                className="p-4 text-start border border-slate-200 rounded-lg hover:border-blue-400 hover:bg-blue-50/50 transition group"
               >
-                <div className="text-sm font-bold text-slate-800 group-hover:text-blue-700">
-                  {t("owner.linkReconciliation")}
-                </div>
-                <div className="text-xs text-slate-500 mt-1">{t("owner.linkReconciliationDesc")}</div>
+                <strong style={{ fontSize: "0.9375rem", color: "var(--color-brand-primary, #102a43)" }}>
+                  {t("owner.linkReconciliation")} →
+                </strong>
+                <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                  {t("owner.linkReconciliationDesc")}
+                </span>
               </button>
 
               <button
                 type="button"
+                style={quickActionCardStyle}
                 onClick={() => onNavigateTab?.("entries")}
-                className="p-4 text-start border border-slate-200 rounded-lg hover:border-blue-400 hover:bg-blue-50/50 transition group"
               >
-                <div className="text-sm font-bold text-slate-800 group-hover:text-blue-700">
-                  {t("owner.linkEntries")}
-                </div>
-                <div className="text-xs text-slate-500 mt-1">{t("owner.linkEntriesDesc")}</div>
+                <strong style={{ fontSize: "0.9375rem", color: "var(--color-brand-primary, #102a43)" }}>
+                  {t("owner.linkEntries")} →
+                </strong>
+                <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                  {t("owner.linkEntriesDesc")}
+                </span>
               </button>
             </div>
-          </div>
+          </Surface>
         </>
       )}
     </div>
