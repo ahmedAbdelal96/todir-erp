@@ -15,6 +15,7 @@ using Modules.Inventory;
 using Modules.Sales;
 using Modules.Purchasing;
 using Modules.Accounting.Controllers;
+using Modules.Hr;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -42,6 +43,7 @@ builder.Services.AddInventoryModule();
 builder.Services.AddSalesModule();
 builder.Services.AddPurchasingModule();
 builder.Services.AddAccountingModule();
+builder.Services.AddHrModule();
 builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 var configuredOrigins = (builder.Configuration["TODIR_CORS_ORIGINS"] ?? string.Empty)
@@ -161,6 +163,7 @@ app.MapInventoryModule();
 app.MapSalesModule();
 app.MapPurchasingModule();
 app.MapAccountingModule();
+app.MapHrModule();
 app.Run();
 
 public partial class Program;

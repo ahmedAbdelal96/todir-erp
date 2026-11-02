@@ -37,6 +37,7 @@ public static class SeedRunner
         {
             var identity = await RunStageAsync(connection, tenant, context => IdentitySeed.SeedAsync(context, password, protectedMfaSecret, recoveryDigests, cancellationToken), cancellationToken);
             var directory = await RunStageAsync(connection, tenant, context => DirectorySeed.SeedAsync(context, cancellationToken), cancellationToken);
+            var hr = await RunStageAsync(connection, tenant, context => HrSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var catalog = await RunStageAsync(connection, tenant, context => CatalogSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var finance = await RunStageAsync(connection, tenant, context => FinanceBaseSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var pricing = await RunStageAsync(connection, tenant, context => PricingSeed.SeedAsync(context, cancellationToken), cancellationToken);
@@ -50,7 +51,7 @@ public static class SeedRunner
             var sales = await RunStageAsync(connection, tenant, context => SalesSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var purchasing = await RunStageAsync(connection, tenant, context => PurchasingSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var accounting = await RunStageAsync(connection, tenant, context => AccountingSeed.SeedAsync(context, cancellationToken), cancellationToken);
-            summaries.Add(new(tenant, identity, directory, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory, sales, purchasing, accounting));
+            summaries.Add(new(tenant, identity, directory, hr, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory, sales, purchasing, accounting));
         }
         return new(SeedIds.Version, summaries);
     }
@@ -72,7 +73,7 @@ public static class SeedRunner
     }
 }
 
-public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory, SeedSalesSummary Sales, SeedPurchasingSummary Purchasing, SeedAccountingSummary Accounting);
+public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, HrSeedSummary Hr, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory, SeedSalesSummary Sales, SeedPurchasingSummary Purchasing, SeedAccountingSummary Accounting);
 public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSummary> Tenants)
 {
     public void Print(TextWriter output)
@@ -85,6 +86,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  Admin: admin@{tenant.Tenant.LoginDomain}");
             output.WriteLine($"  Users: {tenant.Identity.Total} (active {tenant.Identity.Active}, suspended {tenant.Identity.Suspended}, must-change-password {tenant.Identity.MustChangePassword}, mfa {(tenant.Identity.MfaEnabled ? "enabled" : "not seeded")})");
             output.WriteLine($"  Parties: {tenant.Directory.Total}");
+            output.WriteLine($"  HR: {tenant.Hr.Employees} employees, {tenant.Hr.Departments} departments, {tenant.Hr.Positions} positions, {tenant.Hr.ActiveEmployments} active employments, {tenant.Hr.TerminatedEmployments} terminated employment, {tenant.Hr.Contracts} contracts, {tenant.Hr.Renewals} renewal scenario, {tenant.Hr.CompensationRecords} compensation records, {tenant.Hr.InsuranceDrafts} insurance drafts, {tenant.Hr.Qualifications} qualifications, {tenant.Hr.Credentials} credentials");
             output.WriteLine($"  Products: {tenant.Catalog.Total}");
             output.WriteLine($"  Finance: {tenant.Finance.EnabledCurrencies} currencies, {tenant.Finance.PaymentTerms} payment terms");
             output.WriteLine($"  Pricing: {tenant.Pricing.PriceLists} lists, {tenant.Pricing.Entries} entries, {tenant.Pricing.ExplicitZeroPrices} explicit zero prices, {tenant.Pricing.ScheduledVersions} scheduled versions");

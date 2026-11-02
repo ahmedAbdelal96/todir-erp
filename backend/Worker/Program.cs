@@ -14,6 +14,8 @@ using Modules.Inventory;
 using Modules.Sales;
 using Modules.Invoicing.Controllers;
 using Modules.Tax;
+using Modules.Hr;
+using Quartz;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
@@ -28,6 +30,7 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<CatalogProjectionConsumer, CatalogProjectionConsumerDefinition>();
     bus.AddConsumer<CatalogImportConsumer, CatalogImportConsumerDefinition>();
     bus.AddConsumer<PaymentProviderOperationConsumer, PaymentProviderOperationConsumerDefinition>();
+    bus.AddConsumer<HrMembershipDeactivationConsumer, HrMembershipDeactivationConsumerDefinition>();
 });
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();
@@ -41,7 +44,20 @@ builder.Services.AddInventoryModule();
 builder.Services.AddInvoicingModule();
 builder.Services.AddSalesModule();
 builder.Services.AddTaxModule();
-builder.Services.AddScheduling(builder.Configuration);
+builder.Services.AddHrModule();
+builder.Services.AddScheduling(builder.Configuration, options =>
+{
+    options.AddJob<HrExpiryReminderJob>(job => job
+        .WithIdentity(HrExpiryReminderJob.Key)
+        .StoreDurably()
+        .RequestRecovery());
+    options.AddTrigger(trigger => trigger
+        .ForJob(HrExpiryReminderJob.Key)
+        .WithIdentity(HrExpiryReminderJob.Trigger)
+        .WithCronSchedule("0 0 2 * * ?", schedule => schedule
+            .InTimeZone(TimeZoneInfo.Utc)
+            .WithMisfireHandlingInstructionFireAndProceed()));
+});
 builder.Services.AddHostedService<OutboxDispatchWorker>();
 builder.Services.AddHostedService<FinanceBaseRateSyncWorker>();
 builder.Services.AddHostedService<PricingScheduledActivationWorker>();

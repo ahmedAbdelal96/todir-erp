@@ -2898,6 +2898,8 @@ Correction/recalculation creates controlled delta movements where needed.
 
 Policy/versioned job at boundary.
 
+Approved Product Owner decision: the annual leave-year boundary is January 1. Leave consumption is allocated FIFO by earliest expiry. Each carried amount is a separate entitlement lot with its own expiry date, calculated from the boundary and the effective policy duration. Uncarried closing-year entitlement is closed through an immutable expiry movement.
+
 ---
 
 # 204. Expiry

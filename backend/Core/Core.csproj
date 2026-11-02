@@ -4,6 +4,7 @@
     <RootNamespace>Core</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="MassTransit.RabbitMQ" />

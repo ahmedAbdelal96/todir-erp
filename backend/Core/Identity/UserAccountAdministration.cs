@@ -33,7 +33,7 @@ public interface IUserAccountAdminStore
     Task<string?> LoadLoginDomainAsync(TenantId tenantId, CancellationToken cancellationToken = default);
 }
 
-public sealed class NullUserAccountAdminStore : IUserAccountAdminStore
+public sealed class NullUserAccountAdminStore : IUserAccountAdminStore, Shared.Contracts.Platform.IPlatformMembershipLifecycleCapability
 {
     public Task<CreatedUserAccount> CreateAsync(TenantId tenantId, string name, string emailPrefix, IReadOnlyCollection<Guid> roleIds, CancellationToken cancellationToken = default) => throw new InvalidOperationException("identity.storage_unavailable");
     public Task<UserAccountPage> ListAsync(TenantId tenantId, string? search, bool? active, int offset, int limit, CancellationToken cancellationToken = default) => Task.FromResult(new UserAccountPage([], 0, offset / Math.Max(1, limit) + 1, limit));
@@ -44,10 +44,46 @@ public sealed class NullUserAccountAdminStore : IUserAccountAdminStore
     public Task<string?> ResetPasswordAsync(TenantId tenantId, IdentityId identityId, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
     public Task<string> ChangeLoginDomainAsync(TenantId tenantId, string loginDomain, CancellationToken cancellationToken = default) => throw new InvalidOperationException("identity.storage_unavailable");
     public Task<string?> LoadLoginDomainAsync(TenantId tenantId, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+    public Task<bool> DeactivateMembershipAsync(TenantId tenantId, Guid membershipId, string reasonCode, CancellationToken cancellationToken = default) => Task.FromResult(false);
 }
 
-public sealed class NpgsqlUserAccountAdminStore(NpgsqlDataSource dataSource, IAuditWriter audit, TimeProvider clock) : IUserAccountAdminStore
+public sealed class NpgsqlUserAccountAdminStore(NpgsqlDataSource dataSource, IAuditWriter audit, TimeProvider clock) : IUserAccountAdminStore, Shared.Contracts.Platform.IPlatformMembershipLifecycleCapability
 {
+    public async Task<bool> DeactivateMembershipAsync(TenantId tenantId, Guid membershipId, string reasonCode, CancellationToken cancellationToken = default)
+    {
+        if (membershipId == Guid.Empty || string.IsNullOrWhiteSpace(reasonCode) || reasonCode.Trim().Length > 100) return false;
+        Guid identityId;
+        await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken))
+        {
+            await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
+            await using var command = new NpgsqlCommand("update platform.membership set status='Revoked',version=version+1 where tenant_id=$1 and id=$2 and status='Active' returning identity_id", connection, transaction);
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(membershipId);
+            var identity = await command.ExecuteScalarAsync(cancellationToken);
+            if (identity is null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return false;
+            }
+            identityId = (Guid)identity;
+            await using (var invalidate = new NpgsqlCommand("update platform.identity set security_stamp=$1,version=version+1 where tenant_id=$2 and id=$3 and status='Active'", connection, transaction))
+            {
+                invalidate.Parameters.AddWithValue(Guid.CreateVersion7()); invalidate.Parameters.AddWithValue(tenantId.Value); invalidate.Parameters.AddWithValue(identityId);
+                await invalidate.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await using (var challenges = new NpgsqlCommand("delete from platform.auth_challenge where identity_id=$1", connection, transaction))
+            {
+                challenges.Parameters.AddWithValue(identityId); await challenges.ExecuteNonQueryAsync(cancellationToken);
+            }
+            var now = clock.GetUtcNow();
+            var cleanReason = reasonCode.Trim();
+            await NpgsqlAuditWriter.WriteAsync(connection, transaction, new AuditEntry(Guid.CreateVersion7(), tenantId, null, null, "System", null, membershipId, "identity", "membership_deactivated_by_hr", "membership", membershipId, null,
+                System.Text.Json.JsonSerializer.Serialize(new { identityId, status = "Revoked", source = "hr", reasonCode = cleanReason }), cleanReason, "worker", Guid.CreateVersion7(), null, now, null), cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        return true;
+    }
+
     public async Task<CreatedUserAccount> CreateAsync(TenantId tenantId, string name, string emailPrefix, IReadOnlyCollection<Guid> roleIds, CancellationToken cancellationToken = default)
     {
         var cleanName = ValidateName(name);

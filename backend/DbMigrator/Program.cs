@@ -10,6 +10,8 @@ var rebuildInventoryBalances = args.Length == 3 && string.Equals(args[0], "--reb
     && Guid.TryParse(args[1], out rebuildTenantId) && Guid.TryParse(args[2], out rebuildEntityId);
 var rebuildSubledger = args.Length == 3 && string.Equals(args[0], "--rebuild-subledger-cache", StringComparison.OrdinalIgnoreCase)
     && Guid.TryParse(args[1], out rebuildTenantId) && Guid.TryParse(args[2], out rebuildEntityId);
+var rebuildHrProjections = args.Length == 2 && string.Equals(args[0], "--rebuild-hr-projections", StringComparison.OrdinalIgnoreCase)
+    && Guid.TryParse(args[1], out rebuildTenantId);
 if (args.Any(argument => string.Equals(argument, "--seed", StringComparison.OrdinalIgnoreCase)) && !seedDevelopment)
 {
     Console.Error.WriteLine("Supported seed mode: --seed development");
@@ -23,6 +25,11 @@ if (args.Any(argument => string.Equals(argument, "--rebuild-subledger-cache", St
 if (args.Any(argument => string.Equals(argument, "--rebuild-inventory-balances", StringComparison.OrdinalIgnoreCase)) && !rebuildInventoryBalances)
 {
     Console.Error.WriteLine("Usage: --rebuild-inventory-balances <tenant-guid> <legal-entity-guid>");
+    return 2;
+}
+if (args.Any(argument => string.Equals(argument, "--rebuild-hr-projections", StringComparison.OrdinalIgnoreCase)) && !rebuildHrProjections)
+{
+    Console.Error.WriteLine("Usage: --rebuild-hr-projections <tenant-guid>");
     return 2;
 }
 if (seedDevelopment)
@@ -341,6 +348,8 @@ await using (var identityTenantResolverOwnership = new NpgsqlCommand("alter func
     await identityTenantResolverOwnership.ExecuteNonQueryAsync();
 await using (var reservationExpiryScopeOwnership = new NpgsqlCommand("alter function business_inventory.due_reservation_scopes(integer,timestamptz) owner to erp_dispatcher", connection))
     await reservationExpiryScopeOwnership.ExecuteNonQueryAsync();
+await using (var hrReminderScopeOwnership = new NpgsqlCommand("alter function business_hr.list_hr_reminder_scopes() owner to erp_dispatcher", connection))
+    await hrReminderScopeOwnership.ExecuteNonQueryAsync();
 
 await using (var dispatcherOwnership = new NpgsqlCommand("alter function platform.claim_pending_outbox(integer) owner to erp_dispatcher", connection))
     await dispatcherOwnership.ExecuteNonQueryAsync();
@@ -376,6 +385,20 @@ if (rebuildInventoryBalances)
     {
         Console.Error.WriteLine($"Inventory stock balance rebuild rolled back: {exception.Message}");
         return 6;
+    }
+}
+
+if (rebuildHrProjections)
+{
+    try
+    {
+        var rebuiltEmployees = await DbMigrator.HrProjectionRebuilder.RunAsync(ownedConnection, rebuildTenantId);
+        Console.WriteLine($"HR timeline and employee list projections rebuilt transactionally; employees: {rebuiltEmployees}.");
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"HR projections rebuild rolled back: {exception.Message}");
+        return 7;
     }
 }
 

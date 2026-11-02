@@ -8,7 +8,7 @@ The platform owns file metadata and lifecycle while an S3-compatible private ada
 
 ## Consequences
 
-Original filenames cannot become storage paths, and object-store outages do not make metadata appear downloadable or public.
+Original filenames cannot become storage paths, and object-store outages do not make metadata appear downloadable or public. A caller first authorizes access in its owning business module, then Core verifies tenant, owner, and `Ready` status before issuing a short-lived GET URL. URLs are secrets and are excluded from audit and logs. Browser-facing endpoint configuration must be reachable from the user's browser; private bucket policy remains mandatory.
 
 ## Evidence
 

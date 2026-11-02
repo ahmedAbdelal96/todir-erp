@@ -6,6 +6,7 @@ using Core.Modules;
 using Core.Messaging;
 using Core.Services;
 using Core.Security;
+using Microsoft.Extensions.Configuration;
 using Shared.Primitives.Identifiers;
 using Xunit;
 
@@ -13,6 +14,27 @@ namespace Core.Tests;
 
 public sealed class ModuleAndPlatformServiceTests
 {
+    [Fact]
+    public async Task S3FileAccessCreatesAShortLivedDownloadUrlWithoutMakingTheBucketPublic()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["TODIR_FILES_BUCKET"] = "private-files",
+            ["TODIR_FILES_PUBLIC_ENDPOINT"] = "http://localhost:9000",
+            ["TODIR_FILES_ACCESS_KEY"] = "development-access",
+            ["TODIR_FILES_SECRET_KEY"] = "development-secret"
+        }).Build();
+        using var provider = new S3FileDownloadUrlProvider(configuration);
+
+        var download = await provider.CreateAsync("tenant/00000000-0000-0000-0000-000000000001/hr/employee/00000000-0000-0000-0000-000000000002/00000000-0000-0000-0000-000000000003", TimeSpan.FromMinutes(5), TimeProvider.System, CancellationToken.None);
+
+        Assert.NotNull(download);
+        Assert.InRange(download.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(4).AddSeconds(59), DateTimeOffset.UtcNow.AddMinutes(5).AddSeconds(1));
+        Assert.StartsWith("http://localhost:9000/private-files/tenant/", download.Url, StringComparison.Ordinal);
+        Assert.Contains("X-Amz-Signature=", download.Url, StringComparison.Ordinal);
+        Assert.Contains("X-Amz-Expires=300", download.Url, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(NotificationChannel.InApp)]
     [InlineData(NotificationChannel.Email)]

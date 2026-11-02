@@ -34,4 +34,8 @@ public static class PlatformSeed
         }
     }
 
+    public static Task EnsureSequenceAsync(SeedContext context, string key, Guid legalEntityId, string prefix, int padding, long nextValue, CancellationToken cancellationToken) =>
+        context.ExecuteAsync("insert into platform.sequence_definition(id,tenant_id,sequence_key,legal_entity_id,branch_id,scope_key,period_key,prefix_template,padding,mode,next_value,version) values($1,$2,$3,$4,null,null,null,$5,$6,'Standard',$7,1) on conflict(tenant_id,sequence_key,legal_entity_id,branch_id,scope_key,period_key) do update set next_value=greatest(platform.sequence_definition.next_value,excluded.next_value),prefix_template=excluded.prefix_template,padding=excluded.padding,version=platform.sequence_definition.version+1", cancellationToken,
+            SeedIds.Stable($"{context.Tenant.Id:D}:platform:sequence:{key}:{legalEntityId:D}"), context.Tenant.Id, key, legalEntityId, prefix, padding, nextValue);
+
 }

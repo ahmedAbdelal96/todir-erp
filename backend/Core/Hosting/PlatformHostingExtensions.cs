@@ -46,11 +46,18 @@ public static class PlatformHostingExtensions
         services.AddSingleton<IUserAccountAdminStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
             ? new NpgsqlUserAccountAdminStore(dataSource, provider.GetRequiredService<IAuditWriter>(), provider.GetRequiredService<TimeProvider>())
             : new NullUserAccountAdminStore());
+        services.AddSingleton<IPlatformMembershipLifecycleCapability>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlUserAccountAdminStore(dataSource, provider.GetRequiredService<IAuditWriter>(), provider.GetRequiredService<TimeProvider>())
+            : new NullUserAccountAdminStore());
         services.AddSingleton<IPlatformAdminSurfaceStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlPlatformAdminSurfaceStore(dataSource) : new NullPlatformAdminSurfaceStore());
         services.AddSingleton<ILegalEntityFinancialReadStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlLegalEntityFinancialReadStore(dataSource) : new NullLegalEntityFinancialReadStore());
         services.AddSingleton<IPlatformOrganizationCapabilities>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
             ? new NpgsqlPlatformOrganizationCapabilities(dataSource)
             : new NullPlatformOrganizationCapabilities());
+        services.AddSingleton(new S3FileDownloadUrlProvider(configuration));
+        services.AddSingleton<Shared.Contracts.Platform.IPlatformFileReferenceCapability>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlPlatformFileReferenceCapability(dataSource, provider.GetRequiredService<S3FileDownloadUrlProvider>(), provider.GetRequiredService<TimeProvider>())
+            : new NullPlatformFileReferenceCapability());
         var cookieSecurePolicy = Enum.TryParse<CookieSecurePolicy>(configuration["TODIR_COOKIE_SECURE_POLICY"], ignoreCase: true, out var configuredCookieSecurePolicy)
             ? configuredCookieSecurePolicy
             : CookieSecurePolicy.Always;

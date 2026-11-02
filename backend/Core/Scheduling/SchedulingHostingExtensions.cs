@@ -8,7 +8,7 @@ namespace Core.Scheduling;
 
 public static class SchedulingHostingExtensions
 {
-    public static IServiceCollection AddScheduling(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddScheduling(this IServiceCollection services, IConfiguration configuration, Action<IServiceCollectionQuartzConfigurator>? configureAdditionalJobs = null)
     {
         var connectionString = configuration.GetRuntimeConnectionString();
         if (!string.IsNullOrWhiteSpace(connectionString) && int.TryParse(configuration["TODIR_DB_MAX_POOL_SIZE"], out var maxPoolSize) && maxPoolSize > 0)
@@ -48,6 +48,7 @@ public static class SchedulingHostingExtensions
                     store.UseClustering();
                 });
             }
+            configureAdditionalJobs?.Invoke(options);
         });
         services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
         return services;
