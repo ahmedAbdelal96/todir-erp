@@ -48,7 +48,7 @@ async function loginIfNeeded(page: Page) {
 
     if (matched === 'login') {
       await emailInput.fill('admin@atlas.com');
-      await page.locator('#login-password').fill('Admin@123456');
+      await page.locator('#login-password').fill(process.env.SEED_DEFAULT_PASSWORD ?? 'TodirDev2026!');
       await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
       await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
       await page.waitForLoadState('networkidle');
@@ -569,7 +569,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     const salesEmail = salesPage.locator('#login-email');
     await salesEmail.waitFor({ state: 'visible', timeout: 15000 });
     await salesEmail.fill('sales@atlas.com');
-    await salesPage.locator('#login-password').fill('Admin@123456');
+    await salesPage.locator('#login-password').fill(process.env.SEED_DEFAULT_PASSWORD ?? 'TodirDev2026!');
     await salesPage.locator('button[type="submit"]').click();
     await salesPage.waitForLoadState('networkidle');
 

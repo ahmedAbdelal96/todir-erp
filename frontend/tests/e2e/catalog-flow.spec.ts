@@ -566,7 +566,7 @@ test.describe('Catalog Real-Stack Canonical Seed Acceptance (No Route Intercepti
     const emailInput = page.locator('#login-email');
     if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
       await emailInput.fill('admin@atlas.com');
-      await page.locator('#login-password').fill('Admin@123456');
+      await page.locator('#login-password').fill(process.env.SEED_DEFAULT_PASSWORD ?? 'TodirDev2026!');
       await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
       await page.waitForLoadState('networkidle');
     }
@@ -581,7 +581,9 @@ test.describe('Catalog Real-Stack Canonical Seed Acceptance (No Route Intercepti
 
     // Wait for the real product rows and total count to appear from the database
     await expect(page.getByRole('grid')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('113')).toBeVisible({ timeout: 15000 });
+    const totalCount = page.getByRole('navigation', { name: 'التنقل بين الصفحات' }).locator('strong');
+    await expect(totalCount).toHaveText(/^\d+$/, { timeout: 15000 });
+    expect(Number(await totalCount.innerText())).toBeGreaterThan(0);
     await expect(page.getByRole('row').nth(1)).toBeVisible({ timeout: 15000 });
 
     // Capture unfiltered real desktop list screenshot

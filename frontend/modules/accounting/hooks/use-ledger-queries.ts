@@ -62,6 +62,7 @@ export const ledgerQueryKeys = {
       dimensionValueId?: string | undefined;
       entryNumber?: string | undefined;
       cursor?: string | undefined;
+      page?: number | undefined;
       limit?: number | undefined;
     }
   ) =>
@@ -75,7 +76,12 @@ export const ledgerQueryKeys = {
       params?.journalId ?? "",
       params?.sourceModule ?? "",
       params?.sourceReference ?? "",
-      params?.cursor ?? ""
+      params?.dimensionDefinitionId ?? "",
+      params?.dimensionValueId ?? "",
+      params?.entryNumber ?? "",
+      params?.cursor ?? "",
+      params?.page ?? 1,
+      params?.limit ?? 50
     ] as const,
   reconcileBalances: (legalEntityId: string, fiscalYearId?: string, periodId?: string) =>
     ["ledger", "reconcileBalances", legalEntityId, fiscalYearId ?? "", periodId ?? ""] as const

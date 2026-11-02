@@ -544,7 +544,7 @@ test.describe('Tax Administration Real-Stack Acceptance & Visual Suite', () => {
         await atlasDevBtn.click();
       } else {
         await emailInput.fill('admin@atlas.com');
-        await page.locator('#login-password').fill('Admin@123456');
+        await page.locator('#login-password').fill(process.env.SEED_DEFAULT_PASSWORD ?? 'TodirDev2026!');
         await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
       }
       await emailInput.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
