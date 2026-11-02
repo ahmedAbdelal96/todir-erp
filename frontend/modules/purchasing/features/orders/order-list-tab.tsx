@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
 import { PurchasingDataTable } from "../../components/purchasing-data-table.tsx";
 import { PurchasingStatusBadge } from "../../components/purchasing-status-badge.tsx";
@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Button } from "../../../../components/primitives/button.tsx";
 import { SearchField } from "../../../../components/primitives/search-field.tsx";
 import { Select, SelectItem } from "../../../../components/primitives/select.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
 import type { PurchaseOrderListItem } from "../../types.ts";
 
 export interface OrderListTabProps {
@@ -22,6 +23,8 @@ export interface OrderListTabProps {
   readonly onNewOrder: () => void;
   readonly stateFilter: string | null;
   readonly onStateFilterChange: (state: string | null) => void;
+  readonly searchQuery: string;
+  readonly onSearchQueryChange: (value: string) => void;
   readonly hasPriceReadPermission?: boolean | undefined;
 }
 
@@ -35,18 +38,11 @@ export function OrderListTab({
   onNewOrder,
   stateFilter,
   onStateFilterChange,
+  searchQuery,
+  onSearchQueryChange,
   hasPriceReadPermission = true
 }: OrderListTabProps): React.JSX.Element {
   const { t } = useTranslation("purchasing");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const filteredOrders = orders.filter((order) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase().trim();
-    const poNum = (order.poNumber || formatPoNumber(order.id)).toLowerCase();
-    return poNum.includes(q) || order.supplierPartyId.toLowerCase().includes(q);
-  });
-
   const stateOptions = [
     { value: "", label: t("orders.filterAllStates") },
     { value: "Draft", label: t("status.Draft") },
@@ -79,7 +75,7 @@ export function OrderListTab({
           <div style={{ minWidth: "15rem", maxWidth: "22rem", flex: 1 }}>
             <SearchField
               value={searchQuery}
-              onChange={setSearchQuery}
+              onChange={onSearchQueryChange}
               placeholder={t("orders.searchPlaceholder")}
               aria-label={t("orders.searchPlaceholder")}
             />
@@ -120,7 +116,7 @@ export function OrderListTab({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredOrders.map((order) => (
+            {orders.map((order) => (
               <TableRow key={order.id}>
                 <TableCell>
                   <span style={{ fontFamily: "monospace", fontWeight: 600, color: "var(--color-brand-primary)" }}>
@@ -162,7 +158,7 @@ export function OrderListTab({
               </TableRow>
             ))}
 
-            {filteredOrders.length === 0 && !isLoading && (
+            {orders.length === 0 && !isLoading && (
               <TableRow>
                 <TableCell colSpan={hasPriceReadPermission ? 9 : 8} style={{ textAlign: "center", padding: "3rem" }}>
                   <p style={{ margin: "0 0 1rem", fontSize: "0.9375rem", color: "var(--color-content-muted)" }}>
@@ -177,6 +173,14 @@ export function OrderListTab({
           </TableBody>
         </Table>
       </PurchasingDataTable>
+      <Pagination
+        page={page}
+        totalItems={totalCount}
+        totalPages={Math.max(1, Math.ceil(totalCount / 50))}
+        pageSize={50}
+        onPageChange={onPageChange}
+        isDisabled={isLoading}
+      />
     </div>
   );
 }

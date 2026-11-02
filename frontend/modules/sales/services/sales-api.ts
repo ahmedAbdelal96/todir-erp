@@ -34,11 +34,12 @@ export const salesApi = {
   // Quotations
   listQuotations: (
     entityId: string,
-    params?: { state?: string | null; partyId?: string | null; page?: number | null; pageSize?: number | null }
+    params?: { state?: string | null; partyId?: string | null; search?: string | null; page?: number | null; pageSize?: number | null }
   ): Promise<SalesPagedResult<QuotationListItem>> => {
     const searchParams = new URLSearchParams();
     if (params?.state) searchParams.set("state", params.state);
     if (params?.partyId) searchParams.set("partyId", params.partyId);
+    if (params?.search) searchParams.set("search", params.search);
     if (params?.page != null) searchParams.set("page", String(params.page));
     if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
     const query = searchParams.toString();
@@ -111,11 +112,12 @@ export const salesApi = {
   // Orders
   listOrders: (
     entityId: string,
-    params?: { page?: number | null; pageSize?: number | null }
+    params?: { page?: number | null; pageSize?: number | null; search?: string | null }
   ): Promise<SalesPagedResult<SalesOrderListItem>> => {
     const searchParams = new URLSearchParams();
     if (params?.page != null) searchParams.set("page", String(params.page));
     if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
+    if (params?.search) searchParams.set("search", params.search);
     const query = searchParams.toString();
     return httpClient<SalesPagedResult<SalesOrderListItem>>(entityPath(entityId, `/orders${query ? `?${query}` : ""}`));
   },

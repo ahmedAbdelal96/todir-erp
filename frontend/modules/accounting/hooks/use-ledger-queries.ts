@@ -246,7 +246,7 @@ export function useJournalEntries(legalEntityId: string, limit: number = 50) {
 
 export function useJournalEntriesPage(
   legalEntityId: string,
-  params: { from?: string | undefined; to?: string | undefined; search?: string | undefined; status?: string | undefined; cursor?: string | undefined; limit?: number | undefined; sort?: string | undefined }
+  params: { from?: string | undefined; to?: string | undefined; search?: string | undefined; status?: string | undefined; cursor?: string | undefined; page?: number | undefined; limit?: number | undefined; sort?: string | undefined }
 ) {
   return useQuery({
     queryKey: ledgerQueryKeys.entriesPage(legalEntityId, params),
@@ -277,7 +277,7 @@ export function useTrialBalance(legalEntityId: string, from?: string, to?: strin
 
 export function useTrialBalancePage(
   legalEntityId: string,
-  params: { from?: string | undefined; to?: string | undefined; search?: string | undefined; cursor?: string | undefined; limit?: number | undefined; sort?: string | undefined }
+  params: { from?: string | undefined; to?: string | undefined; search?: string | undefined; cursor?: string | undefined; page?: number | undefined; limit?: number | undefined; sort?: string | undefined }
 ) {
   return useQuery({
     queryKey: ledgerQueryKeys.trialBalancePage(legalEntityId, params),
@@ -299,6 +299,7 @@ export function useGeneralLedger(
     dimensionValueId?: string | undefined;
     entryNumber?: string | undefined;
     cursor?: string | undefined;
+    page?: number | undefined;
     limit?: number | undefined;
   }
 ) {

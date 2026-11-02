@@ -58,6 +58,7 @@ export function SalesPage(): React.JSX.Element {
 
   // Quotation pagination & filter state
   const [page, setPage] = useState(1);
+  const [quotationSearch, setQuotationSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<string | null>(null);
 
   // Modals state
@@ -67,7 +68,8 @@ export function SalesPage(): React.JSX.Element {
   const { data: quotesPage, isLoading: isQuotesLoading } = useSalesQuotations(legalEntityId, {
     page,
     pageSize: 50,
-    state: stateFilter
+    state: stateFilter,
+    search: quotationSearch || null
   });
 
   const quotations = quotesPage?.items ?? [];
@@ -133,10 +135,12 @@ export function SalesPage(): React.JSX.Element {
             totalCount={totalQuotationsCount}
             page={page}
             onPageChange={setPage}
+            searchQuery={quotationSearch}
+            onSearchQueryChange={(value) => { setQuotationSearch(value); setPage(1); }}
             onSelectQuotation={(id) => setSelectedQuotationId(id)}
             onNewQuotation={() => setIsNewQuotationOpen(true)}
             stateFilter={stateFilter}
-            onStateFilterChange={setStateFilter}
+            onStateFilterChange={(value) => { setStateFilter(value); setPage(1); }}
           />
         )}
 

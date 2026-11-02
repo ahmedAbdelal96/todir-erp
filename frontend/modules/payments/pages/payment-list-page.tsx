@@ -5,6 +5,7 @@ import { ListPage } from "../../../components/pages/list-page.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
+import { Pagination } from "../../../components/primitives/pagination.tsx";
 import { LoadingState } from "../../../components/primitives/loading-state.tsx";
 import { EmptyState } from "../../../components/primitives/empty-state.tsx";
 import { ErrorState } from "../../../components/primitives/error-state.tsx";
@@ -292,6 +293,35 @@ export function PaymentListPage(): React.JSX.Element {
         ]}
         secondaryActions={primaryActions}
         help={helpContent}
+        pagination={
+          activeTab === "requests" ? (
+            <Pagination
+              page={page}
+              totalItems={requestsQuery.data?.totalCount ?? 0}
+              totalPages={Math.max(1, Math.ceil((requestsQuery.data?.totalCount ?? 0) / pageSize))}
+              pageSize={pageSize}
+              onPageChange={(nextPage) => {
+                const next = new URLSearchParams(searchParams);
+                next.set("page", String(nextPage));
+                setSearchParams(next);
+              }}
+              isDisabled={requestsQuery.isLoading}
+            />
+          ) : activeTab !== "accounts" ? (
+            <Pagination
+              page={page}
+              totalItems={paymentsQuery.data?.totalCount ?? 0}
+              totalPages={Math.max(1, Math.ceil((paymentsQuery.data?.totalCount ?? 0) / pageSize))}
+              pageSize={pageSize}
+              onPageChange={(nextPage) => {
+                const next = new URLSearchParams(searchParams);
+                next.set("page", String(nextPage));
+                setSearchParams(next);
+              }}
+              isDisabled={paymentsQuery.isLoading}
+            />
+          ) : undefined
+        }
       >
         {/* Navigation Tabs */}
         <div

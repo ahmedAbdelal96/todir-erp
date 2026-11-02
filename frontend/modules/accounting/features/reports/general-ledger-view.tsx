@@ -38,8 +38,7 @@ export function GeneralLedgerView({
     return "";
   });
   const [entryNumber, setEntryNumber] = useState("");
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
   const [explainEntryId, setExplainEntryId] = useState<string | null>(null);
@@ -49,16 +48,13 @@ export function GeneralLedgerView({
     to: to || undefined,
     accountId: selectedAccountId || undefined,
     entryNumber: entryNumber || undefined,
-    cursor,
+    page,
     limit: pageSize
   });
 
   const items = pageData?.items ?? [];
 
-  const resetCursor = () => {
-    setCursor(undefined);
-    setCursorHistory([]);
-  };
+  const resetCursor = () => setPage(1);
 
   const columns: readonly DataGridColumn<GeneralLedgerRowDto>[] = [
     {
@@ -234,24 +230,12 @@ export function GeneralLedgerView({
           <DataGrid columns={columns} staticRows={items} loading={isLoading} emptyMessage={t("reports.noTransactionsFound")} hasActiveFilters={Boolean(from || to || selectedAccountId || entryNumber)} density="compact" />
 
           <Pagination
-            mode="cursor"
-            page={cursorHistory.length + 1}
-            itemCount={items.length}
+            page={page}
+            totalItems={pageData?.totalCount ?? 0}
+            totalPages={Math.max(1, Math.ceil((pageData?.totalCount ?? 0) / pageSize))}
             pageSize={pageSize}
-            hasPrevious={cursorHistory.length > 0}
-            hasNext={Boolean(pageData?.nextCursor)}
-            onPrevious={() => {
-              if (cursorHistory.length === 0) return;
-              const nextHistory = cursorHistory.slice(0, -1);
-              setCursorHistory(nextHistory);
-              setCursor(nextHistory[nextHistory.length - 1]);
-            }}
-            onNext={() => {
-              if (!pageData?.nextCursor) return;
-              setCursorHistory((history) => [...history, cursor]);
-              setCursor(pageData.nextCursor ?? undefined);
-            }}
-            onPageSizeChange={(size) => { setPageSize(size); resetCursor(); }}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
             isDisabled={isLoading}
           />
         </>

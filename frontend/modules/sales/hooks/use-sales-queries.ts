@@ -20,11 +20,11 @@ import type {
 export const salesKeys = {
   all: ["sales"] as const,
   quotations: (entityId: string) => [...salesKeys.all, "quotations", entityId] as const,
-  quotationList: (entityId: string, params?: { state?: string | null; partyId?: string | null; page?: number | null; pageSize?: number | null }) =>
+  quotationList: (entityId: string, params?: { state?: string | null; partyId?: string | null; search?: string | null; page?: number | null; pageSize?: number | null }) =>
     [...salesKeys.quotations(entityId), params] as const,
   quotationDetail: (entityId: string, id: string) => [...salesKeys.all, "quotation", entityId, id] as const,
   orders: (entityId: string) => [...salesKeys.all, "orders", entityId] as const,
-  orderList: (entityId: string, params?: { page?: number | null; pageSize?: number | null }) =>
+  orderList: (entityId: string, params?: { page?: number | null; pageSize?: number | null; search?: string | null }) =>
     [...salesKeys.orders(entityId), params] as const,
   orderDetail: (entityId: string, id: string) => [...salesKeys.all, "order", entityId, id] as const,
   returnDetail: (entityId: string, id: string) => [...salesKeys.all, "return", entityId, id] as const
@@ -32,7 +32,7 @@ export const salesKeys = {
 
 export function useSalesQuotations(
   entityId: string,
-  params?: { state?: string | null; partyId?: string | null; page?: number | null; pageSize?: number | null }
+  params?: { state?: string | null; partyId?: string | null; search?: string | null; page?: number | null; pageSize?: number | null }
 ) {
   return useQuery({
     queryKey: salesKeys.quotationList(entityId, params),
@@ -162,7 +162,7 @@ export function useConvertToOrderMutation(entityId: string, id: string) {
 // Orders hooks
 export function useSalesOrders(
   entityId: string,
-  params?: { page?: number | null; pageSize?: number | null }
+  params?: { page?: number | null; pageSize?: number | null; search?: string | null }
 ) {
   return useQuery({
     queryKey: salesKeys.orderList(entityId, params),

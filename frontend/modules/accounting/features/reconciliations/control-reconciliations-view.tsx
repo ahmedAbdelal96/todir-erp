@@ -21,24 +21,20 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [runTypeFilter, setRunTypeFilter] = useState("all");
   const [issueStatusFilter, setIssueStatusFilter] = useState("all");
-  const [runCursor, setRunCursor] = useState<string | undefined>();
-  const [runHistory, setRunHistory] = useState<readonly (string | undefined)[]>([]);
-  const [issueCursor, setIssueCursor] = useState<string | undefined>();
-  const [issueHistory, setIssueHistory] = useState<readonly (string | undefined)[]>([]);
+  const [runPage, setRunPage] = useState(1);
+  const [issuePage, setIssuePage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  const runsQuery = useReconciliationsPage({ cursor: runCursor, limit: pageSize, type: runTypeFilter === "all" ? undefined : runTypeFilter }, legalEntityId);
-  const issuesQuery = useReconciliationIssuesPage({ cursor: issueCursor, limit: pageSize, status: issueStatusFilter === "all" ? undefined : issueStatusFilter }, legalEntityId);
+  const runsQuery = useReconciliationsPage({ page: runPage, limit: pageSize, type: runTypeFilter === "all" ? undefined : runTypeFilter }, legalEntityId);
+  const issuesQuery = useReconciliationIssuesPage({ page: issuePage, limit: pageSize, status: issueStatusFilter === "all" ? undefined : issueStatusFilter }, legalEntityId);
   const runMutation = useRunReconciliationMutation(legalEntityId);
   const reconciliations = runsQuery.data?.items ?? [];
   const issues = issuesQuery.data?.items ?? [];
 
   const resetPages = (size = pageSize) => {
     setPageSize(size);
-    setRunCursor(undefined);
-    setRunHistory([]);
-    setIssueCursor(undefined);
-    setIssueHistory([]);
+    setRunPage(1);
+    setIssuePage(1);
   };
 
   const runColumns: readonly DataGridColumn<SubledgerReconciliationView>[] = [
@@ -99,12 +95,12 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
 
       <Surface variant="card" title={t("reconciliation.runsHistoryTitle")} style={{ padding: "1rem" }}>
         <DataGrid columns={runColumns} staticRows={reconciliations} loading={runsQuery.isLoading} emptyMessage={t("reconciliation.noRunsYet")} density="compact" />
-        <Pagination mode="cursor" page={runHistory.length + 1} itemCount={reconciliations.length} pageSize={pageSize} hasPrevious={runHistory.length > 0} hasNext={Boolean(runsQuery.data?.nextCursor)} onPrevious={() => { const history = runHistory.slice(0, -1); setRunHistory(history); setRunCursor(history[history.length - 1]); }} onNext={() => { if (!runsQuery.data?.nextCursor) return; setRunHistory((history) => [...history, runCursor]); setRunCursor(runsQuery.data.nextCursor ?? undefined); }} onPageSizeChange={resetPages} isDisabled={runsQuery.isFetching} />
+        <Pagination page={runPage} totalItems={runsQuery.data?.totalCount ?? 0} totalPages={Math.max(1, Math.ceil((runsQuery.data?.totalCount ?? 0) / pageSize))} pageSize={pageSize} onPageChange={setRunPage} onPageSizeChange={resetPages} isDisabled={runsQuery.isFetching} />
       </Surface>
 
       <Surface variant="card" title={t("reconciliation.issuesTitle")} description={t("reconciliation.issuesSubtitle")} style={{ padding: "1rem" }}>
         <DataGrid columns={issueColumns} staticRows={issues} loading={issuesQuery.isLoading} emptyMessage={t("reconciliation.noIssuesFound")} density="compact" />
-        <Pagination mode="cursor" page={issueHistory.length + 1} itemCount={issues.length} pageSize={pageSize} hasPrevious={issueHistory.length > 0} hasNext={Boolean(issuesQuery.data?.nextCursor)} onPrevious={() => { const history = issueHistory.slice(0, -1); setIssueHistory(history); setIssueCursor(history[history.length - 1]); }} onNext={() => { if (!issuesQuery.data?.nextCursor) return; setIssueHistory((history) => [...history, issueCursor]); setIssueCursor(issuesQuery.data.nextCursor ?? undefined); }} onPageSizeChange={resetPages} isDisabled={issuesQuery.isFetching} />
+        <Pagination page={issuePage} totalItems={issuesQuery.data?.totalCount ?? 0} totalPages={Math.max(1, Math.ceil((issuesQuery.data?.totalCount ?? 0) / pageSize))} pageSize={pageSize} onPageChange={setIssuePage} onPageSizeChange={resetPages} isDisabled={issuesQuery.isFetching} />
       </Surface>
 
       <Dialog isOpen={isRunModalOpen} onOpenChange={(open) => !open && setIsRunModalOpen(false)} title={`${t("reconciliation.modalRunTitle")} — ${selectedType}`} size="medium" footer={<div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}><Button variant="secondary" onPress={() => setIsRunModalOpen(false)}>{t("common.cancel")}</Button><Button variant="primary" isLoading={runMutation.isPending} onPress={() => void executeRun({ preventDefault: () => undefined } as React.FormEvent)}>{t("reconciliation.modalSubmit")}</Button></div>}>

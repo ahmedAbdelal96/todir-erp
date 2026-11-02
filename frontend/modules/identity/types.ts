@@ -49,4 +49,12 @@ export interface ListUsersParams {
   readonly active?: boolean | undefined;
   readonly offset?: number | undefined;
   readonly limit?: number | undefined;
+  readonly page?: number | undefined;
+}
+
+export interface UserAccountPage {
+  readonly items: readonly UserAccountSummary[];
+  readonly totalCount: number;
+  readonly page: number;
+  readonly pageSize: number;
 }

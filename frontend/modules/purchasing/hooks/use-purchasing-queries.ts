@@ -17,7 +17,7 @@ import type {
 export const purchasingKeys = {
   all: ["purchasing"] as const,
   orders: (entityId: string) => [...purchasingKeys.all, "orders", entityId] as const,
-  orderList: (entityId: string, params?: { state?: string | null; page?: number | null; pageSize?: number | null }) =>
+  orderList: (entityId: string, params?: { state?: string | null; search?: string | null; page?: number | null; pageSize?: number | null }) =>
     [...purchasingKeys.orders(entityId), params] as const,
   orderDetail: (entityId: string, id: string) => [...purchasingKeys.all, "order", entityId, id] as const,
   supplierProfile: (entityId: string, supplierId: string) => [...purchasingKeys.all, "supplier-profile", entityId, supplierId] as const,
@@ -28,7 +28,7 @@ export const purchasingKeys = {
 
 export function usePurchaseOrders(
   entityId: string,
-  params?: { state?: string | null; page?: number | null; pageSize?: number | null }
+  params?: { state?: string | null; search?: string | null; page?: number | null; pageSize?: number | null }
 ) {
   return useQuery({
     queryKey: purchasingKeys.orderList(entityId, params),

@@ -43,7 +43,7 @@ public sealed class PurchasingService(
     }
 
     public Task<PurchaseOrderView?> GetAsync(TenantId tenant, Guid entity, Guid id, bool includePrice, CancellationToken ct) => repository.GetAsync(tenant, entity, id, includePrice, ct);
-    public Task<PurchaseOrderPage> ListAsync(TenantId tenant, Guid entity, string? state, int page, int pageSize, CancellationToken ct) => repository.ListAsync(tenant, entity, state, page, pageSize, ct);
+    public Task<PurchaseOrderPage> ListAsync(TenantId tenant, Guid entity, string? state, string? search, int page, int pageSize, CancellationToken ct) => repository.ListAsync(tenant, entity, state, search, page, pageSize, ct);
     public Task<long> ApproveAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.ApproveAsync(tenant, actor, entity, id, request, correlation, ct);
     public Task<long> RejectAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.RejectAsync(tenant, actor, entity, id, request, correlation, ct);
     public Task<long> CancelAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CancelAsync(tenant, actor, entity, id, request, correlation, ct);

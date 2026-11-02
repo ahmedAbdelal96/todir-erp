@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LocalDateDisplay } from "../../../components/fields/local-date-display.tsx";
 import { ListPage } from "../../../components/pages/list-page.tsx";
@@ -40,10 +40,12 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
 
   const activeParam = statusFilter === "all" ? undefined : statusFilter === "active";
 
-  const { data: users = [], isLoading, error, refetch } = useUsersList(
+  const { data: usersPage, isLoading, error, refetch } = useUsersList(
     {
       search: searchTerm.trim() || undefined,
-      active: activeParam
+      active: activeParam,
+      page,
+      limit: pageSize
     },
     context
   );
@@ -51,19 +53,10 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
   const { data: domainInfo } = useLoginDomain(context);
   const currentDomain = domainInfo?.loginDomain || "";
 
-  const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
-      if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase();
-      return u.name.toLowerCase().includes(term) || u.email.toLowerCase().includes(term);
-    });
-  }, [users, searchTerm]);
+  const users = usersPage?.items ?? [];
+  const totalCount = usersPage?.totalCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
-  const paginatedUsers = useMemo(() => {
-    const startIndex = (page - 1) * pageSize;
-    return filteredUsers.slice(startIndex, startIndex + pageSize);
-  }, [filteredUsers, page, pageSize]);
 
   return (
     <ListPage
@@ -74,11 +67,11 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
         onClick: () => setIsCreateOpen(true)
       }}
       pagination={
-        filteredUsers.length > 0 ? (
+        totalCount > 0 ? (
           <Pagination
             page={page}
             totalPages={totalPages}
-            totalItems={filteredUsers.length}
+            totalItems={totalCount}
             pageSize={pageSize}
             onPageChange={setPage}
             onPageSizeChange={(newSize) => {
@@ -95,13 +88,14 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
               ariaLabel={t("userList.searchLabel")}
               placeholder={t("userList.searchPlaceholder")}
               value={searchTerm}
-              onChange={setSearchTerm}
+            onChange={(value) => { setSearchTerm(value); setPage(1); }}
             />
           }
           activeFilterCount={statusFilter !== "all" || searchTerm ? 1 : 0}
           onResetFilters={() => {
             setSearchTerm("");
             setStatusFilter("all");
+            setPage(1);
           }}
         >
           <div style={{ minWidth: "160px" }}>
@@ -126,12 +120,12 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
           message={t("userList.loadErrorDescription")}
           onRetry={() => void refetch()}
         />
-      ) : filteredUsers.length === 0 ? (
+      ) : users.length === 0 ? (
         <EmptyState
           icon={<UsersIcon size={28} />}
           title={t("userList.emptyTitle")}
           description={
-            searchTerm || statusFilter !== "all"
+              searchTerm || statusFilter !== "all"
               ? t("userList.filteredEmpty")
               : t("userList.emptyDescription")
           }
@@ -162,7 +156,7 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedUsers.map((user) => {
+              {users.map((user) => {
                 const isActive = user.status === "Active";
                 return (
                   <TableRow key={user.id}>

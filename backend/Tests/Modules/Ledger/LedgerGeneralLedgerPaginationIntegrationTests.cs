@@ -77,6 +77,36 @@ public sealed class LedgerGeneralLedgerPaginationIntegrationTests
         Assert.All(dimensionAccountRows, row => Assert.Equal(debit, row.AccountId));
     }
 
+    [Fact]
+    public async Task GeneralLedgerOffsetPagesKeepRunningBalancesAndExposeStableTotals()
+    {
+        await using var dataSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection());
+        var posting = LedgerTestSupport.CreateRepository(dataSource);
+        var operations = new LedgerOperationsRepository(dataSource, new Core.Transactions.NpgsqlTransactionCoordinator(dataSource), posting, TimeProvider.System);
+        var journal = await ReadGuidAsync(dataSource, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL'");
+        var debit = (await posting.CreateAccountAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new($"96{Guid.NewGuid():N}"[..10], "حساب رصيد", "Balance account", AccountType.Asset, "Current", null), default)).Id;
+        var credit = (await posting.CreateAccountAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new($"97{Guid.NewGuid():N}"[..10], "حساب مقابل", "Offset account", AccountType.Revenue, "Current", null), default)).Id;
+        var source = $"ledger-offset-{Guid.NewGuid():N}";
+        for (var index = 1; index <= 4; index++)
+        {
+            var reference = $"offset-{index}-{Guid.NewGuid():N}";
+            var payload = new ExplicitLedgerPostingPayload(journal, $"Offset entry {index}", "EGP", [new(debit, 10m, 0m, "EGP", 10m, 0m, 10m, 0m, 1m, [], "debit", reference), new(credit, 0m, 10m, "EGP", 0m, 10m, 0m, 10m, 1m, [], "credit", reference)]);
+            var fact = new AccountingFactEnvelope<IAccountingFactPayload>(Guid.CreateVersion7(), LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, AccountingFactTypes.ManualGeneralJournalPosted, 1, source, reference, $"offset-idempotency-{Guid.NewGuid():N}", new DateOnly(2026, 5, 15), new DateOnly(2026, 5, 15), payload, Guid.CreateVersion7(), Guid.CreateVersion7());
+            await posting.PostAsync(fact, default);
+        }
+
+        var first = await operations.GetGeneralLedgerAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new DateOnly(2026, 5, 15), new DateOnly(2026, 5, 15), debit, null, 2, default, sourceModule: source, page: 1);
+        var second = await operations.GetGeneralLedgerAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new DateOnly(2026, 5, 15), new DateOnly(2026, 5, 15), debit, null, 2, default, sourceModule: source, page: 2);
+
+        Assert.Equal(4, first.TotalCount);
+        Assert.Equal(2, first.Items.Count);
+        Assert.Equal(2, second.Items.Count);
+        Assert.Equal(10m, first.Items[0].RunningBalance);
+        Assert.Equal(20m, first.Items[1].RunningBalance);
+        Assert.Equal(30m, second.Items[0].RunningBalance);
+        Assert.Equal(40m, second.Items[1].RunningBalance);
+    }
+
     private static async Task<List<GeneralLedgerRowDto>> ReadAllAsync(Func<string?, Task<GeneralLedgerPageDto>> read)
     {
         var rows = new List<GeneralLedgerRowDto>();

@@ -122,7 +122,7 @@ test.describe('Identity, Authentication & User Management Journeys', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(currentUsers),
+          body: JSON.stringify({ items: currentUsers, totalCount: currentUsers.length, page: 1, pageSize: currentUsers.length }),
         });
       }
     });
@@ -362,7 +362,7 @@ test.describe('Identity, Authentication & User Management Journeys', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([targetUser]),
+        body: JSON.stringify({ items: [targetUser], totalCount: 1, page: 1, pageSize: 1 }),
       });
     });
 

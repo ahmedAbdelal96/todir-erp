@@ -45,6 +45,9 @@ export interface PartyOpenItem {
 export interface OpenItemPage {
   readonly items: readonly PartyOpenItem[];
   readonly nextCursor?: string | null;
+  readonly totalCount?: number;
+  readonly page?: number;
+  readonly pageSize?: number;
 }
 
 export interface OpenItemListFilter {
@@ -54,6 +57,7 @@ export interface OpenItemListFilter {
   readonly openOnly?: boolean;
   readonly limit?: number;
   readonly cursor?: string | undefined;
+  readonly page?: number;
   readonly search?: string;
   readonly dueFrom?: string;
   readonly dueTo?: string;

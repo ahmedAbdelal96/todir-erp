@@ -27,15 +27,14 @@ export function OpenItemsPage(): React.JSX.Element {
   const [statusFilter, setStatusFilter] = useState("openOnly");
   const [currencyFilter, setCurrencyFilter] = useState("");
   const [sort, setSort] = useState<"idAsc" | "dueDateAsc" | "dueDateDesc">("idAsc");
-  const [cursor, setCursor] = useState<string | undefined>();
-  const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [selectedDetailItem, setSelectedDetailItem] = useState<PartyOpenItem | null>(null);
   const [selectedWriteOffItem, setSelectedWriteOffItem] = useState<PartyOpenItem | null>(null);
   const [selectedReversal, setSelectedReversal] = useState<{ applicationId: string; openItemId: string } | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const resetCursor = () => { setCursor(undefined); setCursorHistory([]); };
+  const resetCursor = () => setPage(1);
   const resetFilters = () => { setSearchTerm(""); setDirectionFilter("all"); setStatusFilter("openOnly"); setCurrencyFilter(""); setSort("idAsc"); resetCursor(); };
 
   const queryFilter = useMemo<OpenItemListFilter>(() => {
@@ -46,8 +45,8 @@ export function OpenItemsPage(): React.JSX.Element {
     if (statusFilter === "all") extra.openOnly = false;
     if (currencyFilter) extra.currencyCode = currencyFilter;
     if (searchTerm.trim()) extra.search = searchTerm.trim();
-    return { legalEntityId, limit: pageSize, cursor, sort, ...extra };
-  }, [legalEntityId, directionFilter, statusFilter, currencyFilter, searchTerm, cursor, pageSize, sort]);
+    return { legalEntityId, limit: pageSize, page, sort, ...extra };
+  }, [legalEntityId, directionFilter, statusFilter, currencyFilter, searchTerm, page, pageSize, sort]);
 
   const openItemsQuery = useOpenItemsQuery(queryFilter);
   const items = openItemsQuery.data?.items ?? [];
@@ -66,7 +65,7 @@ export function OpenItemsPage(): React.JSX.Element {
     { id: "actions", header: t("openItems.actions"), minWidth: 270, sortable: false, filterable: false, cellRenderer: ({ row }) => { const settled = Number(row.openTransactionAmount) <= 0; const hasSettlement = Number(row.settledTransactionAmount) > 0; return <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}><Button size="compact" variant="secondary" onClick={() => setSelectedDetailItem(row)}>{t("openItems.viewDetails")}</Button>{!settled && <Button size="compact" variant="secondary" onClick={() => navigate(`/subledger/applications?partyId=${row.partyId}&direction=${row.direction}&sourceId=${row.id}`)}>{t("openItems.applyNow")}</Button>}{!settled && <Button size="compact" variant="danger" onClick={() => setSelectedWriteOffItem(row)}>{t("openItems.writeOff")}</Button>}{hasSettlement && <Button size="compact" variant="secondary" onClick={() => setSelectedReversal({ applicationId: `app-${row.id}`, openItemId: row.id })}>{t("reversal.title")}</Button>}</div>; } }
   ];
 
-  const pagination = <Pagination mode="cursor" page={cursorHistory.length + 1} itemCount={items.length} pageSize={pageSize} hasPrevious={cursorHistory.length > 0} hasNext={Boolean(openItemsQuery.data?.nextCursor)} onPrevious={() => { const history = cursorHistory.slice(0, -1); setCursorHistory(history); setCursor(history[history.length - 1]); }} onNext={() => { if (!openItemsQuery.data?.nextCursor) return; setCursorHistory((history) => [...history, cursor]); setCursor(openItemsQuery.data.nextCursor ?? undefined); }} onPageSizeChange={(size) => { setPageSize(size); resetCursor(); }} isDisabled={openItemsQuery.isFetching} />;
+  const pagination = <Pagination page={page} totalItems={openItemsQuery.data?.totalCount ?? 0} totalPages={Math.max(1, Math.ceil((openItemsQuery.data?.totalCount ?? 0) / pageSize))} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} isDisabled={openItemsQuery.isFetching} />;
   const filterBar = <FilterBar searchInput={<SearchField value={searchTerm} onChange={(value) => { setSearchTerm(value); resetCursor(); }} placeholder={t("openItems.searchPlaceholder")} isPending={openItemsQuery.isFetching} ariaLabel={t("openItemsPage.searchLabel")} />} activeFilterCount={activeFilterCount} onResetFilters={resetFilters} isPending={openItemsQuery.isFetching}>
     <label><span style={{ display: "block", fontSize: "0.75rem", fontWeight: 600 }}>{t("openItems.filterDirection")}</span><select value={directionFilter} onChange={(event) => { setDirectionFilter(event.target.value); resetCursor(); }}><option value="all">{t("openItems.allDirections")}</option><option value="receivable">{t("openItems.receivableOnly")}</option><option value="payable">{t("openItems.payableOnly")}</option></select></label>
     <label><span style={{ display: "block", fontSize: "0.75rem", fontWeight: 600 }}>{t("openItems.filterStatus")}</span><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); resetCursor(); }}><option value="openOnly">{t("openItems.openOnly")}</option><option value="overdueOnly">{t("openItems.overdueOnly")}</option><option value="all">{t("openItems.allStatuses")}</option></select></label>

@@ -47,18 +47,21 @@ public sealed partial class SalesRepository(NpgsqlDataSource dataSource, ITransa
             revision.net, revision.discount, revision.gross, lines, accepts, history);
     }
 
-    public async Task<SalesPage<QuotationListItem>> ListQuotationsAsync(TenantId tenant, Guid legalEntityId, string? state, Guid? partyId, int page, int pageSize, CancellationToken ct)
+    public async Task<SalesPage<QuotationListItem>> ListQuotationsAsync(TenantId tenant, Guid legalEntityId, string? state, Guid? partyId, int page, int pageSize, CancellationToken ct, string? search = null)
     {
         page = Math.Clamp(page, 1, 100000); pageSize = Math.Clamp(pageSize, 1, 200);
         await using var connection = await OpenAsync(tenant, ct);
         var filter = string.IsNullOrWhiteSpace(state) ? "" : " and q.state=$3";
         var party = partyId is null ? "" : string.IsNullOrWhiteSpace(state) ? " and q.party_id=$3" : " and q.party_id=$4";
-        var limitParameter = string.IsNullOrWhiteSpace(state) ? (partyId is null ? 3 : 4) : (partyId is null ? 4 : 5);
+        var searchParameter = (string.IsNullOrWhiteSpace(state) ? 3 : 4) + (partyId is null ? 0 : 1);
+        var searchFilter = string.IsNullOrWhiteSpace(search) ? "" : $" and (q.number ilike ${searchParameter} || '%' or q.party_id::text ilike ${searchParameter} || '%')";
+        var limitParameter = searchParameter + (string.IsNullOrWhiteSpace(search) ? 0 : 1);
         var offsetParameter = limitParameter + 1;
-        var sql = $"select q.id,q.branch_id,q.number,q.party_id,q.quote_date,q.valid_until,q.state,q.current_revision_number,q.currency_code,q.version,r.gross_total,count(*) over() from business_sales.quotation q join business_sales.quotation_revision r on r.tenant_id=q.tenant_id and r.quotation_id=q.id and r.revision_number=q.current_revision_number where q.tenant_id=$1 and q.legal_entity_id=$2{filter}{party} order by q.updated_at desc,q.id limit ${limitParameter} offset ${offsetParameter}";
+        var sql = $"select q.id,q.branch_id,q.number,q.party_id,q.quote_date,q.valid_until,q.state,q.current_revision_number,q.currency_code,q.version,r.gross_total,count(*) over() from business_sales.quotation q join business_sales.quotation_revision r on r.tenant_id=q.tenant_id and r.quotation_id=q.id and r.revision_number=q.current_revision_number where q.tenant_id=$1 and q.legal_entity_id=$2{filter}{party}{searchFilter} order by q.updated_at desc,q.id limit ${limitParameter} offset ${offsetParameter}";
         await using var command = new NpgsqlCommand(sql, connection); Add(command, tenant.Value, legalEntityId); var index = 3;
         if (!string.IsNullOrWhiteSpace(state)) { command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), state!); index++; }
         if (partyId is { } p) { command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), p); index++; }
+        if (!string.IsNullOrWhiteSpace(search)) { command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), search.Trim()); index++; }
         command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), pageSize); index++; command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), (page - 1) * pageSize);
         var items = new List<QuotationListItem>(); var total = 0;
         await using var reader = await command.ExecuteReaderAsync(ct);
@@ -199,10 +202,10 @@ public sealed partial class SalesRepository(NpgsqlDataSource dataSource, ITransa
         return result with { Lines = await ReadOrderLinesAsync(connection, tenant.Value, legalEntityId, id, ct) };
     }
 
-    public async Task<SalesPage<SalesOrderListItem>> ListOrdersAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, CancellationToken ct)
+    public async Task<SalesPage<SalesOrderListItem>> ListOrdersAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, CancellationToken ct, string? search = null)
     {
         page = Math.Clamp(page, 1, 100000); pageSize = Math.Clamp(pageSize, 1, 200); await using var connection = await OpenAsync(tenant, ct);
-        await using var command = new NpgsqlCommand("select o.id,o.branch_id,o.number,o.party_id,o.commercial_state,o.fulfillment_state,o.invoicing_state,o.version,coalesce(sum(l.ordered_quantity*l.unit_price),0),count(*) over() from business_sales.sales_order o left join business_sales.sales_order_line l on l.tenant_id=o.tenant_id and l.order_id=o.id where o.tenant_id=$1 and o.legal_entity_id=$2 group by o.id,o.branch_id,o.number,o.party_id,o.commercial_state,o.fulfillment_state,o.invoicing_state,o.version,o.updated_at order by o.updated_at desc,o.id limit $3 offset $4", connection); Add(command, tenant.Value, legalEntityId, pageSize, (page - 1) * pageSize); var list = new List<SalesOrderListItem>(); var total = 0; await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) { total = reader.GetInt32(9); list.Add(new(reader.GetGuid(0), legalEntityId, reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetString(2), reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetInt64(7), reader.GetDecimal(8))); }
+        await using var command = new NpgsqlCommand("select o.id,o.branch_id,o.number,o.party_id,o.commercial_state,o.fulfillment_state,o.invoicing_state,o.version,coalesce(sum(l.ordered_quantity*l.unit_price),0),count(*) over() from business_sales.sales_order o left join business_sales.sales_order_line l on l.tenant_id=o.tenant_id and l.order_id=o.id where o.tenant_id=$1 and o.legal_entity_id=$2 and ($3 is null or o.number ilike '%' || $3 || '%' or o.party_id::text ilike '%' || $3 || '%') group by o.id,o.branch_id,o.number,o.party_id,o.commercial_state,o.fulfillment_state,o.invoicing_state,o.version,o.updated_at order by o.updated_at desc,o.id limit $4 offset $5", connection); Add(command, tenant.Value, legalEntityId, string.IsNullOrWhiteSpace(search) ? DBNull.Value : search.Trim(), pageSize, (page - 1) * pageSize); var list = new List<SalesOrderListItem>(); var total = 0; await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) { total = reader.GetInt32(9); list.Add(new(reader.GetGuid(0), legalEntityId, reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetString(2), reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetInt64(7), reader.GetDecimal(8))); }
         return new(list, total, page, pageSize);
     }
 

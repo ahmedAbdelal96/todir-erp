@@ -23,5 +23,5 @@ public sealed record SupplierReturnView(Guid Id, Guid PurchaseOrderId, Guid Supp
 public sealed record PurchaseOrderLineView(Guid Id, int Sequence, Guid? ProductVariantId, Guid? UnitOfMeasureId, string? UnitCode, string Description, decimal OrderedQuantity, decimal UnitPrice, decimal InvoicedQuantity, decimal CancelledQuantity, string? PriceEvidence, decimal ReceivedQuantity = 0, decimal ClosedShortQuantity = 0);
 public sealed record PurchaseOrderView(Guid Id, Guid LegalEntityId, Guid? BranchId, Guid SupplierPartyId, string CurrencyCode, DateOnly OrderDate, string State, string ApprovalState, string ReceiptState, string InvoicingState, long Version, decimal NetTotal, IReadOnlyList<PurchaseOrderLineView> Lines, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record PurchaseOrderListItem(Guid Id, Guid SupplierPartyId, DateOnly OrderDate, string State, string CurrencyCode, decimal NetTotal, long Version, DateTimeOffset UpdatedAt);
-public sealed record PurchaseOrderPage(IReadOnlyList<PurchaseOrderListItem> Items, int Page, int PageSize, bool HasMore);
+public sealed record PurchaseOrderPage(IReadOnlyList<PurchaseOrderListItem> Items, int Page, int PageSize, bool HasMore, int TotalCount = 0);
 public sealed record PurchaseInvoiceLinkView(Guid InvoiceId, string Purpose, string IdempotencyKey, DateTimeOffset CreatedAt);

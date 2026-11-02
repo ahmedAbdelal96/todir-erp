@@ -55,12 +55,13 @@ export const accountingApi = {
 
   listReconciliationsPage: async (
     legalEntityId: string,
-    params?: { type?: string | undefined; asOf?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+    params?: { type?: string | undefined; asOf?: string | undefined; cursor?: string | undefined; page?: number | undefined; limit?: number | undefined }
   ): Promise<ReconciliationPageDto> => {
     const search = new URLSearchParams();
     if (params?.type) search.set("type", params.type);
     if (params?.asOf) search.set("asOf", params.asOf);
     if (params?.cursor) search.set("cursor", params.cursor);
+    if (params?.page) search.set("page", String(params.page));
     if (params?.limit) search.set("limit", String(params.limit));
     const qs = search.toString();
     return httpClient<ReconciliationPageDto>(`/api/v1/accounting/legal-entities/${legalEntityId}/reconciliations/page${qs ? `?${qs}` : ""}`);
@@ -85,11 +86,12 @@ export const accountingApi = {
 
   listReconciliationIssuesPage: async (
     legalEntityId: string,
-    params?: { status?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+    params?: { status?: string | undefined; cursor?: string | undefined; page?: number | undefined; limit?: number | undefined }
   ): Promise<ReconciliationIssuePageDto> => {
     const search = new URLSearchParams();
     if (params?.status) search.set("status", params.status);
     if (params?.cursor) search.set("cursor", params.cursor);
+    if (params?.page) search.set("page", String(params.page));
     if (params?.limit) search.set("limit", String(params.limit));
     const qs = search.toString();
     return httpClient<ReconciliationIssuePageDto>(`/api/v1/accounting/legal-entities/${legalEntityId}/reconciliation-issues/page${qs ? `?${qs}` : ""}`);

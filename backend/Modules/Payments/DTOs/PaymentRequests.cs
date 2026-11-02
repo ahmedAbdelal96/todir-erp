@@ -26,7 +26,7 @@ public sealed record PaymentAttemptReadModel(Guid Id, int AttemptNumber, string 
 public sealed record PaymentRequestDetails(PaymentIntentResult Request, IReadOnlyList<PaymentAttemptReadModel> Attempts,
     DateTimeOffset? ExpiresAt);
 public sealed record PaymentRequestListQuery(Guid LegalEntityId, int Page, int PageSize, string? Search, string? State);
-public sealed record PaymentRequestPage(IReadOnlyList<PaymentIntentResult> Items, int Page, int PageSize, bool HasMore);
+public sealed record PaymentRequestPage(IReadOnlyList<PaymentIntentResult> Items, int Page, int PageSize, bool HasMore, int TotalCount = 0);
 
 public sealed record ProviderPaymentOperation(Guid OperationId, Guid RequestId, Guid AttemptId, Guid LegalEntityId, Guid? BranchId,
     Guid? PartyId, Guid PaymentAccountId, Guid CreatedBy, Guid? CreatedByMembershipId, decimal Amount, string CurrencyCode,

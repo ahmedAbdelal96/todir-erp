@@ -365,7 +365,7 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ items: MOCK_ENTRIES, nextCursor: null })
+        body: JSON.stringify({ items: MOCK_ENTRIES, nextCursor: null, totalCount: MOCK_ENTRIES.length, page: 1, pageSize: 50 })
       });
     });
 
@@ -476,7 +476,10 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
               sequence: 1
             }
           ],
-          nextCursor: null
+          nextCursor: null,
+          totalCount: 1,
+          page: 1,
+          pageSize: 100
         })
       });
     });

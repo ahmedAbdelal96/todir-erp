@@ -35,14 +35,13 @@ export function EntriesExplorerView({
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState("postingDateDesc");
   const [pageSize, setPageSize] = useState(initialPageSize);
-  const [cursor, setCursor] = useState<string | undefined>();
-  const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
+  const [page, setPage] = useState(1);
 
   const { data: pageData, isLoading, isError, refetch } = useJournalEntriesPage(legalEntityId, {
     search: searchTerm || undefined,
     status: status || undefined,
     sort,
-    cursor,
+    page,
     limit: pageSize
   });
   const entries = pageData?.items ?? [];
@@ -51,10 +50,7 @@ export function EntriesExplorerView({
   const [explainEntryId, setExplainEntryId] = useState<string | null>(null);
   const [reversalEntry, setReversalEntry] = useState<JournalEntryDto | null>(null);
 
-  const resetCursor = () => {
-    setCursor(undefined);
-    setCursorHistory([]);
-  };
+  const resetCursor = () => setPage(1);
 
   const columns: readonly DataGridColumn<JournalEntryDto>[] = [
     {
@@ -202,24 +198,12 @@ export function EntriesExplorerView({
         <>
           <DataGrid columns={columns} staticRows={entries} loading={isLoading} emptyMessage={t("journal.noEntriesFound")} hasActiveFilters={Boolean(searchTerm || status || sort !== "postingDateDesc")} density="compact" />
           <Pagination
-            mode="cursor"
-            page={cursorHistory.length + 1}
-            itemCount={entries.length}
+            page={page}
+            totalItems={pageData?.totalCount ?? 0}
+            totalPages={Math.max(1, Math.ceil((pageData?.totalCount ?? 0) / pageSize))}
             pageSize={pageSize}
-            hasPrevious={cursorHistory.length > 0}
-            hasNext={Boolean(pageData?.nextCursor)}
-            onPrevious={() => {
-              if (cursorHistory.length === 0) return;
-              const nextHistory = cursorHistory.slice(0, -1);
-              setCursorHistory(nextHistory);
-              setCursor(nextHistory[nextHistory.length - 1]);
-            }}
-            onNext={() => {
-              if (!pageData?.nextCursor) return;
-              setCursorHistory((history) => [...history, cursor]);
-              setCursor(pageData.nextCursor ?? undefined);
-            }}
-            onPageSizeChange={(size) => { setPageSize(size); resetCursor(); }}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
             isDisabled={isLoading}
           />
         </>

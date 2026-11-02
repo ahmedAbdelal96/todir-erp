@@ -27,8 +27,7 @@ export function TrialBalanceView({
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("accountCodeAsc");
-  const [cursor, setCursor] = useState<string | undefined>();
-  const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
   const { data: pageData, isLoading, isError, refetch } = useTrialBalancePage(legalEntityId, {
@@ -36,7 +35,7 @@ export function TrialBalanceView({
     to: to || undefined,
     search: search || undefined,
     sort,
-    cursor,
+    page,
     limit: pageSize
   });
   const rows = pageData?.items ?? [];
@@ -45,7 +44,7 @@ export function TrialBalanceView({
   const totalCredit = pageData?.totalCredit ?? 0;
   const difference = Math.abs(totalDebit - totalCredit);
   const isBalanced = difference < 0.0001;
-  const resetCursor = () => { setCursor(undefined); setCursorHistory([]); };
+  const resetCursor = () => setPage(1);
 
   const columns: readonly DataGridColumn<TrialBalanceRowDto>[] = [
     {
@@ -203,24 +202,12 @@ export function TrialBalanceView({
             </div>
           </div>
           <Pagination
-            mode="cursor"
-            page={cursorHistory.length + 1}
-            itemCount={rows.length}
+            page={page}
+            totalItems={pageData?.totalCount ?? 0}
+            totalPages={Math.max(1, Math.ceil((pageData?.totalCount ?? 0) / pageSize))}
             pageSize={pageSize}
-            hasPrevious={cursorHistory.length > 0}
-            hasNext={Boolean(pageData?.nextCursor)}
-            onPrevious={() => {
-              if (cursorHistory.length === 0) return;
-              const nextHistory = cursorHistory.slice(0, -1);
-              setCursorHistory(nextHistory);
-              setCursor(nextHistory[nextHistory.length - 1]);
-            }}
-            onNext={() => {
-              if (!pageData?.nextCursor) return;
-              setCursorHistory((history) => [...history, cursor]);
-              setCursor(pageData.nextCursor ?? undefined);
-            }}
-            onPageSizeChange={(size) => { setPageSize(size); resetCursor(); }}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
             isDisabled={isLoading}
           />
         </>

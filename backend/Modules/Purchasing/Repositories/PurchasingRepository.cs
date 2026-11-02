@@ -82,19 +82,19 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
         return new(header.Id, header.EntityId, header.BranchId, header.SupplierPartyId, header.Currency, header.OrderDate, header.State, header.Approval, header.Receipt, header.Invoicing, header.Version, header.Total, lines, header.CreatedAt, header.UpdatedAt);
     }
 
-    public async Task<PurchaseOrderPage> ListAsync(TenantId tenant, Guid legalEntityId, string? state, int page, int pageSize, CancellationToken ct)
+    public async Task<PurchaseOrderPage> ListAsync(TenantId tenant, Guid legalEntityId, string? state, string? search, int page, int pageSize, CancellationToken ct)
     {
         page = Math.Clamp(page, 1, 100000); pageSize = Math.Clamp(pageSize, 1, 100);
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await SetTenantAsync(connection, null, tenant, ct);
         var offset = (page - 1) * pageSize;
-        await using var command = new NpgsqlCommand("select id,supplier_party_id,order_date,state,currency_code,net_total,row_version,updated_at from business_purchasing.purchase_order where tenant_id=$1 and legal_entity_id=$2 and ($3 is null or state=$3) order by order_date desc,id desc offset $4 limit $5", connection);
-        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(NpgsqlDbType.Text, (object?)state ?? DBNull.Value); command.Parameters.AddWithValue(offset); command.Parameters.AddWithValue(pageSize + 1);
+        await using var command = new NpgsqlCommand("select id,supplier_party_id,order_date,state,currency_code,net_total,row_version,updated_at,count(*) over() from business_purchasing.purchase_order where tenant_id=$1 and legal_entity_id=$2 and ($3 is null or state=$3) and ($4 is null or id::text ilike '%' || $4 || '%' or supplier_party_id::text ilike '%' || $4 || '%') order by order_date desc,id desc offset $5 limit $6", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(NpgsqlDbType.Text, (object?)state ?? DBNull.Value); command.Parameters.AddWithValue(NpgsqlDbType.Text, string.IsNullOrWhiteSpace(search) ? DBNull.Value : search.Trim()); command.Parameters.AddWithValue(offset); command.Parameters.AddWithValue(pageSize);
         var items = new List<PurchaseOrderListItem>();
+        var total = 0;
         await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct) && items.Count <= pageSize) items.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetString(3), reader.GetString(4), reader.GetDecimal(5), reader.GetInt64(6), reader.GetFieldValue<DateTimeOffset>(7)));
-        var more = items.Count > pageSize; if (more) items.RemoveAt(items.Count - 1);
-        return new(items, page, pageSize, more);
+        while (await reader.ReadAsync(ct)) { total = reader.GetInt32(8); items.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetString(3), reader.GetString(4), reader.GetDecimal(5), reader.GetInt64(6), reader.GetFieldValue<DateTimeOffset>(7))); }
+        return new(items, page, pageSize, (page * pageSize) < total, total);
     }
 
     public Task<bool> IsApprovedAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct) => StateAsync(tenant, legalEntityId, id, "Approved", ct);

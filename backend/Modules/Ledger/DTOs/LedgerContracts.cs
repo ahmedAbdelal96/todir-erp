@@ -14,7 +14,7 @@ public sealed record CreateFinancialLockRequest(FinancialLockType LockType, Date
 public sealed record FinancialLockDto(Guid Id, Guid LegalEntityId, FinancialLockType LockType, DateOnly StartDate, DateOnly? EndDate, string Status, string Reason, long Version);
 public sealed record EntryLineDto(int Sequence, Guid AccountId, decimal Debit, decimal Credit, string CurrencyCode, decimal Amount, string Role, string? Description);
 public sealed record JournalEntryDto(Guid Id, Guid JournalId, Guid? FactId, string EntryNumber, DateOnly PostingDate, DateOnly PeriodDate, string Status, string CurrencyCode, IReadOnlyList<EntryLineDto> Lines);
-public sealed record JournalEntryPageDto(IReadOnlyList<JournalEntryDto> Items, string? NextCursor);
+public sealed record JournalEntryPageDto(IReadOnlyList<JournalEntryDto> Items, string? NextCursor, int TotalCount = 0, int Page = 1, int PageSize = 0);
 public sealed record ReverseEntryRequest(DateOnly ReversalDate, string Reason, DateOnly? AutoReversalDate = null);
 public sealed record DimensionDefinitionRequest(string Code, string NameAr, string NameEn, string ValueOwnerModule = "ledger");
 public sealed record DimensionValueRequest(Guid DefinitionId, string Code, string NameAr, string NameEn, string? ExternalOwnerModule = null, Guid? ExternalReferenceId = null);
@@ -29,7 +29,7 @@ public sealed record OpeningBalancePreviewDto(Guid BatchId, bool Balanced, decim
 public sealed record TrialBalanceRowDto(Guid AccountId, string AccountCode, string AccountName, decimal Debit, decimal Credit, decimal Balance, string CurrencyCode);
 public sealed record TrialBalancePageDto(IReadOnlyList<TrialBalanceRowDto> Items, string? NextCursor, int TotalCount, decimal TotalDebit, decimal TotalCredit);
 public sealed record GeneralLedgerRowDto(Guid EntryId, Guid LineId, string EntryNumber, DateOnly PostingDate, Guid AccountId, string AccountCode, string AccountName, decimal Debit, decimal Credit, decimal BaseDebit, decimal BaseCredit, string CurrencyCode, string SourceModule, string SourceReference, int Sequence, decimal? RunningBalance = null);
-public sealed record GeneralLedgerPageDto(IReadOnlyList<GeneralLedgerRowDto> Items, string? NextCursor);
+public sealed record GeneralLedgerPageDto(IReadOnlyList<GeneralLedgerRowDto> Items, string? NextCursor, int TotalCount = 0, int Page = 1, int PageSize = 0);
 public sealed record AccountBalanceDto(Guid AccountId, decimal Debit, decimal Credit, decimal Balance, string CurrencyCode, DateOnly? From, DateOnly? To);
 public sealed record EntryExplanationDimensionDto(string Code, Guid ValueId, string ValueCode);
 public sealed record EntryExplanationLineDto(Guid LineId, int Sequence, string AccountRole, Guid AccountId, string AccountCode, string AccountName, Guid? MappingId, long? MappingVersion, Guid? MappingVersionId, decimal Debit, decimal Credit, string CurrencyCode, decimal TransactionDebit, decimal TransactionCredit, decimal BaseDebit, decimal BaseCredit, decimal? ExchangeRate, string WhyThisAccount, IReadOnlyList<EntryExplanationDimensionDto> Dimensions);

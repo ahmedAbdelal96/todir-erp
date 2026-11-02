@@ -108,6 +108,7 @@ export function PurchasingPage(): React.JSX.Element {
 
   // Pagination & Filters
   const [page, setPage] = useState(1);
+  const [orderSearch, setOrderSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<string | null>(null);
 
   // Modals State
@@ -122,7 +123,8 @@ export function PurchasingPage(): React.JSX.Element {
   const { data: ordersPage, isLoading } = usePurchaseOrders(legalEntityId, {
     page,
     pageSize: 50,
-    state: stateFilter
+    state: stateFilter,
+    search: orderSearch || null
   });
 
   const { data: selectedOrderDetail } = usePurchaseOrderDetail(legalEntityId, selectedOrderId ?? "");
@@ -201,7 +203,9 @@ export function PurchasingPage(): React.JSX.Element {
             onSelectOrder={(id) => setSelectedOrderId(id)}
             onNewOrder={() => setIsNewOrderOpen(true)}
             stateFilter={stateFilter}
-            onStateFilterChange={setStateFilter}
+            onStateFilterChange={(value) => { setStateFilter(value); setPage(1); }}
+            searchQuery={orderSearch}
+            onSearchQueryChange={(value) => { setOrderSearch(value); setPage(1); }}
             hasPriceReadPermission={hasPriceReadPermission}
           />
         )}

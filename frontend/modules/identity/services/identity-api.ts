@@ -8,22 +8,24 @@ import type {
   LoginDomainInfo,
   CreateUserPayload,
   ChangeLoginDomainPayload,
-  ListUsersParams
+  ListUsersParams,
+  UserAccountPage
 } from "../types.ts";
 
 export async function fetchUsers(
   tenantId: string,
   params: ListUsersParams = {}
-): Promise<UserAccountSummary[]> {
+): Promise<UserAccountPage> {
   const query = new URLSearchParams();
   if (params.search) query.set("search", params.search);
   if (params.active !== undefined) query.set("active", String(params.active));
   if (params.offset !== undefined) query.set("offset", String(params.offset));
   if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.page !== undefined) query.set("page", String(params.page));
 
   const qs = query.toString();
   const url = `/api/v1/tenants/${tenantId}/users${qs ? `?${qs}` : ""}`;
-  return httpClient<UserAccountSummary[]>(url, { tenantId });
+  return httpClient<UserAccountPage>(url, { tenantId });
 }
 
 export async function fetchUser(

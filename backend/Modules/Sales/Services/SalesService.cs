@@ -46,7 +46,7 @@ public sealed partial class SalesService(
     }
 
     public Task<QuotationDetail?> GetQuotationAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetQuotationAsync(tenant, entity, id, ct);
-    public Task<SalesPage<QuotationListItem>> ListQuotationsAsync(TenantId tenant, Guid entity, string? state, Guid? party, int page, int pageSize, CancellationToken ct) => repository.ListQuotationsAsync(tenant, entity, state, party, page, pageSize, ct);
+    public Task<SalesPage<QuotationListItem>> ListQuotationsAsync(TenantId tenant, Guid entity, string? state, Guid? party, int page, int pageSize, CancellationToken ct, string? search = null) => repository.ListQuotationsAsync(tenant, entity, state, party, page, pageSize, ct, search);
     public Task<int> OpenQuotationAsync(TenantId tenant, Guid actor, Guid entity, Guid id, TransitionQuotationRequest request, CancellationToken ct) => repository.OpenQuotationAsync(tenant, actor, entity, id, request, ct);
     public Task<int> DeclineQuotationAsync(TenantId tenant, Guid actor, Guid entity, Guid id, TransitionQuotationRequest request, CancellationToken ct) => repository.DeclineQuotationAsync(tenant, actor, entity, id, request, ct);
     public Task<int> CancelQuotationAsync(TenantId tenant, Guid actor, Guid entity, Guid id, TransitionQuotationRequest request, CancellationToken ct) => repository.CancelQuotationAsync(tenant, actor, entity, id, request, ct);
@@ -82,7 +82,7 @@ public sealed partial class SalesService(
     }
 
     public Task<SalesOrderDetail?> GetOrderAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetOrderAsync(tenant, entity, id, ct);
-    public Task<SalesPage<SalesOrderListItem>> ListOrdersAsync(TenantId tenant, Guid entity, int page, int pageSize, CancellationToken ct) => repository.ListOrdersAsync(tenant, entity, page, pageSize, ct);
+    public Task<SalesPage<SalesOrderListItem>> ListOrdersAsync(TenantId tenant, Guid entity, int page, int pageSize, CancellationToken ct, string? search = null) => repository.ListOrdersAsync(tenant, entity, page, pageSize, ct, search);
 
     public Task<Guid> ConvertQuotationToOrderAsync(TenantId tenant, Guid actor, Guid entity, Guid id, ConvertQuotationToOrderRequest request, CancellationToken ct)
         => repository.ConvertQuotationToOrderAsync(tenant, actor, entity, id, request, ct);

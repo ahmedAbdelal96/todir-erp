@@ -18,11 +18,12 @@ public sealed record UserAccountSummary(
     DateTimeOffset CreatedAt);
 
 public sealed record CreatedUserAccount(UserAccountSummary User, string TemporaryPassword);
+public sealed record UserAccountPage(IReadOnlyList<UserAccountSummary> Items, int TotalCount, int Page, int PageSize);
 
 public interface IUserAccountAdminStore
 {
     Task<CreatedUserAccount> CreateAsync(TenantId tenantId, string name, string emailPrefix, IReadOnlyCollection<Guid> roleIds, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<UserAccountSummary>> ListAsync(TenantId tenantId, string? search, bool? active, int offset, int limit, CancellationToken cancellationToken = default);
+    Task<UserAccountPage> ListAsync(TenantId tenantId, string? search, bool? active, int offset, int limit, CancellationToken cancellationToken = default);
     Task<UserAccountSummary?> FindAsync(TenantId tenantId, IdentityId identityId, CancellationToken cancellationToken = default);
     Task<bool> RenameAsync(TenantId tenantId, IdentityId identityId, string name, CancellationToken cancellationToken = default);
     Task<bool> RenameLoginPrefixAsync(TenantId tenantId, IdentityId identityId, string emailPrefix, CancellationToken cancellationToken = default);
@@ -35,7 +36,7 @@ public interface IUserAccountAdminStore
 public sealed class NullUserAccountAdminStore : IUserAccountAdminStore
 {
     public Task<CreatedUserAccount> CreateAsync(TenantId tenantId, string name, string emailPrefix, IReadOnlyCollection<Guid> roleIds, CancellationToken cancellationToken = default) => throw new InvalidOperationException("identity.storage_unavailable");
-    public Task<IReadOnlyList<UserAccountSummary>> ListAsync(TenantId tenantId, string? search, bool? active, int offset, int limit, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<UserAccountSummary>>([]);
+    public Task<UserAccountPage> ListAsync(TenantId tenantId, string? search, bool? active, int offset, int limit, CancellationToken cancellationToken = default) => Task.FromResult(new UserAccountPage([], 0, offset / Math.Max(1, limit) + 1, limit));
     public Task<UserAccountSummary?> FindAsync(TenantId tenantId, IdentityId identityId, CancellationToken cancellationToken = default) => Task.FromResult<UserAccountSummary?>(null);
     public Task<bool> RenameAsync(TenantId tenantId, IdentityId identityId, string name, CancellationToken cancellationToken = default) => Task.FromResult(false);
     public Task<bool> RenameLoginPrefixAsync(TenantId tenantId, IdentityId identityId, string emailPrefix, CancellationToken cancellationToken = default) => Task.FromResult(false);
@@ -91,20 +92,20 @@ public sealed class NpgsqlUserAccountAdminStore(NpgsqlDataSource dataSource, IAu
         return new(result, password);
     }
 
-    public async Task<IReadOnlyList<UserAccountSummary>> ListAsync(TenantId tenantId, string? search, bool? active, int offset, int limit, CancellationToken cancellationToken = default)
+    public async Task<UserAccountPage> ListAsync(TenantId tenantId, string? search, bool? active, int offset, int limit, CancellationToken cancellationToken = default)
     {
         if (offset < 0 || limit is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(limit), "identity.pagination_invalid");
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("select id, tenant_id, name, email, login_prefix, status, must_change_password, created_at from platform.identity where tenant_id = $1 and ($2::text is null or lower(name) like lower($2) || '%' or normalized_email like upper($2) || '%') and ($3::boolean is null or status = case when $3 then 'Active' else 'Suspended' end) order by name, id limit $4 offset $5", connection, transaction);
+        await using var command = new NpgsqlCommand("select id, tenant_id, name, email, login_prefix, status, must_change_password, created_at, count(*) over() from platform.identity where tenant_id = $1 and ($2::text is null or lower(name) like lower($2) || '%' or normalized_email like upper($2) || '%') and ($3::boolean is null or status = case when $3 then 'Active' else 'Suspended' end) order by name, id limit $4 offset $5", connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue((object?)search?.Trim() ?? DBNull.Value); command.Parameters.AddWithValue((object?)active ?? DBNull.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var users = new List<UserAccountSummary>();
-        while (await reader.ReadAsync(cancellationToken)) users.Add(ReadSummary(reader));
+        var total = 0; while (await reader.ReadAsync(cancellationToken)) { total = reader.GetInt32(8); users.Add(ReadSummary(reader)); }
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
-        return users;
+        return new UserAccountPage(users, total, offset / limit + 1, limit);
     }
 
     public async Task<UserAccountSummary?> FindAsync(TenantId tenantId, IdentityId identityId, CancellationToken cancellationToken = default)

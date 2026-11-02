@@ -98,7 +98,7 @@ export function useReconciliationDetails(runId: string, overrideLegalEntityId?: 
   });
 }
 
-export function useReconciliationsPage(params?: { type?: string | undefined; asOf?: string | undefined; cursor?: string | undefined; limit?: number | undefined }, overrideLegalEntityId?: string) {
+export function useReconciliationsPage(params?: { type?: string | undefined; asOf?: string | undefined; cursor?: string | undefined; page?: number | undefined; limit?: number | undefined }, overrideLegalEntityId?: string) {
   const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadReconciliation } = useAccountingPermissions();
   return useQuery({
@@ -119,7 +119,7 @@ export function useReconciliationIssues(params?: { status?: string; limit?: numb
   });
 }
 
-export function useReconciliationIssuesPage(params?: { status?: string | undefined; cursor?: string | undefined; limit?: number | undefined }, overrideLegalEntityId?: string) {
+export function useReconciliationIssuesPage(params?: { status?: string | undefined; cursor?: string | undefined; page?: number | undefined; limit?: number | undefined }, overrideLegalEntityId?: string) {
   const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadReconciliation } = useAccountingPermissions();
   return useQuery({

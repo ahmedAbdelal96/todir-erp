@@ -252,6 +252,9 @@ export interface JournalEntryDto {
 export interface JournalEntryPageDto {
   readonly items: readonly JournalEntryDto[];
   readonly nextCursor?: string | null;
+  readonly totalCount?: number;
+  readonly page?: number;
+  readonly pageSize?: number;
 }
 
 export interface ReverseEntryRequest {
@@ -483,6 +486,9 @@ export interface GeneralLedgerRowDto {
 export interface GeneralLedgerPageDto {
   readonly items: readonly GeneralLedgerRowDto[];
   readonly nextCursor?: string | null;
+  readonly totalCount?: number;
+  readonly page?: number;
+  readonly pageSize?: number;
 }
 
 export interface ProjectionReconciliationDifferenceDto {
@@ -604,11 +610,17 @@ export interface ReconciliationIssueView {
 export interface ReconciliationPageDto {
   readonly items: readonly SubledgerReconciliationView[];
   readonly nextCursor?: string | null;
+  readonly totalCount?: number;
+  readonly page?: number;
+  readonly pageSize?: number;
 }
 
 export interface ReconciliationIssuePageDto {
   readonly items: readonly ReconciliationIssueView[];
   readonly nextCursor?: string | null;
+  readonly totalCount?: number;
+  readonly page?: number;
+  readonly pageSize?: number;
 }
 
 export interface CloseCheckView {

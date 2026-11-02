@@ -29,8 +29,8 @@ public static class PurchasingModuleExtensions
     public static WebApplication MapPurchasingModule(this WebApplication app)
     {
         var group = app.MapGroup("/api/v1/purchasing").WithTags("Purchasing").RequireAuthorization().RequireRateLimiting("api");
-        group.MapGet("/legal-entities/{entityId:guid}/purchase-orders", async (Guid entityId, string? state, int? page, int? pageSize, HttpContext http, PurchasingService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
-            await Execute(http, await AccessAsync(http, subjects, authorizer, "purchasing.po.read", entityId, ct), () => service.ListAsync(Tenant(http), entityId, state, page ?? 1, pageSize ?? 50, ct)));
+        group.MapGet("/legal-entities/{entityId:guid}/purchase-orders", async (Guid entityId, string? state, string? search, int? page, int? pageSize, HttpContext http, PurchasingService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            await Execute(http, await AccessAsync(http, subjects, authorizer, "purchasing.po.read", entityId, ct), () => service.ListAsync(Tenant(http), entityId, state, search, page ?? 1, pageSize ?? 50, ct)));
         group.MapPost("/legal-entities/{entityId:guid}/purchase-orders", async (Guid entityId, CreatePurchaseOrderRequest request, HttpContext http, PurchasingService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
             if (request.LegalEntityId != entityId) return Results.BadRequest(new { code = "purchasing.entity_mismatch" });

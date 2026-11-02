@@ -97,10 +97,10 @@ public sealed class AccountingService(
     }
 
     public Task<IReadOnlyList<ReconciliationView>> ListReconciliationsAsync(TenantId tenant, Guid entity, string? type, DateOnly? asOf, int limit, CancellationToken ct) => repository.ListReconciliationsAsync(tenant, entity, type, asOf, limit, ct);
-    public Task<ReconciliationPageDto> ListReconciliationsPageAsync(TenantId tenant, Guid entity, string? type, DateOnly? asOf, string? cursor, int limit, CancellationToken ct) => repository.ListReconciliationsPageAsync(tenant, entity, type, asOf, cursor, limit, ct);
+    public Task<ReconciliationPageDto> ListReconciliationsPageAsync(TenantId tenant, Guid entity, string? type, DateOnly? asOf, string? cursor, int limit, CancellationToken ct, int? page = null) => repository.ListReconciliationsPageAsync(tenant, entity, type, asOf, cursor, limit, ct, page);
     public async Task<ReconciliationView> GetReconciliationAsync(TenantId tenant, Guid entity, Guid runId, CancellationToken ct) => await repository.GetReconciliationAsync(tenant, entity, runId, ct) ?? throw new AccountingException("accounting.reconciliation_not_found");
     public Task<IReadOnlyList<ReconciliationIssueView>> ListReconciliationIssuesAsync(TenantId tenant, Guid entity, string? status, int limit, CancellationToken ct) => repository.ListReconciliationIssuesAsync(tenant, entity, status, limit, ct);
-    public Task<ReconciliationIssuePageDto> ListReconciliationIssuesPageAsync(TenantId tenant, Guid entity, string? status, string? cursor, int limit, CancellationToken ct) => repository.ListReconciliationIssuesPageAsync(tenant, entity, status, cursor, limit, ct);
+    public Task<ReconciliationIssuePageDto> ListReconciliationIssuesPageAsync(TenantId tenant, Guid entity, string? status, string? cursor, int limit, CancellationToken ct, int? page = null) => repository.ListReconciliationIssuesPageAsync(tenant, entity, status, cursor, limit, ct, page);
     public async Task<CloseRunView> GetCloseRunAsync(TenantId tenant, Guid entity, Guid periodId, CancellationToken ct) => await repository.GetCloseRunAsync(tenant, entity, periodId, ct) ?? throw new AccountingException("accounting.close_run_not_found");
     public Task<IReadOnlyList<CloseCheckView>> ListCloseRunIssuesAsync(TenantId tenant, Guid entity, Guid periodId, CancellationToken ct) => repository.ListCloseRunIssuesAsync(tenant, entity, periodId, ct);
 

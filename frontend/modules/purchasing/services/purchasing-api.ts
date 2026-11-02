@@ -29,10 +29,11 @@ function entityPath(entityId: string, path: string): string {
 export const purchasingApi = {
   listPurchaseOrders: (
     entityId: string,
-    params?: { state?: string | null; page?: number | null; pageSize?: number | null }
+    params?: { state?: string | null; search?: string | null; page?: number | null; pageSize?: number | null }
   ): Promise<PurchaseOrderPage> => {
     const searchParams = new URLSearchParams();
     if (params?.state) searchParams.set("state", params.state);
+    if (params?.search) searchParams.set("search", params.search);
     if (params?.page != null) searchParams.set("page", String(params.page));
     if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
     const query = searchParams.toString();

@@ -41,7 +41,7 @@ public sealed record InternalTransferResult(Guid Id, PaymentRecord SourcePayment
 public sealed record PaymentListQuery(Guid LegalEntityId, int Page, int PageSize, string? Search, PaymentDirection? Direction,
     PaymentBusinessState? State, DateOnly? FromDate, DateOnly? ToDate, Guid? BranchId = null);
 
-public sealed record PaymentPage(IReadOnlyList<PaymentRecord> Items, int Page, int PageSize, bool HasMore);
+public sealed record PaymentPage(IReadOnlyList<PaymentRecord> Items, int Page, int PageSize, bool HasMore, int TotalCount = 0);
 
 public sealed class PaymentException(string code, string message, Exception? innerException = null) : Exception(message, innerException)
 {

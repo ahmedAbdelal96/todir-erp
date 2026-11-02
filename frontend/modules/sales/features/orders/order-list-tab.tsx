@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { SearchField } from "../../../../components/primitives/search-field.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { SalesDataTable } from "../../components/sales-data-table.tsx";
 import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
@@ -31,14 +32,8 @@ export function OrderListTab({ legalEntityId }: OrderListTabProps): React.JSX.El
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
-  const { data: ordersPage, isLoading } = useSalesOrders(legalEntityId, { page, pageSize: 50 });
+  const { data: ordersPage, isLoading } = useSalesOrders(legalEntityId, { page, pageSize: 50, search: searchQuery || null });
   const orders = ordersPage?.items ?? [];
-
-  const filteredOrders = orders.filter((o) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return o.number.toLowerCase().includes(q) || o.partyId.toLowerCase().includes(q);
-  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -76,7 +71,7 @@ export function OrderListTab({ legalEntityId }: OrderListTabProps): React.JSX.El
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted)" }}>
             {t("common.loading")}
           </div>
-        ) : filteredOrders.length === 0 ? (
+        ) : orders.length === 0 ? (
           <div style={{ padding: "3rem 1rem", textAlign: "center", color: "var(--color-content-muted)" }}>
             <p style={{ margin: 0, fontSize: "0.9375rem" }}>{t("orders.noOrdersFound")}</p>
           </div>
@@ -95,7 +90,7 @@ export function OrderListTab({ legalEntityId }: OrderListTabProps): React.JSX.El
                 </tr>
               </thead>
               <tbody>
-                {filteredOrders.map((o: SalesOrderListItem) => (
+                {orders.map((o: SalesOrderListItem) => (
                   <tr key={o.id} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
                     <td style={{ padding: "0.75rem 1rem", fontWeight: 600, fontFamily: "monospace", fontSize: "0.875rem", color: "var(--color-brand-primary)", whiteSpace: "nowrap" }}>
                       {o.number}
@@ -130,6 +125,14 @@ export function OrderListTab({ legalEntityId }: OrderListTabProps): React.JSX.El
             </table>
           </SalesDataTable>
         )}
+        <Pagination
+          page={page}
+          totalItems={ordersPage?.totalCount ?? 0}
+          totalPages={Math.max(1, Math.ceil((ordersPage?.totalCount ?? 0) / 50))}
+          pageSize={50}
+          onPageChange={setPage}
+          isDisabled={isLoading}
+        />
       </div>
 
       {/* Order Detail Modal */}

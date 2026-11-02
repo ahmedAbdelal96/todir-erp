@@ -47,6 +47,7 @@ export const subledgerApi = {
     if (filter.direction) params.set("direction", filter.direction);
     if (filter.openOnly !== undefined) params.set("openOnly", String(filter.openOnly));
     if (filter.limit !== undefined) params.set("limit", String(filter.limit));
+    if (filter.page !== undefined) params.set("page", String(filter.page));
     if (filter.cursor) params.set("cursor", filter.cursor);
     if (filter.search) params.set("search", filter.search);
     if (filter.dueFrom) params.set("dueFrom", filter.dueFrom);

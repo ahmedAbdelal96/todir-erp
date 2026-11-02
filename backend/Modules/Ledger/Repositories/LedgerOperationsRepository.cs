@@ -189,7 +189,7 @@ public sealed class LedgerOperationsRepository(
     }
 
     public async Task<TrialBalancePageDto> GetTrialBalancePageAsync(TenantId tenant, LegalEntityId entity, DateOnly? from, DateOnly? to,
-        string? search, string? cursor, int limit, CancellationToken ct, string? sort = null)
+        string? search, string? cursor, int limit, CancellationToken ct, string? sort = null, int? page = null)
     {
         limit = Math.Clamp(limit, 1, 200);
         var sortKey = sort?.Trim() switch
@@ -200,6 +200,29 @@ public sealed class LedgerOperationsRepository(
         };
         var sortExpression = sortKey == "accountNameAsc" ? "name_en,id" : "code,id";
         string? cursorCode = null; Guid? cursorId = null;
+        if (page is not null)
+        {
+            var pageNumber = Math.Max(1, page.Value); var offset = (pageNumber - 1) * limit;
+            await using var offsetConnection = await OpenAsync(tenant, ct);
+            var offsetSql = $"""
+                with grouped as (
+                    select a.id,a.code,a.name_en,coalesce(sum(l.base_debit),0) debit,coalesce(sum(l.base_credit),0) credit,coalesce(sum(l.base_debit-l.base_credit),0) balance,max(e.base_currency_code) currency_code
+                    from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id
+                    join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id
+                    where e.tenant_id=$1 and e.legal_entity_id=$2 and ($3::date is null or e.posting_date >= $3) and ($4::date is null or e.posting_date <= $4) and ($5::text is null or (a.code ilike $5 || '%' or a.name_en ilike $5 || '%'))
+                    group by a.id,a.code,a.name_en
+                ), ranked as (
+                    select grouped.*, count(*) over() total_count, coalesce(sum(debit) over(),0) total_debit, coalesce(sum(credit) over(),0) total_credit
+                    from grouped
+                )
+                select id,code,name_en,debit,credit,balance,currency_code,total_count,total_debit,total_credit
+                from ranked order by {sortExpression} offset $6 limit $7
+                """;
+            await using var command = new NpgsqlCommand(offsetSql, offsetConnection); Add(command, tenant.Value, entity.Value, (object?)from ?? DBNull.Value, (object?)to ?? DBNull.Value, (object?)CleanCursorText(search) ?? DBNull.Value, offset, limit);
+            await using var reader = await command.ExecuteReaderAsync(ct); var rows = new List<TrialBalanceRowDto>(); var totalCount = 0; decimal totalDebit = 0m; decimal totalCredit = 0m;
+            while (await reader.ReadAsync(ct)) { totalCount = reader.GetInt32(7); totalDebit = reader.GetDecimal(8); totalCredit = reader.GetDecimal(9); rows.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetDecimal(3), reader.GetDecimal(4), reader.GetDecimal(5), reader.GetString(6))); }
+            return new TrialBalancePageDto(rows, null, totalCount, totalDebit, totalCredit);
+        }
         if (!string.IsNullOrWhiteSpace(cursor))
         {
             string[] parts;
@@ -237,10 +260,10 @@ public sealed class LedgerOperationsRepository(
                 order by {sortExpression}
                 limit $8
                 """;
-            await using var page = new NpgsqlCommand(pageSql, connection);
-            Add(page, tenant.Value, entity.Value, (object?)from ?? DBNull.Value, (object?)to ?? DBNull.Value, (object?)CleanCursorText(search) ?? DBNull.Value,
+            await using var pageCommand = new NpgsqlCommand(pageSql, connection);
+            Add(pageCommand, tenant.Value, entity.Value, (object?)from ?? DBNull.Value, (object?)to ?? DBNull.Value, (object?)CleanCursorText(search) ?? DBNull.Value,
                 (object?)cursorCode ?? DBNull.Value, (object?)cursorId ?? DBNull.Value, limit + 1);
-            await using var reader = await page.ExecuteReaderAsync(ct); var rows = new List<TrialBalanceRowDto>();
+            await using var reader = await pageCommand.ExecuteReaderAsync(ct); var rows = new List<TrialBalanceRowDto>();
             while (await reader.ReadAsync(ct)) rows.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetDecimal(3), reader.GetDecimal(4), reader.GetDecimal(5), reader.GetString(6)));
             var hasMore = rows.Count > limit; if (hasMore) rows.RemoveAt(rows.Count - 1);
             var last = rows.LastOrDefault();
@@ -287,10 +310,38 @@ public sealed class LedgerOperationsRepository(
         return new LedgerGeneralLedgerPage(rows, next is null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes($"{next.PostingDate:yyyy-MM-dd}|{next.EntryNumber}|{next.Sequence}|{next.LineId}")));
     }
 
-    public async Task<GeneralLedgerPageDto> GetGeneralLedgerAsync(TenantId tenant, LegalEntityId entity, DateOnly? from, DateOnly? to, Guid? accountId, string? cursor, int limit, CancellationToken ct, Guid? journalId = null, string? sourceModule = null, string? sourceReference = null, Guid? dimensionDefinitionId = null, Guid? dimensionValueId = null, string? entryNumber = null)
+    public async Task<GeneralLedgerPageDto> GetGeneralLedgerAsync(TenantId tenant, LegalEntityId entity, DateOnly? from, DateOnly? to, Guid? accountId, string? cursor, int limit, CancellationToken ct, Guid? journalId = null, string? sourceModule = null, string? sourceReference = null, Guid? dimensionDefinitionId = null, Guid? dimensionValueId = null, string? entryNumber = null, int? page = null)
     {
-        limit = Math.Clamp(limit, 1, 200); DateOnly? cursorDate = null; string? cursorNumber = null; int cursorSequence = 0; Guid? cursorLineId = null; if (!string.IsNullOrWhiteSpace(cursor)) { var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|'); if (parts.Length != 4 || !DateOnly.TryParse(parts[0], out var parsed) || !int.TryParse(parts[2], out cursorSequence) || !Guid.TryParse(parts[3], out var parsedLineId)) throw new LedgerDomainException("ledger.cursor_invalid", "The report cursor is invalid."); cursorDate = parsed; cursorNumber = parts[1]; cursorLineId = parsedLineId; }
-        await using var connection = await OpenAsync(tenant, ct); const string sql = "select e.id,l.id,e.entry_number,e.posting_date,a.id,a.code,a.name_en,l.debit,l.credit,l.base_debit,l.base_credit,l.currency_code,e.source_module,e.source_reference,l.sequence_no,sum(l.base_debit-l.base_credit) over (partition by l.account_id order by e.posting_date,e.entry_number,l.sequence_no,l.id rows unbounded preceding) as running_balance from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id where e.tenant_id=$1 and e.legal_entity_id=$2 and ($3::date is null or e.posting_date >= $3) and ($4::date is null or e.posting_date <= $4) and ($5::uuid is null or l.account_id=$5) and ($6::date is null or (e.posting_date,e.entry_number,l.sequence_no,l.id) > ($6,$7,$8,$9)) and ($10::uuid is null or e.journal_id=$10) and ($11::text is null or e.source_module=$11) and ($12::text is null or e.source_reference=$12) and ($13::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xd where xd.tenant_id=l.tenant_id and xd.legal_entity_id=l.legal_entity_id and xd.journal_entry_line_id=l.id and xd.dimension_definition_id=$13)) and ($14::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xv where xv.tenant_id=l.tenant_id and xv.legal_entity_id=l.legal_entity_id and xv.journal_entry_line_id=l.id and xv.dimension_value_id=$14)) and ($15::text is null or e.entry_number like $15 || '%') order by e.posting_date,e.entry_number,l.sequence_no,l.id limit $16"; await using var command = new NpgsqlCommand(sql, connection); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(entity.Value); command.Parameters.AddWithValue((object?)from ?? DBNull.Value); command.Parameters.AddWithValue((object?)to ?? DBNull.Value); command.Parameters.AddWithValue((object?)accountId ?? DBNull.Value); command.Parameters.AddWithValue((object?)cursorDate ?? DBNull.Value); command.Parameters.AddWithValue((object?)cursorNumber ?? DBNull.Value); command.Parameters.AddWithValue(cursorSequence); command.Parameters.AddWithValue((object?)cursorLineId ?? DBNull.Value); command.Parameters.AddWithValue((object?)journalId ?? DBNull.Value); command.Parameters.AddWithValue((object?)sourceModule ?? DBNull.Value); command.Parameters.AddWithValue((object?)sourceReference ?? DBNull.Value); command.Parameters.AddWithValue((object?)dimensionDefinitionId ?? DBNull.Value); command.Parameters.AddWithValue((object?)dimensionValueId ?? DBNull.Value); command.Parameters.AddWithValue((object?)entryNumber ?? DBNull.Value); command.Parameters.AddWithValue(limit + 1); await using var reader = await command.ExecuteReaderAsync(ct); var rows = new List<GeneralLedgerRowDto>(); while (await reader.ReadAsync(ct)) rows.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), DateOnly.FromDateTime(reader.GetDateTime(3)), reader.GetGuid(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.GetDecimal(9), reader.GetDecimal(10), reader.GetString(11), reader.GetString(12), reader.GetString(13), reader.GetInt32(14), reader.GetDecimal(15))); var next = rows.Count > limit ? rows[limit - 1] : null; if (rows.Count > limit) rows.RemoveAt(limit); return new GeneralLedgerPageDto(rows, next is null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes($"{next.PostingDate:yyyy-MM-dd}|{next.EntryNumber}|{next.Sequence}|{next.LineId}")));
+        limit = Math.Clamp(limit, 1, 200); DateOnly? cursorDate = null; string? cursorNumber = null; int cursorSequence = 0; Guid? cursorLineId = null; if (page is null && !string.IsNullOrWhiteSpace(cursor)) { var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|'); if (parts.Length != 4 || !DateOnly.TryParse(parts[0], out var parsed) || !int.TryParse(parts[2], out cursorSequence) || !Guid.TryParse(parts[3], out var parsedLineId)) throw new LedgerDomainException("ledger.cursor_invalid", "The report cursor is invalid."); cursorDate = parsed; cursorNumber = parts[1]; cursorLineId = parsedLineId; }
+        await using var connection = await OpenAsync(tenant, ct);
+        if (page is not null)
+        {
+            var pageNumber = Math.Max(1, page.Value); var offset = (pageNumber - 1) * limit;
+            const string offsetSql = """
+                with filtered as (
+                    select e.id entry_id,l.id line_id,e.entry_number,e.posting_date,a.id account_id,a.code,a.name_en,l.debit,l.credit,l.base_debit,l.base_credit,l.currency_code,e.source_module,e.source_reference,l.sequence_no
+                    from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id
+                    join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id
+                    where e.tenant_id=$1 and e.legal_entity_id=$2 and ($3::date is null or e.posting_date >= $3) and ($4::date is null or e.posting_date <= $4)
+                      and ($5::uuid is null or l.account_id=$5) and ($6::uuid is null or e.journal_id=$6) and ($7::text is null or e.source_module=$7) and ($8::text is null or e.source_reference=$8)
+                      and ($9::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xd where xd.tenant_id=l.tenant_id and xd.legal_entity_id=l.legal_entity_id and xd.journal_entry_line_id=l.id and xd.dimension_definition_id=$9))
+                      and ($10::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xv where xv.tenant_id=l.tenant_id and xv.legal_entity_id=l.legal_entity_id and xv.journal_entry_line_id=l.id and xv.dimension_value_id=$10))
+                      and ($11::text is null or e.entry_number like $11 || '%')
+                ), ranked as (
+                    select filtered.*, sum(base_debit-base_credit) over (partition by account_id order by posting_date,entry_number,sequence_no,line_id rows unbounded preceding) running_balance, count(*) over() total_count
+                    from filtered
+                )
+                select entry_id,line_id,entry_number,posting_date,account_id,code,name_en,debit,credit,base_debit,base_credit,currency_code,source_module,source_reference,sequence_no,running_balance,total_count
+                from ranked order by posting_date,entry_number,sequence_no,line_id offset $12 limit $13
+                """;
+            await using var offsetCommand = new NpgsqlCommand(offsetSql, connection);
+            Add(offsetCommand, tenant.Value, entity.Value, (object?)from ?? DBNull.Value, (object?)to ?? DBNull.Value, (object?)accountId ?? DBNull.Value, (object?)journalId ?? DBNull.Value, (object?)sourceModule ?? DBNull.Value, (object?)sourceReference ?? DBNull.Value, (object?)dimensionDefinitionId ?? DBNull.Value, (object?)dimensionValueId ?? DBNull.Value, (object?)entryNumber ?? DBNull.Value, offset, limit);
+            await using var offsetReader = await offsetCommand.ExecuteReaderAsync(ct); var rows = new List<GeneralLedgerRowDto>(); var totalCount = 0;
+            while (await offsetReader.ReadAsync(ct)) { totalCount = offsetReader.GetInt32(16); rows.Add(new(offsetReader.GetGuid(0), offsetReader.GetGuid(1), offsetReader.GetString(2), DateOnly.FromDateTime(offsetReader.GetDateTime(3)), offsetReader.GetGuid(4), offsetReader.GetString(5), offsetReader.GetString(6), offsetReader.GetDecimal(7), offsetReader.GetDecimal(8), offsetReader.GetDecimal(9), offsetReader.GetDecimal(10), offsetReader.GetString(11), offsetReader.GetString(12), offsetReader.GetString(13), offsetReader.GetInt32(14), offsetReader.GetDecimal(15))); }
+            return new GeneralLedgerPageDto(rows, null, totalCount, pageNumber, limit);
+        }
+        const string sql = "select e.id,l.id,e.entry_number,e.posting_date,a.id,a.code,a.name_en,l.debit,l.credit,l.base_debit,l.base_credit,l.currency_code,e.source_module,e.source_reference,l.sequence_no,sum(l.base_debit-l.base_credit) over (partition by l.account_id order by e.posting_date,e.entry_number,l.sequence_no,l.id rows unbounded preceding) as running_balance from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id where e.tenant_id=$1 and e.legal_entity_id=$2 and ($3::date is null or e.posting_date >= $3) and ($4::date is null or e.posting_date <= $4) and ($5::uuid is null or l.account_id=$5) and ($6::date is null or (e.posting_date,e.entry_number,l.sequence_no,l.id) > ($6,$7,$8,$9)) and ($10::uuid is null or e.journal_id=$10) and ($11::text is null or e.source_module=$11) and ($12::text is null or e.source_reference=$12) and ($13::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xd where xd.tenant_id=l.tenant_id and xd.legal_entity_id=l.legal_entity_id and xd.journal_entry_line_id=l.id and xd.dimension_definition_id=$13)) and ($14::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xv where xv.tenant_id=l.tenant_id and xv.legal_entity_id=l.legal_entity_id and xv.journal_entry_line_id=l.id and xv.dimension_value_id=$14)) and ($15::text is null or e.entry_number like $15 || '%') order by e.posting_date,e.entry_number,l.sequence_no,l.id limit $16";
+        await using var command = new NpgsqlCommand(sql, connection); Add(command, tenant.Value, entity.Value, (object?)from ?? DBNull.Value, (object?)to ?? DBNull.Value, (object?)accountId ?? DBNull.Value, (object?)cursorDate ?? DBNull.Value, (object?)cursorNumber ?? DBNull.Value, cursorSequence, (object?)cursorLineId ?? DBNull.Value, (object?)journalId ?? DBNull.Value, (object?)sourceModule ?? DBNull.Value, (object?)sourceReference ?? DBNull.Value, (object?)dimensionDefinitionId ?? DBNull.Value, (object?)dimensionValueId ?? DBNull.Value, (object?)entryNumber ?? DBNull.Value, limit + 1); await using var reader = await command.ExecuteReaderAsync(ct); var legacyRows = new List<GeneralLedgerRowDto>(); while (await reader.ReadAsync(ct)) legacyRows.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), DateOnly.FromDateTime(reader.GetDateTime(3)), reader.GetGuid(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.GetDecimal(9), reader.GetDecimal(10), reader.GetString(11), reader.GetString(12), reader.GetString(13), reader.GetInt32(14), reader.GetDecimal(15))); var next = legacyRows.Count > limit ? legacyRows[limit - 1] : null; if (legacyRows.Count > limit) legacyRows.RemoveAt(limit); return new GeneralLedgerPageDto(legacyRows, next is null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes($"{next.PostingDate:yyyy-MM-dd}|{next.EntryNumber}|{next.Sequence}|{next.LineId}")));
     }
 
     public async Task<AccountBalanceDto> GetAccountBalanceAsync(TenantId tenant, LegalEntityId entity, Guid accountId, DateOnly? from, DateOnly? to, CancellationToken ct)

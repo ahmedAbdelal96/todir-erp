@@ -9,7 +9,8 @@ import type {
   LoginDomainInfo,
   CreateUserPayload,
   ChangeLoginDomainPayload,
-  ListUsersParams
+  ListUsersParams,
+  UserAccountPage
 } from "../types.ts";
 
 export interface UseIdentityContext {
@@ -27,7 +28,7 @@ export function useUsersList(
   const tenantId = context.tenantId || DEFAULT_TENANT;
   const entityId = context.entityId || DEFAULT_ENTITY;
 
-  return useQuery<UserAccountSummary[]>({
+  return useQuery<UserAccountPage>({
     queryKey: queryKeyFactory.list(tenantId, entityId, "identity", "users", params as Record<string, unknown>),
     queryFn: () => identityApi.fetchUsers(tenantId, params),
     staleTime: 30_000

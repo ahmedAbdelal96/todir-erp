@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
 import { SearchField } from "../../../../components/primitives/search-field.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
@@ -6,6 +6,7 @@ import { SalesDataTable } from "../../components/sales-data-table.tsx";
 import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
 import { SalesStatusBadge } from "../../components/sales-status-badge.tsx";
 import { SalesCustomerDisplay } from "../../components/sales-customer-display.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
 import type { QuotationListItem } from "../../types.ts";
 
 export interface QuotationListTabProps {
@@ -14,6 +15,8 @@ export interface QuotationListTabProps {
   readonly totalCount: number;
   readonly page: number;
   readonly onPageChange: (newPage: number) => void;
+  readonly searchQuery: string;
+  readonly onSearchQueryChange: (value: string) => void;
   readonly onSelectQuotation: (id: string) => void;
   readonly onNewQuotation: () => void;
   readonly stateFilter: string | null;
@@ -26,20 +29,15 @@ export function QuotationListTab({
   totalCount,
   page,
   onPageChange,
+  searchQuery,
+  onSearchQueryChange,
   onSelectQuotation,
   onNewQuotation,
   stateFilter,
   onStateFilterChange
 }: QuotationListTabProps): React.JSX.Element {
   const { t } = useTranslation("sales");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const filteredQuotes = quotations.filter((q) => {
-    if (stateFilter && q.state !== stateFilter) return false;
-    if (!searchQuery.trim()) return true;
-    const qTerm = searchQuery.toLowerCase();
-    return q.number.toLowerCase().includes(qTerm) || q.partyId.toLowerCase().includes(qTerm);
-  });
+  const filteredQuotes = quotations;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -57,7 +55,7 @@ export function QuotationListTab({
           <div style={{ width: "260px" }}>
             <SearchField
               value={searchQuery}
-              onChange={setSearchQuery}
+              onChange={onSearchQueryChange}
               placeholder={t("quotations.searchPlaceholder")}
               ariaLabel={t("quotations.title")}
             />
@@ -248,29 +246,7 @@ export function QuotationListTab({
             </SalesDataTable>
 
             {/* Pagination Strip */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "0.5rem" }}>
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-                {t("common.page")} {page} · {totalCount} {t("quotations.title")}
-              </span>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <Button
-                  variant="secondary"
-                  onPress={() => onPageChange(page - 1)}
-                  isDisabled={page <= 1}
-                  type="button"
-                >
-                  {t("common.previous")}
-                </Button>
-                <Button
-                  variant="secondary"
-                  onPress={() => onPageChange(page + 1)}
-                  isDisabled={filteredQuotes.length < 50}
-                  type="button"
-                >
-                  {t("common.next")}
-                </Button>
-              </div>
-            </div>
+            <Pagination page={page} totalItems={totalCount} totalPages={Math.max(1, Math.ceil(totalCount / 50))} pageSize={50} onPageChange={onPageChange} isDisabled={isLoading} />
           </>
         )}
       </div>

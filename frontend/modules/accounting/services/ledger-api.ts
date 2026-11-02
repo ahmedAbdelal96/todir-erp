@@ -192,7 +192,7 @@ export const ledgerApi = {
 
   listEntriesPage: async (
     legalEntityId: string,
-    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; status?: string | undefined; cursor?: string | undefined; limit?: number | undefined; sort?: string | undefined }
+    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; status?: string | undefined; cursor?: string | undefined; page?: number | undefined; limit?: number | undefined; sort?: string | undefined }
   ): Promise<JournalEntryPageDto> => {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params ?? {})) if (value) searchParams.set(key, String(value));
@@ -303,7 +303,7 @@ export const ledgerApi = {
 
   getTrialBalancePage: async (
     legalEntityId: string,
-    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; cursor?: string | undefined; limit?: number | undefined; sort?: string | undefined }
+    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; cursor?: string | undefined; page?: number | undefined; limit?: number | undefined; sort?: string | undefined }
   ): Promise<TrialBalancePageDto> => {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params ?? {})) if (value) searchParams.set(key, String(value));
@@ -324,6 +324,7 @@ export const ledgerApi = {
       dimensionValueId?: string | undefined;
       entryNumber?: string | undefined;
       cursor?: string | undefined;
+      page?: number | undefined;
       limit?: number | undefined;
     }
   ): Promise<GeneralLedgerPageDto> => {
@@ -338,6 +339,7 @@ export const ledgerApi = {
     if (params?.dimensionValueId) searchParams.set("dimensionValueId", params.dimensionValueId);
     if (params?.entryNumber) searchParams.set("entryNumber", params.entryNumber);
     if (params?.cursor) searchParams.set("cursor", params.cursor);
+    if (params?.page) searchParams.set("page", params.page.toString());
     if (params?.limit) searchParams.set("limit", params.limit.toString());
     const queryStr = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return httpClient<GeneralLedgerPageDto>(`/api/v1/ledger/legal-entities/${legalEntityId}/reports/general-ledger${queryStr}`);

@@ -95,6 +95,7 @@ export interface PaymentPage {
   readonly page: number;
   readonly pageSize: number;
   readonly hasMore: boolean;
+  readonly totalCount?: number | undefined;
 }
 
 export interface CreatePaymentRequest {
@@ -245,6 +246,7 @@ export interface PaymentRequestPage {
   readonly page: number;
   readonly pageSize: number;
   readonly hasMore: boolean;
+  readonly totalCount?: number | undefined;
 }
 
 export interface CreatePaymentLinkRequest {

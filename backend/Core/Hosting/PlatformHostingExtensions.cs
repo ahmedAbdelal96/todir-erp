@@ -219,11 +219,12 @@ public static class PlatformHostingExtensions
             catch (ArgumentException exception) when (exception.Message is "identity.email_prefix_invalid" or "identity.name_invalid") { return Problem(StatusCodes.Status400BadRequest, exception.Message, "User data is invalid"); }
             catch (InvalidOperationException exception) when (exception.Message is "identity.email_prefix_already_used" or "identity.role_assignment_invalid" or "tenant.unavailable") { return Problem(StatusCodes.Status409Conflict, exception.Message, "User could not be created"); }
         }).RequireAuthorization();
-        group.MapGet("/tenants/{tenantId:guid}/users", async (Guid tenantId, string? search, bool? active, int? offset, int? limit, HttpContext context, IUserAccountAdminStore users, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        group.MapGet("/tenants/{tenantId:guid}/users", async (Guid tenantId, string? search, bool? active, int? offset, int? limit, int? page, HttpContext context, IUserAccountAdminStore users, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
         {
             var tenant = new TenantId(tenantId);
             if (!await HasTenantPermissionAsync(context, tenant, "platform.identity.read", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
-            try { return Results.Ok(await users.ListAsync(tenant, search, active, offset ?? 0, limit ?? 100, cancellationToken)); }
+            var pageSize = Math.Clamp(limit ?? 20, 1, 100); var pageNumber = Math.Max(1, page ?? ((offset ?? 0) / pageSize) + 1);
+            try { return Results.Ok(await users.ListAsync(tenant, search, active, (pageNumber - 1) * pageSize, pageSize, cancellationToken)); }
             catch (ArgumentOutOfRangeException exception) { return Problem(StatusCodes.Status400BadRequest, "identity.pagination_invalid", exception.Message); }
         }).RequireAuthorization();
         group.MapGet("/tenants/{tenantId:guid}/users/{identityId:guid}", async (Guid tenantId, Guid identityId, HttpContext context, IUserAccountAdminStore users, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>

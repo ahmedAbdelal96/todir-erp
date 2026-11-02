@@ -15,7 +15,7 @@ public static class SubledgerEndpoints
     public static void Map(WebApplication app)
     {
         var group = app.MapGroup("/api/v1/subledger").RequireAuthorization().RequireRateLimiting("api").WithTags("Subledger");
-        group.MapGet("/open-items", async (Guid? partyId, Guid legalEntityId, string? direction, bool? openOnly, int? limit, string? cursor, string? search,
+        group.MapGet("/open-items", async (Guid? partyId, Guid legalEntityId, string? direction, bool? openOnly, int? limit, int? page, string? cursor, string? search,
             DateOnly? dueFrom, DateOnly? dueTo, string? currencyCode, bool? overdueOnly, DateOnly? asOfDate, string? status, string? sort,
             HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, SubledgerService subledger, CancellationToken ct) =>
         {
@@ -28,10 +28,10 @@ public static class SubledgerEndpoints
             var access = await ResolveAsync(http.User, subjects, authorizer, "subledger.read", legalEntityId, ct);
             if (access.Response is not null) return access.Response;
             return await Execute(() => subledger.ListOpenItemsAsync(access.Tenant,
-                new(new LegalEntityId(legalEntityId), partyId, parsedDirection, openOnly ?? true, limit ?? 50, cursor, search, dueFrom, dueTo, currencyCode, overdueOnly ?? false, asOfDate, status, sort), ct));
+                new(new LegalEntityId(legalEntityId), partyId, parsedDirection, openOnly ?? true, limit ?? 50, cursor, search, dueFrom, dueTo, currencyCode, overdueOnly ?? false, asOfDate, status, sort, page), ct));
         });
 
-        group.MapGet("/parties/{partyId:guid}/open-items", async (Guid partyId, Guid legalEntityId, string? direction, bool? openOnly, int? limit, string? cursor, string? search,
+        group.MapGet("/parties/{partyId:guid}/open-items", async (Guid partyId, Guid legalEntityId, string? direction, bool? openOnly, int? limit, int? page, string? cursor, string? search,
             DateOnly? dueFrom, DateOnly? dueTo, string? currencyCode, bool? overdueOnly, DateOnly? asOfDate, string? status, string? sort,
             HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, SubledgerService subledger, CancellationToken ct) =>
         {
@@ -44,7 +44,7 @@ public static class SubledgerEndpoints
             var access = await ResolveAsync(http.User, subjects, authorizer, "subledger.read", legalEntityId, ct);
             if (access.Response is not null) return access.Response;
             return await Execute(() => subledger.ListOpenItemsAsync(access.Tenant,
-                new(new LegalEntityId(legalEntityId), partyId, parsedDirection, openOnly ?? true, limit ?? 50, cursor, search, dueFrom, dueTo, currencyCode, overdueOnly ?? false, asOfDate, status, sort), ct));
+                new(new LegalEntityId(legalEntityId), partyId, parsedDirection, openOnly ?? true, limit ?? 50, cursor, search, dueFrom, dueTo, currencyCode, overdueOnly ?? false, asOfDate, status, sort, page), ct));
         });
 
         group.MapGet("/open-items/{openItemId:guid}", async (Guid openItemId, Guid legalEntityId, HttpContext http,
