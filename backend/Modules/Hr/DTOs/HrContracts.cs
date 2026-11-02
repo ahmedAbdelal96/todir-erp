@@ -81,6 +81,9 @@ public sealed record CreateEmployeeDocumentRequest(Guid LegalEntityId, string Ca
 public sealed record VerifyEmployeeDocumentRequest(long ExpectedVersion, bool Verified, string Reason);
 public sealed record EmployeeDocumentView(Guid Id, Guid EmployeeId, string Category, string Sensitivity, Guid FileRef, string Sha256, string ContentType, long SizeBytes, DateOnly? ExpiryDate, string VerificationStatus, string Status, Guid? SupersedesDocumentId, long Version);
 public sealed record EmployeeDocumentDownloadView(string Url, DateTimeOffset ExpiresAt);
+public sealed record SaveRequiredDocumentRuleRequest(Guid LegalEntityId, string Category, bool Enabled, long ExpectedVersion, string Reason);
+public sealed record RequiredDocumentRuleView(Guid Id, Guid LegalEntityId, string Category, bool Enabled, long Version);
+public sealed record EmployeeFileCompletenessView(Guid EmployeeId, string Status, int MissingRequiredCount, IReadOnlyList<string> MissingCategories, int ExpiringDocumentCount);
 public sealed record CreateQualificationRequest(Guid LegalEntityId, string QualificationType, string Name, string Institution, string? FieldOfStudy = null, string? Level = null, DateOnly? CompletedOn = null, Guid? FileRef = null);
 public sealed record QualificationView(Guid Id, Guid EmployeeId, string QualificationType, string Name, string Institution, string? FieldOfStudy, string? Level, DateOnly? CompletedOn, Guid? FileRef, string Status, DateTimeOffset CreatedAt);
 public sealed record CreateCredentialRequest(Guid LegalEntityId, string CredentialType, string Name, string Issuer, string? CountryCode, DateOnly? IssuedOn, DateOnly? ExpiryDate, Guid? FileRef = null);
@@ -124,6 +127,10 @@ public sealed record OvertimeRequestView(Guid Id, Guid AttendanceRecordId, Guid 
 public sealed record CreateAttendancePunchRequest(Guid LegalEntityId, DateTimeOffset OccurredAt, string Direction, string SourceType, string? SourceReference, string IdempotencyKey);
 public sealed record AttendanceRecordView(Guid Id, Guid EmployeeId, Guid EmploymentId, Guid LegalEntityId, DateOnly WorkDate, Guid? WorkCalendarId, Guid? ShiftAssignmentId, string TimeZoneId, TimeOnly? PlannedStart, TimeOnly? PlannedEnd, short PlannedBreakMinutes, short GraceMinutes, DateTimeOffset? FirstIn, DateTimeOffset? LastOut, int WorkedMinutes, int LateMinutes, int EarlyLeaveMinutes, int OvertimeEligibleMinutes, string Status, string LockState, string? PayrollReference, long Version);
 public sealed record AttendancePunchResult(Guid PunchId, bool DuplicateSubmission, bool LateAfterPayrollLock, AttendanceRecordView Record);
+public sealed record HrAttendanceImportRow(string RowReference, string EmploymentNumber, DateTimeOffset OccurredAt, string Direction, string SourceReference);
+public sealed record HrAttendanceImportRequest(Guid LegalEntityId, string SourceSystem, string BatchReference, string FileSha256, IReadOnlyList<HrAttendanceImportRow> Rows);
+public sealed record HrAttendanceImportRowResult(string RowReference, string Status, string? EmploymentNumber, DateOnly? WorkDate, string? TimeZoneId, IReadOnlyList<string> Issues, IReadOnlyList<string> Warnings);
+public sealed record HrAttendanceImportSummary(int TotalRows, int ReadyRows, int ImportedRows, int AlreadyImportedRows, int RejectedRows, IReadOnlyList<HrAttendanceImportRowResult> Rows);
 public sealed record AttendancePageRequest(Guid LegalEntityId, DateOnly From, DateOnly To, Guid? EmploymentId = null, string? Status = null, int Page = 1, int PageSize = 50);
 public sealed record AttendancePage(IReadOnlyList<AttendanceRecordView> Items, int Page, int PageSize, long TotalCount);
 public sealed record AttendanceExceptionView(Guid Id, Guid EmploymentId, Guid? AttendanceRecordId, Guid? AttendancePunchId, string Code, string Status, string? Reason, DateTimeOffset CreatedAt);

@@ -45,6 +45,8 @@ public sealed class HrTenantIsolationIntegrationTests : DatabaseIntegrationTestB
         await using var transaction = await connection.BeginTransactionAsync();
         await using var query = new NpgsqlCommand("select count(*) from business_hr.employee", connection, transaction);
         Assert.Equal(0L, Convert.ToInt64(await query.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
+        await using var requirements = new NpgsqlCommand("select count(*) from business_hr.employee_document_requirement", connection, transaction);
+        Assert.Equal(0L, Convert.ToInt64(await requirements.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
         await transaction.RollbackAsync();
     }
 
@@ -61,6 +63,14 @@ public sealed class HrTenantIsolationIntegrationTests : DatabaseIntegrationTestB
         await using var ownRows = new NpgsqlCommand("select count(*) from business_hr.employee where tenant_id=$1", connection, transaction);
         ownRows.Parameters.AddWithValue(tenantId);
         Assert.True(Convert.ToInt64(await ownRows.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture) > 0);
+
+        await using var ownRequirements = new NpgsqlCommand("select count(*) from business_hr.employee_document_requirement where tenant_id=$1 and enabled", connection, transaction);
+        ownRequirements.Parameters.AddWithValue(tenantId);
+        Assert.True(Convert.ToInt64(await ownRequirements.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture) > 0);
+
+        await using var foreignRequirements = new NpgsqlCommand("select count(*) from business_hr.employee_document_requirement where tenant_id=$1", connection, transaction);
+        foreignRequirements.Parameters.AddWithValue(otherTenantId);
+        Assert.Equal(0L, Convert.ToInt64(await foreignRequirements.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
 
         await using var foreignRows = new NpgsqlCommand("select count(*) from business_hr.employee where tenant_id=$1", connection, transaction);
         foreignRows.Parameters.AddWithValue(otherTenantId);

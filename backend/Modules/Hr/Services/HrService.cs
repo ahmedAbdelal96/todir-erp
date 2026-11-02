@@ -5,7 +5,7 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Hr.Services;
 
-public sealed class HrService(HrRepository repository, HrImportRepository imports, HrAssignmentImportRepository assignmentImports, HrContractImportRepository contractImports, HrCompensationImportRepository compensationImports, HrInsuranceImportRepository insuranceImports, HrDocumentImportRepository documentImports, HrGoLiveConfigurationRepository goLiveConfigurations, HrReminderRepository reminders, HrHomeRepository home, HrTeamRepository team, HrReportsRepository reports, WorkCalendarRepository calendars, ShiftRepository shifts, HrAdjustmentRepository adjustments, LeavePolicyRepository leavePolicies, AttendanceRepository attendance, LeaveRequestRepository leaveRequests, OnboardingRepository onboarding, OvertimeRepository overtime)
+public sealed class HrService(HrRepository repository, HrImportRepository imports, HrAssignmentImportRepository assignmentImports, HrContractImportRepository contractImports, HrCompensationImportRepository compensationImports, HrInsuranceImportRepository insuranceImports, HrDocumentImportRepository documentImports, HrGoLiveConfigurationRepository goLiveConfigurations, HrReminderRepository reminders, HrHomeRepository home, HrTeamRepository team, HrReportsRepository reports, WorkCalendarRepository calendars, ShiftRepository shifts, HrAdjustmentRepository adjustments, LeavePolicyRepository leavePolicies, AttendanceRepository attendance, AttendanceImportRepository attendanceImports, LeaveRequestRepository leaveRequests, OnboardingRepository onboarding, OvertimeRepository overtime, HrDocumentRequirementRepository documentRequirements)
 {
     public static HrException? TranslatePersistenceException(Exception exception) => HrRepositoryExceptionTranslator.Translate(exception);
 
@@ -96,6 +96,15 @@ public sealed class HrService(HrRepository repository, HrImportRepository import
 
     public Task<EmployeeDocumentView> VerifyDocumentAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, Guid documentId, Guid legalEntityId, VerifyEmployeeDocumentRequest request, Guid correlationId, CancellationToken ct) =>
         repository.VerifyDocumentAsync(tenant, actor, membershipId, employeeId, documentId, legalEntityId, request, correlationId, ct);
+
+    public Task<RequiredDocumentRuleView> SaveRequiredDocumentRuleAsync(TenantId tenant, Guid actor, Guid membershipId, SaveRequiredDocumentRuleRequest request, Guid correlationId, CancellationToken ct) =>
+        documentRequirements.SaveAsync(tenant, actor, membershipId, request, correlationId, ct);
+
+    public Task<IReadOnlyList<RequiredDocumentRuleView>> ListRequiredDocumentRulesAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct) =>
+        documentRequirements.ListAsync(tenant, legalEntityId, ct);
+
+    public Task<EmployeeFileCompletenessView> GetDocumentCompletenessAsync(TenantId tenant, Guid employeeId, Guid legalEntityId, CancellationToken ct) =>
+        documentRequirements.GetCompletenessAsync(tenant, employeeId, legalEntityId, ct);
 
     public Task<IReadOnlyList<EmployeeIdentifierView>> ListIdentifiersAsync(TenantId tenant, Guid employeeId, Guid legalEntityId, CancellationToken ct) =>
         repository.ListIdentifiersAsync(tenant, employeeId, legalEntityId, ct);
@@ -231,6 +240,43 @@ public sealed class HrService(HrRepository repository, HrImportRepository import
 
     public Task<AttendancePunchResult> RecordAttendancePunchAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employmentId, CreateAttendancePunchRequest request, Guid correlationId, CancellationToken ct) =>
         attendance.RecordPunchAsync(tenant, actor, membershipId, employmentId, request, correlationId, ct);
+
+    public async Task<HrAttendanceImportSummary> PreviewAttendanceImportAsync(TenantId tenant, HrAttendanceImportRequest request, CancellationToken ct) =>
+        (await attendanceImports.PrepareAsync(tenant, request, ct)).Summary;
+
+    public async Task<HrAttendanceImportSummary> CommitAttendanceImportAsync(TenantId tenant, Guid actor, Guid membershipId, HrAttendanceImportRequest request, Guid correlationId, CancellationToken ct)
+    {
+        var plan = await attendanceImports.PrepareAsync(tenant, request, ct);
+        var rows = new List<HrAttendanceImportRowResult>(plan.Rows.Count);
+        foreach (var prepared in plan.Rows)
+        {
+            if (prepared.Status != "Ready" || prepared.EmploymentId is not { } employmentId)
+            {
+                rows.Add(prepared.ToView());
+                continue;
+            }
+
+            var punch = new CreateAttendancePunchRequest(plan.LegalEntityId, prepared.Row.OccurredAt, prepared.Row.Direction,
+                "Imported", prepared.PunchSourceReference, prepared.IdempotencyKey);
+            var evidence = new AttendanceImportEvidence(plan.SourceSystem, prepared.Row.SourceReference, plan.BatchReference,
+                prepared.Row.RowReference, plan.FileSha256, prepared.PayloadHash);
+            try
+            {
+                var result = await attendance.RecordImportedPunchAsync(tenant, actor, membershipId, employmentId, punch, evidence, correlationId, ct);
+                var status = result.DuplicateSubmission ? "AlreadyImported" : "Imported";
+                var warnings = prepared.Warnings.ToList();
+                if (result.LateAfterPayrollLock) warnings.Add("hr.attendance_import_after_payroll_lock");
+                rows.Add(prepared.ToView() with { Status = status, Warnings = warnings });
+            }
+            catch (HrException exception)
+            {
+                rows.Add(prepared.ToView() with { Status = "Rejected", Issues = [exception.Code] });
+            }
+        }
+
+        return new(rows.Count, 0, rows.Count(row => row.Status == "Imported"), rows.Count(row => row.Status == "AlreadyImported"),
+            rows.Count(row => row.Status == "Rejected"), rows);
+    }
 
     public Task<AttendancePage> ListAttendanceAsync(TenantId tenant, AttendancePageRequest request, CancellationToken ct) =>
         attendance.ListAsync(tenant, request, ct);

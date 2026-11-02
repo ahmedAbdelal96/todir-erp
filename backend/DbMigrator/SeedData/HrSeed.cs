@@ -23,6 +23,7 @@ public static class HrSeed
 
     public static async Task<HrSeedSummary> SeedAsync(SeedContext context, CancellationToken ct)
     {
+        await SeedDocumentRequirementsAsync(context, ct);
         var count = context.Tenant.Id == SeedIds.AtlasTenant ? 80 : 40;
         var compensationRecords = 0;
         var insuranceDrafts = 0;
@@ -195,6 +196,16 @@ public static class HrSeed
         await PlatformSeed.EnsureSequenceAsync(context, "hr.employee-number", context.EntityId, "EMP-", 6, nextNumber, ct);
 
         return new(count + 1, Departments.Length, Positions.Length, count, 1, count + 3, 1, compensationRecords, insuranceDrafts, qualificationRecords, credentialRecords);
+    }
+
+    private static async Task SeedDocumentRequirementsAsync(SeedContext context, CancellationToken ct)
+    {
+        foreach (var (code, category) in new[] { ("NATIONAL-ID", "National ID"), ("EMPLOYMENT-CONTRACT", "Employment Contract") })
+        {
+            var id = SeedIds.Stable($"{context.Tenant.Id:D}:hr:document-requirement:{code}");
+            await context.ExecuteAsync("insert into business_hr.employee_document_requirement(id,tenant_id,legal_entity_id,category,category_key,enabled,created_by,updated_by,updated_at,version) values($1,$2,$3,$4,upper($4),true,$5,$5,$6,1) on conflict(tenant_id,legal_entity_id,category_key) do update set category=excluded.category,enabled=true,updated_by=excluded.updated_by,updated_at=excluded.updated_at,version=business_hr.employee_document_requirement.version+case when (business_hr.employee_document_requirement.category,business_hr.employee_document_requirement.enabled) is distinct from (excluded.category,excluded.enabled) then 1 else 0 end", ct,
+                id, context.Tenant.Id, context.EntityId, category, context.AdministratorId, context.AsOf);
+        }
     }
 
     private static async Task UpsertEmploymentAsync(SeedContext context, Guid employeeId, Guid employmentId, string number, string status, DateOnly start, DateOnly? end, CancellationToken ct) =>

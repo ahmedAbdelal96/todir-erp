@@ -35,6 +35,8 @@ public static class HrModuleExtensions
         services.AddSingleton<WorkCalendarRepository>();
         services.AddSingleton<ShiftRepository>();
         services.AddSingleton<AttendanceRepository>();
+        services.AddSingleton<AttendanceImportRepository>();
+        services.AddSingleton<HrDocumentRequirementRepository>();
         services.AddSingleton<IHrCountryProviderRegistry, HrCountryProviderRegistry>();
         services.AddSingleton<HrAdjustmentRepository>();
         services.AddSingleton<LeavePolicyRepository>();
@@ -438,6 +440,27 @@ public static class HrModuleExtensions
             if (!access.Allowed) return Results.Forbid();
             return await Execute(http, () => service.CreateDocumentAsync(access.Tenant, access.ActorId, access.MembershipId, employeeId, request, Correlation(http), ct), StatusCodes.Status201Created);
         });
+        group.MapGet("/employees/{employeeId:guid}/document-completeness", async (Guid employeeId, Guid legalEntityId, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var access = await AccessAsync(http, subjects, authorizer, "hr.employee.document.read", legalEntityId, ct);
+            if (access is null) return Results.Unauthorized();
+            if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.GetDocumentCompletenessAsync(access.Tenant, employeeId, legalEntityId, ct));
+        });
+        group.MapGet("/document-requirements", async (Guid legalEntityId, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var access = await AccessAsync(http, subjects, authorizer, "hr.employee.document.read", legalEntityId, ct);
+            if (access is null) return Results.Unauthorized();
+            if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.ListRequiredDocumentRulesAsync(access.Tenant, legalEntityId, ct));
+        });
+        group.MapPut("/document-requirements", async (SaveRequiredDocumentRuleRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var access = await AccessAsync(http, subjects, authorizer, "hr.employee.document.manage", request.LegalEntityId, ct);
+            if (access is null) return Results.Unauthorized();
+            if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.SaveRequiredDocumentRuleAsync(access.Tenant, access.ActorId, access.MembershipId, request, Correlation(http), ct));
+        });
         group.MapPost("/employees/{employeeId:guid}/documents/{documentId:guid}/verify", async (Guid employeeId, Guid documentId, Guid legalEntityId, VerifyEmployeeDocumentRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
             var access = await AccessAsync(http, subjects, authorizer, "hr.employee.document.verify", legalEntityId, ct);
@@ -684,6 +707,20 @@ public static class HrModuleExtensions
             if (access is null) return Results.Unauthorized();
             if (!access.Allowed) return Results.Forbid();
             return await Execute(http, () => service.RecordAttendancePunchAsync(access.Tenant, access.ActorId, access.MembershipId, employmentId, request, Correlation(http), ct), StatusCodes.Status201Created);
+        });
+        group.MapPost("/attendance/imports/preview", async (HrAttendanceImportRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var access = await AccessAsync(http, subjects, authorizer, "hr.attendance.manage", request.LegalEntityId, ct);
+            if (access is null) return Results.Unauthorized();
+            if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.PreviewAttendanceImportAsync(access.Tenant, request, ct));
+        });
+        group.MapPost("/attendance/imports/commit", async (HrAttendanceImportRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var access = await AccessAsync(http, subjects, authorizer, "hr.attendance.manage", request.LegalEntityId, ct);
+            if (access is null) return Results.Unauthorized();
+            if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.CommitAttendanceImportAsync(access.Tenant, access.ActorId, access.MembershipId, request, Correlation(http), ct));
         });
         group.MapGet("/attendance-records", async (Guid legalEntityId, DateOnly from, DateOnly to, Guid? employmentId, string? status, int? page, int? pageSize, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
@@ -1014,7 +1051,7 @@ public sealed class HrModuleManifestProvider : IModuleManifestProvider
 {
     public ModuleManifest Manifest { get; } = new("hr", "1.0.0", 2, "L4", "business-module", true, "tenant",
         new(["platform-kernel"], ["platform.files", "platform.approvals", "platform.notifications", "platform.scheduler", "platform.outbox", "platform.iam", "directory.party"]),
-        new("business_hr", ["employee", "employment", "employee_import_reference", "legal_entity_go_live_configuration", "department", "position", "employment_assignment", "employment_assignment_import_reference", "work_calendar", "work_calendar_weekly_pattern", "work_calendar_holiday", "shift_definition", "shift_assignment", "attendance_punch", "attendance_record", "attendance_exception", "attendance_correction", "attendance_overtime_request", "attendance_overtime_event", "payroll_period_snapshot", "attendance_payroll_lock", "attendance_payroll_correction_delta", "leave_type", "leave_policy", "leave_balance_movement", "leave_import_reference", "leave_request", "leave_request_event", "leave_request_charge", "onboarding_template", "onboarding_template_task", "onboarding_case", "onboarding_task", "onboarding_task_event", "employment_contract", "employment_contract_import_reference", "employment_contract_amendment", "identifier_lookup_key", "employee_identifier", "employee_document", "employee_document_import_reference", "employee_qualification", "employee_credential", "employee_insurance_enrollment", "employee_insurance_import_reference", "employment_compensation_agreement", "employment_compensation_import_reference", "hr_adjustment", "employment_event", "employee_list_projection", "employee_timeline_projection"]),
+        new("business_hr", ["employee", "employment", "employee_import_reference", "legal_entity_go_live_configuration", "department", "position", "employment_assignment", "employment_assignment_import_reference", "work_calendar", "work_calendar_weekly_pattern", "work_calendar_holiday", "shift_definition", "shift_assignment", "attendance_punch", "attendance_import_reference", "attendance_record", "attendance_exception", "attendance_correction", "attendance_overtime_request", "attendance_overtime_event", "payroll_period_snapshot", "attendance_payroll_lock", "attendance_payroll_correction_delta", "leave_type", "leave_policy", "leave_balance_movement", "leave_import_reference", "leave_request", "leave_request_event", "leave_request_charge", "onboarding_template", "onboarding_template_task", "onboarding_case", "onboarding_task", "onboarding_task_event", "employment_contract", "employment_contract_import_reference", "employment_contract_amendment", "identifier_lookup_key", "employee_identifier", "employee_document", "employee_document_requirement", "employee_document_import_reference", "employee_qualification", "employee_credential", "employee_insurance_enrollment", "employee_insurance_import_reference", "employment_compensation_agreement", "employment_compensation_import_reference", "hr_adjustment", "employment_event", "employee_list_projection", "employee_timeline_projection"]),
         ["hr.employee.read_basic", "hr.employee.create", "hr.employee.import", "hr.employee.manage", "hr.employee.archive", "hr.employee.link_user", "hr.employee.read_personal", "hr.employee.read_self", "hr.employee.read_team", "hr.employee.identifier.read", "hr.employee.identifier.manage", "hr.employee.identifier.reveal", "hr.employee.document.read", "hr.employee.document.read_self", "hr.employee.document.read_sensitive", "hr.employee.document.manage", "hr.employee.document.verify", "hr.employee.qualification.read", "hr.employee.qualification.manage", "hr.employee.credential.read", "hr.employee.credential.manage", "hr.employee.credential.verify", "hr.insurance.read", "hr.insurance.manage", "hr.insurance.reveal", "hr.compensation.read", "hr.compensation.manage", "hr.golive.manage", "hr.calendar.read", "hr.calendar.manage", "hr.shift.read", "hr.shift.manage", "hr.adjustment.read", "hr.adjustment.manage", "hr.adjustment.approve", "hr.leave.read", "hr.leave.read_self", "hr.leave.read_team", "hr.leave.approve_team", "hr.leave.request_self", "hr.leave.manage", "hr.leave.approve", "hr.leave.balance.adjust", "hr.attendance.read", "hr.attendance.read_self", "hr.attendance.manage", "hr.attendance.correct", "hr.attendance.overtime.approve", "hr.attendance.payroll_lock", "hr.onboarding.read", "hr.onboarding.manage", "hr.employment.read", "hr.employment.manage", "hr.assignment.read", "hr.assignment.manage", "hr.contract.read", "hr.contract.manage", "hr.department.read", "hr.department.manage", "hr.position.read", "hr.position.manage", "hr.timeline.read", "hr.audit.read", "hr.export", "hr.home.read", "hr.report.read"],
         new(["hr.core", "hr.contracts", "hr.assignments", "hr.timeline", "hr.adjustments", "hr.shifts", "hr.attendance", "hr.leave-policies", "hr.leave-balances", "hr.leave-requests", "hr.payroll-input"], ["platform.organization", "platform.iam", "platform.audit", "platform.transaction-coordination", "platform.numbering", "platform.files"]),
         new([], []), new(true, "blocked_if_dependents"));

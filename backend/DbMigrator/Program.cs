@@ -152,7 +152,12 @@ await using (var disableRowSecurityForMigration = new NpgsqlCommand("set row_sec
 await using (var history = new NpgsqlCommand("create table if not exists platform_migration.applied_script (module_id text not null, script_name text not null, checksum text not null, applied_at timestamptz not null, primary key (module_id, script_name)); alter table platform_migration.applied_script add column if not exists module_id text; update platform_migration.applied_script set module_id = case when script_name like '%runtime-roles-and-schemas.sql' then 'runtime' when script_name like '%tenant-boundary.sql' then 'tenancy' when script_name like '%organization-schema.sql' then 'org' when script_name like '%identity-membership-schema.sql' then 'iam' when script_name like '%scheduling-schema.sql' then 'scheduling' when script_name like '%platform-kernel-schema.sql' then 'platform-kernel' else coalesce(nullif(module_id, ''), 'legacy') end where module_id is null or module_id = 'legacy'; alter table platform_migration.applied_script alter column module_id set not null; do $$ declare old_primary_key text; begin select constraint_name into old_primary_key from information_schema.table_constraints where table_schema = 'platform_migration' and table_name = 'applied_script' and constraint_type = 'PRIMARY KEY'; if old_primary_key is not null then execute format('alter table platform_migration.applied_script drop constraint %I', old_primary_key); end if; end $$; alter table platform_migration.applied_script add primary key (module_id, script_name)", connection))
     await history.ExecuteNonQueryAsync();
 
-var runtimeName = Path.GetRelativePath(repositoryRoot, runtimeScript).Replace('\\', '/');
+var runtimeName = Path.GetFileName(runtimeScript);
+var legacyRuntimePaths = new[]
+{
+    Path.GetRelativePath(repositoryRoot, runtimeScript).Replace('\\', '/'),
+    $"ops/database/bootstrap/{runtimeName}"
+};
 var runtimeChecksum = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(runtimeScript))).ToLowerInvariant();
 var knownRuntimeRelocationChecksums = new HashSet<string>(StringComparer.Ordinal)
 {
@@ -163,56 +168,108 @@ await using (var runtimeLookup = new NpgsqlCommand("select checksum from platfor
 {
     runtimeLookup.Parameters.AddWithValue("runtime"); runtimeLookup.Parameters.AddWithValue(runtimeName);
     var appliedChecksum = (string?)await runtimeLookup.ExecuteScalarAsync();
+    var appliedName = appliedChecksum is null ? null : runtimeName;
+    if (appliedChecksum is null)
+    {
+        foreach (var previousName in legacyRuntimePaths.Distinct(StringComparer.Ordinal))
+        {
+            await using var legacyRuntimeLookup = new NpgsqlCommand("select checksum from platform_migration.applied_script where module_id = $1 and script_name = $2", connection);
+            legacyRuntimeLookup.Parameters.AddWithValue("runtime"); legacyRuntimeLookup.Parameters.AddWithValue(previousName);
+            appliedChecksum = (string?)await legacyRuntimeLookup.ExecuteScalarAsync();
+            if (appliedChecksum is null) continue;
+            appliedName = previousName;
+            break;
+        }
+    }
     if (appliedChecksum is not null && !string.Equals(appliedChecksum, runtimeChecksum, StringComparison.Ordinal))
     {
         if (!knownRuntimeRelocationChecksums.Contains(appliedChecksum))
             throw new InvalidOperationException($"Migration checksum changed for {runtimeName}; create a forward-fix migration instead.");
-
-        await using var relocatedRuntimeRecord = new NpgsqlCommand("update platform_migration.applied_script set checksum = $1, applied_at = now() where module_id = $2 and script_name = $3", connection);
-        relocatedRuntimeRecord.Parameters.AddWithValue(runtimeChecksum);
-        relocatedRuntimeRecord.Parameters.AddWithValue("runtime");
-        relocatedRuntimeRecord.Parameters.AddWithValue(runtimeName);
-        await relocatedRuntimeRecord.ExecuteNonQueryAsync();
+        if (string.Equals(appliedName, runtimeName, StringComparison.Ordinal))
+        {
+            await using var updateChecksum = new NpgsqlCommand("update platform_migration.applied_script set checksum=$1 where module_id='runtime' and script_name=$2", connection);
+            updateChecksum.Parameters.AddWithValue(runtimeChecksum); updateChecksum.Parameters.AddWithValue(runtimeName);
+            await updateChecksum.ExecuteNonQueryAsync();
+            appliedChecksum = runtimeChecksum;
+        }
     }
-    if (appliedChecksum is null)
+    if (appliedChecksum is not null && !string.Equals(appliedName, runtimeName, StringComparison.Ordinal))
+    {
+        await using var relocate = new NpgsqlCommand("update platform_migration.applied_script set script_name=$1,checksum=$2 where module_id=$3 and script_name=$4", connection);
+        relocate.Parameters.AddWithValue(runtimeName); relocate.Parameters.AddWithValue(runtimeChecksum); relocate.Parameters.AddWithValue("runtime"); relocate.Parameters.AddWithValue(appliedName!);
+        await relocate.ExecuteNonQueryAsync();
+    }
+    else if (appliedChecksum is null)
     {
         await using var runtimeRecord = new NpgsqlCommand("insert into platform_migration.applied_script (module_id, script_name, checksum, applied_at) values ($1, $2, $3, now())", connection);
         runtimeRecord.Parameters.AddWithValue("runtime"); runtimeRecord.Parameters.AddWithValue(runtimeName); runtimeRecord.Parameters.AddWithValue(runtimeChecksum);
         await runtimeRecord.ExecuteNonQueryAsync();
     }
+
+    foreach (var previousName in legacyRuntimePaths.Distinct(StringComparer.Ordinal).Where(name => !string.Equals(name, runtimeName, StringComparison.Ordinal)))
+    {
+        await using var legacyLookup = new NpgsqlCommand("select checksum from platform_migration.applied_script where module_id='runtime' and script_name=$1", connection);
+        legacyLookup.Parameters.AddWithValue(previousName);
+        var legacyChecksum = (string?)await legacyLookup.ExecuteScalarAsync();
+        if (legacyChecksum is null) continue;
+        if (!string.Equals(legacyChecksum, runtimeChecksum, StringComparison.Ordinal)
+            && !knownRuntimeRelocationChecksums.Contains(legacyChecksum))
+            throw new InvalidOperationException($"Migration checksum changed for legacy history {previousName}; create a forward-fix migration instead.");
+        await using var mergeTime = new NpgsqlCommand("update platform_migration.applied_script canonical set applied_at=least(canonical.applied_at,legacy.applied_at) from platform_migration.applied_script legacy where canonical.module_id='runtime' and canonical.script_name=$1 and legacy.module_id='runtime' and legacy.script_name=$2", connection);
+        mergeTime.Parameters.AddWithValue(runtimeName); mergeTime.Parameters.AddWithValue(previousName);
+        await mergeTime.ExecuteNonQueryAsync();
+        await using var removeDuplicate = new NpgsqlCommand("delete from platform_migration.applied_script where module_id='runtime' and script_name=$1", connection);
+        removeDuplicate.Parameters.AddWithValue(previousName);
+        await removeDuplicate.ExecuteNonQueryAsync();
+    }
 }
 
-// The canonical database directory was moved from ops/database to the locked
-// backend/DbMigrator/Database location. Reconcile only the known path move for
-// already-applied schema baselines; unknown checksum changes still fail below.
-foreach (var script in scripts.Where(path => Path.GetFileName(path).EndsWith("-schema.sql", StringComparison.Ordinal)))
+// Migration identity is the module plus file name. Normalize previously stored
+// repository-relative keys once, preserving their checksum and applied time.
+foreach (var script in scripts)
 {
-    var scriptName = Path.GetRelativePath(repositoryRoot, script).Replace('\\', '/');
+    var scriptName = Path.GetFileName(script);
     var moduleId = ModuleIdForScript(scriptName);
     var checksum = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(script))).ToLowerInvariant();
-    var legacyScriptName = $"ops/database/bootstrap/{Path.GetFileName(script)}";
-    await using var legacyLookup = new NpgsqlCommand("select script_name from platform_migration.applied_script where module_id = $1 and script_name = $2", connection);
-    legacyLookup.Parameters.AddWithValue(moduleId);
-    legacyLookup.Parameters.AddWithValue(legacyScriptName);
-    var legacyApplied = (string?)await legacyLookup.ExecuteScalarAsync();
-    if (legacyApplied is null) continue;
+    var currentName = Path.GetRelativePath(repositoryRoot, script).Replace('\\', '/');
+    var previousNames = new[] { currentName, $"ops/database/bootstrap/{scriptName}" };
+    await using var canonicalLookup = new NpgsqlCommand("select checksum from platform_migration.applied_script where module_id=$1 and script_name=$2", connection);
+    canonicalLookup.Parameters.AddWithValue(moduleId); canonicalLookup.Parameters.AddWithValue(scriptName);
+    var appliedChecksum = (string?)await canonicalLookup.ExecuteScalarAsync();
+    if (appliedChecksum is not null && !string.Equals(appliedChecksum, checksum, StringComparison.Ordinal))
+        throw new InvalidOperationException($"Migration checksum changed for {scriptName}; create a forward-fix migration instead.");
 
-    await using var currentLookup = new NpgsqlCommand("select 1 from platform_migration.applied_script where module_id = $1 and script_name = $2", connection);
-    currentLookup.Parameters.AddWithValue(moduleId);
-    currentLookup.Parameters.AddWithValue(scriptName);
-    if (await currentLookup.ExecuteScalarAsync() is not null) continue;
-
-    await using var relocatedRecord = new NpgsqlCommand("insert into platform_migration.applied_script (module_id, script_name, checksum, applied_at) values ($1, $2, $3, now())", connection);
-    relocatedRecord.Parameters.AddWithValue(moduleId);
-    relocatedRecord.Parameters.AddWithValue(scriptName);
-    relocatedRecord.Parameters.AddWithValue(checksum);
-    await relocatedRecord.ExecuteNonQueryAsync();
-    Console.WriteLine($"Reconciled relocated migration history {legacyScriptName} -> {scriptName}");
+    foreach (var previousName in previousNames.Distinct(StringComparer.Ordinal))
+    {
+        await using var legacyLookup = new NpgsqlCommand("select checksum from platform_migration.applied_script where module_id=$1 and script_name=$2", connection);
+        legacyLookup.Parameters.AddWithValue(moduleId); legacyLookup.Parameters.AddWithValue(previousName);
+        var legacyChecksum = (string?)await legacyLookup.ExecuteScalarAsync();
+        if (legacyChecksum is null) continue;
+        if (!string.Equals(legacyChecksum, checksum, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Migration checksum changed for legacy history {previousName}; create a forward-fix migration instead.");
+        if (appliedChecksum is null)
+        {
+            await using var relocate = new NpgsqlCommand("update platform_migration.applied_script set script_name=$1 where module_id=$2 and script_name=$3", connection);
+            relocate.Parameters.AddWithValue(scriptName); relocate.Parameters.AddWithValue(moduleId); relocate.Parameters.AddWithValue(previousName);
+            await relocate.ExecuteNonQueryAsync();
+            appliedChecksum = legacyChecksum;
+            Console.WriteLine($"Normalized migration history {previousName} -> {scriptName}");
+        }
+        else
+        {
+            await using var mergeTime = new NpgsqlCommand("update platform_migration.applied_script canonical set applied_at=least(canonical.applied_at,legacy.applied_at) from platform_migration.applied_script legacy where canonical.module_id=$1 and canonical.script_name=$2 and legacy.module_id=$1 and legacy.script_name=$3", connection);
+            mergeTime.Parameters.AddWithValue(moduleId); mergeTime.Parameters.AddWithValue(scriptName); mergeTime.Parameters.AddWithValue(previousName);
+            await mergeTime.ExecuteNonQueryAsync();
+            await using var removeDuplicate = new NpgsqlCommand("delete from platform_migration.applied_script where module_id=$1 and script_name=$2", connection);
+            removeDuplicate.Parameters.AddWithValue(moduleId); removeDuplicate.Parameters.AddWithValue(previousName);
+            await removeDuplicate.ExecuteNonQueryAsync();
+        }
+    }
 }
 
 foreach (var script in scripts)
 {
-    var scriptName = Path.GetRelativePath(repositoryRoot, script).Replace('\\', '/');
+    var scriptName = Path.GetFileName(script);
     var moduleId = ModuleIdForScript(scriptName);
     var checksum = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(script))).ToLowerInvariant();
     string? appliedChecksum;

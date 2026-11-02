@@ -44,6 +44,9 @@ public sealed class DevelopmentSeedTests
             Assert.Contains("Invoicing: 120 drafts (60 customer, 60 supplier)", firstRun.Output, StringComparison.Ordinal);
 
             await using var acceptanceDataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
+            await using (var migrationIdentityCheck = await acceptanceDataSource.OpenConnectionAsync())
+            await using (var invalidNames = new NpgsqlCommand("select count(*) from platform_migration.applied_script where script_name like '%/%'", migrationIdentityCheck))
+                Assert.Equal(0L, Convert.ToInt64(await invalidNames.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
             var firstCounts = await ReadCanonicalCountsAsync(acceptanceDataSource);
             await AssertPricingEntityIsolationAsync(acceptanceDataSource);
             await AssertCanonicalCurrencyPrecisionAsync(acceptanceDataSource);

@@ -10,7 +10,7 @@ namespace Modules.Hr.Repositories;
 
 public sealed class AttendanceRepository(ITransactionCoordinator transactions, NpgsqlDataSource dataSource, TimeProvider clock)
 {
-    public async Task<AttendancePunchResult> RecordPunchAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employmentId, CreateAttendancePunchRequest request, Guid correlationId, CancellationToken ct)
+    public async Task<AttendancePunchResult> RecordPunchAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employmentId, CreateAttendancePunchRequest request, Guid correlationId, CancellationToken ct, AttendanceImportEvidence? importEvidence = null)
     {
         var direction = request.Direction?.Trim();
         var sourceType = request.SourceType?.Trim();
@@ -19,6 +19,10 @@ public sealed class AttendanceRepository(ITransactionCoordinator transactions, N
         if (request.OccurredAt == default || request.OccurredAt > clock.GetUtcNow().AddMinutes(5) || direction is not ("In" or "Out" or "Unknown")
             || sourceType is not ("Manual" or "Web" or "Imported" or "API" or "Device") || string.IsNullOrWhiteSpace(key) || key.Length is < 8 or > 120 || sourceReference?.Length > 200)
             throw new HrException("hr.attendance_punch_invalid");
+        if (importEvidence is not null && (sourceType != "Imported" || importEvidence.SourceSystem.Length is < 1 or > 80
+            || importEvidence.SourceReference.Length is < 1 or > 160 || importEvidence.BatchReference.Length is < 1 or > 160
+            || importEvidence.RowReference.Length is < 1 or > 160 || !IsSha256(importEvidence.FileSha256) || !IsSha256(importEvidence.PayloadSha256)))
+            throw new HrException("hr.attendance_import_request_invalid");
 
         return await transactions.ExecuteAsync<AttendancePunchResult>(tenant, async (context, token) =>
         {
@@ -33,6 +37,8 @@ public sealed class AttendanceRepository(ITransactionCoordinator transactions, N
                 employee.Parameters.AddWithValue(tenant.Value); employee.Parameters.AddWithValue(employmentId); employee.Parameters.AddWithValue(request.LegalEntityId);
                 employeeId = (Guid?)await employee.ExecuteScalarAsync(token) ?? throw new HrException("hr.employment_not_found");
             }
+            if (importEvidence is not null)
+                await ValidateImportEvidenceAsync(context.Connection, context.Transaction, tenant, importEvidence, token);
 
             Guid calendarId; string timezone;
             await using (var assignment = new NpgsqlCommand("select a.work_calendar_id,wc.time_zone_id from business_hr.employment_assignment a join business_hr.work_calendar wc on wc.tenant_id=a.tenant_id and wc.id=a.work_calendar_id where a.tenant_id=$1 and a.employment_id=$2 and a.legal_entity_id=$3 and a.work_calendar_id is not null and a.effective_from<=($4::timestamptz at time zone wc.time_zone_id)::date and (a.effective_to is null or a.effective_to>($4::timestamptz at time zone wc.time_zone_id)::date) and wc.status='Active' order by a.effective_from desc,a.id desc limit 1", context.Connection, context.Transaction))
@@ -87,6 +93,8 @@ public sealed class AttendanceRepository(ITransactionCoordinator transactions, N
                     await existingReader.DisposeAsync();
                     var record = await FindRecordAsync(context.Connection, context.Transaction, tenant, employmentId, workDate, token);
                     if (record is null) throw new HrException("hr.attendance_record_missing");
+                    if (importEvidence is not null)
+                        await StoreImportEvidenceAsync(context.Connection, context.Transaction, tenant, request.LegalEntityId, employeeId, employmentId, existingId, actor, importEvidence, token);
                     return new(existingId, true, false, record);
                 }
                 duplicateSubmission = false;
@@ -139,12 +147,61 @@ public sealed class AttendanceRepository(ITransactionCoordinator transactions, N
             if (direction == "Unknown" || outOfOrder) await AddPunchExceptionAsync(context.Connection, context.Transaction, tenant, employeeId, employmentId, request.LegalEntityId, punchId, "OutOfShiftPunch", "Punch order or direction requires review.", token);
             if (firstIn is not null && lastOut is not null && lastOut >= firstIn) await ResolveMissingPunchExceptionsAsync(context.Connection, context.Transaction, tenant, recordId, actor, token);
             await WritePunchAuditAsync(context.Connection, context.Transaction, tenant, actor, membershipId, request, punchId, "attendance.punch.recorded", correlationId, token);
+            if (importEvidence is not null)
+                await StoreImportEvidenceAsync(context.Connection, context.Transaction, tenant, request.LegalEntityId, employeeId, employmentId, punchId, actor, importEvidence, token);
             var result = current is null
                 ? new AttendanceRecordView(recordId, employeeId, employmentId, request.LegalEntityId, workDate, calendarId, shiftAssignmentId, timezone, plannedStart, plannedEnd, breakMinutes, shiftGrace, firstIn, lastOut, workedMinutes, lateMinutes, earlyMinutes, overtimeMinutes, status, lockState, null, version)
                 : current with { WorkCalendarId = calendarId, ShiftAssignmentId = shiftAssignmentId, TimeZoneId = timezone, PlannedStart = plannedStart, PlannedEnd = plannedEnd, PlannedBreakMinutes = breakMinutes, GraceMinutes = shiftGrace, FirstIn = firstIn, LastOut = lastOut, WorkedMinutes = workedMinutes, LateMinutes = lateMinutes, EarlyLeaveMinutes = earlyMinutes, OvertimeEligibleMinutes = overtimeMinutes, Status = status, Version = version };
             return new(punchId, duplicateSubmission, false, result);
         }, ct);
     }
+
+    public Task<AttendancePunchResult> RecordImportedPunchAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employmentId,
+        CreateAttendancePunchRequest request, AttendanceImportEvidence evidence, Guid correlationId, CancellationToken ct) =>
+        RecordPunchAsync(tenant, actor, membershipId, employmentId, request, correlationId, ct, evidence);
+
+    private static async Task ValidateImportEvidenceAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant,
+        AttendanceImportEvidence evidence, CancellationToken ct)
+    {
+        await using (var importLock = new NpgsqlCommand("select pg_advisory_xact_lock(hashtextextended($1::text || ':attendance-import:' || $2::text || ':' || $3::text,0))", connection, transaction))
+        {
+            importLock.Parameters.AddWithValue(tenant.Value); importLock.Parameters.AddWithValue(evidence.SourceSystem);
+            importLock.Parameters.AddWithValue($"{evidence.SourceReference}:{evidence.BatchReference}:{evidence.RowReference}");
+            await importLock.ExecuteNonQueryAsync(ct);
+        }
+        await using var command = new NpgsqlCommand("select source_reference,payload_sha256 from business_hr.attendance_import_reference where tenant_id=$1 and source_system=$2 and (source_reference=$3 or (batch_reference=$4 and row_reference=$5))", connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(evidence.SourceSystem); command.Parameters.AddWithValue(evidence.SourceReference);
+        command.Parameters.AddWithValue(evidence.BatchReference); command.Parameters.AddWithValue(evidence.RowReference);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct))
+        {
+            if (reader.GetString(0) != evidence.SourceReference || reader.GetString(1) != evidence.PayloadSha256
+                || await reader.ReadAsync(ct))
+                throw new HrException("hr.attendance_import_source_conflict");
+        }
+    }
+
+    private static async Task StoreImportEvidenceAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant,
+        Guid legalEntityId, Guid employeeId, Guid employmentId, Guid punchId, Guid actor, AttendanceImportEvidence evidence, CancellationToken ct)
+    {
+        await using (var insert = new NpgsqlCommand("insert into business_hr.attendance_import_reference(id,tenant_id,legal_entity_id,employee_id,employment_id,punch_id,source_system,source_reference,batch_reference,row_reference,file_sha256,payload_sha256,imported_at,imported_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),$13) on conflict do nothing", connection, transaction))
+        {
+            insert.Parameters.AddWithValue(Guid.CreateVersion7()); insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(legalEntityId);
+            insert.Parameters.AddWithValue(employeeId); insert.Parameters.AddWithValue(employmentId); insert.Parameters.AddWithValue(punchId);
+            insert.Parameters.AddWithValue(evidence.SourceSystem); insert.Parameters.AddWithValue(evidence.SourceReference); insert.Parameters.AddWithValue(evidence.BatchReference);
+            insert.Parameters.AddWithValue(evidence.RowReference); insert.Parameters.AddWithValue(evidence.FileSha256); insert.Parameters.AddWithValue(evidence.PayloadSha256);
+            insert.Parameters.AddWithValue(actor); await insert.ExecuteNonQueryAsync(ct);
+        }
+        await using var verify = new NpgsqlCommand("select punch_id,source_reference,payload_sha256 from business_hr.attendance_import_reference where tenant_id=$1 and source_system=$2 and (source_reference=$3 or (batch_reference=$4 and row_reference=$5))", connection, transaction);
+        verify.Parameters.AddWithValue(tenant.Value); verify.Parameters.AddWithValue(evidence.SourceSystem); verify.Parameters.AddWithValue(evidence.SourceReference);
+        verify.Parameters.AddWithValue(evidence.BatchReference); verify.Parameters.AddWithValue(evidence.RowReference);
+        await using var reader = await verify.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct) || reader.GetGuid(0) != punchId || reader.GetString(1) != evidence.SourceReference
+            || reader.GetString(2) != evidence.PayloadSha256 || await reader.ReadAsync(ct))
+            throw new HrException("hr.attendance_import_source_conflict");
+    }
+
+    private static bool IsSha256(string value) => value.Length == 64 && value.All(Uri.IsHexDigit);
 
     public async Task<AttendancePage> ListAsync(TenantId tenant, AttendancePageRequest request, CancellationToken ct)
     {
