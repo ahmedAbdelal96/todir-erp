@@ -204,7 +204,37 @@ public sealed class LedgerOperationsRepository(
         {
             var pageNumber = Math.Max(1, page.Value); var offset = (pageNumber - 1) * limit;
             await using var offsetConnection = await OpenAsync(tenant, ct);
-            const string groupedOffset = "select a.id,a.code,a.name_en,coalesce(sum(l.base_debit),0) debit,coalesce(sum(l.base_credit),0) credit,coalesce(sum(l.base_debit-l.base_credit),0) balance,max(e.base_currency_code) currency_code from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id where e.tenant_id=$1 and e.legal_entity_id=$2 and ($3::date is null or e.posting_date >= $3) and ($4::date is null or e.posting_date <= $4) and ($5::text is null or (a.code ilike $5 || '%' or a.name_en ilike $5 || '%')) group by a.id,a.code,a.name_en";
+            const string groupedOffset = """
+                with full_periods as (
+                    select p.id
+                    from finance_ledger.accounting_period p
+                    where p.tenant_id=$1 and p.legal_entity_id=$2
+                      and ($3::date is null or p.start_date >= $3)
+                      and ($4::date is null or p.end_date <= $4)
+                ), segments as (
+                    select b.account_id,sum(b.opening_debit+b.period_debit) debit,sum(b.opening_credit+b.period_credit) credit,
+                           sum(b.opening_debit+b.period_debit-b.opening_credit-b.period_credit) balance,max(b.currency_code) currency_code
+                    from finance_ledger.account_period_balance b
+                    join full_periods fp on fp.id=b.accounting_period_id
+                    where b.tenant_id=$1 and b.legal_entity_id=$2
+                    group by b.account_id
+                    union all
+                    select l.account_id,sum(l.base_debit),sum(l.base_credit),sum(l.base_debit-l.base_credit),max(e.base_currency_code)
+                    from finance_ledger.journal_entry e
+                    join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id
+                    where e.tenant_id=$1 and e.legal_entity_id=$2
+                      and ($3::date is null or e.posting_date >= $3)
+                      and ($4::date is null or e.posting_date <= $4)
+                      and not exists (select 1 from full_periods fp where fp.id=e.accounting_period_id)
+                    group by l.account_id
+                )
+                select a.id,a.code,a.name_en,coalesce(sum(s.debit),0) debit,coalesce(sum(s.credit),0) credit,
+                       coalesce(sum(s.balance),0) balance,max(s.currency_code) currency_code
+                from segments s
+                join finance_ledger.account a on a.tenant_id=$1 and a.legal_entity_id=$2 and a.id=s.account_id
+                where ($5::text is null or (a.code ilike $5 || '%' or a.name_en ilike $5 || '%'))
+                group by a.id,a.code,a.name_en
+                """;
             await using var summary = new NpgsqlCommand($"select count(*)::int,coalesce(sum(debit),0),coalesce(sum(credit),0) from ({groupedOffset}) grouped", offsetConnection);
             Add(summary, tenant.Value, entity.Value, (object?)from ?? DBNull.Value, (object?)to ?? DBNull.Value, (object?)CleanCursorText(search) ?? DBNull.Value);
             await using var summaryReader = await summary.ExecuteReaderAsync(ct);
@@ -212,13 +242,7 @@ public sealed class LedgerOperationsRepository(
             var totalCount = summaryReader.GetInt32(0); var totalDebit = summaryReader.GetDecimal(1); var totalCredit = summaryReader.GetDecimal(2);
             await summaryReader.CloseAsync();
             var offsetSql = $"""
-                with grouped as (
-                    select a.id,a.code,a.name_en,coalesce(sum(l.base_debit),0) debit,coalesce(sum(l.base_credit),0) credit,coalesce(sum(l.base_debit-l.base_credit),0) balance,max(e.base_currency_code) currency_code
-                    from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id
-                    join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id
-                    where e.tenant_id=$1 and e.legal_entity_id=$2 and ($3::date is null or e.posting_date >= $3) and ($4::date is null or e.posting_date <= $4) and ($5::text is null or (a.code ilike $5 || '%' or a.name_en ilike $5 || '%'))
-                    group by a.id,a.code,a.name_en
-                )
+                with grouped as ({groupedOffset})
                 select id,code,name_en,debit,credit,balance,currency_code
                 from grouped order by {sortExpression} offset $6 limit $7
                 """;
@@ -321,26 +345,41 @@ public sealed class LedgerOperationsRepository(
         if (page is not null)
         {
             var pageNumber = Math.Max(1, page.Value); var offset = (pageNumber - 1) * limit;
-            const string countSql = "select count(*) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and ($3::date is null or e.posting_date >= $3) and ($4::date is null or e.posting_date <= $4) and ($5::uuid is null or l.account_id=$5) and ($6::uuid is null or e.journal_id=$6) and ($7::text is null or e.source_module=$7) and ($8::text is null or e.source_reference=$8) and ($9::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xd where xd.tenant_id=l.tenant_id and xd.legal_entity_id=l.legal_entity_id and xd.journal_entry_line_id=l.id and xd.dimension_definition_id=$9)) and ($10::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xv where xv.tenant_id=l.tenant_id and xv.legal_entity_id=l.legal_entity_id and xv.journal_entry_line_id=l.id and xv.dimension_value_id=$10)) and ($11::text is null or e.entry_number like $11 || '%')";
+            const string countSql = "select count(*) from finance_ledger.general_ledger_search_projection p where p.tenant_id=$1 and p.legal_entity_id=$2 and ($3::date is null or p.posting_date >= $3) and ($4::date is null or p.posting_date <= $4) and ($5::uuid is null or p.account_id=$5) and ($6::uuid is null or p.journal_id=$6) and ($7::text is null or p.source_module=$7) and ($8::text is null or p.source_reference=$8) and ($9::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xd where xd.tenant_id=p.tenant_id and xd.legal_entity_id=p.legal_entity_id and xd.journal_entry_line_id=p.journal_entry_line_id and xd.dimension_definition_id=$9)) and ($10::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xv where xv.tenant_id=p.tenant_id and xv.legal_entity_id=p.legal_entity_id and xv.journal_entry_line_id=p.journal_entry_line_id and xv.dimension_value_id=$10)) and ($11::text is null or p.entry_number like $11 || '%')";
             await using var countCommand = new NpgsqlCommand(countSql, connection);
             Add(countCommand, tenant.Value, entity.Value, (object?)from ?? DBNull.Value, (object?)to ?? DBNull.Value, (object?)accountId ?? DBNull.Value, (object?)journalId ?? DBNull.Value, (object?)sourceModule ?? DBNull.Value, (object?)sourceReference ?? DBNull.Value, (object?)dimensionDefinitionId ?? DBNull.Value, (object?)dimensionValueId ?? DBNull.Value, (object?)entryNumber ?? DBNull.Value);
             var totalCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
             const string offsetSql = """
-                with filtered as (
-                    select e.id entry_id,l.id line_id,e.entry_number,e.posting_date,a.id account_id,a.code,a.name_en,l.debit,l.credit,l.base_debit,l.base_credit,l.currency_code,e.source_module,e.source_reference,l.sequence_no
-                    from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id
-                    join finance_ledger.account a on a.tenant_id=l.tenant_id and a.legal_entity_id=l.legal_entity_id and a.id=l.account_id
-                    where e.tenant_id=$1 and e.legal_entity_id=$2 and ($3::date is null or e.posting_date >= $3) and ($4::date is null or e.posting_date <= $4)
-                      and ($5::uuid is null or l.account_id=$5) and ($6::uuid is null or e.journal_id=$6) and ($7::text is null or e.source_module=$7) and ($8::text is null or e.source_reference=$8)
-                      and ($9::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xd where xd.tenant_id=l.tenant_id and xd.legal_entity_id=l.legal_entity_id and xd.journal_entry_line_id=l.id and xd.dimension_definition_id=$9))
-                      and ($10::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xv where xv.tenant_id=l.tenant_id and xv.legal_entity_id=l.legal_entity_id and xv.journal_entry_line_id=l.id and xv.dimension_value_id=$10))
-                      and ($11::text is null or e.entry_number like $11 || '%')
+                with page_rows as materialized (
+                    select p.journal_entry_id entry_id,p.journal_entry_line_id line_id,p.entry_number,p.posting_date,p.account_id,p.account_code,p.account_name_en,p.debit,p.credit,p.base_debit,p.base_credit,p.currency_code,p.source_module,p.source_reference,p.sequence_no
+                    from finance_ledger.general_ledger_search_projection p
+                    where p.tenant_id=$1 and p.legal_entity_id=$2 and ($3::date is null or p.posting_date >= $3) and ($4::date is null or p.posting_date <= $4)
+                      and ($5::uuid is null or p.account_id=$5) and ($6::uuid is null or p.journal_id=$6) and ($7::text is null or p.source_module=$7) and ($8::text is null or p.source_reference=$8)
+                      and ($9::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xd where xd.tenant_id=p.tenant_id and xd.legal_entity_id=p.legal_entity_id and xd.journal_entry_line_id=p.journal_entry_line_id and xd.dimension_definition_id=$9))
+                      and ($10::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xv where xv.tenant_id=p.tenant_id and xv.legal_entity_id=p.legal_entity_id and xv.journal_entry_line_id=p.journal_entry_line_id and xv.dimension_value_id=$10))
+                      and ($11::text is null or p.entry_number like $11 || '%')
+                    order by p.posting_date,p.entry_number,p.sequence_no,p.journal_entry_line_id offset $12 limit $13
+                ), first_rows as (
+                    select distinct on (account_id) account_id,posting_date,entry_number,sequence_no,line_id
+                    from page_rows
+                    order by account_id,posting_date,entry_number,sequence_no,line_id
+                ), opening as (
+                    select p.account_id,coalesce(sum(p.base_debit-p.base_credit),0) opening_balance
+                    from finance_ledger.general_ledger_search_projection p
+                    join first_rows r on r.account_id=p.account_id
+                      and (p.posting_date,p.entry_number,p.sequence_no,p.journal_entry_line_id) < (r.posting_date,r.entry_number,r.sequence_no,r.line_id)
+                    where p.tenant_id=$1 and p.legal_entity_id=$2 and ($3::date is null or p.posting_date >= $3) and ($4::date is null or p.posting_date <= $4)
+                      and ($5::uuid is null or p.account_id=$5) and ($6::uuid is null or p.journal_id=$6) and ($7::text is null or p.source_module=$7) and ($8::text is null or p.source_reference=$8)
+                      and ($9::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xd where xd.tenant_id=p.tenant_id and xd.legal_entity_id=p.legal_entity_id and xd.journal_entry_line_id=p.journal_entry_line_id and xd.dimension_definition_id=$9))
+                      and ($10::uuid is null or exists (select 1 from finance_ledger.journal_line_dimension xv where xv.tenant_id=p.tenant_id and xv.legal_entity_id=p.legal_entity_id and xv.journal_entry_line_id=p.journal_entry_line_id and xv.dimension_value_id=$10))
+                      and ($11::text is null or p.entry_number like $11 || '%')
+                    group by p.account_id
                 ), ranked as (
-                    select filtered.*, sum(base_debit-base_credit) over (partition by account_id order by posting_date,entry_number,sequence_no,line_id rows unbounded preceding) running_balance
-                    from filtered
+                    select p.*,coalesce(o.opening_balance,0)+sum(p.base_debit-p.base_credit) over (partition by p.account_id order by p.posting_date,p.entry_number,p.sequence_no,p.line_id rows unbounded preceding) running_balance
+                    from page_rows p left join opening o on o.account_id=p.account_id
                 )
-                select entry_id,line_id,entry_number,posting_date,account_id,code,name_en,debit,credit,base_debit,base_credit,currency_code,source_module,source_reference,sequence_no,running_balance
-                from ranked order by posting_date,entry_number,sequence_no,line_id offset $12 limit $13
+                select entry_id,line_id,entry_number,posting_date,account_id,account_code,account_name_en,debit,credit,base_debit,base_credit,currency_code,source_module,source_reference,sequence_no,running_balance
+                from ranked order by posting_date,entry_number,sequence_no,line_id
                 """;
             await using var offsetCommand = new NpgsqlCommand(offsetSql, connection);
             Add(offsetCommand, tenant.Value, entity.Value, (object?)from ?? DBNull.Value, (object?)to ?? DBNull.Value, (object?)accountId ?? DBNull.Value, (object?)journalId ?? DBNull.Value, (object?)sourceModule ?? DBNull.Value, (object?)sourceReference ?? DBNull.Value, (object?)dimensionDefinitionId ?? DBNull.Value, (object?)dimensionValueId ?? DBNull.Value, (object?)entryNumber ?? DBNull.Value, offset, limit);
