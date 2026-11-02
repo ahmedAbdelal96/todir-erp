@@ -472,8 +472,10 @@ export function AuthView({ onAuthenticated }: AuthViewProps): React.JSX.Element 
                       onPress={() => handleDevelopmentLogin(profile)}
                       style={{ width: "100%", justifyContent: "space-between" }}
                     >
-                      <BidiText lang={currentLanguage()} style={{ textAlign: "start" }}>{t(`auth.${profile.label}`)}</BidiText>
-                      <BidiText direction="ltr" lang="en" style={{ fontSize: "0.75rem" }}>{profile.email}</BidiText>
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", width: "100%" }}>
+                        <BidiText lang={currentLanguage()} style={{ textAlign: "start" }}>{t(`auth.${profile.label}`)}</BidiText>
+                        <BidiText direction="ltr" lang="en" style={{ fontSize: "0.75rem" }}>{profile.email}</BidiText>
+                      </span>
                     </Button>
                   ))}
                 </fieldset>
