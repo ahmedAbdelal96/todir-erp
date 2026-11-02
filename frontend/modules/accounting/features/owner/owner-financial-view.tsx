@@ -123,7 +123,8 @@ export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ legalEnt
             variant="card"
             style={{
               padding: "1rem 1.5rem",
-              backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+              backgroundColor: summary.health === "Blocking" ? "var(--color-status-danger-subtle, #fef2f2)" : summary.health === "Attention" ? "var(--color-status-warning-subtle, #fffbeb)" : "var(--color-surface-subtle, #f8fafc)",
+              border: summary.health === "Blocking" ? "1px solid var(--color-status-danger, #ef4444)" : summary.health === "Attention" ? "1px solid var(--color-status-warning, #f59e0b)" : "1px solid var(--color-border-default, #cbd5e1)",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
@@ -136,6 +137,11 @@ export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ legalEnt
                 {t("owner.integrityStatus")}:
               </span>
               {getHealthBadge(summary.health)}
+              {summary.health !== "Healthy" && onNavigateTab && (
+                <Button variant="ghost" size="compact" onPress={() => onNavigateTab("health")}>
+                  عرض تفاصيل العوائق في مركز السلامة المالية ←
+                </Button>
+              )}
             </div>
             <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontFamily: "var(--font-mono, monospace)" }}>
               {t("owner.lastUpdated")}: {summary.asOfDate} ({summary.currencyCode})

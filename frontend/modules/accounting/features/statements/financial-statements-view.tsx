@@ -10,6 +10,7 @@ import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { useAccountingI18n } from "../../i18n/index.ts";
 import type { StatementKind, StatementLineView } from "../../types.ts";
+import { formatAccountType } from "../../utils/diagnostic-translations.ts";
 
 export interface FinancialStatementsViewProps {
   readonly legalEntityId?: string;
@@ -327,12 +328,31 @@ export const FinancialStatementsView: React.FC<FinancialStatementsViewProps> = (
                                   fontWeight: 500
                                 }}
                               >
-                                {line.lineKind}
+                                {formatAccountType(line.lineKind)}
                               </span>
+                              {statementKind === "ProfitAndLoss" && (line.code === "expense" || line.accountType === "Expense") && line.amount < 0 && (
+                                <span
+                                  style={{
+                                    fontSize: "0.6875rem",
+                                    padding: "0.125rem 0.375rem",
+                                    borderRadius: "var(--radius-sm, 0.25rem)",
+                                    backgroundColor: "var(--color-status-info-subtle, #f0f9ff)",
+                                    color: "var(--color-status-info, #0284c7)",
+                                    fontWeight: 700
+                                  }}
+                                >
+                                  رصيد دائن (استرداد / تسوية تخفض المصروفات)
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)", fontFamily: "var(--font-mono, monospace)", marginTop: "0.125rem" }}>
-                              <bdi>{line.code}</bdi> {line.accountType ? `• ${line.accountType}` : ""}
+                              <bdi>{line.code}</bdi> {line.accountType ? `• ${formatAccountType(line.accountType)}` : ""}
                             </div>
+                            {statementKind === "ProfitAndLoss" && (line.code === "expense" || line.accountType === "Expense") && line.amount < 0 && (
+                              <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-status-info, #0284c7)", lineHeight: 1.4 }}>
+                                * ملاحظة محاسبية: الحسابات المدينة للمصروفات ذات رصيد دائن صافٍ (-400.00 ج.م) نتيجة حركات استرداد/تسوية، مما يُضاف محاسبياً لزيادة صافي الدخل.
+                              </p>
+                            )}
                           </div>
 
                           <div style={{ flexShrink: 0, textAlign: "start", whiteSpace: "nowrap" }}>

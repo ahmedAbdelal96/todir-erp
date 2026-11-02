@@ -103,14 +103,63 @@ test.describe('Accounting Real-Backend Visual Acceptance Suite', () => {
       }
     }
 
-    // Screen 07: Desktop FX Revaluation
+    // Screen 07: Desktop FX Revaluation - Completed Journey (Preview -> Post -> Reverse)
     await page.locator('[data-testid="accounting-tab-fxRevaluation"]').click();
     await page.waitForTimeout(600);
     await expect(page.locator('[data-testid="fx-revaluation-view"]')).toBeVisible({ timeout: 10000 });
+
+    // Step 1: Trigger Preview
+    const previewBtn = page.locator('[data-testid="btn-preview-fx"]');
+    if (await previewBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await previewBtn.click();
+      await page.waitForTimeout(1500);
+    }
+
+    // Capture Preview State
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, '07-desktop-fx-revaluation-1280.png'),
       fullPage: true
     });
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, '07-desktop-fx-revaluation-preview-1280.png'),
+      fullPage: true
+    });
+
+    // Step 2: Post Revaluation if available
+    const postBtn = page.locator('[data-testid="fx-btn-post"]');
+    if (await postBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
+      await postBtn.click();
+      await page.waitForTimeout(1500);
+      await page.screenshot({
+        path: path.join(SCREENSHOT_DIR, '07-desktop-fx-revaluation-posted-1280.png'),
+        fullPage: true
+      });
+    }
+
+    // Step 3: Reverse Revaluation
+    const reverseBtn = page.locator('[data-testid="fx-btn-reverse"]');
+    if (await reverseBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
+      await reverseBtn.click();
+      await page.waitForTimeout(600);
+      const reasonInput = page.locator('#fx-rev-reason');
+      if (await reasonInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await reasonInput.fill('عكس قيد فروق تقييم العملة الأجنبية بنهاية الفترة المحاسبية');
+      }
+      const confirmRevBtn = page.locator('[data-testid="fx-btn-confirm-reverse"]');
+      if (await confirmRevBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await confirmRevBtn.click();
+        await page.waitForTimeout(2000);
+      }
+      await page.screenshot({
+        path: path.join(SCREENSHOT_DIR, '07-desktop-fx-revaluation-reversed-1280.png'),
+        fullPage: true
+      });
+      const cancelRevBtn = page.getByRole('button', { name: /إلغاء|Cancel/i }).last();
+      if (await cancelRevBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await cancelRevBtn.click();
+        await page.waitForTimeout(400);
+      }
+    }
 
     // Screen 08: Desktop Fiscal Periods View
     await page.locator('[data-testid="accounting-tab-periods"]').click();

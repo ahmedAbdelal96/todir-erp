@@ -153,7 +153,7 @@ public sealed class AccountingService(
                     throw new AccountingException("accounting.fx_revaluation_source_changed");
                 if (line.JournalEntryId is not null) continue;
                 Guid? configurationId = source.ControlConfigurationReference.StartsWith("configuration:", StringComparison.Ordinal)
-                    && Guid.TryParse(source.ControlConfigurationReference["configuration:".Length..], out var parsedConfiguration) ? parsedConfiguration : null;
+                    && Guid.TryParse(source.ControlConfigurationReference["configuration:".Length..], out var parsedConfiguration) && parsedConfiguration != Guid.Empty ? parsedConfiguration : null;
                 var factId = DeterministicGuid(run.Id, line.Id);
                 var payload = new UnrealizedFxRevaluationPayload(run.Id, line.OpenItemId, line.Direction, line.DifferenceAmount, line.BaseCurrency,
                     source.ControlAccountRole, line.DifferenceRole, line.TransactionCurrency, line.OpenTransactionAmount, line.CarryingBaseAmount,
@@ -356,8 +356,8 @@ public sealed class AccountingService(
         var trial = await ledgerWorkspace.GetTrialBalanceAsync(tenant, new(entity), null, asOf, ct);
         var cashBalance = trial.Accounts.Where(account => account.AccountSubtype is "Cash" or "Bank" || account.AccountCode.StartsWith("1102", StringComparison.Ordinal)).Sum(account => account.SignedBalance);
         var pnl = await GetStatementAsync(tenant, entity, "ProfitAndLoss", new DateOnly(asOf.Year, 1, 1), asOf, ct);
-        var health = new[] { ar.Status, ap.Status, inventoryResult.Status }.Any(status => status is "Difference" or "NotReady" or "Error") ? "Attention" : "Healthy";
-        return new(entity, asOf, trial.BaseCurrencyCode, cashBalance, ar.SourceBalance ?? 0m, ap.SourceBalance ?? 0m, inventoryResult.SourceBalance, pnl.Total, health);
+        var healthView = await GetHealthAsync(tenant, membershipId, entity, asOf, actor, correlation, ct);
+        return new(entity, asOf, trial.BaseCurrencyCode, cashBalance, ar.SourceBalance ?? 0m, ap.SourceBalance ?? 0m, inventoryResult.SourceBalance, pnl.Total, healthView.Status);
     }
 
     private async Task<IReadOnlyList<ReconciliationView>> ReconcileAllReadOnlyAsync(TenantId tenant, Guid membership, Guid entity, DateOnly asOf, CancellationToken ct) => [await EvaluateReconciliationReadOnlyAsync(tenant, membership, entity, "AR", asOf, ct), await EvaluateReconciliationReadOnlyAsync(tenant, membership, entity, "AP", asOf, ct), await EvaluateReconciliationReadOnlyAsync(tenant, membership, entity, "Inventory", asOf, ct)];

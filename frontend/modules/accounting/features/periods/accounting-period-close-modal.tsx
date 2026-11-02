@@ -8,6 +8,11 @@ import {
 } from "../../hooks/use-accounting-queries.ts";
 import { useAccountingI18n } from "../../i18n";
 import type { PeriodDto, CloseRunView, CloseCheckView } from "../../types.ts";
+import {
+  formatHealthCode,
+  formatStatus,
+  formatDiagnosticMessage
+} from "../../utils/diagnostic-translations.ts";
 
 export interface AccountingPeriodCloseModalProps {
   readonly period: PeriodDto;
@@ -140,15 +145,18 @@ export const AccountingPeriodCloseModal: React.FC<AccountingPeriodCloseModalProp
                   }}
                 >
                   <div>
-                    <span style={{ fontWeight: 600, color: "var(--color-content-primary)", fontSize: "0.875rem" }}>
-                      {check.code}
+                    <span style={{ fontWeight: 700, color: "var(--color-content-primary)", fontSize: "0.875rem", display: "block" }}>
+                      {formatHealthCode(check.code)}
                     </span>
-                    <p style={{ margin: "0.25rem 0 0", color: "var(--color-content-muted)", fontSize: "0.8125rem" }}>
-                      {check.message}
+                    <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                      <bdi>{check.code}</bdi>
+                    </span>
+                    <p style={{ margin: "0.25rem 0 0", color: "var(--color-content-secondary)", fontSize: "0.8125rem", lineHeight: 1.4 }}>
+                      {formatDiagnosticMessage(check.message)}
                     </p>
                   </div>
                   <StatusBadge
-                    label={check.status}
+                    label={formatStatus(check.status)}
                     intent={
                       check.status === "Pass"
                         ? "success"

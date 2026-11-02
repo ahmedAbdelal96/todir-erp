@@ -11,6 +11,7 @@ import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { useAccountingI18n } from "../../i18n/index.ts";
 import type { FxRevaluationRunView, FxRevaluationLineView } from "../../types.ts";
+import { formatStatus, formatDirection } from "../../utils/diagnostic-translations.ts";
 
 export interface FxRevaluationViewProps {
   readonly legalEntityId?: string;
@@ -33,8 +34,10 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
   const postMutation = usePostFxRevaluationMutation(legalEntityId);
   const reverseMutation = useReverseFxRevaluationMutation(legalEntityId);
 
-  const handlePreview = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handlePreview = async (e?: React.SyntheticEvent | unknown) => {
+    if (e && typeof (e as React.SyntheticEvent).preventDefault === "function") {
+      (e as React.SyntheticEvent).preventDefault();
+    }
     try {
       const res = await previewMutation.mutateAsync({
         asOfDate,
@@ -57,8 +60,10 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
     }
   };
 
-  const handleReverse = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleReverse = async (e?: React.SyntheticEvent | unknown) => {
+    if (e && typeof (e as React.SyntheticEvent).preventDefault === "function") {
+      (e as React.SyntheticEvent).preventDefault();
+    }
     if (!currentRun || !reversalReason.trim()) return;
     try {
       const res = await reverseMutation.mutateAsync({
@@ -139,7 +144,8 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
             <Button
               variant="primary"
               isLoading={previewMutation.isPending}
-              onPress={handlePreview as unknown as () => void}
+              onPress={() => void handlePreview()}
+              data-testid="btn-preview-fx"
             >
               {t("fx.btnPreview")}
             </Button>
@@ -161,6 +167,11 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
           description={`${currentRun.asOfDate} — ${t("fx.totalItems")}: ${currentRun.lines.length}`}
           headerActions={
             <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+              <StatusBadge
+                intent={currentRun.status === "Posted" ? "success" : currentRun.status === "Reversed" ? "info" : "warning"}
+                label={formatStatus(currentRun.status)}
+                size="medium"
+              />
               <div style={{ textAlign: "end" }}>
                 <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", display: "block" }}>
                   {t("fx.totalGainLoss")}
@@ -172,11 +183,12 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
                 />
               </div>
 
-              {currentRun.status === "Preview" && currentRun.lines.length > 0 && (
+              {(currentRun.status === "Preview" || currentRun.status === "Previewed") && currentRun.lines.length > 0 && (
                 <Button
                   variant="primary"
                   isLoading={postMutation.isPending}
                   onPress={handlePost}
+                  data-testid="fx-btn-post"
                 >
                   ✓ {t("fx.btnPost")}
                 </Button>
@@ -186,6 +198,7 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
                 <Button
                   variant="danger"
                   onPress={() => setIsReverseModalOpen(true)}
+                  data-testid="fx-btn-reverse"
                 >
                   {t("fx.btnReverse")}
                 </Button>
@@ -238,7 +251,7 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
                       <td style={{ padding: "0.75rem 1rem" }}>
                         <StatusBadge
                           intent={line.direction === "Receivable" ? "info" : "warning"}
-                          label={line.direction}
+                          label={formatDirection(line.direction)}
                           size="small"
                         />
                       </td>
@@ -262,7 +275,7 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
                       </td>
                       <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
                         <span style={{ fontSize: "0.75rem", padding: "0.125rem 0.375rem", borderRadius: "var(--radius-sm, 0.25rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", border: "1px solid var(--color-border-subtle, #e2e8f0)", color: "var(--color-content-secondary, #334155)" }}>
-                          {line.differenceRole}
+                          {formatDirection(line.differenceRole)}
                         </span>
                       </td>
                     </tr>
@@ -288,7 +301,8 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
             <Button
               variant="danger"
               isLoading={reverseMutation.isPending}
-              onPress={handleReverse as unknown as () => void}
+              onPress={() => void handleReverse()}
+              data-testid="fx-btn-confirm-reverse"
             >
               {t("fx.modalConfirmReverse")}
             </Button>

@@ -11,6 +11,12 @@ import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { useAccountingI18n } from "../../i18n/index.ts";
 import type { SubledgerReconciliationView, ReconciliationIssueView } from "../../types.ts";
+import {
+  formatHealthCode,
+  formatSeverity,
+  formatStatus,
+  formatDirection
+} from "../../utils/diagnostic-translations.ts";
 
 export interface ControlReconciliationsViewProps {
   readonly legalEntityId?: string;
@@ -60,12 +66,12 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "Reconciled":
-        return <StatusBadge intent="success" label={t("reconciliation.statusReconciled")} size="small" />;
+        return <StatusBadge intent="success" label={formatStatus("Reconciled")} size="small" />;
       case "Difference":
-        return <StatusBadge intent="danger" label={t("reconciliation.statusDifference")} size="small" />;
+        return <StatusBadge intent="danger" label={formatStatus("Difference")} size="small" />;
       case "NotReady":
       default:
-        return <StatusBadge intent="warning" label={t("reconciliation.statusNotReady")} size="small" />;
+        return <StatusBadge intent="warning" label={formatStatus(status)} size="small" />;
     }
   };
 
@@ -226,7 +232,7 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
                     >
                       <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
                         <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-surface-subtle, #f1f5f9)", border: "1px solid var(--color-border-subtle, #e2e8f0)", fontSize: "0.75rem" }}>
-                          {run.type}
+                          {formatDirection(run.type)}
                         </span>
                       </td>
                       <td style={{ padding: "0.75rem 1rem", fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem" }}>
@@ -267,7 +273,7 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
                                   fontSize: "0.6875rem"
                                 }}
                               >
-                                {diag}
+                                {formatHealthCode(diag)}
                               </span>
                             ))}
                           </div>
@@ -326,20 +332,25 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
                       backgroundColor: idx % 2 === 0 ? "var(--color-surface-card, #ffffff)" : "var(--color-surface-subtle, #f8fafc)"
                     }}
                   >
-                    <td style={{ padding: "0.75rem 1rem", fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem", fontWeight: 700 }}>
-                      <bdi>{issue.code}</bdi>
+                    <td style={{ padding: "0.75rem 1rem" }}>
+                      <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)", display: "block" }}>
+                        {formatHealthCode(issue.code)}
+                      </span>
+                      <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)" }}>
+                        <bdi>{issue.code}</bdi>
+                      </span>
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <StatusBadge
                         intent={issue.severity === "Blocking" ? "danger" : issue.severity === "Attention" ? "warning" : "info"}
-                        label={issue.severity}
+                        label={formatSeverity(issue.severity)}
                         size="small"
                       />
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <StatusBadge
                         intent={issue.status === "Resolved" ? "success" : "danger"}
-                        label={issue.status}
+                        label={formatStatus(issue.status)}
                         size="small"
                       />
                     </td>

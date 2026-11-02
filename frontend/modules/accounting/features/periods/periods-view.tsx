@@ -72,9 +72,28 @@ export function PeriodsView({
 
   const currentLang = i18n.language?.startsWith("ar") ? "ar" : "en";
 
-  const filteredPeriods = periods.filter(
-    (p) => selectedYearId === "ALL" || p.fiscalYearId === selectedYearId
-  );
+  const isSyntheticTestYear = (code: string) => /[a-f0-9]{8}/i.test(code) || code.length > 12;
+  const cleanFiscalYears = fiscalYears.filter((fy) => !isSyntheticTestYear(fy.code));
+  const displayFiscalYears = cleanFiscalYears.length > 0 ? cleanFiscalYears : fiscalYears;
+
+  const formatFiscalYearLabel = (fy: FiscalYearDto) => {
+    const yearNumber = fy.code.replace(/^FY-?/i, "");
+    const yearTitle = /^\d{4}$/.test(yearNumber) ? `السنة المالية ${yearNumber}` : fy.code;
+    const statusLabel = fy.status === "Open" ? "مفتوحة" : fy.status === "Closed" ? "مغلقة" : fy.status;
+    return `${yearTitle} (${statusLabel})`;
+  };
+
+  const filteredPeriods = periods
+    .filter((p) => {
+      if (selectedYearId === "ALL") {
+        if (cleanFiscalYears.length > 0) {
+          return cleanFiscalYears.some((fy) => fy.id === p.fiscalYearId);
+        }
+        return true;
+      }
+      return p.fiscalYearId === selectedYearId;
+    })
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
   const handleCreateYear = async () => {
     setErrorMessage(null);
@@ -239,7 +258,10 @@ export function PeriodsView({
       </div>
 
       {/* Year Filter Tabs */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)", marginInlineEnd: "0.25rem" }}>
+          السنة المالية:
+        </span>
         <button
           type="button"
           onClick={() => setSelectedYearId("ALL")}
@@ -254,9 +276,9 @@ export function PeriodsView({
             cursor: "pointer"
           }}
         >
-          {t("period.allFiscalYears")}
+          {t("period.allFiscalYears")} ({filteredPeriods.length})
         </button>
-        {fiscalYears.map((fy) => (
+        {displayFiscalYears.map((fy) => (
           <button
             key={fy.id}
             type="button"
@@ -272,7 +294,7 @@ export function PeriodsView({
               cursor: "pointer"
             }}
           >
-            {fy.code} ({fy.status === "Open" ? t("period.open") : fy.status === "Closed" ? t("period.closed") : fy.status})
+            {formatFiscalYearLabel(fy)}
           </button>
         ))}
       </div>

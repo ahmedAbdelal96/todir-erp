@@ -5,6 +5,13 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
 import { useAccountingI18n } from "../../i18n/index.ts";
 import type { AccountingHealthItem } from "../../types.ts";
+import {
+  formatHealthCode,
+  formatSeverity,
+  formatStatus,
+  formatDirection,
+  formatDiagnosticMessage
+} from "../../utils/diagnostic-translations.ts";
 
 export interface AccountingHealthViewProps {
   readonly legalEntityId?: string;
@@ -20,24 +27,24 @@ export const AccountingHealthViewComponent: React.FC<AccountingHealthViewProps> 
   const getSeverityBadge = (severity: string) => {
     switch (severity) {
       case "Blocking":
-        return <StatusBadge intent="danger" label={t("health.severityBlocking")} size="small" />;
+        return <StatusBadge intent="danger" label={formatSeverity("Blocking")} size="small" />;
       case "Attention":
-        return <StatusBadge intent="warning" label={t("health.severityAttention")} size="small" />;
+        return <StatusBadge intent="warning" label={formatSeverity("Attention")} size="small" />;
       case "Info":
       default:
-        return <StatusBadge intent="success" label={t("health.severityInfo")} size="small" />;
+        return <StatusBadge intent="success" label={formatSeverity("Info")} size="small" />;
     }
   };
 
   const getOverallStatusBadge = (status?: string) => {
     switch (status) {
       case "Healthy":
-        return <StatusBadge intent="success" label={t("health.overallHealthy")} size="medium" />;
+        return <StatusBadge intent="success" label={formatStatus("Healthy")} size="medium" />;
       case "Attention":
-        return <StatusBadge intent="warning" label={t("health.overallAttention")} size="medium" />;
+        return <StatusBadge intent="warning" label={formatSeverity("Attention")} size="medium" />;
       case "Blocking":
       default:
-        return <StatusBadge intent="danger" label={t("health.overallBlocking")} size="medium" />;
+        return <StatusBadge intent="danger" label={formatSeverity("Blocking")} size="medium" />;
     }
   };
 
@@ -258,10 +265,10 @@ export const AccountingHealthViewComponent: React.FC<AccountingHealthViewProps> 
                         fontWeight: 700
                       }}
                     >
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("common.status")}</th>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("health.severityAttention")}</th>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>الكود والمصدر</th>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>البيان والتفاصيل</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>مستوى الأهمية</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>الحالة التشغيلية</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>الفحص والتحقق الرقابي</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>البيان والتفاصيل التشغيلية</th>
                       <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("common.actions")}</th>
                     </tr>
                   </thead>
@@ -278,20 +285,18 @@ export const AccountingHealthViewComponent: React.FC<AccountingHealthViewProps> 
                           {getSeverityBadge(item.severity)}
                         </td>
                         <td style={{ padding: "0.75rem 1rem", whiteSpace: "nowrap", fontSize: "0.8125rem", fontWeight: 600 }}>
-                          {item.status}
+                          {formatStatus(item.status)}
                         </td>
-                        <td style={{ padding: "0.75rem 1rem", whiteSpace: "nowrap" }}>
-                          <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem", color: "var(--color-content-primary, #0f172a)", display: "block" }}>
-                            {item.code}
+                        <td style={{ padding: "0.75rem 1rem" }}>
+                          <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)", display: "block" }}>
+                            {formatHealthCode(item.code)}
                           </span>
-                          {item.source && (
-                            <span style={{ fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)" }}>
-                              {item.source}
-                            </span>
-                          )}
+                          <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)" }}>
+                            <bdi>{item.code}</bdi>{item.source ? ` • ${formatDirection(item.source)}` : ""}
+                          </span>
                         </td>
                         <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", color: "var(--color-content-primary, #0f172a)", lineHeight: 1.5 }}>
-                          {item.message}
+                          {formatDiagnosticMessage(item.message)}
                         </td>
                         <td style={{ padding: "0.75rem 1rem", textAlign: "end", whiteSpace: "nowrap" }}>
                           {item.code.includes("reconciliation") ? (
