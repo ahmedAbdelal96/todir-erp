@@ -366,14 +366,24 @@ export const ar = {
     ,accountSearchPlaceholder: "الكود أو الاسم"
     ,loadError: "تعذر تحميل التقرير. حاول مرة أخرى."
     ,retry: "إعادة المحاولة"
+    ,sortBy: "ترتيب حسب"
+    ,newestFirst: "أحدث تاريخ ترحيل"
+    ,oldestFirst: "أقدم تاريخ ترحيل"
+    ,accountCodeOrder: "كود الحساب"
+    ,accountNameOrder: "اسم الحساب"
   },
   reconciliation: {
+    projectionTitle: "فحص مطابقة التجميعات المحاسبية",
     title: "مطابقة حسابات الرقابة (العملاء / الموردين / المخزون)",
     subtitle: "التحقق من تطابق أرصدة الدفاتر المساعدة مع حسابات الرقابة في دفتر الأستاذ العام",
     description: "التحقق من تطابق الأرصدة المسقطة مع الحقيقة المطلقة لسجل قيود دفتر الأستاذ",
     runAr: "مطابقة العملاء (AR)",
     runAp: "مطابقة الموردين (AP)",
     runInventory: "مطابقة المخزون (Inventory)",
+    allTypes: "كل أنواع المطابقة",
+    allIssueStatuses: "كل حالات المسائل",
+    openIssues: "المسائل المفتوحة",
+    resolvedIssues: "المسائل المسواة",
     runsHistoryTitle: "سجل عمليات المطابقة المحاسبية",
     refresh: "تحديث",
     loading: "جارٍ التحميل...",

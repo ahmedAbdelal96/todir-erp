@@ -192,7 +192,7 @@ export const ledgerApi = {
 
   listEntriesPage: async (
     legalEntityId: string,
-    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; status?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; status?: string | undefined; cursor?: string | undefined; limit?: number | undefined; sort?: string | undefined }
   ): Promise<JournalEntryPageDto> => {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params ?? {})) if (value) searchParams.set(key, String(value));
@@ -303,7 +303,7 @@ export const ledgerApi = {
 
   getTrialBalancePage: async (
     legalEntityId: string,
-    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; cursor?: string | undefined; limit?: number | undefined; sort?: string | undefined }
   ): Promise<TrialBalancePageDto> => {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params ?? {})) if (value) searchParams.set(key, String(value));

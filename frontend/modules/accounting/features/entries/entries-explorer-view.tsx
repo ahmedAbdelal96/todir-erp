@@ -2,11 +2,12 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
-import { CursorPagination } from "../../../../components/primitives/cursor-pagination.tsx";
-import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { FilterBar } from "../../../../components/primitives/filter-bar.tsx";
+import { SearchField } from "../../../../components/primitives/search-field.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
+import { DataGrid, type DataGridColumn } from "../../../../components/grid/index.ts";
 import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
-import { AccountingDataTable, type AccountingTableColumn } from "../../components/accounting-data-table.tsx";
 import { LedgerEntryStatusBadge } from "../../components/ledger-status-badges.tsx";
 import { EntryDetailModal } from "./entry-detail-modal.tsx";
 import { EntryExplanationModal } from "./entry-explanation-modal.tsx";
@@ -32,6 +33,7 @@ export function EntriesExplorerView({
   const { t } = useTranslation("accounting");
   const [searchTerm, setSearchTerm] = useState("");
   const [status, setStatus] = useState("");
+  const [sort, setSort] = useState("postingDateDesc");
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [cursor, setCursor] = useState<string | undefined>();
   const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
@@ -39,6 +41,7 @@ export function EntriesExplorerView({
   const { data: pageData, isLoading, isError, refetch } = useJournalEntriesPage(legalEntityId, {
     search: searchTerm || undefined,
     status: status || undefined,
+    sort,
     cursor,
     limit: pageSize
   });
@@ -53,60 +56,60 @@ export function EntriesExplorerView({
     setCursorHistory([]);
   };
 
-  const columns: readonly AccountingTableColumn<JournalEntryDto>[] = [
+  const columns: readonly DataGridColumn<JournalEntryDto>[] = [
     {
-      key: "entryNumber",
+      id: "entryNumber",
       header: t("journal.entryNumber"),
       width: "180px",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         <span style={{ fontWeight: 600, fontFamily: "var(--font-mono, monospace)" }}>
           <bdi>{item.entryNumber}</bdi>
         </span>
       )
     },
     {
-      key: "postingDate",
+      id: "postingDate",
       header: t("journal.entryDate"),
       width: "130px",
-      render: (item) => <LocalDateDisplay value={item.postingDate} />
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => <LocalDateDisplay value={item.postingDate} />
     },
     {
-      key: "debit",
+      id: "debit",
       header: t("journal.totalDebit"),
       width: "140px",
       align: "end",
-      render: (item) => {
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => {
         const totalDebit = item.lines.reduce((s, l) => s + l.debit, 0);
         return <MoneyDisplay value={{ amount: totalDebit.toFixed(2), currency: item.currencyCode }} />;
       }
     },
     {
-      key: "credit",
+      id: "credit",
       header: t("journal.totalCredit"),
       width: "140px",
       align: "end",
-      render: (item) => {
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => {
         const totalCredit = item.lines.reduce((s, l) => s + l.credit, 0);
         return <MoneyDisplay value={{ amount: totalCredit.toFixed(2), currency: item.currencyCode }} />;
       }
     },
     {
-      key: "status",
+      id: "status",
       header: t("account.status"),
       width: "130px",
-      render: (item) => <LedgerEntryStatusBadge status={item.status} />
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => <LedgerEntryStatusBadge status={item.status} />
     },
     {
-      key: "actions",
+      id: "actions",
       header: t("common.actions"),
       width: "260px",
       align: "end",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", flexWrap: "wrap" }}>
           <Button
             size="compact"
             variant="secondary"
-            onPress={() => setSelectedEntry(item)}
+            onClick={() => setSelectedEntry(item)}
           >
             {t("journal.viewDetails")}
           </Button>
@@ -115,7 +118,7 @@ export function EntriesExplorerView({
             <Button
               size="compact"
               variant="secondary"
-              onPress={() => setExplainEntryId(item.id)}
+              onClick={() => setExplainEntryId(item.id)}
             >
               {t("explanation.whyThisAccount")}
             </Button>
@@ -125,7 +128,7 @@ export function EntriesExplorerView({
             <Button
               size="compact"
               variant="secondary"
-              onPress={() => setReversalEntry(item)}
+              onClick={() => setReversalEntry(item)}
             >
               {t("reversal.button")}
             </Button>
@@ -137,7 +140,7 @@ export function EntriesExplorerView({
 
   return (
     <Surface style={{ padding: "1.25rem 1.5rem", width: "100%", maxWidth: "100%", boxSizing: "border-box", minWidth: 0 }}>
-      <div
+        <div
         style={{
           display: "flex",
           justifyContent: "space-between",
@@ -156,13 +159,20 @@ export function EntriesExplorerView({
           </p>
         </div>
 
-        <div style={{ width: "260px" }}>
-          <TextField
-            value={searchTerm}
-            onChange={(value) => { setSearchTerm(value); resetCursor(); }}
-            placeholder={t("journal.searchEntriesPlaceholder")}
-          />
-        </div>
+        <FilterBar
+          searchInput={
+            <SearchField
+              value={searchTerm}
+              onChange={(value) => { setSearchTerm(value); resetCursor(); }}
+              placeholder={t("journal.searchEntriesPlaceholder")}
+              isPending={isLoading}
+              ariaLabel={t("journal.searchEntriesPlaceholder")}
+            />
+          }
+          activeFilterCount={(searchTerm ? 1 : 0) + (status ? 1 : 0) + (sort !== "postingDateDesc" ? 1 : 0)}
+          onResetFilters={() => { setSearchTerm(""); setStatus(""); setSort("postingDateDesc"); resetCursor(); }}
+          isPending={isLoading}
+        >
         <div style={{ width: "180px" }}>
           <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("account.status")}</label>
           <select value={status} onChange={(event) => { setStatus(event.target.value); resetCursor(); }} style={{ width: "100%", padding: "0.5rem 0.75rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", background: "var(--color-surface-card)" }}>
@@ -171,6 +181,14 @@ export function EntriesExplorerView({
             <option value="Draft">{t("reports.draft")}</option>
           </select>
         </div>
+        <div style={{ width: "180px" }}>
+          <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("reports.sortBy")}</label>
+          <select value={sort} onChange={(event) => { setSort(event.target.value); resetCursor(); }} style={{ width: "100%", padding: "0.5rem 0.75rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", background: "var(--color-surface-card)" }}>
+            <option value="postingDateDesc">{t("reports.newestFirst")}</option>
+            <option value="postingDateAsc">{t("reports.oldestFirst")}</option>
+          </select>
+        </div>
+        </FilterBar>
       </div>
 
       {isLoading ? (
@@ -182,13 +200,9 @@ export function EntriesExplorerView({
         </div>
       ) : (
         <>
-          <AccountingDataTable
-          data={entries}
-          columns={columns}
-          rowKey={(item) => item.id}
-          emptyMessage={t("journal.noEntriesFound")}
-          />
-          <CursorPagination
+          <DataGrid columns={columns} staticRows={entries} loading={isLoading} emptyMessage={t("journal.noEntriesFound")} hasActiveFilters={Boolean(searchTerm || status || sort !== "postingDateDesc")} density="compact" />
+          <Pagination
+            mode="cursor"
             page={cursorHistory.length + 1}
             itemCount={entries.length}
             pageSize={pageSize}

@@ -93,7 +93,7 @@ export function ReconciliationView({
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.25rem" }}>
             <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700 }}>
-              {t("reconciliation.title")}
+              {t("reconciliation.projectionTitle")}
             </h2>
             <StatusBadge
               status={isHealthy ? "success" : "danger"}

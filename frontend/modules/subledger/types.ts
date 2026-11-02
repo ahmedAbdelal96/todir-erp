@@ -61,6 +61,7 @@ export interface OpenItemListFilter {
   readonly overdueOnly?: boolean;
   readonly asOfDate?: string;
   readonly status?: string;
+  readonly sort?: "idAsc" | "dueDateAsc" | "dueDateDesc";
 }
 
 export interface PartyCurrencyBalance {

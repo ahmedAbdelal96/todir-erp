@@ -361,6 +361,14 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_ENTRIES) });
     });
 
+    await page.route(new RegExp(`/api/v1/ledger/legal-entities/${MAIN_ENTITY_ID}/entries/page(\\?.*)?$`), async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: MOCK_ENTRIES, nextCursor: null })
+      });
+    });
+
     await page.route(new RegExp(`/api/v1/ledger/legal-entities/${MAIN_ENTITY_ID}/entries/.*/explanation`), async (route) => {
       await route.fulfill({
         status: 200,
@@ -415,29 +423,32 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
     });
 
     await page.route(new RegExp(`/api/v1/ledger/legal-entities/${MAIN_ENTITY_ID}/reports/trial-balance`), async (route) => {
+      const rows = [
+        {
+          accountId: MOCK_ACCOUNTS[2].id,
+          accountCode: MOCK_ACCOUNTS[2].code,
+          accountName: MOCK_ACCOUNTS[2].nameAr,
+          debit: 25000,
+          credit: 0,
+          balance: 25000,
+          currencyCode: 'EGP'
+        },
+        {
+          accountId: MOCK_ACCOUNTS[4].id,
+          accountCode: MOCK_ACCOUNTS[4].code,
+          accountName: MOCK_ACCOUNTS[4].nameAr,
+          debit: 0,
+          credit: 25000,
+          balance: 25000,
+          currencyCode: 'EGP'
+        }
+      ];
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([
-          {
-            accountId: MOCK_ACCOUNTS[2].id,
-            accountCode: MOCK_ACCOUNTS[2].code,
-            accountName: MOCK_ACCOUNTS[2].nameAr,
-            debit: 25000,
-            credit: 0,
-            balance: 25000,
-            currencyCode: 'EGP'
-          },
-          {
-            accountId: MOCK_ACCOUNTS[4].id,
-            accountCode: MOCK_ACCOUNTS[4].code,
-            accountName: MOCK_ACCOUNTS[4].nameAr,
-            debit: 0,
-            credit: 25000,
-            balance: 25000,
-            currencyCode: 'EGP'
-          }
-        ])
+        body: JSON.stringify(route.request().url().includes('/page')
+          ? { items: rows, nextCursor: null, totalCount: rows.length, totalDebit: 25000, totalCredit: 25000 }
+          : rows)
       });
     });
 
@@ -668,7 +679,7 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
     await expect(page.getByText('JV-2026-0001')).toBeVisible();
 
     const explainButton = page.getByRole('button', { name: 'لماذا تم اختيار هذا الحساب؟' }).first();
-    await explainButton.evaluate((btn: HTMLElement) => btn.click());
+    await explainButton.click();
     await expect(page.getByText('شرح القيد وقواعد التوجيه المحاسبي')).toBeVisible();
     await expect(page.getByText('CustomerInvoicePosted')).toBeVisible();
 
@@ -781,7 +792,7 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
 
     // Open Reversal Modal
     const reverseButton = page.getByRole('button', { name: 'عكس القيد' }).first();
-    await reverseButton.evaluate((b: HTMLElement) => b.click());
+    await reverseButton.click();
 
     await expect(page.getByRole('heading', { name: /عكس القيد المحاسبي/ })).toBeVisible();
     await expect(page.getByText('عكس القيد سينشئ قيداً محاسبياً عكسياً متوازناً جديداً')).toBeVisible();
@@ -953,7 +964,7 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
     await page.getByRole('tab', { name: 'Posted Journal Entries' }).evaluate((tab: HTMLElement) => tab.click());
     await expect(page.getByText('JV-2026-0001')).toBeVisible();
     const whyBtn = page.getByRole('button', { name: 'Why This Account?' }).first();
-    await whyBtn.evaluate((btn: HTMLElement) => btn.click());
+    await whyBtn.click();
     await expect(page.getByText('Entry Explanation & Determination Rules')).toBeVisible();
     await page.screenshot({
       path: 'artifacts/test-results/visual-acceptance/ledger-why-this-account-ltr.png'
@@ -980,7 +991,7 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
     // 7. General Ledger LTR
     await page.getByRole('tab', { name: 'General Ledger' }).evaluate((tab: HTMLElement) => tab.click());
     await expect(page.getByRole('heading', { name: 'General Ledger' })).toBeVisible();
-    const glContainer = page.locator('.accounting-table-container').first();
+    const glContainer = page.locator('.ui-datagrid').first();
     await glContainer.evaluate((el: HTMLElement) => el.scrollTo({ left: el.scrollWidth, behavior: 'instant' }));
     const whyActionBtn = page.getByRole('button', { name: 'Why This Account?' }).first();
     await expect(whyActionBtn).toBeVisible();
@@ -998,7 +1009,8 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
 
     // Drill down from account row to General Ledger using "كشف الحركة"
     const accountDrillLink = page.getByRole('button', { name: 'كشف الحركة' }).first();
-    await accountDrillLink.evaluate((btn: HTMLElement) => btn.click());
+    await expect(accountDrillLink).toBeVisible();
+    await accountDrillLink.click();
 
     // Verify navigated to General Ledger
     await expect(page.getByRole('heading', { name: 'دفتر الأستاذ العام' })).toBeVisible();
@@ -1084,7 +1096,8 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
       // Check Explanation Modal in RTL
       await page.getByRole('tab', { name: 'قيود اليومية المرحلة' }).evaluate((tab: HTMLElement) => tab.click());
       const explainBtn = page.getByRole('button', { name: 'لماذا تم اختيار هذا الحساب؟' }).first();
-      await explainBtn.evaluate((b: HTMLElement) => b.click());
+      await expect(explainBtn).toBeVisible();
+      await explainBtn.click();
       await expect(page.getByText('شرح القيد وقواعد التوجيه المحاسبي')).toBeVisible();
       if (vp.width === 1440) {
         await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/ledger-why-this-account-rtl.png' });
@@ -1145,7 +1158,7 @@ test.describe('Ledger & Accounting UX Acceptance & Visual Suite', () => {
       // Check Explanation Modal in LTR
       await page.getByRole('tab', { name: 'Posted Journal Entries' }).evaluate((tab: HTMLElement) => tab.click());
       const explainBtnLtr = page.getByRole('button', { name: 'Why This Account?' }).first();
-      await explainBtnLtr.evaluate((b: HTMLElement) => b.click());
+      await explainBtnLtr.click();
       await expect(page.getByText('Entry Explanation & Determination Rules')).toBeVisible();
       if (vp.width === 1440) {
         await page.screenshot({ path: 'artifacts/test-results/visual-acceptance/ledger-why-this-account-ltr.png' });

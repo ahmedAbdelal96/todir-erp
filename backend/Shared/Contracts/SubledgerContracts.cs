@@ -105,7 +105,7 @@ public sealed record ReverseApplicationCommand(
 
 public sealed record SubledgerApplicationResult(Guid BatchId, bool AlreadyApplied, IReadOnlyList<Guid> ApplicationIds);
 public sealed record OpenItemListQuery(LegalEntityId LegalEntityId, Guid? PartyId, SubledgerDirectionContract? Direction, bool OpenOnly, int Limit, string? Cursor,
-    string? Search = null, DateOnly? DueFrom = null, DateOnly? DueTo = null, string? CurrencyCode = null, bool OverdueOnly = false, DateOnly? AsOfDate = null, string? Status = null);
+    string? Search = null, DateOnly? DueFrom = null, DateOnly? DueTo = null, string? CurrencyCode = null, bool OverdueOnly = false, DateOnly? AsOfDate = null, string? Status = null, string? Sort = null);
 public sealed record OpenItemPage(IReadOnlyList<PartyOpenItemResult> Items, string? NextCursor);
 public sealed record AutoApplySuggestionQuery(LegalEntityId LegalEntityId, Guid SourceOpenItemId, string? Reference, string Policy, int MaximumLines = 50);
 public sealed record AutoApplySuggestionLine(Guid DebitItemId, Guid CreditItemId, string DebitAmount, string CreditAmount, long ExpectedDebitVersion, long ExpectedCreditVersion, string ReasonCode, string ConfidenceClass, string CurrencyCode, string DebitRemaining, string CreditRemaining);

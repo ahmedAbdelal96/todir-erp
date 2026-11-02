@@ -442,7 +442,9 @@ public sealed class SubledgerService(
         var started = Stopwatch.GetTimestamp();
         ValidateScope(tenantId, query.LegalEntityId);
         if (query.Limit is < 1 or > 200) throw new SubledgerException("subledger.page_size_invalid", "Page size must be between 1 and 200.");
-        if (query.Cursor is not null && !Guid.TryParse(query.Cursor, out _)) throw new SubledgerException("subledger.cursor_invalid", "The open-item cursor is invalid.");
+        var sort = query.Sort ?? "idAsc";
+        if (sort is not ("idAsc" or "dueDateAsc" or "dueDateDesc")) throw new SubledgerException("subledger.sort_invalid", "The open-item sort is invalid.");
+        if (query.Cursor is not null && !SubledgerRepository.ValidateCursor(query.Cursor, sort)) throw new SubledgerException("subledger.cursor_invalid", "The open-item cursor is invalid.");
         if (query.Direction is not null && !Enum.IsDefined(query.Direction.Value)) throw new SubledgerException("subledger.direction_invalid", "The financial direction is invalid.");
         if (query.DueFrom == DateOnly.MinValue || query.DueTo == DateOnly.MinValue || query.DueFrom is { } dueFrom && query.DueTo is { } dueTo && dueTo < dueFrom)
             throw new SubledgerException("subledger.due_range_invalid", "The due-date range is invalid.");
@@ -454,7 +456,7 @@ public sealed class SubledgerService(
         if (query.CurrencyCode is not null) _ = NormalizeCurrency(query.CurrencyCode);
         await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
         if (query.PartyId is { } partyId) await EnsurePartyAsync(tenantId, query.LegalEntityId, partyId, cancellationToken);
-        query = query with { Search = Clean(query.Search), CurrencyCode = query.CurrencyCode is null ? null : NormalizeCurrency(query.CurrencyCode) };
+        query = query with { Search = Clean(query.Search), CurrencyCode = query.CurrencyCode is null ? null : NormalizeCurrency(query.CurrencyCode), Sort = sort };
         try { return await repository.ListAsync(tenantId, query, cancellationToken); }
         finally { SubledgerObservability.OpenItemsQueryDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds); }
     }

@@ -55,6 +55,7 @@ export const subledgerApi = {
     if (filter.overdueOnly !== undefined) params.set("overdueOnly", String(filter.overdueOnly));
     if (filter.asOfDate) params.set("asOfDate", filter.asOfDate);
     if (filter.status) params.set("status", filter.status);
+    if (filter.sort) params.set("sort", filter.sort);
 
     return httpClient<OpenItemPage>(
       `${basePath}/open-items?${params.toString()}`,

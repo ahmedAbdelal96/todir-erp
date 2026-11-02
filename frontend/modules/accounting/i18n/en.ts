@@ -366,14 +366,24 @@ export const en = {
     ,accountSearchPlaceholder: "Code or name"
     ,loadError: "The report could not be loaded. Try again."
     ,retry: "Retry"
+    ,sortBy: "Sort by"
+    ,newestFirst: "Newest posting date"
+    ,oldestFirst: "Oldest posting date"
+    ,accountCodeOrder: "Account code"
+    ,accountNameOrder: "Account name"
   },
   reconciliation: {
+    projectionTitle: "Ledger Projection Reconciliation",
     title: "Subledger Control Reconciliations (AR / AP / Inventory)",
     subtitle: "Verify equality between subledger auxiliary items and General Ledger control accounts",
     description: "Verify that projection balances exactly match immutable canonical journal entries",
     runAr: "Reconcile AR",
     runAp: "Reconcile AP",
     runInventory: "Reconcile Inventory",
+    allTypes: "All reconciliation types",
+    allIssueStatuses: "All issue statuses",
+    openIssues: "Open issues",
+    resolvedIssues: "Resolved issues",
     runsHistoryTitle: "Reconciliation Run History",
     refresh: "Refresh",
     loading: "Loading reconciliation runs...",

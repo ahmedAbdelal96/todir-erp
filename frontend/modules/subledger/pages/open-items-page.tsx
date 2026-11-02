@@ -1,11 +1,15 @@
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
-import { PageHeader } from "../../../components/pages/page-header.tsx";
+import { ListPage } from "../../../components/pages/list-page.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
-import { CursorPagination } from "../../../components/primitives/cursor-pagination.tsx";
+import { FilterBar } from "../../../components/primitives/filter-bar.tsx";
+import { SearchField } from "../../../components/primitives/search-field.tsx";
+import { Pagination } from "../../../components/primitives/pagination.tsx";
+import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
+import { DataGrid, type DataGridColumn } from "../../../components/grid/index.ts";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { FinancialStatusBadge } from "../components/financial-status-badge.tsx";
 import { OpenItemDetailDrawer } from "../components/open-item-detail-drawer.tsx";
@@ -18,399 +22,69 @@ export function OpenItemsPage(): React.JSX.Element {
   const { t } = useTranslation("subledger");
   const navigate = useNavigate();
   const { legalEntityId } = useSubledgerScope();
-
-  // Filters state
-  const [searchTerm, setSearchTerm] = useState<string>("");
-  const [directionFilter, setDirectionFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("openOnly");
-  const [currencyFilter, setCurrencyFilter] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [directionFilter, setDirectionFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("openOnly");
+  const [currencyFilter, setCurrencyFilter] = useState("");
+  const [sort, setSort] = useState<"idAsc" | "dueDateAsc" | "dueDateDesc">("idAsc");
   const [cursor, setCursor] = useState<string | undefined>();
   const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
   const [pageSize, setPageSize] = useState(50);
-
-  // Modals & Drawers state
   const [selectedDetailItem, setSelectedDetailItem] = useState<PartyOpenItem | null>(null);
   const [selectedWriteOffItem, setSelectedWriteOffItem] = useState<PartyOpenItem | null>(null);
   const [selectedReversal, setSelectedReversal] = useState<{ applicationId: string; openItemId: string } | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const resetCursor = () => { setCursor(undefined); setCursorHistory([]); };
+  const resetFilters = () => { setSearchTerm(""); setDirectionFilter("all"); setStatusFilter("openOnly"); setCurrencyFilter(""); setSort("idAsc"); resetCursor(); };
+
   const queryFilter = useMemo<OpenItemListFilter>(() => {
-    const f: {
-      legalEntityId: string;
-      limit: number;
-      cursor?: string | undefined;
-      direction?: SubledgerDirection;
-      openOnly?: boolean;
-      currencyCode?: string;
-      search?: string;
-      overdueOnly?: boolean;
-      asOfDate?: string;
-    } = {
-      legalEntityId,
-      limit: pageSize,
-      cursor,
-    };
-
-    if (directionFilter === "receivable") {
-      f.direction = "Receivable";
-    } else if (directionFilter === "payable") {
-      f.direction = "Payable";
-    }
-
-    if (statusFilter === "openOnly") {
-      f.openOnly = true;
-    } else if (statusFilter === "overdueOnly") {
-      f.openOnly = true;
-      f.overdueOnly = true;
-      f.asOfDate = new Date().toISOString().slice(0, 10);
-    } else {
-      f.openOnly = false;
-    }
-
-    if (currencyFilter) {
-      f.currencyCode = currencyFilter;
-    }
-
-    if (searchTerm.trim()) f.search = searchTerm.trim();
-
-    return f;
-  }, [legalEntityId, directionFilter, statusFilter, currencyFilter, searchTerm, cursor, pageSize]);
+    const extra: { direction?: SubledgerDirection; openOnly?: boolean; overdueOnly?: boolean; asOfDate?: string; currencyCode?: string; search?: string } = {};
+    if (directionFilter === "receivable" || directionFilter === "payable") extra.direction = directionFilter === "receivable" ? "Receivable" : "Payable";
+    if (statusFilter === "openOnly") extra.openOnly = true;
+    if (statusFilter === "overdueOnly") { extra.openOnly = true; extra.overdueOnly = true; extra.asOfDate = new Date().toISOString().slice(0, 10); }
+    if (statusFilter === "all") extra.openOnly = false;
+    if (currencyFilter) extra.currencyCode = currencyFilter;
+    if (searchTerm.trim()) extra.search = searchTerm.trim();
+    return { legalEntityId, limit: pageSize, cursor, sort, ...extra };
+  }, [legalEntityId, directionFilter, statusFilter, currencyFilter, searchTerm, cursor, pageSize, sort]);
 
   const openItemsQuery = useOpenItemsQuery(queryFilter);
-
-  const rawItems = openItemsQuery.data?.items ?? [];
+  const items = openItemsQuery.data?.items ?? [];
   const isLoading = openItemsQuery.isLoading;
-  const resetCursor = () => { setCursor(undefined); setCursorHistory([]); };
+  const activeFilterCount = (searchTerm ? 1 : 0) + (directionFilter !== "all" ? 1 : 0) + (statusFilter !== "openOnly" ? 1 : 0) + (currencyFilter ? 1 : 0) + (sort !== "idAsc" ? 1 : 0);
+
+  const columns: readonly DataGridColumn<PartyOpenItem>[] = [
+    { id: "document", header: t("openItems.documentRef"), minWidth: 180, sortable: false, filterable: false, cellRenderer: ({ row }) => <div><strong>{row.sourceDisplayNumber || row.sourceReference}</strong><small style={{ display: "block", color: "var(--color-content-muted)" }}>{row.sourceReference}</small></div> },
+    { id: "sourceType", header: t("drawer.sourceType"), minWidth: 130, sortable: false, filterable: false, cellRenderer: ({ row }) => <div><strong>{row.sourceType}</strong><small style={{ display: "block", color: "var(--color-content-muted)" }}>{row.polarity === "Debit" ? t("common.debit") : t("common.credit")}</small></div> },
+    { id: "documentDate", header: t("openItems.documentDate"), width: 120, sortable: false, filterable: false, cellRenderer: ({ row }) => row.documentDate },
+    { id: "dueDate", header: t("openItems.dueDate"), width: 130, sortable: false, filterable: false, cellRenderer: ({ row }) => { const overdue = new Date(row.dueDate) < new Date() && Number(row.openTransactionAmount) > 0; return <span style={{ color: overdue ? "var(--color-status-danger)" : undefined, fontWeight: overdue ? 700 : undefined }}>{row.dueDate}</span>; } },
+    { id: "originalAmount", header: t("openItems.originalAmount"), align: "end", width: 150, sortable: false, filterable: false, cellRenderer: ({ row }) => <MoneyDisplay value={{ amount: row.originalTransactionAmount, currency: row.transactionCurrency }} /> },
+    { id: "settledAmount", header: t("openItems.settledAmount"), align: "end", width: 150, sortable: false, filterable: false, cellRenderer: ({ row }) => <MoneyDisplay value={{ amount: row.settledTransactionAmount, currency: row.transactionCurrency }} /> },
+    { id: "remainingAmount", header: t("openItems.remainingAmount"), align: "end", width: 160, sortable: false, filterable: false, cellRenderer: ({ row }) => <strong><MoneyDisplay value={{ amount: row.openTransactionAmount, currency: row.transactionCurrency }} /></strong> },
+    { id: "status", header: t("openItems.status"), width: 130, sortable: false, filterable: false, cellRenderer: ({ row }) => <FinancialStatusBadge status={row.status} isOverdue={new Date(row.dueDate) < new Date() && Number(row.openTransactionAmount) > 0} /> },
+    { id: "actions", header: t("openItems.actions"), minWidth: 270, sortable: false, filterable: false, cellRenderer: ({ row }) => { const settled = Number(row.openTransactionAmount) <= 0; const hasSettlement = Number(row.settledTransactionAmount) > 0; return <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}><Button size="compact" variant="secondary" onClick={() => setSelectedDetailItem(row)}>{t("openItems.viewDetails")}</Button>{!settled && <Button size="compact" variant="secondary" onClick={() => navigate(`/subledger/applications?partyId=${row.partyId}&direction=${row.direction}&sourceId=${row.id}`)}>{t("openItems.applyNow")}</Button>}{!settled && <Button size="compact" variant="danger" onClick={() => setSelectedWriteOffItem(row)}>{t("openItems.writeOff")}</Button>}{hasSettlement && <Button size="compact" variant="secondary" onClick={() => setSelectedReversal({ applicationId: `app-${row.id}`, openItemId: row.id })}>{t("reversal.title")}</Button>}</div>; } }
+  ];
+
+  const pagination = <Pagination mode="cursor" page={cursorHistory.length + 1} itemCount={items.length} pageSize={pageSize} hasPrevious={cursorHistory.length > 0} hasNext={Boolean(openItemsQuery.data?.nextCursor)} onPrevious={() => { const history = cursorHistory.slice(0, -1); setCursorHistory(history); setCursor(history[history.length - 1]); }} onNext={() => { if (!openItemsQuery.data?.nextCursor) return; setCursorHistory((history) => [...history, cursor]); setCursor(openItemsQuery.data.nextCursor ?? undefined); }} onPageSizeChange={(size) => { setPageSize(size); resetCursor(); }} isDisabled={openItemsQuery.isFetching} />;
+  const filterBar = <FilterBar searchInput={<SearchField value={searchTerm} onChange={(value) => { setSearchTerm(value); resetCursor(); }} placeholder={t("openItems.searchPlaceholder")} isPending={openItemsQuery.isFetching} ariaLabel={t("openItemsPage.searchLabel")} />} activeFilterCount={activeFilterCount} onResetFilters={resetFilters} isPending={openItemsQuery.isFetching}>
+    <label><span style={{ display: "block", fontSize: "0.75rem", fontWeight: 600 }}>{t("openItems.filterDirection")}</span><select value={directionFilter} onChange={(event) => { setDirectionFilter(event.target.value); resetCursor(); }}><option value="all">{t("openItems.allDirections")}</option><option value="receivable">{t("openItems.receivableOnly")}</option><option value="payable">{t("openItems.payableOnly")}</option></select></label>
+    <label><span style={{ display: "block", fontSize: "0.75rem", fontWeight: 600 }}>{t("openItems.filterStatus")}</span><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); resetCursor(); }}><option value="openOnly">{t("openItems.openOnly")}</option><option value="overdueOnly">{t("openItems.overdueOnly")}</option><option value="all">{t("openItems.allStatuses")}</option></select></label>
+    <label><span style={{ display: "block", fontSize: "0.75rem", fontWeight: 600 }}>{t("openItems.sortBy")}</span><select value={sort} onChange={(event) => { setSort(event.target.value as "idAsc" | "dueDateAsc" | "dueDateDesc"); resetCursor(); }}><option value="idAsc">{t("openItems.recordOrder")}</option><option value="dueDateAsc">{t("openItems.dueDateAscending")}</option><option value="dueDateDesc">{t("openItems.dueDateDescending")}</option></select></label>
+    <TextField value={currencyFilter} onChange={(value) => { setCurrencyFilter(value.toUpperCase()); resetCursor(); }} placeholder={t("common.currencyPlaceholder")} aria-label={t("openItems.currency")} />
+  </FilterBar>;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={t("openItems.title")}
-        description={t("openItems.subtitle")}
-        secondaryActions={
-          <div className="flex items-center gap-2">
-            <Link to="/subledger/applications">
-              <Button variant="primary" size="compact" className="bg-slate-900 hover:bg-slate-800 text-white">
-                {t("application.title")}
-              </Button>
-            </Link>
-          </div>
-        }
-      />
-
-      {successMessage && (
-        <Alert variant="success">
-          {successMessage}
-        </Alert>
-      )}
-
-      {/* Filter Surface */}
-      <Surface variant="card" padding="normal" className="bg-white border border-slate-200 rounded-lg shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Search Box */}
-          <div>
-            <label htmlFor="open-item-search" className="text-xs font-semibold text-slate-700 block mb-1">
-              {t("openItemsPage.searchLabel")}
-            </label>
-            <input
-              id="open-item-search"
-              type="text"
-              placeholder={t("openItems.searchPlaceholder")}
-              value={searchTerm}
-              onChange={(e) => { setSearchTerm(e.target.value); resetCursor(); }}
-              className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded bg-white text-slate-900 shadow-sm focus:border-slate-800 focus:outline-none"
-            />
-          </div>
-
-          {/* Direction Filter */}
-          <div>
-            <label htmlFor="open-item-dir" className="text-xs font-semibold text-slate-700 block mb-1">
-              {t("openItems.filterDirection")}
-            </label>
-            <select
-              id="open-item-dir"
-              value={directionFilter}
-              onChange={(e) => { setDirectionFilter(e.target.value); resetCursor(); }}
-              className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded bg-white text-slate-900 shadow-sm focus:border-slate-800 focus:outline-none"
-            >
-              <option value="all">{t("openItems.allDirections")}</option>
-              <option value="receivable">{t("openItems.receivableOnly")}</option>
-              <option value="payable">{t("openItems.payableOnly")}</option>
-            </select>
-          </div>
-
-          {/* Status Filter */}
-          <div>
-            <label htmlFor="open-item-status" className="text-xs font-semibold text-slate-700 block mb-1">
-              {t("openItems.filterStatus")}
-            </label>
-            <select
-              id="open-item-status"
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); resetCursor(); }}
-              className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded bg-white text-slate-900 shadow-sm focus:border-slate-800 focus:outline-none"
-            >
-              <option value="openOnly">{t("openItems.openOnly")}</option>
-              <option value="overdueOnly">{t("openItems.overdueOnly")}</option>
-              <option value="all">{t("openItems.allStatuses")}</option>
-            </select>
-          </div>
-
-          {/* Currency Filter */}
-          <div>
-            <label htmlFor="open-item-currency" className="text-xs font-semibold text-slate-700 block mb-1">
-              {t("openItems.currency")}
-            </label>
-            <input
-              id="open-item-currency"
-              type="text"
-              placeholder={t("common.currencyPlaceholder")}
-              value={currencyFilter}
-              onChange={(e) => { setCurrencyFilter(e.target.value.toUpperCase()); resetCursor(); }}
-              className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded bg-white text-slate-900 shadow-sm focus:border-slate-800 focus:outline-none"
-            />
-          </div>
-        </div>
+    <ListPage title={t("openItems.title")} subtitle={t("openItems.subtitle")} filterBar={filterBar} pagination={pagination} secondaryActions={<Link to="/subledger/applications"><Button variant="primary" size="compact">{t("application.title")}</Button></Link>}>
+      {successMessage && <Alert variant="success">{successMessage}</Alert>}
+      <Surface variant="card" padding="none" style={{ padding: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}><strong>{t("openItemsPage.totalDisplayed")} {items.length}</strong><Button variant="secondary" size="compact" onPress={() => void openItemsQuery.refetch()} isDisabled={isLoading}>{t("common.refresh")}</Button></div>
+        <DataGrid columns={columns} staticRows={items} loading={isLoading} emptyMessage={t("openItems.emptyDescription")} hasActiveFilters={activeFilterCount > 0} density="compact" />
       </Surface>
 
-      {/* High-Density Data Table */}
-      <Surface variant="card" padding="none" className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-700">
-            {t("openItemsPage.totalDisplayed")} {rawItems.length}
-          </span>
-          <Button
-            variant="secondary"
-            size="compact"
-            onClick={() => void openItemsQuery.refetch()}
-            isDisabled={isLoading}
-            className="border-slate-300 text-xs text-slate-700 hover:bg-slate-100"
-          >
-            {t("common.refresh")}
-          </Button>
-        </div>
-
-        {isLoading ? (
-          <div className="p-8 text-center text-slate-500 text-sm">
-            {t("openItems.loadingText")}
-          </div>
-        ) : rawItems.length === 0 ? (
-          <div className="p-10 text-center space-y-2">
-            <h4 className="text-sm font-bold text-slate-800">{t("openItems.emptyTitle")}</h4>
-            <p className="text-xs text-slate-500">{t("openItems.emptyDescription")}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-start">
-              <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-3 text-start">{t("openItems.documentRef")}</th>
-                  <th className="px-4 py-3 text-start">{t("drawer.sourceType")}</th>
-                  <th className="px-4 py-3 text-start">{t("openItems.documentDate")}</th>
-                  <th className="px-4 py-3 text-start">{t("openItems.dueDate")}</th>
-                  <th className="px-4 py-3 text-end">{t("openItems.originalAmount")}</th>
-                  <th className="px-4 py-3 text-end">{t("openItems.settledAmount")}</th>
-                  <th className="px-4 py-3 text-end font-bold">{t("openItems.remainingAmount")}</th>
-                  <th className="px-4 py-3 text-center">{t("openItems.status")}</th>
-                  <th className="px-4 py-3 text-center">{t("openItems.actions")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 text-slate-900 font-medium">
-                {rawItems.map((item) => {
-                  const remAmt = parseFloat(item.openTransactionAmount || "0");
-                  const settledAmt = parseFloat(item.settledTransactionAmount || "0");
-                  const isSettled = remAmt <= 0;
-                  const isOverdue = new Date(item.dueDate) < new Date() && remAmt > 0;
-                  const daysOverdue = Math.max(
-                    0,
-                    Math.floor((Date.now() - new Date(item.dueDate).getTime()) / (1000 * 60 * 60 * 24))
-                  );
-
-                  return (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3">
-                        <span className="font-bold text-slate-900 block">
-                          {item.sourceDisplayNumber || item.sourceReference}
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {item.sourceReference}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
-                        <span className="font-semibold">{item.sourceType}</span>
-                        <span className="text-[10px] text-slate-500 block">
-                          {item.polarity === "Debit" ? t("common.debit") : t("common.credit")}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
-                        {item.documentDate}
-                      </td>
-
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={isOverdue ? "text-rose-700 font-bold" : "text-slate-700"}>
-                          {item.dueDate}
-                        </span>
-                        {daysOverdue > 0 && (
-                          <span className="text-[10px] text-rose-600 block">
-                            +{daysOverdue} {t("common.days")}
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3 text-end text-slate-800">
-                        <MoneyDisplay value={{ amount: item.originalTransactionAmount, currency: item.transactionCurrency }} />
-                      </td>
-
-                      <td className="px-4 py-3 text-end text-slate-600">
-                        <MoneyDisplay value={{ amount: item.settledTransactionAmount, currency: item.transactionCurrency }} />
-                      </td>
-
-                      <td className="px-4 py-3 text-end font-bold text-slate-900">
-                        <MoneyDisplay value={{ amount: item.openTransactionAmount, currency: item.transactionCurrency }} />
-                      </td>
-
-                      <td className="px-4 py-3 text-center">
-                        <FinancialStatusBadge
-                          status={item.status}
-                          isOverdue={isOverdue}
-                        />
-                      </td>
-
-                      <td className="px-4 py-3 text-center whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDetailItem(item)}
-                            className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-300"
-                          >
-                            {t("openItems.viewDetails")}
-                          </button>
-
-                          {!isSettled && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigate(
-                                  `/subledger/applications?partyId=${item.partyId}&direction=${item.direction}&sourceId=${item.id}`
-                                );
-                              }}
-                              className="px-2 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-300"
-                            >
-                              {t("openItems.applyNow")}
-                            </button>
-                          )}
-
-                          {!isSettled && (
-                            <button
-                              type="button"
-                              onClick={() => setSelectedWriteOffItem(item)}
-                              className="px-2 py-1 text-[11px] font-semibold text-rose-800 bg-rose-50 hover:bg-rose-100 rounded border border-rose-300"
-                            >
-                              {t("openItems.writeOff")}
-                            </button>
-                          )}
-
-                          {settledAmt > 0 && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setSelectedReversal({
-                                  applicationId: `app-${item.id}`,
-                                  openItemId: item.id
-                                })
-                              }
-                              className="px-2 py-1 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded border border-amber-300"
-                            >
-                              {t("reversal.title")}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {!isLoading && (
-          <div className="px-5">
-            <CursorPagination
-              page={cursorHistory.length + 1}
-              itemCount={rawItems.length}
-              pageSize={pageSize}
-              hasPrevious={cursorHistory.length > 0}
-              hasNext={Boolean(openItemsQuery.data?.nextCursor)}
-              onPrevious={() => {
-                if (cursorHistory.length === 0) return;
-                const nextHistory = cursorHistory.slice(0, -1);
-                setCursorHistory(nextHistory);
-                setCursor(nextHistory[nextHistory.length - 1]);
-              }}
-              onNext={() => {
-                if (!openItemsQuery.data?.nextCursor) return;
-                setCursorHistory((history) => [...history, cursor]);
-                setCursor(openItemsQuery.data.nextCursor ?? undefined);
-              }}
-              onPageSizeChange={(size) => { setPageSize(size); resetCursor(); }}
-              isDisabled={openItemsQuery.isFetching}
-            />
-          </div>
-        )}
-      </Surface>
-
-      {/* Item Detail Drawer */}
-      {selectedDetailItem && (
-        <OpenItemDetailDrawer
-          item={selectedDetailItem}
-          isOpen={Boolean(selectedDetailItem)}
-          onClose={() => setSelectedDetailItem(null)}
-          onTriggerReversal={(applicationId) => {
-            setSelectedReversal({
-              applicationId,
-              openItemId: selectedDetailItem.id
-            });
-            setSelectedDetailItem(null);
-          }}
-          onTriggerWriteOff={() => {
-            setSelectedWriteOffItem(selectedDetailItem);
-            setSelectedDetailItem(null);
-          }}
-        />
-      )}
-
-      {/* Write-Off Dialog */}
-      {selectedWriteOffItem && (
-        <WriteOffDialog
-          item={selectedWriteOffItem}
-          legalEntityId={legalEntityId}
-          isOpen={Boolean(selectedWriteOffItem)}
-          onClose={() => setSelectedWriteOffItem(null)}
-          onCompleted={() => {
-            setSelectedWriteOffItem(null);
-            setSuccessMessage(t("common.saved", "تم الحفظ بنجاح"));
-            void openItemsQuery.refetch();
-          }}
-        />
-      )}
-
-      {/* Reversal Dialog */}
-      {selectedReversal && (
-        <ReversalDialog
-          applicationId={selectedReversal.applicationId}
-          legalEntityId={legalEntityId}
-          isOpen={Boolean(selectedReversal)}
-          onClose={() => setSelectedReversal(null)}
-          onCompleted={() => {
-            setSelectedReversal(null);
-            setSuccessMessage(t("reversal.successMessage"));
-            void openItemsQuery.refetch();
-          }}
-        />
-      )}
-    </div>
+      {selectedDetailItem && <OpenItemDetailDrawer item={selectedDetailItem} isOpen onClose={() => setSelectedDetailItem(null)} onTriggerReversal={(applicationId) => { setSelectedReversal({ applicationId, openItemId: selectedDetailItem.id }); setSelectedDetailItem(null); }} onTriggerWriteOff={() => { setSelectedWriteOffItem(selectedDetailItem); setSelectedDetailItem(null); }} />}
+      {selectedWriteOffItem && <WriteOffDialog item={selectedWriteOffItem} legalEntityId={legalEntityId} isOpen onClose={() => setSelectedWriteOffItem(null)} onCompleted={() => { setSelectedWriteOffItem(null); setSuccessMessage(t("common.saved", "تم الحفظ بنجاح")); void openItemsQuery.refetch(); }} />}
+      {selectedReversal && <ReversalDialog applicationId={selectedReversal.applicationId} legalEntityId={legalEntityId} isOpen onClose={() => setSelectedReversal(null)} onCompleted={() => { setSelectedReversal(null); setSuccessMessage(t("reversal.successMessage")); void openItemsQuery.refetch(); }} />}
+    </ListPage>
   );
 }

@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
-import { CursorPagination } from "../../../../components/primitives/cursor-pagination.tsx";
+import { FilterBar } from "../../../../components/primitives/filter-bar.tsx";
+import { SearchField } from "../../../../components/primitives/search-field.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
+import { DataGrid, type DataGridColumn } from "../../../../components/grid/index.ts";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
-import { AccountingDataTable, type AccountingTableColumn } from "../../components/accounting-data-table.tsx";
 import { useTrialBalancePage } from "../../hooks/use-ledger-queries.ts";
 import type { TrialBalanceRowDto } from "../../types.ts";
 
@@ -24,6 +26,7 @@ export function TrialBalanceView({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("accountCodeAsc");
   const [cursor, setCursor] = useState<string | undefined>();
   const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
   const [pageSize, setPageSize] = useState(50);
@@ -32,6 +35,7 @@ export function TrialBalanceView({
     from: from || undefined,
     to: to || undefined,
     search: search || undefined,
+    sort,
     cursor,
     limit: pageSize
   });
@@ -43,58 +47,58 @@ export function TrialBalanceView({
   const isBalanced = difference < 0.0001;
   const resetCursor = () => { setCursor(undefined); setCursorHistory([]); };
 
-  const columns: readonly AccountingTableColumn<TrialBalanceRowDto>[] = [
+  const columns: readonly DataGridColumn<TrialBalanceRowDto>[] = [
     {
-      key: "code",
+      id: "code",
       header: t("account.code"),
       width: "160px",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         <span style={{ fontWeight: 600, fontFamily: "var(--font-mono, monospace)" }}>
           <bdi>{item.accountCode}</bdi>
         </span>
       )
     },
     {
-      key: "name",
+      id: "name",
       header: t("account.name"),
-      render: (item) => <span>{item.accountName}</span>
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => <span>{item.accountName}</span>
     },
     {
-      key: "debit",
+      id: "debit",
       header: t("journal.debit"),
       width: "160px",
       align: "end",
-      render: (item) => <MoneyDisplay value={{ amount: item.debit.toFixed(2), currency: item.currencyCode }} />
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => <MoneyDisplay value={{ amount: item.debit.toFixed(2), currency: item.currencyCode }} />
     },
     {
-      key: "credit",
+      id: "credit",
       header: t("journal.credit"),
       width: "160px",
       align: "end",
-      render: (item) => <MoneyDisplay value={{ amount: item.credit.toFixed(2), currency: item.currencyCode }} />
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => <MoneyDisplay value={{ amount: item.credit.toFixed(2), currency: item.currencyCode }} />
     },
     {
-      key: "balance",
+      id: "balance",
       header: t("account.balance"),
       width: "160px",
       align: "end",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         <span style={{ fontWeight: 700 }}>
           <MoneyDisplay value={{ amount: item.balance.toFixed(2), currency: item.currencyCode }} />
         </span>
       )
     },
     {
-      key: "actions",
+      id: "actions",
       header: t("common.actions"),
       width: "120px",
       align: "end",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         onOpenGeneralLedger ? (
           <Button
             size="compact"
             variant="secondary"
-            onPress={() => onOpenGeneralLedger(item.accountCode)}
+            onClick={() => onOpenGeneralLedger(item.accountCode)}
           >
             {t("reports.drillDown")}
           </Button>
@@ -124,18 +128,29 @@ export function TrialBalanceView({
           </p>
         </div>
 
-        {/* Date Filter */}
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+        {/* Shared server-side filter bar */}
+        <FilterBar
+          searchInput={
+            <SearchField
+              value={search}
+              onChange={(value) => { setSearch(value); resetCursor(); }}
+              placeholder={t("reports.accountSearchPlaceholder")}
+              isPending={isLoading}
+              ariaLabel={t("reports.accountSearch")}
+            />
+          }
+          activeFilterCount={(from ? 1 : 0) + (to ? 1 : 0) + (search ? 1 : 0) + (sort !== "accountCodeAsc" ? 1 : 0)}
+          onResetFilters={() => { setFrom(""); setTo(""); setSearch(""); setSort("accountCodeAsc"); resetCursor(); }}
+          isPending={isLoading}
+        >
           <div style={{ width: "150px" }}>
             <TextField label={t("reports.from")} value={from} onChange={(value) => { setFrom(value); resetCursor(); }} placeholder="2026-01-01" />
           </div>
           <div style={{ width: "150px" }}>
             <TextField label={t("reports.to")} value={to} onChange={(value) => { setTo(value); resetCursor(); }} placeholder="2026-12-31" />
           </div>
-          <div style={{ width: "220px" }}>
-            <TextField label={t("reports.accountSearch")} value={search} onChange={(value) => { setSearch(value); resetCursor(); }} placeholder={t("reports.accountSearchPlaceholder")} />
-          </div>
-        </div>
+          <label style={{ width: "190px" }}><span style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("reports.sortBy")}</span><select value={sort} onChange={(event) => { setSort(event.target.value); resetCursor(); }} style={{ width: "100%", padding: "0.5rem 0.75rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", background: "var(--color-surface-card)" }}><option value="accountCodeAsc">{t("reports.accountCodeOrder")}</option><option value="accountNameAsc">{t("reports.accountNameOrder")}</option></select></label>
+        </FilterBar>
       </div>
 
       {isLoading ? (
@@ -147,12 +162,7 @@ export function TrialBalanceView({
         </div>
       ) : (
         <>
-          <AccountingDataTable
-            data={rows}
-            columns={columns}
-            rowKey={(item) => item.accountId}
-            emptyMessage={t("reports.noDataFound")}
-          />
+          <DataGrid columns={columns} staticRows={rows} loading={isLoading} emptyMessage={t("reports.noDataFound")} hasActiveFilters={Boolean(from || to || search || sort !== "accountCodeAsc")} density="compact" />
 
           {/* Totals Footer Card */}
           <div
@@ -192,7 +202,8 @@ export function TrialBalanceView({
               </div>
             </div>
           </div>
-          <CursorPagination
+          <Pagination
+            mode="cursor"
             page={cursorHistory.length + 1}
             itemCount={rows.length}
             pageSize={pageSize}

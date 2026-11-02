@@ -551,15 +551,43 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
     public async Task<OpenItemPage> ListAsync(TenantId tenant, OpenItemListQuery query, CancellationToken ct)
     {
         var limit = Math.Clamp(query.Limit, 1, 200);
+        var sort = query.Sort ?? "idAsc";
+        if (sort is "idAsc")
+        {
+            await using var idConnection = await dataSource.OpenConnectionAsync(ct);
+            await using var idTransaction = await idConnection.BeginTransactionAsync(ct); await SetTenantAsync(idConnection, idTransaction, tenant, ct);
+            await using var idCommand = new NpgsqlCommand("select id,legal_entity_id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,settled_transaction_amount,open_transaction_amount,base_currency,original_base_amount,settled_base_carrying_amount,open_base_carrying_amount,control_account_role,control_account_reference,status,row_version from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or party_id=$3) and ($4::text is null or direction=$4) and (not $5 or is_open) and ($6::uuid is null or id>$6) and ($8::text is null or (source_display_number is not null and lower(source_display_number) like lower($8)||'%') or lower(source_reference) like lower($8)||'%') and ($9::date is null or due_date >= $9) and ($10::date is null or due_date <= $10) and ($11::text is null or transaction_currency=$11) and (not $12 or (is_open and due_date < $13)) and ($14::text is null or status=$14) order by id limit $7", idConnection, idTransaction);
+            Add(idCommand, tenant.Value, query.LegalEntityId.Value, (object?)query.PartyId ?? DBNull.Value, Db(query.Direction?.ToString()), query.OpenOnly, Db(ParseCursor(query.Cursor)), limit + 1,
+                Db(query.Search), Db(query.DueFrom), Db(query.DueTo), Db(query.CurrencyCode), query.OverdueOnly, Db(query.AsOfDate), Db(query.Status));
+            return await ReadPageAsync(idCommand, limit, sort, ct);
+        }
+
+        var descending = sort == "dueDateDesc";
+        var (cursorDate, cursorId) = ParseDateCursor(query.Cursor, sort);
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, transaction, tenant, ct);
-        await using var command = new NpgsqlCommand("select id,legal_entity_id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,settled_transaction_amount,open_transaction_amount,base_currency,original_base_amount,settled_base_carrying_amount,open_base_carrying_amount,control_account_role,control_account_reference,status,row_version from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or party_id=$3) and ($4::text is null or direction=$4) and (not $5 or is_open) and ($6::uuid is null or id>$6) and ($8::text is null or (source_display_number is not null and lower(source_display_number) like lower($8)||'%') or lower(source_reference) like lower($8)||'%') and ($9::date is null or due_date >= $9) and ($10::date is null or due_date <= $10) and ($11::text is null or transaction_currency=$11) and (not $12 or (is_open and due_date < $13)) and ($14::text is null or status=$14) order by id limit $7", connection, transaction);
-        Add(command, tenant.Value, query.LegalEntityId.Value, (object?)query.PartyId ?? DBNull.Value, Db(query.Direction?.ToString()), query.OpenOnly, Db(ParseCursor(query.Cursor)), limit + 1,
+        var comparison = descending ? "<" : ">";
+        var order = descending ? "desc" : "asc";
+        await using var command = new NpgsqlCommand($"select id,legal_entity_id,party_id,direction,polarity,source_type,source_reference,source_schedule_reference,source_display_number,document_date,posting_date,due_date,transaction_currency,original_transaction_amount,settled_transaction_amount,open_transaction_amount,base_currency,original_base_amount,settled_base_carrying_amount,open_base_carrying_amount,control_account_role,control_account_reference,status,row_version from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or party_id=$3) and ($4::text is null or direction=$4) and (not $5 or is_open) and ($6::date is null or ($7::uuid is null) or (due_date,id) {comparison} ($6,$7)) and ($9::text is null or (source_display_number is not null and lower(source_display_number) like lower($9)||'%') or lower(source_reference) like lower($9)||'%') and ($10::date is null or due_date >= $10) and ($11::date is null or due_date <= $11) and ($12::text is null or transaction_currency=$12) and (not $13 or (is_open and due_date < $14)) and ($15::text is null or status=$15) order by due_date {order}, id {order} limit $8", connection, transaction);
+        Add(command, tenant.Value, query.LegalEntityId.Value, (object?)query.PartyId ?? DBNull.Value, Db(query.Direction?.ToString()), query.OpenOnly, Db(cursorDate), Db(cursorId), limit + 1,
             Db(query.Search), Db(query.DueFrom), Db(query.DueTo), Db(query.CurrencyCode), query.OverdueOnly, Db(query.AsOfDate), Db(query.Status));
+        return await ReadPageAsync(command, limit, sort, ct);
+    }
+
+    public static bool ValidateCursor(string cursor, string sort) => sort == "idAsc"
+        ? Guid.TryParse(cursor, out _)
+        : TryDecodeDateCursor(cursor, sort, out _, out _);
+
+    private static async Task<OpenItemPage> ReadPageAsync(NpgsqlCommand command, int limit, string sort, CancellationToken ct)
+    {
         var rows = new List<PartyOpenItemResult>(); await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) rows.Add(ReadItem(reader));
         var hasMore = rows.Count > limit; if (hasMore) rows.RemoveAt(rows.Count - 1);
-        return new(rows, hasMore && rows.Count > 0 ? rows[^1].Id.ToString("D") : null);
+        if (!hasMore || rows.Count == 0) return new(rows, null);
+        var last = rows[^1];
+        if (sort == "idAsc") return new(rows, last.Id.ToString("D"));
+        var value = $"{sort}|{last.DueDate:yyyy-MM-dd}|{last.Id:D}";
+        return new(rows, Convert.ToBase64String(Encoding.UTF8.GetBytes(value)));
     }
 
     public async Task<PartyOpenItemResult?> GetOpenItemAsync(TenantId tenant, LegalEntityId entity, Guid openItemId, CancellationToken ct)
@@ -1388,6 +1416,19 @@ public sealed class SubledgerRepository(NpgsqlDataSource dataSource, ITransactio
             : throw new SubledgerException("subledger.ledger_configuration_reference_invalid", "The open item has no valid historical Ledger configuration reference.");
     private static object Db(object? value) => value ?? DBNull.Value;
     private static Guid? ParseCursor(string? value) => Guid.TryParse(value, out var id) ? id : null;
+    private static (DateOnly? Date, Guid? Id) ParseDateCursor(string? value, string sort) =>
+        TryDecodeDateCursor(value, sort, out var date, out var id) ? (date, id) : (null, null);
+    private static bool TryDecodeDateCursor(string? value, string sort, out DateOnly date, out Guid id)
+    {
+        date = default; id = default;
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        try
+        {
+            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(value)).Split('|', StringSplitOptions.None);
+            return parts.Length == 3 && parts[0] == sort && DateOnly.TryParseExact(parts[1], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date) && Guid.TryParse(parts[2], out id);
+        }
+        catch (FormatException) { return false; }
+    }
     private static void Add(NpgsqlCommand command, params object?[] values) { foreach (var value in values) command.Parameters.AddWithValue(value ?? DBNull.Value); }
 
     private sealed record LockedItem(Guid Id, Guid PartyId, string Direction, string Polarity, string Currency, decimal OpenAmount, decimal SettledAmount, string BaseCurrency, decimal OpenBase, string ControlRole, string ControlReference, string ControlConfiguration, string Status, long RowVersion);

@@ -2,11 +2,13 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
-import { CursorPagination } from "../../../../components/primitives/cursor-pagination.tsx";
+import { FilterBar } from "../../../../components/primitives/filter-bar.tsx";
+import { SearchField } from "../../../../components/primitives/search-field.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
+import { DataGrid, type DataGridColumn } from "../../../../components/grid/index.ts";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
-import { AccountingDataTable, type AccountingTableColumn } from "../../components/accounting-data-table.tsx";
 import { EntryExplanationModal } from "../entries/entry-explanation-modal.tsx";
 import { useGeneralLedger, useAccounts } from "../../hooks/use-ledger-queries.ts";
 import type { GeneralLedgerRowDto } from "../../types.ts";
@@ -53,93 +55,83 @@ export function GeneralLedgerView({
 
   const items = pageData?.items ?? [];
 
-  // Running balance calculation
-  let running = 0;
-  const itemsWithRunningBalance = items.map((row) => {
-    running += row.debit - row.credit;
-    return {
-      ...row,
-      runningBalance: row.runningBalance ?? running
-    };
-  });
-
   const resetCursor = () => {
     setCursor(undefined);
     setCursorHistory([]);
   };
 
-  const columns: readonly AccountingTableColumn<GeneralLedgerRowDto & { runningBalance: number }>[] = [
+  const columns: readonly DataGridColumn<GeneralLedgerRowDto>[] = [
     {
-      key: "postingDate",
+      id: "postingDate",
       header: t("journal.entryDate"),
       width: "120px",
-      render: (item) => <LocalDateDisplay value={item.postingDate} />
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => <LocalDateDisplay value={item.postingDate} />
     },
     {
-      key: "entryNumber",
+      id: "entryNumber",
       header: t("journal.entryNumber"),
       width: "160px",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         <span style={{ fontWeight: 600, fontFamily: "var(--font-mono, monospace)" }}>
           <bdi>{item.entryNumber}</bdi>
         </span>
       )
     },
     {
-      key: "account",
+      id: "account",
       header: t("journal.accountCodeName"),
       width: "200px",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         <span>
           <bdi>{item.accountCode}</bdi> — {item.accountName}
         </span>
       )
     },
     {
-      key: "source",
+      id: "source",
       header: t("explanation.sourceModule"),
       width: "140px",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         <span>
           {item.sourceModule} ({item.sourceReference})
         </span>
       )
     },
     {
-      key: "debit",
+      id: "debit",
       header: t("journal.debit"),
       width: "130px",
       align: "end",
-      render: (item) => <MoneyDisplay value={{ amount: item.debit.toFixed(2), currency: item.currencyCode }} />
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => <MoneyDisplay value={{ amount: item.debit.toFixed(2), currency: item.currencyCode }} />
     },
     {
-      key: "credit",
+      id: "credit",
       header: t("journal.credit"),
       width: "130px",
       align: "end",
-      render: (item) => <MoneyDisplay value={{ amount: item.credit.toFixed(2), currency: item.currencyCode }} />
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => <MoneyDisplay value={{ amount: item.credit.toFixed(2), currency: item.currencyCode }} />
     },
     {
-      key: "runningBalance",
+      id: "runningBalance",
       header: t("reports.runningBalance"),
       width: "140px",
       align: "end",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         <span style={{ fontWeight: 600 }}>
-          <MoneyDisplay value={{ amount: item.runningBalance.toFixed(2), currency: baseCurrency }} />
+          {item.runningBalance === null || item.runningBalance === undefined ? "—" : <MoneyDisplay value={{ amount: item.runningBalance.toFixed(2), currency: baseCurrency }} />}
         </span>
       )
     },
     {
-      key: "actions",
+      id: "actions",
       header: t("common.actions"),
       width: "120px",
       align: "end",
-      render: (item) => (
+      sortable: false, filterable: false, cellRenderer: ({ row: item }) => (
         <Button
           size="compact"
           variant="secondary"
-          onPress={() => setExplainEntryId(item.entryId)}
+          onClick={() => setExplainEntryId(item.entryId)}
         >
           {t("explanation.whyThisAccount")}
         </Button>
@@ -169,7 +161,21 @@ export function GeneralLedgerView({
         </div>
       </div>
 
-      {/* Filter toolbar */}
+      {/* Shared server-side filter toolbar */}
+      <FilterBar
+        searchInput={
+          <SearchField
+            value={entryNumber}
+            onChange={(value) => { setEntryNumber(value); resetCursor(); }}
+            placeholder={t("journal.entryNumber")}
+            isPending={isLoading}
+            ariaLabel={t("journal.entryNumber")}
+          />
+        }
+        activeFilterCount={(from ? 1 : 0) + (to ? 1 : 0) + (selectedAccountId ? 1 : 0) + (entryNumber ? 1 : 0)}
+        onResetFilters={() => { setFrom(""); setTo(""); setSelectedAccountId(""); setEntryNumber(""); resetCursor(); }}
+        isPending={isLoading}
+      >
       <div
         style={{
           display: "grid",
@@ -218,25 +224,17 @@ export function GeneralLedgerView({
           placeholder="2026-12-31"
         />
 
-        <TextField
-          label={t("journal.entryNumber")}
-          value={entryNumber}
-          onChange={(value) => { setEntryNumber(value); resetCursor(); }}
-        />
       </div>
+      </FilterBar>
 
       {isLoading ? (
         <div style={{ padding: "3rem", textAlign: "center" }}>{t("common.loading")}</div>
       ) : (
         <>
-          <AccountingDataTable
-            data={itemsWithRunningBalance}
-            columns={columns}
-            rowKey={(item) => `${item.entryId}-${item.lineId}`}
-            emptyMessage={t("reports.noTransactionsFound")}
-          />
+          <DataGrid columns={columns} staticRows={items} loading={isLoading} emptyMessage={t("reports.noTransactionsFound")} hasActiveFilters={Boolean(from || to || selectedAccountId || entryNumber)} density="compact" />
 
-          <CursorPagination
+          <Pagination
+            mode="cursor"
             page={cursorHistory.length + 1}
             itemCount={items.length}
             pageSize={pageSize}

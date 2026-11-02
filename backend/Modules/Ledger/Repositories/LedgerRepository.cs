@@ -201,20 +201,34 @@ public sealed class LedgerRepository(
     }
 
     public async Task<JournalEntryPageDto> ListEntriesPageAsync(TenantId tenant, LegalEntityId entity, DateOnly? from, DateOnly? to,
-        string? search, string? status, string? cursor, int limit, CancellationToken ct)
+        string? search, string? status, string? cursor, int limit, CancellationToken ct, string? sort = null)
     {
         limit = Math.Clamp(limit, 1, 100);
+        var sortKey = sort?.Trim() switch
+        {
+            "postingDateAsc" => "postingDateAsc",
+            "postingDateDesc" or null or "" => "postingDateDesc",
+            _ => throw new LedgerDomainException("ledger.sort_invalid", "The journal-entry sort is invalid.")
+        };
+        var descending = sortKey == "postingDateDesc";
+        var order = descending ? "desc" : "asc";
+        var cursorOperator = descending ? "<" : ">";
         DateOnly? cursorDate = null; string? cursorNumber = null; Guid? cursorId = null;
         if (!string.IsNullOrWhiteSpace(cursor))
         {
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|');
-            if (parts.Length != 3 || !DateOnly.TryParse(parts[0], out var parsedDate) || !Guid.TryParse(parts[2], out var parsedId))
+            string[] parts;
+            try { parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|'); }
+            catch (FormatException) { throw new LedgerDomainException("ledger.cursor_invalid", "The journal-entry cursor is invalid."); }
+            if (parts.Length == 4 && !string.Equals(parts[0], sortKey, StringComparison.Ordinal))
+                throw new LedgerDomainException("ledger.cursor_invalid", "The journal-entry cursor does not match the requested sort.");
+            var offset = parts.Length == 4 ? 1 : 0;
+            if ((parts.Length != 3 && parts.Length != 4) || !DateOnly.TryParse(parts[offset], out var parsedDate) || !Guid.TryParse(parts[offset + 2], out var parsedId))
                 throw new LedgerDomainException("ledger.cursor_invalid", "The journal-entry cursor is invalid.");
-            cursorDate = parsedDate; cursorNumber = parts[1]; cursorId = parsedId;
+            cursorDate = parsedDate; cursorNumber = parts[offset + 1]; cursorId = parsedId;
         }
 
         await using var connection = await OpenAsync(tenant, ct);
-        const string sql = """
+        var sql = $"""
             with page as (
                 select e.id,e.journal_id,e.fact_id,e.entry_number,e.posting_date,p.start_date,e.status,e.currency_code
                 from finance_ledger.journal_entry e
@@ -224,15 +238,15 @@ public sealed class LedgerRepository(
                   and ($4::date is null or e.posting_date <= $4)
                   and ($5::text is null or e.entry_number ilike $5 || '%')
                   and ($6::text is null or e.status=$6)
-                  and ($7::date is null or (e.posting_date,e.entry_number,e.id) < ($7,$8,$9))
-                order by e.posting_date desc,e.entry_number desc,e.id desc
+                  and ($7::date is null or (e.posting_date,e.entry_number,e.id) {cursorOperator} ($7,$8,$9))
+                order by e.posting_date {order},e.entry_number {order},e.id {order}
                 limit $10
             )
             select page.id,page.journal_id,page.fact_id,page.entry_number,page.posting_date,page.start_date,page.status,page.currency_code,
                    l.sequence_no,l.account_id,l.debit,l.credit,l.currency_code,l.amount,l.semantic_role,l.description
             from page
             join finance_ledger.journal_entry_line l on l.tenant_id=$1 and l.legal_entity_id=$2 and l.journal_entry_id=page.id
-            order by page.posting_date desc,page.entry_number desc,page.id desc,l.sequence_no,l.id
+            order by page.posting_date {order},page.entry_number {order},page.id {order},l.sequence_no,l.id
             """;
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(entity.Value);
@@ -265,7 +279,7 @@ public sealed class LedgerRepository(
         }).ToArray();
         var last = items.LastOrDefault();
         var next = hasMore && last is not null
-            ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{last.PostingDate:yyyy-MM-dd}|{last.EntryNumber}|{last.Id}"))
+            ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{sortKey}|{last.PostingDate:yyyy-MM-dd}|{last.EntryNumber}|{last.Id}"))
             : null;
         return new JournalEntryPageDto(items, next);
     }

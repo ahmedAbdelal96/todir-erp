@@ -189,16 +189,28 @@ public sealed class LedgerOperationsRepository(
     }
 
     public async Task<TrialBalancePageDto> GetTrialBalancePageAsync(TenantId tenant, LegalEntityId entity, DateOnly? from, DateOnly? to,
-        string? search, string? cursor, int limit, CancellationToken ct)
+        string? search, string? cursor, int limit, CancellationToken ct, string? sort = null)
     {
         limit = Math.Clamp(limit, 1, 200);
+        var sortKey = sort?.Trim() switch
+        {
+            "accountNameAsc" => "accountNameAsc",
+            "accountCodeAsc" or null or "" => "accountCodeAsc",
+            _ => throw new LedgerDomainException("ledger.sort_invalid", "The trial-balance sort is invalid.")
+        };
+        var sortExpression = sortKey == "accountNameAsc" ? "name_en,id" : "code,id";
         string? cursorCode = null; Guid? cursorId = null;
         if (!string.IsNullOrWhiteSpace(cursor))
         {
-            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|');
-            if (parts.Length != 2 || !Guid.TryParse(parts[1], out var parsedId))
+            string[] parts;
+            try { parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|'); }
+            catch (FormatException) { throw new LedgerDomainException("ledger.cursor_invalid", "The trial-balance cursor is invalid."); }
+            if (parts.Length == 3 && !string.Equals(parts[0], sortKey, StringComparison.Ordinal))
+                throw new LedgerDomainException("ledger.cursor_invalid", "The trial-balance cursor does not match the requested sort.");
+            var offset = parts.Length == 3 ? 1 : 0;
+            if ((parts.Length != 2 && parts.Length != 3) || !Guid.TryParse(parts[offset + 1], out var parsedId))
                 throw new LedgerDomainException("ledger.cursor_invalid", "The trial-balance cursor is invalid.");
-            cursorCode = parts[0]; cursorId = parsedId;
+            cursorCode = parts[offset]; cursorId = parsedId;
         }
 
         await using var connection = await OpenAsync(tenant, ct);
@@ -210,7 +222,7 @@ public sealed class LedgerOperationsRepository(
             await summaryReader.ReadAsync(ct);
             var totalCount = summaryReader.GetInt32(0); var totalDebit = summaryReader.GetDecimal(1); var totalCredit = summaryReader.GetDecimal(2);
             await summaryReader.CloseAsync();
-            const string pageSql = """
+            var pageSql = $"""
                 with grouped as (
                     select a.id,a.code,a.name_en,coalesce(sum(l.base_debit),0) debit,coalesce(sum(l.base_credit),0) credit,coalesce(sum(l.base_debit-l.base_credit),0) balance,max(e.base_currency_code) currency_code
                     from finance_ledger.journal_entry e
@@ -221,8 +233,8 @@ public sealed class LedgerOperationsRepository(
                 )
                 select id,code,name_en,debit,credit,balance,currency_code
                 from grouped
-                where ($6::text is null or (code,id) > ($6,$7))
-                order by code,id
+                where ($6::text is null or ({sortExpression}) > ($6,$7))
+                order by {sortExpression}
                 limit $8
                 """;
             await using var page = new NpgsqlCommand(pageSql, connection);
@@ -232,7 +244,7 @@ public sealed class LedgerOperationsRepository(
             while (await reader.ReadAsync(ct)) rows.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetDecimal(3), reader.GetDecimal(4), reader.GetDecimal(5), reader.GetString(6)));
             var hasMore = rows.Count > limit; if (hasMore) rows.RemoveAt(rows.Count - 1);
             var last = rows.LastOrDefault();
-            var next = hasMore && last is not null ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{last.AccountCode}|{last.AccountId}")) : null;
+            var next = hasMore && last is not null ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{sortKey}|{(sortKey == "accountNameAsc" ? last.AccountName : last.AccountCode)}|{last.AccountId}")) : null;
             return new TrialBalancePageDto(rows, next, totalCount, totalDebit, totalCredit);
         }
     }
