@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../../../components/pages/page-header.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
+import { CursorPagination } from "../../../components/primitives/cursor-pagination.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { FinancialStatusBadge } from "../components/financial-status-badge.tsx";
@@ -23,6 +24,9 @@ export function OpenItemsPage(): React.JSX.Element {
   const [directionFilter, setDirectionFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("openOnly");
   const [currencyFilter, setCurrencyFilter] = useState<string>("");
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
+  const [pageSize, setPageSize] = useState(50);
 
   // Modals & Drawers state
   const [selectedDetailItem, setSelectedDetailItem] = useState<PartyOpenItem | null>(null);
@@ -34,12 +38,17 @@ export function OpenItemsPage(): React.JSX.Element {
     const f: {
       legalEntityId: string;
       limit: number;
+      cursor?: string | undefined;
       direction?: SubledgerDirection;
       openOnly?: boolean;
       currencyCode?: string;
+      search?: string;
+      overdueOnly?: boolean;
+      asOfDate?: string;
     } = {
       legalEntityId,
-      limit: 200
+      limit: pageSize,
+      cursor,
     };
 
     if (directionFilter === "receivable") {
@@ -50,35 +59,28 @@ export function OpenItemsPage(): React.JSX.Element {
 
     if (statusFilter === "openOnly") {
       f.openOnly = true;
+    } else if (statusFilter === "overdueOnly") {
+      f.openOnly = true;
+      f.overdueOnly = true;
+      f.asOfDate = new Date().toISOString().slice(0, 10);
+    } else {
+      f.openOnly = false;
     }
 
     if (currencyFilter) {
       f.currencyCode = currencyFilter;
     }
 
+    if (searchTerm.trim()) f.search = searchTerm.trim();
+
     return f;
-  }, [legalEntityId, directionFilter, statusFilter, currencyFilter]);
+  }, [legalEntityId, directionFilter, statusFilter, currencyFilter, searchTerm, cursor, pageSize]);
 
   const openItemsQuery = useOpenItemsQuery(queryFilter);
 
   const rawItems = openItemsQuery.data?.items ?? [];
   const isLoading = openItemsQuery.isLoading;
-
-  // Filter items by search query & overdue filter
-  const filteredItems = useMemo(() => {
-    const now = new Date();
-    return rawItems.filter((i) => {
-      const isOverdue = new Date(i.dueDate) < now && parseFloat(i.openTransactionAmount) > 0;
-      if (statusFilter === "overdueOnly" && !isOverdue) return false;
-
-      if (!searchTerm.trim()) return true;
-      const term = searchTerm.toLowerCase();
-      const matchDoc = i.sourceReference?.toLowerCase().includes(term);
-      const matchNum = i.sourceDisplayNumber?.toLowerCase().includes(term);
-      const matchType = i.sourceType?.toLowerCase().includes(term);
-      return Boolean(matchDoc || matchNum || matchType);
-    });
-  }, [rawItems, searchTerm, statusFilter]);
+  const resetCursor = () => { setCursor(undefined); setCursorHistory([]); };
 
   return (
     <div className="space-y-6">
@@ -115,7 +117,7 @@ export function OpenItemsPage(): React.JSX.Element {
               type="text"
               placeholder={t("openItems.searchPlaceholder")}
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); resetCursor(); }}
               className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded bg-white text-slate-900 shadow-sm focus:border-slate-800 focus:outline-none"
             />
           </div>
@@ -128,7 +130,7 @@ export function OpenItemsPage(): React.JSX.Element {
             <select
               id="open-item-dir"
               value={directionFilter}
-              onChange={(e) => setDirectionFilter(e.target.value)}
+              onChange={(e) => { setDirectionFilter(e.target.value); resetCursor(); }}
               className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded bg-white text-slate-900 shadow-sm focus:border-slate-800 focus:outline-none"
             >
               <option value="all">{t("openItems.allDirections")}</option>
@@ -145,7 +147,7 @@ export function OpenItemsPage(): React.JSX.Element {
             <select
               id="open-item-status"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => { setStatusFilter(e.target.value); resetCursor(); }}
               className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded bg-white text-slate-900 shadow-sm focus:border-slate-800 focus:outline-none"
             >
               <option value="openOnly">{t("openItems.openOnly")}</option>
@@ -164,7 +166,7 @@ export function OpenItemsPage(): React.JSX.Element {
               type="text"
               placeholder={t("common.currencyPlaceholder")}
               value={currencyFilter}
-              onChange={(e) => setCurrencyFilter(e.target.value.toUpperCase())}
+              onChange={(e) => { setCurrencyFilter(e.target.value.toUpperCase()); resetCursor(); }}
               className="w-full px-3 py-1.5 text-xs font-medium border border-slate-300 rounded bg-white text-slate-900 shadow-sm focus:border-slate-800 focus:outline-none"
             />
           </div>
@@ -175,7 +177,7 @@ export function OpenItemsPage(): React.JSX.Element {
       <Surface variant="card" padding="none" className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
           <span className="text-xs font-bold text-slate-700">
-            {t("openItemsPage.totalDisplayed")} {filteredItems.length}
+            {t("openItemsPage.totalDisplayed")} {rawItems.length}
           </span>
           <Button
             variant="secondary"
@@ -192,7 +194,7 @@ export function OpenItemsPage(): React.JSX.Element {
           <div className="p-8 text-center text-slate-500 text-sm">
             {t("openItems.loadingText")}
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : rawItems.length === 0 ? (
           <div className="p-10 text-center space-y-2">
             <h4 className="text-sm font-bold text-slate-800">{t("openItems.emptyTitle")}</h4>
             <p className="text-xs text-slate-500">{t("openItems.emptyDescription")}</p>
@@ -214,7 +216,7 @@ export function OpenItemsPage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-slate-900 font-medium">
-                {filteredItems.map((item) => {
+                {rawItems.map((item) => {
                   const remAmt = parseFloat(item.openTransactionAmount || "0");
                   const settledAmt = parseFloat(item.settledTransactionAmount || "0");
                   const isSettled = remAmt <= 0;
@@ -331,6 +333,31 @@ export function OpenItemsPage(): React.JSX.Element {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {!isLoading && (
+          <div className="px-5">
+            <CursorPagination
+              page={cursorHistory.length + 1}
+              itemCount={rawItems.length}
+              pageSize={pageSize}
+              hasPrevious={cursorHistory.length > 0}
+              hasNext={Boolean(openItemsQuery.data?.nextCursor)}
+              onPrevious={() => {
+                if (cursorHistory.length === 0) return;
+                const nextHistory = cursorHistory.slice(0, -1);
+                setCursorHistory(nextHistory);
+                setCursor(nextHistory[nextHistory.length - 1]);
+              }}
+              onNext={() => {
+                if (!openItemsQuery.data?.nextCursor) return;
+                setCursorHistory((history) => [...history, cursor]);
+                setCursor(openItemsQuery.data.nextCursor ?? undefined);
+              }}
+              onPageSizeChange={(size) => { setPageSize(size); resetCursor(); }}
+              isDisabled={openItemsQuery.isFetching}
+            />
           </div>
         )}
       </Surface>

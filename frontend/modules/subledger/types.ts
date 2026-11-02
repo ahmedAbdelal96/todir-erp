@@ -53,7 +53,7 @@ export interface OpenItemListFilter {
   readonly direction?: SubledgerDirection;
   readonly openOnly?: boolean;
   readonly limit?: number;
-  readonly cursor?: string;
+  readonly cursor?: string | undefined;
   readonly search?: string;
   readonly dueFrom?: string;
   readonly dueTo?: string;

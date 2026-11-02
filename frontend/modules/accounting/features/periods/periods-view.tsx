@@ -260,7 +260,7 @@ export function PeriodsView({
       {/* Year Filter Tabs */}
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
         <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-secondary, #334155)", marginInlineEnd: "0.25rem" }}>
-          السنة المالية:
+          {t("period.fiscalYearLabel")}
         </span>
         <button
           type="button"

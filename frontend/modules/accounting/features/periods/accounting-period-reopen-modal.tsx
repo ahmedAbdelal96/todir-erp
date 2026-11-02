@@ -81,7 +81,7 @@ export const AccountingPeriodReopenModal: React.FC<AccountingPeriodReopenModalPr
             fontWeight: 600
           }}
         >
-          ⚠️ {t("reopen.warningMessage")}
+          <span aria-hidden="true">{String.fromCodePoint(0x26a0, 0xfe0f)}</span> {t("reopen.warningMessage")}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>

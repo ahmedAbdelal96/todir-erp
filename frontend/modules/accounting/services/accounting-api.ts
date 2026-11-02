@@ -14,6 +14,8 @@ import type {
   GoLiveApprovalView,
   OwnerFinancialSummary,
   ReconciliationIssueView,
+  ReconciliationIssuePageDto,
+  ReconciliationPageDto,
   SubledgerReconciliationView,
   ReopenPeriodRequest,
   StatementKind
@@ -51,6 +53,19 @@ export const accountingApi = {
     );
   },
 
+  listReconciliationsPage: async (
+    legalEntityId: string,
+    params?: { type?: string | undefined; asOf?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+  ): Promise<ReconciliationPageDto> => {
+    const search = new URLSearchParams();
+    if (params?.type) search.set("type", params.type);
+    if (params?.asOf) search.set("asOf", params.asOf);
+    if (params?.cursor) search.set("cursor", params.cursor);
+    if (params?.limit) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return httpClient<ReconciliationPageDto>(`/api/v1/accounting/legal-entities/${legalEntityId}/reconciliations/page${qs ? `?${qs}` : ""}`);
+  },
+
   getReconciliation: async (legalEntityId: string, runId: string): Promise<SubledgerReconciliationView> => {
     return httpClient<SubledgerReconciliationView>(`/api/v1/accounting/legal-entities/${legalEntityId}/reconciliations/${runId}`);
   },
@@ -66,6 +81,18 @@ export const accountingApi = {
     return httpClient<readonly ReconciliationIssueView[]>(
       `/api/v1/accounting/legal-entities/${legalEntityId}/reconciliation-issues${qs ? `?${qs}` : ""}`
     );
+  },
+
+  listReconciliationIssuesPage: async (
+    legalEntityId: string,
+    params?: { status?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+  ): Promise<ReconciliationIssuePageDto> => {
+    const search = new URLSearchParams();
+    if (params?.status) search.set("status", params.status);
+    if (params?.cursor) search.set("cursor", params.cursor);
+    if (params?.limit) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return httpClient<ReconciliationIssuePageDto>(`/api/v1/accounting/legal-entities/${legalEntityId}/reconciliation-issues/page${qs ? `?${qs}` : ""}`);
   },
 
   getCloseRun: async (legalEntityId: string, periodId: string): Promise<CloseRunView> => {

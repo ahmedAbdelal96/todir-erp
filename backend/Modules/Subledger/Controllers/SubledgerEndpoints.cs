@@ -15,7 +15,7 @@ public static class SubledgerEndpoints
     public static void Map(WebApplication app)
     {
         var group = app.MapGroup("/api/v1/subledger").RequireAuthorization().RequireRateLimiting("api").WithTags("Subledger");
-        group.MapGet("/open-items", async (Guid partyId, Guid legalEntityId, string? direction, bool? openOnly, int? limit, string? cursor, string? search,
+        group.MapGet("/open-items", async (Guid? partyId, Guid legalEntityId, string? direction, bool? openOnly, int? limit, string? cursor, string? search,
             DateOnly? dueFrom, DateOnly? dueTo, string? currencyCode, bool? overdueOnly, DateOnly? asOfDate, string? status,
             HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, SubledgerService subledger, CancellationToken ct) =>
         {

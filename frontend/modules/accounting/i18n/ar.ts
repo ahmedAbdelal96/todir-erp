@@ -165,6 +165,7 @@ export const ar = {
   },
   period: {
     fiscalYearsAndPeriods: "السنوات المالية والفترات المحاسبية",
+    fiscalYearLabel: "السنة المالية:",
     description: "إدارة الفترات المالية والتحكم في إقفالها لحماية السجلات المحاسبية",
     newFiscalYear: "سنة مالية جديدة",
     newPeriod: "فترة محاسبية جديدة",
@@ -357,7 +358,14 @@ export const ar = {
     runningBalance: "الرصيد التراكمي",
     loadMore: "تحميل المزيد من الحركات...",
     noDataFound: "لا توجد أرصدة مسجلة في هذه الفترة",
-    noTransactionsFound: "لا توجد حركات مسجلة مطابقة لخيارات التصفية"
+    noTransactionsFound: "لا توجد حركات مسجلة مطابقة لخيارات التصفية",
+    allStatuses: "كل الحالات"
+    ,posted: "مرحل"
+    ,draft: "مسودة"
+    ,accountSearch: "بحث في الحسابات"
+    ,accountSearchPlaceholder: "الكود أو الاسم"
+    ,loadError: "تعذر تحميل التقرير. حاول مرة أخرى."
+    ,retry: "إعادة المحاولة"
   },
   reconciliation: {
     title: "مطابقة حسابات الرقابة (العملاء / الموردين / المخزون)",
@@ -408,7 +416,16 @@ export const ar = {
     projectionBalance: "الرصيد في التجميعات",
     difference: "الفارق",
     statusMatched: "متطابق",
-    statusDiscrepancy: "يوجد فارق"
+    statusDiscrepancy: "يوجد فارق",
+    arCode: "110100",
+    arDescription: "مطابقة حساب مراقبة الذمم المدينة مع سجلات وفواتير مبيعات العملاء.",
+    runArAction: "تشغيل مطابقة العملاء (AR)",
+    apCode: "210100",
+    apDescription: "مطابقة حساب مراقبة الذمم الدائنة مع فواتير ومستحقات الموردين.",
+    runApAction: "تشغيل مطابقة الموردين (AP)",
+    inventoryCode: "110400",
+    inventoryDescription: "مطابقة تقييم حركات المستودعات والبضاعة المتاحة مع حساب الأستاذ العام.",
+    runInventoryAction: "تشغيل مطابقة المخزون (Inventory)"
   },
   owner: {
     title: "لوحة الرؤية المالية للمالك والإدارة التنفيذية",
@@ -441,7 +458,13 @@ export const ar = {
     linkReconciliation: "سجلات مطابقة حسابات الرقابة",
     linkReconciliationDesc: "مراجعة مطابقة دفاتر الموردين والعملاء والمخزون",
     linkEntries: "سجل القيود المحاسبية",
-    linkEntriesDesc: "استعراض وتدقيق قيود اليومية التفصيلية"
+    linkEntriesDesc: "استعراض وتدقيق قيود اليومية التفصيلية",
+    viewBlockingDetails: "عرض تفاصيل العوائق في مركز السلامة المالية ←",
+    cashBookCode: "1102",
+    receivablesCode: "AR",
+    payablesCode: "AP",
+    inventoryCode: "1104",
+    profitCode: "P&L"
   },
   health: {
     title: "مركز الرقابة والصحة المحاسبية",
@@ -469,7 +492,11 @@ export const ar = {
     filterInfo: "السليمة فقط",
     noItemsFound: "لا توجد بنود مطابقة لخيارات التصفية",
     actionReconcile: "تشغيل المطابقة",
-    actionViewStatements: "معاينة القوائم"
+    actionViewStatements: "معاينة القوائم",
+    severityHeading: "مستوى الأهمية",
+    statusHeading: "الحالة التشغيلية",
+    checkHeading: "الفحص والتحقق الرقابي",
+    detailsHeading: "البيان والتفاصيل التشغيلية"
   },
   statements: {
     title: "القوائم المالية والتقارير القانونية",
@@ -503,7 +530,17 @@ export const ar = {
     defColNameEn: "الاسم بالإنجليزية",
     defColAccountType: "نوع الحساب الموجه",
     defColKind: "طبيعة السطر",
-    defColFormula: "المعادلة / الحساب"
+    defColFormula: "المعادلة / الحساب",
+    lineAsset: "الأصول (المتداولة وغير المتداولة)",
+    lineLiability: "الالتزامات (المتداولة وطويلة الأجل)",
+    lineEquity: "حقوق الملكية ورأس المال",
+    lineRevenue: "الإيرادات والمبيعات التشغيلية",
+    lineExpense: "المصروفات والتكاليف التشغيلية",
+    lineNetProfit: "صافي أرباح / (خسائر) الفترة",
+    dateRange: "{{fromDate}} → {{toDate}} ({{currencyCode}})",
+    creditBalanceNote: "رصيد دائن (استرداد / تسوية تخفض المصروفات)",
+    creditExpenseExplanation: "* ملاحظة محاسبية: الحسابات المدينة للمصروفات ذات رصيد دائن صافٍ (-400.00 ج.م) نتيجة حركات استرداد/تسوية، مما يُضاف محاسبياً لزيادة صافي الدخل.",
+    noStatementStructure: "لا يوجد هيكل معتمد لهذه القائمة."
   },
   fx: {
     title: "إعادة تقييم فروق العملات الأجنبية (FX Revaluation)",
@@ -579,7 +616,8 @@ export const ar = {
     errorApproving: "تعذر اعتماد بدء التشغيل المالي، تحقق من توازن دفعة الأرصدة ومطابقتها.",
     cancel: "إلغاء",
     approving: "جارٍ فحص واعتماد بدء التشغيل...",
-    btnApprove: "تأكيد واعتماد بدء التشغيل المالي"
+    btnApprove: "تأكيد واعتماد بدء التشغيل المالي",
+    uuidPlaceholder: "UUID"
   },
   dimensions: {
     title: "الأبعاد ومراكز التكلفة المحاسبية",

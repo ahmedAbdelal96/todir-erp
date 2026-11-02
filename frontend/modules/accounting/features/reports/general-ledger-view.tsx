@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { CursorPagination } from "../../../../components/primitives/cursor-pagination.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
@@ -36,6 +37,8 @@ export function GeneralLedgerView({
   });
   const [entryNumber, setEntryNumber] = useState("");
   const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
+  const [pageSize, setPageSize] = useState(50);
 
   const [explainEntryId, setExplainEntryId] = useState<string | null>(null);
 
@@ -45,7 +48,7 @@ export function GeneralLedgerView({
     accountId: selectedAccountId || undefined,
     entryNumber: entryNumber || undefined,
     cursor,
-    limit: 50
+    limit: pageSize
   });
 
   const items = pageData?.items ?? [];
@@ -56,9 +59,14 @@ export function GeneralLedgerView({
     running += row.debit - row.credit;
     return {
       ...row,
-      runningBalance: running
+      runningBalance: row.runningBalance ?? running
     };
   });
+
+  const resetCursor = () => {
+    setCursor(undefined);
+    setCursorHistory([]);
+  };
 
   const columns: readonly AccountingTableColumn<GeneralLedgerRowDto & { runningBalance: number }>[] = [
     {
@@ -177,7 +185,7 @@ export function GeneralLedgerView({
           </label>
           <select
             value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
+            onChange={(e) => { setSelectedAccountId(e.target.value); resetCursor(); }}
             style={{
               width: "100%",
               padding: "0.5rem 0.75rem",
@@ -199,21 +207,21 @@ export function GeneralLedgerView({
         <TextField
           label={t("reports.from")}
           value={from}
-          onChange={setFrom}
+          onChange={(value) => { setFrom(value); resetCursor(); }}
           placeholder="2026-01-01"
         />
 
         <TextField
           label={t("reports.to")}
           value={to}
-          onChange={setTo}
+          onChange={(value) => { setTo(value); resetCursor(); }}
           placeholder="2026-12-31"
         />
 
         <TextField
           label={t("journal.entryNumber")}
           value={entryNumber}
-          onChange={setEntryNumber}
+          onChange={(value) => { setEntryNumber(value); resetCursor(); }}
         />
       </div>
 
@@ -228,17 +236,26 @@ export function GeneralLedgerView({
             emptyMessage={t("reports.noTransactionsFound")}
           />
 
-          {/* Cursor pagination controls */}
-          {pageData?.nextCursor && (
-            <div style={{ display: "flex", justifyContent: "center", marginTop: "1.5rem" }}>
-              <Button
-                variant="secondary"
-                onPress={() => setCursor(pageData.nextCursor ?? undefined)}
-              >
-                {t("reports.loadMore")}
-              </Button>
-            </div>
-          )}
+          <CursorPagination
+            page={cursorHistory.length + 1}
+            itemCount={items.length}
+            pageSize={pageSize}
+            hasPrevious={cursorHistory.length > 0}
+            hasNext={Boolean(pageData?.nextCursor)}
+            onPrevious={() => {
+              if (cursorHistory.length === 0) return;
+              const nextHistory = cursorHistory.slice(0, -1);
+              setCursorHistory(nextHistory);
+              setCursor(nextHistory[nextHistory.length - 1]);
+            }}
+            onNext={() => {
+              if (!pageData?.nextCursor) return;
+              setCursorHistory((history) => [...history, cursor]);
+              setCursor(pageData.nextCursor ?? undefined);
+            }}
+            onPageSizeChange={(size) => { setPageSize(size); resetCursor(); }}
+            isDisabled={isLoading}
+          />
         </>
       )}
 

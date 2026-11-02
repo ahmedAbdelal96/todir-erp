@@ -4,6 +4,8 @@ public sealed record AccountingHealthItem(string Code, string Severity, string S
 public sealed record AccountingHealthView(Guid LegalEntityId, DateOnly AsOfDate, string Status, IReadOnlyList<AccountingHealthItem> Items);
 public sealed record ReconciliationView(Guid Id, string Type, DateOnly AsOfDate, decimal? SourceBalance, decimal? LedgerBalance, decimal? Difference, string? CurrencyCode, string Status, IReadOnlyList<string> Diagnostics, DateTimeOffset CreatedAt);
 public sealed record ReconciliationIssueView(Guid Id, Guid ReconciliationRunId, string Code, string Severity, string Status, DateTimeOffset CreatedAt, DateTimeOffset? ResolvedAt);
+public sealed record ReconciliationPageDto(IReadOnlyList<ReconciliationView> Items, string? NextCursor);
+public sealed record ReconciliationIssuePageDto(IReadOnlyList<ReconciliationIssueView> Items, string? NextCursor);
 public sealed record ClosePreviewRequest(Guid PeriodId, string IdempotencyKey, string? Reason = null);
 public sealed record CloseCheckView(string Code, string Severity, string Status, string Message);
 public sealed record CloseRunView(Guid Id, Guid PeriodId, string Status, IReadOnlyList<CloseCheckView> Checks, DateTimeOffset CreatedAt);

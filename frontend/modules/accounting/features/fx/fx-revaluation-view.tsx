@@ -16,7 +16,7 @@ import { formatStatus, formatDirection } from "../../utils/diagnostic-translatio
 function getNextDay(dateStr: string): string {
   try {
     const parts = dateStr.split("-").map(Number);
-    if (parts.length === 3) {
+    if (parts.length === 3 && parts[0] !== undefined && parts[1] !== undefined && parts[2] !== undefined) {
       const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + 1));
       return d.toISOString().slice(0, 10);
     }

@@ -200,6 +200,78 @@ public sealed class LedgerRepository(
         return entries.Select(item => new JournalEntryDto(item.Key, item.Value.Journal, item.Value.Fact, item.Value.Number, item.Value.Posting, item.Value.Period, item.Value.Status, item.Value.Currency, item.Value.Lines)).ToArray();
     }
 
+    public async Task<JournalEntryPageDto> ListEntriesPageAsync(TenantId tenant, LegalEntityId entity, DateOnly? from, DateOnly? to,
+        string? search, string? status, string? cursor, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        DateOnly? cursorDate = null; string? cursorNumber = null; Guid? cursorId = null;
+        if (!string.IsNullOrWhiteSpace(cursor))
+        {
+            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|');
+            if (parts.Length != 3 || !DateOnly.TryParse(parts[0], out var parsedDate) || !Guid.TryParse(parts[2], out var parsedId))
+                throw new LedgerDomainException("ledger.cursor_invalid", "The journal-entry cursor is invalid.");
+            cursorDate = parsedDate; cursorNumber = parts[1]; cursorId = parsedId;
+        }
+
+        await using var connection = await OpenAsync(tenant, ct);
+        const string sql = """
+            with page as (
+                select e.id,e.journal_id,e.fact_id,e.entry_number,e.posting_date,p.start_date,e.status,e.currency_code
+                from finance_ledger.journal_entry e
+                join finance_ledger.accounting_period p on p.tenant_id=e.tenant_id and p.legal_entity_id=e.legal_entity_id and p.id=e.accounting_period_id
+                where e.tenant_id=$1 and e.legal_entity_id=$2
+                  and ($3::date is null or e.posting_date >= $3)
+                  and ($4::date is null or e.posting_date <= $4)
+                  and ($5::text is null or e.entry_number ilike $5 || '%')
+                  and ($6::text is null or e.status=$6)
+                  and ($7::date is null or (e.posting_date,e.entry_number,e.id) < ($7,$8,$9))
+                order by e.posting_date desc,e.entry_number desc,e.id desc
+                limit $10
+            )
+            select page.id,page.journal_id,page.fact_id,page.entry_number,page.posting_date,page.start_date,page.status,page.currency_code,
+                   l.sequence_no,l.account_id,l.debit,l.credit,l.currency_code,l.amount,l.semantic_role,l.description
+            from page
+            join finance_ledger.journal_entry_line l on l.tenant_id=$1 and l.legal_entity_id=$2 and l.journal_entry_id=page.id
+            order by page.posting_date desc,page.entry_number desc,page.id desc,l.sequence_no,l.id
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(entity.Value);
+        command.Parameters.AddWithValue((object?)from ?? DBNull.Value); command.Parameters.AddWithValue((object?)to ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)CleanCursorText(search) ?? DBNull.Value); command.Parameters.AddWithValue((object?)status ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)cursorDate ?? DBNull.Value); command.Parameters.AddWithValue((object?)cursorNumber ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)cursorId ?? DBNull.Value); command.Parameters.AddWithValue(limit + 1);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var entries = new Dictionary<Guid, (Guid Journal, Guid? Fact, string Number, DateOnly Posting, DateOnly Period, string Status, string Currency, List<EntryLineDto> Lines)>();
+        var orderedIds = new List<Guid>();
+        while (await reader.ReadAsync(ct))
+        {
+            var id = reader.GetGuid(0);
+            if (!entries.TryGetValue(id, out var entry))
+            {
+                entry = (reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3),
+                    DateOnly.FromDateTime(reader.GetDateTime(4)), DateOnly.FromDateTime(reader.GetDateTime(5)), reader.GetString(6), reader.GetString(7), []);
+                orderedIds.Add(id);
+            }
+            entry.Lines.Add(new(reader.GetInt32(8), reader.GetGuid(9), reader.GetDecimal(10), reader.GetDecimal(11), reader.GetString(12), reader.GetDecimal(13), reader.GetString(14), reader.IsDBNull(15) ? null : reader.GetString(15)));
+            entries[id] = entry;
+        }
+
+        var hasMore = orderedIds.Count > limit;
+        if (hasMore) orderedIds.RemoveAt(orderedIds.Count - 1);
+        var items = orderedIds.Select(id =>
+        {
+            var entry = entries[id];
+            return new JournalEntryDto(id, entry.Journal, entry.Fact, entry.Number, entry.Posting, entry.Period, entry.Status, entry.Currency, entry.Lines);
+        }).ToArray();
+        var last = items.LastOrDefault();
+        var next = hasMore && last is not null
+            ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{last.PostingDate:yyyy-MM-dd}|{last.EntryNumber}|{last.Id}"))
+            : null;
+        return new JournalEntryPageDto(items, next);
+    }
+
+    private static string? CleanCursorText(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     public Task<LedgerPostingResult> PostCustomerInvoiceAsync(AccountingFactEnvelope<CustomerInvoicePostedPayload> fact, CancellationToken cancellationToken = default) =>
         PostAsync(new AccountingFactEnvelope<IAccountingFactPayload>(fact.FactId, fact.TenantId, fact.LegalEntityId, fact.FactType, fact.FactVersion, fact.SourceModule, fact.SourceReference, fact.IdempotencyKey, fact.BusinessDate, fact.PostingDate, fact.Payload, fact.CorrelationId, fact.ActorId), cancellationToken);
 

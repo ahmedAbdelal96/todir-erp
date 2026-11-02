@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import {
-  useReconciliationsList,
-  useReconciliationIssues,
+  useReconciliationsPage,
+  useReconciliationIssuesPage,
   useRunReconciliationMutation
 } from "../../hooks/use-accounting-queries.ts";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { CursorPagination } from "../../../../components/primitives/cursor-pagination.tsx";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
@@ -29,19 +30,27 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
   const [isRunModalOpen, setIsRunModalOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<"AR" | "AP" | "Inventory">("AR");
   const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [runCursor, setRunCursor] = useState<string | undefined>();
+  const [runHistory, setRunHistory] = useState<readonly (string | undefined)[]>([]);
+  const [issueCursor, setIssueCursor] = useState<string | undefined>();
+  const [issueHistory, setIssueHistory] = useState<readonly (string | undefined)[]>([]);
+  const [pageSize, setPageSize] = useState(50);
 
   // Queries
   const {
-    data: reconciliations = [],
+    data: runPage,
     isLoading: isListLoading,
     refetch: refetchList
-  } = useReconciliationsList({ limit: 50 }, legalEntityId);
+  } = useReconciliationsPage({ cursor: runCursor, limit: pageSize }, legalEntityId);
 
   const {
-    data: issues = [],
+    data: issuePage,
     isLoading: isIssuesLoading,
     refetch: refetchIssues
-  } = useReconciliationIssues({ limit: 50 }, legalEntityId);
+  } = useReconciliationIssuesPage({ cursor: issueCursor, limit: pageSize }, legalEntityId);
+
+  const reconciliations = runPage?.items ?? [];
+  const issues = issuePage?.items ?? [];
 
   // Mutation
   const runMutation = useRunReconciliationMutation(legalEntityId);
@@ -123,16 +132,16 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
                 {t("reconciliation.runAr")}
               </span>
               <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
-                110100
+                {t("reconciliation.arCode")}
               </span>
             </div>
             <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)", lineHeight: 1.5 }}>
-              مطابقة حساب مراقبة الذمم المدينة مع سجلات وفواتير مبيعات العملاء.
+              {t("reconciliation.arDescription")}
             </p>
           </div>
           <div>
             <Button variant="primary" data-testid="btn-reconcile-ar" onPress={() => handleOpenRunModal("AR")} style={{ width: "100%" }}>
-              تشغيل مطابقة العملاء (AR)
+              {t("reconciliation.runArAction")}
             </Button>
           </div>
         </div>
@@ -145,16 +154,16 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
                 {t("reconciliation.runAp")}
               </span>
               <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-warning-subtle, #fffbeb)", color: "var(--color-status-warning, #d97706)", fontSize: "0.75rem", fontWeight: 700 }}>
-                210100
+                {t("reconciliation.apCode")}
               </span>
             </div>
             <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)", lineHeight: 1.5 }}>
-              مطابقة حساب مراقبة الذمم الدائنة مع فواتير ومستحقات الموردين.
+              {t("reconciliation.apDescription")}
             </p>
           </div>
           <div>
             <Button variant="primary" onPress={() => handleOpenRunModal("AP")} style={{ width: "100%" }}>
-              تشغيل مطابقة الموردين (AP)
+              {t("reconciliation.runApAction")}
             </Button>
           </div>
         </div>
@@ -167,16 +176,16 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
                 {t("reconciliation.runInventory")}
               </span>
               <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
-                110400
+                {t("reconciliation.inventoryCode")}
               </span>
             </div>
             <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)", lineHeight: 1.5 }}>
-              مطابقة تقييم حركات المستودعات والبضاعة المتاحة مع حساب الأستاذ العام.
+              {t("reconciliation.inventoryDescription")}
             </p>
           </div>
           <div>
             <Button variant="primary" onPress={() => handleOpenRunModal("Inventory")} style={{ width: "100%" }}>
-              تشغيل مطابقة المخزون (Inventory)
+              {t("reconciliation.runInventoryAction")}
             </Button>
           </div>
         </div>
@@ -197,6 +206,7 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
             <p>{t("reconciliation.noRunsYet")}</p>
           </div>
         ) : (
+          <>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start" }}>
               <thead>
@@ -285,6 +295,28 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
               </tbody>
             </table>
           </div>
+          <div style={{ padding: "0 1rem" }}>
+            <CursorPagination
+              page={runHistory.length + 1}
+              itemCount={reconciliations.length}
+              pageSize={pageSize}
+              hasPrevious={runHistory.length > 0}
+              hasNext={Boolean(runPage?.nextCursor)}
+              onPrevious={() => {
+                const history = runHistory.slice(0, -1);
+                setRunHistory(history);
+                setRunCursor(history[history.length - 1]);
+              }}
+              onNext={() => {
+                if (!runPage?.nextCursor) return;
+                setRunHistory((history) => [...history, runCursor]);
+                setRunCursor(runPage.nextCursor ?? undefined);
+              }}
+              onPageSizeChange={(size) => { setPageSize(size); setRunCursor(undefined); setRunHistory([]); setIssueCursor(undefined); setIssueHistory([]); }}
+              isDisabled={isListLoading}
+            />
+          </div>
+          </>
         )}
       </Surface>
 
@@ -304,6 +336,7 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
             <p style={{ margin: 0 }}>✓ {t("reconciliation.noIssuesFound")}</p>
           </div>
         ) : (
+          <>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start" }}>
               <thead>
@@ -362,6 +395,28 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
               </tbody>
             </table>
           </div>
+          <div style={{ padding: "0 1rem" }}>
+            <CursorPagination
+              page={issueHistory.length + 1}
+              itemCount={issues.length}
+              pageSize={pageSize}
+              hasPrevious={issueHistory.length > 0}
+              hasNext={Boolean(issuePage?.nextCursor)}
+              onPrevious={() => {
+                const history = issueHistory.slice(0, -1);
+                setIssueHistory(history);
+                setIssueCursor(history[history.length - 1]);
+              }}
+              onNext={() => {
+                if (!issuePage?.nextCursor) return;
+                setIssueHistory((history) => [...history, issueCursor]);
+                setIssueCursor(issuePage.nextCursor ?? undefined);
+              }}
+              onPageSizeChange={(size) => { setPageSize(size); setRunCursor(undefined); setRunHistory([]); setIssueCursor(undefined); setIssueHistory([]); }}
+              isDisabled={isIssuesLoading}
+            />
+          </div>
+          </>
         )}
       </Surface>
 

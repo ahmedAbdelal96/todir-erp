@@ -178,7 +178,7 @@ export const AccountingPeriodCloseModal: React.FC<AccountingPeriodCloseModalProp
                   fontWeight: 600
                 }}
               >
-                ⚠️ {t("close.blockingErrorWarning")}
+                <span aria-hidden="true">{String.fromCodePoint(0x26a0, 0xfe0f)}</span> {t("close.blockingErrorWarning")}
               </div>
             )}
           </div>

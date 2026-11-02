@@ -32,7 +32,6 @@ import {
   useFiscalYears,
   usePeriods,
   useLocks,
-  useJournalEntries
 } from "../hooks/use-ledger-queries.ts";
 
 export function AccountingPage(): React.JSX.Element {
@@ -70,7 +69,6 @@ export function AccountingPage(): React.JSX.Element {
   const { data: fiscalYears = [] } = useFiscalYears(legalEntityId);
   const { data: periods = [], isLoading: isPeriodsLoading } = usePeriods(legalEntityId);
   const { data: locks = [], isLoading: isLocksLoading } = useLocks(legalEntityId);
-  const { data: entries = [], isLoading: isEntriesLoading } = useJournalEntries(legalEntityId);
 
   const currentMode = modeData?.mode ?? "Managed";
   const modeVersion = modeData?.version ?? 1;
@@ -143,11 +141,10 @@ export function AccountingPage(): React.JSX.Element {
           />
           <EntriesExplorerView
             legalEntityId={legalEntityId}
-            entries={entries.slice(0, 10)}
-            isLoading={isEntriesLoading}
             canReverse={permissions.canReverseEntries}
             canExplain={permissions.canExplainEntries}
             today={today}
+            pageSize={10}
           />
         </div>
       )}
@@ -216,8 +213,6 @@ export function AccountingPage(): React.JSX.Element {
       {activeTab === "entries" && (
         <EntriesExplorerView
           legalEntityId={legalEntityId}
-          entries={entries}
-          isLoading={isEntriesLoading}
           canReverse={permissions.canReverseEntries}
           canExplain={permissions.canExplainEntries}
           today={today}

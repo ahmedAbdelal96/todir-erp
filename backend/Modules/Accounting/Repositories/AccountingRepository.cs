@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Modules.Accounting.DTOs;
 using Npgsql;
@@ -176,6 +177,21 @@ public sealed class AccountingRepository(NpgsqlDataSource dataSource, TimeProvid
         return await ReadReconciliationsAsync(command, ct);
     }
 
+    public async Task<ReconciliationPageDto> ListReconciliationsPageAsync(TenantId tenant, Guid entity, string? type, DateOnly? asOf, string? cursor, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        var (cursorCreatedAt, cursorId) = DecodeCursor(cursor, "accounting.reconciliation_cursor_invalid");
+        await using var connection = await OpenAsync(tenant, ct);
+        const string sql = "select id,reconciliation_type,as_of_date,source_balance,ledger_balance,difference,currency_code,status,diagnostics::text,created_at from business_accounting.reconciliation_run where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or reconciliation_type=$3) and ($4::date is null or as_of_date=$4) and ($5::timestamptz is null or (created_at,id)<($5,$6)) order by created_at desc,id desc limit $7";
+        await using var command = new NpgsqlCommand(sql, connection);
+        Add(command, tenant.Value, entity, (object?)type ?? DBNull.Value, (object?)asOf ?? DBNull.Value, (object?)cursorCreatedAt ?? DBNull.Value, (object?)cursorId ?? DBNull.Value, limit + 1);
+        await using var reader = await command.ExecuteReaderAsync(ct); var rows = new List<ReconciliationView>();
+        while (await reader.ReadAsync(ct)) rows.Add(ReadReconciliation(reader));
+        var hasMore = rows.Count > limit; if (hasMore) rows.RemoveAt(rows.Count - 1);
+        var last = rows.LastOrDefault();
+        return new(rows, hasMore && last is not null ? EncodeCursor(last.CreatedAt, last.Id) : null);
+    }
+
     public async Task<ReconciliationView?> GetReconciliationAsync(TenantId tenant, Guid entity, Guid runId, CancellationToken ct)
     {
         await using var connection = await OpenAsync(tenant, ct);
@@ -194,15 +210,49 @@ public sealed class AccountingRepository(NpgsqlDataSource dataSource, TimeProvid
         return result;
     }
 
+    public async Task<ReconciliationIssuePageDto> ListReconciliationIssuesPageAsync(TenantId tenant, Guid entity, string? status, string? cursor, int limit, CancellationToken ct)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        var (cursorCreatedAt, cursorId) = DecodeCursor(cursor, "accounting.reconciliation_issue_cursor_invalid");
+        await using var connection = await OpenAsync(tenant, ct);
+        const string sql = "select id,reconciliation_run_id,code,severity,status,created_at,resolved_at from business_accounting.reconciliation_issue where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or status=$3) and ($4::timestamptz is null or (created_at,id)<($4,$5)) order by created_at desc,id desc limit $6";
+        await using var command = new NpgsqlCommand(sql, connection);
+        Add(command, tenant.Value, entity, (object?)status ?? DBNull.Value, (object?)cursorCreatedAt ?? DBNull.Value, (object?)cursorId ?? DBNull.Value, limit + 1);
+        await using var reader = await command.ExecuteReaderAsync(ct); var rows = new List<ReconciliationIssueView>();
+        while (await reader.ReadAsync(ct)) rows.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetFieldValue<DateTimeOffset>(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6)));
+        var hasMore = rows.Count > limit; if (hasMore) rows.RemoveAt(rows.Count - 1);
+        var last = rows.LastOrDefault();
+        return new(rows, hasMore && last is not null ? EncodeCursor(last.CreatedAt, last.Id) : null);
+    }
+
     private static async Task<IReadOnlyList<ReconciliationView>> ReadReconciliationsAsync(NpgsqlCommand command, CancellationToken ct)
     {
         await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<ReconciliationView>();
         while (await reader.ReadAsync(ct))
         {
             var diagnostics = JsonSerializer.Deserialize<string[]>(reader.GetString(8)) ?? [];
-            result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetFieldValue<DateOnly>(2), reader.IsDBNull(3) ? null : reader.GetDecimal(3), reader.IsDBNull(4) ? null : reader.GetDecimal(4), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetString(6).Trim(), reader.GetString(7), diagnostics, reader.GetFieldValue<DateTimeOffset>(9)));
+            result.Add(ReadReconciliation(reader));
         }
         return result;
+    }
+
+    private static ReconciliationView ReadReconciliation(NpgsqlDataReader reader)
+    {
+        var diagnostics = JsonSerializer.Deserialize<string[]>(reader.GetString(8)) ?? [];
+        return new(reader.GetGuid(0), reader.GetString(1), reader.GetFieldValue<DateOnly>(2), reader.IsDBNull(3) ? null : reader.GetDecimal(3), reader.IsDBNull(4) ? null : reader.GetDecimal(4), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetString(6).Trim(), reader.GetString(7), diagnostics, reader.GetFieldValue<DateTimeOffset>(9));
+    }
+
+    private static string EncodeCursor(DateTimeOffset createdAt, Guid id) => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{createdAt:O}|{id}"));
+    private static (DateTimeOffset? CreatedAt, Guid? Id) DecodeCursor(string? cursor, string code)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return (null, null);
+        try
+        {
+            var parts = Encoding.UTF8.GetString(Convert.FromBase64String(cursor)).Split('|');
+            if (parts.Length != 2 || !DateTimeOffset.TryParse(parts[0], out var createdAt) || !Guid.TryParse(parts[1], out var id)) throw new FormatException();
+            return (createdAt, id);
+        }
+        catch (FormatException) { throw new AccountingRepositoryException(code); }
     }
 
     public async Task<CloseRunView> SaveCloseRunAsync(TenantId tenant, Guid entity, Guid periodId, string idempotencyKey, string payloadHash, string status, string? reason, Guid actor, IReadOnlyList<CloseCheckView> checks, CancellationToken ct)

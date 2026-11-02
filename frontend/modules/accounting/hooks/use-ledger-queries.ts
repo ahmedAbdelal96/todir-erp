@@ -41,10 +41,14 @@ export const ledgerQueryKeys = {
   locks: (legalEntityId: string) => ["ledger", "locks", legalEntityId] as const,
   entries: (legalEntityId: string, limit?: number) =>
     ["ledger", "entries", legalEntityId, limit ?? 50] as const,
+  entriesPage: (legalEntityId: string, params?: Record<string, unknown>) =>
+    ["ledger", "entries-page", legalEntityId, params] as const,
   entryExplanation: (legalEntityId: string, entryId: string) =>
     ["ledger", "entryExplanation", legalEntityId, entryId] as const,
   trialBalance: (legalEntityId: string, from?: string, to?: string) =>
     ["ledger", "trialBalance", legalEntityId, from ?? "", to ?? ""] as const,
+  trialBalancePage: (legalEntityId: string, params?: Record<string, unknown>) =>
+    ["ledger", "trialBalance-page", legalEntityId, params] as const,
   generalLedger: (
     legalEntityId: string,
     params?: {
@@ -240,6 +244,17 @@ export function useJournalEntries(legalEntityId: string, limit: number = 50) {
   });
 }
 
+export function useJournalEntriesPage(
+  legalEntityId: string,
+  params: { from?: string | undefined; to?: string | undefined; search?: string | undefined; status?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+) {
+  return useQuery({
+    queryKey: ledgerQueryKeys.entriesPage(legalEntityId, params),
+    queryFn: () => ledgerApi.listEntriesPage(legalEntityId, params),
+    enabled: Boolean(legalEntityId)
+  });
+}
+
 export function useExplainEntry(legalEntityId: string, entryId: string) {
   return useQuery({
     queryKey: ledgerQueryKeys.entryExplanation(legalEntityId, entryId),
@@ -256,6 +271,17 @@ export function useTrialBalance(legalEntityId: string, from?: string, to?: strin
         ...(from ? { from } : {}),
         ...(to ? { to } : {})
       }),
+    enabled: Boolean(legalEntityId)
+  });
+}
+
+export function useTrialBalancePage(
+  legalEntityId: string,
+  params: { from?: string | undefined; to?: string | undefined; search?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+) {
+  return useQuery({
+    queryKey: ledgerQueryKeys.trialBalancePage(legalEntityId, params),
+    queryFn: () => ledgerApi.getTrialBalancePage(legalEntityId, params),
     enabled: Boolean(legalEntityId)
   });
 }

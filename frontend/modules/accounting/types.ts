@@ -249,6 +249,11 @@ export interface JournalEntryDto {
   readonly lines: readonly EntryLineDto[];
 }
 
+export interface JournalEntryPageDto {
+  readonly items: readonly JournalEntryDto[];
+  readonly nextCursor?: string | null;
+}
+
 export interface ReverseEntryRequest {
   readonly reversalDate: string;
   readonly reason: string;
@@ -448,6 +453,14 @@ export interface TrialBalanceRowDto {
   readonly currencyCode: string;
 }
 
+export interface TrialBalancePageDto {
+  readonly items: readonly TrialBalanceRowDto[];
+  readonly nextCursor?: string | null;
+  readonly totalCount: number;
+  readonly totalDebit: number;
+  readonly totalCredit: number;
+}
+
 export interface GeneralLedgerRowDto {
   readonly entryId: string;
   readonly lineId: string;
@@ -464,6 +477,7 @@ export interface GeneralLedgerRowDto {
   readonly sourceModule: string;
   readonly sourceReference: string;
   readonly sequence: number;
+  readonly runningBalance?: number | null;
 }
 
 export interface GeneralLedgerPageDto {
@@ -585,6 +599,16 @@ export interface ReconciliationIssueView {
   readonly status: string;
   readonly createdAt: string;
   readonly resolvedAt?: string | null;
+}
+
+export interface ReconciliationPageDto {
+  readonly items: readonly SubledgerReconciliationView[];
+  readonly nextCursor?: string | null;
+}
+
+export interface ReconciliationIssuePageDto {
+  readonly items: readonly ReconciliationIssueView[];
+  readonly nextCursor?: string | null;
 }
 
 export interface CloseCheckView {

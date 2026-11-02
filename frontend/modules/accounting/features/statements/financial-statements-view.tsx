@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import type { TFunction } from "i18next";
 import {
   useFinancialStatement,
   useStatementDefinition,
@@ -16,22 +17,22 @@ export interface FinancialStatementsViewProps {
   readonly legalEntityId?: string;
 }
 
-function getLineLabel(line: StatementLineView, lang: string): string {
+function getLineLabel(line: StatementLineView, lang: string, translate: TFunction<"accounting">): string {
   const raw = lang === "ar" ? line.nameAr || line.name : line.nameEn || line.name;
   if (!raw || raw.includes("?")) {
     switch (line.code) {
       case "asset":
-        return lang === "ar" ? "الأصول (المتداولة وغير المتداولة)" : "Assets";
+        return translate("statements.lineAsset");
       case "liability":
-        return lang === "ar" ? "الالتزامات (المتداولة والقصيرة/طويلة الأجل)" : "Liabilities";
+        return translate("statements.lineLiability");
       case "equity":
-        return lang === "ar" ? "حقوق الملكية ورأس المال" : "Equity";
+        return translate("statements.lineEquity");
       case "revenue":
-        return lang === "ar" ? "الإيرادات والمبيعات التشغيلية" : "Revenue";
+        return translate("statements.lineRevenue");
       case "expense":
-        return lang === "ar" ? "المصروفات والتكاليف التشغيلية" : "Expenses";
+        return translate("statements.lineExpense");
       case "net-profit":
-        return lang === "ar" ? "صافي أرباح / (خسائر) الفترة" : "Net Profit / (Loss)";
+        return translate("statements.lineNetProfit");
       default:
         return line.code;
     }
@@ -259,7 +260,7 @@ export const FinancialStatementsView: React.FC<FinancialStatementsViewProps> = (
               <Surface
                 variant="card"
                 title={statementKind === "ProfitAndLoss" ? t("statements.pnlHeader") : t("statements.balanceSheetHeader")}
-                description={`${statement.fromDate} → ${statement.toDate} (${statement.currencyCode})`}
+                description={t("statements.dateRange", { fromDate: statement.fromDate, toDate: statement.toDate, currencyCode: statement.currencyCode })}
                 headerActions={
                   <div style={{ textAlign: "end" }}>
                     <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", display: "block" }}>
@@ -316,7 +317,7 @@ export const FinancialStatementsView: React.FC<FinancialStatementsViewProps> = (
                           <div style={{ minWidth: 0, flex: "1 1 auto" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                               <span style={{ fontWeight: isHighlight ? 700 : 600, fontSize: "0.875rem", color: "var(--color-content-primary, #0f172a)" }}>
-                                {getLineLabel(line, language)}
+                                {getLineLabel(line, language, t)}
                               </span>
                               <span
                                 style={{
@@ -341,7 +342,7 @@ export const FinancialStatementsView: React.FC<FinancialStatementsViewProps> = (
                                     fontWeight: 700
                                   }}
                                 >
-                                  رصيد دائن (استرداد / تسوية تخفض المصروفات)
+                                  {t("statements.creditBalanceNote")}
                                 </span>
                               )}
                             </div>
@@ -352,7 +353,7 @@ export const FinancialStatementsView: React.FC<FinancialStatementsViewProps> = (
                             )}
                             {statementKind === "ProfitAndLoss" && (line.code === "expense" || line.accountType === "Expense") && line.amount < 0 && (
                               <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-status-info, #0284c7)", lineHeight: 1.4 }}>
-                                * ملاحظة محاسبية: الحسابات المدينة للمصروفات ذات رصيد دائن صافٍ (-400.00 ج.م) نتيجة حركات استرداد/تسوية، مما يُضاف محاسبياً لزيادة صافي الدخل.
+                                {t("statements.creditExpenseExplanation")}
                               </p>
                             )}
                           </div>
@@ -389,7 +390,7 @@ export const FinancialStatementsView: React.FC<FinancialStatementsViewProps> = (
             </div>
           ) : !definition ? (
             <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
-              <p>لا يوجد هيكل معتمد لهذه القائمة.</p>
+              <p>{t("statements.noStatementStructure")}</p>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>

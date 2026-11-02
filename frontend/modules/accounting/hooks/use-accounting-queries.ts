@@ -22,6 +22,10 @@ export const accountingQueryKeys = {
   reconciliation: (legalEntityId: string, runId: string) => ["accounting", "reconciliation", legalEntityId, runId] as const,
   reconciliationIssues: (legalEntityId: string, status?: string) =>
     ["accounting", "reconciliation-issues", legalEntityId, status] as const,
+  reconciliationsPage: (legalEntityId: string, params?: Record<string, unknown>) =>
+    ["accounting", "reconciliations-page", legalEntityId, params] as const,
+  reconciliationIssuesPage: (legalEntityId: string, params?: Record<string, unknown>) =>
+    ["accounting", "reconciliation-issues-page", legalEntityId, params] as const,
   statement: (legalEntityId: string, kind: string, from: string, to: string) =>
     ["accounting", "statement", legalEntityId, kind, from, to] as const,
   statementDefinition: (legalEntityId: string, kind: string) =>
@@ -94,6 +98,16 @@ export function useReconciliationDetails(runId: string, overrideLegalEntityId?: 
   });
 }
 
+export function useReconciliationsPage(params?: { type?: string | undefined; asOf?: string | undefined; cursor?: string | undefined; limit?: number | undefined }, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
+  const { canReadReconciliation } = useAccountingPermissions();
+  return useQuery({
+    queryKey: accountingQueryKeys.reconciliationsPage(legalEntityId, params),
+    queryFn: () => accountingApi.listReconciliationsPage(legalEntityId, params),
+    enabled: Boolean(legalEntityId) && canReadReconciliation
+  });
+}
+
 export function useReconciliationIssues(params?: { status?: string; limit?: number }, overrideLegalEntityId?: string) {
   const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
   const { canReadReconciliation } = useAccountingPermissions();
@@ -101,6 +115,16 @@ export function useReconciliationIssues(params?: { status?: string; limit?: numb
   return useQuery({
     queryKey: accountingQueryKeys.reconciliationIssues(legalEntityId, params?.status),
     queryFn: () => accountingApi.listReconciliationIssues(legalEntityId, params),
+    enabled: Boolean(legalEntityId) && canReadReconciliation
+  });
+}
+
+export function useReconciliationIssuesPage(params?: { status?: string | undefined; cursor?: string | undefined; limit?: number | undefined }, overrideLegalEntityId?: string) {
+  const { legalEntityId } = useLedgerScope({ legalEntityId: overrideLegalEntityId });
+  const { canReadReconciliation } = useAccountingPermissions();
+  return useQuery({
+    queryKey: accountingQueryKeys.reconciliationIssuesPage(legalEntityId, params),
+    queryFn: () => accountingApi.listReconciliationIssuesPage(legalEntityId, params),
     enabled: Boolean(legalEntityId) && canReadReconciliation
   });
 }

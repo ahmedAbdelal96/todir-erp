@@ -158,7 +158,7 @@ export const ApproveGoLiveModal: React.FC<ApproveGoLiveModalProps> = ({
                 fontSize: "0.8125rem"
               }}
             >
-              ℹ️ {t("goLive.infoBanner")}
+              <span aria-hidden="true">{String.fromCodePoint(0x2139, 0xfe0f)}</span> {t("goLive.infoBanner")}
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
@@ -170,7 +170,7 @@ export const ApproveGoLiveModal: React.FC<ApproveGoLiveModalProps> = ({
                 type="text"
                 value={subledgerBatchId}
                 onChange={e => setSubledgerBatchId(e.target.value)}
-                placeholder="UUID"
+                placeholder={t("goLive.uuidPlaceholder")}
                 style={{
                   width: "100%",
                   padding: "0.5rem 0.75rem",

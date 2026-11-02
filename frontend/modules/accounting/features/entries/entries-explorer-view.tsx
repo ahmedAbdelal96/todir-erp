@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { CursorPagination } from "../../../../components/primitives/cursor-pagination.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
@@ -10,35 +11,47 @@ import { LedgerEntryStatusBadge } from "../../components/ledger-status-badges.ts
 import { EntryDetailModal } from "./entry-detail-modal.tsx";
 import { EntryExplanationModal } from "./entry-explanation-modal.tsx";
 import { ReversalModal } from "./reversal-modal.tsx";
+import { useJournalEntriesPage } from "../../hooks/use-ledger-queries.ts";
 import type { JournalEntryDto } from "../../types.ts";
 
 export interface EntriesExplorerViewProps {
   readonly legalEntityId: string;
-  readonly entries: readonly JournalEntryDto[];
-  readonly isLoading: boolean;
   readonly canReverse: boolean;
   readonly canExplain: boolean;
   readonly today: string;
+  readonly pageSize?: number;
 }
 
 export function EntriesExplorerView({
   legalEntityId,
-  entries,
-  isLoading,
   canReverse,
   canExplain,
-  today
+  today,
+  pageSize: initialPageSize = 50
 }: EntriesExplorerViewProps): React.JSX.Element {
   const { t } = useTranslation("accounting");
   const [searchTerm, setSearchTerm] = useState("");
+  const [status, setStatus] = useState("");
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [cursorHistory, setCursorHistory] = useState<readonly (string | undefined)[]>([]);
+
+  const { data: pageData, isLoading, isError, refetch } = useJournalEntriesPage(legalEntityId, {
+    search: searchTerm || undefined,
+    status: status || undefined,
+    cursor,
+    limit: pageSize
+  });
+  const entries = pageData?.items ?? [];
 
   const [selectedEntry, setSelectedEntry] = useState<JournalEntryDto | null>(null);
   const [explainEntryId, setExplainEntryId] = useState<string | null>(null);
   const [reversalEntry, setReversalEntry] = useState<JournalEntryDto | null>(null);
 
-  const filteredEntries = entries.filter((e) =>
-    e.entryNumber.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const resetCursor = () => {
+    setCursor(undefined);
+    setCursorHistory([]);
+  };
 
   const columns: readonly AccountingTableColumn<JournalEntryDto>[] = [
     {
@@ -146,21 +159,56 @@ export function EntriesExplorerView({
         <div style={{ width: "260px" }}>
           <TextField
             value={searchTerm}
-            onChange={setSearchTerm}
+            onChange={(value) => { setSearchTerm(value); resetCursor(); }}
             placeholder={t("journal.searchEntriesPlaceholder")}
           />
+        </div>
+        <div style={{ width: "180px" }}>
+          <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.8125rem", fontWeight: 600 }}>{t("account.status")}</label>
+          <select value={status} onChange={(event) => { setStatus(event.target.value); resetCursor(); }} style={{ width: "100%", padding: "0.5rem 0.75rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", background: "var(--color-surface-card)" }}>
+            <option value="">{t("reports.allStatuses")}</option>
+            <option value="Posted">{t("reports.posted")}</option>
+            <option value="Draft">{t("reports.draft")}</option>
+          </select>
         </div>
       </div>
 
       {isLoading ? (
         <div style={{ padding: "3rem", textAlign: "center" }}>{t("common.loading")}</div>
+      ) : isError ? (
+        <div style={{ padding: "3rem", textAlign: "center" }}>
+          <p>{t("reports.loadError")}</p>
+          <Button variant="secondary" onPress={() => void refetch()}>{t("reports.retry")}</Button>
+        </div>
       ) : (
-        <AccountingDataTable
-          data={filteredEntries}
+        <>
+          <AccountingDataTable
+          data={entries}
           columns={columns}
           rowKey={(item) => item.id}
           emptyMessage={t("journal.noEntriesFound")}
-        />
+          />
+          <CursorPagination
+            page={cursorHistory.length + 1}
+            itemCount={entries.length}
+            pageSize={pageSize}
+            hasPrevious={cursorHistory.length > 0}
+            hasNext={Boolean(pageData?.nextCursor)}
+            onPrevious={() => {
+              if (cursorHistory.length === 0) return;
+              const nextHistory = cursorHistory.slice(0, -1);
+              setCursorHistory(nextHistory);
+              setCursor(nextHistory[nextHistory.length - 1]);
+            }}
+            onNext={() => {
+              if (!pageData?.nextCursor) return;
+              setCursorHistory((history) => [...history, cursor]);
+              setCursor(pageData.nextCursor ?? undefined);
+            }}
+            onPageSizeChange={(size) => { setPageSize(size); resetCursor(); }}
+            isDisabled={isLoading}
+          />
+        </>
       )}
 
       {/* Entry Details Modal */}

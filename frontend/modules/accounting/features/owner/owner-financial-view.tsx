@@ -139,7 +139,7 @@ export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ legalEnt
               {getHealthBadge(summary.health)}
               {summary.health !== "Healthy" && onNavigateTab && (
                 <Button variant="ghost" size="compact" onPress={() => onNavigateTab("health")}>
-                  عرض تفاصيل العوائق في مركز السلامة المالية ←
+                  {t("owner.viewBlockingDetails")}
                 </Button>
               )}
             </div>
@@ -166,7 +166,7 @@ export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ legalEnt
                     {t("owner.cashBook")}
                   </span>
                   <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
-                    1102
+                    {t("owner.cashBookCode")}
                   </span>
                 </div>
                 <div style={{ margin: "0.5rem 0" }}>
@@ -189,7 +189,7 @@ export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ legalEnt
                     {t("owner.receivables")}
                   </span>
                   <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
-                    AR
+                    {t("owner.receivablesCode")}
                   </span>
                 </div>
                 <div style={{ margin: "0.5rem 0" }}>
@@ -212,7 +212,7 @@ export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ legalEnt
                     {t("owner.payables")}
                   </span>
                   <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-warning-subtle, #fffbeb)", color: "var(--color-status-warning, #d97706)", fontSize: "0.75rem", fontWeight: 700 }}>
-                    AP
+                    {t("owner.payablesCode")}
                   </span>
                 </div>
                 <div style={{ margin: "0.5rem 0" }}>
@@ -235,7 +235,7 @@ export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ legalEnt
                     {t("owner.inventoryValue")}
                   </span>
                   <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-info-subtle, #f0f9ff)", color: "var(--color-status-info, #0284c7)", fontSize: "0.75rem", fontWeight: 700 }}>
-                    1104
+                    {t("owner.inventoryCode")}
                   </span>
                 </div>
                 <div style={{ margin: "0.5rem 0" }}>
@@ -264,7 +264,7 @@ export const OwnerFinancialView: React.FC<OwnerFinancialViewProps> = ({ legalEnt
                     {t("owner.profit")}
                   </span>
                   <span style={{ padding: "0.25rem 0.5rem", borderRadius: "var(--radius-md, 0.5rem)", backgroundColor: "var(--color-status-success-subtle, #ecfdf5)", color: "var(--color-status-success, #059669)", fontSize: "0.75rem", fontWeight: 700 }}>
-                    P&L
+                    {t("owner.profitCode")}
                   </span>
                 </div>
                 <div style={{ margin: "0.5rem 0" }}>

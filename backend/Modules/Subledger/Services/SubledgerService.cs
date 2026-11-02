@@ -440,7 +440,7 @@ public sealed class SubledgerService(
     public async Task<OpenItemPage> ListOpenItemsAsync(TenantId tenantId, OpenItemListQuery query, CancellationToken cancellationToken = default)
     {
         var started = Stopwatch.GetTimestamp();
-        ValidateIdentity(tenantId, query.LegalEntityId, query.PartyId);
+        ValidateScope(tenantId, query.LegalEntityId);
         if (query.Limit is < 1 or > 200) throw new SubledgerException("subledger.page_size_invalid", "Page size must be between 1 and 200.");
         if (query.Cursor is not null && !Guid.TryParse(query.Cursor, out _)) throw new SubledgerException("subledger.cursor_invalid", "The open-item cursor is invalid.");
         if (query.Direction is not null && !Enum.IsDefined(query.Direction.Value)) throw new SubledgerException("subledger.direction_invalid", "The financial direction is invalid.");
@@ -453,7 +453,7 @@ public sealed class SubledgerService(
         if (query.Search?.Trim().Length > 120) throw new SubledgerException("subledger.search_too_long", "Search text cannot exceed 120 characters.");
         if (query.CurrencyCode is not null) _ = NormalizeCurrency(query.CurrencyCode);
         await EnsureEntityAsync(tenantId, query.LegalEntityId, cancellationToken);
-        await EnsurePartyAsync(tenantId, query.LegalEntityId, query.PartyId, cancellationToken);
+        if (query.PartyId is { } partyId) await EnsurePartyAsync(tenantId, query.LegalEntityId, partyId, cancellationToken);
         query = query with { Search = Clean(query.Search), CurrencyCode = query.CurrencyCode is null ? null : NormalizeCurrency(query.CurrencyCode) };
         try { return await repository.ListAsync(tenantId, query, cancellationToken); }
         finally { SubledgerObservability.OpenItemsQueryDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds); }

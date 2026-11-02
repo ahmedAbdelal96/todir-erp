@@ -165,6 +165,7 @@ export const en = {
   },
   period: {
     fiscalYearsAndPeriods: "Fiscal Years & Accounting Periods",
+    fiscalYearLabel: "Fiscal Year:",
     description: "Manage accounting periods and period locking to preserve accounting truth",
     newFiscalYear: "New Fiscal Year",
     newPeriod: "New Period",
@@ -357,7 +358,14 @@ export const en = {
     runningBalance: "Running Balance",
     loadMore: "Load More Transactions...",
     noDataFound: "No balances found for the selected period",
-    noTransactionsFound: "No transactions found matching filter criteria"
+    noTransactionsFound: "No transactions found matching filter criteria",
+    allStatuses: "All statuses"
+    ,posted: "Posted"
+    ,draft: "Draft"
+    ,accountSearch: "Account search"
+    ,accountSearchPlaceholder: "Code or name"
+    ,loadError: "The report could not be loaded. Try again."
+    ,retry: "Retry"
   },
   reconciliation: {
     title: "Subledger Control Reconciliations (AR / AP / Inventory)",
@@ -408,7 +416,16 @@ export const en = {
     projectionBalance: "Projection Balance",
     difference: "Difference",
     statusMatched: "Matched",
-    statusDiscrepancy: "Discrepancy"
+    statusDiscrepancy: "Discrepancy",
+    arCode: "110100",
+    arDescription: "Reconcile the customer receivables control account with customer sales records and invoices.",
+    runArAction: "Run Customer Reconciliation (AR)",
+    apCode: "210100",
+    apDescription: "Reconcile the supplier payables control account with supplier invoices and obligations.",
+    runApAction: "Run Supplier Reconciliation (AP)",
+    inventoryCode: "110400",
+    inventoryDescription: "Reconcile warehouse movement valuation and available goods with the General Ledger.",
+    runInventoryAction: "Run Inventory Reconciliation"
   },
   owner: {
     title: "Owner Financial Visibility Dashboard",
@@ -441,7 +458,13 @@ export const en = {
     linkReconciliation: "Subledger Control Reconciliations",
     linkReconciliationDesc: "Verify auxiliary customer, supplier, and inventory registers",
     linkEntries: "General Journal Entries",
-    linkEntriesDesc: "Explore and audit detailed posted journal entries"
+    linkEntriesDesc: "Explore and audit detailed posted journal entries",
+    viewBlockingDetails: "View blocker details in Financial Health Center →",
+    cashBookCode: "1102",
+    receivablesCode: "AR",
+    payablesCode: "AP",
+    inventoryCode: "1104",
+    profitCode: "P&L"
   },
   health: {
     title: "Accounting Health & Control Center",
@@ -469,7 +492,11 @@ export const en = {
     filterInfo: "Healthy Only",
     noItemsFound: "No diagnostic items match filter criteria",
     actionReconcile: "Run Reconciliation",
-    actionViewStatements: "View Statements"
+    actionViewStatements: "View Statements",
+    severityHeading: "Severity",
+    statusHeading: "Operational Status",
+    checkHeading: "Control Check",
+    detailsHeading: "Operational Details"
   },
   statements: {
     title: "Financial Statements & Statutory Reports",
@@ -503,7 +530,17 @@ export const en = {
     defColNameEn: "English Name",
     defColAccountType: "Mapped Account Type",
     defColKind: "Line Kind",
-    defColFormula: "Formula / Source"
+    defColFormula: "Formula / Source",
+    lineAsset: "Assets (Current and Non-current)",
+    lineLiability: "Liabilities (Current and Long-term)",
+    lineEquity: "Equity and Capital",
+    lineRevenue: "Revenue and Operating Sales",
+    lineExpense: "Operating Expenses and Costs",
+    lineNetProfit: "Net Profit / (Loss) for Period",
+    dateRange: "{{fromDate}} → {{toDate}} ({{currencyCode}})",
+    creditBalanceNote: "Credit balance (refund / adjustment reducing expenses)",
+    creditExpenseExplanation: "* Accounting note: expense accounts with a net credit balance (-400.00 EGP) result from refunds or adjustments, increasing net income.",
+    noStatementStructure: "No certified structure is available for this statement."
   },
   fx: {
     title: "Foreign Exchange Revaluation (FX Revaluation)",
@@ -579,7 +616,8 @@ export const en = {
     errorApproving: "Failed to approve financial go-live.",
     cancel: "Cancel",
     approving: "Validating and approving go-live...",
-    btnApprove: "Confirm & Approve Financial Go-Live"
+    btnApprove: "Confirm & Approve Financial Go-Live",
+    uuidPlaceholder: "UUID"
   },
   dimensions: {
     title: "Accounting Dimensions & Cost Centers",

@@ -21,6 +21,7 @@ import type {
   GeneralLedgerPageDto,
   JournalDto,
   JournalEntryDto,
+  JournalEntryPageDto,
   LedgerMode,
   LedgerModeDto,
   LedgerPostingResult,
@@ -35,7 +36,8 @@ import type {
   ProjectionRebuildResult,
   ProjectionReconciliationResultDto,
   ReverseEntryRequest,
-  TrialBalanceRowDto
+  TrialBalanceRowDto,
+  TrialBalancePageDto
 } from "../types.ts";
 
 export const ledgerApi = {
@@ -188,6 +190,16 @@ export const ledgerApi = {
     return httpClient<readonly JournalEntryDto[]>(`/api/v1/ledger/legal-entities/${legalEntityId}/entries?limit=${limit}`);
   },
 
+  listEntriesPage: async (
+    legalEntityId: string,
+    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; status?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+  ): Promise<JournalEntryPageDto> => {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params ?? {})) if (value) searchParams.set(key, String(value));
+    const query = searchParams.toString();
+    return httpClient<JournalEntryPageDto>(`/api/v1/ledger/legal-entities/${legalEntityId}/entries/page${query ? `?${query}` : ""}`);
+  },
+
   explainEntry: async (legalEntityId: string, entryId: string): Promise<EntryExplanationDto> => {
     return httpClient<EntryExplanationDto>(`/api/v1/ledger/legal-entities/${legalEntityId}/entries/${entryId}/explanation`);
   },
@@ -287,6 +299,16 @@ export const ledgerApi = {
     if (params?.limit) searchParams.set("limit", params.limit.toString());
     const queryStr = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return httpClient<readonly TrialBalanceRowDto[]>(`/api/v1/ledger/legal-entities/${legalEntityId}/reports/trial-balance${queryStr}`);
+  },
+
+  getTrialBalancePage: async (
+    legalEntityId: string,
+    params?: { from?: string | undefined; to?: string | undefined; search?: string | undefined; cursor?: string | undefined; limit?: number | undefined }
+  ): Promise<TrialBalancePageDto> => {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params ?? {})) if (value) searchParams.set(key, String(value));
+    const query = searchParams.toString();
+    return httpClient<TrialBalancePageDto>(`/api/v1/ledger/legal-entities/${legalEntityId}/reports/trial-balance/page${query ? `?${query}` : ""}`);
   },
 
   getGeneralLedger: async (

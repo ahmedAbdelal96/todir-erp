@@ -265,10 +265,10 @@ export const AccountingHealthViewComponent: React.FC<AccountingHealthViewProps> 
                         fontWeight: 700
                       }}
                     >
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>مستوى الأهمية</th>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>الحالة التشغيلية</th>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>الفحص والتحقق الرقابي</th>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>البيان والتفاصيل التشغيلية</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("health.severityHeading")}</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("health.statusHeading")}</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("health.checkHeading")}</th>
+                      <th style={{ padding: "0.75rem 1rem", textAlign: "start" }}>{t("health.detailsHeading")}</th>
                       <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("common.actions")}</th>
                     </tr>
                   </thead>
