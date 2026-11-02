@@ -78,7 +78,7 @@ test.describe('Accounting Real-Backend Full-Stack Verification Suite', () => {
     expect(Array.isArray(list)).toBe(true);
   });
 
-  test('5. Real FX Revaluation Preview', async ({ request }) => {
+  test('5. Real FX Revaluation Complete Journey (Preview -> Post -> Reverse)', async ({ request }) => {
     const csrfRes = await request.get(`${REAL_BACKEND_URL}/api/v1/auth/csrf`);
     const { token } = await csrfRes.json();
     await request.post(`${REAL_BACKEND_URL}/api/v1/auth/login`, {
@@ -89,6 +89,7 @@ test.describe('Accounting Real-Backend Full-Stack Verification Suite', () => {
     const csrfPost = await request.get(`${REAL_BACKEND_URL}/api/v1/auth/csrf`);
     const csrf = (await csrfPost.json()).token;
 
+    // 1. Preview
     const fxRes = await request.post(`${REAL_BACKEND_URL}/api/v1/accounting/legal-entities/${ATLAS_ENTITY_ID}/fx-revaluations/preview`, {
       data: {
         asOfDate: '2026-11-01',
@@ -100,5 +101,31 @@ test.describe('Accounting Real-Backend Full-Stack Verification Suite', () => {
     const fx = await fxRes.json();
     expect(fx.asOfDate).toBe('2026-11-01');
     expect(Array.isArray(fx.lines)).toBe(true);
+    expect(fx.lines.length).toBeGreaterThan(0);
+    expect(fx.status).toBe('Previewed');
+
+    // 2. Post
+    const postRes = await request.post(`${REAL_BACKEND_URL}/api/v1/accounting/legal-entities/${ATLAS_ENTITY_ID}/fx-revaluations/${fx.id}/post`, {
+      headers: { 'X-CSRF-TOKEN': csrf }
+    });
+    expect(postRes.status()).toBe(200);
+    const posted = await postRes.json();
+    expect(posted.status).toBe('Posted');
+    expect(posted.lines.length).toBeGreaterThan(0);
+    expect(posted.lines.every((l: { journalEntryId: string | null }) => l.journalEntryId !== null)).toBe(true);
+
+    // 3. Reverse (reversalDate MUST be strictly after asOfDate: 2026-11-02)
+    const revRes = await request.post(`${REAL_BACKEND_URL}/api/v1/accounting/legal-entities/${ATLAS_ENTITY_ID}/fx-revaluations/${fx.id}/reverse`, {
+      data: {
+        reversalDate: '2026-11-02',
+        reason: 'Monthly unrealized FX revaluation reversal at start of new period'
+      },
+      headers: { 'X-CSRF-TOKEN': csrf }
+    });
+    expect(revRes.status()).toBe(200);
+    const reversed = await revRes.json();
+    expect(reversed.status).toBe('Reversed');
+    expect(reversed.lines.length).toBeGreaterThan(0);
+    expect(reversed.lines.every((l: { reversalEntryId: string | null }) => l.reversalEntryId !== null)).toBe(true);
   });
 });

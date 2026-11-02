@@ -336,9 +336,6 @@ export const ControlReconciliationsView: React.FC<ControlReconciliationsViewProp
                       <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)", display: "block" }}>
                         {formatHealthCode(issue.code)}
                       </span>
-                      <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)" }}>
-                        <bdi>{issue.code}</bdi>
-                      </span>
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <StatusBadge

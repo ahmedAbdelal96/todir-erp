@@ -109,10 +109,15 @@ test.describe('Accounting Real-Backend Visual Acceptance Suite', () => {
     await expect(page.locator('[data-testid="fx-revaluation-view"]')).toBeVisible({ timeout: 10000 });
 
     // Step 1: Trigger Preview
+    const asOfInput = page.locator('#fx-as-of');
+    if (await asOfInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await asOfInput.fill('2026-11-01');
+    }
     const previewBtn = page.locator('[data-testid="btn-preview-fx"]');
     if (await previewBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
       await previewBtn.click();
-      await page.waitForTimeout(1500);
+      await expect(page.locator('text=معاينة مسودة')).toBeVisible({ timeout: 10000 });
+      await page.waitForTimeout(500);
     }
 
     // Capture Preview State
@@ -129,7 +134,8 @@ test.describe('Accounting Real-Backend Visual Acceptance Suite', () => {
     const postBtn = page.locator('[data-testid="fx-btn-post"]');
     if (await postBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
       await postBtn.click();
-      await page.waitForTimeout(1500);
+      await expect(page.locator('text=مرحل ومعتمد')).toBeVisible({ timeout: 10000 });
+      await page.waitForTimeout(500);
       await page.screenshot({
         path: path.join(SCREENSHOT_DIR, '07-desktop-fx-revaluation-posted-1280.png'),
         fullPage: true
@@ -142,23 +148,17 @@ test.describe('Accounting Real-Backend Visual Acceptance Suite', () => {
       await reverseBtn.click();
       await page.waitForTimeout(600);
       const reasonInput = page.locator('#fx-rev-reason');
-      if (await reasonInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await reasonInput.fill('عكس قيد فروق تقييم العملة الأجنبية بنهاية الفترة المحاسبية');
-      }
+      await expect(reasonInput).toBeVisible({ timeout: 5000 });
+      await reasonInput.fill('عكس قيد فروق تقييم العملة الأجنبية بنهاية الفترة المحاسبية');
       const confirmRevBtn = page.locator('[data-testid="fx-btn-confirm-reverse"]');
-      if (await confirmRevBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await confirmRevBtn.click();
-        await page.waitForTimeout(2000);
-      }
+      await expect(confirmRevBtn).toBeVisible({ timeout: 5000 });
+      await confirmRevBtn.click();
+      await expect(page.locator('text=تم العكس بالكامل')).toBeVisible({ timeout: 10000 });
+      await page.waitForTimeout(500);
       await page.screenshot({
         path: path.join(SCREENSHOT_DIR, '07-desktop-fx-revaluation-reversed-1280.png'),
         fullPage: true
       });
-      const cancelRevBtn = page.getByRole('button', { name: /إلغاء|Cancel/i }).last();
-      if (await cancelRevBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await cancelRevBtn.click();
-        await page.waitForTimeout(400);
-      }
     }
 
     // Screen 08: Desktop Fiscal Periods View

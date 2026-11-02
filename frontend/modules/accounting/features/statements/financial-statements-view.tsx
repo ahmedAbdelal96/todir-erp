@@ -345,9 +345,11 @@ export const FinancialStatementsView: React.FC<FinancialStatementsViewProps> = (
                                 </span>
                               )}
                             </div>
-                            <div style={{ fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)", fontFamily: "var(--font-mono, monospace)", marginTop: "0.125rem" }}>
-                              <bdi>{line.code}</bdi> {line.accountType ? `• ${formatAccountType(line.accountType)}` : ""}
-                            </div>
+                            {line.accountType && (
+                              <div style={{ fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)", marginTop: "0.125rem" }}>
+                                {formatAccountType(line.accountType)}
+                              </div>
+                            )}
                             {statementKind === "ProfitAndLoss" && (line.code === "expense" || line.accountType === "Expense") && line.amount < 0 && (
                               <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-status-info, #0284c7)", lineHeight: 1.4 }}>
                                 * ملاحظة محاسبية: الحسابات المدينة للمصروفات ذات رصيد دائن صافٍ (-400.00 ج.م) نتيجة حركات استرداد/تسوية، مما يُضاف محاسبياً لزيادة صافي الدخل.

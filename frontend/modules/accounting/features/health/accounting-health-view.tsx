@@ -291,9 +291,11 @@ export const AccountingHealthViewComponent: React.FC<AccountingHealthViewProps> 
                           <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)", display: "block" }}>
                             {formatHealthCode(item.code)}
                           </span>
-                          <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)" }}>
-                            <bdi>{item.code}</bdi>{item.source ? ` • ${formatDirection(item.source)}` : ""}
-                          </span>
+                          {item.source && (
+                            <span style={{ fontSize: "0.6875rem", color: "var(--color-content-muted, #64748b)" }}>
+                              {formatDirection(item.source)}
+                            </span>
+                          )}
                         </td>
                         <td style={{ padding: "0.75rem 1rem", fontSize: "0.875rem", color: "var(--color-content-primary, #0f172a)", lineHeight: 1.5 }}>
                           {formatDiagnosticMessage(item.message)}

@@ -148,9 +148,6 @@ export const AccountingPeriodCloseModal: React.FC<AccountingPeriodCloseModalProp
                     <span style={{ fontWeight: 700, color: "var(--color-content-primary)", fontSize: "0.875rem", display: "block" }}>
                       {formatHealthCode(check.code)}
                     </span>
-                    <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                      <bdi>{check.code}</bdi>
-                    </span>
                     <p style={{ margin: "0.25rem 0 0", color: "var(--color-content-secondary)", fontSize: "0.8125rem", lineHeight: 1.4 }}>
                       {formatDiagnosticMessage(check.message)}
                     </p>

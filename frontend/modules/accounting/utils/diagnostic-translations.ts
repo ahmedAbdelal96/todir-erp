@@ -58,7 +58,11 @@ export const DIRECTION_LABELS: Record<string, string> = {
   Payable: "ذمم دائنة (موردين)",
   Inventory: "تقييم المخزون والمستودعات",
   UnrealizedGain: "أرباح فروق صرف غير محققة",
-  UnrealizedLoss: "خسائر فروق صرف غير محققة"
+  UnrealizedLoss: "خسائر فروق صرف غير محققة",
+  FXGain: "أرباح فروق صرف",
+  FXLoss: "خسائر فروق صرف",
+  ledger: "دفتر الأستاذ العام",
+  accounting: "إدارة المحاسبة"
 };
 
 export const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -101,6 +105,10 @@ export function formatAccountType(type: string): string {
 export function formatDiagnosticMessage(message: string): string {
   if (!message) return "";
 
+  if (/Accounting is running in Managed mode/i.test(message)) {
+    return "نظام المحاسبة يعمل في النمط المدار تلقائياً (القيود تُنشأ وتُرحل آلياً)";
+  }
+
   // Pattern replacements for common backend messages
   if (/Statement definition (.*?) version (\d+) is active/i.test(message)) {
     const match = message.match(/Statement definition (.*?) version (\d+) is active/i);
@@ -126,10 +134,20 @@ export function formatDiagnosticMessage(message: string): string {
     return "بدء التشغيل المحاسبي المالي معتمد ونشط";
   }
 
-  // Handle comma-separated codes like "ledger.account_mapping_missing, ledger.inventory_configuration_incomplete"
-  if (message.includes("ledger.") || message.includes("reconciliation.")) {
-    const parts = message.split(",").map(p => p.trim());
-    const translatedParts = parts.map(p => HEALTH_CODE_LABELS[p] || p);
+  if (message === "Reconciled" || message.toLowerCase() === "reconciled") {
+    return "الأرصدة متطابقة تماماً مع السجل المساعد";
+  }
+
+  // Handle comma-separated codes like "ledger.account_mapping_missing, ledger.inventory_configuration_incomplete", "control_context_missing, control_balance_difference"
+  const parts = message.split(",").map(p => p.trim());
+  const translatedParts = parts.map(p => {
+    if (HEALTH_CODE_LABELS[p]) return HEALTH_CODE_LABELS[p];
+    if (p === "control_context_missing") return "سياق حساب المراقبة والتحكم غير مكتمل";
+    if (p === "control_balance_difference") return "يوجد فارق تسوية بين رصيد الأستاذ العام والسجل المساعد";
+    if (p === "control_currency_mismatch") return "عدم تطابق عملة حساب المراقبة";
+    return p;
+  });
+  if (translatedParts.some((tp, i) => tp !== parts[i])) {
     return translatedParts.join(" • ");
   }
 

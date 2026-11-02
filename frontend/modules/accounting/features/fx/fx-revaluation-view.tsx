@@ -13,6 +13,21 @@ import { useAccountingI18n } from "../../i18n/index.ts";
 import type { FxRevaluationRunView, FxRevaluationLineView } from "../../types.ts";
 import { formatStatus, formatDirection } from "../../utils/diagnostic-translations.ts";
 
+function getNextDay(dateStr: string): string {
+  try {
+    const parts = dateStr.split("-").map(Number);
+    if (parts.length === 3) {
+      const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + 1));
+      return d.toISOString().slice(0, 10);
+    }
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return dateStr;
+  }
+}
+
 export interface FxRevaluationViewProps {
   readonly legalEntityId?: string;
 }
@@ -26,13 +41,22 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
 
   // Reverse Modal State
   const [isReverseModalOpen, setIsReverseModalOpen] = useState(false);
-  const [reversalDate, setReversalDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [reversalDate, setReversalDate] = useState<string>("");
   const [reversalReason, setReversalReason] = useState<string>("");
 
   // Mutations
   const previewMutation = usePreviewFxRevaluationMutation(legalEntityId);
   const postMutation = usePostFxRevaluationMutation(legalEntityId);
   const reverseMutation = useReverseFxRevaluationMutation(legalEntityId);
+
+  const handleOpenReverse = () => {
+    if (currentRun) {
+      setReversalDate(getNextDay(currentRun.asOfDate));
+      setReversalReason("");
+    }
+    reverseMutation.reset();
+    setIsReverseModalOpen(true);
+  };
 
   const handlePreview = async (e?: React.SyntheticEvent | unknown) => {
     if (e && typeof (e as React.SyntheticEvent).preventDefault === "function") {
@@ -197,7 +221,7 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
               {currentRun.status === "Posted" && (
                 <Button
                   variant="danger"
-                  onPress={() => setIsReverseModalOpen(true)}
+                  onPress={handleOpenReverse}
                   data-testid="fx-btn-reverse"
                 >
                   {t("fx.btnReverse")}
@@ -318,6 +342,7 @@ export const FxRevaluationView: React.FC<FxRevaluationViewProps> = ({ legalEntit
               id="fx-rev-date"
               type="date"
               value={reversalDate}
+              min={currentRun ? getNextDay(currentRun.asOfDate) : undefined}
               onChange={(e) => setReversalDate(e.target.value)}
               required
               style={{
