@@ -112,6 +112,25 @@ public sealed class HrPayrollDeltaIntegrationTests : DatabaseIntegrationTestBase
         Assert.Equal("Approved", leave.StatusAtCutoff);
         Assert.Equal("Paid", leave.PayrollTreatment);
         Assert.Equal(1m, leave.ChargedQuantityInPeriod);
+
+        var replay = await payroll.CreateSnapshotAsync(new TenantId(tenantId),
+            new(legalEntityId, periodStart, periodEnd, now), CancellationToken.None);
+        Assert.Equal(snapshot.SnapshotId, replay.SnapshotId);
+        Assert.Equal(snapshot.PayloadSha256, replay.PayloadSha256);
+        Assert.Equal("Approved", Assert.Single(Assert.Single(replay.Employments, item => item.EmploymentId == employmentId).Leave).StatusAtCutoff);
+
+        await using var immutableCheck = new NpgsqlConnection(adminConnectionString);
+        await immutableCheck.OpenAsync();
+        await using var mutateSnapshot = new NpgsqlCommand("update business_hr.payroll_period_snapshot set payload='{}'::jsonb where tenant_id=$1 and id=$2", immutableCheck);
+        mutateSnapshot.Parameters.AddWithValue(tenantId);
+        mutateSnapshot.Parameters.AddWithValue(snapshot.SnapshotId);
+        var mutation = await Assert.ThrowsAsync<PostgresException>(() => mutateSnapshot.ExecuteNonQueryAsync());
+        Assert.Equal(PostgresErrorCodes.CheckViolation, mutation.SqlState);
+
+        var afterMutationAttempt = await payroll.CreateSnapshotAsync(new TenantId(tenantId),
+            new(legalEntityId, periodStart, periodEnd, now), CancellationToken.None);
+        Assert.Equal(snapshot.PayloadSha256, afterMutationAttempt.PayloadSha256);
+        Assert.Equal("Approved", Assert.Single(Assert.Single(afterMutationAttempt.Employments, item => item.EmploymentId == employmentId).Leave).StatusAtCutoff);
     }
 
     [HrPostgresFact]
