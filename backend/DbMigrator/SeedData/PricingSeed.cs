@@ -28,7 +28,7 @@ public static class PricingSeed
         var eachId = SeedIds.Uom(tenant, "EA");
         var packId = SeedIds.Uom(tenant, "PACK");
         var cartonId = SeedIds.Uom(tenant, "CARTON");
-        var customerId = SeedIds.Party(tenant, 5);
+        var customerId = SeedIds.Party(tenant, 2);
         var supplierId = SeedIds.Party(tenant, 2);
         var now = context.AsOf;
 

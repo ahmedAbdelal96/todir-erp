@@ -36,7 +36,18 @@ public sealed class PricingService(PricingRepository repository, ICatalogCapabil
     }
     public Task<PriceVersionDto> CreateVersionAsync(TenantId tenant, Guid legalEntityId, Guid actor, Guid membership, Guid listId, CreatePriceVersionRequest request, Guid correlationId, CancellationToken cancellationToken) => repository.CreateVersionAsync(tenant, legalEntityId, actor, membership, listId, request, correlationId, cancellationToken);
     public Task<IReadOnlyList<PriceVersionDto>> ListVersionsAsync(TenantId tenant, Guid legalEntityId, Guid listId, CancellationToken cancellationToken) => repository.ListVersionsAsync(tenant, legalEntityId, listId, cancellationToken);
-    public Task<PriceVersionContentPageDto> ListVersionContentAsync(TenantId tenant, Guid legalEntityId, Guid listId, Guid versionId, int page, int pageSize, CancellationToken cancellationToken) => repository.ListVersionContentAsync(tenant, legalEntityId, listId, versionId, page, pageSize, cancellationToken);
+    public async Task<PriceVersionContentPageDto> ListVersionContentAsync(TenantId tenant, Guid legalEntityId, Guid listId, Guid versionId, int page, int pageSize, CancellationToken cancellationToken)
+    {
+        var content = await repository.ListVersionContentAsync(tenant, legalEntityId, listId, versionId, page, pageSize, cancellationToken);
+        var variantIds = content.Items.Where(item => item.VariantId is not null).Select(item => item.VariantId!.Value).Distinct().ToArray();
+        if (variantIds.Length == 0) return content;
+
+        var identities = await catalog.FindVariantsBatchAsync(tenant, variantIds, legalEntityId, cancellationToken);
+        var enriched = content.Items.Select(item => item.VariantId is { } variantId && identities.TryGetValue(variantId, out var identity)
+            ? item with { VariantSku = identity.Sku, ProductDisplayName = identity.DisplayName }
+            : item).ToArray();
+        return content with { Items = enriched };
+    }
 
     public async Task AddEntryAsync(TenantId tenant, Guid legalEntityId, Guid actor, Guid membership, Guid listId, Guid versionId, CreatePriceEntryRequest request, Guid correlationId, CancellationToken cancellationToken)
     {

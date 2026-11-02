@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   usePricingScope,
@@ -12,6 +12,7 @@ import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
+import { ComboBox } from "../../../components/primitives/combobox.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
@@ -29,7 +30,8 @@ export function PricingSimulatorWidget({
   const legalEntityId = propLegalEntityId || scopeLegalEntityId;
   const { t } = useTranslation("pricing");
   const { data: priceLists } = usePriceLists(legalEntityId);
-  const productsQuery = useLookupProducts(legalEntityId);
+  const [productSearch, setProductSearch] = useState("");
+  const productsQuery = useLookupProducts(legalEntityId, productSearch);
   const uomsQuery = useLookupUoms();
   const partiesQuery = useLookupParties(legalEntityId);
   const simulateMutation = useSimulatePriceMutation();
@@ -47,6 +49,7 @@ export function PricingSimulatorWidget({
   const [quantity, setQuantity] = useState("1");
   const [result, setResult] = useState<PriceResolution>();
   const [errorMsg, setErrorMsg] = useState<string>();
+  const selectedProductLabel = useRef("");
 
   // Extract products options with human business labels (Name + SKU)
   const productOptions = useMemo(() => {
@@ -238,10 +241,26 @@ export function PricingSimulatorWidget({
               options={partyOptions}
             />
 
-            <Select
+            <ComboBox
               label={t("simulator.productLabel")}
               selectedKey={variantId}
-              onSelectionChange={(k) => setVariantId(k as string)}
+              inputValue={selectedProductLabel.current || productSearch}
+              menuTrigger="input"
+              onSelectionChange={(k) => {
+                const selectedKey = k ? String(k) : "";
+                const selectedLabel = productOptions.find((product) => product.id === selectedKey)?.label ?? "";
+                setVariantId(selectedKey);
+                selectedProductLabel.current = selectedLabel;
+              }}
+              onInputChange={(value) => {
+                if (selectedProductLabel.current && !value) return;
+                setProductSearch(value);
+                if (selectedProductLabel.current && value !== selectedProductLabel.current) {
+                  setVariantId("");
+                  selectedProductLabel.current = "";
+                }
+              }}
+              placeholder={t("simulator.productPlaceholder")}
               options={productOptions}
             />
 

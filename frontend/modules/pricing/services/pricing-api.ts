@@ -260,11 +260,20 @@ export const pricingApi = {
     ),
 
   // Commercial lookup contracts (Catalog / Directory / FinBase)
-  getLookupProducts: (legalEntityId: string, options?: RequestOptions) =>
-    httpClient<{ items?: readonly any[] } | readonly any[]>(
-      `/api/v1/catalog/products?legalEntityId=${encodeURIComponent(legalEntityId)}&pageSize=100`,
+  getLookupProducts: (legalEntityId: string, search = "", options?: RequestOptions) => {
+    const searchQuery = search.trim();
+    const query = new URLSearchParams({
+      legalEntityId,
+      page: "1",
+      pageSize: "20"
+    });
+    if (searchQuery) query.set("search", searchQuery);
+
+    return httpClient<{ items?: readonly any[] } | readonly any[]>(
+      `/api/v1/catalog/products?${query.toString()}`,
       opts(legalEntityId, options)
-    ),
+    );
+  },
 
   getLookupUoms: (options?: RequestOptions) =>
     httpClient<readonly any[]>(`/api/v1/catalog/uoms`, options),

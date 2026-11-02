@@ -8,9 +8,23 @@ const atlasVariantUnpriced = '01c6a2aa-6619-ce59-b5ea-92d9500f27ad';
 const atlasProductWithPriceId = '798fbf84-e5d9-475f-8b91-7d1f62ebed50';
 async function selectOption(page: Page, labelRegex: RegExp, optionRegex: RegExp) {
   const trigger = page.getByLabel(labelRegex).first();
-  await trigger.click();
-  await page.waitForTimeout(300);
   const listbox = page.locator('[role="listbox"]').first();
+  const isProductLookup = /المنتج|product/i.test(labelRegex.source);
+
+  if (isProductLookup) {
+    const searchTerm = optionRegex.source.replaceAll("\\", "");
+    await trigger.fill(searchTerm);
+    await page.waitForTimeout(700);
+    const combo = trigger.locator('xpath=ancestor::div[contains(@class, "ui-combobox")]');
+    await combo.getByRole('button', { name: /Show suggestions|إظهار الاقتراحات/i }).click();
+  } else {
+    await trigger.click();
+    await page.waitForTimeout(300);
+  }
+
+  if (!(await listbox.isVisible().catch(() => false))) {
+    await trigger.click();
+  }
   await expect(listbox).toBeVisible({ timeout: 5000 });
   const option = listbox.getByRole('option', { name: optionRegex }).first();
   await option.click();
@@ -18,7 +32,7 @@ async function selectOption(page: Page, labelRegex: RegExp, optionRegex: RegExp)
 }
 
 async function loginIfNeeded(page: Page) {
-  await page.goto('/pricing');
+  await page.goto('/pricing', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('domcontentloaded');
 
   const pricingHeading = page.getByRole('heading', { name: /الأسعار والتسعير التجاري|Commercial Pricing/i });
@@ -42,16 +56,21 @@ async function loginIfNeeded(page: Page) {
 
     if (matched === 'retry') {
       await retryBtn.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(350);
       continue;
     }
 
     if (matched === 'login') {
-      await emailInput.fill('admin@atlas.com');
-      await page.locator('#login-password').fill(process.env.SEED_DEFAULT_PASSWORD ?? 'TodirDev2026!');
-      await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
+      const atlasQuickLogin = page.getByRole('button', { name: /Atlas.*مسؤول النظام/i });
+      if (await atlasQuickLogin.isVisible().catch(() => false)) {
+        await atlasQuickLogin.click();
+      } else {
+        await emailInput.fill('admin@atlas.com');
+        await page.locator('#login-password').fill(process.env.SEED_DEFAULT_PASSWORD ?? 'TodirDev2026!');
+        await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
+      }
       await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
-      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(500);
       continue;
     }
   }
@@ -61,7 +80,6 @@ async function loginIfNeeded(page: Page) {
   if (await entitySelect.isVisible({ timeout: 5000 }).catch(() => false)) {
     await entitySelect.selectOption({ index: 1 });
     await page.waitForTimeout(500);
-    await page.waitForLoadState('networkidle');
   }
 
   await expect(pricingHeading).toBeVisible({ timeout: 20000 });
@@ -83,8 +101,8 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     // ==========================================
     // 1. Hub Overview, Selling/Buying Lists, and Version Lifecycle
     // ==========================================
-    await page.goto('/pricing');
-    await page.waitForLoadState('networkidle');
+    await page.goto('/pricing', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(350);
 
     // 02: Pricing Hub Overview (Arabic RTL)
     await expect(page.getByText(/قوائم البيع النشطة/i)).toBeVisible({ timeout: 15000 });
@@ -97,7 +115,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
 
     // 04: Customer Selling Price Lists Tab
     await page.getByRole('button', { name: /^قوائم البيع$|^Selling Lists$/i }).click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByRole('heading', { name: /قوائم أسعار البيع للعملاء/i })).toBeVisible();
     await expect(page.getByText('RETAIL').first()).toBeVisible();
     await expect(page.getByText('WHOLESALE').first()).toBeVisible();
@@ -110,7 +128,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
 
     // 05: Supplier Buying Price Lists Tab
     await page.getByRole('button', { name: /^قوائم الشراء$|^Buying Lists$/i }).click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByRole('heading', { name: /قوائم أسعار الشراء من الموردين/i })).toBeVisible();
     await expect(page.getByText('PURCHASE').first()).toBeVisible();
 
@@ -121,7 +139,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
 
     // 06: Version Editor - Active Read-Only Version with Business Labels
     await page.getByRole('button', { name: /^قوائم البيع$|^Selling Lists$/i }).click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     const viewVersionsBtn = page.getByRole('button', { name: /عرض الإصدارات والمحرر/i }).nth(1);
     await viewVersionsBtn.click();
     await expect(page.getByRole('heading', { name: /إصدارات قائمة الأسعار والمحرر/i })).toBeVisible({ timeout: 5000 });
@@ -130,8 +148,8 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await expect(version1Trigger).toBeVisible({ timeout: 5000 });
     await version1Trigger.click();
     await page.waitForTimeout(500);
-    await expect(page.getByText(/الإصدار الحالي نشط ومقفل تاريخياً/i)).toBeVisible();
-    await expect(page.getByText(/AT-0002/).first()).toBeVisible();
+    await expect(page.getByText(/منتهي الصلاحية/i).first()).toBeVisible();
+    await expect(page.getByText(/EG-1-0002/).first()).toBeVisible();
     await expect(page.getByText(/1,250|1250/).first()).toBeVisible();
     await expect(page.getByText(/قطعة|EA/).first()).toBeVisible();
     await expect(page.getByRole('button', { name: /إضافة بند سعر مباشر/i })).not.toBeVisible();
@@ -154,7 +172,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     const downloadedPath = await download.path();
     expect(downloadedPath).not.toBeNull();
     const csv = await readFile(downloadedPath!, 'utf8');
-    expect(csv).toContain('AT-0002');
+    expect(csv).toContain('EG-1-0002');
     expect(csv).toContain('EA');
     expect(csv).toContain('1250');
     expect(csv).not.toContain('VariantId');
@@ -205,10 +223,10 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     // 2. Business-Friendly Simulator: Customer, Quantity Tiers, UOM, and FX Proofs
     // ==========================================
     await page.getByRole('button', { name: /^محاكي ومفسر السعر$|^Simulator/i }).click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByRole('heading', { name: /محاكي ومفسر التسعير التجاري/i })).toBeVisible();
 
-    await selectOption(page, /المنتج \/ النموذج/i, /AT-0002\)/i);
+    await selectOption(page, /المنتج \/ النموذج/i, /EG-1-0002/i);
     await selectOption(page, /وحدة القياس/i, /EA|قطعة/i);
 
     const simulateBtn = page.getByRole('button', { name: /محاكاة واحتساب السعر/i });
@@ -218,7 +236,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await selectOption(page, /العميل أو المورد/i, /أطلس للصناعات المكتبية/i);
     await page.getByLabel(/عملة العملية التجارية/i).fill('EGP');
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
 
     await expect(page.getByRole('heading', { name: /النتيجة السعرية المعتمدة/i })).toBeVisible();
     await expect(page.getByText(/1,100|1100/i).first()).toBeVisible();
@@ -235,13 +253,13 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     // Boundary check 1: Below boundary (11 qty) -> 1,125 EGP
     await qtyInput.fill('11');
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByText(/1,125|1125/i).first()).toBeVisible();
 
     // Boundary check 2: Exact boundary (12 qty) -> 1,050 EGP
     await qtyInput.fill('12');
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
 
     await expect(page.getByText(/1,050|1050/i).first()).toBeVisible();
     await expect(page.getByText(/تم تطبيق السعر المخصص للطلبات بكمية 12 أو أكثر/i)).toBeVisible();
@@ -252,7 +270,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     // Boundary check 3: Above boundary (13 qty) -> 1,050 EGP
     await qtyInput.fill('13');
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByText(/1,050|1050/i).first()).toBeVisible();
 
     // 10: Explicit commercial prices for Piece, Pack, and Carton.
@@ -260,14 +278,14 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await selectOption(page, /العميل أو المورد/i, /بدون تحديد عميل/i);
     await selectOption(page, /وحدة القياس/i, /EA|قطعة/i);
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByText(/1,250|1250/i).first()).toBeVisible();
     await expect(page.getByText('قطعة (EA)', { exact: true }).last()).toBeVisible();
     await page.screenshot({ path: 'artifacts/test-results/pricing/10-uom-piece.png' });
 
     await selectOption(page, /وحدة القياس/i, /PACK|عبوة|باك/i);
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByText(/700/i).first()).toBeVisible();
     await expect(page.getByText(/تم تطبيق سعر تجاري مستقل لوحدة/i)).toBeVisible();
     await page.screenshot({ path: 'artifacts/test-results/pricing/10-uom-pack.png' });
@@ -277,7 +295,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await qtyInput.fill('1');
     await selectOption(page, /وحدة القياس/i, /CARTON|كرتونة/i);
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
 
     await expect(page.getByText(/25,500|25500/i).first()).toBeVisible();
     await expect(page.getByText(/تم تطبيق سعر تجاري مستقل لوحدة كرتونة/i)).toBeVisible();
@@ -297,7 +315,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
       if (!primaryResponse.ok || !secondaryResponse.ok || !primary || !secondary) return { batchStatus: primaryResponse.status || secondaryResponse.status, count: 0, prices: [] as (string | null)[], sampledSinglePrices: [] as (string | null)[] };
       const csrfResponse = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin' });
       const csrf = await csrfResponse.json() as { token: string };
-      const makeRequest = (legalEntityId: string, priceListId: string, quantity: number) => ({ legalEntityId, direction: 'Selling', pricingDate: '2026-01-05', transactionCurrencyCode: 'EGP', priceListId, partyId: null, productVariantId: variantId, unitOfMeasureId: uomId, quantity });
+      const makeRequest = (legalEntityId: string, priceListId: string, quantity: number) => ({ legalEntityId, direction: 'Selling', pricingDate: '2026-10-05', transactionCurrencyCode: 'EGP', priceListId, partyId: null, productVariantId: variantId, unitOfMeasureId: uomId, quantity });
       const contexts = Array.from({ length: 100 }, (_, index) => index < 50 ? makeRequest(entityId, primary.id, 1) : makeRequest(secondaryEntityId, secondary.id, 1));
       const batch = await fetch('/api/v1/pricing/resolve-batch', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf.token }, body: JSON.stringify({ items: contexts }) });
       const results = await batch.json() as { snapshot?: { finalUnitPrice: string } }[];
@@ -321,9 +339,9 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     // The canonical finance seed rate is dated 2026-01-01; use a nearby
     // historical business date to verify conversion without pretending that
     // this stale rate is valid for today's transactions.
-    await page.getByLabel(/تاريخ استحقاق التسعير/i).fill('2026-01-05');
+    await page.getByLabel(/تاريخ استحقاق التسعير/i).fill('2026-10-05');
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
 
     await expect(page.getByText(/تم التحويل التلقائي للعملة عبر FinBase/i)).toBeVisible();
     await page.screenshot({
@@ -334,16 +352,17 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await selectOption(page, /قائمة الأسعار المحددة/i, /RETAIL|قائمة البيع العامة/i);
     await selectOption(page, /العميل أو المورد/i, /بدون تحديد عميل/i);
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByText(/1,250|1250/i).first()).toBeVisible();
     await page.screenshot({
       path: 'artifacts/test-results/pricing/12-simulator-resolved-price-why.png'
     });
 
     // 13: Simulator - Price Missing State
-    await selectOption(page, /المنتج \/ النموذج/i, /AT-0022/i);
+    await selectOption(page, /المنتج \/ النموذج/i, /EG-2-0041/i);
+    await selectOption(page, /وحدة القياس/i, /KG|كيلوغرام/i);
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
 
     await expect(page.getByText(/لا يوجد سعر معتمد لهذا المنتج في هذا السياق/i)).toBeVisible();
     await page.screenshot({
@@ -351,9 +370,10 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     });
 
     // 14: Simulator - Explicit Promotional Zero Price
-    await selectOption(page, /المنتج \/ النموذج/i, /AT-0004/i);
+    await selectOption(page, /المنتج \/ النموذج/i, /EG-1-0004/i);
+    await selectOption(page, /وحدة القياس/i, /EA|قطعة/i);
     await simulateBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
 
     await expect(page.getByRole('heading', { name: /النتيجة السعرية المعتمدة/i })).toBeVisible();
     await expect(page.getByText(/سعر مجاني معتمد/i).first()).toBeVisible();
@@ -365,7 +385,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     // 3. Import Preview / Reconciliation Flow with Representative Result Classes
     // ==========================================
     await page.getByRole('button', { name: /^الاستيراد والتصدير$|^Import & Export$/i }).click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByRole('heading', { name: /استيراد وتصدير بنود الأسعار/i })).toBeVisible();
 
     const openImportBtn = page.getByRole('button', { name: /استيراد أسعار \(CSV\)/i }).first();
@@ -385,12 +405,12 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
       await page.waitForTimeout(300);
     }
 
-    await page.locator('textarea').fill('SKU,UOM,Price,Currency,MinQty,MaxQty\nAT-0006,EA,15.00,EGP,1,');
+    await page.locator('textarea').fill('SKU,UOM,Price,Currency,MinQty,MaxQty\nEG-1-0006,EA,15.00,EGP,1,');
 
     // Click Validate & Preview to advance to Step 2
     const validatePreviewBtn = page.getByRole('button', { name: /فحص وتدقيق البيانات/i });
     await validatePreviewBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await expect(page.getByText(/تقرير تدقيق ومطابقة الاستيراد/i)).toBeVisible({ timeout: 10000 });
     await expect(page.getByText(/الصفوف المطابقة والسليمة:\s*1/i)).toBeVisible();
     await expect(page.getByText(/جاهز للاعتماد في المسودة/i)).toBeVisible();
@@ -416,7 +436,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     // 19: Add overlapping entries after import reconciliation so the conflict
     // does not prevent the preceding valid import from being committed.
     await page.getByRole('button', { name: /^قوائم البيع$|^Selling Lists$/i }).click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await page.getByRole('button', { name: /عرض الإصدارات والمحرر/i }).nth(1).click();
     await expect(page.getByRole('heading', { name: /إصدارات قائمة الأسعار والمحرر/i })).toBeVisible({ timeout: 5000 });
     const version3Trigger = page.getByRole('button', { name: /إصدار #3/i }).first();
@@ -428,7 +448,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
 
       for (const price of ['100', '90']) {
         await page.getByRole('button', { name: /إضافة بند سعر مباشر/i }).click();
-        await selectOption(page, /المنتج \/ النموذج/i, /AT-0008/i);
+        await selectOption(page, /المنتج \/ النموذج/i, /EG-1-0008/i);
         await selectOption(page, /وحدة القياس/i, /قطعة \(EA\)/i);
         await page.getByLabel(/سعر الوحدة/i).fill(price);
         await page.getByRole('button', { name: /إضافة البند للمسودة/i }).click();
@@ -448,8 +468,8 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     // ==========================================
     // 4. Product Workspace SME Pricing Integration and Dialog
     // ==========================================
-    await page.goto(`/catalog/${atlasProductWithPriceId}`);
-    await page.waitForLoadState('networkidle');
+    await page.goto(`/catalog/${atlasProductWithPriceId}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(350);
 
     // Verify Pricing-owned ProductSellingPriceCard is rendered with approved price
     await expect(page.getByText(/سعر البيع المعتمد/i).first()).toBeVisible({ timeout: 10000 });
@@ -477,8 +497,8 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     });
 
     // Navigate back to Pricing
-    await page.goto('/pricing');
-    await page.waitForLoadState('networkidle');
+    await page.goto('/pricing', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(350);
 
     // ==========================================
     // 5. Mobile 390px, English LTR, Multi-Entity Isolation, and Permission-Limited State
@@ -509,7 +529,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     const langBtn = page.getByRole('button', { name: /التبديل إلى الإنجليزية|English/i });
     if (await langBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await langBtn.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(350);
     }
 
     await expect(page.getByRole('heading', { name: /Commercial Pricing & Price Lists/i })).toBeVisible({ timeout: 10000 });
@@ -522,7 +542,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     const arBtn = page.getByRole('button', { name: /Switch to Arabic|التبديل إلى العربية|العربية/i });
     if (await arBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await arBtn.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(350);
     }
 
     // 17: Legal Entity Switch Proof (Isolation)
@@ -530,7 +550,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     await expect(entitySelect).toBeVisible();
     await entitySelect.selectOption({ index: 2 });
     await page.waitForTimeout(1000);
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
 
     await expect(page.locator('h1').first()).toBeVisible();
     await page.getByRole('button', { name: /^قوائم البيع$|^Selling Lists$/i }).click();
@@ -547,7 +567,7 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     // Switch back to Atlas
     await entitySelect.selectOption({ index: 1 });
     await page.waitForTimeout(1000);
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
     await page.getByRole('button', { name: /^قوائم البيع$|^Selling Lists$/i }).click();
     await expect(page.getByText('RETAIL').first()).toBeVisible();
     await page.getByRole('button', { name: /عرض الإصدارات والمحرر/i }).nth(1).click();
@@ -564,18 +584,18 @@ test.describe('Pricing Real-Stack Product Acceptance & Visual Suite', () => {
     const salesPage = await salesContext.newPage();
     await salesPage.setViewportSize({ width: 1440, height: 900 });
 
-    await salesPage.goto('/pricing');
-    await salesPage.waitForLoadState('networkidle');
+    await salesPage.goto('/pricing', { waitUntil: 'domcontentloaded' });
+    await salesPage.waitForTimeout(350);
     const salesEmail = salesPage.locator('#login-email');
     await salesEmail.waitFor({ state: 'visible', timeout: 15000 });
     await salesEmail.fill('sales@atlas.com');
     await salesPage.locator('#login-password').fill(process.env.SEED_DEFAULT_PASSWORD ?? 'TodirDev2026!');
     await salesPage.locator('button[type="submit"]').click();
-    await salesPage.waitForLoadState('networkidle');
+    await salesPage.waitForTimeout(350);
 
     if (!salesPage.url().includes('/pricing')) {
-      await salesPage.goto('/pricing');
-      await salesPage.waitForLoadState('networkidle');
+      await salesPage.goto('/pricing', { waitUntil: 'domcontentloaded' });
+      await salesPage.waitForTimeout(350);
     }
 
     // Confirm landing on Pricing Hub as read-only user

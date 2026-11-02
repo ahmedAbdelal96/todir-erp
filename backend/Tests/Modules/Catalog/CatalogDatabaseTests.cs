@@ -42,6 +42,59 @@ public sealed class CatalogDatabaseTests
     }
 
     [Fact]
+    public async Task ProductSearchMatchesExactSkuWithSeparators()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_CATALOG_ADMIN_CONNECTION");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_CATALOG_RUNTIME_CONNECTION");
+        if (string.IsNullOrWhiteSpace(adminConnectionString) || string.IsNullOrWhiteSpace(runtimeConnectionString)) return;
+
+        await ResetRuntimePasswordAsync(adminConnectionString);
+        var tenant = Guid.CreateVersion7();
+        var uom = Guid.CreateVersion7();
+        await using (var admin = NpgsqlDataSource.Create(adminConnectionString))
+        await using (var connection = await admin.OpenConnectionAsync())
+        {
+            await using var command = new NpgsqlCommand("insert into platform.tenant (id,slug,display_name,status,login_domain,normalized_login_domain,created_at,version) values ($1,$2,$3,'Active',$4,$4,now(),1)", connection);
+            command.Parameters.AddWithValue(tenant);
+            command.Parameters.AddWithValue($"catalog-sku-search-{tenant:N}");
+            command.Parameters.AddWithValue("Catalog SKU Search");
+            command.Parameters.AddWithValue($"catalog-sku-search-{tenant:N}.local");
+            await command.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            await using var dataSource = NpgsqlDataSource.Create(runtimeConnectionString);
+            await using (var connection = await dataSource.OpenConnectionAsync())
+            {
+                await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+                context.Parameters.AddWithValue(tenant.ToString("D"));
+                await context.ExecuteNonQueryAsync();
+                await using var insert = new NpgsqlCommand("insert into foundation_catalog.uom (tenant_id,id,code,name_ar,name_en,dimension,allow_fraction,precision,status,created_at,updated_at,version) values ($1,$2,'EA','قطعة','Piece','Count',false,0,'Active',now(),now(),1)", connection);
+                insert.Parameters.AddWithValue(tenant);
+                insert.Parameters.AddWithValue(uom);
+                await insert.ExecuteNonQueryAsync();
+            }
+
+            var service = new ProductService(new Modules.Catalog.Repositories.ProductRepository(new NpgsqlTransactionCoordinator(dataSource), dataSource));
+            var created = await service.CreateAsync(new TenantId(tenant), Guid.CreateVersion7(), Guid.CreateVersion7(), new CreateProductRequest("SKU Search Product", ProductNature.Goods, "SKU-42-001", "منتج بحث SKU", "SKU Search Product", null, null, uom), Guid.CreateVersion7(), null, CancellationToken.None);
+            var result = await service.ListAsync(new TenantId(tenant), "SKU-42-001", null, null, null, null, null, 1, 20, CancellationToken.None);
+            Assert.Contains(result.Items, item => item.Id == created.Id);
+        }
+        finally
+        {
+            await using var admin = NpgsqlDataSource.Create(adminConnectionString);
+            await using var connection = await admin.OpenConnectionAsync();
+            foreach (var sql in new[] { "delete from foundation_catalog.catalog_search_projection where tenant_id=$1", "delete from foundation_catalog.product_visibility where tenant_id=$1", "delete from foundation_catalog.product_uom where tenant_id=$1", "delete from foundation_catalog.product_variant where tenant_id=$1", "delete from foundation_catalog.product_template where tenant_id=$1", "delete from foundation_catalog.uom where tenant_id=$1", "delete from platform.outbox_message where tenant_id=$1", "delete from platform.audit_entry where tenant_id=$1", "delete from platform.tenant where id=$1" })
+            {
+                await using var cleanup = new NpgsqlCommand(sql, connection);
+                cleanup.Parameters.AddWithValue(tenant);
+                await cleanup.ExecuteNonQueryAsync();
+            }
+        }
+    }
+
+    [Fact]
     public async Task VariantAttributeCombinationsAreValidatedAndUniqueInPostgres()
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_CATALOG_ADMIN_CONNECTION");

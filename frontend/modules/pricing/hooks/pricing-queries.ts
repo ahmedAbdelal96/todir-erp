@@ -287,10 +287,12 @@ export function useCommitImportMutation() {
   });
 }
 
-export function useLookupProducts(legalEntityId: string) {
+export function useLookupProducts(legalEntityId: string, search = "") {
+  const normalizedSearch = search.trim();
   return useQuery({
-    queryKey: ["pricing", "lookup", "products", legalEntityId],
-    queryFn: () => pricingApi.getLookupProducts(legalEntityId),
+    queryKey: ["pricing", "lookup", "products", legalEntityId, normalizedSearch],
+    queryFn: () => pricingApi.getLookupProducts(legalEntityId, normalizedSearch),
+    enabled: Boolean(legalEntityId),
     staleTime: 60_000
   });
 }

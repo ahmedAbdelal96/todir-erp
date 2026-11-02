@@ -58,7 +58,7 @@ public sealed class ProductRepository(ITransactionCoordinator coordinator, Npgsq
         }
         else
         {
-            const string indexedTextMatches = "select c.tenant_id,c.variant_id,c.template_id,case when c.normalized_sku=$9 then 0 else 2 end as priority from foundation_catalog.catalog_search_projection c where c.tenant_id=$1 and c.search_text_normalized like $7";
+            const string indexedTextMatches = "select c.tenant_id,c.variant_id,c.template_id,2 as priority from foundation_catalog.catalog_search_projection c where c.tenant_id=$1 and c.search_text_normalized like $7 union all select c.tenant_id,c.variant_id,c.template_id,0 from foundation_catalog.catalog_search_projection c where c.tenant_id=$1 and c.normalized_sku=$9";
             var matches = $"""
                 with matched_aliases as materialized (
                     select tenant_id,variant_id from foundation_catalog.product_alias where tenant_id=$1 and normalized_alias like $7

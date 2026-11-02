@@ -330,7 +330,11 @@ export function VersionEditorDrawer({
                   {contentQuery.isError && <tr><td colSpan={7} style={{ padding: 16, textAlign: "center" }}>{t("versions.contentFailed")}</td></tr>}
                   {contentQuery.data?.items.map((item) => {
                     const partyScope = item.partyScope === "SpecificParty" ? partyLabel(item.partyId) : item.partyScope === "PriceGroup" ? t("versions.priceGroup") : t("versions.allParties");
-                    const productScope = item.productScope === "Variant" ? productLabel(item.variantId) : item.productScope === "Template" ? productLabel(undefined, item.templateId) : t(`versions.productScopes.${item.productScope}`, item.productScope);
+                    const productScope = item.productScope === "Variant"
+                      ? item.productDisplayName
+                        ? `${item.variantSku ? `${item.variantSku} · ` : ""}${item.productDisplayName}`
+                        : productLabel(item.variantId)
+                      : item.productScope === "Template" ? productLabel(undefined, item.templateId) : t(`versions.productScopes.${item.productScope}`, item.productScope);
                     const from = item.validFrom ?? currentVersion?.effectiveFrom ?? "—";
                     const to = item.validTo ?? currentVersion?.effectiveTo ?? "—";
                     return (

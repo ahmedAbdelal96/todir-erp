@@ -55,6 +55,8 @@ export interface PriceVersionContentItemDto {
   readonly priority: number;
   readonly status: string;
   readonly isDirectEntry: boolean;
+  readonly variantSku?: string | null;
+  readonly productDisplayName?: string | null;
 }
 
 export interface PriceVersionContentPageDto {

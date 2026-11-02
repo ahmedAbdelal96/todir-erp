@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useAddPriceEntryMutation, useLookupProducts, useLookupUoms, useLookupParties } from "../hooks/pricing-queries.ts";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
+import { ComboBox } from "../../../components/primitives/combobox.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
 import { normalizeDecimalInput } from "../../../components/formatting/decimal-parser.ts";
 import type { PricingPartyScope } from "../types.ts";
@@ -45,7 +46,8 @@ export function AddEntryModal({
 }: AddEntryModalProps): React.JSX.Element | null {
   const { t } = useTranslation("pricing");
   const addMutation = useAddPriceEntryMutation();
-  const productsQuery = useLookupProducts(legalEntityId);
+  const [productSearch, setProductSearch] = useState("");
+  const productsQuery = useLookupProducts(legalEntityId, productSearch);
   const uomsQuery = useLookupUoms();
   const partiesQuery = useLookupParties(legalEntityId);
 
@@ -60,6 +62,7 @@ export function AddEntryModal({
   const [validTo, setValidTo] = useState("");
   const [priority, setPriority] = useState("0");
   const [errorMsg, setErrorMsg] = useState<string>();
+  const selectedProductLabel = useRef("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,10 +142,26 @@ export function AddEntryModal({
           {errorMsg ? <Alert variant="danger">{errorMsg}</Alert> : null}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
-            <Select
+            <ComboBox
               label={t("entryModal.variantLabel")}
               selectedKey={variantId}
-              onSelectionChange={(key) => setVariantId(key as string)}
+              inputValue={selectedProductLabel.current || productSearch}
+              menuTrigger="input"
+              onSelectionChange={(key) => {
+                const selectedKey = key ? String(key) : "";
+                const selectedLabel = products.find((product) => product.id === selectedKey)?.label ?? "";
+                setVariantId(selectedKey);
+                selectedProductLabel.current = selectedLabel;
+              }}
+              onInputChange={(value) => {
+                if (selectedProductLabel.current && !value) return;
+                setProductSearch(value);
+                if (selectedProductLabel.current && value !== selectedProductLabel.current) {
+                  setVariantId("");
+                  selectedProductLabel.current = "";
+                }
+              }}
+              placeholder={t("entryModal.variantPlaceholder")}
               options={products}
             />
             <Select
