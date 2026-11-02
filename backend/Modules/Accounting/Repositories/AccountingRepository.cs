@@ -185,10 +185,12 @@ public sealed class AccountingRepository(NpgsqlDataSource dataSource, TimeProvid
         if (page is not null)
         {
             var pageNumber = Math.Max(1, page.Value); var offset = (pageNumber - 1) * limit;
-            const string offsetSql = "select id,reconciliation_type,as_of_date,source_balance,ledger_balance,difference,currency_code,status,diagnostics::text,created_at,count(*) over() from business_accounting.reconciliation_run where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or reconciliation_type=$3) and ($4::date is null or as_of_date=$4) order by created_at desc,id desc offset $5 limit $6";
+            await using var countCommand = new NpgsqlCommand("select count(*) from business_accounting.reconciliation_run where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or reconciliation_type=$3) and ($4::date is null or as_of_date=$4)", connection); Add(countCommand, tenant.Value, entity, (object?)type ?? DBNull.Value, (object?)asOf ?? DBNull.Value);
+            var totalCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+            const string offsetSql = "select id,reconciliation_type,as_of_date,source_balance,ledger_balance,difference,currency_code,status,diagnostics::text,created_at from business_accounting.reconciliation_run where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or reconciliation_type=$3) and ($4::date is null or as_of_date=$4) order by created_at desc,id desc offset $5 limit $6";
             await using var offsetCommand = new NpgsqlCommand(offsetSql, connection); Add(offsetCommand, tenant.Value, entity, (object?)type ?? DBNull.Value, (object?)asOf ?? DBNull.Value, offset, limit);
-            await using var offsetReader = await offsetCommand.ExecuteReaderAsync(ct); var offsetRows = new List<ReconciliationView>(); var totalCount = 0;
-            while (await offsetReader.ReadAsync(ct)) { totalCount = offsetReader.GetInt32(10); offsetRows.Add(ReadReconciliation(offsetReader)); }
+            await using var offsetReader = await offsetCommand.ExecuteReaderAsync(ct); var offsetRows = new List<ReconciliationView>();
+            while (await offsetReader.ReadAsync(ct)) offsetRows.Add(ReadReconciliation(offsetReader));
             return new(offsetRows, null, totalCount, pageNumber, limit);
         }
         const string sql = "select id,reconciliation_type,as_of_date,source_balance,ledger_balance,difference,currency_code,status,diagnostics::text,created_at from business_accounting.reconciliation_run where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or reconciliation_type=$3) and ($4::date is null or as_of_date=$4) and ($5::timestamptz is null or (created_at,id)<($5,$6)) order by created_at desc,id desc limit $7";
@@ -227,10 +229,12 @@ public sealed class AccountingRepository(NpgsqlDataSource dataSource, TimeProvid
         if (page is not null)
         {
             var pageNumber = Math.Max(1, page.Value); var offset = (pageNumber - 1) * limit;
-            const string offsetSql = "select id,reconciliation_run_id,code,severity,status,created_at,resolved_at,count(*) over() from business_accounting.reconciliation_issue where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or status=$3) order by created_at desc,id desc offset $4 limit $5";
+            await using var countCommand = new NpgsqlCommand("select count(*) from business_accounting.reconciliation_issue where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or status=$3)", connection); Add(countCommand, tenant.Value, entity, (object?)status ?? DBNull.Value);
+            var totalCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+            const string offsetSql = "select id,reconciliation_run_id,code,severity,status,created_at,resolved_at from business_accounting.reconciliation_issue where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or status=$3) order by created_at desc,id desc offset $4 limit $5";
             await using var offsetCommand = new NpgsqlCommand(offsetSql, connection); Add(offsetCommand, tenant.Value, entity, (object?)status ?? DBNull.Value, offset, limit);
-            await using var offsetReader = await offsetCommand.ExecuteReaderAsync(ct); var offsetRows = new List<ReconciliationIssueView>(); var totalCount = 0;
-            while (await offsetReader.ReadAsync(ct)) { totalCount = offsetReader.GetInt32(7); offsetRows.Add(new(offsetReader.GetGuid(0), offsetReader.GetGuid(1), offsetReader.GetString(2), offsetReader.GetString(3), offsetReader.GetString(4), offsetReader.GetFieldValue<DateTimeOffset>(5), offsetReader.IsDBNull(6) ? null : offsetReader.GetFieldValue<DateTimeOffset>(6))); }
+            await using var offsetReader = await offsetCommand.ExecuteReaderAsync(ct); var offsetRows = new List<ReconciliationIssueView>();
+            while (await offsetReader.ReadAsync(ct)) offsetRows.Add(new(offsetReader.GetGuid(0), offsetReader.GetGuid(1), offsetReader.GetString(2), offsetReader.GetString(3), offsetReader.GetString(4), offsetReader.GetFieldValue<DateTimeOffset>(5), offsetReader.IsDBNull(6) ? null : offsetReader.GetFieldValue<DateTimeOffset>(6)));
             return new(offsetRows, null, totalCount, pageNumber, limit);
         }
         const string sql = "select id,reconciliation_run_id,code,severity,status,created_at,resolved_at from business_accounting.reconciliation_issue where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or status=$3) and ($4::timestamptz is null or (created_at,id)<($4,$5)) order by created_at desc,id desc limit $6";

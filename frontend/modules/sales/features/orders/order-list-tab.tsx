@@ -42,7 +42,10 @@ export function OrderListTab({ legalEntityId }: OrderListTabProps): React.JSX.El
         <div style={{ width: "280px" }}>
           <SearchField
             value={searchQuery}
-            onChange={setSearchQuery}
+            onChange={(value) => {
+              setSearchQuery(value);
+              setPage(1);
+            }}
             placeholder={t("orders.searchPlaceholder")}
             ariaLabel={t("orders.title")}
           />

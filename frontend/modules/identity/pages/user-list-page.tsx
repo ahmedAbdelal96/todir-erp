@@ -102,7 +102,10 @@ export function UserListPage({ onSelectUser, context }: UserListPageProps): Reac
             <Select
               label={t("userList.accountStatus")}
               selectedKey={statusFilter}
-              onSelectionChange={(key) => setStatusFilter(String(key))}
+              onSelectionChange={(key) => {
+                setStatusFilter(String(key));
+                setPage(1);
+              }}
             >
               <SelectItem id="all" textValue={t("userList.allAccounts")}>{t("userList.allAccounts")}</SelectItem>
               <SelectItem id="active" textValue={t("userList.activeAccounts")}>{t("userList.activeAccounts")}</SelectItem>

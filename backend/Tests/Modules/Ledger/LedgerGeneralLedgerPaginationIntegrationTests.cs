@@ -105,6 +105,10 @@ public sealed class LedgerGeneralLedgerPaginationIntegrationTests
         Assert.Equal(20m, first.Items[1].RunningBalance);
         Assert.Equal(30m, second.Items[0].RunningBalance);
         Assert.Equal(40m, second.Items[1].RunningBalance);
+
+        var outOfRange = await operations.GetGeneralLedgerAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, new DateOnly(2026, 5, 15), new DateOnly(2026, 5, 15), debit, null, 2, default, sourceModule: source, page: 99);
+        Assert.Empty(outOfRange.Items);
+        Assert.Equal(4, outOfRange.TotalCount);
     }
 
     private static async Task<List<GeneralLedgerRowDto>> ReadAllAsync(Func<string?, Task<GeneralLedgerPageDto>> read)

@@ -855,9 +855,12 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             throw new PaymentException("payments.request_state_invalid", "Choose a valid payment request status.");
         var search = string.IsNullOrWhiteSpace(query.Search) ? null : $"{query.Search.Trim().ToLowerInvariant()}%";
         await using var connection = await OpenAsync(tenant, ct);
+        await using var countCommand = new NpgsqlCommand("select count(*) from finance_payments.payment_request request where request.tenant_id=$1 and request.legal_entity_id=$2 and ($3::text is null or request.workflow_state=$3) and ($4::text is null or lower(request.merchant_reference) like $4)", connection);
+        Add(countCommand, tenant.Value, query.LegalEntityId, Db(state), Db(search));
+        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
         await using var command = new NpgsqlCommand("""
             select request.id,request.legal_entity_id,request.merchant_reference,request.amount,request.currency_code,request.workflow_state,
-                   coalesce(attempt.id,'00000000-0000-0000-0000-000000000000'::uuid),coalesce(attempt.attempt_number,0),count(*) over()
+                   coalesce(attempt.id,'00000000-0000-0000-0000-000000000000'::uuid),coalesce(attempt.attempt_number,0)
             from finance_payments.payment_request request
             left join lateral (select id,attempt_number from finance_payments.payment_attempt where tenant_id=request.tenant_id and legal_entity_id=request.legal_entity_id and payment_request_id=request.id order by attempt_number desc limit 1) attempt on true
             where request.tenant_id=$1 and request.legal_entity_id=$2 and ($3::text is null or request.workflow_state=$3)
@@ -865,10 +868,9 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             order by request.created_at desc,request.id desc limit $5 offset $6
             """, connection);
         Add(command, tenant.Value, query.LegalEntityId, Db(state), Db(search), pageSize + 1, checked((page - 1) * pageSize));
-        var items = new List<PaymentIntentResult>(pageSize + 1); var total = 0; await using var reader = await command.ExecuteReaderAsync(ct);
+        var items = new List<PaymentIntentResult>(pageSize + 1); await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            total = reader.GetInt32(8);
             items.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetDecimal(3),
                 reader.GetString(4).Trim(), reader.GetString(5), reader.GetGuid(6), reader.GetInt32(7)));
         }
@@ -1157,8 +1159,13 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
         var directionParameter = searchParameter + 1; var stateParameter = searchParameter + 2;
         var fromParameter = searchParameter + 3; var toParameter = searchParameter + 4;
         var offsetParameter = searchParameter + 5; var limitParameter = searchParameter + 6;
+        var countSql = $"select count(*) from finance_payments.payment p left join finance_payments.payment_list_projection x on x.tenant_id=p.tenant_id and x.payment_id=p.id where p.tenant_id=$1 and p.legal_entity_id=$2{branchFilter} and (${searchParameter}::text is null or x.normalized_search like '%' || ${searchParameter} || '%') and (${directionParameter}::text is null or p.direction=${directionParameter}) and (${stateParameter}::text is null or p.business_state=${stateParameter}) and (${fromParameter}::date is null or p.payment_date >= ${fromParameter}) and (${toParameter}::date is null or p.payment_date <= ${toParameter})";
+        await using var countCommand = new NpgsqlCommand(countSql, connection);
+        Add(countCommand, tenant.Value, query.LegalEntityId); if (query.BranchId is { } countBranch) Add(countCommand, countBranch);
+        Add(countCommand, NormalizeSearch(query.Search), query.Direction?.ToString(), query.State?.ToString(), Db(query.FromDate), Db(query.ToDate));
+        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
         var sql = $"""
-            select p.id,p.legal_entity_id,p.payment_number,p.branch_id,p.direction,p.payment_type,p.party_id,p.amount,p.currency_code,p.method,p.payment_account_id,p.payment_date,p.posting_date,p.value_date,p.bank_reference,p.customer_reference,p.supplier_reference,p.source_type,p.source_reference,p.business_state,p.completed_at,p.row_version,count(*) over()
+            select p.id,p.legal_entity_id,p.payment_number,p.branch_id,p.direction,p.payment_type,p.party_id,p.amount,p.currency_code,p.method,p.payment_account_id,p.payment_date,p.posting_date,p.value_date,p.bank_reference,p.customer_reference,p.supplier_reference,p.source_type,p.source_reference,p.business_state,p.completed_at,p.row_version
             from finance_payments.payment p left join finance_payments.payment_list_projection x on x.tenant_id=p.tenant_id and x.payment_id=p.id
             where p.tenant_id=$1 and p.legal_entity_id=$2{branchFilter} and (${searchParameter}::text is null or x.normalized_search like '%' || ${searchParameter} || '%') and (${directionParameter}::text is null or p.direction=${directionParameter}) and (${stateParameter}::text is null or p.business_state=${stateParameter}) and (${fromParameter}::date is null or p.payment_date >= ${fromParameter}) and (${toParameter}::date is null or p.payment_date <= ${toParameter})
             order by p.payment_date desc,p.id desc offset ${offsetParameter} limit ${limitParameter}
@@ -1166,8 +1173,8 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
         await using var command = new NpgsqlCommand(sql, connection);
         Add(command, tenant.Value, query.LegalEntityId); if (query.BranchId is { } branch) Add(command, branch);
         Add(command, NormalizeSearch(query.Search), query.Direction?.ToString(), query.State?.ToString(), Db(query.FromDate), Db(query.ToDate), (page - 1) * pageSize, pageSize + 1);
-        var result = new List<PaymentRecord>(); var total = 0; await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) { total = reader.GetInt32(22); result.Add(ReadPayment(reader)); }
+        var result = new List<PaymentRecord>(); await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result.Add(ReadPayment(reader));
         var more = result.Count > pageSize; if (more) result.RemoveAt(pageSize);
         return new(result, page, pageSize, more, total);
     }

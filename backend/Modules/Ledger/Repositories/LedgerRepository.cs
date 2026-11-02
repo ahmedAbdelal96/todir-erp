@@ -232,10 +232,14 @@ public sealed class LedgerRepository(
         {
             var pageNumber = Math.Max(1, page.Value);
             var offset = (pageNumber - 1) * limit;
+            await using var countCommand = new NpgsqlCommand("select count(*) from finance_ledger.journal_entry e where e.tenant_id=$1 and e.legal_entity_id=$2 and ($3::date is null or e.posting_date >= $3) and ($4::date is null or e.posting_date <= $4) and ($5::text is null or e.entry_number ilike $5 || '%') and ($6::text is null or e.status=$6)", connection);
+            countCommand.Parameters.AddWithValue(tenant.Value); countCommand.Parameters.AddWithValue(entity.Value);
+            countCommand.Parameters.AddWithValue((object?)from ?? DBNull.Value); countCommand.Parameters.AddWithValue((object?)to ?? DBNull.Value);
+            countCommand.Parameters.AddWithValue((object?)CleanCursorText(search) ?? DBNull.Value); countCommand.Parameters.AddWithValue((object?)status ?? DBNull.Value);
+            var totalCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
             var offsetSql = $"""
                 with filtered as (
-                    select e.id,e.journal_id,e.fact_id,e.entry_number,e.posting_date,p.start_date,e.status,e.currency_code,
-                           count(*) over() as total_count
+                    select e.id,e.journal_id,e.fact_id,e.entry_number,e.posting_date,p.start_date,e.status,e.currency_code
                     from finance_ledger.journal_entry e
                     join finance_ledger.accounting_period p on p.tenant_id=e.tenant_id and p.legal_entity_id=e.legal_entity_id and p.id=e.accounting_period_id
                     where e.tenant_id=$1 and e.legal_entity_id=$2
@@ -246,7 +250,7 @@ public sealed class LedgerRepository(
                     order by e.posting_date {order},e.entry_number {order},e.id {order}
                     offset $7 limit $8
                 )
-                select filtered.id,filtered.journal_id,filtered.fact_id,filtered.entry_number,filtered.posting_date,filtered.start_date,filtered.status,filtered.currency_code,filtered.total_count,
+                select filtered.id,filtered.journal_id,filtered.fact_id,filtered.entry_number,filtered.posting_date,filtered.start_date,filtered.status,filtered.currency_code,
                        l.sequence_no,l.account_id,l.debit,l.credit,l.currency_code,l.amount,l.semantic_role,l.description
                 from filtered
                 join finance_ledger.journal_entry_line l on l.tenant_id=$1 and l.legal_entity_id=$2 and l.journal_entry_id=filtered.id
@@ -259,16 +263,16 @@ public sealed class LedgerRepository(
             offsetCommand.Parameters.AddWithValue(offset); offsetCommand.Parameters.AddWithValue(limit);
             await using var offsetReader = await offsetCommand.ExecuteReaderAsync(ct);
             var offsetEntries = new Dictionary<Guid, (Guid Journal, Guid? Fact, string Number, DateOnly Posting, DateOnly Period, string Status, string Currency, List<EntryLineDto> Lines)>();
-            var orderedOffsetIds = new List<Guid>(); var totalCount = 0;
+            var orderedOffsetIds = new List<Guid>();
             while (await offsetReader.ReadAsync(ct))
             {
-                totalCount = offsetReader.GetInt32(8); var id = offsetReader.GetGuid(0);
+                var id = offsetReader.GetGuid(0);
                 if (!offsetEntries.TryGetValue(id, out var entry))
                 {
                     entry = (offsetReader.GetGuid(1), offsetReader.IsDBNull(2) ? null : offsetReader.GetGuid(2), offsetReader.GetString(3), DateOnly.FromDateTime(offsetReader.GetDateTime(4)), DateOnly.FromDateTime(offsetReader.GetDateTime(5)), offsetReader.GetString(6), offsetReader.GetString(7), []);
                     orderedOffsetIds.Add(id);
                 }
-                entry.Lines.Add(new(offsetReader.GetInt32(9), offsetReader.GetGuid(10), offsetReader.GetDecimal(11), offsetReader.GetDecimal(12), offsetReader.GetString(13), offsetReader.GetDecimal(14), offsetReader.GetString(15), offsetReader.IsDBNull(16) ? null : offsetReader.GetString(16)));
+                entry.Lines.Add(new(offsetReader.GetInt32(8), offsetReader.GetGuid(9), offsetReader.GetDecimal(10), offsetReader.GetDecimal(11), offsetReader.GetString(12), offsetReader.GetDecimal(13), offsetReader.GetString(14), offsetReader.IsDBNull(15) ? null : offsetReader.GetString(15)));
                 offsetEntries[id] = entry;
             }
             var offsetItems = orderedOffsetIds.Select(id => { var entry = offsetEntries[id]; return new JournalEntryDto(id, entry.Journal, entry.Fact, entry.Number, entry.Posting, entry.Period, entry.Status, entry.Currency, entry.Lines); }).ToArray();

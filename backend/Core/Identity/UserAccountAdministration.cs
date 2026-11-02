@@ -98,11 +98,14 @@ public sealed class NpgsqlUserAccountAdminStore(NpgsqlDataSource dataSource, IAu
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantAsync(connection, transaction, tenantId, cancellationToken);
-        await using var command = new NpgsqlCommand("select id, tenant_id, name, email, login_prefix, status, must_change_password, created_at, count(*) over() from platform.identity where tenant_id = $1 and ($2::text is null or lower(name) like lower($2) || '%' or normalized_email like upper($2) || '%') and ($3::boolean is null or status = case when $3 then 'Active' else 'Suspended' end) order by name, id limit $4 offset $5", connection, transaction);
+        await using var countCommand = new NpgsqlCommand("select count(*) from platform.identity where tenant_id = $1 and ($2::text is null or lower(name) like lower($2) || '%' or normalized_email like upper($2) || '%') and ($3::boolean is null or status = case when $3 then 'Active' else 'Suspended' end)", connection, transaction);
+        countCommand.Parameters.AddWithValue(tenantId.Value); countCommand.Parameters.AddWithValue((object?)search?.Trim() ?? DBNull.Value); countCommand.Parameters.AddWithValue((object?)active ?? DBNull.Value);
+        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand("select id, tenant_id, name, email, login_prefix, status, must_change_password, created_at from platform.identity where tenant_id = $1 and ($2::text is null or lower(name) like lower($2) || '%' or normalized_email like upper($2) || '%') and ($3::boolean is null or status = case when $3 then 'Active' else 'Suspended' end) order by name, id limit $4 offset $5", connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue((object?)search?.Trim() ?? DBNull.Value); command.Parameters.AddWithValue((object?)active ?? DBNull.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var users = new List<UserAccountSummary>();
-        var total = 0; while (await reader.ReadAsync(cancellationToken)) { total = reader.GetInt32(8); users.Add(ReadSummary(reader)); }
+        while (await reader.ReadAsync(cancellationToken)) users.Add(ReadSummary(reader));
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
         return new UserAccountPage(users, total, offset / limit + 1, limit);
