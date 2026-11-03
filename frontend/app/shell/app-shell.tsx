@@ -43,7 +43,7 @@ type Session = {
   context: { displayName?: string; legalEntities: Array<{ id: string; code: string; name: string }>; branches: Array<{ id: string; legalEntityId: string; code: string; name: string }> };
 };
 
-const fallbackModuleIds = ["home", "users", "domain-settings", "directory", "catalog", "invoicing", "payments", "accounting", "migration", "finbase", "pricing", "subledger", "tax", "inventory", "sales", "preview", "settings"];
+const fallbackModuleIds = ["home", "users", "domain-settings", "directory", "catalog", "invoicing", "payments", "accounting", "migration", "finbase", "pricing", "subledger", "tax", "inventory", "sales", "purchasing", "hr", "preview", "settings"];
 
 function getModuleIcon(id: string): React.JSX.Element {
   switch (id) {
@@ -63,6 +63,10 @@ function getModuleIcon(id: string): React.JSX.Element {
       return <CatalogIcon size={18} />;
     case "sales":
       return <CatalogIcon size={18} />;
+    case "purchasing":
+      return <CatalogIcon size={18} />;
+    case "hr":
+      return <UsersIcon size={18} />;
     case "invoicing":
       return <InvoicingIcon size={18} />;
     case "payments":
