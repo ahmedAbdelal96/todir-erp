@@ -43,4 +43,6 @@ export const queryKeyFactory = {
       "detail",
       id
     ] as const
+  ,userNavigation: (tenantId: string, identityId: string) =>
+    [...queryKeyFactory.tenant(tenantId), "user-navigation", identityId] as const
 };

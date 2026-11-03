@@ -127,6 +127,24 @@ export async function httpClient<T>(
 
     try {
       problemDetails = await response.json();
+      if (problemDetails?.code === "security.csrf_invalid" && isMutative) {
+        resetCsrfToken();
+        const freshCsrf = await fetchCsrfToken();
+        if (freshCsrf) {
+          requestHeaders["X-CSRF-TOKEN"] = freshCsrf;
+          const retryResponse = await fetch(url, {
+            method,
+            headers: requestHeaders,
+            ...rest
+          });
+          if (retryResponse.ok) {
+            if (retryResponse.status === 204) {
+              return null as T;
+            }
+            return (await retryResponse.json()) as T;
+          }
+        }
+      }
       if (problemDetails?.detail) {
         message = problemDetails.detail;
       } else if (problemDetails?.title) {

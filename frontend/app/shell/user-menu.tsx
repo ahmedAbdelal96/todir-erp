@@ -4,6 +4,7 @@ import {
   GlobeIcon,
   SunMoonIcon,
   DensityIcon,
+  KeyIcon,
   LogOutIcon,
   ChevronDownIcon
 } from "../../components/primitives/icons.tsx";
@@ -17,6 +18,7 @@ export interface UserMenuProps {
   readonly onToggleTheme: () => void;
   readonly density: "comfortable" | "compact";
   readonly onToggleDensity: () => void;
+  readonly onOpenShortcuts: () => void;
   readonly onSignOut: () => void;
 }
 
@@ -28,6 +30,7 @@ export function UserMenu({
   onToggleTheme,
   density,
   onToggleDensity,
+  onOpenShortcuts,
   onSignOut
 }: UserMenuProps): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
@@ -210,6 +213,24 @@ export function UserMenu({
             <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
               {density === "comfortable" ? t("preferences.compact") : t("preferences.comfortable")}
             </span>
+          </button>
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onOpenShortcuts();
+              setIsOpen(false);
+            }}
+            style={menuItemStyle}
+            onMouseEnter={handleItemHover}
+            onMouseLeave={handleItemLeave}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
+              <KeyIcon size={16} />
+              <span>{t("shortcuts.title")}</span>
+            </span>
+            <kbd className="user-menu-shortcut-key">Shift + ?</kbd>
           </button>
 
           <Separator style={{ margin: "0.25rem 0" }} />

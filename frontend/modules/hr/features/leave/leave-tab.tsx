@@ -27,6 +27,7 @@ export function LeaveTab({ legalEntityId, defaultEmploymentId }: LeaveTabProps):
   const cancelMutation = useCancelLeaveRequestMutation(legalEntityId);
 
   const requests: readonly LeaveRequestView[] = leaveRequestsQuery.data ?? [];
+  const effectiveEmploymentId = defaultEmploymentId || requests[0]?.employmentId || "";
 
   const handleApprove = async (req: LeaveRequestView) => {
     try {
@@ -143,11 +144,11 @@ export function LeaveTab({ legalEntityId, defaultEmploymentId }: LeaveTabProps):
       </div>
 
       {/* Creation Modal */}
-      {isNewRequestOpen && defaultEmploymentId && (
+      {isNewRequestOpen && effectiveEmploymentId && (
         <NewLeaveRequestModal
           isOpen={isNewRequestOpen}
           onClose={() => setIsNewRequestOpen(false)}
-          employmentId={defaultEmploymentId}
+          employmentId={effectiveEmploymentId}
           legalEntityId={legalEntityId}
           onCreated={() => leaveRequestsQuery.refetch()}
         />

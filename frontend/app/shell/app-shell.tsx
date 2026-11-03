@@ -1,8 +1,10 @@
-import { Component, Suspense, type ErrorInfo, type ReactNode, useEffect, useRef, useState } from "react";
+import { Component, Suspense, type ErrorInfo, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { UserMenu } from "./user-menu.tsx";
+import { useUserDisplayPreferences } from "./use-user-display-preferences.ts";
 import {
   HomeIcon,
   UsersIcon,
@@ -34,11 +36,15 @@ import { requestCsrf, clearCsrfToken, logoutUser } from "../../core/api/auth-ser
 import { changeLanguage, currentDirection, currentLanguage, i18n } from "../../core/i18n/i18n.ts";
 import { resolveNavigation } from "../router/navigation-registry.ts";
 import type { ModuleNavigationRegistration, WorkspaceOutletContext } from "../router/route-contract.ts";
+import { useNavigationPreferences } from "./use-navigation-preferences.ts";
+import { Dialog } from "../../components/primitives/dialog.tsx";
+import { Tooltip, TooltipTrigger } from "../../components/primitives/tooltip.tsx";
 
 type Screen = "loading" | "signed-out" | "authenticated" | "forbidden" | "error";
 type Session = {
   authenticated: boolean;
   tenantId: string;
+  identityId: string;
   memberships?: Array<{ id: string; tenantId: string; displayName: string }> | undefined;
   context: { displayName?: string; legalEntities: Array<{ id: string; code: string; name: string }>; branches: Array<{ id: string; legalEntityId: string; code: string; name: string }> };
 };
@@ -131,11 +137,15 @@ function formatBranchLabel(code: string, name: string, entityName?: string, isAr
 export function AppShell() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation(["common", "navigation"]);
   const language = currentLanguage();
+  const direction = currentDirection();
   const [screen, setScreen] = useState<Screen>("loading");
   const [companyName, setCompanyName] = useState("شركة الأفق للتجارة");
   const [userEmail, setUserEmail] = useState(() => window.sessionStorage.getItem("erp.session.email") ?? "—");
+  const [activeTenantId, setActiveTenantId] = useState("");
+  const [activeIdentityId, setActiveIdentityId] = useState("");
   const [legalEntities, setLegalEntities] = useState<Session["context"]["legalEntities"]>([]);
   const [branches, setBranches] = useState<Session["context"]["branches"]>([]);
   const [legalEntity, setLegalEntity] = useState("");
@@ -144,21 +154,116 @@ export function AppShell() {
   const [contextError, setContextError] = useState<string | undefined>();
   const [operation, setOperation] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
-  const [theme, setTheme] = useState<string>("default");
-  const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
+  const [openSidebarPanel, setOpenSidebarPanel] = useState<"favorites" | "recent" | null>(null);
+  const [recentPopoverPosition, setRecentPopoverPosition] = useState({ top: 0, left: 0 });
+  const favoritesTriggerRef = useRef<HTMLButtonElement>(null);
+  const recentTriggerRef = useRef<HTMLButtonElement>(null);
+  const quickPopoverRef = useRef<HTMLDivElement>(null);
   const permCacheRef = useRef<Record<string, boolean>>({});
+  const navigationPreferences = useNavigationPreferences(activeTenantId, activeIdentityId, screen === "authenticated");
+  const displayPreferences = useUserDisplayPreferences(activeTenantId, activeIdentityId, screen === "authenticated");
+  const theme = displayPreferences.preferences.theme;
+  const density = displayPreferences.preferences.density;
+  const isSidebarCollapsed = displayPreferences.preferences.sidebarCollapsed;
+  const activeNavigationItem = modules
+    .filter(item => item.path === "/" ? location.pathname === "/" : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`))
+    .sort((left, right) => right.path.length - left.path.length)[0];
+
+  useEffect(() => {
+    if (screen === "authenticated" && activeNavigationItem) {
+      navigationPreferences.recordRecent(activeNavigationItem.id);
+    }
+  }, [screen, activeNavigationItem?.id, navigationPreferences.recordRecent]);
 
   useEffect(() => {
     function handleGlobalKeyDown(e: KeyboardEvent) {
+      const target = e.target;
+      const isEditing = target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea, select, [role='textbox']"));
+      if (isEditing) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setIsCommandPaletteOpen((prev) => !prev);
+      } else if (e.altKey && e.shiftKey && e.code === "KeyS") {
+        e.preventDefault();
+        displayPreferences.update({ sidebarCollapsed: !displayPreferences.preferences.sidebarCollapsed });
+      } else if (e.shiftKey && e.code === "Slash") {
+        e.preventDefault();
+        setIsShortcutsOpen((open) => !open);
       }
     }
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [displayPreferences.preferences.sidebarCollapsed, displayPreferences.update]);
+
+  useEffect(() => {
+    if (screen === "authenticated" && language !== displayPreferences.preferences.language) {
+      void changeLanguage(displayPreferences.preferences.language);
+    }
+  }, [displayPreferences.preferences.language, language, screen]);
+
+  useEffect(() => {
+    setOpenSidebarPanel(null);
+  }, [location.pathname]);
+
+  useLayoutEffect(() => {
+    if (!openSidebarPanel) return;
+    const updatePosition = () => {
+      const trigger = openSidebarPanel === "favorites" ? favoritesTriggerRef.current : recentTriggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const popoverWidth = Math.min(320, window.innerWidth - 24);
+      const preferredLeft = direction === "rtl" ? rect.left - popoverWidth - 8 : rect.right + 8;
+      const left = Math.max(12, Math.min(preferredLeft, window.innerWidth - popoverWidth - 12));
+      const top = Math.max(12, Math.min(rect.top, window.innerHeight - 340));
+      setRecentPopoverPosition(current => current.top === top && current.left === left ? current : { top, left });
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !quickPopoverRef.current?.contains(target)
+        && !recentTriggerRef.current?.contains(target) && !favoritesTriggerRef.current?.contains(target)) {
+        setOpenSidebarPanel(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenSidebarPanel(null);
+        (openSidebarPanel === "favorites" ? favoritesTriggerRef.current : recentTriggerRef.current)?.focus();
+      }
+    };
+    updatePosition();
+    quickPopoverRef.current?.querySelector<HTMLElement>("a")?.focus();
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [direction, openSidebarPanel]);
+
+  useEffect(() => {
+    const syncFullscreenState = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
   }, []);
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      // The browser can reject fullscreen requests when its policy disallows them.
+    }
+  }
 
   const commandItems = buildCommandPaletteItems({
     modules,
@@ -166,7 +271,6 @@ export function AppShell() {
     t
   });
 
-  const direction = currentDirection();
   const labels = {
     title: t("common:shell.workspace"),
     entity: t("common:shell.legalEntity"),
@@ -186,10 +290,12 @@ export function AppShell() {
         await new Promise((resolve) => setTimeout(resolve, 2000 * (retries + 1)));
         response = await fetch("/api/v1/session/context", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
       }
-      if (response.status === 401) { queryClient.clear(); window.sessionStorage.removeItem("erp.session.email"); setUserEmail("—"); setScreen("signed-out"); return; }
+      if (response.status === 401) { queryClient.clear(); setActiveTenantId(""); setActiveIdentityId(""); window.sessionStorage.removeItem("erp.session.email"); setUserEmail("—"); setScreen("signed-out"); return; }
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("session.load_failed");
       const session = await response.json() as Session;
+      setActiveTenantId(session.tenantId);
+      setActiveIdentityId(session.identityId);
       setCompanyName(session.context.displayName || session.memberships?.[0]?.displayName || "شركة الأفق للتجارة");
       setLegalEntities(session.context.legalEntities);
       setBranches(session.context.branches);
@@ -271,6 +377,8 @@ export function AppShell() {
     permCacheRef.current = {};
     await logoutUser();
     queryClient.clear();
+    setActiveTenantId("");
+    setActiveIdentityId("");
     window.sessionStorage.removeItem("erp.session.email");
     setUserEmail("—");
     setScreen("signed-out");
@@ -281,12 +389,74 @@ export function AppShell() {
   if (screen === "forbidden") return <AccessView direction={direction} kind="forbidden" onRetry={() => void loadSession()} />;
   if (screen === "error") return <AccessView direction={direction} kind="error" message={error ?? undefined} onRetry={() => void loadSession()} />;
 
+  const favorites = navigationPreferences.snapshot.favorites
+    .map(key => modules.find(item => item.id === key))
+    .filter((item): item is ModuleNavigationRegistration => item !== undefined && item.id !== activeNavigationItem?.id);
+  const recentPages = navigationPreferences.snapshot.recent
+    .map(key => modules.find(item => item.id === key))
+    .filter((item): item is ModuleNavigationRegistration => item !== undefined && item.id !== activeNavigationItem?.id)
+    .slice(0, 5);
+  const quickPopoverItems = openSidebarPanel === "favorites" ? favorites : recentPages;
+  const quickPopoverTitle = t(openSidebarPanel === "favorites" ? "common:shell.favorites" : "common:shell.recentPages");
+  const renderNavigationLink = (item: ModuleNavigationRegistration, canToggleFavorite = false) => {
+    const label = t(`navigation:${item.navigationKey}`);
+    const isFavorite = navigationPreferences.snapshot.favorites.includes(item.id);
+    return (
+      <div className="sidebar-entry">
+        <TooltipTrigger delay={500} isDisabled={!isSidebarCollapsed}>
+          <NavLink
+            to={item.path}
+            end={item.id === "home"}
+            aria-label={label}
+            className={({ isActive }) => isActive ? "sidebar-link active" : "sidebar-link"}
+          >
+            <span className="sidebar-icon-container" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "26px", height: "26px", borderRadius: "var(--radius-sm, 0.375rem)", backgroundColor: "rgba(15, 23, 42, 0.04)" }}>
+              {getModuleIcon(item.icon)}
+            </span>
+            <span className="sidebar-link-label">{label}</span>
+          </NavLink>
+          <Tooltip placement={direction === "rtl" ? "left" : "right"}>{label}</Tooltip>
+        </TooltipTrigger>
+        {canToggleFavorite ? (
+          <button
+            type="button"
+            className={`sidebar-favorite-toggle${isFavorite ? " is-favorite" : ""}`}
+            aria-label={t(isFavorite ? "common:shell.removeFavorite" : "common:shell.addFavorite", { name: label })}
+            title={t(isFavorite ? "common:shell.removeFavorite" : "common:shell.addFavorite", { name: label })}
+            aria-pressed={isFavorite}
+            disabled={navigationPreferences.isSavingFavorite}
+            onClick={() => navigationPreferences.setFavorite(item.id, !isFavorite)}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill={isFavorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m12 3 2.75 5.58 6.16.9-4.46 4.35 1.05 6.14L12 17.07l-5.5 2.9 1.05-6.14L3.1 9.48l6.16-.9L12 3Z" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <UndoToastProvider>
-      <div className="todir-app-shell shell" dir={direction} data-theme={theme} data-density={density}>
+      <div className="todir-app-shell shell" dir={direction} data-theme={theme} data-density={density} data-sidebar-collapsed={isSidebarCollapsed}>
         <header className="topbar">
         {/* Left Side (in LTR) / Right Side (in RTL): Brand & Company */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
+          <button
+            type="button"
+            className="sidebar-toggle-btn"
+            aria-label={t(isSidebarCollapsed ? "common:shell.expandSidebar" : "common:shell.collapseSidebar")}
+            aria-expanded={!isSidebarCollapsed}
+            aria-controls="app-sidebar"
+            title={t(isSidebarCollapsed ? "common:shell.expandSidebar" : "common:shell.collapseSidebar")}
+            onClick={() => displayPreferences.update({ sidebarCollapsed: !isSidebarCollapsed })}
+          >
+            <svg className="sidebar-toggle-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M15 4v16" />
+              <path d={isSidebarCollapsed ? "m10 9 3 3-3 3" : "m13 9-3 3 3 3"} />
+            </svg>
+          </button>
           <Link className="brand" to="/" aria-label="TODIR">
             <span className="brand-icon" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "32px", height: "32px", borderRadius: "var(--radius-md, 0.5rem)", background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)", color: "#ffffff", fontWeight: 900, fontSize: "1rem", boxShadow: "0 2px 8px rgba(37, 99, 235, 0.45)" }}>
               T
@@ -394,7 +564,7 @@ export function AppShell() {
           <button
             type="button"
             className="topbar-lang-btn"
-            onClick={() => void changeLanguage(language === "ar" ? "en" : "ar")}
+            onClick={() => displayPreferences.update({ language: language === "ar" ? "en" : "ar" })}
           >
             <GlobeIcon size={14} style={{ color: "#93c5fd" }} />
             <span>{labels.language}</span>
@@ -404,13 +574,28 @@ export function AppShell() {
           <UserMenu
             userName={t("common:shell.administrator")}
             userEmail={userEmail}
-            onToggleLanguage={() => void changeLanguage(language === "ar" ? "en" : "ar")}
+            onToggleLanguage={() => displayPreferences.update({ language: language === "ar" ? "en" : "ar" })}
             theme={theme}
-            onToggleTheme={() => setTheme(theme === "default" ? "sapphire-modern" : "default")}
+            onToggleTheme={() => displayPreferences.update({ theme: theme === "default" ? "dark" : "default" })}
             density={density}
-            onToggleDensity={() => setDensity(density === "comfortable" ? "compact" : "comfortable")}
+            onToggleDensity={() => displayPreferences.update({ density: density === "comfortable" ? "compact" : "comfortable" })}
+            onOpenShortcuts={() => setIsShortcutsOpen(true)}
             onSignOut={() => void signOut()}
           />
+          <button
+            type="button"
+            className="topbar-icon-btn"
+            aria-label={t(isFullscreen ? "common:shell.exitFullscreen" : "common:shell.enterFullscreen")}
+            title={t(isFullscreen ? "common:shell.exitFullscreen" : "common:shell.enterFullscreen")}
+            aria-pressed={isFullscreen}
+            onClick={() => void toggleFullscreen()}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {isFullscreen
+                ? <path d="M8 3v5H3m13-5v5h5M3 16h5v5m13-5h-5v5" />
+                : <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />}
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -419,26 +604,78 @@ export function AppShell() {
       {operation ? <div className="operation-progress" role="status" aria-live="polite">{operation}</div> : null}
 
       <div className="layout">
-        <aside className="sidebar" aria-label={t("common:accessibility.mainNavigation")}>
-          <div className="sidebar-label" style={{ padding: "0.25rem 0.5rem 0.75rem", fontSize: "0.6875rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-content-muted, #94a3b8)" }}>
-            {t("common:shell.modules")}
+        <aside id="app-sidebar" className="sidebar" aria-label={t("common:accessibility.mainNavigation")}>
+          <section className="sidebar-section sidebar-modules-section">
+            <div className="sidebar-section-title sidebar-label">{t("common:shell.modules")}</div>
+            <nav aria-label={t("common:shell.modules")}>
+              {modules.map(item => <div key={item.id}>{renderNavigationLink(item, true)}</div>)}
+            </nav>
+          </section>
+          <div className="sidebar-footer">
+            {favorites.length ? (
+              <section className="sidebar-section sidebar-quick-section">
+                <button
+                  ref={favoritesTriggerRef}
+                  type="button"
+                  className="sidebar-quick-trigger"
+                  aria-label={t("common:shell.favorites")}
+                  aria-haspopup="dialog"
+                  aria-expanded={openSidebarPanel === "favorites"}
+                  aria-controls="sidebar-quick-popover"
+                  title={t("common:shell.favorites")}
+                  onClick={() => setOpenSidebarPanel(panel => panel === "favorites" ? null : "favorites")}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill={openSidebarPanel === "favorites" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="m12 3 2.75 5.58 6.16.9-4.46 4.35 1.05 6.14L12 17.07l-5.5 2.9 1.05-6.14L3.1 9.48l6.16-.9L12 3Z" />
+                  </svg>
+                  <span className="sidebar-quick-trigger-label">{t("common:shell.favorites")}</span>
+                  <span className="sidebar-quick-count" aria-label={String(favorites.length)}>{favorites.length}</span>
+                </button>
+              </section>
+            ) : null}
+            {recentPages.length ? (
+              <section className="sidebar-section sidebar-quick-section" aria-label={t("common:shell.recentPages")}>
+                <button
+                  ref={recentTriggerRef}
+                  type="button"
+                  className="sidebar-quick-trigger"
+                  aria-label={t("common:shell.recentPages")}
+                  aria-haspopup="dialog"
+                  aria-expanded={openSidebarPanel === "recent"}
+                  aria-controls="sidebar-quick-popover"
+                  title={t("common:shell.recentPages")}
+                  onClick={() => setOpenSidebarPanel(panel => panel === "recent" ? null : "recent")}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                  </svg>
+                  <span className="sidebar-quick-trigger-label">{t("common:shell.recentPages")}</span>
+                  <span className="sidebar-quick-count" aria-label={String(recentPages.length)}>{recentPages.length}</span>
+                </button>
+              </section>
+            ) : null}
+            {navigationPreferences.saveFailed ? <div className="sidebar-preference-error" role="alert">{t("common:shell.navigationPreferencesSaveFailed")}</div> : null}
+          {displayPreferences.saveFailed ? <div className="sidebar-preference-error" role="alert">{t("common:shell.displayPreferencesSaveFailed")}</div> : null}
           </div>
-          <nav>
-            {modules.map(item => (
-              <NavLink
-                key={item.id}
-                to={item.path}
-                end={item.id === "home"}
-                className={({ isActive }) => isActive ? "active" : undefined}
-              >
-                <span className="sidebar-icon-container" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "26px", height: "26px", borderRadius: "var(--radius-sm, 0.375rem)", backgroundColor: "rgba(15, 23, 42, 0.04)" }}>
-                  {getModuleIcon(item.icon)}
-                </span>
-                <span>{t(`navigation:${item.navigationKey}`)}</span>
-              </NavLink>
-            ))}
-          </nav>
         </aside>
+
+        {openSidebarPanel && quickPopoverItems.length ? createPortal(
+          <div
+            ref={quickPopoverRef}
+            id="sidebar-quick-popover"
+            className="sidebar-quick-popover"
+            role="dialog"
+            aria-label={quickPopoverTitle}
+            style={{ top: recentPopoverPosition.top, left: recentPopoverPosition.left }}
+          >
+            <div className="sidebar-quick-popover-title">{quickPopoverTitle}</div>
+            <nav aria-label={quickPopoverTitle}>
+              {quickPopoverItems.map(item => <div key={item.id} onClick={() => setOpenSidebarPanel(null)}>{renderNavigationLink(item)}</div>)}
+            </nav>
+          </div>,
+          document.body
+        ) : null}
 
         <main className="content" aria-live="polite">
           {contextError ? <div className="error" role="alert">{contextError}</div> : null}
@@ -453,6 +690,28 @@ export function AppShell() {
         onClose={() => setIsCommandPaletteOpen(false)}
         items={commandItems}
       />
+      <Dialog
+        isOpen={isShortcutsOpen}
+        onOpenChange={setIsShortcutsOpen}
+        title={t("common:shortcuts.title")}
+        description={t("common:shortcuts.description")}
+        size="small"
+      >
+        <div className="keyboard-shortcuts-list">
+          <div className="keyboard-shortcut-row">
+            <span>{t("common:shortcuts.openSearch")}</span>
+            <kbd>Ctrl</kbd><span>+</span><kbd>K</kbd>
+          </div>
+          <div className="keyboard-shortcut-row">
+            <span>{t("common:shortcuts.toggleSidebar")}</span>
+            <kbd>Alt</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>S</kbd>
+          </div>
+          <div className="keyboard-shortcut-row">
+            <span>{t("common:shortcuts.openHelp")}</span>
+            <kbd>Shift</kbd><span>+</span><kbd>?</kbd>
+          </div>
+        </div>
+      </Dialog>
     </div>
     </UndoToastProvider>
   );

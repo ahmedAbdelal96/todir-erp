@@ -43,6 +43,12 @@ public static class PlatformHostingExtensions
             services.AddSingleton(dataSourceBuilder.Build());
         }
         services.AddSingleton<IIdentityStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlIdentityStore(dataSource) : new NullIdentityStore());
+        services.AddSingleton<IUserNavigationPreferencesStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlUserNavigationPreferencesStore(dataSource)
+            : new NullUserNavigationPreferencesStore());
+        services.AddSingleton<IUserDisplayPreferencesStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlUserDisplayPreferencesStore(dataSource)
+            : new NullUserDisplayPreferencesStore());
         services.AddSingleton<IUserAccountAdminStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
             ? new NpgsqlUserAccountAdminStore(dataSource, provider.GetRequiredService<IAuditWriter>(), provider.GetRequiredService<TimeProvider>())
             : new NullUserAccountAdminStore());
@@ -185,13 +191,52 @@ public static class PlatformHostingExtensions
             return Results.NoContent();
         }).RequireAuthorization();
         group.MapGet("/modules", (IModuleRegistry registry) => Results.Ok(registry.GetAll()));
+        group.MapGet("/me/navigation-preferences", async (HttpContext context, IUserNavigationPreferencesStore preferences, CancellationToken cancellationToken) =>
+        {
+            if (!TryGetUserScope(context, out var tenant, out var identity)) return Results.Unauthorized();
+            return Results.Ok(await preferences.LoadAsync(tenant, identity, cancellationToken));
+        }).RequireAuthorization();
+        group.MapPut("/me/navigation-preferences/favorites", async (NavigationKeyRequest request, HttpContext context, IUserNavigationPreferencesStore preferences, CancellationToken cancellationToken) =>
+        {
+            if (!TryGetUserScope(context, out var tenant, out var identity)) return Results.Unauthorized();
+            if (!UserNavigationKey.IsValid(request.NavigationKey)) return Problem(StatusCodes.Status400BadRequest, "navigation.key_invalid", "The navigation item is invalid");
+            await preferences.SetFavoriteAsync(tenant, identity, request.NavigationKey, true, cancellationToken);
+            return Results.NoContent();
+        }).RequireAuthorization();
+        group.MapDelete("/me/navigation-preferences/favorites/{navigationKey}", async (string navigationKey, HttpContext context, IUserNavigationPreferencesStore preferences, CancellationToken cancellationToken) =>
+        {
+            if (!TryGetUserScope(context, out var tenant, out var identity)) return Results.Unauthorized();
+            if (!UserNavigationKey.IsValid(navigationKey)) return Problem(StatusCodes.Status400BadRequest, "navigation.key_invalid", "The navigation item is invalid");
+            await preferences.SetFavoriteAsync(tenant, identity, navigationKey, false, cancellationToken);
+            return Results.NoContent();
+        }).RequireAuthorization();
+        group.MapPost("/me/navigation-preferences/recent", async (NavigationKeyRequest request, HttpContext context, IUserNavigationPreferencesStore preferences, CancellationToken cancellationToken) =>
+        {
+            if (!TryGetUserScope(context, out var tenant, out var identity)) return Results.Unauthorized();
+            if (!UserNavigationKey.IsValid(request.NavigationKey)) return Problem(StatusCodes.Status400BadRequest, "navigation.key_invalid", "The navigation item is invalid");
+            await preferences.RecordVisitAsync(tenant, identity, request.NavigationKey, cancellationToken);
+            return Results.NoContent();
+        }).RequireAuthorization();
+        group.MapGet("/me/preferences", async (HttpContext context, IUserDisplayPreferencesStore preferences, CancellationToken cancellationToken) =>
+        {
+            if (!TryGetUserScope(context, out var tenant, out var identity)) return Results.Unauthorized();
+            return Results.Ok(await preferences.LoadAsync(tenant, identity, cancellationToken));
+        }).RequireAuthorization();
+        group.MapPatch("/me/preferences", async (UpdateUserDisplayPreferencesRequest request, HttpContext context, IUserDisplayPreferencesStore preferences, CancellationToken cancellationToken) =>
+        {
+            if (!TryGetUserScope(context, out var tenant, out var identity)) return Results.Unauthorized();
+            if (!UserDisplayPreferenceRules.IsValid(request)) return Problem(StatusCodes.Status400BadRequest, "preferences.value_invalid", "One or more display preferences are invalid");
+            await preferences.SaveAsync(tenant, identity, request, cancellationToken);
+            return Results.NoContent();
+        }).RequireAuthorization();
         group.MapGet("/session", (HttpContext context) => context.User.Identity?.IsAuthenticated == true ? Results.Ok(new { authenticated = true, tenantId = context.User.FindFirstValue("tenant_id") }) : Results.Unauthorized()).RequireAuthorization();
         group.MapGet("/session/context", async (HttpContext context, IPlatformAdminSurfaceStore surfaceStore, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId)) return Results.Unauthorized();
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
             var snapshot = await surfaceStore.LoadTenantContextAsync(new(tenantId), cancellationToken);
             if (snapshot is null) return Results.NotFound();
-            return Results.Ok(new { authenticated = true, tenantId, context = snapshot });
+            return Results.Ok(new { authenticated = true, tenantId, identityId, context = snapshot });
         }).RequireAuthorization();
         group.MapGet("/authorization/check", async (string permission, HttpContext context, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
         {
@@ -351,6 +396,20 @@ public static class PlatformHostingExtensions
 
     private static IResult Problem(int statusCode, string code, string title) => Results.Problem(statusCode: statusCode, title: title, extensions: new Dictionary<string, object?> { ["code"] = code });
 
+    private static bool TryGetUserScope(HttpContext context, out TenantId tenantId, out IdentityId identityId)
+    {
+        if (Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenant) && Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identity))
+        {
+            tenantId = new TenantId(tenant);
+            identityId = new IdentityId(identity);
+            return true;
+        }
+
+        tenantId = default;
+        identityId = default;
+        return false;
+    }
+
     private static async Task<IResult> RenderAuthenticationResult(AuthenticationFlowResult result, HttpContext context)
     {
         if (result.State == AuthenticationNextStep.Rejected) return Problem(StatusCodes.Status401Unauthorized, result.ErrorCode ?? "auth.invalid_credentials", "Authentication could not be completed");
@@ -390,4 +449,5 @@ public static class PlatformHostingExtensions
         var subject = await subjectStore.LoadAsync(tenant, membershipId, cancellationToken);
         return subject is not null && authorizer.Authorize(subject, permission, PermissionScope.ForTenant(tenant));
     }
+
 }

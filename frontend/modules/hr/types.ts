@@ -85,9 +85,13 @@ export interface EmploymentContractView {
 export interface ContractAmendmentView {
   readonly id: string;
   readonly contractId: string;
-  readonly amendmentType: string;
+  readonly changeType?: string;
+  readonly amendmentType?: string;
   readonly effectiveDate: string;
-  readonly termsSummary: string;
+  readonly termsSummary?: string;
+  readonly reason?: string;
+  readonly previousSnapshot?: unknown;
+  readonly newTerms?: unknown;
   readonly fileRef?: string | null;
   readonly createdAt: string;
 }
@@ -125,19 +129,68 @@ export interface EmployeeDocumentView {
   readonly id: string;
   readonly employeeId: string;
   readonly category: string;
-  readonly titleAr: string;
+  readonly sensitivity?: string;
+  readonly titleAr?: string;
   readonly titleEn?: string | null;
   readonly fileRef: string;
+  readonly sha256?: string;
   readonly contentType: string;
   readonly sizeBytes: number;
   readonly expiryDate?: string | null;
-  readonly isVerified: boolean;
-  readonly isSensitive: boolean;
+  readonly verificationStatus?: string;
+  readonly status?: string;
+  readonly isVerified?: boolean;
+  readonly isSensitive?: boolean;
   readonly verificationNotes?: string | null;
   readonly employmentId?: string | null;
+  readonly supersedesDocumentId?: string | null;
   readonly supersededByDocumentId?: string | null;
   readonly version: number;
-  readonly createdAt: string;
+  readonly createdAt?: string;
+}
+
+export interface EmployeeDocumentUploadIntentView {
+  readonly fileRef: string;
+  readonly url: string;
+  readonly fields: Record<string, string>;
+  readonly contentType: string;
+  readonly sizeBytes: number;
+  readonly expiresAt: string;
+}
+
+export interface EmployeeDocumentDownloadView {
+  readonly url: string;
+  readonly expiresAt: string;
+}
+
+export interface CreateEmployeeDocumentUploadRequest {
+  readonly legalEntityId: string;
+  readonly fileName: string;
+  readonly contentType: string;
+  readonly sizeBytes: number;
+  readonly sensitivity: string;
+  readonly employmentId?: string | null;
+}
+
+export interface CompleteEmployeeDocumentUploadRequest {
+  readonly legalEntityId: string;
+  readonly employmentId?: string | null;
+}
+
+export interface CreateEmployeeDocumentRequest {
+  readonly legalEntityId: string;
+  readonly category: string;
+  readonly fileRef: string;
+  readonly sensitivity: string;
+  readonly expiryDate?: string | null;
+  readonly supersedesDocumentId?: string | null;
+  readonly employmentId?: string | null;
+}
+
+export interface VerifyEmployeeDocumentRequest {
+  readonly expectedVersion: number;
+  readonly verified: boolean;
+  readonly reason: string;
 }
 
 export interface DocumentRequirementView {
@@ -416,12 +469,24 @@ export interface HrHomeReminder {
 }
 
 export interface HrHomeSummary {
-  readonly activeEmployeesCount: number;
-  readonly missingAttendanceCount: number;
-  readonly pendingLeaveApprovalsCount: number;
-  readonly expiringDocumentsCount: number;
-  readonly expiringContractsCount: number;
-  readonly reminders: readonly HrHomeReminder[];
+  readonly headcount?: number;
+  readonly activeEmployeesCount?: number;
+  readonly attendanceRecordsToday?: number;
+  readonly presentToday?: number;
+  readonly absentToday?: number;
+  readonly openAttendanceExceptions?: number;
+  readonly missingAttendanceCount?: number;
+  readonly pendingLeaveApprovals?: number;
+  readonly pendingLeaveApprovalsCount?: number;
+  readonly documentsExpiringWithin30Days?: number;
+  readonly expiringDocumentsCount?: number;
+  readonly contractsExpiringWithin30Days?: number;
+  readonly expiringContractsCount?: number;
+  readonly newHiresWithin30Days?: number;
+  readonly employeesInNoticePeriod?: number;
+  readonly pendingOvertimeApprovals?: number;
+  readonly payrollWarnings?: number;
+  readonly reminders?: readonly HrHomeReminder[];
 }
 
 export interface OnboardingCaseView {

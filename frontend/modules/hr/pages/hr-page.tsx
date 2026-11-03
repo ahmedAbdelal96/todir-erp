@@ -30,7 +30,7 @@ export function HrPage(): React.JSX.Element {
     // Outside RuntimeProvider
   }
 
-  const legalEntityId = outletCtx?.legalEntityId ?? contextEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const legalEntityId = outletCtx?.legalEntityId || contextEntityId || "00000000-0000-0000-0000-000000000001";
 
   // Tab & Employee State derived from searchParams (Single Source of Truth)
   const activeTab = (searchParams.get("tab") as HrTabId | null) ?? "home";
@@ -81,7 +81,7 @@ export function HrPage(): React.JSX.Element {
   ];
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: "1400px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "1rem" }}>
+    <div data-testid="hr-page" style={{ padding: "1.5rem", maxWidth: "1400px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "1rem" }}>
       {/* Top Header Bar with Contextual Help */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
         <div>
@@ -149,10 +149,7 @@ export function HrPage(): React.JSX.Element {
           )}
 
           {activeTab === "leave" && (
-            <LeaveTab
-              legalEntityId={legalEntityId}
-              defaultEmploymentId="00000000-0000-0000-0000-000000000001"
-            />
+            <LeaveTab legalEntityId={legalEntityId} />
           )}
 
           {activeTab === "organization" && (

@@ -1,4 +1,4 @@
-import { httpClient, type RequestOptions } from "./http-client.ts";
+import { httpClient, resetCsrfToken, type RequestOptions } from "./http-client.ts";
 
 export type AuthNextStep = "Authenticated" | "ChangePassword" | "VerifyMfa" | "Rejected";
 
@@ -44,6 +44,7 @@ export async function requestCsrf(): Promise<string> {
 
 export function clearCsrfToken(): void {
   cachedCsrfToken = null;
+  resetCsrfToken();
 }
 
 /**

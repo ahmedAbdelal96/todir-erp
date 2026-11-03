@@ -3,11 +3,20 @@ export const ar = {
   shell: {
     workspace: "مساحة العمل", legalEntity: "الكيان القانوني", branch: "الفرع", emptyWorkspace: "اختر مساحة عمل للبدء",
     updatingContext: "جارٍ تحديث السياق", signOut: "تسجيل الخروج", modules: "الوحدات والخدمات", administrator: "مسؤول النظام",
+    collapseSidebar: "عرض القائمة الجانبية كأيقونات فقط", expandSidebar: "إظهار أسماء الوحدات في القائمة الجانبية",
+    enterFullscreen: "عرض النظام بملء الشاشة", exitFullscreen: "الخروج من وضع ملء الشاشة",
+    favorites: "المفضلة", recentPages: "آخر الصفحات", addFavorite: "إضافة {{name}} إلى المفضلة", removeFavorite: "إزالة {{name}} من المفضلة",
+    navigationPreferencesSaveFailed: "تعذر حفظ المفضلة. حاول مرة أخرى.",
+    displayPreferencesSaveFailed: "تعذر حفظ تفضيلات العرض على حسابك.",
     couldNotLoadSession: "تعذر تحميل الجلسة", couldNotUpdateScope: "تعذر تحديث النطاق التنظيمي"
   },
   preferences: {
-    language: "اللغة", theme: "المظهر", alternateTheme: "البديل", defaultTheme: "الافتراضي",
+    language: "اللغة", theme: "المظهر", alternateTheme: "داكن", defaultTheme: "الافتراضي",
     density: "كثافة العرض", compact: "مدمج", comfortable: "مريح", profile: "الملف الشخصي"
+  },
+  shortcuts: {
+    title: "اختصارات لوحة المفاتيح", description: "استخدم الاختصارات للوصول إلى الأدوات الأساسية بسرعة.",
+    openSearch: "فتح البحث السريع", toggleSidebar: "طيّ أو توسيع القائمة الجانبية", openHelp: "عرض هذه الاختصارات"
   },
   actions: {
     save: "حفظ", cancel: "إلغاء", close: "إغلاق", confirm: "تأكيد", retry: "إعادة المحاولة",

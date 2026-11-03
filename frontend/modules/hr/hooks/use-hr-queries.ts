@@ -232,11 +232,11 @@ export function useCreateContractAmendmentMutation(employmentId: string, contrac
   });
 }
 
-export function useCompensationAgreements(employmentId: string, legalEntityId: string) {
+export function useCompensationAgreements(employeeId: string, employmentId: string, legalEntityId: string) {
   return useQuery({
     queryKey: hrKeys.compensation(employmentId, legalEntityId),
-    queryFn: () => hrApi.listCompensationAgreements(employmentId, legalEntityId),
-    enabled: Boolean(employmentId && legalEntityId)
+    queryFn: () => hrApi.listCompensationAgreements(employeeId, employmentId, legalEntityId),
+    enabled: Boolean(employeeId && employmentId && legalEntityId)
   });
 }
 
@@ -306,7 +306,7 @@ export function useDocumentRequirements(legalEntityId: string) {
 export function useCreateDocumentMutation(employeeId: string, legalEntityId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (request: { legalEntityId: string; category: string; titleAr: string; titleEn?: string | null; fileRef: string; contentType: string; sizeBytes: number; expiryDate?: string | null; isSensitive?: boolean; employmentId?: string | null }) =>
+    mutationFn: (request: { legalEntityId: string; category: string; fileRef: string; sensitivity?: string | undefined; titleAr?: string | undefined; titleEn?: string | null | undefined; contentType?: string | undefined; sizeBytes?: number | undefined; expiryDate?: string | null | undefined; isSensitive?: boolean | undefined; employmentId?: string | null | undefined }) =>
       hrApi.createDocument(employeeId, request),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: hrKeys.documents(employeeId, legalEntityId) });
@@ -318,8 +318,8 @@ export function useCreateDocumentMutation(employeeId: string, legalEntityId: str
 export function useVerifyDocumentMutation(employeeId: string, legalEntityId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ documentId, isVerified, notes, expectedVersion }: { documentId: string; isVerified: boolean; notes?: string | null | undefined; expectedVersion: number }) =>
-      hrApi.verifyDocument(employeeId, documentId, legalEntityId, { isVerified, notes, expectedVersion }),
+    mutationFn: ({ documentId, isVerified, notes, expectedVersion, verified, reason }: { documentId: string; isVerified?: boolean | undefined; notes?: string | null | undefined; expectedVersion: number; verified?: boolean | undefined; reason?: string | undefined }) =>
+      hrApi.verifyDocument(employeeId, documentId, legalEntityId, { isVerified, notes, expectedVersion, verified, reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: hrKeys.documents(employeeId, legalEntityId) });
       queryClient.invalidateQueries({ queryKey: hrKeys.documentCompleteness(employeeId, legalEntityId) });
@@ -414,7 +414,7 @@ export function useAttendanceCorrectionMutation(legalEntityId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ recordId, request }: { recordId: string; request: AttendanceCorrectionRequest }) =>
-      hrApi.correctAttendance(recordId, request),
+      hrApi.correctAttendance(recordId, legalEntityId, request),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: hrKeys.all });
     }

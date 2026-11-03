@@ -32,7 +32,7 @@ const allowedBusinessValuePatterns = [
   /^[a-z]+(?:[A-Z][a-zA-Z0-9]*)+$/,
   /^https?:\/\/$/
 ];
-const nonCopyLiterals = new Set(["TODIR", "T", "✓", "✕", "⚠️", "ℹ️", "—", "|", "/", "*", "(", ")", "%", "…", "...", "0", "0.00", "name@company.com", "••••••••••••", "300123456700003", ":", "·", "#", "○", "📁", "🎉", "📄", "📥", "⚡", "⏳", "✅", "party"]);
+const nonCopyLiterals = new Set(["TODIR", "T", "✓", "✕", "⚠️", "ℹ️", "—", "|", "/", "*", "(", ")", "%", "…", "...", "0", "0.00", "name@company.com", "••••••••••••", "300123456700003", ":", "·", "#", "○", "📁", "🎉", "📄", "📥", "⚡", "⏳", "✅", "party", "Ctrl", "Alt", "Shift", "K", "S", "?", "Shift + ?"]);
 
 function walk(node, visit, ancestors = []) {
   if (!node || typeof node !== "object") return;
@@ -89,7 +89,7 @@ export async function checkResourceParity() {
 function visibleLiteral(node, ancestors) {
   if (node.type === "JSXText") {
     const value = node.value.trim();
-    if (!value || /^(?:TODIR|[T✓*%—|…✕+@()▲▼]+|\/$|\([A-Z]{2,4}\))$/u.test(value) || /^[\p{P}\p{S}\s]+$/u.test(value)) return false;
+    if (!value || /^(?:TODIR|Ctrl|Alt|Shift|Shift \+ \?|[T✓*%—|…✕+@()▲▼A-Z]+|\/$|\([A-Z]{2,4}\))$/u.test(value) || /^[\p{P}\p{S}\s]+$/u.test(value)) return false;
     return true;
   }
   if (node.type !== "StringLiteral" && node.type !== "TemplateLiteral") return false;

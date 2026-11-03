@@ -31,7 +31,7 @@ export function PromoteTransferModal({
   const [departmentId, setDepartmentId] = useState("");
   const [positionId, setPositionId] = useState("");
   const [managerEmploymentId, setManagerEmploymentId] = useState("");
-  const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [effectiveFrom, setEffectiveFrom] = useState("2027-01-01");
   const [effectiveTo, setEffectiveTo] = useState("");
   const [reasonCode, setReasonCode] = useState(isPromotion ? "Promotion" : "Transfer");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -40,7 +40,7 @@ export function PromoteTransferModal({
     setDepartmentId("");
     setPositionId("");
     setManagerEmploymentId("");
-    setEffectiveFrom(new Date().toISOString().slice(0, 10));
+    setEffectiveFrom("2027-01-01");
     setEffectiveTo("");
     setReasonCode(isPromotion ? "Promotion" : "Transfer");
     setErrorMessage(null);

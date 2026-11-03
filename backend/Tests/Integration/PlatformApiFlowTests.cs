@@ -49,6 +49,7 @@ public sealed class PlatformApiFlowTests : DatabaseIntegrationTestBase
             var contextResponse = await client.GetAsync("/api/v1/session/context");
             Assert.Equal(HttpStatusCode.OK, contextResponse.StatusCode);
             var context = await contextResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(administrator.Value, context.GetProperty("identityId").GetGuid());
             Assert.Equal(1, context.GetProperty("context").GetProperty("legalEntities").GetArrayLength());
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/organization")).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/roles")).StatusCode);
@@ -57,12 +58,34 @@ public sealed class PlatformApiFlowTests : DatabaseIntegrationTestBase
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/audit")).StatusCode);
             Assert.Equal(HttpStatusCode.NoContent, (await PostAsync(client, "/api/v1/context/organization", new { legalEntityId, branchId })).StatusCode);
 
+            var initialNavigation = await client.GetAsync("/api/v1/me/navigation-preferences");
+            Assert.Equal(HttpStatusCode.OK, initialNavigation.StatusCode);
+            var initialNavigationBody = await initialNavigation.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Empty(initialNavigationBody.GetProperty("favorites").EnumerateArray());
+            Assert.Empty(initialNavigationBody.GetProperty("recent").EnumerateArray());
+            Assert.Equal(HttpStatusCode.NoContent, (await PutAsync(client, "/api/v1/me/navigation-preferences/favorites", new { navigationKey = "accounting" })).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await PostAsync(client, "/api/v1/me/navigation-preferences/recent", new { navigationKey = "accounting" })).StatusCode);
+            var savedNavigation = await (await client.GetAsync("/api/v1/me/navigation-preferences")).Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("accounting", savedNavigation.GetProperty("favorites")[0].GetString());
+            Assert.Equal("accounting", savedNavigation.GetProperty("recent")[0].GetString());
+            Assert.Equal(HttpStatusCode.BadRequest, (await PostAsync(client, "/api/v1/me/navigation-preferences/recent", new { navigationKey = "../tenant" })).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await DeleteAsync(client, "/api/v1/me/navigation-preferences/favorites/accounting")).StatusCode);
+            var removedFavorite = await (await client.GetAsync("/api/v1/me/navigation-preferences")).Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Empty(removedFavorite.GetProperty("favorites").EnumerateArray());
+            Assert.Equal("accounting", removedFavorite.GetProperty("recent")[0].GetString());
+
             var create = await PostAsync(client, $"/api/v1/tenants/{tenant.Value:D}/users", new { name = "أحمد محمد", emailPrefix = "ahmed" });
             Assert.Equal(HttpStatusCode.Created, create.StatusCode);
             var created = await create.Content.ReadFromJsonAsync<JsonElement>();
             createdUserId = created.GetProperty("user").GetProperty("id").GetGuid();
             Assert.Equal($"ahmed@api-flow-{tenant.Value:N}.local", created.GetProperty("user").GetProperty("email").GetString());
             Assert.False(string.IsNullOrWhiteSpace(created.GetProperty("temporaryPassword").GetString()));
+            await using (var preferenceDataSource = NpgsqlDataSource.Create(appConnectionString))
+            {
+                var anotherUserPreferences = await new NpgsqlUserNavigationPreferencesStore(preferenceDataSource).LoadAsync(tenant, new IdentityId(createdUserId.Value));
+                Assert.Empty(anotherUserPreferences.Favorites);
+                Assert.Empty(anotherUserPreferences.Recent);
+            }
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/users")).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/users/{createdUserId:D}")).StatusCode);
             var domain = await client.GetAsync($"/api/v1/tenants/{tenant.Value:D}/login-domain");
@@ -105,6 +128,25 @@ public sealed class PlatformApiFlowTests : DatabaseIntegrationTestBase
     private static async Task LoginAsync(HttpClient client, string email, string password, Guid tenantId)
     {
         var response = await PostAsync(client, "/api/v1/auth/login", new { email, password }); Assert.Equal(HttpStatusCode.OK, response.StatusCode); var authentication = await response.Content.ReadFromJsonAsync<JsonElement>(); Assert.Equal("Authenticated", authentication.GetProperty("state").GetString()); Assert.Equal(tenantId, authentication.GetProperty("tenantId").GetGuid());
+    }
+    private static async Task<HttpResponseMessage> PutAsync(HttpClient client, string path, object body)
+    {
+        var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
+        Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
+        var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfResponse>();
+        using var request = new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(body) };
+        request.Headers.Add("X-CSRF-TOKEN", csrf!.Token);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> DeleteAsync(HttpClient client, string path)
+    {
+        var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
+        Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
+        var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfResponse>();
+        using var request = new HttpRequestMessage(HttpMethod.Delete, path);
+        request.Headers.Add("X-CSRF-TOKEN", csrf!.Token);
+        return await client.SendAsync(request);
     }
     private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string path, object? body) { var csrfResponse = await client.GetAsync("/api/v1/auth/csrf"); Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode); var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfResponse>(); using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body ?? new { }) }; request.Headers.Add("X-CSRF-TOKEN", csrf!.Token); return await client.SendAsync(request); }
     private static async Task ExecuteAsync(NpgsqlConnection connection, string sql) { await using var command = new NpgsqlCommand(sql, connection); await command.ExecuteNonQueryAsync(); }

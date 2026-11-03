@@ -42,6 +42,7 @@ export function HrTabNav({ activeTab, onTabChange, tabs }: HrTabNavProps): React
           <button
             key={tab.id}
             type="button"
+            data-testid={`hr-tab-${tab.id}`}
             onClick={() => onTabChange(tab.id)}
             style={{
               display: "inline-flex",

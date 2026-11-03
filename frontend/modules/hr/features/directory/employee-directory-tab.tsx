@@ -66,7 +66,7 @@ export function EmployeeDirectoryTab({
             />
           </div>
         </div>
-        <Button variant="primary" onPress={openNew}>
+        <Button data-testid="new-employee-button" variant="primary" onPress={openNew}>
           + {t("directory.newEmployeeAction")}
         </Button>
       </FilterBar>
@@ -101,6 +101,7 @@ export function EmployeeDirectoryTab({
               items.map((emp) => (
                 <TableRow
                   key={emp.id}
+                  data-testid="employee-row"
                   onClick={() => onSelectEmployee(emp.id)}
                   style={{ cursor: "pointer" }}
                 >

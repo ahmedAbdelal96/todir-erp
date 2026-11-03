@@ -10,6 +10,12 @@ import type {
   CompensationAgreementView,
   InsuranceEnrollmentView,
   EmployeeDocumentView,
+  EmployeeDocumentUploadIntentView,
+  EmployeeDocumentDownloadView,
+  CreateEmployeeDocumentUploadRequest,
+  CompleteEmployeeDocumentUploadRequest,
+  CreateEmployeeDocumentRequest,
+  VerifyEmployeeDocumentRequest,
   DocumentCompletenessView,
   DocumentRequirementView,
   QualificationView,
@@ -140,24 +146,34 @@ export const hrApi = {
       body: JSON.stringify(request)
     }),
 
-  activateContract: (contractId: string, legalEntityId: string, version: number): Promise<EmploymentContractView> =>
+  activateContract: (contractId: string, legalEntityId: string, _version?: number | undefined, signedFileRef?: string | null | undefined): Promise<EmploymentContractView> =>
     httpClient<EmploymentContractView>(`${BASE}/contracts/${encodeURIComponent(contractId)}/activate?legalEntityId=${encodeURIComponent(legalEntityId)}`, {
       method: "POST",
-      body: JSON.stringify({ expectedVersion: version })
+      body: JSON.stringify({ signedFileRef: signedFileRef ?? null })
     }),
 
   listContractAmendments: (contractId: string, legalEntityId: string): Promise<readonly ContractAmendmentView[]> =>
     httpClient<readonly ContractAmendmentView[]>(`${BASE}/contracts/${encodeURIComponent(contractId)}/amendments?legalEntityId=${encodeURIComponent(legalEntityId)}`),
 
-  createContractAmendment: (contractId: string, legalEntityId: string, request: { amendmentType: string; effectiveDate: string; termsSummary: string; fileRef?: string | null | undefined }): Promise<ContractAmendmentView> =>
-    httpClient<ContractAmendmentView>(`${BASE}/contracts/${encodeURIComponent(contractId)}/amendments?legalEntityId=${encodeURIComponent(legalEntityId)}`, {
+  createContractAmendment: (contractId: string, legalEntityId: string, request: { effectiveDate: string; changeType?: string | undefined; amendmentType?: string | undefined; reason?: string | undefined; newTerms?: unknown; termsSummary?: string | undefined; fileRef?: string | null | undefined }): Promise<ContractAmendmentView> => {
+    const changeType = request.changeType ?? request.amendmentType ?? "Renewal";
+    const reason = request.reason ?? request.termsSummary ?? "Contract Amendment";
+    const newTerms = request.newTerms ?? { summary: request.termsSummary ?? "" };
+    return httpClient<ContractAmendmentView>(`${BASE}/contracts/${encodeURIComponent(contractId)}/amendments?legalEntityId=${encodeURIComponent(legalEntityId)}`, {
       method: "POST",
-      body: JSON.stringify(request)
-    }),
+      body: JSON.stringify({
+        effectiveDate: request.effectiveDate,
+        changeType,
+        newTerms,
+        reason,
+        fileRef: request.fileRef ?? null
+      })
+    });
+  },
 
   // Compensation
-  listCompensationAgreements: (employmentId: string, legalEntityId: string): Promise<readonly CompensationAgreementView[]> =>
-    httpClient<readonly CompensationAgreementView[]>(`${BASE}/employments/${encodeURIComponent(employmentId)}/compensation?legalEntityId=${encodeURIComponent(legalEntityId)}`),
+  listCompensationAgreements: (employeeId: string, employmentId: string, legalEntityId: string): Promise<readonly CompensationAgreementView[]> =>
+    httpClient<readonly CompensationAgreementView[]>(`${BASE}/employments/${encodeURIComponent(employmentId)}/compensation?employeeId=${encodeURIComponent(employeeId)}&legalEntityId=${encodeURIComponent(legalEntityId)}`),
 
   createCompensationAgreement: (employeeId: string, employmentId: string, request: CreateCompensationAgreementRequest): Promise<CompensationAgreementView> =>
     httpClient<CompensationAgreementView>(`${BASE}/employees/${encodeURIComponent(employeeId)}/employments/${encodeURIComponent(employmentId)}/compensation`, {
@@ -196,17 +212,49 @@ export const hrApi = {
   listDocumentRequirements: (legalEntityId: string): Promise<readonly DocumentRequirementView[]> =>
     httpClient<readonly DocumentRequirementView[]>(`${BASE}/document-requirements?legalEntityId=${encodeURIComponent(legalEntityId)}`),
 
-  createDocument: (employeeId: string, request: { legalEntityId: string; category: string; titleAr: string; titleEn?: string | null | undefined; fileRef: string; contentType: string; sizeBytes: number; expiryDate?: string | null | undefined; isSensitive?: boolean | undefined; employmentId?: string | null | undefined }): Promise<EmployeeDocumentView> =>
-    httpClient<EmployeeDocumentView>(`${BASE}/employees/${encodeURIComponent(employeeId)}/documents`, {
+  createDocumentUploadIntent: (employeeId: string, request: CreateEmployeeDocumentUploadRequest): Promise<EmployeeDocumentUploadIntentView> =>
+    httpClient<EmployeeDocumentUploadIntentView>(`${BASE}/employees/${encodeURIComponent(employeeId)}/documents/upload-intents`, {
       method: "POST",
       body: JSON.stringify(request)
     }),
 
-  verifyDocument: (employeeId: string, documentId: string, legalEntityId: string, request: { isVerified: boolean; notes?: string | null | undefined; expectedVersion: number }): Promise<EmployeeDocumentView> =>
-    httpClient<EmployeeDocumentView>(`${BASE}/employees/${encodeURIComponent(employeeId)}/documents/${encodeURIComponent(documentId)}/verify?legalEntityId=${encodeURIComponent(legalEntityId)}`, {
+  completeDocumentUpload: (employeeId: string, fileRef: string, request: CompleteEmployeeDocumentUploadRequest): Promise<{ fileRef: string; sha256: string; contentType: string; sizeBytes: number; ready: boolean }> =>
+    httpClient<{ fileRef: string; sha256: string; contentType: string; sizeBytes: number; ready: boolean }>(`${BASE}/employees/${encodeURIComponent(employeeId)}/documents/uploads/${encodeURIComponent(fileRef)}/complete`, {
       method: "POST",
       body: JSON.stringify(request)
     }),
+
+  createDocument: (employeeId: string, request: { legalEntityId: string; category: string; fileRef: string; sensitivity?: string | undefined; expiryDate?: string | null | undefined; supersedesDocumentId?: string | null | undefined; employmentId?: string | null | undefined; titleAr?: string | undefined; titleEn?: string | null | undefined; contentType?: string | undefined; sizeBytes?: number | undefined; isSensitive?: boolean | undefined }): Promise<EmployeeDocumentView> => {
+    const sensitivity = request.sensitivity ?? (request.isSensitive ? "Confidential" : "Normal");
+    return httpClient<EmployeeDocumentView>(`${BASE}/employees/${encodeURIComponent(employeeId)}/documents`, {
+      method: "POST",
+      body: JSON.stringify({
+        legalEntityId: request.legalEntityId,
+        category: request.category,
+        fileRef: request.fileRef,
+        sensitivity,
+        expiryDate: request.expiryDate || null,
+        supersedesDocumentId: request.supersedesDocumentId || null,
+        employmentId: request.employmentId || null
+      })
+    });
+  },
+
+  getDocumentDownload: (employeeId: string, documentId: string, legalEntityId: string): Promise<EmployeeDocumentDownloadView> =>
+    httpClient<EmployeeDocumentDownloadView>(`${BASE}/employees/${encodeURIComponent(employeeId)}/documents/${encodeURIComponent(documentId)}/download?legalEntityId=${encodeURIComponent(legalEntityId)}`),
+
+  verifyDocument: (employeeId: string, documentId: string, legalEntityId: string, request: { expectedVersion: number; verified?: boolean | undefined; isVerified?: boolean | undefined; reason?: string | undefined; notes?: string | null | undefined }): Promise<EmployeeDocumentView> => {
+    const verified = request.verified ?? request.isVerified ?? true;
+    const reason = request.reason ?? request.notes ?? "Document verified by HR";
+    return httpClient<EmployeeDocumentView>(`${BASE}/employees/${encodeURIComponent(employeeId)}/documents/${encodeURIComponent(documentId)}/verify?legalEntityId=${encodeURIComponent(legalEntityId)}`, {
+      method: "POST",
+      body: JSON.stringify({
+        expectedVersion: request.expectedVersion,
+        verified,
+        reason
+      })
+    });
+  },
 
   // Sensitive Identifiers
   listIdentifiers: (employeeId: string, legalEntityId: string): Promise<readonly EmployeeIdentifierView[]> =>
@@ -271,8 +319,8 @@ export const hrApi = {
   listAttendanceExceptions: (legalEntityId: string): Promise<readonly AttendanceExceptionView[]> =>
     httpClient<readonly AttendanceExceptionView[]>(`${BASE}/attendance-exceptions?legalEntityId=${encodeURIComponent(legalEntityId)}`),
 
-  correctAttendance: (recordId: string, request: AttendanceCorrectionRequest): Promise<AttendanceCorrectionView> =>
-    httpClient<AttendanceCorrectionView>(`${BASE}/attendance-records/${encodeURIComponent(recordId)}/corrections`, {
+  correctAttendance: (recordId: string, legalEntityId: string, request: AttendanceCorrectionRequest): Promise<AttendanceCorrectionView> =>
+    httpClient<AttendanceCorrectionView>(`${BASE}/attendance-records/${encodeURIComponent(recordId)}/corrections?legalEntityId=${encodeURIComponent(legalEntityId)}`, {
       method: "POST",
       body: JSON.stringify(request)
     }),

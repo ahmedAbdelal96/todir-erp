@@ -882,6 +882,14 @@ timezone?
 created_at
 ```
 
+## Personal Navigation State
+
+Navigation favorites and recent pages are Platform user-experience preferences, not user-administration features or a standalone business module. Persist them in the single `platform` schema, scoped by the authenticated `(tenant_id, identity_id)` pair so each user has an independent list in each tenant and can retrieve it from another device. The request identity and tenant come from the validated session; clients never submit either value.
+
+Store stable navigation keys only. Do not persist raw URLs, record identifiers, search terms, or route query strings. The backend bounds recent pages to the ten most recently visited keys and returns a small indexed snapshot. The frontend maps keys through the current permission-filtered navigation registry before displaying them; this preference API never grants access to a route. Browser storage may hydrate the interface immediately, but the backend remains authoritative across devices.
+
+Safe personal display preferences (language `ar`/`en`, theme `default`/`dark`, density `comfortable`/`compact`, and whether the navigation rail is collapsed) use the same authenticated tenant-and-identity scope in `platform.user_display_preferences`. The server validates supported values, and browser storage is only a per-user, per-tenant startup cache. Preferences never change permissions, business scope, or legal-document presentation.
+
 ## Tenant-bound authorization subject state
 
 ```text

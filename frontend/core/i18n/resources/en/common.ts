@@ -3,11 +3,20 @@ export const en = {
   shell: {
     workspace: "Workspace", legalEntity: "Legal entity", branch: "Branch", emptyWorkspace: "Choose a workspace to begin",
     updatingContext: "Updating context", signOut: "Sign out", modules: "Modules & services", administrator: "System administrator",
+    collapseSidebar: "Show sidebar icons only", expandSidebar: "Show sidebar labels",
+    enterFullscreen: "Enter full screen", exitFullscreen: "Exit full screen",
+    favorites: "Favorites", recentPages: "Recent pages", addFavorite: "Add {{name}} to favorites", removeFavorite: "Remove {{name}} from favorites",
+    navigationPreferencesSaveFailed: "Could not save this favorite. Try again.",
+    displayPreferencesSaveFailed: "Could not save your display preferences to your account.",
     couldNotLoadSession: "Could not load the session", couldNotUpdateScope: "Could not update the organization scope"
   },
   preferences: {
-    language: "Language", theme: "Theme", alternateTheme: "Alternate", defaultTheme: "Default",
+    language: "Language", theme: "Theme", alternateTheme: "Dark", defaultTheme: "Default",
     density: "Display density", compact: "Compact", comfortable: "Comfortable", profile: "Profile"
+  },
+  shortcuts: {
+    title: "Keyboard shortcuts", description: "Use shortcuts to reach common tools faster.",
+    openSearch: "Open quick search", toggleSidebar: "Collapse or expand the sidebar", openHelp: "Show these shortcuts"
   },
   actions: {
     save: "Save", cancel: "Cancel", close: "Close", confirm: "Confirm", retry: "Retry",

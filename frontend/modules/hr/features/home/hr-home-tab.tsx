@@ -20,6 +20,10 @@ export function HrHomeTab({ legalEntityId, onNavigateTab, onOpenNewEmployee }: H
   const data = homeQuery.data;
 
   const reminders = data?.reminders ?? [];
+  const activeEmployees = data?.headcount ?? data?.activeEmployeesCount ?? 0;
+  const pendingLeaves = data?.pendingLeaveApprovals ?? data?.pendingLeaveApprovalsCount ?? 0;
+  const attendanceExceptions = data?.openAttendanceExceptions ?? data?.missingAttendanceCount ?? 0;
+  const expiringDocs = data?.documentsExpiringWithin30Days ?? data?.expiringDocumentsCount ?? 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -47,27 +51,27 @@ export function HrHomeTab({ legalEntityId, onNavigateTab, onOpenNewEmployee }: H
       <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
         <HrKpiCard
           title={t("home.kpi.activeEmployees")}
-          value={data?.activeEmployeesCount ?? 0}
+          value={activeEmployees}
           subtitle={t("home.kpi.activeEmployeesDesc")}
           tone="primary"
         />
         <HrKpiCard
           title={t("home.kpi.pendingLeave")}
-          value={data?.pendingLeaveApprovalsCount ?? 0}
+          value={pendingLeaves}
           subtitle={t("home.kpi.pendingLeaveDesc")}
-          tone={data?.pendingLeaveApprovalsCount ? "warning" : "default"}
+          tone={pendingLeaves > 0 ? "warning" : "default"}
         />
         <HrKpiCard
           title={t("home.kpi.missingAttendance")}
-          value={data?.missingAttendanceCount ?? 0}
+          value={attendanceExceptions}
           subtitle={t("home.kpi.missingAttendanceDesc")}
-          tone={data?.missingAttendanceCount ? "danger" : "default"}
+          tone={attendanceExceptions > 0 ? "danger" : "default"}
         />
         <HrKpiCard
           title={t("home.kpi.expiringDocs")}
-          value={data?.expiringDocumentsCount ?? 0}
+          value={expiringDocs}
           subtitle={t("home.kpi.expiringDocsDesc")}
-          tone={data?.expiringDocumentsCount ? "warning" : "default"}
+          tone={expiringDocs > 0 ? "warning" : "default"}
         />
       </div>
 

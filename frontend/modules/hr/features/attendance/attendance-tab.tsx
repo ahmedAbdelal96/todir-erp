@@ -11,9 +11,10 @@ import type { AttendanceRecordView } from "../../types.ts";
 
 export interface AttendanceTabProps {
   readonly legalEntityId: string;
+  readonly defaultEmploymentId?: string | null;
 }
 
-export function AttendanceTab({ legalEntityId }: AttendanceTabProps): React.JSX.Element {
+export function AttendanceTab({ legalEntityId, defaultEmploymentId }: AttendanceTabProps): React.JSX.Element {
   const { t } = useTranslation("hr");
 
   const today = new Date().toISOString().slice(0, 10);
@@ -27,11 +28,12 @@ export function AttendanceTab({ legalEntityId }: AttendanceTabProps): React.JSX.
     to: toDate
   });
 
-  const punchMutation = useAttendancePunchMutation(legalEntityId, legalEntityId);
-
   const items = attendanceQuery.data?.items ?? [];
+  const effectiveEmploymentId = defaultEmploymentId || items[0]?.employmentId || "";
+  const punchMutation = useAttendancePunchMutation(effectiveEmploymentId, legalEntityId);
 
   const handleSimulatePunch = async (direction: "In" | "Out") => {
+    if (!effectiveEmploymentId) return;
     try {
       await punchMutation.mutateAsync({
         legalEntityId,

@@ -21,8 +21,11 @@ import {
   useDocumentCompleteness,
   useQualifications,
   useCredentials,
-  useTimeline
+  useTimeline,
+  useVerifyDocumentMutation
 } from "../../hooks/use-hr-queries.ts";
+import { usePermissions } from "../../../../core/runtime/runtime-provider.tsx";
+import type { EmployeeDocumentView } from "../../types.ts";
 
 export interface EmployeeWorkspaceProps {
   readonly employeeId: string;
@@ -48,6 +51,14 @@ export function EmployeeWorkspace({
   hasSalaryPermission = true
 }: EmployeeWorkspaceProps): React.JSX.Element {
   const { t } = useTranslation("hr");
+  let userPerms;
+  try {
+    userPerms = usePermissions();
+  } catch {
+    // Outside runtime provider
+  }
+  const effectiveSalaryPermission = userPerms ? userPerms.hasPermission("hr.compensation.read") : hasSalaryPermission;
+
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("overview");
 
   // Modals
@@ -67,13 +78,27 @@ export function EmployeeWorkspace({
 
   const assignmentsQuery = useAssignments(currentEmploymentId, legalEntityId);
   const contractsQuery = useContracts(currentEmploymentId, legalEntityId);
-  const compensationQuery = useCompensationAgreements(currentEmploymentId, legalEntityId);
+  const compensationQuery = useCompensationAgreements(employeeId, currentEmploymentId, legalEntityId);
   const insuranceQuery = useInsuranceEnrollments(employeeId, currentEmploymentId, legalEntityId);
   const documentsQuery = useDocuments(employeeId, legalEntityId);
   const completenessQuery = useDocumentCompleteness(employeeId, legalEntityId);
   const qualificationsQuery = useQualifications(employeeId, legalEntityId);
   const credentialsQuery = useCredentials(employeeId, legalEntityId);
   const timelineQuery = useTimeline(employeeId, legalEntityId);
+  const verifyDocMutation = useVerifyDocumentMutation(employeeId, legalEntityId);
+
+  const handleVerifyDoc = async (doc: EmployeeDocumentView) => {
+    try {
+      await verifyDocMutation.mutateAsync({
+        documentId: doc.id,
+        expectedVersion: doc.version,
+        verified: true,
+        reason: "Document verified by HR"
+      });
+    } catch {
+      // Handled by react query
+    }
+  };
 
   const assignments = assignmentsQuery.data ?? [];
   const contracts = contractsQuery.data ?? [];
@@ -108,7 +133,7 @@ export function EmployeeWorkspace({
     { id: "overview", label: t("workspace.tabs.overview") },
     { id: "assignments", label: t("workspace.tabs.assignments"), count: assignments.length },
     { id: "contracts", label: t("workspace.tabs.contracts"), count: contracts.length },
-    ...(hasSalaryPermission ? [{ id: "compensation" as WorkspaceSection, label: t("workspace.tabs.compensation"), count: compensation.length }] : []),
+    ...(effectiveSalaryPermission ? [{ id: "compensation" as WorkspaceSection, label: t("workspace.tabs.compensation"), count: compensation.length }] : []),
     { id: "documents", label: t("workspace.tabs.documents"), count: documents.length },
     { id: "qualifications", label: t("workspace.tabs.qualifications"), count: qualifications.length + credentials.length },
     { id: "insurance", label: t("workspace.tabs.insurance"), count: insurance.length },
@@ -153,21 +178,21 @@ export function EmployeeWorkspace({
 
           {/* Quick Lifecycle Action Buttons */}
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <Button variant="primary" onPress={() => setIsPromoteOpen(true)}>
+            <Button data-testid="workspace-action-promote" variant="primary" onPress={() => setIsPromoteOpen(true)}>
               {t("workspace.actions.promoteTransfer")}
             </Button>
-            <Button variant="secondary" onPress={() => setIsNewContractOpen(true)}>
+            <Button data-testid="workspace-action-contract" variant="secondary" onPress={() => setIsNewContractOpen(true)}>
               {t("workspace.actions.newContract")}
             </Button>
-            <Button variant="secondary" onPress={() => setIsUploadDocOpen(true)}>
+            <Button data-testid="workspace-action-upload" variant="secondary" onPress={() => setIsUploadDocOpen(true)}>
               {t("workspace.actions.uploadDoc")}
             </Button>
             {currentEmployment?.status === "Terminated" || currentEmployment?.status === "Ended" ? (
-              <Button variant="primary" onPress={() => setTerminateMode("rehire")}>
+              <Button data-testid="workspace-action-rehire" variant="primary" onPress={() => setTerminateMode("rehire")}>
                 {t("workspace.actions.rehire")}
               </Button>
             ) : (
-              <Button variant="danger" onPress={() => setTerminateMode("terminate")}>
+              <Button data-testid="workspace-action-terminate" variant="danger" onPress={() => setTerminateMode("terminate")}>
                 {t("workspace.actions.terminate")}
               </Button>
             )}
@@ -183,6 +208,7 @@ export function EmployeeWorkspace({
             <button
               key={item.id}
               type="button"
+              data-testid={`workspace-tab-${item.id}`}
               onClick={() => setActiveSection(item.id)}
               style={{
                 display: "inline-flex",
@@ -368,24 +394,40 @@ export function EmployeeWorkspace({
                 <TableHead>{t("workspace.documents.titleLabel")}</TableHead>
                 <TableHead>{t("workspace.documents.expiryDate")}</TableHead>
                 <TableHead>{t("workspace.documents.verified")}</TableHead>
+                <TableHead style={{ textAlign: "end" }}>{t("actions.action", "الإجراء")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {documents.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} style={{ textAlign: "center", padding: "1.5rem", color: "var(--color-content-muted)" }}>
+                  <TableCell colSpan={5} style={{ textAlign: "center", padding: "1.5rem", color: "var(--color-content-muted)" }}>
                     {t("workspace.documents.empty")}
                   </TableCell>
                 </TableRow>
               ) : (
-                documents.map((doc) => (
-                  <TableRow key={doc.id}>
-                    <TableCell>{doc.category}</TableCell>
-                    <TableCell style={{ fontWeight: 600 }}>{doc.titleAr}</TableCell>
-                    <TableCell>{doc.expiryDate ? <LocalDateDisplay value={doc.expiryDate} /> : "—"}</TableCell>
-                    <TableCell><HrStatusBadge status={doc.isVerified ? "Verified" : "Pending"} /></TableCell>
-                  </TableRow>
-                ))
+                documents.map((doc) => {
+                  const isDocVerified = doc.verificationStatus === "Verified" || doc.isVerified === true;
+                  return (
+                    <TableRow key={doc.id}>
+                      <TableCell>{t(`workspace.documents.categories.${doc.category}`, doc.category)}</TableCell>
+                      <TableCell style={{ fontWeight: 600 }}>{doc.titleAr || doc.category}</TableCell>
+                      <TableCell>{doc.expiryDate ? <LocalDateDisplay value={doc.expiryDate} /> : "—"}</TableCell>
+                      <TableCell><HrStatusBadge status={isDocVerified ? "Verified" : "Pending"} /></TableCell>
+                      <TableCell style={{ textAlign: "end" }}>
+                        {!isDocVerified && (
+                          <Button
+                            size="compact"
+                            variant="secondary"
+                            onPress={() => handleVerifyDoc(doc)}
+                            isDisabled={verifyDocMutation.isPending}
+                          >
+                            {t("workspace.documents.verify", "تحقق")}
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
