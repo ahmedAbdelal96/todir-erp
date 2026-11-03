@@ -199,7 +199,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
           minWidth: "var(--trigger-width)",
           maxHeight: "15rem",
           overflowY: "auto",
-          zIndex: 1000
+          zIndex: 2500
         }}
       >
         <AriaListBox

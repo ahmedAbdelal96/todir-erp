@@ -175,7 +175,7 @@ export function Select<T extends object = SelectOption>({
           minWidth: "var(--trigger-width)",
           maxHeight: "15rem",
           overflowY: "auto",
-          zIndex: 1000
+          zIndex: 2500
         }}
       >
         <AriaListBox

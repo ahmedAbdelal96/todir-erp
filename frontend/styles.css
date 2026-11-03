@@ -1298,20 +1298,19 @@ a {
   height: 100dvh !important;
   background-color: rgba(15, 23, 42, 0.6) !important;
   backdrop-filter: blur(3px) !important;
-  z-index: 2000 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+  z-index: 1400 !important;
+  display: grid !important;
+  place-items: center !important;
   padding: 1.25rem !important;
   box-sizing: border-box !important;
 }
 
 .ui-modal,
 .react-aria-Modal {
-  margin: auto !important;
+  margin: 0 !important;
   outline: none !important;
   box-sizing: border-box !important;
-  z-index: 2001 !important;
+  z-index: 1401 !important;
   display: flex !important;
   flex-direction: column !important;
   max-height: calc(100vh - 2.5rem) !important;
@@ -1319,7 +1318,7 @@ a {
 }
 
 .ui-dialog {
-  margin: auto !important;
+  margin: 0 !important;
   box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25) !important;
   background-color: var(--color-surface-card, #ffffff) !important;
   border-radius: var(--radius-lg, 0.75rem) !important;
@@ -1349,6 +1348,10 @@ a {
 .ui-dialog-footer {
   flex-shrink: 0 !important;
   background-color: var(--color-surface-subtle, #f8fafc) !important;
+}
+
+.react-aria-Popover {
+  z-index: 2500 !important;
 }
 
 .ui-dialog--small,

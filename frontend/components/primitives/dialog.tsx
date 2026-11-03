@@ -62,11 +62,10 @@ export function Dialog({
         position: "fixed",
         inset: 0,
         backgroundColor: "rgba(15, 23, 42, 0.6)",
-        zIndex: 2000,
+        zIndex: 1400,
         backdropFilter: "blur(3px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        display: "grid",
+        placeItems: "center",
         padding: "1.25rem",
         boxSizing: "border-box"
       }}
@@ -78,10 +77,10 @@ export function Dialog({
           maxWidth: getMaxWidth(),
           maxHeight: "calc(100vh - 2.5rem)",
           outline: "none",
-          zIndex: 2001,
+          zIndex: 1401,
           display: "flex",
           flexDirection: "column",
-          margin: "auto"
+          margin: 0
         }}
       >
         <AriaDialog
@@ -97,7 +96,8 @@ export function Dialog({
             display: "flex",
             flexDirection: "column",
             outline: "none",
-            overflow: "hidden"
+            overflow: "hidden",
+            margin: 0
           }}
         >
         {({ close }) => (
