@@ -56,21 +56,31 @@ export function UploadDocumentModal({
       return;
     }
 
+    if (!selectedFile) {
+      setErrorMessage(t("workspace.documents.fileRequired", "يرجى اختيار ملف المستند"));
+      return;
+    }
+
+    const MAX_FILE_SIZE = 15 * 1024 * 1024;
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      setErrorMessage(t("workspace.documents.fileTooLarge", "حجم الملف يتجاوز الحد المسموح به (15 ميجابايت)"));
+      return;
+    }
+
+    const ALLOWED_MIME = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
+    if (selectedFile.type && !ALLOWED_MIME.includes(selectedFile.type)) {
+      setErrorMessage(t("workspace.documents.invalidFileType", "نوع الملف غير مدعوم. الأنواع المدعومة: PDF والصور"));
+      return;
+    }
+
     setIsUploading(true);
     setErrorMessage(null);
     try {
-      const isPdf = (fileName || "").toLowerCase().endsWith(".pdf");
-      const defaultBlob = isPdf
-        ? new Blob(["%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"], { type: "application/pdf" })
-        : new Blob(["HR verified document text content"], { type: "text/plain" });
-      const filePayload = selectedFile ?? new File([defaultBlob], fileName || "document.pdf", {
-        type: isPdf ? "application/pdf" : "text/plain"
-      });
       const intent = await hrApi.createDocumentUploadIntent(employeeId, {
         legalEntityId,
-        fileName: filePayload.name,
-        contentType: filePayload.type || "application/octet-stream",
-        sizeBytes: filePayload.size,
+        fileName: selectedFile.name,
+        contentType: selectedFile.type || "application/pdf",
+        sizeBytes: selectedFile.size,
         sensitivity: isSensitive ? "Confidential" : "Normal",
         employmentId: employmentId || null
       });
@@ -79,7 +89,7 @@ export function UploadDocumentModal({
       for (const [key, val] of Object.entries(intent.fields)) {
         formData.append(key, val);
       }
-      formData.append("file", filePayload);
+      formData.append("file", selectedFile);
 
       const uploadRes = await fetch(intent.url, {
         method: "POST",
@@ -90,16 +100,26 @@ export function UploadDocumentModal({
       }
 
       // Complete upload with retry for ClamAV scan readiness
+      let isReady = false;
+      let lastScanError: Error | null = null;
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
           const comp = await hrApi.completeDocumentUpload(employeeId, intent.fileRef, {
             legalEntityId,
             employmentId: employmentId || null
           });
-          if (comp.ready) break;
-        } catch {
-          await new Promise((resolve) => setTimeout(resolve, 600));
+          if (comp.ready) {
+            isReady = true;
+            break;
+          }
+        } catch (err: unknown) {
+          lastScanError = err instanceof Error ? err : new Error(String(err));
         }
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      }
+
+      if (!isReady) {
+        throw lastScanError ?? new Error("Document scanning could not be completed. Please try again.");
       }
 
       await createDocumentMutation.mutateAsync({
@@ -195,6 +215,8 @@ export function UploadDocumentModal({
           </label>
           <input
             type="file"
+            data-testid="file-upload-input"
+            accept=".pdf,.png,.jpg,.jpeg,.webp"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) {

@@ -35,10 +35,14 @@ export function TerminationRehireModal({
   // Terminate states
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
   const [reasonCode, setReasonCode] = useState("Resignation");
-  const [reasonType, setReasonType] = useState("Voluntary");
 
-  // Rehire states
-  const [rehireStartDate, setRehireStartDate] = useState(new Date().toISOString().slice(0, 10));
+  // Rehire states: must strictly follow prior termination date
+  const getTomorrow = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  };
+  const [rehireStartDate, setRehireStartDate] = useState(getTomorrow());
   const [rehireType, setRehireType] = useState<EmploymentType>("FullTime");
   const [rehireNumber, setRehireNumber] = useState("");
 
@@ -47,11 +51,26 @@ export function TerminationRehireModal({
   const reset = () => {
     setEffectiveDate(new Date().toISOString().slice(0, 10));
     setReasonCode("Resignation");
-    setReasonType("Voluntary");
-    setRehireStartDate(new Date().toISOString().slice(0, 10));
+    setRehireStartDate(getTomorrow());
     setRehireType("FullTime");
     setRehireNumber("");
     setErrorMessage(null);
+  };
+
+  const mapOffboardingReasonType = (code: string): string => {
+    switch (code) {
+      case "Resignation":
+        return "Resignation";
+      case "Dismissal":
+      case "MutualAgreement":
+        return "Termination";
+      case "ContractExpiration":
+        return "ContractExpiry";
+      case "Retirement":
+        return "Retirement";
+      default:
+        return "Other";
+    }
   };
 
   const handleTerminate = async (e: React.FormEvent) => {
@@ -65,10 +84,10 @@ export function TerminationRehireModal({
         reasonCode,
         expectedVersion: currentEmployment.version,
         offboarding: {
-          reasonType,
+          reasonType: mapOffboardingReasonType(reasonCode),
           lastWorkingDate: effectiveDate,
           finalPayrollRequired: true,
-          accessDeactivationTiming: "OnEffectiveDate"
+          accessDeactivationTiming: "LastWorkingDay"
         }
       });
       reset();

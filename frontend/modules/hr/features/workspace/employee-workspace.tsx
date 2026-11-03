@@ -48,7 +48,7 @@ export function EmployeeWorkspace({
   employeeId,
   legalEntityId,
   onBack,
-  hasSalaryPermission = true
+  hasSalaryPermission = false
 }: EmployeeWorkspaceProps): React.JSX.Element {
   const { t } = useTranslation("hr");
   let userPerms;
@@ -78,7 +78,7 @@ export function EmployeeWorkspace({
 
   const assignmentsQuery = useAssignments(currentEmploymentId, legalEntityId);
   const contractsQuery = useContracts(currentEmploymentId, legalEntityId);
-  const compensationQuery = useCompensationAgreements(employeeId, currentEmploymentId, legalEntityId);
+  const compensationQuery = useCompensationAgreements(employeeId, currentEmploymentId, legalEntityId, effectiveSalaryPermission);
   const insuranceQuery = useInsuranceEnrollments(employeeId, currentEmploymentId, legalEntityId);
   const documentsQuery = useDocuments(employeeId, legalEntityId);
   const completenessQuery = useDocumentCompleteness(employeeId, legalEntityId);
@@ -246,7 +246,7 @@ export function EmployeeWorkspace({
               {assignments[0] ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.875rem" }}>
                   <div><strong>{t("workspace.assignment.effectiveFrom")}:</strong> <LocalDateDisplay value={assignments[0].effectiveFrom} /></div>
-                  <div><strong>{t("workspace.assignment.reasonCode")}:</strong> {assignments[0].reasonCode}</div>
+                  <div><strong>{t("workspace.assignment.reasonCode")}:</strong> {t(`workspace.assignment.reasons.${assignments[0].reasonCode}`, { defaultValue: assignments[0].reasonCode })}</div>
                 </div>
               ) : (
                 <p style={{ margin: 0, color: "var(--color-content-muted)", fontSize: "0.875rem" }}>
@@ -292,7 +292,7 @@ export function EmployeeWorkspace({
                   <TableRow key={asg.id}>
                     <TableCell><LocalDateDisplay value={asg.effectiveFrom} /></TableCell>
                     <TableCell>{asg.effectiveTo ? <LocalDateDisplay value={asg.effectiveTo} /> : t("workspace.assignment.current")}</TableCell>
-                    <TableCell style={{ fontWeight: 600 }}>{asg.reasonCode}</TableCell>
+                    <TableCell style={{ fontWeight: 600 }}>{t(`workspace.assignment.reasons.${asg.reasonCode}`, { defaultValue: asg.reasonCode })}</TableCell>
                     <TableCell>{asg.version}</TableCell>
                   </TableRow>
                 ))
@@ -347,7 +347,7 @@ export function EmployeeWorkspace({
       )}
 
       {/* Section 4: Compensation */}
-      {activeSection === "compensation" && hasSalaryPermission && (
+      {activeSection === "compensation" && effectiveSalaryPermission && (
         <Surface title={t("workspace.compensation.title")}>
           <Table aria-label={t("workspace.compensation.title")}>
             <TableHeader>

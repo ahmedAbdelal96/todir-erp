@@ -1,7 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
 
 const SCREENSHOT_DIR = path.resolve(process.cwd(), '..', 'artifacts', 'test-results', 'hr-acceptance');
 
@@ -52,15 +51,25 @@ async function ensureAuthenticated(page: Page) {
   await expect(page.locator('[data-testid="hr-page"]')).toBeVisible({ timeout: 20000 });
 }
 
+// Global unique identifier for the employee created during this acceptance run
+const UNIQUE_RUN_ID = Date.now().toString().slice(-5);
+const TEST_EMPLOYEE_NAME = `حسام عبد الرحمن الشريف ${UNIQUE_RUN_ID}`;
+
+async function openTestEmployeeWorkspace(page: Page) {
+  await page.locator('[data-testid="hr-tab-directory"]').click();
+  await page.waitForTimeout(800);
+  const searchInput = page.getByPlaceholder(/البحث بالاسم/i);
+  if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await searchInput.fill(TEST_EMPLOYEE_NAME);
+    await page.waitForTimeout(800);
+  }
+  await page.getByText(TEST_EMPLOYEE_NAME).first().click();
+}
+
 test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite', () => {
   test.beforeAll(() => {
     if (!fs.existsSync(SCREENSHOT_DIR)) {
       fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-    }
-    try {
-      execSync(`docker exec todir-postgres-1 psql -U erp_app -d todir -c "set app.tenant_id = 'c9fea3c8-249d-f150-a53a-84f5a891c82b'; delete from business_hr.employment_assignment where reason_code = 'Promotion'; update business_hr.employment_assignment set effective_to = null where effective_to = '2027-01-01' or effective_to = '2026-11-03';"`, { stdio: 'ignore' });
-    } catch {
-      // Non-fatal if postgres is remote
     }
   });
 
@@ -85,7 +94,7 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
     });
   });
 
-  test('2. Real Employee Directory & New Employee Creation (Scenario A)', async ({ page }) => {
+  test('2. Real Employee Directory & New Employee Creation (HR38-A)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await ensureAuthenticated(page);
 
@@ -104,7 +113,7 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
 
     // Fill in new employee form
     const arabicNameInput = page.getByRole('dialog').locator('input').first();
-    await arabicNameInput.fill('حسام عبد الرحمن الشريف');
+    await arabicNameInput.fill(TEST_EMPLOYEE_NAME);
 
     // Capture Screen 02 (New Employee Modal in Arabic)
     await page.screenshot({
@@ -114,21 +123,24 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
 
     // Submit employee creation
     await page.getByRole('dialog').getByRole('button', { name: /حفظ|إضافة|تأكيد|Confirm/i }).click();
-    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 10000 });
+    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15000 });
 
     // Verify new employee appears in directory
-    await page.waitForTimeout(600);
-    await expect(page.getByText('حسام عبد الرحمن الشريف')).toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(1000);
+    const searchInput = page.getByPlaceholder(/البحث بالاسم/i);
+    if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await searchInput.fill(TEST_EMPLOYEE_NAME);
+      await page.waitForTimeout(800);
+    }
+    await expect(page.getByText(TEST_EMPLOYEE_NAME)).toBeVisible({ timeout: 15000 });
   });
 
-  test('3. Real 360-Degree Employee Workspace & Real Document Upload (Scenario B & G)', async ({ page }) => {
+  test('3. Real 360-Degree Employee Workspace & Real Document Upload (HR38-B & G)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await ensureAuthenticated(page);
 
-    // Navigate to Directory and select the first employee
-    await page.locator('[data-testid="hr-tab-directory"]').click();
-    await page.waitForTimeout(600);
-    await page.locator('[data-testid="employee-row"]').first().click();
+    // Navigate to Directory and select our newly created test employee
+    await openTestEmployeeWorkspace(page);
 
     // Verify 360 Workspace header and tabs
     await expect(page.locator('[data-testid="workspace-action-promote"]')).toBeVisible({ timeout: 15000 });
@@ -155,15 +167,22 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
       await titleInput.fill('بطاقة الهوية الوطنية');
     }
 
-    // Submit Document Upload (genuine Presigned S3 upload + complete + create)
+    // Set real file input with valid PDF buffer
+    const testPdfBuffer = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Title (National ID) >>\nendobj\ntrailer\n<<>>\n%%EOF');
+    await page.locator('[data-testid="file-upload-input"]').setInputFiles({
+      name: 'national-id-scan.pdf',
+      mimeType: 'application/pdf',
+      buffer: testPdfBuffer
+    });
+
+    // Submit Document Upload (genuine Presigned S3 upload + ClamAV scan completion + backend persistence)
     await page.getByRole('dialog').getByRole('button', { name: /تأكيد|رفع|Confirm/i }).click();
-    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15000 });
+    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 25000 });
 
     // Verify document row in documents table
     await page.waitForTimeout(1000);
     const verifyBtn = page.getByRole('button', { name: /تحقق|Verify/i }).first();
     if (await verifyBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      // Click Verify Document action
       await verifyBtn.click();
       await page.waitForTimeout(1000);
     }
@@ -175,24 +194,22 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
     });
   });
 
-  test('4. Real Promotion & Assignment Transfer (Scenario C)', async ({ page }) => {
+  test('4. Real Promotion & Assignment Transfer (HR38-C)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await ensureAuthenticated(page);
 
-    // Open employee workspace (pick second row)
-    await page.locator('[data-testid="hr-tab-directory"]').click();
-    await page.waitForTimeout(600);
-    await page.locator('[data-testid="employee-row"]').nth(1).click();
-    await expect(page.locator('[data-testid="workspace-action-promote"]')).toBeVisible({ timeout: 10000 });
+    // Open workspace for test employee
+    await openTestEmployeeWorkspace(page);
+    await expect(page.locator('[data-testid="workspace-action-promote"]')).toBeVisible({ timeout: 15000 });
 
     // Click Promote / Transfer button
     await page.locator('[data-testid="workspace-action-promote"]').click();
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 });
 
-    // Set effective date to future date to prevent collision with seeded/prior runs
+    // Set effective date to future date (2028-01-01) to avoid collision
     const dateInput = page.getByRole('dialog').locator('input[placeholder*="2026"]').first();
     if (await dateInput.isVisible().catch(() => false)) {
-      await dateInput.fill('2027-01-01');
+      await dateInput.fill('2028-01-01');
     }
 
     // Capture Screen 05 (Promotion & Transfer Modal)
@@ -203,55 +220,73 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
 
     // Submit Promotion
     await page.getByRole('dialog').getByRole('button', { name: /تأكيد|حفظ|Confirm/i }).click();
-    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 10000 });
+    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15000 });
 
     // Switch to Assignments Tab to verify
     await page.locator('[data-testid="workspace-tab-assignments"]').click();
-    await page.waitForTimeout(600);
-    await expect(page.getByText(/Promotion|ترقية|Transfer|InitialHiring/i).first()).toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(800);
+    await expect(page.getByText(/Promotion|ترقية/i).first()).toBeVisible({ timeout: 10000 });
+
+    // Reload page to verify persistence
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await page.locator('[data-testid="workspace-tab-assignments"]').click();
+    await expect(page.getByText(/Promotion|ترقية/i).first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('5. Real Contract Renewal & Amendment (Scenario D)', async ({ page }) => {
+  test('5. Real Contract Renewal & Amendment (HR38-D)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await ensureAuthenticated(page);
 
-    // Open employee workspace (pick second row)
-    await page.locator('[data-testid="hr-tab-directory"]').click();
-    await page.waitForTimeout(600);
-    await page.locator('[data-testid="employee-row"]').nth(1).click();
-    await expect(page.locator('[data-testid="workspace-tab-contracts"]')).toBeVisible({ timeout: 10000 });
+    // Open workspace for test employee
+    await openTestEmployeeWorkspace(page);
+    await expect(page.locator('[data-testid="workspace-tab-contracts"]')).toBeVisible({ timeout: 15000 });
 
     // Switch to Contracts Tab
     await page.locator('[data-testid="workspace-tab-contracts"]').click();
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(800);
 
-    // Click Renew Contract or New Contract button to display modal
-    const renewBtn = page.getByRole('button', { name: /تجديد العقد|Renew/i }).first();
+    // Ensure a contract exists or create one first
+    const renewBtn = page.getByRole('button', { name: /تجديد|Renew/i }).first();
     const newContractBtn = page.locator('[data-testid="workspace-action-contract"]');
+
     if (await renewBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await renewBtn.click();
-    } else if (await newContractBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    } else {
       await newContractBtn.click();
+      await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 });
+      await page.getByRole('dialog').getByRole('button', { name: /تأكيد|حفظ|Confirm/i }).click();
+      await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15000 });
+      await page.waitForTimeout(1000);
+      await page.getByRole('button', { name: /تجديد|Renew/i }).first().click();
     }
 
-    if (await page.getByRole('dialog').isVisible({ timeout: 5000 }).catch(() => false)) {
-      // Capture Screen 06 (Contract Modal)
-      await page.screenshot({
-        path: path.join(SCREENSHOT_DIR, '06-hr-contract-renewal-modal.png'),
-        fullPage: true
-      });
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 });
 
-      const cancelBtn = page.getByRole('dialog').getByRole('button', { name: /إلغاء|Cancel/i });
-      if (await cancelBtn.isVisible().catch(() => false)) {
-        await cancelBtn.click();
-      } else {
-        await page.keyboard.press('Escape');
-      }
-      await expect(page.getByRole('dialog')).toBeHidden({ timeout: 5000 }).catch(() => {});
+    // Fill renewal terms summary
+    const termsInput = page.getByRole('dialog').locator('input[placeholder*="مثال"]').first();
+    if (await termsInput.isVisible().catch(() => false)) {
+      await termsInput.fill('تجديد العقد لمدة سنة إضافية مع استمرار كامل المزايا');
     }
+
+    // Capture Screen 06 (Contract Modal)
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, '06-hr-contract-renewal-modal.png'),
+      fullPage: true
+    });
+
+    // Submit renewal
+    await page.getByRole('dialog').getByRole('button', { name: /تأكيد|تجديد|Confirm/i }).click();
+    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15000 });
+
+    // Reload page to verify persistence
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await page.locator('[data-testid="workspace-tab-contracts"]').click();
+    await expect(page.getByRole('button', { name: /تجديد|Renew/i }).first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('6. Real Attendance Tracking & Punch Correction (Scenario E)', async ({ page }) => {
+  test('6. Real Attendance Tracking & Punch Correction (HR38-E)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await ensureAuthenticated(page);
 
@@ -262,15 +297,18 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
     // Verify Attendance Table / Heading
     await expect(page.getByRole('heading', { name: 'سجل حركات الحضور والانصراف' })).toBeVisible({ timeout: 10000 });
 
-    // Punch manual check-in if button is present
-    const punchInBtn = page.getByRole('button', { name: /تسجيل حضور يدوي/i });
-    if (await punchInBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await punchInBtn.click();
-      await page.waitForTimeout(800);
+    // Ensure records are displayed by expanding from date if needed
+    let correctBtn = page.getByRole('button', { name: /تصحيح|Correct/i }).first();
+    if (!await correctBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      const fromDateInput = page.locator('input[placeholder="2026-01-01"]').first();
+      if (await fromDateInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await fromDateInput.fill('2026-10-01');
+        await page.waitForTimeout(1000);
+      }
     }
 
-    // Check for correction button
-    const correctBtn = page.getByRole('button', { name: /تصحيح|Correct/i }).first();
+    // Check for correction button on records
+    correctBtn = page.getByRole('button', { name: /تصحيح|Correct/i }).first();
     if (await correctBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
       await correctBtn.click();
       await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 });
@@ -294,9 +332,12 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
         fullPage: true
       });
     }
+
+    // Verify table remains healthy
+    await expect(page.getByRole('heading', { name: 'سجل حركات الحضور والانصراف' })).toBeVisible();
   });
 
-  test('7. Real Leave Management & Approval (Scenario F)', async ({ page }) => {
+  test('7. Real Leave Management & Approval (HR38-F)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await ensureAuthenticated(page);
 
@@ -319,14 +360,21 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
       path: path.join(SCREENSHOT_DIR, '08-hr-leave-management.png'),
       fullPage: true
     });
+
+    // Verify Approved badge is visible
+    await expect(page.getByText(/معتمد|Approved/i).first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('8. Responsive Layouts & Zero Overflow (Tablet 768px and Mobile 390px)', async ({ page }) => {
+  test('8. Operational Compliance & Responsive Layouts (HR38-G)', async ({ page }) => {
     await ensureAuthenticated(page);
+
+    // Home compliance discovery
+    await page.locator('[data-testid="hr-tab-home"]').click();
+    await page.waitForTimeout(600);
+    await expect(page.getByText('التنبيهات التشغيلية والالتزامات النظامية')).toBeVisible({ timeout: 10000 });
 
     // Tablet 768px
     await page.setViewportSize({ width: 768, height: 1024 });
-    await page.locator('[data-testid="hr-tab-home"]').click();
     await page.waitForTimeout(600);
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, '09-hr-tablet-768px.png'),
@@ -348,5 +396,47 @@ test.describe('TODIR HR Real-Backend Full-Stack Verification & Acceptance Suite'
       path: path.join(SCREENSHOT_DIR, '10-hr-mobile-390px.png'),
       fullPage: true
     });
+  });
+
+  test('9. Termination & Rehire Full Lifecycle (HR38-H)', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await ensureAuthenticated(page);
+
+    // Open workspace for test employee
+    await openTestEmployeeWorkspace(page);
+    await expect(page.locator('[data-testid="workspace-action-terminate"]')).toBeVisible({ timeout: 15000 });
+
+    // Click Terminate button
+    await page.locator('[data-testid="workspace-action-terminate"]').click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 });
+
+    // Submit termination
+    await page.getByRole('dialog').getByRole('button', { name: /تأكيد|حفظ|Confirm/i }).click();
+    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15000 });
+
+    // Verify status updated to Terminated
+    await page.waitForTimeout(1000);
+    await expect(page.getByText(/منتهية خدماته|Terminated/i).first()).toBeVisible({ timeout: 10000 });
+
+    // Rehire button is now visible
+    const rehireBtn = page.locator('[data-testid="workspace-action-rehire"]');
+    await expect(rehireBtn).toBeVisible({ timeout: 10000 });
+    await rehireBtn.click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 });
+
+    // Ensure rehire start date strictly follows prior termination date
+    const rehireDateInput = page.getByRole('dialog').locator('input[placeholder*="2026"]').first();
+    if (await rehireDateInput.isVisible().catch(() => false)) {
+      await rehireDateInput.fill('2028-06-01');
+    }
+
+    // Submit rehire
+    await page.getByRole('dialog').getByRole('button', { name: /تأكيد|إعادة تعيين|Confirm/i }).click();
+    await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15000 });
+
+    // Reload page and verify employee is active again with preserved history
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="workspace-action-terminate"]')).toBeVisible({ timeout: 15000 });
   });
 });

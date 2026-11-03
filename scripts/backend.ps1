@@ -101,6 +101,13 @@ try {
     $env:TODIR_MIGRATOR_CONNECTION = "Host=$databaseHost;Port=$databasePort;Database=$databaseName;Username=postgres;Password=postgres"
     $env:TODIR_RUNTIME_PASSWORD = $runtimePassword
     $env:SEED_DEFAULT_PASSWORD = $seedPassword
+    $env:TODIR_FILES_BUCKET = if ($settings.TODIR_FILES_BUCKET) { $settings.TODIR_FILES_BUCKET } else { 'todir-files-private' }
+    $env:TODIR_FILES_PUBLIC_ENDPOINT = if ($settings.TODIR_FILES_PUBLIC_ENDPOINT) { $settings.TODIR_FILES_PUBLIC_ENDPOINT } else { 'http://127.0.0.1:19000' }
+    $env:TODIR_FILES_ACCESS_KEY = if ($settings.TODIR_FILES_ACCESS_KEY) { $settings.TODIR_FILES_ACCESS_KEY } else { 'todir' }
+    $env:TODIR_FILES_SECRET_KEY = if ($settings.TODIR_FILES_SECRET_KEY) { $settings.TODIR_FILES_SECRET_KEY } else { 'todir-dev-only' }
+    $env:TODIR_FILES_REGION = if ($settings.TODIR_FILES_REGION) { $settings.TODIR_FILES_REGION } else { 'us-east-1' }
+    $env:TODIR_FILES_SCANNER_HOST = if ($settings.TODIR_FILES_SCANNER_HOST) { $settings.TODIR_FILES_SCANNER_HOST } else { '127.0.0.1' }
+    $env:TODIR_FILES_SCANNER_PORT = if ($settings.TODIR_FILES_SCANNER_PORT) { $settings.TODIR_FILES_SCANNER_PORT } else { '3310' }
 
     Stop-ExistingLocalHosts
 

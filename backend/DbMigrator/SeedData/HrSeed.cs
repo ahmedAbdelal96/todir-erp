@@ -2,6 +2,7 @@ using Modules.Hr.Entities;
 using Core.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using System.Security.Cryptography;
 
 namespace DbMigrator.SeedData;
@@ -74,6 +75,7 @@ public static class HrSeed
             var employmentId = EmploymentId(context.Tenant.Id, index, isRehireScenario ? 2 : 1);
             var employmentNumber = $"EMP-{(isRehireScenario ? count + 1 : index):000000}";
             var startDate = new DateOnly(2021 + index % 5, 1 + index % 12, 1 + index % 20);
+            var effectiveDate = startDate < new DateOnly(2025, 1, 1) ? new DateOnly(2025, 1, 1) : startDate;
             if (isRehireScenario)
             {
                 var formerEmploymentId = EmploymentId(context.Tenant.Id, index, 1);
@@ -137,16 +139,22 @@ public static class HrSeed
 
             Guid? managerEmploymentId = index is > 1 and <= 8 ? EmploymentId(context.Tenant.Id, 1, 1) : null;
             var currentAssignmentId = AssignmentId(context.Tenant.Id, index, 2);
-            var effectiveDate = startDate < new DateOnly(2025, 1, 1) ? new DateOnly(2025, 1, 1) : startDate;
-            await UpsertAssignmentAsync(context, currentAssignmentId, employmentId, DepartmentId(context.Tenant.Id, index % Departments.Length), PositionId(context.Tenant.Id, index % Positions.Length), calendarId, managerEmploymentId,
-                effectiveDate, null, "InitialHire", context.AdministratorId, ct);
+            var assignmentBoundary = await ReadAssignmentBoundaryAsync(context, employmentId, currentAssignmentId, effectiveDate, ct);
+            var seededCurrentAssignment = !assignmentBoundary.HasAssignmentAtStart;
+            if (seededCurrentAssignment)
+            {
+                // A scheduled future transfer owns its effective date; end the seed baseline at that exclusive boundary.
+                await UpsertAssignmentAsync(context, currentAssignmentId, employmentId, DepartmentId(context.Tenant.Id, index % Departments.Length), PositionId(context.Tenant.Id, index % Positions.Length), calendarId, managerEmploymentId,
+                    effectiveDate, assignmentBoundary.NextEffectiveFrom, "InitialHire", context.AdministratorId, ct);
+            }
             if (index <= 10 || index is >= 11 and <= 14)
             {
                 var shiftId = index <= 10 ? dayShiftId : nightShiftId;
                 await context.ExecuteAsync("insert into business_hr.shift_assignment(tenant_id,id,legal_entity_id,employment_id,shift_definition_id,effective_from,effective_to,created_by,created_at) values($1,$2,$3,$4,$5,$6,null,$7,$8) on conflict(tenant_id,id) do nothing", ct,
                     context.Tenant.Id, ShiftAssignmentId(context.Tenant.Id, index), context.EntityId, employmentId, shiftId, effectiveDate, context.AdministratorId, context.AsOf);
             }
-            await AddEventAsync(context, 2000 + index, person.EmployeeId, employmentId, "AssignmentChanged", effectiveDate, new { department = Departments[index % Departments.Length].Code, position = Positions[index % Positions.Length].Code }, ct);
+            if (seededCurrentAssignment)
+                await AddEventAsync(context, 2000 + index, person.EmployeeId, employmentId, "AssignmentChanged", effectiveDate, new { department = Departments[index % Departments.Length].Code, position = Positions[index % Positions.Length].Code }, ct);
         }
 
         var pendingEmploymentId = EmploymentId(context.Tenant.Id, 3, 1);
@@ -341,6 +349,24 @@ public static class HrSeed
     private static async Task UpsertAssignmentAsync(SeedContext context, Guid id, Guid employmentId, Guid departmentId, Guid positionId, Guid calendarId, Guid? managerEmploymentId, DateOnly from, DateOnly? to, string reason, Guid actor, CancellationToken ct) =>
         await context.ExecuteAsync("insert into business_hr.employment_assignment(tenant_id,id,legal_entity_id,employment_id,branch_id,department_id,position_id,manager_employment_id,work_calendar_id,effective_from,effective_to,reason_code,created_by,created_at,version) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1) on conflict(tenant_id,id) do update set branch_id=excluded.branch_id,department_id=excluded.department_id,position_id=excluded.position_id,manager_employment_id=excluded.manager_employment_id,work_calendar_id=excluded.work_calendar_id,effective_from=excluded.effective_from,effective_to=excluded.effective_to,reason_code=excluded.reason_code,version=business_hr.employment_assignment.version+case when (business_hr.employment_assignment.department_id,business_hr.employment_assignment.position_id,business_hr.employment_assignment.manager_employment_id,business_hr.employment_assignment.work_calendar_id,business_hr.employment_assignment.effective_from,business_hr.employment_assignment.effective_to) is distinct from (excluded.department_id,excluded.position_id,excluded.manager_employment_id,excluded.work_calendar_id,excluded.effective_from,excluded.effective_to) then 1 else 0 end", ct,
             context.Tenant.Id, id, context.EntityId, employmentId, context.BranchId, departmentId, positionId, managerEmploymentId, calendarId, from, to, reason, actor, context.AsOf);
+
+    private static async Task<(DateOnly? NextEffectiveFrom, bool HasAssignmentAtStart)> ReadAssignmentBoundaryAsync(SeedContext context, Guid employmentId, Guid currentAssignmentId, DateOnly effectiveFrom, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            select
+                min(effective_from) filter (where effective_from > $4),
+                coalesce(bool_or(effective_from <= $4 and coalesce(effective_to, 'infinity'::date) > $4), false)
+            from business_hr.employment_assignment
+            where tenant_id = $1 and employment_id = $2 and id <> $3
+            """, context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(context.Tenant.Id);
+        command.Parameters.AddWithValue(employmentId);
+        command.Parameters.AddWithValue(currentAssignmentId);
+        command.Parameters.AddWithValue(effectiveFrom);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+        return (reader.IsDBNull(0) ? null : reader.GetFieldValue<DateOnly>(0), reader.GetBoolean(1));
+    }
 
     private static async Task AddEventAsync(SeedContext context, int suffix, Guid employeeId, Guid? employmentId, string eventType, DateOnly effectiveOn, object payload, CancellationToken ct)
     {

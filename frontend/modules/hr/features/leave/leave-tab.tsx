@@ -9,7 +9,8 @@ import { NewLeaveRequestModal } from "./new-leave-request-modal.tsx";
 import {
   useLeaveRequests,
   useApproveLeaveRequestMutation,
-  useCancelLeaveRequestMutation
+  useCancelLeaveRequestMutation,
+  useMyProfile
 } from "../../hooks/use-hr-queries.ts";
 import type { LeaveRequestView } from "../../types.ts";
 
@@ -22,12 +23,15 @@ export function LeaveTab({ legalEntityId, defaultEmploymentId }: LeaveTabProps):
   const { t } = useTranslation("hr");
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
 
-  const leaveRequestsQuery = useLeaveRequests(legalEntityId, defaultEmploymentId);
+  const myProfileQuery = useMyProfile(legalEntityId);
+  const selfEmploymentId = myProfileQuery.data?.initialEmployment?.id ?? null;
+  const authorizedEmploymentId = defaultEmploymentId || selfEmploymentId || "";
+
+  const leaveRequestsQuery = useLeaveRequests(legalEntityId, defaultEmploymentId || undefined);
   const approveMutation = useApproveLeaveRequestMutation(legalEntityId);
   const cancelMutation = useCancelLeaveRequestMutation(legalEntityId);
 
   const requests: readonly LeaveRequestView[] = leaveRequestsQuery.data ?? [];
-  const effectiveEmploymentId = defaultEmploymentId || requests[0]?.employmentId || "";
 
   const handleApprove = async (req: LeaveRequestView) => {
     try {
@@ -63,9 +67,20 @@ export function LeaveTab({ legalEntityId, defaultEmploymentId }: LeaveTabProps):
             {t("leave.subtitle")}
           </p>
         </div>
-        <Button variant="primary" onPress={() => setIsNewRequestOpen(true)}>
-          + {t("leave.actions.newRequest")}
-        </Button>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          {!authorizedEmploymentId && (
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+              {t("leave.selectEmployeeHelper", "يتطلب تقديم طلب إجازة حساب موظف أو تحديد موظف")}
+            </span>
+          )}
+          <Button
+            variant="primary"
+            isDisabled={!authorizedEmploymentId}
+            onPress={() => setIsNewRequestOpen(true)}
+          >
+            + {t("leave.actions.newRequest")}
+          </Button>
+        </div>
       </FilterBar>
 
       {/* Leave Requests Table */}
@@ -144,11 +159,11 @@ export function LeaveTab({ legalEntityId, defaultEmploymentId }: LeaveTabProps):
       </div>
 
       {/* Creation Modal */}
-      {isNewRequestOpen && effectiveEmploymentId && (
+      {isNewRequestOpen && authorizedEmploymentId && (
         <NewLeaveRequestModal
           isOpen={isNewRequestOpen}
           onClose={() => setIsNewRequestOpen(false)}
-          employmentId={effectiveEmploymentId}
+          employmentId={authorizedEmploymentId}
           legalEntityId={legalEntityId}
           onCreated={() => leaveRequestsQuery.refetch()}
         />

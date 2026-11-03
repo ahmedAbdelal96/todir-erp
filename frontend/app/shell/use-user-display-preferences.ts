@@ -74,12 +74,15 @@ export function useUserDisplayPreferences(tenantId: string, identityId: string, 
         }
       }
       setSaveFailed(false);
-    }, () => setSaveFailed(true));
+    }, (err: unknown) => {
+      if (err instanceof Error && err.name === "AbortError") return;
+      setSaveFailed(true);
+    });
   }, [identityId, queryClient, queryKey, scopeKey, tenantId]);
 
   return {
     preferences: preferencesQuery.data ?? defaultUserDisplayPreferences,
     update,
-    saveFailed: saveFailed || preferencesQuery.isError
+    saveFailed
   };
 }

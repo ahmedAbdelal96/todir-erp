@@ -6,7 +6,7 @@ import { LocalDateField } from "../../../../components/fields/local-date-field.t
 import { Button } from "../../../../components/primitives/button.tsx";
 import { HrStatusBadge } from "../../components/hr-status-badge.tsx";
 import { AttendanceCorrectionModal } from "./attendance-correction-modal.tsx";
-import { useAttendanceRecords, useAttendancePunchMutation } from "../../hooks/use-hr-queries.ts";
+import { useAttendanceRecords, useAttendancePunchMutation, useMyProfile } from "../../hooks/use-hr-queries.ts";
 import type { AttendanceRecordView } from "../../types.ts";
 
 export interface AttendanceTabProps {
@@ -22,18 +22,22 @@ export function AttendanceTab({ legalEntityId, defaultEmploymentId }: Attendance
   const [toDate, setToDate] = useState(today);
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecordView | null>(null);
 
+  const myProfileQuery = useMyProfile(legalEntityId);
+  const selfEmploymentId = myProfileQuery.data?.initialEmployment?.id ?? null;
+  const authorizedPunchEmploymentId = defaultEmploymentId || selfEmploymentId || "";
+
   const attendanceQuery = useAttendanceRecords({
     legalEntityId,
     from: fromDate,
-    to: toDate
+    to: toDate,
+    employmentId: defaultEmploymentId || null
   });
 
   const items = attendanceQuery.data?.items ?? [];
-  const effectiveEmploymentId = defaultEmploymentId || items[0]?.employmentId || "";
-  const punchMutation = useAttendancePunchMutation(effectiveEmploymentId, legalEntityId);
+  const punchMutation = useAttendancePunchMutation(authorizedPunchEmploymentId, legalEntityId);
 
   const handleSimulatePunch = async (direction: "In" | "Out") => {
-    if (!effectiveEmploymentId) return;
+    if (!authorizedPunchEmploymentId) return;
     try {
       await punchMutation.mutateAsync({
         legalEntityId,
@@ -42,6 +46,7 @@ export function AttendanceTab({ legalEntityId, defaultEmploymentId }: Attendance
         sourceType: "WebSelfService",
         idempotencyKey: `punch-${direction}-${Date.now()}`
       });
+      await attendanceQuery.refetch();
     } catch {
       // Handled by query refetch
     }
@@ -66,12 +71,27 @@ export function AttendanceTab({ legalEntityId, defaultEmploymentId }: Attendance
             onChange={setToDate}
           />
         </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <Button variant="secondary" size="compact" onPress={() => handleSimulatePunch("In")}>
-            {t("attendance.actions.punchIn")}
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          {!authorizedPunchEmploymentId && (
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginInlineEnd: "0.25rem" }}>
+              {t("attendance.selectEmployeeHelper", "تسجيل الحضور يتطلب حساب موظف أو تحديد موظف")}
+            </span>
+          )}
+          <Button
+            variant="secondary"
+            size="compact"
+            isDisabled={!authorizedPunchEmploymentId || punchMutation.isPending}
+            onPress={() => handleSimulatePunch("In")}
+          >
+            {punchMutation.isPending ? t("actions.saving") : t("attendance.actions.punchIn")}
           </Button>
-          <Button variant="secondary" size="compact" onPress={() => handleSimulatePunch("Out")}>
-            {t("attendance.actions.punchOut")}
+          <Button
+            variant="secondary"
+            size="compact"
+            isDisabled={!authorizedPunchEmploymentId || punchMutation.isPending}
+            onPress={() => handleSimulatePunch("Out")}
+          >
+            {punchMutation.isPending ? t("actions.saving") : t("attendance.actions.punchOut")}
           </Button>
         </div>
       </FilterBar>

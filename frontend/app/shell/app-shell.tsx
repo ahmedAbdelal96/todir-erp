@@ -217,7 +217,8 @@ export function AppShell() {
       const popoverWidth = Math.min(320, window.innerWidth - 24);
       const preferredLeft = direction === "rtl" ? rect.left - popoverWidth - 8 : rect.right + 8;
       const left = Math.max(12, Math.min(preferredLeft, window.innerWidth - popoverWidth - 12));
-      const top = Math.max(12, Math.min(rect.top, window.innerHeight - 340));
+      const popoverHeight = quickPopoverRef.current?.getBoundingClientRect().height ?? 0;
+      const top = Math.max(12, Math.min(rect.top, window.innerHeight - popoverHeight - 12));
       setRecentPopoverPosition(current => current.top === top && current.left === left ? current : { top, left });
     };
     const handlePointerDown = (event: PointerEvent) => {

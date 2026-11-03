@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import type { EmployeeStatus, EmploymentStatus } from "../types.ts";
 
@@ -8,6 +9,7 @@ export interface HrStatusBadgeProps {
 }
 
 export function HrStatusBadge({ status, label }: HrStatusBadgeProps): React.JSX.Element {
+  const { t } = useTranslation("hr");
   let tone: "success" | "warning" | "danger" | "neutral" | "info" = "neutral";
 
   switch (status) {
@@ -39,5 +41,6 @@ export function HrStatusBadge({ status, label }: HrStatusBadgeProps): React.JSX.
       break;
   }
 
-  return <StatusBadge intent={tone} label={label ?? status} />;
+  const localizedLabel = label ?? t(`statuses.${status}`, { defaultValue: status });
+  return <StatusBadge intent={tone} label={localizedLabel} />;
 }

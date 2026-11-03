@@ -70,7 +70,14 @@ export const ar = {
     Exception: "حالة شاذة",
     Late: "متأخر",
     Open: "مفتوح",
-    Locked: "مقفل للرواتب"
+    Locked: "مقفل للرواتب",
+    PreHire: "قيد التعيين",
+    Probationary: "فترة تجربة",
+    NoticePeriod: "فترة إشعار",
+    Terminated: "منتهية خدماته",
+    Ended: "منتهي",
+    Suspended: "موقوف مؤقتاً",
+    Archived: "مؤرشف"
   },
 
   frequencies: {
@@ -203,6 +210,7 @@ export const ar = {
         Promotion: "ترقية دورية أو استثنائية",
         Transfer: "نقل بين الفروع أو الإدارات",
         Restructure: "إعادة هيكلة تنظيمية",
+        InitialHire: "تعيين أولي",
         InitialHiring: "تعيين أولي"
       }
     },
@@ -255,13 +263,18 @@ export const ar = {
       isSensitiveLabel: "وثيقة حساسة للغاية (تقييد الوصول)",
       verified: "حالة الاعتماد",
       empty: "لا توجد مستندات مرفوعة للموظف حالياً.",
+      fileRequired: "يرجى اختيار ملف المستند",
+      fileTooLarge: "حجم الملف يتجاوز الحد المسموح به (15 ميجابايت)",
+      invalidFileType: "نوع الملف غير مدعوم. الأنواع المدعومة: PDF والصور",
       categories: {
         NationalId: "بطاقة الهوية الوطنية / الإقامة",
         Passport: "جواز السفر",
         WorkPermit: "رخصة العمل",
         Contract: "عقد العمل الموثق",
         Certificate: "شهادة دراسية / تخرج",
+        EducationalCertificate: "شهادة دراسية / تخرج",
         Medical: "تقرير الكشف الطبي",
+        MedicalFitness: "تقرير الكشف الطبي",
         Other: "وثيقة إدارية أخرى"
       }
     },
@@ -313,6 +326,8 @@ export const ar = {
     emptyState: "لا توجد حركات حضور مسجلة في هذه الفترة الزمنية.",
     loading: "جارٍ التحميل...",
     missingCheckout: "لم يسجل انصراف",
+    selectEmployeeHelper: "تسجيل الحضور يتطلب حساب موظف أو تحديد موظف",
+    noEmploymentSelected: "يرجى تحديد موظف لتسجيل الحضور",
     filters: {
       fromDate: "من تاريخ",
       toDate: "إلى تاريخ"
@@ -345,6 +360,8 @@ export const ar = {
     title: "إدارة الإجازات السنوية والرسمية",
     subtitle: "تقديم الطلبات، متابعة الأرصدة المستهلكة، وموافقة أصحاب الصلاحية",
     typeRequired: "يرجى تحديد نوع الإجازة المطلوبة.",
+    employeeRequired: "يرجى تحديد الموظف المعني بالطلب.",
+    selectEmployeeHelper: "يتطلب تقديم طلب إجازة حساب موظف أو تحديد موظف",
     daysUnit: "يوم",
     tableAria: "جدول طلبات الإجازة",
     emptyState: "لا توجد طلبات إجازة في هذا السجل.",

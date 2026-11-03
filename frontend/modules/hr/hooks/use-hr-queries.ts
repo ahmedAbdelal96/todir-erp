@@ -232,11 +232,11 @@ export function useCreateContractAmendmentMutation(employmentId: string, contrac
   });
 }
 
-export function useCompensationAgreements(employeeId: string, employmentId: string, legalEntityId: string) {
+export function useCompensationAgreements(employeeId: string, employmentId: string, legalEntityId: string, isAllowed = true) {
   return useQuery({
     queryKey: hrKeys.compensation(employmentId, legalEntityId),
     queryFn: () => hrApi.listCompensationAgreements(employeeId, employmentId, legalEntityId),
-    enabled: Boolean(employeeId && employmentId && legalEntityId)
+    enabled: Boolean(employeeId && employmentId && legalEntityId) && isAllowed
   });
 }
 

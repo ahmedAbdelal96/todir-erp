@@ -70,7 +70,14 @@ export const en = {
     Exception: "Exception",
     Late: "Late",
     Open: "Open",
-    Locked: "Locked"
+    Locked: "Locked",
+    PreHire: "Pre-Hire",
+    Probationary: "Probationary",
+    NoticePeriod: "Notice Period",
+    Terminated: "Terminated",
+    Ended: "Ended",
+    Suspended: "Suspended",
+    Archived: "Archived"
   },
 
   frequencies: {
@@ -203,6 +210,7 @@ export const en = {
         Promotion: "Merit or Periodic Promotion",
         Transfer: "Department / Branch Transfer",
         Restructure: "Organizational Restructuring",
+        InitialHire: "Initial Hiring",
         InitialHiring: "Initial Hiring"
       }
     },
@@ -255,13 +263,18 @@ export const en = {
       isSensitiveLabel: "Highly Sensitive (Restrict Access)",
       verified: "Verification",
       empty: "No documents uploaded for this employee.",
+      fileRequired: "Document file is required.",
+      fileTooLarge: "File size exceeds the allowed limit (15 MB).",
+      invalidFileType: "File type not supported. Allowed formats: PDF and images.",
       categories: {
         NationalId: "National ID / Iqama",
         Passport: "Passport",
         WorkPermit: "Work Permit",
         Contract: "Signed Contract",
         Certificate: "Degree / Educational Certificate",
+        EducationalCertificate: "Degree / Educational Certificate",
         Medical: "Medical Fitness Report",
+        MedicalFitness: "Medical Fitness Report",
         Other: "Administrative Document"
       }
     },
@@ -313,6 +326,8 @@ export const en = {
     emptyState: "No attendance records found for the selected date range.",
     loading: "Loading...",
     missingCheckout: "Missing Checkout",
+    selectEmployeeHelper: "Recording attendance requires an employee account or selected employee context",
+    noEmploymentSelected: "Please select an employee to record attendance",
     filters: {
       fromDate: "From Date",
       toDate: "To Date"
@@ -345,6 +360,8 @@ export const en = {
     title: "Leave Management & Requests",
     subtitle: "Submit requests, monitor leave usage, and track approvals",
     typeRequired: "Please select a leave type.",
+    employeeRequired: "Please select the employee for this leave request.",
+    selectEmployeeHelper: "Submitting a leave request requires an employee account or selected employee",
     daysUnit: "days",
     tableAria: "Leave requests table",
     emptyState: "No leave requests found in this register.",
