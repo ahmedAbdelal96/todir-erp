@@ -62,10 +62,6 @@ export function Dialog({
         position: "fixed",
         inset: 0,
         backgroundColor: "rgba(15, 23, 42, 0.6)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "1rem",
         zIndex: 2000,
         backdropFilter: "blur(3px)"
       }}
@@ -73,13 +69,17 @@ export function Dialog({
       <AriaModal
         className="ui-modal"
         style={{
-          width: "100%",
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          margin: 0,
+          width: `min(${getMaxWidth()}, calc(100vw - 2rem))`,
           maxWidth: getMaxWidth(),
+          outline: "none",
+          zIndex: 2001,
           display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          margin: "auto",
-          outline: "none"
+          flexDirection: "column"
         }}
       >
         <AriaDialog
@@ -87,15 +87,16 @@ export function Dialog({
           className={clsx("ui-dialog", `ui-dialog--${size}`, className)}
           style={{
             backgroundColor: "var(--color-surface-card)",
-            borderRadius: "var(--radius-lg, 0.5rem)",
-            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+            borderRadius: "var(--radius-lg, 0.75rem)",
+            border: "1px solid var(--color-border-default)",
+            boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.25)",
             width: "100%",
-            maxHeight: "90vh",
+            maxHeight: "88vh",
             display: "flex",
             flexDirection: "column",
             outline: "none",
             overflow: "hidden",
-            margin: "auto"
+            margin: 0
           }}
         >
         {({ close }) => (

@@ -1298,26 +1298,26 @@ a {
   height: 100dvh !important;
   background-color: rgba(15, 23, 42, 0.6) !important;
   backdrop-filter: blur(3px) !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
   z-index: 2000 !important;
-  padding: 1.25rem !important;
   box-sizing: border-box !important;
 }
 
 .ui-modal,
 .react-aria-Modal {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  margin: auto !important;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  margin: 0 !important;
   outline: none !important;
   box-sizing: border-box !important;
+  z-index: 2001 !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .ui-dialog {
-  margin: auto !important;
+  margin: 0 !important;
   box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25) !important;
   background-color: var(--color-surface-card, #ffffff) !important;
   border-radius: var(--radius-lg, 0.75rem) !important;
@@ -1326,20 +1326,31 @@ a {
   max-height: 88vh !important;
   max-height: 88dvh !important;
   box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  outline: none !important;
 }
 
-.ui-dialog--small {
-  max-width: 22rem !important; /* 352px */
+.ui-dialog--small,
+.ui-modal:has(.ui-dialog--small) {
+  width: min(22rem, calc(100vw - 2rem)) !important; /* 352px */
+  max-width: 22rem !important;
 }
 
-.ui-dialog--medium {
-  max-width: 30rem !important; /* 480px */
+.ui-dialog--medium,
+.ui-modal:has(.ui-dialog--medium) {
+  width: min(30rem, calc(100vw - 2rem)) !important; /* 480px */
+  max-width: 30rem !important;
 }
 
-.ui-dialog--large {
-  max-width: 40rem !important; /* 640px */
+.ui-dialog--large,
+.ui-modal:has(.ui-dialog--large) {
+  width: min(40rem, calc(100vw - 2rem)) !important; /* 640px */
+  max-width: 40rem !important;
 }
 
-.ui-dialog--fullscreen {
+.ui-dialog--fullscreen,
+.ui-modal:has(.ui-dialog--fullscreen) {
+  width: 92vw !important;
   max-width: 92vw !important;
 }
