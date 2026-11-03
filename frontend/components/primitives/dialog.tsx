@@ -40,15 +40,15 @@ export function Dialog({
   const getMaxWidth = () => {
     switch (size) {
       case "small":
-        return "22rem";
+        return "24rem";
       case "medium":
-        return "30rem";
+        return "36rem";
       case "large":
-        return "40rem";
+        return "48rem";
       case "fullscreen":
         return "92vw";
       default:
-        return "30rem";
+        return "36rem";
     }
   };
 
@@ -63,23 +63,26 @@ export function Dialog({
         inset: 0,
         backgroundColor: "rgba(15, 23, 42, 0.6)",
         zIndex: 2000,
-        backdropFilter: "blur(3px)"
+        backdropFilter: "blur(3px)",
+        display: "grid",
+        placeItems: "center",
+        padding: "1rem",
+        overflow: "hidden"
       }}
     >
       <AriaModal
         className="ui-modal"
         style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          margin: 0,
           width: `min(${getMaxWidth()}, calc(100vw - 2rem))`,
           maxWidth: getMaxWidth(),
+          maxHeight: "min(88vh, 42rem)",
           outline: "none",
           zIndex: 2001,
           display: "flex",
-          flexDirection: "column"
+          flexDirection: "column",
+          margin: "auto",
+          borderRadius: "var(--radius-lg, 0.75rem)",
+          overflow: "hidden"
         }}
       >
         <AriaDialog
@@ -91,24 +94,29 @@ export function Dialog({
             border: "1px solid var(--color-border-default)",
             boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.25)",
             width: "100%",
-            maxHeight: "88vh",
+            height: "100%",
+            maxHeight: "min(88vh, 42rem)",
             display: "flex",
             flexDirection: "column",
             outline: "none",
             overflow: "hidden",
-            margin: 0
+            margin: "auto"
           }}
         >
         {({ close }) => (
           <>
             {title && (
               <div
+                className="ui-dialog-header"
                 style={{
                   padding: "1rem 1.25rem",
                   borderBottom: "1px solid var(--color-border-default)",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "space-between"
+                  justifyContent: "space-between",
+                  flexShrink: 0,
+                  backgroundColor: "var(--color-surface-card)",
+                  zIndex: 10
                 }}
               >
                 <div>
@@ -156,10 +164,12 @@ export function Dialog({
               </div>
             )}
             <div
+              className="ui-dialog-body"
               style={{
                 padding: "1.25rem",
                 overflowY: "auto",
                 flex: 1,
+                minHeight: 0,
                 fontSize: "0.875rem",
                 color: "var(--color-content-primary)"
               }}
@@ -168,6 +178,7 @@ export function Dialog({
             </div>
             {footer && (
               <div
+                className="ui-dialog-footer"
                 style={{
                   padding: "0.875rem 1.25rem",
                   borderTop: "1px solid var(--color-border-default)",
@@ -175,7 +186,9 @@ export function Dialog({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "flex-end",
-                  gap: "0.625rem"
+                  gap: "0.625rem",
+                  flexShrink: 0,
+                  zIndex: 10
                 }}
               >
                 {footer}

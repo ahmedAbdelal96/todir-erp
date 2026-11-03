@@ -1299,58 +1299,86 @@ a {
   background-color: rgba(15, 23, 42, 0.6) !important;
   backdrop-filter: blur(3px) !important;
   z-index: 2000 !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 1rem !important;
+  overflow: hidden !important;
   box-sizing: border-box !important;
 }
 
 .ui-modal,
 .react-aria-Modal {
-  position: fixed !important;
-  top: 50% !important;
-  left: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  margin: 0 !important;
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+  margin: auto !important;
   outline: none !important;
   box-sizing: border-box !important;
   z-index: 2001 !important;
   display: flex !important;
   flex-direction: column !important;
+  max-height: min(85vh, 42rem) !important;
+  max-height: min(85dvh, 42rem) !important;
+  border-radius: var(--radius-lg, 0.75rem) !important;
+  overflow: hidden !important;
 }
 
 .ui-dialog {
-  margin: 0 !important;
+  margin: auto !important;
   box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25) !important;
   background-color: var(--color-surface-card, #ffffff) !important;
   border-radius: var(--radius-lg, 0.75rem) !important;
   border: 1px solid var(--color-border-default, #cbd5e1) !important;
   width: 100% !important;
-  max-height: 88vh !important;
-  max-height: 88dvh !important;
+  height: 100% !important;
+  max-height: inherit !important;
   box-sizing: border-box !important;
   display: flex !important;
   flex-direction: column !important;
   outline: none !important;
+  overflow: hidden !important;
+}
+
+.ui-dialog-header {
+  flex-shrink: 0 !important;
+  background-color: var(--color-surface-card, #ffffff) !important;
+}
+
+.ui-dialog-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+}
+
+.ui-dialog-footer {
+  flex-shrink: 0 !important;
+  background-color: var(--color-surface-subtle, #f8fafc) !important;
 }
 
 .ui-dialog--small,
 .ui-modal:has(.ui-dialog--small) {
-  width: min(22rem, calc(100vw - 2rem)) !important; /* 352px */
-  max-width: 22rem !important;
+  width: min(24rem, calc(100vw - 2rem)) !important; /* 384px */
+  max-width: 24rem !important;
 }
 
 .ui-dialog--medium,
 .ui-modal:has(.ui-dialog--medium) {
-  width: min(30rem, calc(100vw - 2rem)) !important; /* 480px */
-  max-width: 30rem !important;
+  width: min(36rem, calc(100vw - 2rem)) !important; /* 576px */
+  max-width: 36rem !important;
 }
 
 .ui-dialog--large,
 .ui-modal:has(.ui-dialog--large) {
-  width: min(40rem, calc(100vw - 2rem)) !important; /* 640px */
-  max-width: 40rem !important;
+  width: min(48rem, calc(100vw - 2rem)) !important; /* 768px */
+  max-width: 48rem !important;
 }
 
 .ui-dialog--fullscreen,
 .ui-modal:has(.ui-dialog--fullscreen) {
-  width: 92vw !important;
-  max-width: 92vw !important;
+  width: 94vw !important;
+  max-width: 94vw !important;
+  height: 92vh !important;
+  max-height: 92vh !important;
 }

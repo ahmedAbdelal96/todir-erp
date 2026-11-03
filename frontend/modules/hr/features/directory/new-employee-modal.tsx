@@ -92,68 +92,8 @@ export function NewEmployeeModal({
       }}
       title={t("directory.newEmployeeModal.title")}
       size="medium"
-    >
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        {errorMessage && (
-          <div
-            role="alert"
-            style={{
-              padding: "0.75rem",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--color-status-danger-subtle, #fee2e2)",
-              color: "var(--color-status-danger, #b91c1c)",
-              fontSize: "0.875rem"
-            }}
-          >
-            {errorMessage}
-          </div>
-        )}
-
-        <TextField
-          label={t("directory.newEmployeeModal.arabicName")}
-          value={arabicName}
-          onChange={setArabicName}
-          isRequired
-          placeholder={t("directory.newEmployeeModal.arabicNamePlaceholder")}
-        />
-
-        <TextField
-          label={t("directory.newEmployeeModal.englishName")}
-          value={englishName}
-          onChange={setEnglishName}
-          placeholder={t("directory.newEmployeeModal.englishNamePlaceholder")}
-        />
-
-        <TextField
-          label={t("directory.newEmployeeModal.preferredName")}
-          value={preferredName}
-          onChange={setPreferredName}
-          placeholder={t("directory.newEmployeeModal.preferredNamePlaceholder")}
-        />
-
-        <Select
-          label={t("directory.newEmployeeModal.employmentType")}
-          selectedKey={employmentType}
-          onSelectionChange={(val) => {
-            if (val) setEmploymentType(String(val) as EmploymentType);
-          }}
-          options={employmentTypeOptions}
-        />
-
-        <LocalDateField
-          label={t("directory.newEmployeeModal.startDate")}
-          value={startDate}
-          onChange={setStartDate}
-          isRequired
-        />
-
-        <LocalDateField
-          label={t("directory.newEmployeeModal.endDateOptional")}
-          value={endDate}
-          onChange={setEndDate}
-        />
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "1rem", borderTop: "1px solid #e2e8f0", paddingTop: "1rem" }}>
+      footer={
+        <>
           <Button
             variant="secondary"
             onPress={() => { reset(); onClose(); }}
@@ -164,10 +104,78 @@ export function NewEmployeeModal({
           <Button
             variant="primary"
             type="submit"
+            form="new-employee-form"
             isDisabled={createMutation.isPending}
           >
             {createMutation.isPending ? t("actions.saving") : t("directory.newEmployeeModal.submit")}
           </Button>
+        </>
+      }
+    >
+      <form id="new-employee-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+        {errorMessage && (
+          <div
+            role="alert"
+            style={{
+              padding: "0.625rem 0.875rem",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--color-status-danger-subtle, #fee2e2)",
+              color: "var(--color-status-danger, #b91c1c)",
+              fontSize: "0.8125rem"
+            }}
+          >
+            {errorMessage}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" }}>
+          <TextField
+            label={t("directory.newEmployeeModal.arabicName")}
+            value={arabicName}
+            onChange={setArabicName}
+            isRequired
+            placeholder={t("directory.newEmployeeModal.arabicNamePlaceholder")}
+          />
+
+          <TextField
+            label={t("directory.newEmployeeModal.englishName")}
+            value={englishName}
+            onChange={setEnglishName}
+            placeholder={t("directory.newEmployeeModal.englishNamePlaceholder")}
+          />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" }}>
+          <TextField
+            label={t("directory.newEmployeeModal.preferredName")}
+            value={preferredName}
+            onChange={setPreferredName}
+            placeholder={t("directory.newEmployeeModal.preferredNamePlaceholder")}
+          />
+
+          <Select
+            label={t("directory.newEmployeeModal.employmentType")}
+            selectedKey={employmentType}
+            onSelectionChange={(val) => {
+              if (val) setEmploymentType(String(val) as EmploymentType);
+            }}
+            options={employmentTypeOptions}
+          />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.75rem" }}>
+          <LocalDateField
+            label={t("directory.newEmployeeModal.startDate")}
+            value={startDate}
+            onChange={setStartDate}
+            isRequired
+          />
+
+          <LocalDateField
+            label={t("directory.newEmployeeModal.endDateOptional")}
+            value={endDate}
+            onChange={setEndDate}
+          />
         </div>
       </form>
     </Dialog>
