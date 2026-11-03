@@ -1299,29 +1299,23 @@ a {
   background-color: rgba(15, 23, 42, 0.6) !important;
   backdrop-filter: blur(3px) !important;
   z-index: 2000 !important;
-  display: grid !important;
-  place-items: center !important;
-  padding: 1rem !important;
-  overflow: hidden !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 1.25rem !important;
   box-sizing: border-box !important;
 }
 
 .ui-modal,
 .react-aria-Modal {
-  position: relative !important;
-  top: auto !important;
-  left: auto !important;
-  transform: none !important;
   margin: auto !important;
   outline: none !important;
   box-sizing: border-box !important;
   z-index: 2001 !important;
   display: flex !important;
   flex-direction: column !important;
-  max-height: min(85vh, 42rem) !important;
-  max-height: min(85dvh, 42rem) !important;
-  border-radius: var(--radius-lg, 0.75rem) !important;
-  overflow: hidden !important;
+  max-height: calc(100vh - 2.5rem) !important;
+  max-height: calc(100dvh - 2.5rem) !important;
 }
 
 .ui-dialog {
@@ -1331,8 +1325,8 @@ a {
   border-radius: var(--radius-lg, 0.75rem) !important;
   border: 1px solid var(--color-border-default, #cbd5e1) !important;
   width: 100% !important;
-  height: 100% !important;
-  max-height: inherit !important;
+  max-height: calc(100vh - 2.5rem) !important;
+  max-height: calc(100dvh - 2.5rem) !important;
   box-sizing: border-box !important;
   display: flex !important;
   flex-direction: column !important;
@@ -1359,26 +1353,26 @@ a {
 
 .ui-dialog--small,
 .ui-modal:has(.ui-dialog--small) {
-  width: min(24rem, calc(100vw - 2rem)) !important; /* 384px */
+  width: min(24rem, calc(100vw - 2.5rem)) !important; /* 384px */
   max-width: 24rem !important;
 }
 
 .ui-dialog--medium,
 .ui-modal:has(.ui-dialog--medium) {
-  width: min(36rem, calc(100vw - 2rem)) !important; /* 576px */
+  width: min(36rem, calc(100vw - 2.5rem)) !important; /* 576px */
   max-width: 36rem !important;
 }
 
 .ui-dialog--large,
 .ui-modal:has(.ui-dialog--large) {
-  width: min(48rem, calc(100vw - 2rem)) !important; /* 768px */
+  width: min(48rem, calc(100vw - 2.5rem)) !important; /* 768px */
   max-width: 48rem !important;
 }
 
 .ui-dialog--fullscreen,
 .ui-modal:has(.ui-dialog--fullscreen) {
-  width: 94vw !important;
-  max-width: 94vw !important;
-  height: 92vh !important;
-  max-height: 92vh !important;
+  width: calc(100vw - 2.5rem) !important;
+  max-width: calc(100vw - 2.5rem) !important;
+  height: calc(100vh - 2.5rem) !important;
+  max-height: calc(100vh - 2.5rem) !important;
 }

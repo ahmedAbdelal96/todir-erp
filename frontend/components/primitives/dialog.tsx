@@ -64,25 +64,24 @@ export function Dialog({
         backgroundColor: "rgba(15, 23, 42, 0.6)",
         zIndex: 2000,
         backdropFilter: "blur(3px)",
-        display: "grid",
-        placeItems: "center",
-        padding: "1rem",
-        overflow: "hidden"
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "1.25rem",
+        boxSizing: "border-box"
       }}
     >
       <AriaModal
         className="ui-modal"
         style={{
-          width: `min(${getMaxWidth()}, calc(100vw - 2rem))`,
+          width: `min(${getMaxWidth()}, calc(100vw - 2.5rem))`,
           maxWidth: getMaxWidth(),
-          maxHeight: "min(88vh, 42rem)",
+          maxHeight: "calc(100vh - 2.5rem)",
           outline: "none",
           zIndex: 2001,
           display: "flex",
           flexDirection: "column",
-          margin: "auto",
-          borderRadius: "var(--radius-lg, 0.75rem)",
-          overflow: "hidden"
+          margin: "auto"
         }}
       >
         <AriaDialog
@@ -94,13 +93,11 @@ export function Dialog({
             border: "1px solid var(--color-border-default)",
             boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.25)",
             width: "100%",
-            height: "100%",
-            maxHeight: "min(88vh, 42rem)",
+            maxHeight: "calc(100vh - 2.5rem)",
             display: "flex",
             flexDirection: "column",
             outline: "none",
-            overflow: "hidden",
-            margin: "auto"
+            overflow: "hidden"
           }}
         >
         {({ close }) => (
