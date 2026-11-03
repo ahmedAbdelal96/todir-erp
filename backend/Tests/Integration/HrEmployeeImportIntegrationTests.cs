@@ -559,19 +559,42 @@ public sealed class HrEmployeeImportIntegrationTests : DatabaseIntegrationTestBa
         var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for HR PostgreSQL integration tests.");
         var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for HR PostgreSQL integration tests.");
         Guid tenantId; Guid legalEntityId; Guid employmentId; Guid leaveTypeId; Guid actorId; Guid membershipId;
+        var carryoverBoundary = new DateOnly(DateTime.UtcNow.Year + 1, 1, 1);
+        var policyEffectiveFrom = carryoverBoundary.AddYears(-1);
         await using (var admin = new NpgsqlConnection(adminConnectionString))
         {
             await admin.OpenAsync();
-            await using var scope = new NpgsqlCommand("select tenant.id,entity.id,employment.id,leave_type.id,identity.id,membership.id from platform.tenant tenant join platform.legal_entity entity on entity.tenant_id=tenant.id and entity.status='Active' join business_hr.employment employment on employment.tenant_id=tenant.id and employment.legal_entity_id=entity.id and employment.status='Active' join business_hr.leave_type leave_type on leave_type.tenant_id=tenant.id and leave_type.legal_entity_id=entity.id and leave_type.code='COMPANY-ANNUAL' and leave_type.status='Active' join platform.membership membership on membership.tenant_id=tenant.id and membership.status='Active' join platform.identity identity on identity.tenant_id=membership.tenant_id and identity.id=membership.identity_id and identity.status='Active' where tenant.slug='atlas-trading' and employment.employment_number='EMP-000001' order by entity.id,membership.id limit 1", admin);
+            await using var transaction = await admin.BeginTransactionAsync();
+            await using var scope = new NpgsqlCommand("select tenant.id,entity.id,employment.id,identity.id,membership.id from platform.tenant tenant join platform.legal_entity entity on entity.tenant_id=tenant.id and entity.status='Active' join business_hr.employment employment on employment.tenant_id=tenant.id and employment.legal_entity_id=entity.id and employment.status='Active' join platform.membership membership on membership.tenant_id=tenant.id and membership.status='Active' join platform.identity identity on identity.tenant_id=membership.tenant_id and identity.id=membership.identity_id and identity.status='Active' where tenant.slug='atlas-trading' and employment.employment_number='EMP-000001' order by entity.id,membership.id limit 1", admin, transaction);
             await using var reader = await scope.ExecuteReaderAsync();
-            if (!await reader.ReadAsync()) throw new InvalidOperationException("The canonical HR development seed must include its first employee and annual leave policy.");
-            tenantId = reader.GetGuid(0); legalEntityId = reader.GetGuid(1); employmentId = reader.GetGuid(2); leaveTypeId = reader.GetGuid(3); actorId = reader.GetGuid(4); membershipId = reader.GetGuid(5);
+            if (!await reader.ReadAsync()) throw new InvalidOperationException("The canonical HR development seed must include its first employee and active user.");
+            tenantId = reader.GetGuid(0); legalEntityId = reader.GetGuid(1); employmentId = reader.GetGuid(2); actorId = reader.GetGuid(3); membershipId = reader.GetGuid(4);
+            await reader.CloseAsync();
+
+            leaveTypeId = Guid.CreateVersion7();
+            var policyId = Guid.CreateVersion7();
+            var sourceReference = $"carryover-test-opening-{Guid.CreateVersion7():N}";
+            await using (var insertType = new NpgsqlCommand("insert into business_hr.leave_type(id,tenant_id,legal_entity_id,code,name_ar,name_en,category,unit,status,created_by,created_at) values($1,$2,$3,$4,'إجازة ترحيل اختبار','Carryover integration test','Annual','Days','Active',$5,now())", admin, transaction))
+            {
+                insertType.Parameters.AddWithValue(leaveTypeId); insertType.Parameters.AddWithValue(tenantId); insertType.Parameters.AddWithValue(legalEntityId); insertType.Parameters.AddWithValue($"CARRY-{Guid.CreateVersion7():N}"[..22]); insertType.Parameters.AddWithValue(actorId);
+                await insertType.ExecuteNonQueryAsync();
+            }
+            await using (var insertPolicy = new NpgsqlCommand("insert into business_hr.leave_policy(id,tenant_id,legal_entity_id,leave_type_id,version,effective_from,counting_method,approval_required,partial_day_allowed,negative_balance_policy,negative_balance_limit,payroll_treatment,accrual_rule,carryover_rule,eligibility_rules,created_by,created_at) values($1,$2,$3,$4,1,$5,'CalendarDays',true,false,'Disallow',0,'Paid','{\"mode\":\"None\"}'::jsonb,'{\"quantity\":5,\"expiryMonths\":6}'::jsonb,'{}'::jsonb,$6,now())", admin, transaction))
+            {
+                insertPolicy.Parameters.AddWithValue(policyId); insertPolicy.Parameters.AddWithValue(tenantId); insertPolicy.Parameters.AddWithValue(legalEntityId); insertPolicy.Parameters.AddWithValue(leaveTypeId); insertPolicy.Parameters.AddWithValue(policyEffectiveFrom); insertPolicy.Parameters.AddWithValue(actorId);
+                await insertPolicy.ExecuteNonQueryAsync();
+            }
+            await using (var insertOpening = new NpgsqlCommand("insert into business_hr.leave_balance_movement(id,tenant_id,legal_entity_id,employment_id,leave_type_id,effective_date,movement_type,quantity,source_type,source_reference,idempotency_key,policy_version,expires_on,reason,created_by,created_at) values($1,$2,$3,$4,$5,$6,'Opening',5,'IntegrationTest',$7,$8,1,null,'Isolated entitlement for the carryover concurrency proof',$9,now())", admin, transaction))
+            {
+                insertOpening.Parameters.AddWithValue(Guid.CreateVersion7()); insertOpening.Parameters.AddWithValue(tenantId); insertOpening.Parameters.AddWithValue(legalEntityId); insertOpening.Parameters.AddWithValue(employmentId); insertOpening.Parameters.AddWithValue(leaveTypeId); insertOpening.Parameters.AddWithValue(policyEffectiveFrom); insertOpening.Parameters.AddWithValue(sourceReference); insertOpening.Parameters.AddWithValue($"carryover-test-opening:{leaveTypeId:D}"); insertOpening.Parameters.AddWithValue(actorId);
+                await insertOpening.ExecuteNonQueryAsync();
+            }
+            await transaction.CommitAsync();
         }
 
         await using var dataSource = NpgsqlDataSource.Create(runtimeConnectionString);
         var repository = new LeaveRequestRepository(new NpgsqlTransactionCoordinator(dataSource), dataSource, TimeProvider.System);
         var tenant = new Shared.Primitives.Identifiers.TenantId(tenantId);
-        var carryoverBoundary = new DateOnly(2026, 1, 1);
         await repository.ProcessScheduledCarryoversAsync(tenant, legalEntityId, carryoverBoundary, CancellationToken.None);
         await using var verify = new NpgsqlConnection(adminConnectionString); await verify.OpenAsync();
         Guid carryoverId; decimal carriedQuantity; DateOnly expiryDate;
@@ -582,13 +605,38 @@ public sealed class HrEmployeeImportIntegrationTests : DatabaseIntegrationTestBa
             Assert.True(await reader.ReadAsync(), "The Jan 1 carryover job must create an independent expiring entitlement bucket.");
             carryoverId = reader.GetGuid(0); carriedQuantity = reader.GetDecimal(1); expiryDate = reader.GetFieldValue<DateOnly>(2);
         }
-        Assert.Equal(new DateOnly(2026, 7, 1), expiryDate);
+        Assert.Equal(carryoverBoundary.AddMonths(6), expiryDate);
         Assert.InRange(carriedQuantity, 0.0001m, 5m);
         Assert.Equal(0, await repository.ProcessScheduledCarryoversAsync(tenant, legalEntityId, carryoverBoundary, CancellationToken.None));
 
         var request = await repository.CreateAsync(tenant, actorId, membershipId, employmentId,
-            new CreateLeaveRequest(legalEntityId, leaveTypeId, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), "hr-carryover-fifo-proof", RequestedQuantity: 1m, Reason: "FIFO entitlement allocation proof"), Guid.CreateVersion7(), CancellationToken.None);
+            new CreateLeaveRequest(legalEntityId, leaveTypeId, carryoverBoundary.AddDays(4), carryoverBoundary.AddDays(4), $"hr-carryover-fifo-proof-{Guid.CreateVersion7():N}", RequestedQuantity: 1m, Reason: "FIFO entitlement allocation proof"), Guid.CreateVersion7(), CancellationToken.None);
         Assert.Equal("Pending", request.Status);
+
+        async Task<(LeaveRequestView? Result, Exception? Error)> TryApproveAsync()
+        {
+            try
+            {
+                return (await repository.DecideAsync(tenant, actorId, membershipId, request.Id, legalEntityId,
+                    new LeaveRequestDecision(request.Version, "Concurrent approval race proof"), true, Guid.CreateVersion7(), CancellationToken.None), null);
+            }
+            catch (Exception exception)
+            {
+                return (null, exception);
+            }
+        }
+
+        var concurrentDecisions = await Task.WhenAll(TryApproveAsync(), TryApproveAsync());
+        var approvedDecision = Assert.Single(concurrentDecisions, result => result.Result is not null);
+        Assert.Null(approvedDecision.Error);
+        Assert.Single(concurrentDecisions, result => result.Error is not null);
+        Assert.Equal("Approved", approvedDecision.Result!.Status);
+        await using (var consumption = new NpgsqlCommand("select count(*) from business_hr.leave_balance_movement where tenant_id=$1 and source_type='LeaveRequest' and source_reference=$2 and movement_type='LeaveTaken'", verify))
+        {
+            consumption.Parameters.AddWithValue(tenantId); consumption.Parameters.AddWithValue(request.Id.ToString("D"));
+            Assert.Equal(1L, Convert.ToInt64(await consumption.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         await using (var allocation = new NpgsqlCommand("select allocation.entitlement_movement_id from business_hr.leave_balance_movement reservation join business_hr.leave_balance_allocation allocation on allocation.tenant_id=reservation.tenant_id and allocation.movement_id=reservation.id where reservation.tenant_id=$1 and reservation.source_reference=$2 and reservation.movement_type='RequestReservation'", verify))
         {
             allocation.Parameters.AddWithValue(tenantId); allocation.Parameters.AddWithValue(request.Id.ToString("D"));
@@ -596,8 +644,9 @@ public sealed class HrEmployeeImportIntegrationTests : DatabaseIntegrationTestBa
         }
 
         var reminders = new HrReminderRepository(dataSource, TimeProvider.System);
-        _ = await reminders.ProcessDueAsync(tenant, legalEntityId, new DateOnly(2026, 6, 15), CancellationToken.None);
-        Assert.Equal(0, await reminders.ProcessDueAsync(tenant, legalEntityId, new DateOnly(2026, 6, 15), CancellationToken.None));
+        var reminderDate = expiryDate.AddDays(-15);
+        _ = await reminders.ProcessDueAsync(tenant, legalEntityId, reminderDate, CancellationToken.None);
+        Assert.Equal(0, await reminders.ProcessDueAsync(tenant, legalEntityId, reminderDate, CancellationToken.None));
         await using (var reminder = new NpgsqlCommand("select count(*) from business_hr.hr_reminder where tenant_id=$1 and legal_entity_id=$2 and reminder_type='LeaveBalanceExpiry' and source_id=$3 and due_date=$4", verify))
         {
             reminder.Parameters.AddWithValue(tenantId); reminder.Parameters.AddWithValue(legalEntityId); reminder.Parameters.AddWithValue(carryoverId); reminder.Parameters.AddWithValue(expiryDate);

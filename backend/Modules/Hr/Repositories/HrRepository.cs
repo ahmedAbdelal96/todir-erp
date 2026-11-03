@@ -128,18 +128,43 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var tx = await connection.BeginTransactionAsync(ct);
         await SetTenantAsync(connection, tx, tenant, ct);
-        const string where = "where e.tenant_id=$1 and e.status<>'Archived' and ($2::text is null or e.arabic_name_normalized like '%' || $2 || '%' or e.english_name_normalized like '%' || $2 || '%' or exists(select 1 from business_hr.employment sx where sx.tenant_id=e.tenant_id and sx.employee_id=e.employee_id and ($3::uuid is null or sx.legal_entity_id=$3) and lower(sx.employment_number) like '%' || lower($2) || '%')) and ($3::uuid is null or exists(select 1 from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.employee_id and em.legal_entity_id=$3 and em.status in ('PreHire','Active','Suspended','NoticePeriod')))";
+        var entityPredicate = request.LegalEntityId is null
+            ? string.Empty
+            : " and exists(select 1 from business_hr.employment scoped where scoped.tenant_id=e.tenant_id and scoped.employee_id=e.employee_id and scoped.legal_entity_id=$2 and scoped.status in ('PreHire','Active','Suspended','NoticePeriod'))";
+        var entityParameterCount = request.LegalEntityId is null ? 0 : 1;
+        var searchNameParameter = 2 + entityParameterCount;
+        var searchNumberParameter = searchNameParameter + 1;
+        var employmentSearchEntityPredicate = request.LegalEntityId is null ? string.Empty : " and sx.legal_entity_id=$2";
+        var candidates = search is null
+            ? "select e.employee_id from business_hr.employee_list_projection e where e.tenant_id=$1 and e.status<>'Archived'"
+            : $"select e.employee_id from business_hr.employee_list_projection e where e.tenant_id=$1 and e.status<>'Archived' and (e.arabic_name_normalized like ${searchNameParameter} or e.english_name_normalized like ${searchNameParameter}) union select sx.employee_id from business_hr.employment sx where sx.tenant_id=$1{employmentSearchEntityPredicate} and lower(sx.employment_number) like ${searchNumberParameter}";
+        var pageSizeParameter = 2 + entityParameterCount + (search is null ? 0 : 2);
+        var countSql = $"with candidate_ids as ({candidates}) select count(*) from business_hr.employee_list_projection e where e.tenant_id=$1 and e.status<>'Archived' and e.employee_id in (select employee_id from candidate_ids){entityPredicate}";
         long count;
-        await using (var countCommand = new NpgsqlCommand($"select count(*) from business_hr.employee_list_projection e {where}", connection, tx))
+        await using (var countCommand = new NpgsqlCommand(countSql, connection, tx))
         {
-            countCommand.Parameters.AddWithValue(tenant.Value); countCommand.Parameters.AddWithValue((object?)search ?? DBNull.Value); countCommand.Parameters.AddWithValue((object?)request.LegalEntityId ?? DBNull.Value);
+            countCommand.Parameters.AddWithValue(tenant.Value);
+            if (request.LegalEntityId is { } entity) countCommand.Parameters.AddWithValue(entity);
+            if (search is not null)
+            {
+                countCommand.Parameters.AddWithValue($"%{search}%");
+                countCommand.Parameters.AddWithValue($"%{search.ToLowerInvariant()}%");
+            }
             count = (long)(await countCommand.ExecuteScalarAsync(ct) ?? 0L);
         }
-        const string sql = "select e.employee_id,em.employment_number,e.display_name,e.english_name,e.status,em.start_date,em.legal_entity_id from business_hr.employee_list_projection e left join lateral (select employment_number,start_date,legal_entity_id from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.employee_id and em.status in ('PreHire','Active','Suspended','NoticePeriod') and ($3::uuid is null or em.legal_entity_id=$3) order by start_date desc,id limit 1) em on true " + where + " order by e.display_name_normalized,e.employee_id limit $4 offset $5";
+        var employmentEntityPredicate = request.LegalEntityId is null ? string.Empty : " and em.legal_entity_id=$2";
+        var candidateSql = $"with candidate_ids as ({candidates}) ";
+        var sql = candidateSql + $"select e.employee_id,em.employment_number,e.display_name,e.english_name,e.status,em.start_date,em.legal_entity_id from business_hr.employee_list_projection e left join lateral (select employment_number,start_date,legal_entity_id from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.employee_id and em.status in ('PreHire','Active','Suspended','NoticePeriod'){employmentEntityPredicate} order by start_date desc,id limit 1) em on true where e.tenant_id=$1 and e.status<>'Archived' and e.employee_id in (select employee_id from candidate_ids){entityPredicate} order by e.display_name_normalized,e.employee_id limit ${pageSizeParameter} offset ${pageSizeParameter + 1}";
         var items = new List<EmployeeListItem>(pageSize);
         await using (var command = new NpgsqlCommand(sql, connection, tx))
         {
-            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue((object?)search ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.LegalEntityId ?? DBNull.Value);
+            command.Parameters.AddWithValue(tenant.Value);
+            if (request.LegalEntityId is { } entity) command.Parameters.AddWithValue(entity);
+            if (search is not null)
+            {
+                command.Parameters.AddWithValue($"%{search}%");
+                command.Parameters.AddWithValue($"%{search.ToLowerInvariant()}%");
+            }
             command.Parameters.AddWithValue(pageSize); command.Parameters.AddWithValue(checked((page - 1) * pageSize));
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct)) items.Add(new(reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3), Enum.Parse<EmployeeStatus>(reader.GetString(4)), reader.IsDBNull(5) ? null : reader.GetFieldValue<DateOnly>(5), reader.IsDBNull(6) ? null : reader.GetGuid(6)));

@@ -128,7 +128,7 @@ public sealed class LeaveRequestRepository(ITransactionCoordinator transactions,
             await LockBalanceAsync(context.Connection, context.Transaction, tenant, employmentId, leaveTypeId, token);
             if (status == "Pending")
             {
-                var reservations = await ReadAllocatedMovementsAsync(context.Connection, context.Transaction, tenant, id, "RequestReservation", $"leave-request:{id:D}:reserve", token);
+                var reservations = await ReadAllocatedMovementsAsync(context.Connection, context.Transaction, tenant, id, "RequestReservation", token);
                 if (reservations.Count == 0)
                     await InsertMovementAsync(context.Connection, context.Transaction, tenant, legalEntityId, employmentId, leaveTypeId, from, "CancellationRestore", quantity, "LeaveRequest", id.ToString("D"), $"leave-request:{id:D}:reservation-release", null, decision.Reason ?? (approve ? "Reservation converted to approved leave" : "Rejected leave request reservation released"), actor, now, token);
                 else
@@ -138,7 +138,7 @@ public sealed class LeaveRequestRepository(ITransactionCoordinator transactions,
             }
             else
             {
-                var taken = await ReadAllocatedMovementsAsync(context.Connection, context.Transaction, tenant, id, "LeaveTaken", $"leave-request:{id:D}:taken", token);
+                var taken = await ReadAllocatedMovementsAsync(context.Connection, context.Transaction, tenant, id, "LeaveTaken", token);
                 if (taken.Count == 0)
                     await InsertMovementAsync(context.Connection, context.Transaction, tenant, legalEntityId, employmentId, leaveTypeId, from, "CancellationRestore", quantity, "LeaveRequest", id.ToString("D"), $"leave-request:{id:D}:cancel-restore", null, decision.Reason ?? "Approved leave cancelled", actor, now, token);
                 else
@@ -489,12 +489,25 @@ public sealed class LeaveRequestRepository(ITransactionCoordinator transactions,
     {
         if (remainingCapacity <= 0) return 0;
         var sources = new List<(Guid EmploymentId, Guid LeaveTypeId)>();
-        await using (var find = new NpgsqlCommand("select distinct employment_id,leave_type_id from business_hr.leave_balance_movement where tenant_id=$1 and legal_entity_id=$2 and movement_type='CarryOver' and expires_on<=$3 order by employment_id,leave_type_id limit $4", connection, transaction))
+        await using (var find = new NpgsqlCommand("""
+            select distinct carry.employment_id,carry.leave_type_id
+            from business_hr.leave_balance_movement carry
+            where carry.tenant_id=$1 and carry.legal_entity_id=$2 and carry.movement_type='CarryOver' and carry.quantity>0 and carry.expires_on<=$3
+              and not exists(
+                select 1 from business_hr.leave_balance_allocation allocation
+                join business_hr.leave_balance_movement expiry on expiry.tenant_id=allocation.tenant_id and expiry.id=allocation.movement_id
+                where allocation.tenant_id=carry.tenant_id and allocation.entitlement_movement_id=carry.id
+                  and expiry.movement_type='Expiry' and expiry.source_type='LeaveEntitlementExpiry'
+              )
+            order by carry.employment_id,carry.leave_type_id
+            limit $4
+            """, connection, transaction))
         {
             find.Parameters.AddWithValue(tenant.Value); find.Parameters.AddWithValue(legalEntityId); find.Parameters.AddWithValue(asOfDate); find.Parameters.AddWithValue(remainingCapacity);
             await using var reader = await find.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) sources.Add((reader.GetGuid(0), reader.GetGuid(1)));
         }
         var inserted = 0;
+        var recordedExpiries = await ReadRecordedExpiryEntitlementsAsync(connection, transaction, tenant, legalEntityId, asOfDate, ct);
         foreach (var source in sources)
         {
             await LockBalanceAsync(connection, transaction, tenant, source.EmploymentId, source.LeaveTypeId, ct);
@@ -502,11 +515,22 @@ public sealed class LeaveRequestRepository(ITransactionCoordinator transactions,
             foreach (var lot in expired)
             {
                 if (inserted >= remainingCapacity) return inserted;
+                if (recordedExpiries.Contains(lot.Id)) continue;
                 var movement = await InsertMovementAsync(connection, transaction, tenant, legalEntityId, source.EmploymentId, source.LeaveTypeId, lot.ExpiresOn!.Value, "Expiry", -lot.Remaining, "LeaveEntitlementExpiry", lot.Id.ToString("D"), $"leave-expiry:{lot.Id:D}", null, "Carried leave expired under the effective policy", Guid.Empty, now, ct);
                 await InsertAllocationAsync(connection, transaction, tenant, movement.Id, lot.Id, ct); inserted++;
             }
         }
         return inserted;
+    }
+
+    private static async Task<HashSet<Guid>> ReadRecordedExpiryEntitlementsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid legalEntityId, DateOnly asOfDate, CancellationToken ct)
+    {
+        var result = new HashSet<Guid>();
+        await using var command = new NpgsqlCommand("select allocation.entitlement_movement_id from business_hr.leave_balance_movement entitlement join business_hr.leave_balance_allocation allocation on allocation.tenant_id=entitlement.tenant_id and allocation.entitlement_movement_id=entitlement.id join business_hr.leave_balance_movement expiry on expiry.tenant_id=allocation.tenant_id and expiry.id=allocation.movement_id where entitlement.tenant_id=$1 and entitlement.legal_entity_id=$2 and entitlement.movement_type='CarryOver' and entitlement.quantity>0 and entitlement.expires_on<=$3 and expiry.movement_type='Expiry' and expiry.source_type='LeaveEntitlementExpiry'", connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(asOfDate);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result.Add(reader.GetGuid(0));
+        return result;
     }
 
     private sealed record LeaveCarryoverPolicy(Guid EmploymentId, Guid LeaveTypeId, int PolicyVersion, decimal CarryoverLimit, int? ExpiryMonths);
@@ -527,11 +551,11 @@ public sealed class LeaveRequestRepository(ITransactionCoordinator transactions,
             await InsertMovementAsync(connection, transaction, tenant, entity, employmentId, leaveTypeId, effectiveDate, movementType, -remaining, sourceType, sourceReference, UnallocatedIdempotencyKey(idempotencyBase), policyVersion, reason, actor, now, ct);
     }
 
-    private static async Task<IReadOnlyList<AllocatedLeaveMovement>> ReadAllocatedMovementsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid leaveRequestId, string movementType, string idempotencyBase, CancellationToken ct)
+    private static async Task<IReadOnlyList<AllocatedLeaveMovement>> ReadAllocatedMovementsAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid leaveRequestId, string movementType, CancellationToken ct)
     {
         var movements = new List<AllocatedLeaveMovement>();
-        await using var command = new NpgsqlCommand("select movement.id,movement.quantity,allocation.entitlement_movement_id from business_hr.leave_balance_movement movement left join business_hr.leave_balance_allocation allocation on allocation.tenant_id=movement.tenant_id and allocation.movement_id=movement.id where movement.tenant_id=$1 and movement.source_type='LeaveRequest' and movement.source_reference=$2 and movement.movement_type=$3 and (movement.idempotency_key=$4 or movement.idempotency_key like $5)", connection, transaction);
-        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(leaveRequestId.ToString("D")); command.Parameters.AddWithValue(movementType); command.Parameters.AddWithValue(idempotencyBase); command.Parameters.AddWithValue(idempotencyBase + ":lot:%");
+        await using var command = new NpgsqlCommand("select movement.id,movement.quantity,allocation.entitlement_movement_id from business_hr.leave_balance_movement movement left join business_hr.leave_balance_allocation allocation on allocation.tenant_id=movement.tenant_id and allocation.movement_id=movement.id where movement.tenant_id=$1 and movement.source_type='LeaveRequest' and movement.source_reference=$2 and movement.movement_type=$3", connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(leaveRequestId.ToString("D")); command.Parameters.AddWithValue(movementType);
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) movements.Add(new(reader.GetGuid(0), reader.GetDecimal(1), reader.IsDBNull(2) ? null : reader.GetGuid(2)));
         return movements;

@@ -2,9 +2,14 @@ using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Core.Identity;
+using Core.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using Shared.Contracts.Platform;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -119,7 +124,9 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
                 .UseEnvironment("Development")
                 .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString)
-                .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+                .UseSetting("TODIR_RABBITMQ_HOST", string.Empty)
+                .ConfigureTestServices(services => services.AddSingleton<IPlatformFileMalwareScanner>(provider =>
+                    new FailOnceThenClamAvScanner(provider.GetRequiredService<IConfiguration>()))));
 
             using var readerClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
             await LoginAsync(readerClient, readerEmail, password, tenantId);
@@ -171,8 +178,10 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
                 Assert.True(uploadResponse.IsSuccessStatusCode, await uploadResponse.Content.ReadAsStringAsync());
             }
             using var completeResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/uploads/{uploadedFileRef:D}/complete", new { legalEntityId, employmentId });
-            Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
-            Assert.True((await completeResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("ready").GetBoolean());
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, completeResponse.StatusCode);
+            using var retryResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/uploads/{uploadedFileRef:D}/complete", new { legalEntityId, employmentId });
+            Assert.Equal(HttpStatusCode.OK, retryResponse.StatusCode);
+            Assert.True((await retryResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("ready").GetBoolean());
             using var createDocumentResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents", new
             {
                 legalEntityId,
@@ -360,6 +369,18 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
                 || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TODIR_FILES_SECRET_KEY"))
                 || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TODIR_FILES_SCANNER_HOST")))
                 Skip = "Set local private object-store and ClamAV settings to run the HR document upload/download security proof.";
+        }
+    }
+
+    private sealed class FailOnceThenClamAvScanner(IConfiguration configuration) : IPlatformFileMalwareScanner
+    {
+        private readonly ClamAvFileScanner scanner = new(configuration);
+        private int attempts;
+
+        public Task<bool> IsCleanAsync(ReadOnlyMemory<byte> content, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref attempts) == 1) throw new PlatformFileStorageUnavailableException();
+            return scanner.IsCleanAsync(content, cancellationToken);
         }
     }
 }

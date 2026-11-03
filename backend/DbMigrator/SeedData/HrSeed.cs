@@ -1,4 +1,8 @@
 using Modules.Hr.Entities;
+using Core.Services;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Cryptography;
 
 namespace DbMigrator.SeedData;
 
@@ -191,12 +195,55 @@ public static class HrSeed
                 SeedIds.Stable($"{context.Tenant.Id:D}:hr:onboarding-task:{item.Code}"), context.Tenant.Id, context.EntityId, onboardingCaseId, item.Code, item.Ar, item.En, item.Required, (object?)(item.DueDays is { } days ? prehireStart.AddDays(days) : null) ?? DBNull.Value);
         }
         await SeedAttendanceHistoryAsync(context, count, ct);
+        var employeeDocuments = await SeedEmployeeDocumentsAsync(context, ct);
 
         var nextNumber = count + 3;
         await PlatformSeed.EnsureSequenceAsync(context, "hr.employee-number", context.EntityId, "EMP-", 6, nextNumber, ct);
 
-        return new(count + 1, Departments.Length, Positions.Length, count, 1, count + 3, 1, compensationRecords, insuranceDrafts, qualificationRecords, credentialRecords);
+        return new(count + 1, Departments.Length, Positions.Length, count, 1, count + 3, 1, compensationRecords, insuranceDrafts, qualificationRecords, credentialRecords, employeeDocuments);
     }
+
+    private static async Task<int> SeedEmployeeDocumentsAsync(SeedContext context, CancellationToken ct)
+    {
+        var configuration = new ConfigurationBuilder().AddEnvironmentVariables().Build();
+        if (string.IsNullOrWhiteSpace(configuration["TODIR_FILES_BUCKET"])) return 0;
+
+        using var storage = new S3PlatformFileStorage(configuration, NullLogger<S3PlatformFileStorage>.Instance);
+        var scanner = new ClamAvFileScanner(configuration);
+        await storage.EnsurePrivateBucketAsync(ct);
+        var asOf = DateOnly.FromDateTime(context.AsOf.UtcDateTime);
+        var scenarios = new[]
+        {
+            new SeedDocument(1, "National ID", 1, "Restricted", "restricted", "Verified", "Active", asOf.AddYears(2), "national-id-current.txt", "بيانات هوية تجريبية محمية — ليست بيانات شخص حقيقي."),
+            new SeedDocument(1, "Employment Contract", 1, "Normal", "internal", "Verified", "Superseded", asOf.AddDays(-400), "employment-contract-previous.txt", "نسخة تاريخية تجريبية من عقد العمل."),
+            new SeedDocument(1, "Employment Contract", 2, "Normal", "internal", "Verified", "Active", asOf.AddDays(365), "employment-contract-current.txt", "نسخة حالية تجريبية من عقد العمل."),
+            new SeedDocument(3, "National ID", 1, "Confidential", "confidential", "Pending", "Active", asOf.AddDays(20), "national-id-pending.txt", "مستند هوية تجريبي بانتظار المراجعة."),
+            new SeedDocument(4, "Employment Contract", 1, "Normal", "internal", "Verified", "Active", asOf.AddDays(-30), "employment-contract-expired.txt", "عقد تجريبي منتهي يحتاج إلى متابعة.")
+        };
+
+        foreach (var scenario in scenarios)
+        {
+            var employeeId = EmployeeId(context.Tenant.Id, scenario.EmployeeIndex);
+            var employmentId = EmploymentId(context.Tenant.Id, scenario.EmployeeIndex, 1);
+            var documentId = SeedIds.Stable($"{context.Tenant.Id:D}:hr:document:{scenario.EmployeeIndex}:{scenario.Category}:{scenario.Revision}");
+            var priorId = scenario.Revision > 1 ? SeedIds.Stable($"{context.Tenant.Id:D}:hr:document:{scenario.EmployeeIndex}:{scenario.Category}:{scenario.Revision - 1}") : (Guid?)null;
+            var fileRef = SeedIds.Stable($"{context.Tenant.Id:D}:hr:document-file:{scenario.EmployeeIndex}:{scenario.Category}:{scenario.Revision}");
+            var content = System.Text.Encoding.UTF8.GetBytes(scenario.Content);
+            if (!await scanner.IsCleanAsync(content, ct)) throw new InvalidOperationException("Development HR seed document was rejected by the malware scanner.");
+            var sha256 = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+            var objectKey = $"tenant/{context.Tenant.Id:D}/hr/employee/{employeeId:D}/{fileRef:D}";
+            await storage.StoreReadyObjectAsync(objectKey, "text/plain", content, ct);
+
+            await context.ExecuteAsync("insert into platform.file_record(id,tenant_id,owner_module,owner_entity_type,owner_entity_id,object_key,original_name,content_type,size,sha256,status,classification,created_by,created_at) values($1,$2,'hr','employee',$3,$4,$5,'text/plain',$6,$7,'Ready',$8,$9,$10) on conflict(id) do nothing", ct,
+                fileRef, context.Tenant.Id, employeeId, objectKey, scenario.FileName, content.Length, sha256, scenario.FileClassification, context.AdministratorId, context.AsOf);
+            await context.ExecuteAsync("insert into business_hr.employee_document(id,tenant_id,employee_id,employment_id,legal_entity_id,scope_status,category,sensitivity,file_ref,sha256,content_type,size_bytes,expiry_date,verification_status,status,supersedes_document_id,created_by,created_at,version) values($1,$2,$3,$4,$5,'Resolved',$6,$7,$8,$9,'text/plain',$10,$11,$12,$13,$14,$15,$16,1) on conflict(tenant_id,id) do update set employment_id=excluded.employment_id,legal_entity_id=excluded.legal_entity_id,scope_status='Resolved',sensitivity=excluded.sensitivity,file_ref=excluded.file_ref,sha256=excluded.sha256,size_bytes=excluded.size_bytes,expiry_date=excluded.expiry_date,verification_status=excluded.verification_status,status=excluded.status,supersedes_document_id=excluded.supersedes_document_id", ct,
+                documentId, context.Tenant.Id, employeeId, employmentId, context.EntityId, scenario.Category, scenario.Sensitivity, fileRef, sha256, content.Length, scenario.ExpiryDate, scenario.VerificationStatus, scenario.Status, priorId, context.AdministratorId, context.AsOf);
+        }
+
+        return scenarios.Length;
+    }
+
+    private sealed record SeedDocument(int EmployeeIndex, string Category, int Revision, string Sensitivity, string FileClassification, string VerificationStatus, string Status, DateOnly? ExpiryDate, string FileName, string Content);
 
     private static async Task SeedDocumentRequirementsAsync(SeedContext context, CancellationToken ct)
     {
@@ -324,4 +371,4 @@ public static class HrSeed
     private static string Normalize(string value) => HrSearchNormalization.Normalize(value);
 }
 
-public sealed record HrSeedSummary(int Employees, int Departments, int Positions, int ActiveEmployments, int TerminatedEmployments, int Contracts, int Renewals, int CompensationRecords, int InsuranceDrafts, int Qualifications, int Credentials);
+public sealed record HrSeedSummary(int Employees, int Departments, int Positions, int ActiveEmployments, int TerminatedEmployments, int Contracts, int Renewals, int CompensationRecords, int InsuranceDrafts, int Qualifications, int Credentials, int EmployeeDocuments);
