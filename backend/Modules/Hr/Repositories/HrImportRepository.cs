@@ -216,8 +216,10 @@ public sealed class HrImportRepository(ITransactionCoordinator transactions, ITr
                     var importEventId = Guid.CreateVersion7();
                     var importPayload = System.Text.Json.JsonSerializer.Serialize(new
                     {
-                        legacySystem = request.SourceSystem.Trim(), row.DataQuality,
-                        branchCode = row.BranchCode?.Trim(), departmentCode = row.DepartmentCode?.Trim(),
+                        legacySystem = request.SourceSystem.Trim(),
+                        row.DataQuality,
+                        branchCode = row.BranchCode?.Trim(),
+                        departmentCode = row.DepartmentCode?.Trim(),
                         positionCode = row.PositionCode?.Trim()
                     });
                     await using (var eventInsert = new NpgsqlCommand("insert into business_hr.employment_event(tenant_id,id,employee_id,employment_id,event_type,effective_on,actor_id,payload,correlation_id,occurred_at) values($1,$2,$3,$4,'EmployeeImported',$5,$6,$7::jsonb,$8,$9)", context.Connection, context.Transaction))

@@ -74,14 +74,18 @@ public sealed class HrDocumentRequirementRepository(ITransactionCoordinator tran
                     where requirement.tenant_id=$1 and requirement.legal_entity_id=$3 and requirement.enabled
                         and not exists(select 1 from business_hr.employee_document document
                             where document.tenant_id=$1 and document.employee_id=employee.id
-                                and upper(document.category)=requirement.category_key and document.status='Active'
+                                and upper(document.category)=requirement.category_key and document.status='Active' and document.scope_status='Resolved'
                                 and document.verification_status='Verified'
+                                and (document.legal_entity_id is null or document.legal_entity_id=$3)
+                                and (document.employment_id is null or exists(select 1 from business_hr.employment scoped where scoped.tenant_id=document.tenant_id and scoped.id=document.employment_id and scoped.legal_entity_id=$3))
                                 and (document.expiry_date is null or document.expiry_date>=current_date))
                 ), expiring as (
                     select count(*)::integer as total from business_hr.employee_document document
                     cross join scoped_employee employee
-                    where document.tenant_id=$1 and document.employee_id=employee.id and document.status='Active'
+                    where document.tenant_id=$1 and document.employee_id=employee.id and document.status='Active' and document.scope_status='Resolved'
+                        and (document.legal_entity_id is null or document.legal_entity_id=$3)
                         and document.expiry_date between current_date and current_date+30
+                        and (document.employment_id is null or exists(select 1 from business_hr.employment scoped where scoped.tenant_id=document.tenant_id and scoped.id=document.employment_id and scoped.legal_entity_id=$3))
                 )
                 select employee.id,coalesce((select array_agg(missing.category order by missing.category) from missing),'{}'::text[]),
                     (select count(*)::integer from missing),expiring.total

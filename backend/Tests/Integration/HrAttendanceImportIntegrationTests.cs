@@ -148,7 +148,7 @@ public sealed class HrAttendanceImportIntegrationTests : DatabaseIntegrationTest
         var proofCategory = $"Test Certificate {suffix[..8]}";
         using var addRequirement = await SendWithCsrfAsync(client, HttpMethod.Put, "/api/v1/hr/document-requirements",
             new SaveRequiredDocumentRuleRequest(legalEntityId, proofCategory, true, 0, "Integration scenario"));
-        Assert.Equal(HttpStatusCode.OK, addRequirement.StatusCode);
+        Assert.True(addRequirement.StatusCode == HttpStatusCode.OK, await addRequirement.Content.ReadAsStringAsync());
         using var incompleteResponse = await client.GetAsync($"/api/v1/hr/employees/{employeeId:D}/document-completeness?legalEntityId={legalEntityId:D}");
         Assert.Equal(HttpStatusCode.OK, incompleteResponse.StatusCode);
         var incomplete = await incompleteResponse.Content.ReadFromJsonAsync<EmployeeFileCompletenessView>();

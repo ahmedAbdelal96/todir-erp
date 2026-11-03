@@ -11,3 +11,25 @@ Configure the adapter with `TODIR_FILES_BUCKET`. `TODIR_FILES_PUBLIC_ENDPOINT` i
 Platform Files uploads use a five-minute signed POST policy for an unguessable incoming object key. The policy binds the key, private ACL, MIME type, and exact declared byte length; the maximum is 25 MiB. Completion validates the bytes, extension/MIME agreement, file signature, and malware scan before copying the exact scanned bytes to the immutable final key and marking metadata Ready. Only Ready objects can be referenced by business modules. Successful and rejected uploads remove incoming objects. Operators must configure an `incoming/` lifecycle rule to expire abandoned uploads after one day; the adapter does not overwrite bucket lifecycle policy.
 
 If storage is not configured or unavailable, metadata stays intact and download requests fail with a stable service error. They must never fall back to an untrusted or public object URL.
+
+## Abandoned-upload lifecycle rule
+
+Before changing a bucket, inspect its current rules and confirm that no existing broad or overlapping `incoming/` rule has different retention requirements:
+
+```powershell
+mc ilm rule ls <alias>/<bucket>
+```
+
+If no matching rule exists, add the narrow one-day rule. This adds a rule without replacing the bucket's other lifecycle rules:
+
+```powershell
+mc ilm rule add --prefix "incoming/" --expire-days 1 <alias>/<bucket>
+```
+
+For a versioned bucket, also expire noncurrent versions under the same prefix:
+
+```powershell
+mc ilm rule add --prefix "incoming/" --expire-days 1 --noncurrent-expire-days 1 <alias>/<bucket>
+```
+
+Run `mc ilm rule ls <alias>/<bucket>` again and verify the prefix and expiration period. Do not import or replace the complete bucket lifecycle configuration to add this rule; doing so can remove unrelated retention rules. See the [MinIO `mc ilm rule add` reference](https://docs.min.io/aistor/reference/cli/mc-ilm-rule/mc-ilm-rule-add/) for command syntax and prefix behavior.

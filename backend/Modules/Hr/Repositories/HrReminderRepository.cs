@@ -17,12 +17,12 @@ public sealed class HrReminderRepository(NpgsqlDataSource dataSource, TimeProvid
         return scopes;
     }
 
-    public Task<int> ProcessDueAsync(TenantId tenant,Guid legalEntityId,CancellationToken ct)=>
-        ProcessDueAsync(tenant,legalEntityId,DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime),ct);
+    public Task<int> ProcessDueAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct) =>
+        ProcessDueAsync(tenant, legalEntityId, DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), ct);
 
     public async Task<int> ProcessDueAsync(TenantId tenant, Guid legalEntityId, DateOnly asOf, CancellationToken ct)
     {
-        if(asOf==default)throw new HrException("hr.reminder_date_invalid");
+        if (asOf == default) throw new HrException("hr.reminder_date_invalid");
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await SetTenantAsync(connection, transaction, tenant, ct);
@@ -36,9 +36,11 @@ public sealed class HrReminderRepository(NpgsqlDataSource dataSource, TimeProvid
                 from business_hr.employment_contract c join business_hr.employment e on e.tenant_id=c.tenant_id and e.id=c.employment_id and e.legal_entity_id=c.legal_entity_id
                 where c.tenant_id=$1 and c.legal_entity_id=$2 and c.status='Active' and e.status in ('PreHire','Active','Suspended','NoticePeriod') and c.probation_end between $3 and $4
                 union all
-                select 'DocumentExpiry','employee_document',d.id,d.employee_id,em.id,d.expiry_date
+                select 'DocumentExpiry','employee_document',d.id,d.employee_id,coalesce(d.employment_id,em.id),d.expiry_date
                 from business_hr.employee_document d join business_hr.employment em on em.tenant_id=d.tenant_id and em.employee_id=d.employee_id and em.legal_entity_id=$2
-                where d.tenant_id=$1 and d.status='Active' and d.expiry_date between $3 and $4 and em.status in ('PreHire','Active','Suspended','NoticePeriod')
+                where d.tenant_id=$1 and d.status='Active' and d.scope_status='Resolved' and d.expiry_date between $3 and $4 and em.status in ('PreHire','Active','Suspended','NoticePeriod')
+                    and (d.legal_entity_id is null or d.legal_entity_id=$2)
+                    and (d.employment_id is null or d.employment_id=em.id)
                 union all
                 select 'CredentialExpiry','employee_credential',c.id,c.employee_id,em.id,c.expiry_date
                 from business_hr.employee_credential c join business_hr.employment em on em.tenant_id=c.tenant_id and em.employee_id=c.employee_id and em.legal_entity_id=$2

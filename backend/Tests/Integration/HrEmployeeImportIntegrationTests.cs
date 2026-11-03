@@ -556,61 +556,61 @@ public sealed class HrEmployeeImportIntegrationTests : DatabaseIntegrationTestBa
     [HrPostgresFact]
     public async Task AnnualCarryoverUsesFifoExpiryAndKeepsRemindersIdempotent()
     {
-        var adminConnectionString=Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")??throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for HR PostgreSQL integration tests.");
-        var runtimeConnectionString=Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")??throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for HR PostgreSQL integration tests.");
-        Guid tenantId;Guid legalEntityId;Guid employmentId;Guid leaveTypeId;Guid actorId;Guid membershipId;
-        await using(var admin=new NpgsqlConnection(adminConnectionString))
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for HR PostgreSQL integration tests.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for HR PostgreSQL integration tests.");
+        Guid tenantId; Guid legalEntityId; Guid employmentId; Guid leaveTypeId; Guid actorId; Guid membershipId;
+        await using (var admin = new NpgsqlConnection(adminConnectionString))
         {
             await admin.OpenAsync();
-            await using var scope=new NpgsqlCommand("select tenant.id,entity.id,employment.id,leave_type.id,identity.id,membership.id from platform.tenant tenant join platform.legal_entity entity on entity.tenant_id=tenant.id and entity.status='Active' join business_hr.employment employment on employment.tenant_id=tenant.id and employment.legal_entity_id=entity.id and employment.status='Active' join business_hr.leave_type leave_type on leave_type.tenant_id=tenant.id and leave_type.legal_entity_id=entity.id and leave_type.code='COMPANY-ANNUAL' and leave_type.status='Active' join platform.membership membership on membership.tenant_id=tenant.id and membership.status='Active' join platform.identity identity on identity.tenant_id=membership.tenant_id and identity.id=membership.identity_id and identity.status='Active' where tenant.slug='atlas-trading' and employment.employment_number='EMP-000001' order by entity.id,membership.id limit 1",admin);
-            await using var reader=await scope.ExecuteReaderAsync();
-            if(!await reader.ReadAsync())throw new InvalidOperationException("The canonical HR development seed must include its first employee and annual leave policy.");
-            tenantId=reader.GetGuid(0);legalEntityId=reader.GetGuid(1);employmentId=reader.GetGuid(2);leaveTypeId=reader.GetGuid(3);actorId=reader.GetGuid(4);membershipId=reader.GetGuid(5);
+            await using var scope = new NpgsqlCommand("select tenant.id,entity.id,employment.id,leave_type.id,identity.id,membership.id from platform.tenant tenant join platform.legal_entity entity on entity.tenant_id=tenant.id and entity.status='Active' join business_hr.employment employment on employment.tenant_id=tenant.id and employment.legal_entity_id=entity.id and employment.status='Active' join business_hr.leave_type leave_type on leave_type.tenant_id=tenant.id and leave_type.legal_entity_id=entity.id and leave_type.code='COMPANY-ANNUAL' and leave_type.status='Active' join platform.membership membership on membership.tenant_id=tenant.id and membership.status='Active' join platform.identity identity on identity.tenant_id=membership.tenant_id and identity.id=membership.identity_id and identity.status='Active' where tenant.slug='atlas-trading' and employment.employment_number='EMP-000001' order by entity.id,membership.id limit 1", admin);
+            await using var reader = await scope.ExecuteReaderAsync();
+            if (!await reader.ReadAsync()) throw new InvalidOperationException("The canonical HR development seed must include its first employee and annual leave policy.");
+            tenantId = reader.GetGuid(0); legalEntityId = reader.GetGuid(1); employmentId = reader.GetGuid(2); leaveTypeId = reader.GetGuid(3); actorId = reader.GetGuid(4); membershipId = reader.GetGuid(5);
         }
 
-        await using var dataSource=NpgsqlDataSource.Create(runtimeConnectionString);
-        var repository=new LeaveRequestRepository(new NpgsqlTransactionCoordinator(dataSource),dataSource,TimeProvider.System);
-        var tenant=new Shared.Primitives.Identifiers.TenantId(tenantId);
-        var carryoverBoundary=new DateOnly(2026,1,1);
-        await repository.ProcessScheduledCarryoversAsync(tenant,legalEntityId,carryoverBoundary,CancellationToken.None);
-        await using var verify=new NpgsqlConnection(adminConnectionString);await verify.OpenAsync();
-        Guid carryoverId;decimal carriedQuantity;DateOnly expiryDate;
-        await using(var carryover=new NpgsqlCommand("select id,quantity,expires_on from business_hr.leave_balance_movement where tenant_id=$1 and employment_id=$2 and leave_type_id=$3 and movement_type='CarryOver' and effective_date=$4",verify))
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnectionString);
+        var repository = new LeaveRequestRepository(new NpgsqlTransactionCoordinator(dataSource), dataSource, TimeProvider.System);
+        var tenant = new Shared.Primitives.Identifiers.TenantId(tenantId);
+        var carryoverBoundary = new DateOnly(2026, 1, 1);
+        await repository.ProcessScheduledCarryoversAsync(tenant, legalEntityId, carryoverBoundary, CancellationToken.None);
+        await using var verify = new NpgsqlConnection(adminConnectionString); await verify.OpenAsync();
+        Guid carryoverId; decimal carriedQuantity; DateOnly expiryDate;
+        await using (var carryover = new NpgsqlCommand("select id,quantity,expires_on from business_hr.leave_balance_movement where tenant_id=$1 and employment_id=$2 and leave_type_id=$3 and movement_type='CarryOver' and effective_date=$4", verify))
         {
-            carryover.Parameters.AddWithValue(tenantId);carryover.Parameters.AddWithValue(employmentId);carryover.Parameters.AddWithValue(leaveTypeId);carryover.Parameters.AddWithValue(carryoverBoundary);
-            await using var reader=await carryover.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow);
-            Assert.True(await reader.ReadAsync(),"The Jan 1 carryover job must create an independent expiring entitlement bucket.");
-            carryoverId=reader.GetGuid(0);carriedQuantity=reader.GetDecimal(1);expiryDate=reader.GetFieldValue<DateOnly>(2);
+            carryover.Parameters.AddWithValue(tenantId); carryover.Parameters.AddWithValue(employmentId); carryover.Parameters.AddWithValue(leaveTypeId); carryover.Parameters.AddWithValue(carryoverBoundary);
+            await using var reader = await carryover.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow);
+            Assert.True(await reader.ReadAsync(), "The Jan 1 carryover job must create an independent expiring entitlement bucket.");
+            carryoverId = reader.GetGuid(0); carriedQuantity = reader.GetDecimal(1); expiryDate = reader.GetFieldValue<DateOnly>(2);
         }
-        Assert.Equal(new DateOnly(2026,7,1),expiryDate);
-        Assert.InRange(carriedQuantity,0.0001m,5m);
-        Assert.Equal(0,await repository.ProcessScheduledCarryoversAsync(tenant,legalEntityId,carryoverBoundary,CancellationToken.None));
+        Assert.Equal(new DateOnly(2026, 7, 1), expiryDate);
+        Assert.InRange(carriedQuantity, 0.0001m, 5m);
+        Assert.Equal(0, await repository.ProcessScheduledCarryoversAsync(tenant, legalEntityId, carryoverBoundary, CancellationToken.None));
 
-        var request=await repository.CreateAsync(tenant,actorId,membershipId,employmentId,
-            new CreateLeaveRequest(legalEntityId,leaveTypeId,new DateOnly(2026,1,5),new DateOnly(2026,1,5),"hr-carryover-fifo-proof",RequestedQuantity:1m,Reason:"FIFO entitlement allocation proof"),Guid.CreateVersion7(),CancellationToken.None);
-        Assert.Equal("Pending",request.Status);
-        await using(var allocation=new NpgsqlCommand("select allocation.entitlement_movement_id from business_hr.leave_balance_movement reservation join business_hr.leave_balance_allocation allocation on allocation.tenant_id=reservation.tenant_id and allocation.movement_id=reservation.id where reservation.tenant_id=$1 and reservation.source_reference=$2 and reservation.movement_type='RequestReservation'",verify))
+        var request = await repository.CreateAsync(tenant, actorId, membershipId, employmentId,
+            new CreateLeaveRequest(legalEntityId, leaveTypeId, new DateOnly(2026, 1, 5), new DateOnly(2026, 1, 5), "hr-carryover-fifo-proof", RequestedQuantity: 1m, Reason: "FIFO entitlement allocation proof"), Guid.CreateVersion7(), CancellationToken.None);
+        Assert.Equal("Pending", request.Status);
+        await using (var allocation = new NpgsqlCommand("select allocation.entitlement_movement_id from business_hr.leave_balance_movement reservation join business_hr.leave_balance_allocation allocation on allocation.tenant_id=reservation.tenant_id and allocation.movement_id=reservation.id where reservation.tenant_id=$1 and reservation.source_reference=$2 and reservation.movement_type='RequestReservation'", verify))
         {
-            allocation.Parameters.AddWithValue(tenantId);allocation.Parameters.AddWithValue(request.Id.ToString("D"));
-            Assert.Equal(carryoverId,(Guid?)await allocation.ExecuteScalarAsync());
-        }
-
-        var reminders=new HrReminderRepository(dataSource,TimeProvider.System);
-        _ = await reminders.ProcessDueAsync(tenant,legalEntityId,new DateOnly(2026,6,15),CancellationToken.None);
-        Assert.Equal(0,await reminders.ProcessDueAsync(tenant,legalEntityId,new DateOnly(2026,6,15),CancellationToken.None));
-        await using(var reminder=new NpgsqlCommand("select count(*) from business_hr.hr_reminder where tenant_id=$1 and legal_entity_id=$2 and reminder_type='LeaveBalanceExpiry' and source_id=$3 and due_date=$4",verify))
-        {
-            reminder.Parameters.AddWithValue(tenantId);reminder.Parameters.AddWithValue(legalEntityId);reminder.Parameters.AddWithValue(carryoverId);reminder.Parameters.AddWithValue(expiryDate);
-            Assert.Equal(1L,Convert.ToInt64(await reminder.ExecuteScalarAsync(),System.Globalization.CultureInfo.InvariantCulture));
+            allocation.Parameters.AddWithValue(tenantId); allocation.Parameters.AddWithValue(request.Id.ToString("D"));
+            Assert.Equal(carryoverId, (Guid?)await allocation.ExecuteScalarAsync());
         }
 
-        Assert.True(await repository.ProcessScheduledCarryoversAsync(tenant,legalEntityId,expiryDate,CancellationToken.None)>0);
-        await using(var expired=new NpgsqlCommand("select sum(movement.quantity) from business_hr.leave_balance_movement movement join business_hr.leave_balance_allocation allocation on allocation.tenant_id=movement.tenant_id and allocation.movement_id=movement.id where movement.tenant_id=$1 and allocation.entitlement_movement_id=$2 and movement.movement_type='Expiry'",verify))
+        var reminders = new HrReminderRepository(dataSource, TimeProvider.System);
+        _ = await reminders.ProcessDueAsync(tenant, legalEntityId, new DateOnly(2026, 6, 15), CancellationToken.None);
+        Assert.Equal(0, await reminders.ProcessDueAsync(tenant, legalEntityId, new DateOnly(2026, 6, 15), CancellationToken.None));
+        await using (var reminder = new NpgsqlCommand("select count(*) from business_hr.hr_reminder where tenant_id=$1 and legal_entity_id=$2 and reminder_type='LeaveBalanceExpiry' and source_id=$3 and due_date=$4", verify))
         {
-            expired.Parameters.AddWithValue(tenantId);expired.Parameters.AddWithValue(carryoverId);
-            Assert.Equal(-carriedQuantity+1m,Convert.ToDecimal(await expired.ExecuteScalarAsync(),System.Globalization.CultureInfo.InvariantCulture));
+            reminder.Parameters.AddWithValue(tenantId); reminder.Parameters.AddWithValue(legalEntityId); reminder.Parameters.AddWithValue(carryoverId); reminder.Parameters.AddWithValue(expiryDate);
+            Assert.Equal(1L, Convert.ToInt64(await reminder.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
         }
-        Assert.Equal(0,await repository.ProcessScheduledCarryoversAsync(tenant,legalEntityId,expiryDate,CancellationToken.None));
+
+        Assert.True(await repository.ProcessScheduledCarryoversAsync(tenant, legalEntityId, expiryDate, CancellationToken.None) > 0);
+        await using (var expired = new NpgsqlCommand("select sum(movement.quantity) from business_hr.leave_balance_movement movement join business_hr.leave_balance_allocation allocation on allocation.tenant_id=movement.tenant_id and allocation.movement_id=movement.id where movement.tenant_id=$1 and allocation.entitlement_movement_id=$2 and movement.movement_type='Expiry'", verify))
+        {
+            expired.Parameters.AddWithValue(tenantId); expired.Parameters.AddWithValue(carryoverId);
+            Assert.Equal(-carriedQuantity + 1m, Convert.ToDecimal(await expired.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
+        }
+        Assert.Equal(0, await repository.ProcessScheduledCarryoversAsync(tenant, legalEntityId, expiryDate, CancellationToken.None));
     }
 
     private static async Task CreateAccountAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid tenantId, string email, string password)

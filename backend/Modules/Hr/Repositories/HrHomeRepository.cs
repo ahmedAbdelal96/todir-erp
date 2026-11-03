@@ -30,8 +30,10 @@ public sealed class HrHomeRepository(NpgsqlDataSource dataSource, TimeProvider c
                 (select count(*)::integer from business_hr.leave_request l where l.tenant_id=$1 and l.legal_entity_id=$2 and l.status='Pending'),
                 (select count(*)::integer from business_hr.onboarding_task t where t.tenant_id=$1 and t.legal_entity_id=$2 and t.status='Pending' and t.due_date<=$3+7),
                 (select count(*)::integer from business_hr.employment_contract c where c.tenant_id=$1 and c.legal_entity_id=$2 and c.status='Active' and c.end_date between $3 and $3+30),
-                (select count(*)::integer from business_hr.employee_document d where d.tenant_id=$1 and d.status='Active' and d.expiry_date between $3 and $3+30
-                    and exists(select 1 from business_hr.employment e where e.tenant_id=d.tenant_id and e.employee_id=d.employee_id and e.legal_entity_id=$2)),
+                (select count(*)::integer from business_hr.employee_document d where d.tenant_id=$1 and d.status='Active' and d.scope_status='Resolved' and d.expiry_date between $3 and $3+30
+                    and exists(select 1 from business_hr.employment e where e.tenant_id=d.tenant_id and e.employee_id=d.employee_id and e.legal_entity_id=$2)
+                    and (d.legal_entity_id is null or d.legal_entity_id=$2)
+                    and (d.employment_id is null or exists(select 1 from business_hr.employment scoped where scoped.tenant_id=d.tenant_id and scoped.id=d.employment_id and scoped.legal_entity_id=$2))),
                 (select count(*)::integer from business_hr.employment e where e.tenant_id=$1 and e.legal_entity_id=$2 and e.start_date between $3-29 and $3 and e.status<>'PreHire'),
                 (select count(*)::integer from business_hr.employment e where e.tenant_id=$1 and e.legal_entity_id=$2 and e.status='NoticePeriod'),
                 (select count(*)::integer from business_hr.attendance_overtime_request o where o.tenant_id=$1 and o.legal_entity_id=$2 and o.status='Pending'),

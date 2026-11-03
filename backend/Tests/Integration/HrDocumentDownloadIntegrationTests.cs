@@ -34,6 +34,8 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
         var content = System.Text.Encoding.UTF8.GetBytes("private HR document acceptance proof");
         Guid tenantId;
         Guid legalEntityId;
+        Guid employmentId;
+        Guid otherLegalEntityId;
         Guid employeeId;
         Guid actorId;
         Guid documentId = Guid.CreateVersion7();
@@ -46,7 +48,7 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
         {
             await admin.OpenAsync();
             await using var transaction = await admin.BeginTransactionAsync();
-            await using (var scope = new NpgsqlCommand("select tenant.id,employment.legal_entity_id,employee.id,identity.id from platform.tenant tenant join business_hr.employee employee on employee.tenant_id=tenant.id join business_hr.employment employment on employment.tenant_id=employee.tenant_id and employment.employee_id=employee.id and employment.status='Active' join platform.identity identity on identity.tenant_id=tenant.id and identity.normalized_email='ADMIN@ATLAS.COM' where tenant.slug='atlas-trading' order by employment.employment_number limit 1", admin, transaction))
+            await using (var scope = new NpgsqlCommand("select tenant.id,employment.legal_entity_id,employee.id,identity.id,employment.id from platform.tenant tenant join business_hr.employee employee on employee.tenant_id=tenant.id join business_hr.employment employment on employment.tenant_id=employee.tenant_id and employment.employee_id=employee.id and employment.status='Active' join platform.identity identity on identity.tenant_id=tenant.id and identity.normalized_email='ADMIN@ATLAS.COM' where tenant.slug='atlas-trading' and not exists(select 1 from business_hr.employment other where other.tenant_id=employee.tenant_id and other.employee_id=employee.id and other.legal_entity_id<>employment.legal_entity_id and other.status in ('Active','Suspended','NoticePeriod')) order by employment.employment_number limit 1", admin, transaction))
             await using (var reader = await scope.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow))
             {
                 if (!await reader.ReadAsync()) throw new InvalidOperationException("The HR integration database must contain the canonical Atlas development seed.");
@@ -54,6 +56,18 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
                 legalEntityId = reader.GetGuid(1);
                 employeeId = reader.GetGuid(2);
                 actorId = reader.GetGuid(3);
+                employmentId = reader.GetGuid(4);
+            }
+
+            await using (var otherEntity = new NpgsqlCommand("select entity.id from platform.legal_entity entity where entity.tenant_id=$1 and entity.id<>$2 and not exists(select 1 from business_hr.employment employment where employment.tenant_id=entity.tenant_id and employment.employee_id=$3 and employment.legal_entity_id=entity.id and employment.status in ('Active','Suspended','NoticePeriod')) order by entity.id limit 1", admin, transaction))
+            {
+                otherEntity.Parameters.AddWithValue(tenantId); otherEntity.Parameters.AddWithValue(legalEntityId); otherEntity.Parameters.AddWithValue(employeeId);
+                otherLegalEntityId = (Guid)(await otherEntity.ExecuteScalarAsync() ?? throw new InvalidOperationException("The Atlas development seed must provide a second Legal Entity for cross-entity document testing."));
+            }
+            await using (var otherEmployment = new NpgsqlCommand("insert into business_hr.employment(id,tenant_id,employee_id,legal_entity_id,employment_number,employment_type,status,start_date,end_date,status_reason_code,created_by,created_at,version) values($1,$2,$3,$4,$5,'FullTime','Active',current_date,null,'document_scope_test',$6,now(),1)", admin, transaction))
+            {
+                otherEmployment.Parameters.AddWithValue(Guid.CreateVersion7()); otherEmployment.Parameters.AddWithValue(tenantId); otherEmployment.Parameters.AddWithValue(employeeId); otherEmployment.Parameters.AddWithValue(otherLegalEntityId); otherEmployment.Parameters.AddWithValue($"HRDOC-{suffix[..12]}"); otherEmployment.Parameters.AddWithValue(actorId);
+                await otherEmployment.ExecuteNonQueryAsync();
             }
 
             await GrantPermissionAsync(admin, transaction, tenantId, "hr_officer", "hr.employee.document.read");
@@ -75,10 +89,12 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
             insertFile.Parameters.AddWithValue(actorId);
             await insertFile.ExecuteNonQueryAsync();
 
-            await using var insertDocument = new NpgsqlCommand("insert into business_hr.employee_document(id,tenant_id,employee_id,category,sensitivity,file_ref,sha256,content_type,size_bytes,verification_status,status,created_by,created_at,version) values($1,$2,$3,'MedicalEvidence','Medical',$4,$5,'text/plain',$6,'Verified','Active',$7,now(),1)", admin, transaction);
+            await using var insertDocument = new NpgsqlCommand("insert into business_hr.employee_document(id,tenant_id,employee_id,employment_id,legal_entity_id,scope_status,category,sensitivity,file_ref,sha256,content_type,size_bytes,verification_status,status,created_by,created_at,version) values($1,$2,$3,$4,$5,'Resolved','MedicalEvidence','Medical',$6,$7,'text/plain',$8,'Verified','Active',$9,now(),1)", admin, transaction);
             insertDocument.Parameters.AddWithValue(documentId);
             insertDocument.Parameters.AddWithValue(tenantId);
             insertDocument.Parameters.AddWithValue(employeeId);
+            insertDocument.Parameters.AddWithValue(employmentId);
+            insertDocument.Parameters.AddWithValue(legalEntityId);
             insertDocument.Parameters.AddWithValue(fileRef);
             insertDocument.Parameters.AddWithValue(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant());
             insertDocument.Parameters.AddWithValue((long)content.Length);
@@ -114,10 +130,29 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
             using var privacyClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
             await LoginAsync(privacyClient, privacyEmail, password, tenantId);
 
+            using var crossEntityList = await privacyClient.GetAsync($"/api/v1/hr/employees/{employeeId:D}/documents?legalEntityId={otherLegalEntityId:D}");
+            Assert.Equal(HttpStatusCode.OK, crossEntityList.StatusCode);
+            Assert.DoesNotContain((await crossEntityList.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray(), row => row.GetProperty("id").GetGuid() == documentId);
+            using var crossEntityDownload = await privacyClient.GetAsync(DownloadRoute(employeeId, documentId, otherLegalEntityId));
+            Assert.Equal(HttpStatusCode.NotFound, crossEntityDownload.StatusCode);
+            using var crossEntityVerification = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/{documentId:D}/verify?legalEntityId={otherLegalEntityId:D}", new { expectedVersion = 1, verified = true, reason = "Cross-entity isolation proof" });
+            Assert.Equal(HttpStatusCode.Conflict, crossEntityVerification.StatusCode);
+            using var crossEntityUpload = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/upload-intents", new
+            {
+                legalEntityId = otherLegalEntityId,
+                employmentId,
+                fileName = "cross-entity.txt",
+                contentType = "text/plain",
+                sizeBytes = 20,
+                sensitivity = "Normal"
+            });
+            Assert.Equal(HttpStatusCode.BadRequest, crossEntityUpload.StatusCode);
+
             var uploadContent = System.Text.Encoding.UTF8.GetBytes("uploaded and scanned HR document proof");
             using var uploadIntentResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/upload-intents", new
             {
                 legalEntityId,
+                employmentId,
                 fileName = "upload-proof.txt",
                 contentType = "text/plain",
                 sizeBytes = uploadContent.Length,
@@ -135,12 +170,13 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
                 using var uploadResponse = await signedUrlClient.PostAsync(uploadUrl, multipart);
                 Assert.True(uploadResponse.IsSuccessStatusCode, await uploadResponse.Content.ReadAsStringAsync());
             }
-            using var completeResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/uploads/{uploadedFileRef:D}/complete", new { legalEntityId });
+            using var completeResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/uploads/{uploadedFileRef:D}/complete", new { legalEntityId, employmentId });
             Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
             Assert.True((await completeResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("ready").GetBoolean());
             using var createDocumentResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents", new
             {
                 legalEntityId,
+                employmentId,
                 category = "EmploymentEvidence",
                 fileRef = uploadedFileRef,
                 sensitivity = "Normal"
@@ -211,8 +247,30 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
             Environment.SetEnvironmentVariable("TODIR_FILES_BUCKET", previousBucket);
             if (objectCreated) await s3.DeleteObjectAsync(bucket, objectKey);
             if (!string.IsNullOrWhiteSpace(uploadedObjectKey)) await s3.DeleteObjectAsync(bucket, uploadedObjectKey);
-            if (bucketCreated) await s3.DeleteBucketAsync(bucket);
+            if (bucketCreated) await DeleteBucketContentsAndBucketAsync(s3, bucket);
         }
+    }
+
+    private static async Task DeleteBucketContentsAndBucketAsync(AmazonS3Client s3, string bucket)
+    {
+        string? continuationToken = null;
+        do
+        {
+            var page = await s3.ListObjectsV2Async(new ListObjectsV2Request { BucketName = bucket, ContinuationToken = continuationToken });
+            if (page.S3Objects is { Count: > 0 })
+                await s3.DeleteObjectsAsync(new DeleteObjectsRequest
+                {
+                    BucketName = bucket,
+                    Objects = page.S3Objects.Select(item => new KeyVersion { Key = item.Key }).ToList(),
+                    Quiet = true
+                });
+            continuationToken = page.IsTruncated == true ? page.NextContinuationToken : null;
+        } while (continuationToken is not null);
+
+        await s3.DeleteBucketAsync(bucket);
+        var remainingBuckets = await s3.ListBucketsAsync();
+        if (remainingBuckets.Buckets?.Any(item => item.BucketName == bucket) == true)
+            throw new InvalidOperationException("The temporary HR document test bucket remained after cleanup.");
     }
 
     private static string DownloadRoute(Guid employeeId, Guid documentId, Guid legalEntityId) =>

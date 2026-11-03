@@ -445,7 +445,7 @@ public static class HrModuleExtensions
             var access = await AccessAsync(http, subjects, authorizer, "hr.employee.document.manage", request.LegalEntityId, ct);
             if (access is null) return Results.Unauthorized();
             if (!access.Allowed) return Results.Forbid();
-            return await Execute(http, () => service.CompleteDocumentUploadAsync(access.Tenant, access.ActorId, access.MembershipId, employeeId, request.LegalEntityId, fileRef, ct));
+            return await Execute(http, () => service.CompleteDocumentUploadAsync(access.Tenant, access.ActorId, access.MembershipId, employeeId, request.LegalEntityId, request.EmploymentId, fileRef, ct));
         });
         group.MapPost("/employees/{employeeId:guid}/documents", async (Guid employeeId, CreateEmployeeDocumentRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
@@ -947,49 +947,49 @@ public static class HrModuleExtensions
         });
         group.MapGet("/onboarding/templates", async (Guid legalEntityId, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
-            var access=await AccessAsync(http,subjects,authorizer,"hr.onboarding.read",legalEntityId,ct);if(access is null)return Results.Unauthorized();if(!access.Allowed)return Results.Forbid();
-            return await Execute(http,()=>service.ListOnboardingTemplatesAsync(access.Tenant,legalEntityId,ct));
+            var access = await AccessAsync(http, subjects, authorizer, "hr.onboarding.read", legalEntityId, ct); if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.ListOnboardingTemplatesAsync(access.Tenant, legalEntityId, ct));
         });
         group.MapPost("/onboarding/templates", async (CreateOnboardingTemplateRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
-            var access=await AccessAsync(http,subjects,authorizer,"hr.onboarding.manage",request.LegalEntityId,ct);if(access is null)return Results.Unauthorized();if(!access.Allowed)return Results.Forbid();
-            return await Execute(http,()=>service.CreateOnboardingTemplateAsync(access.Tenant,access.ActorId,access.MembershipId,request,Correlation(http),ct),StatusCodes.Status201Created);
+            var access = await AccessAsync(http, subjects, authorizer, "hr.onboarding.manage", request.LegalEntityId, ct); if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.CreateOnboardingTemplateAsync(access.Tenant, access.ActorId, access.MembershipId, request, Correlation(http), ct), StatusCodes.Status201Created);
         });
         group.MapGet("/employments/{employmentId:guid}/onboarding", async (Guid employmentId, Guid legalEntityId, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
-            var access=await AccessAsync(http,subjects,authorizer,"hr.onboarding.read",legalEntityId,ct);if(access is null)return Results.Unauthorized();if(!access.Allowed)return Results.Forbid();
-            return await Execute(http,async()=>await service.GetOnboardingCaseAsync(access.Tenant,employmentId,legalEntityId,ct)??throw new HrException("hr.onboarding_case_not_found"));
+            var access = await AccessAsync(http, subjects, authorizer, "hr.onboarding.read", legalEntityId, ct); if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, async () => await service.GetOnboardingCaseAsync(access.Tenant, employmentId, legalEntityId, ct) ?? throw new HrException("hr.onboarding_case_not_found"));
         });
         group.MapPost("/employees/{employeeId:guid}/employments/{employmentId:guid}/onboarding", async (Guid employeeId, Guid employmentId, CreateOnboardingCaseRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
-            var access=await AccessAsync(http,subjects,authorizer,"hr.onboarding.manage",request.LegalEntityId,ct);if(access is null)return Results.Unauthorized();if(!access.Allowed)return Results.Forbid();
-            return await Execute(http,()=>service.CreateOnboardingCaseAsync(access.Tenant,access.ActorId,access.MembershipId,employeeId,employmentId,request,Correlation(http),ct),StatusCodes.Status201Created);
+            var access = await AccessAsync(http, subjects, authorizer, "hr.onboarding.manage", request.LegalEntityId, ct); if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.CreateOnboardingCaseAsync(access.Tenant, access.ActorId, access.MembershipId, employeeId, employmentId, request, Correlation(http), ct), StatusCodes.Status201Created);
         });
         group.MapPost("/onboarding/tasks/{taskId:guid}/complete", async (Guid taskId, Guid legalEntityId, CompleteOnboardingTaskRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
-            var access=await AccessAsync(http,subjects,authorizer,"hr.onboarding.manage",legalEntityId,ct);if(access is null)return Results.Unauthorized();if(!access.Allowed)return Results.Forbid();
-            return await Execute(http,()=>service.CompleteOnboardingTaskAsync(access.Tenant,access.ActorId,access.MembershipId,taskId,legalEntityId,request,Correlation(http),ct));
+            var access = await AccessAsync(http, subjects, authorizer, "hr.onboarding.manage", legalEntityId, ct); if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.CompleteOnboardingTaskAsync(access.Tenant, access.ActorId, access.MembershipId, taskId, legalEntityId, request, Correlation(http), ct));
         });
         group.MapGet("/overtime-requests", async (Guid legalEntityId, string? status, int? page, int? pageSize, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
-            var access=await AccessAsync(http,subjects,authorizer,"hr.attendance.read",legalEntityId,ct);if(access is null)return Results.Unauthorized();if(!access.Allowed)return Results.Forbid();
-            return await Execute(http,()=>service.ListOvertimeRequestsAsync(access.Tenant,legalEntityId,status,page??1,pageSize??50,ct));
+            var access = await AccessAsync(http, subjects, authorizer, "hr.attendance.read", legalEntityId, ct); if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.ListOvertimeRequestsAsync(access.Tenant, legalEntityId, status, page ?? 1, pageSize ?? 50, ct));
         });
         group.MapPost("/attendance-records/{recordId:guid}/overtime-requests", async (Guid recordId, CreateOvertimeRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
-            var access=await AccessAsync(http,subjects,authorizer,"hr.attendance.manage",request.LegalEntityId,ct);if(access is null)return Results.Unauthorized();if(!access.Allowed)return Results.Forbid();
-            return await Execute(http,()=>service.CreateOvertimeRequestAsync(access.Tenant,access.ActorId,access.MembershipId,recordId,request,Correlation(http),ct),StatusCodes.Status201Created);
+            var access = await AccessAsync(http, subjects, authorizer, "hr.attendance.manage", request.LegalEntityId, ct); if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.CreateOvertimeRequestAsync(access.Tenant, access.ActorId, access.MembershipId, recordId, request, Correlation(http), ct), StatusCodes.Status201Created);
         });
         group.MapPost("/overtime-requests/{requestId:guid}/approve", async (Guid requestId, Guid legalEntityId, OvertimeRequestDecision request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
-            var access=await AccessAsync(http,subjects,authorizer,"hr.attendance.overtime.approve",legalEntityId,ct);if(access is null)return Results.Unauthorized();if(!access.Allowed)return Results.Forbid();
-            return await Execute(http,()=>service.DecideOvertimeRequestAsync(access.Tenant,access.ActorId,access.MembershipId,requestId,legalEntityId,request,true,Correlation(http),ct));
+            var access = await AccessAsync(http, subjects, authorizer, "hr.attendance.overtime.approve", legalEntityId, ct); if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.DecideOvertimeRequestAsync(access.Tenant, access.ActorId, access.MembershipId, requestId, legalEntityId, request, true, Correlation(http), ct));
         });
         group.MapPost("/overtime-requests/{requestId:guid}/reject", async (Guid requestId, Guid legalEntityId, OvertimeRequestDecision request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
-            var access=await AccessAsync(http,subjects,authorizer,"hr.attendance.overtime.approve",legalEntityId,ct);if(access is null)return Results.Unauthorized();if(!access.Allowed)return Results.Forbid();
-            if(string.IsNullOrWhiteSpace(request.Reason))return Results.BadRequest(new { code="hr.overtime_decision_reason_required" });
-            return await Execute(http,()=>service.DecideOvertimeRequestAsync(access.Tenant,access.ActorId,access.MembershipId,requestId,legalEntityId,request,false,Correlation(http),ct));
+            var access = await AccessAsync(http, subjects, authorizer, "hr.attendance.overtime.approve", legalEntityId, ct); if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
+            if (string.IsNullOrWhiteSpace(request.Reason)) return Results.BadRequest(new { code = "hr.overtime_decision_reason_required" });
+            return await Execute(http, () => service.DecideOvertimeRequestAsync(access.Tenant, access.ActorId, access.MembershipId, requestId, legalEntityId, request, false, Correlation(http), ct));
         });
         return app;
     }

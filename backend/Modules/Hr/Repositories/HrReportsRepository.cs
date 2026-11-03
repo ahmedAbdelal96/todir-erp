@@ -110,14 +110,16 @@ public sealed class HrReportsRepository(NpgsqlDataSource dataSource, TimeProvide
                 join business_hr.employee employee on employee.tenant_id=employment.tenant_id and employee.id=employment.employee_id
                 where contract.tenant_id=$1 and contract.legal_entity_id=$2 and contract.status in ('Active','Expired') and contract.end_date between $3 and $4
                 union all
-                select document.employee_id, employee.display_name, null::uuid, null::text,
+                select document.employee_id, employee.display_name, document.employment_id, employment.employment_number,
                     'Document'::text, 'Employee document'::text, document.expiry_date
                 from business_hr.employee_document document
                 join business_hr.employee employee on employee.tenant_id=document.tenant_id and employee.id=document.employee_id
-                where document.tenant_id=$1 and document.status='Active' and document.expiry_date between $3 and $4
+                join business_hr.employment employment on employment.tenant_id=document.tenant_id and employment.employee_id=document.employee_id and employment.legal_entity_id=$2
+                    and (document.employment_id is null or document.employment_id=employment.id)
+                where document.tenant_id=$1 and document.status='Active' and document.scope_status='Resolved' and document.expiry_date between $3 and $4
                     and document.sensitivity not in ('Medical','Restricted')
-                    and exists(select 1 from business_hr.employment employment where employment.tenant_id=document.tenant_id and employment.employee_id=document.employee_id
-                        and employment.legal_entity_id=$2 and employment.status in ('Active','Suspended','NoticePeriod'))
+                    and (document.legal_entity_id is null or document.legal_entity_id=$2)
+                    and employment.status in ('Active','Suspended','NoticePeriod')
                 union all
                 select credential.employee_id, employee.display_name, null::uuid, null::text,
                     'Credential'::text, credential.credential_type, credential.expiry_date

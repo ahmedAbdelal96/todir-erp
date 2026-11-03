@@ -224,6 +224,7 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
     {
         var category = (request.Category ?? string.Empty).Trim(); var sensitivity = (request.Sensitivity ?? string.Empty).Trim();
         if (category.Length is < 1 or > 80 || sensitivity is not ("Normal" or "Confidential" or "Medical" or "Restricted")) throw new HrException("hr.document_metadata_invalid");
+        await EnsureEmployeeInEntityAsync(tenant, employeeId, request.LegalEntityId, request.EmploymentId, ct);
         var file = await files.VerifyReadyReferenceAsync(tenant, request.FileRef, "hr", "employee", employeeId, ct);
         if (file is null || !FileClassificationAllows(file.Classification, sensitivity)) throw new HrException("hr.document_file_reference_invalid");
         var id = Guid.CreateVersion7();
@@ -231,20 +232,20 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         {
             if (request.SupersedesDocumentId is { } priorId)
             {
-                await using var supersede = new NpgsqlCommand("update business_hr.employee_document set status='Superseded',version=version+1 where tenant_id=$1 and id=$2 and employee_id=$3 and status='Active'", context.Connection, context.Transaction);
-                supersede.Parameters.AddWithValue(tenant.Value); supersede.Parameters.AddWithValue(priorId); supersede.Parameters.AddWithValue(employeeId);
+                await using var supersede = new NpgsqlCommand("update business_hr.employee_document set status='Superseded',version=version+1 where tenant_id=$1 and id=$2 and employee_id=$3 and employment_id is not distinct from $4 and legal_entity_id is not distinct from $5 and status='Active'", context.Connection, context.Transaction);
+                supersede.Parameters.AddWithValue(tenant.Value); supersede.Parameters.AddWithValue(priorId); supersede.Parameters.AddWithValue(employeeId); supersede.Parameters.AddWithValue((object?)request.EmploymentId ?? DBNull.Value); supersede.Parameters.AddWithValue((object?)request.EmploymentId is null ? DBNull.Value : request.LegalEntityId);
                 if (await supersede.ExecuteNonQueryAsync(token) != 1) throw new HrException("hr.document_supersede_target_invalid");
             }
-            await using var insert = new NpgsqlCommand("insert into business_hr.employee_document(id,tenant_id,employee_id,category,sensitivity,file_ref,sha256,content_type,size_bytes,expiry_date,verification_status,status,supersedes_document_id,created_by,created_at,version) select $1,$2,e.id,$4,$5,$6,$7,$8,$9,$10,'Pending','Active',$11,$12,$13,1 from business_hr.employee e where e.tenant_id=$2 and e.id=$3 and e.status='Active' and exists(select 1 from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.id and em.legal_entity_id=$14)", context.Connection, context.Transaction);
-            insert.Parameters.AddWithValue(id); insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(employeeId); insert.Parameters.AddWithValue(category); insert.Parameters.AddWithValue(sensitivity); insert.Parameters.AddWithValue(file.FileRef); insert.Parameters.AddWithValue(file.Sha256.ToLowerInvariant()); insert.Parameters.AddWithValue(file.ContentType); insert.Parameters.AddWithValue(file.SizeBytes); insert.Parameters.AddWithValue((object?)request.ExpiryDate ?? DBNull.Value); insert.Parameters.AddWithValue((object?)request.SupersedesDocumentId ?? DBNull.Value); insert.Parameters.AddWithValue(actor); insert.Parameters.AddWithValue(clock.GetUtcNow()); insert.Parameters.AddWithValue(request.LegalEntityId);
+            await using var insert = new NpgsqlCommand("insert into business_hr.employee_document(id,tenant_id,employee_id,employment_id,legal_entity_id,scope_status,category,sensitivity,file_ref,sha256,content_type,size_bytes,expiry_date,verification_status,status,supersedes_document_id,created_by,created_at,version) select $1,$2,e.id,$4,$15,$16,$5,$6,$7,$8,$9,$10,$11,'Pending','Active',$12,$13,$14,1 from business_hr.employee e where e.tenant_id=$2 and e.id=$3 and e.status='Active' and exists(select 1 from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.id and em.legal_entity_id=$15 and ($4::uuid is null or em.id=$4))", context.Connection, context.Transaction);
+            insert.Parameters.AddWithValue(id); insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(employeeId); insert.Parameters.AddWithValue((object?)request.EmploymentId ?? DBNull.Value); insert.Parameters.AddWithValue(category); insert.Parameters.AddWithValue(sensitivity); insert.Parameters.AddWithValue(file.FileRef); insert.Parameters.AddWithValue(file.Sha256.ToLowerInvariant()); insert.Parameters.AddWithValue(file.ContentType); insert.Parameters.AddWithValue(file.SizeBytes); insert.Parameters.AddWithValue((object?)request.ExpiryDate ?? DBNull.Value); insert.Parameters.AddWithValue((object?)request.SupersedesDocumentId ?? DBNull.Value); insert.Parameters.AddWithValue(actor); insert.Parameters.AddWithValue(clock.GetUtcNow()); insert.Parameters.AddWithValue((object?)request.EmploymentId is null ? DBNull.Value : request.LegalEntityId); insert.Parameters.AddWithValue("Resolved");
             if (await insert.ExecuteNonQueryAsync(token) != 1) throw new HrException("hr.employee_not_found_or_outside_entity");
             await AppendEventAsync(context.Connection, context.Transaction, tenant, employeeId, null, "EmployeeDocumentAdded", DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), actor,
                 new { id, category, sensitivity, request.ExpiryDate }, correlationId, token);
             await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction,
                 new AuditEntry(Guid.CreateVersion7(), tenant, request.LegalEntityId, null, "Human", actor, membershipId, "hr", "employee.document_added", "employee_document", id,
-                    null, JsonSerializer.Serialize(new { employeeId, category, sensitivity, file.FileRef, file.Sha256, request.ExpiryDate, request.SupersedesDocumentId }), null, "hr-api", correlationId,
+                    null, JsonSerializer.Serialize(new { employeeId, request.EmploymentId, category, sensitivity, file.FileRef, file.Sha256, request.ExpiryDate, request.SupersedesDocumentId }), null, "hr-api", correlationId,
                     System.Diagnostics.Activity.Current?.TraceId.ToString(), clock.GetUtcNow(), null), token);
-            return new(id, employeeId, category, sensitivity, file.FileRef, file.Sha256, file.ContentType, file.SizeBytes, request.ExpiryDate, "Pending", "Active", request.SupersedesDocumentId, 1);
+            return new(id, employeeId, category, sensitivity, file.FileRef, file.Sha256, file.ContentType, file.SizeBytes, request.ExpiryDate, "Pending", "Active", request.SupersedesDocumentId, 1, request.EmploymentId);
         }, ct);
     }
 
@@ -252,7 +253,7 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
     {
         var sensitivity = (request.Sensitivity ?? string.Empty).Trim();
         if (sensitivity is not ("Normal" or "Confidential" or "Medical" or "Restricted")) throw new HrException("hr.document_metadata_invalid");
-        await EnsureEmployeeInEntityAsync(tenant, employeeId, request.LegalEntityId, ct);
+        await EnsureEmployeeInEntityAsync(tenant, employeeId, request.LegalEntityId, request.EmploymentId, ct);
         var classification = sensitivity switch { "Normal" => "internal", "Confidential" => "confidential", "Medical" => "medical", _ => "restricted" };
         Shared.Contracts.Platform.SignedPlatformFileUpload? intent;
         try { intent = await fileUploads.CreateUploadIntentAsync(tenant, actor, membershipId, "hr", "employee", employeeId, request.FileName, request.ContentType, request.SizeBytes, classification, ct); }
@@ -262,9 +263,9 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         return new(intent.FileRef, intent.Url, intent.Fields, intent.ContentType, intent.SizeBytes, intent.ExpiresAt);
     }
 
-    public async Task<Shared.Contracts.Platform.PlatformFileUploadCompletion> CompleteDocumentUploadAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, Guid legalEntityId, Guid fileRef, CancellationToken ct)
+    public async Task<Shared.Contracts.Platform.PlatformFileUploadCompletion> CompleteDocumentUploadAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, Guid legalEntityId, Guid? employmentId, Guid fileRef, CancellationToken ct)
     {
-        await EnsureEmployeeInEntityAsync(tenant, employeeId, legalEntityId, ct);
+        await EnsureEmployeeInEntityAsync(tenant, employeeId, legalEntityId, employmentId, ct);
         try
         {
             var completion = await fileUploads.CompleteUploadAsync(tenant, actor, membershipId, "hr", "employee", employeeId, fileRef, ct);
@@ -273,13 +274,13 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         catch (Shared.Contracts.Platform.PlatformFileStorageUnavailableException) { throw new HrException("hr.file_access_unavailable"); }
     }
 
-    private async Task EnsureEmployeeInEntityAsync(TenantId tenant, Guid employeeId, Guid legalEntityId, CancellationToken ct)
+    private async Task EnsureEmployeeInEntityAsync(TenantId tenant, Guid employeeId, Guid legalEntityId, Guid? employmentId, CancellationToken ct)
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await SetTenantAsync(connection, transaction, tenant, ct);
-        await using var command = new NpgsqlCommand("select exists(select 1 from business_hr.employee e where e.tenant_id=$1 and e.id=$2 and e.status='Active' and exists(select 1 from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.id and em.legal_entity_id=$3))", connection, transaction);
-        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(employeeId); command.Parameters.AddWithValue(legalEntityId);
+        await using var command = new NpgsqlCommand("select exists(select 1 from business_hr.employee e where e.tenant_id=$1 and e.id=$2 and e.status='Active' and exists(select 1 from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.id and em.legal_entity_id=$3 and ($4::uuid is null or em.id=$4)))", connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(employeeId); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue((object?)employmentId ?? DBNull.Value);
         var exists = (bool)(await command.ExecuteScalarAsync(ct) ?? false);
         await transaction.CommitAsync(ct);
         if (!exists) throw new HrException("hr.employee_not_found_or_outside_entity");
@@ -288,10 +289,10 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
     public async Task<IReadOnlyList<EmployeeDocumentView>> ListDocumentsAsync(TenantId tenant, Guid employeeId, Guid legalEntityId, bool includeSensitive, CancellationToken ct)
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var tx = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tx, tenant, ct);
-        const string sql = "select d.id,d.employee_id,d.category,d.sensitivity,d.file_ref,d.sha256,d.content_type,d.size_bytes,d.expiry_date,d.verification_status,d.status,d.supersedes_document_id,d.version from business_hr.employee_document d where d.tenant_id=$1 and d.employee_id=$2 and d.status<>'Archived' and ($4 or d.sensitivity='Normal') and exists(select 1 from business_hr.employment e where e.tenant_id=d.tenant_id and e.employee_id=d.employee_id and e.legal_entity_id=$3) order by d.created_at desc,d.id desc limit 100";
+        const string sql = "select d.id,d.employee_id,d.category,d.sensitivity,d.file_ref,d.sha256,d.content_type,d.size_bytes,d.expiry_date,d.verification_status,d.status,d.supersedes_document_id,d.version,d.employment_id from business_hr.employee_document d where d.tenant_id=$1 and d.employee_id=$2 and d.status<>'Archived' and d.scope_status='Resolved' and ($4 or d.sensitivity='Normal') and exists(select 1 from business_hr.employment e where e.tenant_id=d.tenant_id and e.employee_id=d.employee_id and e.legal_entity_id=$3) and (d.legal_entity_id is null or d.legal_entity_id=$3) and (d.employment_id is null or exists(select 1 from business_hr.employment scoped where scoped.tenant_id=d.tenant_id and scoped.id=d.employment_id and scoped.legal_entity_id=$3)) order by d.created_at desc,d.id desc limit 100";
         await using var command = new NpgsqlCommand(sql, connection, tx); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(employeeId); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(includeSensitive);
         var result = new List<EmployeeDocumentView>(); await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetGuid(4), reader.GetString(5), reader.GetString(6), reader.GetInt64(7), reader.IsDBNull(8) ? null : reader.GetFieldValue<DateOnly?>(8), reader.GetString(9), reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetGuid(11), reader.GetInt64(12)));
+        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetGuid(4), reader.GetString(5), reader.GetString(6), reader.GetInt64(7), reader.IsDBNull(8) ? null : reader.GetFieldValue<DateOnly?>(8), reader.GetString(9), reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetGuid(11), reader.GetInt64(12), reader.IsDBNull(13) ? null : reader.GetGuid(13)));
         await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
     }
 
@@ -302,7 +303,7 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         await using (var transaction = await connection.BeginTransactionAsync(ct))
         {
             await SetTenantAsync(connection, transaction, tenant, ct);
-            await using var command = new NpgsqlCommand("select file_ref,sensitivity,verification_status,status from business_hr.employee_document where tenant_id=$1 and id=$2 and employee_id=$3 and exists(select 1 from business_hr.employment e where e.tenant_id=employee_document.tenant_id and e.employee_id=employee_document.employee_id and e.legal_entity_id=$4)", connection, transaction);
+            await using var command = new NpgsqlCommand("select d.file_ref,d.sensitivity,d.verification_status,d.status from business_hr.employee_document d where d.tenant_id=$1 and d.id=$2 and d.employee_id=$3 and d.scope_status='Resolved' and exists(select 1 from business_hr.employment e where e.tenant_id=d.tenant_id and e.employee_id=d.employee_id and e.legal_entity_id=$4) and (d.legal_entity_id is null or d.legal_entity_id=$4) and (d.employment_id is null or exists(select 1 from business_hr.employment scoped where scoped.tenant_id=d.tenant_id and scoped.id=d.employment_id and scoped.legal_entity_id=$4))", connection, transaction);
             command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(documentId); command.Parameters.AddWithValue(employeeId); command.Parameters.AddWithValue(legalEntityId);
             await using var reader = await command.ExecuteReaderAsync(ct);
             if (!await reader.ReadAsync(ct)) throw new HrException("hr.document_not_found");
@@ -336,10 +337,10 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         return await transactions.ExecuteAsync<EmployeeDocumentView>(tenant, async (context, token) =>
         {
             var status = request.Verified ? "Verified" : "Rejected";
-            await using var command = new NpgsqlCommand("update business_hr.employee_document d set verification_status=$1,version=version+1 where d.tenant_id=$2 and d.id=$3 and d.employee_id=$4 and d.verification_status='Pending' and d.version=$5 and exists(select 1 from business_hr.employment e where e.tenant_id=d.tenant_id and e.employee_id=d.employee_id and e.legal_entity_id=$6) returning d.category,d.sensitivity,d.file_ref,d.sha256,d.content_type,d.size_bytes,d.expiry_date,d.status,d.supersedes_document_id,d.version", context.Connection, context.Transaction);
+            await using var command = new NpgsqlCommand("update business_hr.employee_document d set verification_status=$1,version=version+1 where d.tenant_id=$2 and d.id=$3 and d.employee_id=$4 and d.scope_status='Resolved' and d.verification_status='Pending' and d.version=$5 and exists(select 1 from business_hr.employment e where e.tenant_id=d.tenant_id and e.employee_id=d.employee_id and e.legal_entity_id=$6) and (d.legal_entity_id is null or d.legal_entity_id=$6) and (d.employment_id is null or exists(select 1 from business_hr.employment scoped where scoped.tenant_id=d.tenant_id and scoped.id=d.employment_id and scoped.legal_entity_id=$6)) returning d.category,d.sensitivity,d.file_ref,d.sha256,d.content_type,d.size_bytes,d.expiry_date,d.status,d.supersedes_document_id,d.version,d.employment_id", context.Connection, context.Transaction);
             command.Parameters.AddWithValue(status); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(documentId); command.Parameters.AddWithValue(employeeId); command.Parameters.AddWithValue(request.ExpectedVersion); command.Parameters.AddWithValue(legalEntityId);
             await using var reader = await command.ExecuteReaderAsync(token); if (!await reader.ReadAsync(token)) throw new HrException("hr.document_concurrency_or_scope_conflict");
-            var result = new EmployeeDocumentView(documentId, employeeId, reader.GetString(0), reader.GetString(1), reader.GetGuid(2), reader.GetString(3), reader.GetString(4), reader.GetInt64(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateOnly?>(6), status, reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetGuid(8), reader.GetInt64(9));
+            var result = new EmployeeDocumentView(documentId, employeeId, reader.GetString(0), reader.GetString(1), reader.GetGuid(2), reader.GetString(3), reader.GetString(4), reader.GetInt64(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateOnly?>(6), status, reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetGuid(8), reader.GetInt64(9), reader.IsDBNull(10) ? null : reader.GetGuid(10));
             await reader.CloseAsync();
             await AppendEventAsync(context.Connection, context.Transaction, tenant, employeeId, null, "EmployeeDocumentVerified", DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), actor, new { documentId, status }, correlationId, token);
             await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction,
@@ -672,14 +673,14 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
 
     public async Task<EmployeeProfile?> GetMyEmployeeAsync(TenantId tenant, Guid membershipId, Guid legalEntityId, CancellationToken ct)
     {
-        await using var connection=await dataSource.OpenConnectionAsync(ct);await using var tx=await connection.BeginTransactionAsync(ct);await SetTenantAsync(connection,tx,tenant,ct);
-        await using var command=new NpgsqlCommand("select e.id,e.arabic_name,e.english_name,e.preferred_name,e.status,e.version,em.id,em.employee_id,em.legal_entity_id,em.employment_number,em.employment_type,em.status,em.start_date,em.end_date,em.version from business_hr.employee e join business_hr.employment em on em.tenant_id=e.tenant_id and em.employee_id=e.id where e.tenant_id=$1 and e.membership_id=$2 and e.status<>'Archived' and em.legal_entity_id=$3 order by case when em.status='Active' then 0 else 1 end,em.start_date desc,em.id limit 1",connection,tx);
-        command.Parameters.AddWithValue(tenant.Value);command.Parameters.AddWithValue(membershipId);command.Parameters.AddWithValue(legalEntityId);
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await using var tx = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tx, tenant, ct);
+        await using var command = new NpgsqlCommand("select e.id,e.arabic_name,e.english_name,e.preferred_name,e.status,e.version,em.id,em.employee_id,em.legal_entity_id,em.employment_number,em.employment_type,em.status,em.start_date,em.end_date,em.version from business_hr.employee e join business_hr.employment em on em.tenant_id=e.tenant_id and em.employee_id=e.id where e.tenant_id=$1 and e.membership_id=$2 and e.status<>'Archived' and em.legal_entity_id=$3 order by case when em.status='Active' then 0 else 1 end,em.start_date desc,em.id limit 1", connection, tx);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(membershipId); command.Parameters.AddWithValue(legalEntityId);
         try
         {
-            await using var reader=await command.ExecuteReaderAsync(ct);EmployeeProfile? result=null;
-            if(await reader.ReadAsync(ct))result=new(reader.GetGuid(0),reader.GetString(1),reader.IsDBNull(2)?null:reader.GetString(2),reader.IsDBNull(3)?null:reader.GetString(3),Enum.Parse<EmployeeStatus>(reader.GetString(4)),reader.GetInt64(5),new(reader.GetGuid(6),reader.GetGuid(7),reader.GetGuid(8),reader.GetString(9),Enum.Parse<EmploymentType>(reader.GetString(10)),Enum.Parse<EmploymentStatus>(reader.GetString(11)),reader.GetFieldValue<DateOnly>(12),reader.IsDBNull(13)?null:reader.GetFieldValue<DateOnly>(13),reader.GetInt64(14)));
-            await reader.CloseAsync();await tx.CommitAsync(ct);return result;
+            await using var reader = await command.ExecuteReaderAsync(ct); EmployeeProfile? result = null;
+            if (await reader.ReadAsync(ct)) result = new(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3), Enum.Parse<EmployeeStatus>(reader.GetString(4)), reader.GetInt64(5), new(reader.GetGuid(6), reader.GetGuid(7), reader.GetGuid(8), reader.GetString(9), Enum.Parse<EmploymentType>(reader.GetString(10)), Enum.Parse<EmploymentStatus>(reader.GetString(11)), reader.GetFieldValue<DateOnly>(12), reader.IsDBNull(13) ? null : reader.GetFieldValue<DateOnly>(13), reader.GetInt64(14)));
+            await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
         }
         catch (PostgresException exception) when (exception.SqlState == "42501")
         {

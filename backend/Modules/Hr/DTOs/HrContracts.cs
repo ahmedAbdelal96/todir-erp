@@ -77,13 +77,13 @@ public sealed record CreateEmployeeIdentifierRequest(Guid LegalEntityId, string 
 public sealed record EmployeeIdentifierView(Guid Id, Guid EmployeeId, string IdentifierType, string? CountryCode, string MaskedDisplay, DateOnly? IssueDate, DateOnly? ExpiryDate, string ExpiryStatus, string Status, Guid? FileRef, long Version);
 public sealed record RevealedEmployeeIdentifier(Guid Id, string Value, DateTimeOffset RevealedAt);
 public sealed record RevokeEmployeeIdentifierRequest(long ExpectedVersion, string Reason);
-public sealed record CreateEmployeeDocumentRequest(Guid LegalEntityId, string Category, Guid FileRef, string Sensitivity, DateOnly? ExpiryDate = null, Guid? SupersedesDocumentId = null);
+public sealed record CreateEmployeeDocumentRequest(Guid LegalEntityId, string Category, Guid FileRef, string Sensitivity, DateOnly? ExpiryDate = null, Guid? SupersedesDocumentId = null, Guid? EmploymentId = null);
 public sealed record VerifyEmployeeDocumentRequest(long ExpectedVersion, bool Verified, string Reason);
-public sealed record EmployeeDocumentView(Guid Id, Guid EmployeeId, string Category, string Sensitivity, Guid FileRef, string Sha256, string ContentType, long SizeBytes, DateOnly? ExpiryDate, string VerificationStatus, string Status, Guid? SupersedesDocumentId, long Version);
+public sealed record EmployeeDocumentView(Guid Id, Guid EmployeeId, string Category, string Sensitivity, Guid FileRef, string Sha256, string ContentType, long SizeBytes, DateOnly? ExpiryDate, string VerificationStatus, string Status, Guid? SupersedesDocumentId, long Version, Guid? EmploymentId = null);
 public sealed record EmployeeDocumentDownloadView(string Url, DateTimeOffset ExpiresAt);
-public sealed record CreateEmployeeDocumentUploadRequest(Guid LegalEntityId, string FileName, string ContentType, long SizeBytes, string Sensitivity);
+public sealed record CreateEmployeeDocumentUploadRequest(Guid LegalEntityId, string FileName, string ContentType, long SizeBytes, string Sensitivity, Guid? EmploymentId = null);
 public sealed record EmployeeDocumentUploadIntentView(Guid FileRef, string Url, IReadOnlyDictionary<string, string> Fields, string ContentType, long SizeBytes, DateTimeOffset ExpiresAt);
-public sealed record CompleteEmployeeDocumentUploadRequest(Guid LegalEntityId);
+public sealed record CompleteEmployeeDocumentUploadRequest(Guid LegalEntityId, Guid? EmploymentId = null);
 public sealed record SaveRequiredDocumentRuleRequest(Guid LegalEntityId, string Category, bool Enabled, long ExpectedVersion, string Reason);
 public sealed record RequiredDocumentRuleView(Guid Id, Guid LegalEntityId, string Category, bool Enabled, long Version);
 public sealed record EmployeeFileCompletenessView(Guid EmployeeId, string Status, int MissingRequiredCount, IReadOnlyList<string> MissingCategories, int ExpiringDocumentCount);

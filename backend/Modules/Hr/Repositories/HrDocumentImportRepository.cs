@@ -26,7 +26,7 @@ public sealed class HrDocumentImportRepository(ITransactionCoordinator transacti
             var issues = ValidateRow(row);
             if (issues.Count != 0) { results.Add(new(row.RowReference, "Rejected", null, issues)); continue; }
             var employment = await ResolveEmployeeAsync(tenant, request.SourceSystem.Trim(), row.LegacyEmployeeId.Trim(), row.LegalEntityId, ct);
-            if (employment.EmployeeId is null) { results.Add(new(row.RowReference, "Rejected", null, ["hr.import_employee_not_found"])); continue; }
+            if (employment.EmployeeId is null || employment.EmploymentId is null) { results.Add(new(row.RowReference, "Rejected", null, ["hr.import_employee_not_found"])); continue; }
             if (!employment.HasLegalEntity) { results.Add(new(row.RowReference, "Rejected", null, ["hr.import_legal_entity_mismatch"])); continue; }
             var file = await files.VerifyReadyReferenceAsync(tenant, row.FileRef, "hr", "employee", employment.EmployeeId.Value, ct);
             if (file is null || !HrRepository.FileClassificationAllows(file.Classification, row.Sensitivity))
@@ -50,11 +50,11 @@ public sealed class HrDocumentImportRepository(ITransactionCoordinator transacti
                     if (goLiveConfiguration.DocumentMigrationStrategy == "None") return new(row.RowReference, "Rejected", null, ["hr.document_migration_disabled"]);
                     if (!commit) return new(row.RowReference, "Ready", null, []);
                     var id = Guid.CreateVersion7(); var now = clock.GetUtcNow();
-                    await using (var insert = new NpgsqlCommand("insert into business_hr.employee_document(id,tenant_id,employee_id,category,sensitivity,file_ref,sha256,content_type,size_bytes,expiry_date,verification_status,status,supersedes_document_id,created_by,created_at,version) select $1,$2,e.id,$4,$5,$6,$7,$8,$9,$10,'Pending','Active',null,$11,$12,1 from business_hr.employee e where e.tenant_id=$2 and e.id=$3 and e.status='Active' and exists(select 1 from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.id and em.legal_entity_id=$13)", context.Connection, context.Transaction))
+                    await using (var insert = new NpgsqlCommand("insert into business_hr.employee_document(id,tenant_id,employee_id,employment_id,legal_entity_id,scope_status,category,sensitivity,file_ref,sha256,content_type,size_bytes,expiry_date,verification_status,status,supersedes_document_id,created_by,created_at,version) values($1,$2,$3,$4,$5,'Resolved',$6,$7,$8,$9,$10,$11,$12,'Pending','Active',null,$13,$14,1)", context.Connection, context.Transaction))
                     {
-                        insert.Parameters.AddWithValue(id); insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(employment.EmployeeId.Value); insert.Parameters.AddWithValue(row.Category.Trim()); insert.Parameters.AddWithValue(row.Sensitivity.Trim());
+                        insert.Parameters.AddWithValue(id); insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(employment.EmployeeId.Value); insert.Parameters.AddWithValue(employment.EmploymentId.Value); insert.Parameters.AddWithValue(row.LegalEntityId); insert.Parameters.AddWithValue(row.Category.Trim()); insert.Parameters.AddWithValue(row.Sensitivity.Trim());
                         insert.Parameters.AddWithValue(file.FileRef); insert.Parameters.AddWithValue(file.Sha256.ToLowerInvariant()); insert.Parameters.AddWithValue(file.ContentType); insert.Parameters.AddWithValue(file.SizeBytes);
-                        insert.Parameters.AddWithValue((object?)row.ExpiryDate ?? DBNull.Value); insert.Parameters.AddWithValue(actor); insert.Parameters.AddWithValue(now); insert.Parameters.AddWithValue(row.LegalEntityId);
+                        insert.Parameters.AddWithValue((object?)row.ExpiryDate ?? DBNull.Value); insert.Parameters.AddWithValue(actor); insert.Parameters.AddWithValue(now);
                         if (await insert.ExecuteNonQueryAsync(token) != 1) return new(row.RowReference, "Rejected", null, ["hr.employee_not_found_or_outside_entity"]);
                     }
                     await using (var reference = new NpgsqlCommand("insert into business_hr.employee_document_import_reference(tenant_id,id,source_system,legacy_document_id,batch_reference,file_sha256,row_reference,row_payload_sha256,employee_id,document_id,data_quality,imported_at,imported_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", context.Connection, context.Transaction))
@@ -105,14 +105,14 @@ public sealed class HrDocumentImportRepository(ITransactionCoordinator transacti
         return issues;
     }
 
-    private async Task<(Guid? EmployeeId, bool HasLegalEntity)> ResolveEmployeeAsync(TenantId tenant, string source, string legacyEmployeeId, Guid legalEntityId, CancellationToken ct) =>
-        await transactions.ExecuteAsync<(Guid?, bool)>(tenant, async (context, token) =>
+    private async Task<(Guid? EmployeeId, Guid? EmploymentId, bool HasLegalEntity)> ResolveEmployeeAsync(TenantId tenant, string source, string legacyEmployeeId, Guid legalEntityId, CancellationToken ct) =>
+        await transactions.ExecuteAsync<(Guid?, Guid?, bool)>(tenant, async (context, token) =>
         {
-            await using var command = new NpgsqlCommand("select e.employee_id,exists(select 1 from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.employee_id and em.legal_entity_id=$4) from business_hr.employee_import_reference r join business_hr.employment e on e.tenant_id=r.tenant_id and e.id=r.employment_id where r.tenant_id=$1 and r.source_system=$2 and r.legacy_employee_id=$3", context.Connection, context.Transaction);
+            await using var command = new NpgsqlCommand("select e.employee_id,e.id,e.legal_entity_id=$4 from business_hr.employee_import_reference r join business_hr.employment e on e.tenant_id=r.tenant_id and e.id=r.employment_id where r.tenant_id=$1 and r.source_system=$2 and r.legacy_employee_id=$3", context.Connection, context.Transaction);
             command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(source); command.Parameters.AddWithValue(legacyEmployeeId);
             command.Parameters.AddWithValue(legalEntityId);
             await using var reader = await command.ExecuteReaderAsync(token);
-            return await reader.ReadAsync(token) ? (reader.GetGuid(0), reader.GetBoolean(1)) : ((Guid?)null, false);
+            return await reader.ReadAsync(token) ? (reader.GetGuid(0), reader.GetGuid(1), reader.GetBoolean(2)) : ((Guid?)null, (Guid?)null, false);
         }, ct);
 
     private static string Hash(HrDocumentImportRow row, string sha256) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { row.RowReference, legacyDocumentId = row.LegacyDocumentId.Trim(), legacyEmployeeId = row.LegacyEmployeeId.Trim(), row.LegalEntityId, category = row.Category.Trim(), sensitivity = row.Sensitivity.Trim(), row.FileRef, sha256 = sha256.ToLowerInvariant(), row.ExpiryDate, row.DataQuality })))).ToLowerInvariant();
