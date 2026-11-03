@@ -1,5 +1,6 @@
 import React, { type ReactNode } from "react";
 import {
+  ModalOverlay as AriaModalOverlay,
   Modal as AriaModal,
   Dialog as AriaDialog,
   Heading as AriaHeading,
@@ -39,18 +40,20 @@ export function Dialog({
   const getMaxWidth = () => {
     switch (size) {
       case "small":
-        return "24rem";
+        return "22rem";
       case "medium":
-        return "36rem";
+        return "30rem";
       case "large":
-        return "48rem";
+        return "40rem";
       case "fullscreen":
-        return "95vw";
+        return "92vw";
+      default:
+        return "30rem";
     }
   };
 
   return (
-    <AriaModal
+    <AriaModalOverlay
       {...(isOpen !== undefined ? { isOpen } : {})}
       {...(onOpenChange !== undefined ? { onOpenChange } : {})}
       isDismissable={isDismissable}
@@ -58,37 +61,49 @@ export function Dialog({
       style={{
         position: "fixed",
         inset: 0,
-        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        backgroundColor: "rgba(15, 23, 42, 0.6)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: "1rem",
         zIndex: 2000,
-        backdropFilter: "blur(2px)"
+        backdropFilter: "blur(3px)"
       }}
     >
-      <AriaDialog
-        {...props}
-        className={clsx("ui-dialog", `ui-dialog--${size}`, className)}
+      <AriaModal
+        className="ui-modal"
         style={{
-          backgroundColor: "var(--color-surface-card)",
-          borderRadius: "var(--radius-lg, 0.5rem)",
-          boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
           width: "100%",
           maxWidth: getMaxWidth(),
-          maxHeight: "90vh",
           display: "flex",
-          flexDirection: "column",
-          outline: "none",
-          overflow: "hidden"
+          justifyContent: "center",
+          alignItems: "center",
+          margin: "auto",
+          outline: "none"
         }}
       >
+        <AriaDialog
+          {...props}
+          className={clsx("ui-dialog", `ui-dialog--${size}`, className)}
+          style={{
+            backgroundColor: "var(--color-surface-card)",
+            borderRadius: "var(--radius-lg, 0.5rem)",
+            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+            width: "100%",
+            maxHeight: "90vh",
+            display: "flex",
+            flexDirection: "column",
+            outline: "none",
+            overflow: "hidden",
+            margin: "auto"
+          }}
+        >
         {({ close }) => (
           <>
             {title && (
               <div
                 style={{
-                  padding: "1.25rem 1.5rem",
+                  padding: "1rem 1.25rem",
                   borderBottom: "1px solid var(--color-border-default)",
                   display: "flex",
                   alignItems: "center",
@@ -100,7 +115,7 @@ export function Dialog({
                     slot="title"
                     style={{
                       margin: 0,
-                      fontSize: "1.125rem",
+                      fontSize: "1.0625rem",
                       fontWeight: 600,
                       color: "var(--color-content-primary)"
                     }}
@@ -111,7 +126,7 @@ export function Dialog({
                     <p
                       style={{
                         margin: "0.25rem 0 0 0",
-                        fontSize: "0.875rem",
+                        fontSize: "0.8125rem",
                         color: "var(--color-content-muted)"
                       }}
                     >
@@ -141,7 +156,7 @@ export function Dialog({
             )}
             <div
               style={{
-                padding: "1.5rem",
+                padding: "1.25rem",
                 overflowY: "auto",
                 flex: 1,
                 fontSize: "0.875rem",
@@ -153,13 +168,13 @@ export function Dialog({
             {footer && (
               <div
                 style={{
-                  padding: "1rem 1.5rem",
+                  padding: "0.875rem 1.25rem",
                   borderTop: "1px solid var(--color-border-default)",
                   backgroundColor: "var(--color-surface-subtle)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "flex-end",
-                  gap: "0.75rem"
+                  gap: "0.625rem"
                 }}
               >
                 {footer}
@@ -169,5 +184,6 @@ export function Dialog({
         )}
       </AriaDialog>
     </AriaModal>
-  );
+  </AriaModalOverlay>
+);
 }

@@ -1281,3 +1281,65 @@ a {
     display: none !important;
   }
 }
+
+/* ==========================================================================
+   Universal Centered Modal Architecture (Strict Platform-Wide Standard)
+   ========================================================================== */
+.ui-modal-overlay,
+.react-aria-ModalOverlay {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  background-color: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(3px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 2000 !important;
+  padding: 1.25rem !important;
+  box-sizing: border-box !important;
+}
+
+.ui-modal,
+.react-aria-Modal {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: auto !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+}
+
+.ui-dialog {
+  margin: auto !important;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25) !important;
+  background-color: var(--color-surface-card, #ffffff) !important;
+  border-radius: var(--radius-lg, 0.75rem) !important;
+  border: 1px solid var(--color-border-default, #cbd5e1) !important;
+  width: 100% !important;
+  max-height: 88vh !important;
+  max-height: 88dvh !important;
+  box-sizing: border-box !important;
+}
+
+.ui-dialog--small {
+  max-width: 22rem !important; /* 352px */
+}
+
+.ui-dialog--medium {
+  max-width: 30rem !important; /* 480px */
+}
+
+.ui-dialog--large {
+  max-width: 40rem !important; /* 640px */
+}
+
+.ui-dialog--fullscreen {
+  max-width: 92vw !important;
+}

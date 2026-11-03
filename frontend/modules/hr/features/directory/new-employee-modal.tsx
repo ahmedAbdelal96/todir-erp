@@ -93,7 +93,7 @@ export function NewEmployeeModal({
       title={t("directory.newEmployeeModal.title")}
       size="medium"
     >
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         {errorMessage && (
           <div
             role="alert"
