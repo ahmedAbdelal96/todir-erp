@@ -88,6 +88,12 @@ public sealed class HrService(HrRepository repository, HrImportRepository import
     public Task<EmployeeDocumentView> CreateDocumentAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, CreateEmployeeDocumentRequest request, Guid correlationId, CancellationToken ct) =>
         repository.CreateDocumentAsync(tenant, actor, membershipId, employeeId, request, correlationId, ct);
 
+    public Task<EmployeeDocumentUploadIntentView> CreateDocumentUploadIntentAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, CreateEmployeeDocumentUploadRequest request, CancellationToken ct) =>
+        repository.CreateDocumentUploadIntentAsync(tenant, actor, membershipId, employeeId, request, ct);
+
+    public Task<Shared.Contracts.Platform.PlatformFileUploadCompletion> CompleteDocumentUploadAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, Guid legalEntityId, Guid fileRef, CancellationToken ct) =>
+        repository.CompleteDocumentUploadAsync(tenant, actor, membershipId, employeeId, legalEntityId, fileRef, ct);
+
     public Task<IReadOnlyList<EmployeeDocumentView>> ListDocumentsAsync(TenantId tenant, Guid employeeId, Guid legalEntityId, bool includeSensitive, CancellationToken ct) =>
         repository.ListDocumentsAsync(tenant, employeeId, legalEntityId, includeSensitive, ct);
 

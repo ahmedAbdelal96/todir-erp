@@ -9,7 +9,7 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Hr.Repositories;
 
-public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDataSource dataSource, TimeProvider clock, ITransactionalSequenceAllocator sequences, HrIdentifierCrypto identifierCrypto, Shared.Contracts.Platform.IPlatformFileReferenceCapability files) : Shared.Contracts.Hr.IHumanResourcesLifecycleCapability
+public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDataSource dataSource, TimeProvider clock, ITransactionalSequenceAllocator sequences, HrIdentifierCrypto identifierCrypto, Shared.Contracts.Platform.IPlatformFileReferenceCapability files, Shared.Contracts.Platform.IPlatformFileUploadCapability fileUploads) : Shared.Contracts.Hr.IHumanResourcesLifecycleCapability
 {
     public Task<bool> ShouldDeactivateMembershipAsync(TenantId tenantId, Guid employeeId, Guid membershipId, DateOnly asOfDate, CancellationToken cancellationToken = default) =>
         transactions.ExecuteAsync(tenantId, async (context, token) =>
@@ -246,6 +246,43 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
                     System.Diagnostics.Activity.Current?.TraceId.ToString(), clock.GetUtcNow(), null), token);
             return new(id, employeeId, category, sensitivity, file.FileRef, file.Sha256, file.ContentType, file.SizeBytes, request.ExpiryDate, "Pending", "Active", request.SupersedesDocumentId, 1);
         }, ct);
+    }
+
+    public async Task<EmployeeDocumentUploadIntentView> CreateDocumentUploadIntentAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, CreateEmployeeDocumentUploadRequest request, CancellationToken ct)
+    {
+        var sensitivity = (request.Sensitivity ?? string.Empty).Trim();
+        if (sensitivity is not ("Normal" or "Confidential" or "Medical" or "Restricted")) throw new HrException("hr.document_metadata_invalid");
+        await EnsureEmployeeInEntityAsync(tenant, employeeId, request.LegalEntityId, ct);
+        var classification = sensitivity switch { "Normal" => "internal", "Confidential" => "confidential", "Medical" => "medical", _ => "restricted" };
+        Shared.Contracts.Platform.SignedPlatformFileUpload? intent;
+        try { intent = await fileUploads.CreateUploadIntentAsync(tenant, actor, membershipId, "hr", "employee", employeeId, request.FileName, request.ContentType, request.SizeBytes, classification, ct); }
+        catch (Shared.Contracts.Platform.PlatformFileStorageUnavailableException) { throw new HrException("hr.file_access_unavailable"); }
+        catch (Core.Services.PlatformFileContentRejectedException) { throw new HrException("hr.document_upload_invalid"); }
+        if (intent is null) throw new HrException("hr.document_upload_unavailable");
+        return new(intent.FileRef, intent.Url, intent.Fields, intent.ContentType, intent.SizeBytes, intent.ExpiresAt);
+    }
+
+    public async Task<Shared.Contracts.Platform.PlatformFileUploadCompletion> CompleteDocumentUploadAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, Guid legalEntityId, Guid fileRef, CancellationToken ct)
+    {
+        await EnsureEmployeeInEntityAsync(tenant, employeeId, legalEntityId, ct);
+        try
+        {
+            var completion = await fileUploads.CompleteUploadAsync(tenant, actor, membershipId, "hr", "employee", employeeId, fileRef, ct);
+            return completion ?? throw new HrException("hr.document_upload_not_found");
+        }
+        catch (Shared.Contracts.Platform.PlatformFileStorageUnavailableException) { throw new HrException("hr.file_access_unavailable"); }
+    }
+
+    private async Task EnsureEmployeeInEntityAsync(TenantId tenant, Guid employeeId, Guid legalEntityId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        await using var command = new NpgsqlCommand("select exists(select 1 from business_hr.employee e where e.tenant_id=$1 and e.id=$2 and e.status='Active' and exists(select 1 from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.id and em.legal_entity_id=$3))", connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(employeeId); command.Parameters.AddWithValue(legalEntityId);
+        var exists = (bool)(await command.ExecuteScalarAsync(ct) ?? false);
+        await transaction.CommitAsync(ct);
+        if (!exists) throw new HrException("hr.employee_not_found_or_outside_entity");
     }
 
     public async Task<IReadOnlyList<EmployeeDocumentView>> ListDocumentsAsync(TenantId tenant, Guid employeeId, Guid legalEntityId, bool includeSensitive, CancellationToken ct)

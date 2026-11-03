@@ -38,7 +38,9 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
         Guid actorId;
         Guid documentId = Guid.CreateVersion7();
         Guid fileRef = Guid.CreateVersion7();
+        Guid uploadedFileRef = Guid.Empty;
         string objectKey = string.Empty;
+        string uploadedObjectKey = string.Empty;
 
         await using (var admin = new NpgsqlConnection(adminConnectionString))
         {
@@ -57,6 +59,8 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
             await GrantPermissionAsync(admin, transaction, tenantId, "hr_officer", "hr.employee.document.read");
             await GrantPermissionAsync(admin, transaction, tenantId, "hr_privacy", "hr.employee.document.read");
             await GrantPermissionAsync(admin, transaction, tenantId, "hr_privacy", "hr.employee.document.read_sensitive");
+            await GrantPermissionAsync(admin, transaction, tenantId, "hr_privacy", "hr.employee.document.manage");
+            await GrantPermissionAsync(admin, transaction, tenantId, "hr_privacy", "hr.employee.document.verify");
             await CreateAccountAsync(admin, transaction, tenantId, readerEmail, password, "hr_officer");
             await CreateAccountAsync(admin, transaction, tenantId, privacyEmail, password, "hr_privacy");
 
@@ -85,6 +89,7 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
 
         var s3Config = new AmazonS3Config { ServiceURL = endpoint, ForcePathStyle = true, AuthenticationRegion = "us-east-1" };
         using var s3 = new AmazonS3Client(new BasicAWSCredentials(accessKey, secretKey), s3Config);
+        using var signedUrlClient = new HttpClient();
         var bucketCreated = false;
         var objectCreated = false;
         try
@@ -108,6 +113,75 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
 
             using var privacyClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
             await LoginAsync(privacyClient, privacyEmail, password, tenantId);
+
+            var uploadContent = System.Text.Encoding.UTF8.GetBytes("uploaded and scanned HR document proof");
+            using var uploadIntentResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/upload-intents", new
+            {
+                legalEntityId,
+                fileName = "upload-proof.txt",
+                contentType = "text/plain",
+                sizeBytes = uploadContent.Length,
+                sensitivity = "Normal"
+            });
+            Assert.True(uploadIntentResponse.StatusCode == HttpStatusCode.Created, await uploadIntentResponse.Content.ReadAsStringAsync());
+            var uploadIntent = await uploadIntentResponse.Content.ReadFromJsonAsync<JsonElement>();
+            var uploadUrl = uploadIntent.GetProperty("url").GetString()!;
+            uploadedFileRef = uploadIntent.GetProperty("fileRef").GetGuid();
+            uploadedObjectKey = $"tenant/{tenantId:D}/hr/employee/{employeeId:D}/{uploadedFileRef:D}";
+            using (var multipart = new MultipartFormDataContent())
+            {
+                foreach (var field in uploadIntent.GetProperty("fields").EnumerateObject()) multipart.Add(new StringContent(field.Value.GetString()!), field.Name);
+                multipart.Add(new ByteArrayContent(uploadContent), "file", "upload-proof.txt");
+                using var uploadResponse = await signedUrlClient.PostAsync(uploadUrl, multipart);
+                Assert.True(uploadResponse.IsSuccessStatusCode, await uploadResponse.Content.ReadAsStringAsync());
+            }
+            using var completeResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/uploads/{uploadedFileRef:D}/complete", new { legalEntityId });
+            Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+            Assert.True((await completeResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("ready").GetBoolean());
+            using var createDocumentResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents", new
+            {
+                legalEntityId,
+                category = "EmploymentEvidence",
+                fileRef = uploadedFileRef,
+                sensitivity = "Normal"
+            });
+            Assert.Equal(HttpStatusCode.Created, createDocumentResponse.StatusCode);
+            var uploadedDocument = await createDocumentResponse.Content.ReadFromJsonAsync<JsonElement>();
+            var uploadedDocumentId = uploadedDocument.GetProperty("id").GetGuid();
+            using var verifyResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/{uploadedDocumentId:D}/verify?legalEntityId={legalEntityId:D}", new { expectedVersion = 1, verified = true, reason = "Scanned document accepted" });
+            Assert.Equal(HttpStatusCode.OK, verifyResponse.StatusCode);
+            using var uploadedDownloadResponse = await privacyClient.GetAsync(DownloadRoute(employeeId, uploadedDocumentId, legalEntityId));
+            Assert.Equal(HttpStatusCode.OK, uploadedDownloadResponse.StatusCode);
+            var uploadedDownload = await uploadedDownloadResponse.Content.ReadFromJsonAsync<JsonElement>();
+            using var uploadedBytesResponse = await signedUrlClient.GetAsync(uploadedDownload.GetProperty("url").GetString());
+            Assert.Equal(HttpStatusCode.OK, uploadedBytesResponse.StatusCode);
+            Assert.Equal(uploadContent, await uploadedBytesResponse.Content.ReadAsByteArrayAsync());
+
+            var eicarContent = System.Text.Encoding.ASCII.GetBytes("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*");
+            using var infectedIntentResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/upload-intents", new
+            {
+                legalEntityId,
+                fileName = "unsafe.txt",
+                contentType = "text/plain",
+                sizeBytes = eicarContent.Length,
+                sensitivity = "Normal"
+            });
+            Assert.Equal(HttpStatusCode.Created, infectedIntentResponse.StatusCode);
+            var infectedIntent = await infectedIntentResponse.Content.ReadFromJsonAsync<JsonElement>();
+            using (var infectedForm = new MultipartFormDataContent())
+            {
+                foreach (var field in infectedIntent.GetProperty("fields").EnumerateObject()) infectedForm.Add(new StringContent(field.Value.GetString()!), field.Name);
+                infectedForm.Add(new ByteArrayContent(eicarContent), "file", "unsafe.txt");
+                using var uploadResponse = await signedUrlClient.PostAsync(infectedIntent.GetProperty("url").GetString(), infectedForm);
+                Assert.True(uploadResponse.IsSuccessStatusCode, await uploadResponse.Content.ReadAsStringAsync());
+            }
+            var infectedFileRef = infectedIntent.GetProperty("fileRef").GetGuid();
+            using var infectedCompletionResponse = await PostJsonWithCsrfAsync(privacyClient, $"/api/v1/hr/employees/{employeeId:D}/documents/uploads/{infectedFileRef:D}/complete", new { legalEntityId });
+            Assert.Equal(HttpStatusCode.OK, infectedCompletionResponse.StatusCode);
+            var infectedCompletion = await infectedCompletionResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.True(infectedCompletion.GetProperty("rejected").GetBoolean());
+            Assert.Equal("files.malware_detected", infectedCompletion.GetProperty("reasonCode").GetString());
+
             using var allowed = await privacyClient.GetAsync(DownloadRoute(employeeId, documentId, legalEntityId));
             Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
             var download = await allowed.Content.ReadFromJsonAsync<JsonElement>();
@@ -136,6 +210,7 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
         {
             Environment.SetEnvironmentVariable("TODIR_FILES_BUCKET", previousBucket);
             if (objectCreated) await s3.DeleteObjectAsync(bucket, objectKey);
+            if (!string.IsNullOrWhiteSpace(uploadedObjectKey)) await s3.DeleteObjectAsync(bucket, uploadedObjectKey);
             if (bucketCreated) await s3.DeleteBucketAsync(bucket);
         }
     }
@@ -205,6 +280,14 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
             ?? throw new InvalidOperationException("The API did not issue a CSRF token.");
     }
 
+    private static async Task<HttpResponseMessage> PostJsonWithCsrfAsync<T>(HttpClient client, string route, T body)
+    {
+        var token = await GetCsrfTokenAsync(client);
+        using var request = new HttpRequestMessage(HttpMethod.Post, route) { Content = JsonContent.Create(body) };
+        request.Headers.Add("X-CSRF-TOKEN", token);
+        return await client.SendAsync(request);
+    }
+
     private static string RequiredSetting(string key) =>
         Environment.GetEnvironmentVariable(key) is { Length: > 0 } value ? value : throw new InvalidOperationException($"Set {key} for the HR document download integration proof.");
 
@@ -216,8 +299,9 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
                 Skip = "Set TODIR_HR_TEST_DATABASE=1 only for a disposable PostgreSQL database with the canonical development seed.";
             else if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TODIR_FILES_PUBLIC_ENDPOINT"))
                 || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TODIR_FILES_ACCESS_KEY"))
-                || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TODIR_FILES_SECRET_KEY")))
-                Skip = "Set local private object-store test settings to run the HR document download security proof.";
+                || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TODIR_FILES_SECRET_KEY"))
+                || string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TODIR_FILES_SCANNER_HOST")))
+                Skip = "Set local private object-store and ClamAV settings to run the HR document upload/download security proof.";
         }
     }
 }

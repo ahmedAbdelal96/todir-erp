@@ -55,9 +55,14 @@ public static class PlatformHostingExtensions
             ? new NpgsqlPlatformOrganizationCapabilities(dataSource)
             : new NullPlatformOrganizationCapabilities());
         services.AddSingleton(new S3FileDownloadUrlProvider(configuration));
+        services.AddSingleton<S3PlatformFileStorage>();
+        services.AddSingleton<IPlatformFileMalwareScanner, ClamAvFileScanner>();
         services.AddSingleton<Shared.Contracts.Platform.IPlatformFileReferenceCapability>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
             ? new NpgsqlPlatformFileReferenceCapability(dataSource, provider.GetRequiredService<S3FileDownloadUrlProvider>(), provider.GetRequiredService<TimeProvider>())
             : new NullPlatformFileReferenceCapability());
+        services.AddSingleton<IPlatformFileUploadCapability>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlPlatformFileUploadCapability(dataSource, provider.GetRequiredService<S3PlatformFileStorage>(), provider.GetRequiredService<IPlatformFileMalwareScanner>(), provider.GetRequiredService<TimeProvider>())
+            : new NullPlatformFileUploadCapability());
         var cookieSecurePolicy = Enum.TryParse<CookieSecurePolicy>(configuration["TODIR_COOKIE_SECURE_POLICY"], ignoreCase: true, out var configuredCookieSecurePolicy)
             ? configuredCookieSecurePolicy
             : CookieSecurePolicy.Always;

@@ -433,6 +433,20 @@ public static class HrModuleExtensions
             var includeSensitive = access.Subject is not null && authorizer.Authorize(access.Subject, "hr.employee.document.read_sensitive", PermissionScope.ForLegalEntity(access.Tenant, new(legalEntityId)));
             return await Execute(http, () => service.CreateDocumentDownloadAsync(access.Tenant, access.ActorId, access.MembershipId, employeeId, documentId, legalEntityId, includeSensitive, Correlation(http), ct));
         });
+        group.MapPost("/employees/{employeeId:guid}/documents/upload-intents", async (Guid employeeId, CreateEmployeeDocumentUploadRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var access = await AccessAsync(http, subjects, authorizer, "hr.employee.document.manage", request.LegalEntityId, ct);
+            if (access is null) return Results.Unauthorized();
+            if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.CreateDocumentUploadIntentAsync(access.Tenant, access.ActorId, access.MembershipId, employeeId, request, ct), StatusCodes.Status201Created);
+        });
+        group.MapPost("/employees/{employeeId:guid}/documents/uploads/{fileRef:guid}/complete", async (Guid employeeId, Guid fileRef, CompleteEmployeeDocumentUploadRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var access = await AccessAsync(http, subjects, authorizer, "hr.employee.document.manage", request.LegalEntityId, ct);
+            if (access is null) return Results.Unauthorized();
+            if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.CompleteDocumentUploadAsync(access.Tenant, access.ActorId, access.MembershipId, employeeId, request.LegalEntityId, fileRef, ct));
+        });
         group.MapPost("/employees/{employeeId:guid}/documents", async (Guid employeeId, CreateEmployeeDocumentRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
             var access = await AccessAsync(http, subjects, authorizer, "hr.employee.document.manage", request.LegalEntityId, ct);
@@ -1034,11 +1048,12 @@ public static class HrModuleExtensions
     private static IResult MapException(HrException exception)
     {
         if (exception.Code == "hr.manager_relationship_required") return Results.Forbid();
-        if (exception.Code is "hr.document_not_found" or "hr.document_file_unavailable") return Results.NotFound();
+        if (exception.Code is "hr.document_not_found" or "hr.document_file_unavailable" or "hr.document_upload_not_found") return Results.NotFound();
+        if (exception.Code == "hr.document_upload_unavailable" || exception.Code == "hr.file_access_unavailable") return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: exception.Code, extensions: new Dictionary<string, object?> { ["code"] = exception.Code });
         if (exception.Code == "hr.document_not_downloadable") return Results.Conflict();
         var conflict = exception.Code.Contains("duplicate", StringComparison.Ordinal) || exception.Code.Contains("overlap", StringComparison.Ordinal) || exception.Code.Contains("concurrency", StringComparison.Ordinal) || exception.Code.Contains("in_use", StringComparison.Ordinal) || exception.Code.Contains("already_linked", StringComparison.Ordinal);
-        var badRequest = exception.Code.Contains("reference_invalid", StringComparison.Ordinal) || exception.Code.Contains("business_rule_violation", StringComparison.Ordinal) || exception.Code.Contains("hierarchy_cycle", StringComparison.Ordinal);
-        var status = exception.Code == "hr.export_row_limit_exceeded" ? StatusCodes.Status413PayloadTooLarge : exception.Code == "hr.file_access_unavailable" ? StatusCodes.Status503ServiceUnavailable : badRequest ? StatusCodes.Status400BadRequest : conflict ? StatusCodes.Status409Conflict : StatusCodes.Status400BadRequest;
+        var badRequest = exception.Code.Contains("reference_invalid", StringComparison.Ordinal) || exception.Code.Contains("business_rule_violation", StringComparison.Ordinal) || exception.Code.Contains("hierarchy_cycle", StringComparison.Ordinal) || exception.Code is "hr.document_upload_invalid" or "hr.document_metadata_invalid";
+        var status = exception.Code == "hr.export_row_limit_exceeded" ? StatusCodes.Status413PayloadTooLarge : badRequest ? StatusCodes.Status400BadRequest : conflict ? StatusCodes.Status409Conflict : StatusCodes.Status400BadRequest;
         return Results.Problem(statusCode: status, title: exception.Code, extensions: new Dictionary<string, object?> { ["code"] = exception.Code });
     }
 

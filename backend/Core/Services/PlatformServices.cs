@@ -256,6 +256,11 @@ public sealed class NullPlatformFileReferenceCapability : Shared.Contracts.Platf
     public Task<Shared.Contracts.Platform.VerifiedPlatformFileReference?> VerifyReadyReferenceAsync(TenantId tenantId, Guid fileRef, string ownerModule, string ownerEntityType, Guid ownerEntityId, CancellationToken cancellationToken = default) => Task.FromResult<Shared.Contracts.Platform.VerifiedPlatformFileReference?>(null);
     public Task<Shared.Contracts.Platform.SignedPlatformFileDownload?> CreateReadyDownloadAsync(TenantId tenantId, Guid fileRef, string ownerModule, string ownerEntityType, Guid ownerEntityId, TimeSpan lifetime, CancellationToken cancellationToken = default) => Task.FromResult<Shared.Contracts.Platform.SignedPlatformFileDownload?>(null);
 }
+public sealed class NullPlatformFileUploadCapability : Shared.Contracts.Platform.IPlatformFileUploadCapability
+{
+    public Task<Shared.Contracts.Platform.SignedPlatformFileUpload?> CreateUploadIntentAsync(TenantId tenantId, Guid actorId, Guid membershipId, string ownerModule, string ownerEntityType, Guid ownerEntityId, string originalName, string contentType, long sizeBytes, string classification, CancellationToken cancellationToken = default) => Task.FromResult<Shared.Contracts.Platform.SignedPlatformFileUpload?>(null);
+    public Task<Shared.Contracts.Platform.PlatformFileUploadCompletion?> CompleteUploadAsync(TenantId tenantId, Guid actorId, Guid membershipId, string ownerModule, string ownerEntityType, Guid ownerEntityId, Guid fileRef, CancellationToken cancellationToken = default) => Task.FromResult<Shared.Contracts.Platform.PlatformFileUploadCompletion?>(null);
+}
 public static class FileObjectKeys
 {
     public static string Create(FileRecord file) => $"tenant/{file.TenantId.Value:D}/{file.OwnerModule}/{file.OwnerEntityType}/{file.OwnerEntityId:D}/{file.Id:D}";
