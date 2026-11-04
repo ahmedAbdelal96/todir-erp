@@ -60,6 +60,25 @@ For work outside a full module mission, trace each affected requirement to its i
 
 Do not return partial progress merely because a solvable in-scope defect was discovered. For an authorized mission, discover → fix → verify → inspect → repeat; close known in-scope defects that can reasonably be corrected before the final report. For a defect owned by another layer, identify the precise boundary and evidence; fix it when the mission authorizes cross-layer work, continue independent work, and report a genuine remaining blocker without compensating with mocks or false business behavior. Incremental reports are appropriate only for a genuine external blocker, required destructive approval, or a materially unresolved locked product/architecture decision. The Senior Agent resolves ordinary implementation, workflow, and UX choices with sound judgment. The user is the final Product Owner, not the agent's primary tester or defect finder.
 
+### 1.3 End-to-end mission ownership contract
+
+Before coding an authorized implementation mission, perform one focused assessment of the canonical requirements, existing code and database state, users and workflows, ownership boundaries, lifecycle invariants, integrations, security/isolation, failure/concurrency/retry behavior, seed scenarios, and acceptance gates. Form an internal coverage/dependency matrix and a concise gap list; this is an execution aid, not a separate deliverable or a reason to pause for ordinary clarification.
+
+Derive the critical acceptance scenarios before implementing each workflow and implement meaningful proof with the workflow. Vertical slices are internal execution units only: completing and testing one slice never completes a broader mission. After a slice passes, continue automatically through every remaining authorized requirement, including migrations, seed, APIs, workers, integrations, security, and acceptance tests. Do not convert a discovered gap into a request for a new prompt when it is solvable within the authorized scope.
+
+For every substantial multi-step mission, keep a concise checkpoint in the existing applicable task or engineering document. It must state the authorized scope, completed and verified items, unfinished items, current failure or dependency, last meaningful change, next executable action, and evidence still valid. Update it after meaningful milestones and before a technical interruption. On resume, continue from repository state and checkpoint; do not restart discovery. Never claim background execution without an actual supported continuation mechanism.
+
+### 1.4 Stopping and delivery statuses
+
+Stop only after the authorized scope is complete, or when all independent work is exhausted and one genuine external blocker remains (locked product/legal/architecture decision, destructive approval, or unavailable authorization/infrastructure). Ordinary implementation choices, missing tests, local configuration, debugging, migrations, and code defects are engineering work, not escalation reasons. Use exactly one delivery status:
+
+- `COMPLETE`: every applicable authorized requirement and acceptance gate is implemented and verified after the last relevant change.
+- `BLOCKED`: an unavoidable external dependency prevents completion, with precise evidence and the independent work already finished.
+- `INTERRUPTED`: execution ended because of a technical session/tool limit; include a resumable checkpoint and do not present the result as successful delivery.
+- `NOT COMPLETE`: use when the authorized scope or evidence is still unfinished; never disguise it as a milestone or audit result.
+
+Never report an internal implementation milestone, passing build, single workflow, or small test subset as completion of an unfinished mission. Preserve the distinctions between `BACKEND COMPLETE`, `FRONTEND COMPLETE`, `PRODUCT / UX ACCEPTANCE COMPLETE`, `INTEGRATION COMPLETE`, and `MODULE COMPLETE`.
+
 # 2. Business first
 
 Do not begin a feature or module from database tables, DTOs, controllers, React screens, or an existing framework pattern. First understand:
@@ -271,11 +290,9 @@ Stay inside the current module. If the Pack mentions future integrations, provid
 
 For ordinary implementation choices, MAKE THE SENIOR DECISION YOURSELF. Do not stop to ask the Product Owner about normal naming, normal UI placement, obvious validation, ordinary component structure, standard API wiring, or routine test organization. Ask only when there is a genuine product/domain decision with multiple materially different business outcomes.
 
-### 12.13 Silent reporting
+### 12.13 Silent execution and truthful interruption reporting
 
-Do not send progress narration such as "I am now inspecting...", "I will next review...", "the test is still running...", or "I will verify when it completes...". Continue working silently. Return only when:
-A. The mission is complete; or
-B. There is one genuine external blocker that prevents continuation.
+Do not send progress narration such as "I am now inspecting...", "I will next review...", "the test is still running...", or "I will verify when it completes...". Continue working silently. Return only with `COMPLETE`, `BLOCKED`, `INTERRUPTED`, or `NOT COMPLETE` as defined in Section 1.4. A technical session/tool limit is `INTERRUPTED`, never successful completion; persist or reference the latest checkpoint and the exact resumable next action. A genuine external blocker is reported only after independent authorized work is exhausted.
 
 ### 12.14 Execution target
 
@@ -292,3 +309,7 @@ Prefer completing a correct vertical slice over studying every possible future e
 Before any repeated read/test/tool action ask: _"Will this produce new information?"_ If NO, do not run it.
 Before creating any new abstraction/tool/test harness ask: _"Is this required to ship the current mission?"_ If NO, do not build it.
 Before touching an already-passed area ask: _"Do I have a concrete regression or requirement gap?"_ If NO, leave it alone.
+
+### 12.16 Final mission reconciliation
+
+Before the final response, reconcile the original authorized request against the internal coverage matrix and the actual diff. For every applicable requirement, confirm implementation, relevant automated tests, real integration/runtime evidence where required, security/authorization and isolation, persisted business outcomes, seed coverage, and post-change verification. Reuse earlier evidence only when the final changes cannot invalidate it. If a final gate exposes an in-scope defect, fix it, rerun the affected checks, and perform one fresh final gate before reporting. Report unrelated repository failures separately and never claim whole-repository release readiness while mandatory global gates are red.

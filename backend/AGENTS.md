@@ -52,6 +52,8 @@ Apply the root Senior Product Architect, Senior Product Designer, Senior Softwar
 
 Own the documented backend business scope, not merely the endpoints that today's frontend calls. Reconcile each required workflow against domain rules, lifecycle and invariants, PostgreSQL schema and constraints/indexes, RLS and permissions, repositories, services, APIs/contracts, migrations, Development Seed, integration and audit/event behavior, automated tests, and real runtime results. Use the root coverage matrix to record a PASS/FAIL for every required capability. Diagnose and correct defects in these owned layers, then rerun the affected flow and required gates; do not hand ordinary failures back to the user as a request for the next fix.
 
+For each backend workflow, derive its critical persisted-state, financial, authorization, isolation, retry, idempotency, and concurrency scenarios before implementation. Implement the workflow and its meaningful tests together, then continue to the next unfinished requirement in the same mission. A passing endpoint, build, migration, or one vertical slice is not a backend delivery boundary. Maintain the applicable mission checkpoint in existing engineering documentation and resume from it after interruption.
+
 Make normal engineering choices within the approved business and architecture model. If an API or seed scenario needed by a documented user task is missing, implement it in the backend mission instead of narrowing the documented scope. For product ambiguity, inspect the employee's actual workflow and relevant market patterns when useful, while preserving the Module Pack's locked ownership, financial, security, and lifecycle decisions. Escalate only a material unresolved business or architectural choice; continue independent work meanwhile.
 
 ## 2. Physical module structure
@@ -220,6 +222,8 @@ Before reporting `BACKEND COMPLETE` or `BACKEND COMPLETE + DEVELOPMENT SEED READ
 ### Final backend verification after the last change
 
 Backend verification in the final report must run after the last relevant backend source, configuration, seed, or migration change. Such a change invalidates earlier results for affected behavior. After the final change, rerun the affected build and tests, then repeat the applicable real PostgreSQL, API, tenant/RLS/security, migration, seed, and integration checks. Inspect the resulting test output, runtime responses, database state, and logs yourself. If verification reveals a defect, fix it and repeat the affected checks; never report based on evidence captured before that fix. Record which post-change checks passed and their exact results. `BACKEND COMPLETE` remains blocked until its required post-change checks pass.
+
+Do not report a backend mission as complete when any authorized workflow, integration, security boundary, seed scenario, or acceptance gate remains unfinished. If execution is technically interrupted, report `INTERRUPTED` with the checkpoint and next executable action; reserve `BLOCKED` for an unavoidable external dependency after independent work is exhausted.
 
 ## 17. Durable module ownership
 
