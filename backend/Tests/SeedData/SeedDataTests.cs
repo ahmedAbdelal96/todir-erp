@@ -40,7 +40,7 @@ public sealed class DevelopmentSeedTests
             var firstRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
             Assert.True(firstRun.ExitCode == 0, firstRun.Output);
             Assert.Contains("Development Seed Ready", firstRun.Output, StringComparison.Ordinal);
-            Assert.Contains("Ledger: 2 legal entities, 38 accounts, 24 periods, invoice rule ready", firstRun.Output, StringComparison.Ordinal);
+            Assert.Contains("Ledger: 2 legal entities, 48 accounts, 24 periods, invoice rule ready", firstRun.Output, StringComparison.Ordinal);
             Assert.Contains("Invoicing: 120 drafts (60 customer, 60 supplier)", firstRun.Output, StringComparison.Ordinal);
 
             await using var acceptanceDataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
@@ -59,7 +59,7 @@ public sealed class DevelopmentSeedTests
             var secondRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
             Assert.True(secondRun.ExitCode == 0, secondRun.Output);
             Assert.Contains("Development Seed Ready", secondRun.Output, StringComparison.Ordinal);
-            Assert.Contains("Ledger: 2 legal entities, 38 accounts, 24 periods, invoice rule ready", secondRun.Output, StringComparison.Ordinal);
+            Assert.Contains("Ledger: 2 legal entities, 48 accounts, 24 periods, invoice rule ready", secondRun.Output, StringComparison.Ordinal);
             Assert.Contains("Invoicing: 120 drafts (60 customer, 60 supplier)", secondRun.Output, StringComparison.Ordinal);
             var secondCounts = await ReadCanonicalCountsAsync(acceptanceDataSource);
             Assert.Equal(firstCounts, secondCounts);
