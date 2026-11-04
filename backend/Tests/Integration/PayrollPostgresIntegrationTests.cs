@@ -14,6 +14,71 @@ namespace KernelIntegrationTests;
 public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBase
 {
     [PayrollPostgresFact]
+    public async Task RegularPayrollPersistsExactEmployeePayslipAndAccountingTotals()
+    {
+        var admin = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")!;
+        var runtime = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")!;
+        var fixture = await ReadFixtureAsync(admin); var periodId = await CreatePeriodAsync(admin, fixture, new DateOnly(2025, 2, 1), new DateOnly(2025, 2, 28));
+        await using var dataSource = NpgsqlDataSource.Create(runtime); var repository = new PayrollRepository(dataSource, new PayrollCountryProviderRegistry()); var tenant = new TenantId(fixture.TenantId);
+        var run = await repository.CreateRunAsync(tenant, fixture.LegalEntityId, new(fixture.PayrollGroupId, periodId, "Regular"), default);
+        var snapshot = await BuildSnapshotAsync(admin, fixture.TenantId, fixture.LegalEntityId, periodId); await repository.SaveHrSnapshotAsync(tenant, fixture.LegalEntityId, run.Id, snapshot, default); await repository.CalculateRunAsync(tenant, fixture.LegalEntityId, run.Id, default); await repository.FinalizeRunAsync(tenant, fixture.LegalEntityId, run.Id, default);
+        Assert.Equal(80L, await CountAsync(admin, "select count(*) from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2 and status='Calculated'", fixture.TenantId, run.Id));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from business_payroll.payroll_run where tenant_id=$1 and id=$2 and finalization_state='Finalized'", fixture.TenantId, run.Id));
+        Assert.Equal(await DecimalAsync(admin, "select coalesce(sum(gross),0) from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id), await DecimalAsync(admin, "select total_gross from business_payroll.payroll_run where tenant_id=$1 and id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(80L, await CountAsync(admin, "select count(*) from business_payroll.payslip where tenant_id=$1 and legal_entity_id=$2 and run_employee_id in (select id from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$3)", fixture.TenantId, fixture.LegalEntityId, run.Id));
+        Assert.True(await DecimalAsync(admin, "select coalesce(sum(l.amount),0) from business_payroll.payroll_calculation_line l join business_payroll.payroll_run_employee e on e.tenant_id=l.tenant_id and e.id=l.run_employee_id where l.tenant_id=$1 and e.run_id=$2 and l.source='HRSnapshot'", fixture.TenantId, run.Id) > 0m);
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from business_payroll.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and run_id=$3 and status='Ready'", fixture.TenantId, fixture.LegalEntityId, run.Id));
+    }
+
+    [PayrollPostgresFact]
+    public async Task RetroPersistsExactDeltaAndLeavesOriginalPayslipImmutable()
+    {
+        var admin = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")!;
+        var runtime = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")!;
+        var fixture = await ReadFixtureAsync(admin); var periodId = await CreatePeriodAsync(admin, fixture, new DateOnly(2025, 3, 1), new DateOnly(2025, 3, 31));
+        await using var dataSource = NpgsqlDataSource.Create(runtime); var repository = new PayrollRepository(dataSource, new PayrollCountryProviderRegistry()); var tenant = new TenantId(fixture.TenantId);
+        var source = await repository.CreateRunAsync(tenant, fixture.LegalEntityId, new(fixture.PayrollGroupId, periodId, "Regular"), default); var originalSnapshot = await BuildSnapshotAsync(admin, fixture.TenantId, fixture.LegalEntityId, periodId); await repository.SaveHrSnapshotAsync(tenant, fixture.LegalEntityId, source.Id, originalSnapshot, default); await repository.CalculateRunAsync(tenant, fixture.LegalEntityId, source.Id, default); await repository.FinalizeRunAsync(tenant, fixture.LegalEntityId, source.Id, default);
+        var originalGross = await DecimalAsync(admin, "select gross from business_payroll.payslip where tenant_id=$1 and legal_entity_id=$2 and employment_id=$3 order by finalized_at limit 1", fixture.TenantId, fixture.LegalEntityId, originalSnapshot.Employments[0].EmploymentId);
+        var retro = await repository.CreateRunAsync(tenant, fixture.LegalEntityId, new(fixture.PayrollGroupId, periodId, "Retro", source.Id, periodId), default);
+        var changed = originalSnapshot with { Employments = originalSnapshot.Employments.Select((item, index) => index == 0 ? item with { Compensation = [new(Guid.CreateVersion7(), "EGP", 31000m, "Monthly", originalSnapshot.PeriodStart, originalSnapshot.PeriodEnd, 2)] } : item).ToArray(), SnapshotId = Guid.CreateVersion7(), PayloadSha256 = "" };
+        changed = changed with { PayloadSha256 = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(changed))).ToLowerInvariant() }; await repository.SaveHrSnapshotAsync(tenant, fixture.LegalEntityId, retro.Id, changed, default); await repository.CalculateRunAsync(tenant, fixture.LegalEntityId, retro.Id, default); await repository.FinalizeRunAsync(tenant, fixture.LegalEntityId, retro.Id, default);
+        Assert.Equal(1000m, await DecimalAsync(admin, "select total_gross from business_payroll.payroll_run where tenant_id=$1 and id=$2", fixture.TenantId, retro.Id));
+        Assert.Equal(originalGross, await DecimalAsync(admin, "select gross from business_payroll.payslip where tenant_id=$1 and legal_entity_id=$2 and employment_id=$3 order by finalized_at limit 1", fixture.TenantId, fixture.LegalEntityId, originalSnapshot.Employments[0].EmploymentId));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from business_payroll.payroll_run where tenant_id=$1 and source_run_id=$2", fixture.TenantId, source.Id));
+    }
+
+    [PayrollPostgresFact]
+    public async Task FinalSettlementProratesExitLeaveRecoversLoanAndCreatesFinancialArtifacts()
+    {
+        var admin = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")!;
+        var runtime = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")!;
+        var fixture = await ReadFixtureAsync(admin);
+        var periodId = await CreatePeriodAsync(admin, fixture, new DateOnly(2025, 4, 1), new DateOnly(2025, 4, 30));
+        await using var dataSource = NpgsqlDataSource.Create(runtime);
+        var repository = new PayrollRepository(dataSource, new PayrollCountryProviderRegistry());
+        var tenant = new TenantId(fixture.TenantId);
+        var opening = await repository.CreateOpeningBalanceAsync(tenant, fixture.LegalEntityId, Guid.CreateVersion7(), new(fixture.EmploymentId, "Loan", 1000m, "EGP", new DateOnly(2025, 3, 31), "final-settlement-loan", 250m, 4), default);
+        await repository.ApproveOpeningBalanceAsync(tenant, fixture.LegalEntityId, opening.Id, default);
+        var run = await repository.CreateRunAsync(tenant, fixture.LegalEntityId, new(fixture.PayrollGroupId, periodId, "FinalSettlement", SettlementEmploymentId: fixture.EmploymentId, EffectiveDate: new DateOnly(2025, 4, 15), ReasonCode: "RESIGNATION"), default);
+        var snapshot = await BuildSnapshotAsync(admin, fixture.TenantId, fixture.LegalEntityId, periodId);
+        var finalExit = new HrPayrollFinalExitContext(Guid.CreateVersion7(), "Resignation", "RESIGNATION", null, new DateOnly(2025, 4, 15), new DateOnly(2025, 4, 15), true, []);
+        var leave = new HrPayrollLeaveContext(Guid.CreateVersion7(), Guid.CreateVersion7(), "UNPAID", "Approved", "Unpaid", 1, new DateOnly(2025, 4, 10), new DateOnly(2025, 4, 11), 2m, "Days");
+        var employment = snapshot.Employments.Single(item => item.EmploymentId == fixture.EmploymentId) with { Leave = [leave], FinalExit = finalExit };
+        snapshot = snapshot with { Employments = snapshot.Employments.Select(item => item.EmploymentId == fixture.EmploymentId ? employment : item).ToArray(), PayloadSha256 = "" };
+        snapshot = snapshot with { PayloadSha256 = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(snapshot))).ToLowerInvariant() };
+        await repository.SaveHrSnapshotAsync(tenant, fixture.LegalEntityId, run.Id, snapshot, default);
+        await repository.CalculateRunAsync(tenant, fixture.LegalEntityId, run.Id, default);
+        await repository.FinalizeRunAsync(tenant, fixture.LegalEntityId, run.Id, default);
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(14000m, await DecimalAsync(admin, "select gross from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(1000m, await DecimalAsync(admin, "select deductions from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(13000m, await DecimalAsync(admin, "select net from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(1000m, await DecimalAsync(admin, "select coalesce(sum(amount),0) from business_payroll.recovery_application where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(13000m, await DecimalAsync(admin, "select amount from business_payroll.payment_instruction where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(13000m, await DecimalAsync(admin, "select total_amount from business_payroll.accounting_fact where tenant_id=$1 and run_id=$2 and status='Ready'", fixture.TenantId, run.Id));
+    }
+
+    [PayrollPostgresFact]
     public async Task BonusOnlyLifecycleUsesOneTargetedEmployeeAndFinalizesExactFinancials()
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")!;
@@ -125,6 +190,17 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
         await using var periodReader = await period.ExecuteReaderAsync(); if (!await periodReader.ReadAsync()) throw new InvalidOperationException("Payroll period missing."); var start = periodReader.GetFieldValue<DateOnly>(0); var end = periodReader.GetFieldValue<DateOnly>(1); await periodReader.CloseAsync();
         await using var command = new NpgsqlCommand("select em.id,em.employee_id,em.employment_number from business_hr.employment em where em.tenant_id=$1 and em.legal_entity_id=$2 and em.status='Active' order by em.employment_number limit 80", connection); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(legalEntityId);
         var result = new List<HrPayrollEmploymentInput>(); await using var reader = await command.ExecuteReaderAsync(); while (await reader.ReadAsync()) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), "Active", [], [new(Guid.CreateVersion7(), "EGP", 30000m, "Monthly", start, end, 1)], [], new(0, 0, 0, 0, 0, 0, 0), [], new(0, 0), [])); return result;
+    }
+
+    private static async Task<HrPayrollPeriodSnapshotContract> BuildSnapshotAsync(string connectionString, Guid tenantId, Guid legalEntityId, Guid periodId)
+    {
+        var employments = await ReadSnapshotEmploymentsAsync(connectionString, tenantId, legalEntityId, periodId);
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); await using var command = new NpgsqlCommand("select period_start,period_end from business_payroll.payroll_period where tenant_id=$1 and id=$2", connection); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(periodId); await using var reader = await command.ExecuteReaderAsync(); await reader.ReadAsync(); var start = reader.GetFieldValue<DateOnly>(0); var end = reader.GetFieldValue<DateOnly>(1); var snapshot = new HrPayrollPeriodSnapshotContract(Guid.CreateVersion7(), 1, legalEntityId, start, end, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "", employments); return snapshot with { PayloadSha256 = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(snapshot))).ToLowerInvariant() };
+    }
+
+    private static async Task<Guid> CreatePeriodAsync(string connectionString, PayrollFixture fixture, DateOnly start, DateOnly end)
+    {
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); var id = Guid.CreateVersion7(); await using var command = new NpgsqlCommand("insert into business_payroll.payroll_period(tenant_id,legal_entity_id,id,payroll_group_id,period_start,period_end,input_cutoff,calculation_date,planned_pay_date,status,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$6,$6,$6,'Open',now(),now())", connection); command.Parameters.AddWithValue(fixture.TenantId); command.Parameters.AddWithValue(fixture.LegalEntityId); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(fixture.PayrollGroupId); command.Parameters.AddWithValue(start); command.Parameters.AddWithValue(end); await command.ExecuteNonQueryAsync(); return id;
     }
 
     private static async Task<decimal> DecimalAsync(string connectionString, string sql, params object[] values)
