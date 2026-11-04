@@ -23,5 +23,6 @@
     <ProjectReference Include="../Modules/Purchasing/Purchasing.csproj" />
     <ProjectReference Include="../Modules/Accounting/Accounting.csproj" />
     <ProjectReference Include="../Modules/Hr/Hr.csproj" />
+    <ProjectReference Include="../Modules/Payroll/Payroll.csproj" />
   </ItemGroup>
 </Project>
