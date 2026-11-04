@@ -58,6 +58,7 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
         var runtime = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")!;
         var fixture = await ReadFixtureAsync(admin);
         var settlementEmploymentId = await FindCleanEmploymentAsync(admin, fixture);
+        const decimal expectedGross = 14000m;
         var period = NextTestPeriod();
         var periodId = await CreatePeriodAsync(admin, fixture, period.Start, period.End);
         await using var dataSource = NpgsqlDataSource.Create(runtime);
@@ -77,12 +78,12 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
         await repository.CalculateRunAsync(tenant, fixture.LegalEntityId, run.Id, default);
         await repository.FinalizeRunAsync(tenant, fixture.LegalEntityId, run.Id, default);
         Assert.Equal(1L, await CountAsync(admin, "select count(*) from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
-        Assert.Equal(14000m, await DecimalAsync(admin, "select gross from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(expectedGross, await DecimalAsync(admin, "select gross from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
         Assert.Equal(1000m, await DecimalAsync(admin, "select deductions from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
-        Assert.Equal(13000m, await DecimalAsync(admin, "select net from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(expectedGross - 1000m, await DecimalAsync(admin, "select net from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
         Assert.Equal(1000m, await DecimalAsync(admin, "select coalesce(sum(amount),0) from business_payroll.recovery_application where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
-        Assert.Equal(13000m, await DecimalAsync(admin, "select amount from business_payroll.payment_instruction where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
-        Assert.Equal(13000m, await DecimalAsync(admin, "select total_amount from business_payroll.accounting_fact where tenant_id=$1 and run_id=$2 and status='Ready'", fixture.TenantId, run.Id));
+        Assert.Equal(expectedGross - 1000m, await DecimalAsync(admin, "select amount from business_payroll.payment_instruction where tenant_id=$1 and run_id=$2", fixture.TenantId, run.Id));
+        Assert.Equal(expectedGross - 1000m, await DecimalAsync(admin, "select total_amount from business_payroll.accounting_fact where tenant_id=$1 and run_id=$2 and status='Ready'", fixture.TenantId, run.Id));
     }
 
     [PayrollPostgresFact]
@@ -227,7 +228,7 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
             structureId = structure.Id;
             var structureVersion = await repository.CreateSalaryStructureVersionAsync(tenant, fixture.LegalEntityId, structureId, new(new DateOnly(2026, 1, 1), "EGP"), default);
             structureVersionId = structureVersion.Id;
-            Assert.Equal("Published", (await repository.PublishSalaryStructureVersionAsync(tenant, structureVersionId, default)).Status);
+            Assert.Equal("Published", (await repository.PublishSalaryStructureVersionAsync(tenant, fixture.LegalEntityId, structureVersionId, default)).Status);
 
             var input = await repository.CreateInputAsync(tenant, new(fixture.LegalEntityId, fixture.EmploymentId, componentId, new DateOnly(2026, 1, 15), 123m, "EGP", "Acceptance"), default);
             inputId = input.Id;
@@ -241,6 +242,67 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
             await ExecuteAsync(adminConnectionString, "delete from business_payroll.salary_structure where tenant_id=$1 and id=$2", fixture.TenantId, structureId);
             await ExecuteAsync(adminConnectionString, "delete from business_payroll.payroll_component_version where tenant_id=$1 and id=$2", fixture.TenantId, componentVersionId);
             await ExecuteAsync(adminConnectionString, "delete from business_payroll.payroll_component where tenant_id=$1 and id=$2", fixture.TenantId, componentId);
+        }
+    }
+
+    [PayrollPostgresFact]
+    public async Task PublishedStructureVersionCanBeSelectedAssignedAndUsedByPayrollCalculation()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")!;
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")!;
+        var fixture = await ReadFixtureAsync(adminConnectionString);
+        var period = NextTestPeriod();
+        var periodId = await CreatePeriodAsync(adminConnectionString, fixture, period.Start, period.End);
+        var oldAssignmentId = await ReadAssignmentIdAsync(adminConnectionString, fixture.TenantId, fixture.EmploymentId);
+        var baseComponentId = await ReadComponentIdAsync(adminConnectionString, fixture.TenantId, "BASE");
+        var transportComponentId = await ReadComponentIdAsync(adminConnectionString, fixture.TenantId, "TRANSPORT");
+        var baseVersionId = await ReadPublishedComponentVersionIdAsync(adminConnectionString, fixture.TenantId, "BASE");
+        var transportVersionId = await ReadPublishedComponentVersionIdAsync(adminConnectionString, fixture.TenantId, "TRANSPORT");
+        var newAssignmentId = Guid.Empty; var runId = Guid.Empty; var inputId = Guid.Empty; var structureId = Guid.Empty; var structureVersionId = Guid.Empty;
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnectionString);
+        var repository = new PayrollRepository(dataSource, new PayrollCountryProviderRegistry());
+        var tenant = new TenantId(fixture.TenantId);
+        try
+        {
+            await ExecuteAsync(adminConnectionString, "update business_payroll.employee_payroll_assignment set effective_to=$3 where tenant_id=$1 and id=$2", fixture.TenantId, oldAssignmentId, period.Start.AddDays(-1));
+            var structure = await repository.CreateSalaryStructureAsync(tenant, new(fixture.LegalEntityId, $"CONFIG-{Guid.CreateVersion7():N}"[..16], "Configured acceptance structure", "EGP"), default);
+            structureId = structure.Id;
+            var version = await repository.CreateSalaryStructureVersionAsync(tenant, fixture.LegalEntityId, structureId, new(period.Start, "EGP"), default);
+            structureVersionId = version.Id;
+            await repository.CreateSalaryStructureComponentAsync(tenant, fixture.LegalEntityId, structureVersionId, new(baseComponentId, baseVersionId, 10), default);
+            await repository.CreateSalaryStructureComponentAsync(tenant, fixture.LegalEntityId, structureVersionId, new(transportComponentId, transportVersionId, 20), default);
+            await repository.PublishSalaryStructureVersionAsync(tenant, fixture.LegalEntityId, structureVersionId, default);
+            Assert.Single(await repository.ListSalaryStructureVersionsAsync(tenant, fixture.LegalEntityId, structureId, 1, 20, period.Start, null, default));
+            var configured = await repository.ListSalaryStructureComponentsAsync(tenant, fixture.LegalEntityId, structureVersionId, 1, 20, null, default);
+            Assert.Equal(2, configured.Count);
+            Assert.Equal("BASE", configured[0].ComponentCode);
+            Assert.Equal("TRANSPORT", configured[1].ComponentCode);
+            Assert.Contains(await repository.ListComponentVersionsAsync(tenant, transportComponentId, 1, 20, period.Start, "Published", default), item => item.Id == transportVersionId);
+
+            var assignment = await repository.CreateEmployeeAssignmentAsync(tenant, fixture.EmploymentId, new(fixture.LegalEntityId, fixture.PayrollGroupId, structureVersionId, period.Start, null, 20000m, "EGP"), default);
+            newAssignmentId = assignment.Id;
+            var run = await repository.CreateRunAsync(tenant, fixture.LegalEntityId, new(fixture.PayrollGroupId, periodId, "Regular"), default); runId = run.Id;
+            var snapshot = await BuildSnapshotAsync(adminConnectionString, fixture.TenantId, fixture.LegalEntityId, periodId);
+            var target = snapshot.Employments.Select(item => item.EmploymentId == fixture.EmploymentId ? item with { Compensation = [new(Guid.CreateVersion7(), "EGP", 20000m, "Monthly", period.Start, period.End, 1)] } : item).ToArray();
+            snapshot = snapshot with { Employments = target, PayloadSha256 = "" };
+            snapshot = snapshot with { PayloadSha256 = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(snapshot))).ToLowerInvariant() };
+            await repository.SaveHrSnapshotAsync(tenant, fixture.LegalEntityId, runId, snapshot, default);
+            var input = await repository.CreateInputAsync(tenant, new(fixture.LegalEntityId, fixture.EmploymentId, transportComponentId, period.Start.AddDays(1), 500m, "EGP", "Acceptance", $"configured-structure-{runId:D}"), default); inputId = input.Id;
+            await repository.ApproveInputAsync(tenant, fixture.LegalEntityId, inputId, default);
+            await repository.CalculateRunAsync(tenant, fixture.LegalEntityId, runId, default);
+            await repository.FinalizeRunAsync(tenant, fixture.LegalEntityId, runId, default);
+            Assert.Equal(20500m, await DecimalAsync(adminConnectionString, "select gross from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2 and employment_id=$3", fixture.TenantId, runId, fixture.EmploymentId));
+            Assert.Equal(20000m, await DecimalAsync(adminConnectionString, "select amount from business_payroll.payroll_calculation_line l join business_payroll.payroll_run_employee e on e.tenant_id=l.tenant_id and e.id=l.run_employee_id join business_payroll.payroll_component c on c.tenant_id=l.tenant_id and c.id=l.component_id where l.tenant_id=$1 and e.run_id=$2 and e.employment_id=$3 and c.code='BASE'", fixture.TenantId, runId, fixture.EmploymentId));
+            Assert.Equal(500m, await DecimalAsync(adminConnectionString, "select amount from business_payroll.payroll_calculation_line l join business_payroll.payroll_run_employee e on e.tenant_id=l.tenant_id and e.id=l.run_employee_id join business_payroll.payroll_component c on c.tenant_id=l.tenant_id and c.id=l.component_id where l.tenant_id=$1 and e.run_id=$2 and e.employment_id=$3 and c.code='TRANSPORT'", fixture.TenantId, runId, fixture.EmploymentId));
+        }
+        finally
+        {
+            if (inputId != Guid.Empty) await ExecuteAsync(adminConnectionString, "delete from business_payroll.payroll_input where tenant_id=$1 and id=$2", fixture.TenantId, inputId);
+            if (newAssignmentId != Guid.Empty) await ExecuteAsync(adminConnectionString, "delete from business_payroll.employee_payroll_assignment where tenant_id=$1 and id=$2", fixture.TenantId, newAssignmentId);
+            await ExecuteAsync(adminConnectionString, "update business_payroll.employee_payroll_assignment set effective_to=null where tenant_id=$1 and id=$2", fixture.TenantId, oldAssignmentId);
+            if (structureVersionId != Guid.Empty) await ExecuteAsync(adminConnectionString, "delete from business_payroll.salary_structure_component where tenant_id=$1 and structure_version_id=$2", fixture.TenantId, structureVersionId);
+            if (structureVersionId != Guid.Empty) await ExecuteAsync(adminConnectionString, "delete from business_payroll.salary_structure_version where tenant_id=$1 and id=$2", fixture.TenantId, structureVersionId);
+            if (structureId != Guid.Empty) await ExecuteAsync(adminConnectionString, "delete from business_payroll.salary_structure where tenant_id=$1 and id=$2", fixture.TenantId, structureId);
         }
     }
 
@@ -310,6 +372,27 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
         return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("The payroll acceptance fixture requires an employment without an existing receivable."));
     }
 
+    private static async Task<Guid> ReadAssignmentIdAsync(string connectionString, Guid tenantId, Guid employmentId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("select id from business_payroll.employee_payroll_assignment where tenant_id=$1 and employment_id=$2 order by effective_from desc limit 1", connection); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(employmentId);
+        return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("The payroll acceptance fixture requires an existing assignment."));
+    }
+
+    private static async Task<Guid> ReadComponentIdAsync(string connectionString, Guid tenantId, string code)
+    {
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("select id from business_payroll.payroll_component where tenant_id=$1 and code=$2", connection); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(code);
+        return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException($"Payroll component {code} is missing from the canonical seed."));
+    }
+
+    private static async Task<Guid> ReadPublishedComponentVersionIdAsync(string connectionString, Guid tenantId, string code)
+    {
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("select v.id from business_payroll.payroll_component_version v join business_payroll.payroll_component c on c.tenant_id=v.tenant_id and c.id=v.component_id where v.tenant_id=$1 and c.code=$2 and v.status='Published' order by v.effective_from desc limit 1", connection); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(code);
+        return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException($"Published component version for {code} is missing from the canonical seed."));
+    }
+
     private static async Task<IReadOnlyList<HrPayrollEmploymentInput>> ReadSnapshotEmploymentsAsync(string connectionString, Guid tenantId, Guid legalEntityId, Guid periodId)
     {
         await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync();
@@ -343,7 +426,7 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
     {
         // Keep acceptance periods under the canonical NotManaged settings; the helper's
         // collision-resistant offset makes repeated local runs independent.
-        var start = new DateOnly(2026, 1, 1).AddDays(Random.Shared.Next(0, 300) + Interlocked.Increment(ref periodSequence));
+        var start = new DateOnly(2027, 1, 1).AddDays(Interlocked.Increment(ref periodSequence));
         return (start, start.AddDays(29));
     }
 

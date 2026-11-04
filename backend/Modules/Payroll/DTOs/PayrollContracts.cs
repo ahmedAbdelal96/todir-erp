@@ -8,11 +8,13 @@ public sealed record CreatePayrollRunRequest(Guid PayrollGroupId, Guid? PeriodId
 public sealed record CreatePayrollInputRequest(Guid LegalEntityId, Guid EmploymentId, Guid ComponentId, DateOnly InputDate, decimal Amount, string CurrencyCode, string Source, string? IdempotencyKey = null, string? Notes = null, Guid? SupplementalRunId = null);
 public sealed record CreateReceivableRequest(Guid LegalEntityId, Guid EmploymentId, string Type, decimal Principal, string CurrencyCode, decimal? InstallmentAmount = null, int? InstallmentCount = null);
 public sealed record CreatePayrollComponentRequest(string Code, string Name, string Category, string Direction, string InputMode);
-public sealed record CreatePayrollComponentVersionRequest(DateOnly EffectiveFrom, JsonElement Formula, short RoundingScale = 2, string? ProviderCode = null);
-public sealed record PayrollComponentVersionDto(Guid Id, Guid ComponentId, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string Status, short RoundingScale, string? ProviderCode);
+public sealed record CreatePayrollComponentVersionRequest(DateOnly EffectiveFrom, JsonElement Formula, short RoundingScale = 2, string? ProviderCode = null, string? StatutoryDomain = null);
+public sealed record PayrollComponentVersionDto(Guid Id, Guid ComponentId, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string Status, short RoundingScale, string? ProviderCode, string? StatutoryDomain = null, JsonElement? Formula = null);
 public sealed record CreateSalaryStructureRequest(Guid LegalEntityId, string Code, string Name, string CurrencyCode);
 public sealed record CreateSalaryStructureVersionRequest(DateOnly EffectiveFrom, string CurrencyCode);
-public sealed record SalaryStructureVersionDto(Guid Id, Guid SalaryStructureId, int VersionNumber, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string Status, string CurrencyCode);
+public sealed record SalaryStructureVersionDto(Guid Id, Guid SalaryStructureId, int VersionNumber, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string Status, string CurrencyCode, int ComponentsCount = 0);
+public sealed record SalaryStructureComponentDto(Guid Id, Guid SalaryStructureVersionId, Guid ComponentId, string ComponentCode, string ComponentName, Guid ComponentVersionId, DateOnly ComponentVersionEffectiveFrom, DateOnly? ComponentVersionEffectiveTo, string ComponentVersionStatus, string? ProviderCode, string? StatutoryDomain, JsonElement? Formula, short RoundingScale, short Priority, decimal? DefaultAmount);
+public sealed record CreateSalaryStructureComponentRequest(Guid ComponentId, Guid ComponentVersionId, short Priority = 100, decimal? DefaultAmount = null);
 public sealed record CreatePayrollAssignmentRequest(Guid LegalEntityId, Guid PayrollGroupId, Guid SalaryStructureVersionId, DateOnly EffectiveFrom, DateOnly? EffectiveTo, decimal BaseSalary, string CurrencyCode);
 public sealed record PayrollGroupDto(Guid Id, Guid LegalEntityId, string Code, string Name, string Frequency, short PayDay, string CurrencyCode, string Status, string HolidayAdjustment = "NextWorkingDay");
 public sealed record PayrollPeriodDto(Guid Id, Guid PayrollGroupId, DateOnly PeriodStart, DateOnly PeriodEnd, DateOnly InputCutoff, DateOnly PlannedPayDate, string Status);
