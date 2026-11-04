@@ -13,13 +13,13 @@
   },
   "owns": {
     "schema": "business_payroll",
-    "entities": ["payroll_group", "payroll_period", "payroll_component", "payroll_component_version", "salary_structure", "salary_structure_version", "salary_structure_component", "employee_payroll_assignment", "payroll_input", "payroll_run", "payroll_run_employee", "payroll_calculation_line", "payslip", "payslip_line", "employee_receivable", "recovery_installment", "receivable_disbursement", "payment_instruction", "accounting_fact", "payroll_hr_snapshot", "payroll_exception", "payroll_variance", "payroll_statutory_setting"]
+    "entities": ["payroll_group", "payroll_period", "payroll_component", "payroll_component_version", "salary_structure", "salary_structure_version", "salary_structure_component", "employee_payroll_assignment", "payroll_input", "payroll_run", "payroll_run_employee", "payroll_calculation_line", "payslip", "payslip_line", "employee_receivable", "recovery_installment", "recovery_application", "receivable_disbursement", "payment_instruction", "accounting_fact", "payroll_hr_snapshot", "payroll_exception", "payroll_variance", "payroll_statutory_setting"]
   },
   "permissions": ["payroll.home.read", "payroll.group.read", "payroll.group.manage", "payroll.structure.read", "payroll.structure.manage", "payroll.component.read", "payroll.component.manage", "payroll.assignment.read", "payroll.assignment.manage", "payroll.input.read", "payroll.input.create", "payroll.input.approve", "payroll.run.read", "payroll.run.create", "payroll.run.capture_inputs", "payroll.run.calculate", "payroll.run.review", "payroll.run.approve", "payroll.run.finalize", "payroll.run.cancel", "payroll.payslip.read", "payroll.payslip.read_self", "payroll.payslip.export", "payroll.loan.read", "payroll.loan.create", "payroll.loan.approve", "payroll.loan.reschedule", "payroll.loan.writeoff", "payroll.retro.read", "payroll.retro.calculate", "payroll.offcycle.create", "payroll.payment.prepare", "payroll.payment.read", "payroll.payment.retry", "payroll.compliance_output.generate", "payroll.compliance_output.read", "payroll.accounting_preview.read", "payroll.settings.read", "payroll.settings.manage", "payroll.audit.read"],
   "capabilities": {
     "provides": ["payroll.core", "payroll.calculation", "payroll.payslips", "payroll.receivables"],
     "consumes": ["hr.payroll-input", "ledger.semantic-facts", "payments.money-movement", "platform.iam", "platform.audit", "platform.transaction-coordination"]
   },
-  "messaging": { "publishes": ["PayrollFinalizedV1", "PayrollPaymentRequestedV1"], "consumes": [] },
+  "messaging": { "publishes": ["PayrollFinalizedV1", "PayrollPaymentRequestedV1"], "consumes": ["PaymentCompletedV1", "PaymentCancelledV1"] },
   "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
 }

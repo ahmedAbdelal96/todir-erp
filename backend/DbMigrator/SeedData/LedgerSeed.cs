@@ -41,6 +41,9 @@ public static class LedgerSeed
             var inventoryAdjustmentLoss = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 19);
             var payrollExpense = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 20);
             var payrollPayable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 21);
+            var payrollTaxPayable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 22);
+            var payrollInsurancePayable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 23);
+            var employeeReceivable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 24);
             var fxGain = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 8);
             var fxLoss = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 9);
             var retainedEarnings = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 10);
@@ -64,6 +67,9 @@ public static class LedgerSeed
                 (inventoryAdjustmentLoss, "530100", "خسائر وتسويات المخزون", "Inventory adjustment losses", "Expense", "InventoryVariance", expenseCategory, (Guid?)null, true),
                 (payrollExpense, "520100", "مصروف الرواتب", "Payroll expense", "Expense", "Payroll", expenseCategory, (Guid?)null, true),
                 (payrollPayable, "210400", "التزام الرواتب", "Payroll payable", "Liability", "Payroll", liabilityCategory, (Guid?)null, true),
+                (payrollTaxPayable, "210500", "التزام ضريبة الرواتب", "Payroll tax payable", "Liability", "PayrollTax", liabilityCategory, (Guid?)null, true),
+                (payrollInsurancePayable, "210600", "التزام تأمينات الرواتب", "Payroll insurance payable", "Liability", "PayrollInsurance", liabilityCategory, (Guid?)null, true),
+                (employeeReceivable, "120200", "سلف وقروض الموظفين", "Employee receivables", "Asset", "EmployeeReceivable", assetCategory, (Guid?)assets, true),
                 (fxGain, "999000", "أرباح فروق العملة", "FX gain", "Revenue", "FXGain", revenueCategory, (Guid?)null, true),
                 (fxLoss, "999100", "خسائر فروق العملة", "FX loss", "Expense", "FXLoss", expenseCategory, (Guid?)null, true),
                 (retainedEarnings, "310000", "الأرباح المحتجزة", "Retained earnings", "Equity", "RetainedEarnings", equityCategory, (Guid?)null, true),
@@ -116,6 +122,9 @@ public static class LedgerSeed
             var roleInventoryLoss = await AddRoleAsync(context, entityId, suffix, 18, "InventoryAdjustmentLoss", "خسائر وتسويات المخزون", "Inventory adjustment losses", cancellationToken);
             var rolePayrollExpense = await AddRoleAsync(context, entityId, suffix, 21, "PayrollExpense", "مصروف الرواتب", "Payroll expense", cancellationToken);
             var rolePayrollPayable = await AddRoleAsync(context, entityId, suffix, 22, "PayrollPayable", "التزام الرواتب", "Payroll payable", cancellationToken);
+            var rolePayrollTaxPayable = await AddRoleAsync(context, entityId, suffix, 23, "PayrollTaxPayable", "التزام ضريبة الرواتب", "Payroll tax payable", cancellationToken);
+            var rolePayrollInsurancePayable = await AddRoleAsync(context, entityId, suffix, 24, "PayrollInsurancePayable", "التزام تأمينات الرواتب", "Payroll insurance payable", cancellationToken);
+            var roleEmployeeReceivable = await AddRoleAsync(context, entityId, suffix, 25, "EmployeeReceivable", "سلف وقروض الموظفين", "Employee receivable", cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 1, roleReceivable, receivable, "Receivable", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 2, roleRevenue, salesRevenue, "SalesRevenue", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 3, roleTax, outputTax, "OutputTax", null, null, "VAT14", cancellationToken);
@@ -138,6 +147,9 @@ public static class LedgerSeed
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 20, roleInventoryLoss, inventoryAdjustmentLoss, "InventoryAdjustmentLoss", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 21, rolePayrollExpense, payrollExpense, "PayrollExpense", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 22, rolePayrollPayable, payrollPayable, "PayrollPayable", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 23, rolePayrollTaxPayable, payrollTaxPayable, "PayrollTaxPayable", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 24, rolePayrollInsurancePayable, payrollInsurancePayable, "PayrollInsurancePayable", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 25, roleEmployeeReceivable, employeeReceivable, "EmployeeReceivable", null, null, null, cancellationToken);
 
             var ruleId = SeedIds.Child(context.Tenant.Id, $"ledger-rule:{suffix}", 1); var ruleVersionId = SeedIds.Child(context.Tenant.Id, $"ledger-rule-version:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.posting_rule (tenant_id,legal_entity_id,id,fact_type,fact_version,code,status,version,created_at) values ($1,$2,$3,'CustomerInvoicePosted',1,'CUSTOMER_INVOICE_V1','Active',1,$4) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, ruleId, context.AsOf);

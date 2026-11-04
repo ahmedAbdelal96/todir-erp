@@ -20,6 +20,6 @@
     "provides": ["payments.money-movement", "payments.payment-accounts", "payments.provider-adapter", "payments.provider-webhooks", "payments.refunds", "payments.internal-transfers", "payments.payment-links", "payments.payment-read-model"],
     "consumes": ["directory.party", "finbase.money", "finbase.exchange-rate", "subledger.open-items", "ledger.semantic-facts", "platform.numbering", "platform.audit", "platform.transaction-coordination", "platform.outbox"]
   },
-  "messaging": { "publishes": ["PaymentCompletedV1", "PaymentReversedV1", "PaymentRefundedV1", "InternalTransferCompletedV1", "PaymentProviderOperationRequestedV1"], "consumes": ["PayrollPaymentRequestedV1"] },
+  "messaging": { "publishes": ["PaymentCompletedV1", "PaymentCancelledV1", "PaymentReversedV1", "PaymentRefundedV1", "InternalTransferCompletedV1", "PaymentProviderOperationRequestedV1"], "consumes": ["PayrollPaymentRequestedV1"] },
   "lifecycle": { "supportsGoLive": false, "deactivationPolicy": "blocked_if_dependents" }
 }

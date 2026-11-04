@@ -1279,8 +1279,10 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             }
             if (payment.State is not (PaymentBusinessState.Draft or PaymentBusinessState.Pending)) throw new PaymentException("payments.payment_not_completable", "Only a draft or pending payment can be completed.");
             if (accountStatus != "Active") throw new PaymentException("payments.account_inactive", "A suspended or archived account cannot receive a payment.");
-            if (payment.PartyId is null) throw new PaymentException("payments.party_required", "A party is required until this payment type has an approved accounting mapping.");
-            if (payment.Type is not (PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierPayment or PaymentType.SupplierAdvance or PaymentType.CustomerRefund or PaymentType.SupplierRefund))
+            var isPayrollSettlement = string.Equals(payment.SourceType, "Payroll", StringComparison.OrdinalIgnoreCase)
+                && payment.Direction == PaymentDirection.Outgoing && payment.Type == PaymentType.ExpensePayment;
+            if (!isPayrollSettlement && payment.PartyId is null) throw new PaymentException("payments.party_required", "A party is required until this payment type has an approved accounting mapping.");
+            if (!isPayrollSettlement && payment.Type is not (PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierPayment or PaymentType.SupplierAdvance or PaymentType.CustomerRefund or PaymentType.SupplierRefund))
                 throw new PaymentException("payments.manual_completion_type_unsupported", "This payment type requires a configured business workflow before completion.");
             if (!string.Equals(financialContext.TransactionCurrencyCode, payment.CurrencyCode, StringComparison.OrdinalIgnoreCase))
                 throw new PaymentException("payments.currency_context_changed", "The approved currency context no longer matches this payment.");
@@ -1317,24 +1319,28 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             var baseFeeAmount = feeAmount == 0m ? 0m : decimal.Round(feeAmount * rate, financialContext.RoundingPolicy.MoneyScale, midpoint);
             if (feeAmount > 0m && baseFeeAmount <= 0m) throw new PaymentException("payments.fee_amount_invalid", "The approved exchange rate produced an invalid fee amount.");
             var configurationId = await ledgerConfiguration.GetActiveConfigurationVersionIdAsync(context, tenant, new(legalEntityId), token);
-            var settlementRole = payment.Type switch
+            var settlementRole = isPayrollSettlement ? "PayrollPayable" : payment.Type switch
             {
                 PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.CustomerRefund => "Receivable",
                 PaymentType.SupplierPayment or PaymentType.SupplierAdvance or PaymentType.SupplierRefund => "Payable",
-                _ => throw new PaymentException("payments.manual_completion_type_unsupported", "This payment type requires a configured business workflow before completion.")
-            };
-            var partyDirection = settlementRole == "Receivable" ? SubledgerDirectionContract.Receivable : SubledgerDirectionContract.Payable;
-            var partyPolarity = payment.Type switch
-            {
-                PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierRefund => SubledgerPolarityContract.Credit,
-                PaymentType.SupplierPayment or PaymentType.SupplierAdvance or PaymentType.CustomerRefund => SubledgerPolarityContract.Debit,
                 _ => throw new PaymentException("payments.manual_completion_type_unsupported", "This payment type requires a configured business workflow before completion.")
             };
             var snapshotJson = snapshot is null ? null : JsonSerializer.Serialize(snapshot, JsonOptions);
             var openItem = new OpenItemSnapshotContract(payment.Id.ToString("D"), null, payment.Number, payment.PaymentDate, payment.PostingDate,
                 payment.PostingDate, payment.CurrencyCode, payment.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), financialContext.BaseCurrencyCode,
                 baseAmount.ToString(System.Globalization.CultureInfo.InvariantCulture), settlementRole, $"role:{settlementRole}", $"configuration:{configurationId:D}", snapshotJson, 1);
-            var itemId = await subledger.CreatePaymentOpenItemAsync(context, tenant, new(new(legalEntityId), payment.PartyId.Value, [openItem], actor, correlationId), partyDirection, partyPolarity, token);
+            Guid? itemId = null;
+            if (!isPayrollSettlement)
+            {
+                var partyDirection = settlementRole == "Receivable" ? SubledgerDirectionContract.Receivable : SubledgerDirectionContract.Payable;
+                var partyPolarity = payment.Type switch
+                {
+                    PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierRefund => SubledgerPolarityContract.Credit,
+                    PaymentType.SupplierPayment or PaymentType.SupplierAdvance or PaymentType.CustomerRefund => SubledgerPolarityContract.Debit,
+                    _ => throw new PaymentException("payments.manual_completion_type_unsupported", "This payment type requires a configured business workflow before completion.")
+                };
+                itemId = await subledger.CreatePaymentOpenItemAsync(context, tenant, new(new(legalEntityId), payment.PartyId!.Value, [openItem], actor, correlationId), partyDirection, partyPolarity, token);
+            }
             var factType = payment.Type == PaymentType.CustomerRefund ? AccountingFactTypes.RefundPaid
                 : payment.Direction == PaymentDirection.Incoming ? AccountingFactTypes.PaymentReceived : AccountingFactTypes.PaymentMade;
             var factPayload = new PaymentFactPayload(payment.Amount, payment.CurrencyCode, "Default", settlementRole, payment.Direction.ToString(),

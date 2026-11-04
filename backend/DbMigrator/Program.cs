@@ -562,6 +562,9 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("purchasing-forward-fix-final-continuation.sql", StringComparison.Ordinal) => 10,
     _ when fileName.Equals("purchasing-forward-fix-closure.sql", StringComparison.Ordinal) => 11,
     _ when fileName.Equals("purchasing-forward-fix-runtime-permissions.sql", StringComparison.Ordinal) => 12,
+    // Calculation evidence adds columns to the statutory settings table; keep the
+    // settings table migration ahead of it for fresh database bootstrap.
+    _ when fileName.Equals("payroll-forward-fix-statutory-settings.sql", StringComparison.Ordinal) => 4,
     _ => 5
 };
 

@@ -609,6 +609,8 @@ public sealed class LedgerRepository(
         if (fact.SourceModule != "payroll" || fact.FactType != AccountingFactTypes.PayrollPosted
             || payload.GrossAmount < 0m || payload.PayableAmount < 0m || payload.DeductionsAmount < 0m
             || payload.PayableAmount + payload.DeductionsAmount != payload.GrossAmount
+            || payload.TaxAmount < 0m || payload.InsuranceAmount < 0m || payload.RecoveryAmount < 0m
+            || payload.TaxAmount + payload.InsuranceAmount + payload.RecoveryAmount > payload.DeductionsAmount
             || payload.CurrencyCode.Trim().Length != 3)
             throw new LedgerDomainException("ledger.payroll_fact_invalid", "The Payroll accounting fact is incomplete or financially inconsistent.");
         if (!await IsRegisteredProducerAsync(context, fact, ct))
@@ -630,7 +632,24 @@ public sealed class LedgerRepository(
         };
         if (payload.DeductionsAmount > 0m)
         {
-            lines.Add(new(payable, 0m, payload.DeductionsAmount, currency, 0m, payload.DeductionsAmount, 0m, payload.DeductionsAmount, 1m, [], "Payroll deductions payable", null));
+            var residual = payload.DeductionsAmount;
+            if (payload.TaxAmount > 0m)
+            {
+                var account = await ResolveSemanticAccountIdAsync(context, fact, configuration, "PayrollTaxPayable", ct);
+                lines.Add(new(account, 0m, payload.TaxAmount, currency, 0m, payload.TaxAmount, 0m, payload.TaxAmount, 1m, [], "Payroll tax payable", null)); residual -= payload.TaxAmount;
+            }
+            if (payload.InsuranceAmount > 0m)
+            {
+                var account = await ResolveSemanticAccountIdAsync(context, fact, configuration, "PayrollInsurancePayable", ct);
+                lines.Add(new(account, 0m, payload.InsuranceAmount, currency, 0m, payload.InsuranceAmount, 0m, payload.InsuranceAmount, 1m, [], "Payroll insurance payable", null)); residual -= payload.InsuranceAmount;
+            }
+            if (payload.RecoveryAmount > 0m)
+            {
+                var account = await ResolveSemanticAccountIdAsync(context, fact, configuration, "EmployeeReceivable", ct);
+                lines.Add(new(account, 0m, payload.RecoveryAmount, currency, 0m, payload.RecoveryAmount, 0m, payload.RecoveryAmount, 1m, [], "Employee loan recovery", null)); residual -= payload.RecoveryAmount;
+            }
+            if (residual > 0m)
+                lines.Add(new(payable, 0m, residual, currency, 0m, residual, 0m, residual, 1m, [], "Other payroll deductions payable", null));
         }
         var posting = new ExplicitLedgerPostingPayload(journal, "Payroll posting", currency, lines);
         return await PostSemanticExplicitInTransactionAsync(context, fact, posting, payload, configuration, ct);
@@ -790,7 +809,7 @@ public sealed class LedgerRepository(
     {
         if (fact.SourceModule != "payments" || fact.FactType is not (AccountingFactTypes.PaymentReceived or AccountingFactTypes.PaymentMade or AccountingFactTypes.RefundPaid)
             || payload.Amount <= 0m || string.IsNullOrWhiteSpace(payload.PaymentAccountReference)
-            || payload.Direction is not ("Incoming" or "Outgoing") || payload.SettlementRole is not ("Receivable" or "Payable")
+            || payload.Direction is not ("Incoming" or "Outgoing") || payload.SettlementRole is not ("Receivable" or "Payable" or "PayrollPayable")
             || (fact.FactType == AccountingFactTypes.PaymentReceived) != (payload.Direction == "Incoming")
             || (fact.FactType == AccountingFactTypes.RefundPaid && (payload.Direction != "Outgoing" || payload.SettlementRole != "Receivable")))
             throw new LedgerDomainException("ledger.fact_invalid", "The payment fact does not contain valid semantic movement details.");

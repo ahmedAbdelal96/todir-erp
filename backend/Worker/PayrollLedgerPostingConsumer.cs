@@ -42,12 +42,16 @@ public sealed class PayrollLedgerPostingConsumer(
         var runId = root.GetProperty("runId").GetGuid();
         var entityId = root.GetProperty("legalEntityId").GetGuid();
         var factId = root.GetProperty("accountingFactId").GetGuid();
+        var postingDate = root.TryGetProperty("postingDate", out var dateProperty)
+            && DateOnly.TryParse(dateProperty.GetString(), out var parsedDate)
+            ? parsedDate
+            : DateOnly.FromDateTime(message.OccurredAt.UtcDateTime);
         var source = $"payroll:{runId:D}";
 
         await transactions.ExecuteAsync(message.TenantId, async (transaction, token) =>
         {
             await using var read = new NpgsqlCommand(
-                "select status,total_amount,currency_code,(payload->>'gross')::numeric,(payload->>'deductions')::numeric,(payload->>'payable')::numeric from business_payroll.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update",
+                "select status,total_amount,currency_code,(payload->>'gross')::numeric,(payload->>'deductions')::numeric,(payload->>'payable')::numeric,coalesce((payload->>'tax')::numeric,0),coalesce((payload->>'insurance')::numeric,0),coalesce((payload->>'recovery')::numeric,0) from business_payroll.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update",
                 transaction.Connection, transaction.Transaction);
             read.Parameters.AddWithValue(message.TenantId.Value);
             read.Parameters.AddWithValue(entityId);
@@ -61,13 +65,16 @@ public sealed class PayrollLedgerPostingConsumer(
             var gross = reader.IsDBNull(3) ? total : reader.GetDecimal(3);
             var deductions = reader.IsDBNull(4) ? gross - (reader.IsDBNull(5) ? total : reader.GetDecimal(5)) : reader.GetDecimal(4);
             var payable = reader.IsDBNull(5) ? total : reader.GetDecimal(5);
+            var tax = reader.GetDecimal(6);
+            var insurance = reader.GetDecimal(7);
+            var recovery = reader.GetDecimal(8);
             await reader.CloseAsync();
             if (status == "Posted")
                 return true;
             if (status != "Ready")
                 throw new InvalidOperationException("payroll.accounting_fact_not_ready");
 
-            var payload = new PayrollPostedPayload(gross, payable, currency, deductions);
+            var payload = new PayrollPostedPayload(gross, payable, currency, deductions, tax, insurance, recovery);
             var fact = new AccountingFactEnvelope<IAccountingFactPayload>(
                 factId,
                 message.TenantId,
@@ -77,8 +84,8 @@ public sealed class PayrollLedgerPostingConsumer(
                 "payroll",
                 source,
                 source,
-                DateOnly.FromDateTime(message.OccurredAt.UtcDateTime),
-                DateOnly.FromDateTime(message.OccurredAt.UtcDateTime),
+                postingDate,
+                postingDate,
                 payload,
                 message.CorrelationId,
                 Guid.Empty);
