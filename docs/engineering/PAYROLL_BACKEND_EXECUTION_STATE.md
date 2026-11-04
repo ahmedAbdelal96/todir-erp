@@ -7,8 +7,8 @@ Complete the Module 18 v1.1 Backend + Database Build Now scope defined by the ca
 ## Current repository state
 
 - Branch: dev
-- Local HEAD: `933c5ec4e98ea5cd56a886c614e2b4d0e03238b8` on `dev` (pending SSH push verification)
-- Last verified origin/dev before this delivery: 72a3520902d734fe5d8abf5d88d80a237ac4f004
+- Local HEAD: `ea477359df3954870720ead6a612bb830d28505b` on `dev`
+- Last verified origin/dev: `ea477359df3954870720ead6a612bb830d28505b`
 - frontend/test-select-click.png is preserved and intentionally untracked.
 - SSH publishing is configured globally through `C:\Users\Adham\.gitconfig` and verified against `origin/dev`.
 
@@ -92,3 +92,4 @@ Continue with Retro/Off-cycle/Final Settlement and report/import/opening-balance
 - Recovery lifecycle migration applied as script 129; calculation includes only due, Disbursed receivables and finalization records guarded FIFO applications in `recovery_application` while settling installment and receivable balances atomically.
 - Full solution test command was executed once and failed only in environment-gated integration/security suites because `TODIR_P04_ADMIN_CONNECTION` is not configured in this shell; targeted Payroll 4/4, Payments 23/23, Architecture 21/21, solution build, fresh 129-script migration and existing-database upgrade all passed.
 - Final post-change runtime check: rebuilt `backend/Backend.sln` and `DbMigrator` with 0 warnings/errors, started the current API and Worker binaries, API `/health` returned HTTP 200, and Worker registered `payroll-payment-reconciliation` successfully.
+- SSH delivery check: `git push origin dev` succeeded and `git rev-parse HEAD` equals `git ls-remote origin refs/heads/dev` at `ea477359df3954870720ead6a612bb830d28505b`.
