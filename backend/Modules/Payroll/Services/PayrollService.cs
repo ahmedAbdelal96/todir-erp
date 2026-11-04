@@ -32,5 +32,5 @@ public sealed class PayrollService(PayrollRepository repository, IHumanResources
     public Task<PayrollInputDto?> GetInputAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetInputAsync(tenant, entity, id, ct);
     public Task<EmployeeReceivableDto> CreateReceivableAsync(TenantId tenant, CreateReceivableRequest request, CancellationToken ct) => repository.CreateReceivableAsync(tenant, request, ct);
     public Task<EmployeeReceivableDto> ApproveReceivableAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ApproveReceivableAsync(tenant, entity, id, ct);
-    public Task<EmployeeReceivableDto> DisburseReceivableAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.DisburseReceivableAsync(tenant, entity, id, ct);
+    public Task<ReceivableDisbursementDto> RequestReceivableDisbursementAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.RequestReceivableDisbursementAsync(tenant, entity, id, ct);
 }

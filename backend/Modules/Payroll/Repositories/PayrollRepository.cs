@@ -3,11 +3,12 @@ using Npgsql;
 using NpgsqlTypes;
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.Hr;
+using Modules.Payroll.Services;
 using System.Text.Json;
 
 namespace Modules.Payroll.Repositories;
 
-public sealed class PayrollRepository(NpgsqlDataSource dataSource)
+public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCountryProviderRegistry countryProviders)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     public async Task<IReadOnlyList<PayrollGroupDto>> ListGroupsAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct)
@@ -74,7 +75,7 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource)
 
     public async Task<PayrollSnapshotDto> SaveHrSnapshotAsync(TenantId tenant, Guid legalEntityId, Guid runId, HrPayrollPeriodSnapshotContract snapshot, CancellationToken ct)
     {
-        var payload = JsonSerializer.Serialize(snapshot, JsonOptions); var id = snapshot.SnapshotId; await using var c = await OpenAsync(tenant, ct); await using var tx = await c.BeginTransactionAsync(ct);
+        var payload = JsonSerializer.Serialize(snapshot, JsonOptions); var id = Guid.CreateVersion7(); await using var c = await OpenAsync(tenant, ct); await using var tx = await c.BeginTransactionAsync(ct);
         await using var existing = new NpgsqlCommand("select id,payload_sha256 from business_payroll.payroll_hr_snapshot where tenant_id=$1 and payroll_run_id=$2 for update", c, tx); Add(existing, tenant.Value, runId); await using var existingReader = await existing.ExecuteReaderAsync(ct);
         Guid? existingId = null; string? existingHash = null;
         if (await existingReader.ReadAsync(ct)) { existingId = existingReader.GetGuid(0); existingHash = existingReader.GetString(1).Trim(); }
@@ -99,31 +100,47 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource)
         await using var check = new NpgsqlCommand("select currency_code,finalization_state,hr_snapshot_id from business_payroll.payroll_run where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", c, tx); Add(check, tenant.Value, legalEntityId, runId); await using var cr = await check.ExecuteReaderAsync(ct); if (!await cr.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.run_not_found"); if (cr.GetString(1) != "Open") throw new PayrollRepositoryException("payroll.run_already_finalized"); var snapshotId = cr.IsDBNull(2) ? (Guid?)null : cr.GetGuid(2); await cr.CloseAsync(); if (snapshotId is null) throw new PayrollRepositoryException("payroll.hr_snapshot_missing");
         await using var clearLines = new NpgsqlCommand("delete from business_payroll.payroll_calculation_line where tenant_id=$1 and run_employee_id in (select id from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2)", c, tx); Add(clearLines, tenant.Value, runId); await clearLines.ExecuteNonQueryAsync(ct);
         await using var clearEmployees = new NpgsqlCommand("delete from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", c, tx); Add(clearEmployees, tenant.Value, runId); await clearEmployees.ExecuteNonQueryAsync(ct);
-        await using var insert = new NpgsqlCommand("""
-            insert into business_payroll.payroll_run_employee(tenant_id,id,run_id,employment_id,hr_snapshot_id,snapshot_employment_number,status,gross,deductions,net,employer_cost,exception_code,calculated_at)
-            select $1,gen_random_uuid(),r.id,(h.item->>'employmentId')::uuid,s.id,h.item->>'employmentNumber',
-                case when coalesce(x.deductions,0)>coalesce(x.base_salary,0)+coalesce(x.earnings,0) then 'Exception' else 'Calculated' end,
-                coalesce(x.base_salary,0)+coalesce(x.earnings,0),coalesce(x.deductions,0),coalesce(x.base_salary,0)+coalesce(x.earnings,0)-coalesce(x.deductions,0),
-                coalesce(x.base_salary,0)+coalesce(x.earnings,0),
-                case when coalesce(x.deductions,0)>coalesce(x.base_salary,0)+coalesce(x.earnings,0) then 'payroll.negative_net_pay' else null end,
-                now()
-            from business_payroll.payroll_run r
-            join business_payroll.payroll_hr_snapshot s on s.tenant_id=r.tenant_id and s.payroll_run_id=r.id and s.id=r.hr_snapshot_id
-            cross join lateral jsonb_array_elements(s.payload->'employments') h(item)
-            left join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id
-            left join lateral (
-                select
-                    coalesce((select (comp->>'amount')::numeric from jsonb_array_elements(coalesce(h.item->'compensation','[]'::jsonb)) comp order by (comp->>'effectiveFrom')::date desc, comp->>'agreementId' desc limit 1),0) base_salary,
-                    coalesce((select sum(case when (adj->>'amount')::numeric >= 0 then (adj->>'amount')::numeric else 0 end) from jsonb_array_elements(coalesce(h.item->'approvedAdjustments','[]'::jsonb)) adj),0)
-                        + coalesce((select sum(case when pc.category='Earning' then input.amount else 0 end) from business_payroll.payroll_input input join business_payroll.payroll_component pc on pc.tenant_id=input.tenant_id and pc.id=input.component_id where input.tenant_id=$1 and input.employment_id=(h.item->>'employmentId')::uuid and input.status='Approved' and input.input_date between coalesce(s.period_start,p.period_start) and coalesce(s.period_end,p.period_end)),0) earnings,
-                    coalesce((select sum(case when (adj->>'amount')::numeric < 0 then abs((adj->>'amount')::numeric) else 0 end) from jsonb_array_elements(coalesce(h.item->'approvedAdjustments','[]'::jsonb)) adj),0)
-                        + coalesce((select sum(case when pc.category in ('EmployeeDeduction','Recovery') then input.amount else 0 end) from business_payroll.payroll_input input join business_payroll.payroll_component pc on pc.tenant_id=input.tenant_id and pc.id=input.component_id where input.tenant_id=$1 and input.employment_id=(h.item->>'employmentId')::uuid and input.status='Approved' and input.input_date between coalesce(s.period_start,p.period_start) and coalesce(s.period_end,p.period_end)),0) deductions
-            ) x on true
-            where r.tenant_id=$1 and r.id=$2 and r.legal_entity_id=$3
-            """, c, tx); Add(insert, tenant.Value, runId, legalEntityId); await insert.ExecuteNonQueryAsync(ct);
-        await using var baseLines = new NpgsqlCommand("insert into business_payroll.payroll_calculation_line(tenant_id,id,run_employee_id,component_id,quantity,amount,source,trace) select $1,gen_random_uuid(),e.id,component.id,1,e.gross,'HRSnapshot','{\"kind\":\"BaseSalary\"}'::jsonb from business_payroll.payroll_run_employee e join business_payroll.payroll_component component on component.tenant_id=$1 and component.code='BASE' where e.tenant_id=$1 and e.run_id=$2", c, tx); Add(baseLines, tenant.Value, runId); await baseLines.ExecuteNonQueryAsync(ct);
-        await using var inputLines = new NpgsqlCommand("insert into business_payroll.payroll_calculation_line(tenant_id,id,run_employee_id,component_id,quantity,amount,source,trace) select $1,gen_random_uuid(),e.id,input.component_id,1,input.amount,input.source,jsonb_build_object('inputId',input.id) from business_payroll.payroll_run_employee e join business_payroll.payroll_run r on r.tenant_id=e.tenant_id and r.id=e.run_id join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id join business_payroll.payroll_input input on input.tenant_id=$1 and input.employment_id=e.employment_id and input.status='Approved' and input.input_date between p.period_start and p.period_end where e.tenant_id=$1 and e.run_id=$2", c, tx); Add(inputLines, tenant.Value, runId); await inputLines.ExecuteNonQueryAsync(ct);
-        await using var exceptions = new NpgsqlCommand("insert into business_payroll.payroll_exception(tenant_id,id,run_id,employment_id,code,severity,explanation,required_action,created_at) select $1,gen_random_uuid(),e.run_id,e.employment_id,e.exception_code,'Blocking','صافي الأجر أقل من صفر بسبب إجمالي الخصومات.','راجع الخصومات أو أضف اعتماداً قبل إعادة الاحتساب.',now() from business_payroll.payroll_run_employee e where e.tenant_id=$1 and e.run_id=$2 and e.exception_code is not null on conflict (tenant_id,run_id,employment_id,code) do update set is_resolved=false,resolved_at=null", c, tx); Add(exceptions, tenant.Value, runId); await exceptions.ExecuteNonQueryAsync(ct);
+        await using var insert = new NpgsqlCommand("insert into business_payroll.payroll_run_employee(tenant_id,id,run_id,employment_id,hr_snapshot_id,snapshot_employment_number,status,gross,deductions,net,employer_cost,calculated_at) select $1,gen_random_uuid(),r.id,(h.item->>'employmentId')::uuid,s.id,h.item->>'employmentNumber','Pending',0,0,0,0,now() from business_payroll.payroll_run r join business_payroll.payroll_hr_snapshot s on s.tenant_id=r.tenant_id and s.payroll_run_id=r.id and s.id=r.hr_snapshot_id cross join lateral jsonb_array_elements(s.payload->'employments') h(item) where r.tenant_id=$1 and r.id=$2 and r.legal_entity_id=$3", c, tx); Add(insert, tenant.Value, runId, legalEntityId); await insert.ExecuteNonQueryAsync(ct);
+        var snapshotPayload = await ReadSnapshotPayloadAsync(c, tx, tenant, snapshotId.Value, ct);
+        var components = new Dictionary<string, (Guid Id, string Category, string InputMode, string? ProviderCode)>(StringComparer.OrdinalIgnoreCase);
+        await using (var componentCommand = new NpgsqlCommand("select c.id,c.code,c.category,c.input_mode,(select v.provider_code from business_payroll.payroll_component_version v where v.tenant_id=c.tenant_id and v.component_id=c.id and v.status='Published' order by v.effective_from desc limit 1) from business_payroll.payroll_component c where c.tenant_id=$1 and c.status='Active'", c, tx))
+        { Add(componentCommand, tenant.Value); await using var reader = await componentCommand.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) components[reader.GetString(1)] = (reader.GetGuid(0), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4)); await reader.CloseAsync(); }
+        if (!components.ContainsKey("BASE")) throw new PayrollRepositoryException("payroll.component_invalid");
+        foreach (var provider in components.Values.Where(component => string.Equals(component.InputMode, "Provider", StringComparison.OrdinalIgnoreCase)))
+            if (string.IsNullOrWhiteSpace(provider.ProviderCode) || countryProviders.Find(provider.ProviderCode) is not { LegallyCertified: true })
+                throw new PayrollRepositoryException("payroll.country_configuration_missing");
+        var approvedInputs = new Dictionary<(Guid EmploymentId, string Code), decimal>();
+        await using (var inputCommand = new NpgsqlCommand("select input.employment_id,component.code,sum(input.amount) from business_payroll.payroll_input input join business_payroll.payroll_component component on component.tenant_id=input.tenant_id and component.id=input.component_id where input.tenant_id=$1 and input.status='Approved' and input.input_date between $2 and $3 group by input.employment_id,component.code", c, tx))
+        { Add(inputCommand, tenant.Value, snapshotPayload.PeriodStart, snapshotPayload.PeriodEnd); await using var reader = await inputCommand.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) approvedInputs[(reader.GetGuid(0), reader.GetString(1))] = reader.GetDecimal(2); await reader.CloseAsync(); }
+        await using var employees = new NpgsqlCommand("select id,employment_id from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2 order by employment_id", c, tx); Add(employees, tenant.Value, runId); await using var employeeReader = await employees.ExecuteReaderAsync(ct); var employeeRows = new List<(Guid Id, Guid EmploymentId)>(); while (await employeeReader.ReadAsync(ct)) employeeRows.Add((employeeReader.GetGuid(0), employeeReader.GetGuid(1))); await employeeReader.CloseAsync();
+        var rules = components.Where(pair => !string.Equals(pair.Key, "BASE", StringComparison.OrdinalIgnoreCase)).Select(pair => new PayrollComponentRule(pair.Key, pair.Value.Category)).ToArray();
+        foreach (var row in employeeRows)
+        {
+            var employment = snapshotPayload.Employments.FirstOrDefault(item => item.EmploymentId == row.EmploymentId) ?? throw new PayrollRepositoryException("payroll.snapshot_population_mismatch");
+            var compensation = employment.Compensation.Where(item => item.EffectiveFrom <= snapshotPayload.PeriodEnd && (item.EffectiveTo is null || item.EffectiveTo >= snapshotPayload.PeriodStart)).OrderBy(item => item.EffectiveFrom).ThenBy(item => item.Version).LastOrDefault();
+            var inputs = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            foreach (var component in components.Keys.Where(code => !string.Equals(code, "BASE", StringComparison.OrdinalIgnoreCase)))
+            {
+                approvedInputs.TryGetValue((row.EmploymentId, component), out var amount);
+                amount += employment.ApprovedAdjustments.Where(item => string.Equals(item.TypeCode, component, StringComparison.OrdinalIgnoreCase) && item.EffectiveFrom <= snapshotPayload.PeriodEnd && (item.EffectiveTo is null || item.EffectiveTo >= snapshotPayload.PeriodStart)).Sum(item => item.Amount);
+                inputs[component] = amount;
+            }
+            try
+            {
+                var result = PayrollCalculationEngine.Calculate(new PayrollCalculationInput(compensation?.Amount ?? 0m, inputs, new Dictionary<string, decimal>()), rules);
+                await using var updateEmployee = new NpgsqlCommand("update business_payroll.payroll_run_employee set status='Calculated',gross=$3,deductions=$4,net=$5,employer_cost=$6,exception_code=null,calculated_at=now() where tenant_id=$1 and id=$2", c, tx); Add(updateEmployee, tenant.Value, row.Id, result.Gross, result.EmployeeDeductions, result.Net, result.EmployerCost); await updateEmployee.ExecuteNonQueryAsync(ct);
+                foreach (var line in result.Lines.Where(line => line.Amount != 0m || line.Category == "Earning"))
+                {
+                    if (!components.TryGetValue(line.Code, out var component)) throw new PayrollRepositoryException("payroll.component_invalid");
+                    await using var lineCommand = new NpgsqlCommand("insert into business_payroll.payroll_calculation_line(tenant_id,id,run_employee_id,component_id,quantity,amount,source,trace) values($1,gen_random_uuid(),$2,$3,1,$4,$5,$6::jsonb)", c, tx); Add(lineCommand, tenant.Value, row.Id, component.Id, line.Amount, line.Source, JsonSerializer.Serialize(new { kind = "PayrollCalculation", line.Code, line.Explanation }, JsonOptions)); await lineCommand.ExecuteNonQueryAsync(ct);
+                }
+            }
+            catch (PayrollCalculationException exception)
+            {
+                await using var updateEmployee = new NpgsqlCommand("update business_payroll.payroll_run_employee set status='Exception',gross=0,deductions=0,net=0,employer_cost=0,exception_code=$3,calculated_at=now() where tenant_id=$1 and id=$2", c, tx); Add(updateEmployee, tenant.Value, row.Id, exception.Code); await updateEmployee.ExecuteNonQueryAsync(ct);
+            }
+        }
+        await using var exceptions = new NpgsqlCommand("insert into business_payroll.payroll_exception(tenant_id,id,run_id,employment_id,code,severity,explanation,required_action,created_at) select $1,gen_random_uuid(),e.run_id,e.employment_id,e.exception_code,'Blocking','فشل احتساب مكون أو قاعدة رواتب لهذه الوظيفة.','راجع إعداد المكون أو القاعدة ثم أعد الاحتساب.',now() from business_payroll.payroll_run_employee e where e.tenant_id=$1 and e.run_id=$2 and e.exception_code is not null on conflict (tenant_id,run_id,employment_id,code) do update set is_resolved=false,resolved_at=null", c, tx); Add(exceptions, tenant.Value, runId); await exceptions.ExecuteNonQueryAsync(ct);
         await using var update = new NpgsqlCommand("update business_payroll.payroll_run r set calculation_state='Calculated',total_gross=coalesce(x.gross,0),total_deductions=coalesce(x.deductions,0),total_net=coalesce(x.net,0),employee_count=coalesce(x.count,0),updated_at=now() from (select run_id,sum(gross) gross,sum(deductions) deductions,sum(net) net,count(*) count from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2 group by run_id) x where r.tenant_id=$1 and r.id=$2", c, tx); Add(update, tenant.Value, runId); await update.ExecuteNonQueryAsync(ct); await tx.CommitAsync(ct);
     }
 
@@ -136,7 +153,10 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource)
         await using var lines = new NpgsqlCommand("insert into business_payroll.payslip_line(tenant_id,id,payslip_id,component_id,code,name,category,amount,trace) select $1,gen_random_uuid(),p.id,cl.component_id,pc.code,pc.name,pc.category,cl.amount,cl.trace from business_payroll.payslip p join business_payroll.payroll_calculation_line cl on cl.tenant_id=p.tenant_id and cl.run_employee_id=p.run_employee_id join business_payroll.payroll_component pc on pc.tenant_id=cl.tenant_id and pc.id=cl.component_id where p.tenant_id=$1 and p.legal_entity_id=$2 and p.status='Finalized' and p.run_employee_id in (select id from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$3)", c, tx); Add(lines, tenant.Value, legalEntityId, runId); await lines.ExecuteNonQueryAsync(ct);
         await using var pi = new NpgsqlCommand("insert into business_payroll.payment_instruction(tenant_id,legal_entity_id,id,run_id,employment_id,amount,currency_code,created_at) select $1,$2,gen_random_uuid(),e.run_id,e.employment_id,e.net,$3,now() from business_payroll.payroll_run_employee e where e.tenant_id=$1 and e.run_id=$4 on conflict (tenant_id,run_id,employment_id) do nothing", c, tx); Add(pi, tenant.Value, legalEntityId, currency, runId); await pi.ExecuteNonQueryAsync(ct);
         await using var consume = new NpgsqlCommand("update business_payroll.payroll_input input set status='Consumed',consumed_run_id=$2 where input.tenant_id=$1 and input.status='Approved' and exists(select 1 from business_payroll.payroll_run_employee e join business_payroll.payroll_run r on r.tenant_id=e.tenant_id and r.id=e.run_id join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id where e.tenant_id=$1 and e.run_id=$2 and e.employment_id=input.employment_id and input.input_date between p.period_start and p.period_end)", c, tx); Add(consume, tenant.Value, runId); await consume.ExecuteNonQueryAsync(ct);
-        await using var fact = new NpgsqlCommand("insert into business_payroll.accounting_fact(tenant_id,legal_entity_id,id,run_id,fact_type,total_amount,currency_code,idempotency_key,payload,created_at) select $1,$2,gen_random_uuid(),$3,'PayrollPosted',total_net,$4,$5,jsonb_build_object('gross',total_gross,'deductions',total_deductions,'payable',total_net,'currencyCode',$4),now() from business_payroll.payroll_run where tenant_id=$1 and id=$3 on conflict do nothing", c, tx); Add(fact, tenant.Value, legalEntityId, runId, currency, $"payroll:{tenant.Value:D}:{runId:D}"); await fact.ExecuteNonQueryAsync(ct);
+        var accountingFactId = Guid.CreateVersion7();
+        await using var fact = new NpgsqlCommand("insert into business_payroll.accounting_fact(tenant_id,legal_entity_id,id,run_id,fact_type,total_amount,currency_code,idempotency_key,payload,created_at) select $1,$2,$3,$4,'PayrollPosted',total_net,$5,$6,jsonb_build_object('gross',total_gross,'deductions',total_deductions,'payable',total_net,'currencyCode',$5),now() from business_payroll.payroll_run where tenant_id=$1 and id=$4 on conflict (tenant_id,idempotency_key) do nothing", c, tx); Add(fact, tenant.Value, legalEntityId, accountingFactId, runId, currency, $"payroll:{tenant.Value:D}:{runId:D}"); await fact.ExecuteNonQueryAsync(ct);
+        await using var finalizedEvent = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,trace_parent,status) values($1,'PayrollFinalizedV1',jsonb_build_object('runId',$2,'legalEntityId',$3,'accountingFactId',$4,'currencyCode',$5),$6,now(),$2,$2,'payroll',null,'Pending') on conflict do nothing", c, tx); Add(finalizedEvent, Guid.CreateVersion7(), runId, legalEntityId, accountingFactId, currency, tenant.Value); await finalizedEvent.ExecuteNonQueryAsync(ct);
+        await using var paymentEvent = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,trace_parent,status) values($1,'PayrollPaymentRequestedV1',jsonb_build_object('runId',$2,'legalEntityId',$3,'currencyCode',$4),$5,now(),$2,$2,'payroll',null,'Pending') on conflict do nothing", c, tx); Add(paymentEvent, Guid.CreateVersion7(), runId, legalEntityId, currency, tenant.Value); await paymentEvent.ExecuteNonQueryAsync(ct);
         await using var markFinalized = new NpgsqlCommand("update business_payroll.payroll_run set finalization_state='Finalized',payment_state='Ready',accounting_state='Ready',updated_at=now() where tenant_id=$1 and id=$2", c, tx); Add(markFinalized, tenant.Value, runId); await markFinalized.ExecuteNonQueryAsync(ct); await tx.CommitAsync(ct);
     }
 
@@ -173,9 +193,26 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource)
         await using var c = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("update business_payroll.employee_receivable set status='Approved',approved_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Draft' returning employment_id,type,principal,outstanding_principal,currency_code,status", c); Add(cmd, tenant.Value, legalEntityId, id); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.receivable_not_found_or_not_draft"); return new(id,r.GetGuid(0),r.GetString(1),r.GetDecimal(2),r.GetDecimal(3),r.GetString(4).Trim(),r.GetString(5));
     }
 
-    public async Task<EmployeeReceivableDto> DisburseReceivableAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct)
+    public async Task<ReceivableDisbursementDto> RequestReceivableDisbursementAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct)
     {
-        await using var c = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("update business_payroll.employee_receivable set status='Disbursed',disbursed_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Approved' returning employment_id,type,principal,outstanding_principal,currency_code,status", c); Add(cmd, tenant.Value, legalEntityId, id); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.receivable_not_approved"); return new(id,r.GetGuid(0),r.GetString(1),r.GetDecimal(2),r.GetDecimal(3),r.GetString(4).Trim(),r.GetString(5));
+        await using var c = await OpenAsync(tenant, ct);
+        await using var tx = await c.BeginTransactionAsync(ct);
+        await using var command = new NpgsqlCommand("""
+            insert into business_payroll.receivable_disbursement
+                (tenant_id,legal_entity_id,id,receivable_id,amount,currency_code,idempotency_key,status,requested_at,created_at,updated_at)
+            select $1,$2,gen_random_uuid(),r.id,r.principal,r.currency_code,$4,'Requested',now(),now(),now()
+            from business_payroll.employee_receivable r
+            where r.tenant_id=$1 and r.legal_entity_id=$2 and r.id=$3 and r.status='Approved'
+            on conflict (tenant_id,receivable_id,idempotency_key) do update set updated_at=now()
+            returning id,receivable_id,amount,currency_code,status,provider_reference
+            """, c, tx);
+        Add(command, tenant.Value, legalEntityId, id, $"payroll:receivable-disbursement:{tenant.Value:D}:{id:D}");
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.receivable_not_approved");
+        var result = new ReceivableDisbursementDto(reader.GetGuid(0), reader.GetGuid(1), reader.GetDecimal(2), reader.GetString(3).Trim(), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5));
+        await reader.CloseAsync();
+        await tx.CommitAsync(ct);
+        return result;
     }
 
     private async Task<NpgsqlConnection> OpenAsync(TenantId tenant, CancellationToken ct)
@@ -193,6 +230,13 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource)
             await connection.DisposeAsync();
             throw;
         }
+    }
+
+    private static async Task<HrPayrollPeriodSnapshotContract> ReadSnapshotPayloadAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid snapshotId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select payload::text from business_payroll.payroll_hr_snapshot where tenant_id=$1 and id=$2", connection, transaction); Add(command, tenant.Value, snapshotId);
+        var payload = (string?)await command.ExecuteScalarAsync(ct) ?? throw new PayrollRepositoryException("payroll.hr_snapshot_missing");
+        return JsonSerializer.Deserialize<HrPayrollPeriodSnapshotContract>(payload, JsonOptions) ?? throw new PayrollRepositoryException("payroll.hr_snapshot_invalid");
     }
 
     private static object Db(Guid? value) => value is null ? DBNull.Value : value.Value;

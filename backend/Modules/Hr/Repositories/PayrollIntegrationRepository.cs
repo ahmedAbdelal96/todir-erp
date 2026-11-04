@@ -187,13 +187,12 @@ public sealed class PayrollIntegrationRepository(ITransactionCoordinator transac
             {
                 lockPeriod.Parameters.AddWithValue(tenant.Value); lockPeriod.Parameters.AddWithValue(request.LegalEntityId); lockPeriod.Parameters.AddWithValue(request.PeriodStart); lockPeriod.Parameters.AddWithValue(request.PeriodEnd); await lockPeriod.ExecuteNonQueryAsync(token);
             }
-            await using (var existing = new NpgsqlCommand("select payroll_snapshot_id,legal_entity_id,period_start,period_end,payroll_reference,locked_record_count,locked_at from business_hr.attendance_payroll_lock where tenant_id=$1 and payroll_run_id=$2", context.Connection, context.Transaction))
+            await using (var existing = new NpgsqlCommand("select payroll_snapshot_id,legal_entity_id,period_start,period_end,payroll_reference,locked_record_count,locked_at from business_hr.attendance_payroll_lock where tenant_id=$1 and legal_entity_id=$2 and period_start=$3 and period_end=$4 order by locked_at desc limit 1", context.Connection, context.Transaction))
             {
-                existing.Parameters.AddWithValue(tenant.Value); existing.Parameters.AddWithValue(request.PayrollRunId); await using var reader = await existing.ExecuteReaderAsync(token);
+                existing.Parameters.AddWithValue(tenant.Value); existing.Parameters.AddWithValue(request.LegalEntityId); existing.Parameters.AddWithValue(request.PeriodStart); existing.Parameters.AddWithValue(request.PeriodEnd); await using var reader = await existing.ExecuteReaderAsync(token);
                 if (await reader.ReadAsync(token))
                 {
-                    var same = reader.GetGuid(0) == request.SnapshotId && reader.GetGuid(1) == request.LegalEntityId && reader.GetFieldValue<DateOnly>(2) == request.PeriodStart && reader.GetFieldValue<DateOnly>(3) == request.PeriodEnd && reader.GetString(4) == reference;
-                    if (!same) throw new HrException("hr.attendance_payroll_lock_idempotency_conflict");
+                    if (reader.GetGuid(0) != request.SnapshotId) throw new HrException("hr.attendance_payroll_lock_idempotency_conflict");
                     var result = new HrAttendancePeriodLockContract(request.PayrollRunId, reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetFieldValue<DateOnly>(3), reader.GetString(4), reader.GetInt32(5), reader.GetFieldValue<DateTimeOffset>(6));
                     await reader.CloseAsync(); return result;
                 }
