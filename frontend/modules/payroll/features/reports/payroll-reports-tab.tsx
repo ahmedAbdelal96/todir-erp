@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Select } from "../../../../components/primitives/select.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
 import { usePayrollReport } from "../../hooks/use-payroll-queries.ts";
+import { payrollApi } from "../../services/payroll-api.ts";
 import { PayrollStatusBadge } from "../../components/payroll-status-badge.tsx";
 import { formatMoneyAmount, formatRunType } from "../../utils/payroll-formatters.ts";
 import type { PayrollReportItem } from "../../types.ts";
@@ -19,9 +21,13 @@ export function PayrollReportsTab({
   const isAr = i18n.language.startsWith("ar");
   const [runTypeFilter, setRunTypeFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [isExporting, setIsExporting] = useState(false);
 
   const reportParams: { from?: string; to?: string; runType?: string; page?: number; pageSize?: number } = {
-    pageSize: 100
+    page,
+    pageSize
   };
   if (runTypeFilter !== "all") {
     reportParams.runType = runTypeFilter;
@@ -43,38 +49,54 @@ export function PayrollReportsTab({
   const totalNet = reportData?.totalNet ?? filtered.reduce((acc: number, r: PayrollReportItem) => acc + r.net, 0);
   const totalDeductions = reportData?.totalDeductions ?? filtered.reduce((acc: number, r: PayrollReportItem) => acc + r.deductions, 0);
   const totalRuns = reportData?.totalCount ?? filtered.length;
+  const totalPages = Math.ceil(totalRuns / pageSize) || 1;
 
-  const handleExportCsv = () => {
-    const headers = [
-      "RunNumber",
-      "RunType",
-      "PeriodEnd",
-      "Employees",
-      "Gross",
-      "Deductions",
-      "NetPay",
-      "Status",
-      "PaymentState"
-    ];
-    const rows = filtered.map((r: PayrollReportItem) => [
-      `"${r.runNumber}"`,
-      r.runType,
-      r.periodEnd ?? "",
-      r.employeeCount,
-      r.gross,
-      r.deductions,
-      r.net,
-      r.finalizationState,
-      r.paymentState
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `payroll-register-${legalEntityId}-${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      const fullReport = await payrollApi.getReport(legalEntityId, {
+        page: 1,
+        pageSize: 500,
+        runType: runTypeFilter !== "all" ? runTypeFilter : undefined
+      });
+      const exportItems = fullReport.items ?? [];
+      const headers = [
+        "RunNumber",
+        "RunType",
+        "PeriodEnd",
+        "Employees",
+        "Gross",
+        "Deductions",
+        "NetPay",
+        "FinalizationStatus",
+        "PaymentState",
+        "PostedToLedger"
+      ];
+      const rows = exportItems.map((r: PayrollReportItem) => [
+        `"${r.runNumber}"`,
+        r.runType,
+        r.periodEnd ?? "",
+        r.employeeCount,
+        r.gross,
+        r.deductions,
+        r.net,
+        r.finalizationState,
+        r.paymentState,
+        r.postedToLedger ? "Posted" : "Unposted"
+      ]);
+      const csvContent =
+        "data:text/csv;charset=utf-8,\uFEFF" +
+        [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `payroll-register-${legalEntityId}-${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const runTypeOptions = [
@@ -116,15 +138,15 @@ export function PayrollReportsTab({
           <Button
             variant="secondary"
             onPress={handleExportCsv}
-            isDisabled={filtered.length === 0}
+            isDisabled={isExporting || filtered.length === 0}
             style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            {t("reports.exportCsvAction")}
+            {isExporting ? t("common.exporting", "جارٍ التصدير...") : t("reports.exportCsv")}
           </Button>
           <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
             {t("reports.exportNote", { count: filtered.length })}
@@ -132,80 +154,102 @@ export function PayrollReportsTab({
         </div>
       </div>
 
-      {/* Aggregate KPI Summary Cards */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: "1rem"
-        }}
-      >
+      {/* Aggregate Financial Metrics */}
+      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
         <div
           style={{
+            flex: "1 1 200px",
+            minWidth: "220px",
+            boxSizing: "border-box",
             padding: "1.25rem",
-            background: "var(--color-surface-card)",
             borderRadius: "var(--radius-lg)",
+            background: "var(--color-surface-card)",
             border: "1px solid var(--color-border-default)",
+            borderTop: "3px solid var(--color-brand-primary)",
             boxShadow: "var(--shadow-sm)"
           }}
         >
-          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", fontWeight: 600 }}>
-            {t("reports.totalGrossPayroll")}
-          </span>
-          <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-content-primary)", marginTop: "0.25rem" }}>
-            <bdi>{formatMoneyAmount(totalGross, "EGP")}</bdi>
-          </div>
-        </div>
-
-        <div
-          style={{
-            padding: "1.25rem",
-            background: "var(--color-surface-card)",
-            borderRadius: "var(--radius-lg)",
-            border: "1px solid var(--color-border-default)",
-            boxShadow: "var(--shadow-sm)"
-          }}
-        >
-          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", fontWeight: 600 }}>
+          <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", fontWeight: 600 }}>
             {t("reports.totalNetPayroll")}
           </span>
-          <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--color-status-success)", marginTop: "0.25rem" }}>
+          <div style={{ fontSize: "1.375rem", fontWeight: 700, color: "var(--color-brand-primary)", marginTop: "0.375rem", wordBreak: "break-word" }}>
             <bdi>{formatMoneyAmount(totalNet, "EGP")}</bdi>
           </div>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.25rem", display: "block" }}>
+            {t("reports.disbursedNetDesc")}
+          </span>
         </div>
 
         <div
           style={{
+            flex: "1 1 200px",
+            minWidth: "220px",
+            boxSizing: "border-box",
             padding: "1.25rem",
-            background: "var(--color-surface-card)",
             borderRadius: "var(--radius-lg)",
+            background: "var(--color-surface-card)",
             border: "1px solid var(--color-border-default)",
+            borderTop: "3px solid var(--color-border-default)",
             boxShadow: "var(--shadow-sm)"
           }}
         >
-          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", fontWeight: 600 }}>
+          <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", fontWeight: 600 }}>
+            {t("reports.totalGrossPayroll")}
+          </span>
+          <div style={{ fontSize: "1.375rem", fontWeight: 700, color: "var(--color-content-primary)", marginTop: "0.375rem", wordBreak: "break-word" }}>
+            <bdi>{formatMoneyAmount(totalGross, "EGP")}</bdi>
+          </div>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.25rem", display: "block" }}>
+            {t("reports.totalGrossDesc")}
+          </span>
+        </div>
+
+        <div
+          style={{
+            flex: "1 1 200px",
+            minWidth: "220px",
+            boxSizing: "border-box",
+            padding: "1.25rem",
+            borderRadius: "var(--radius-lg)",
+            background: "var(--color-surface-card)",
+            border: "1px solid var(--color-border-default)",
+            borderTop: "3px solid var(--color-status-warning)",
+            boxShadow: "var(--shadow-sm)"
+          }}
+        >
+          <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", fontWeight: 600 }}>
             {t("reports.totalDeductions")}
           </span>
-          <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-status-danger)", marginTop: "0.25rem" }}>
+          <div style={{ fontSize: "1.375rem", fontWeight: 700, color: "var(--color-status-warning)", marginTop: "0.375rem", wordBreak: "break-word" }}>
             <bdi>{formatMoneyAmount(totalDeductions > 0 ? -totalDeductions : totalDeductions, "EGP")}</bdi>
           </div>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.25rem", display: "block" }}>
+            {t("reports.totalDeductionsDesc")}
+          </span>
         </div>
 
         <div
           style={{
+            flex: "1 1 200px",
+            minWidth: "220px",
+            boxSizing: "border-box",
             padding: "1.25rem",
-            background: "var(--color-surface-card)",
             borderRadius: "var(--radius-lg)",
+            background: "var(--color-surface-card)",
             border: "1px solid var(--color-border-default)",
+            borderTop: "3px solid var(--color-status-success)",
             boxShadow: "var(--shadow-sm)"
           }}
         >
-          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", fontWeight: 600 }}>
-            {t("reports.totalRunsCount", "إجمالي الدورات المسجلة")}
+          <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", fontWeight: 600 }}>
+            {t("reports.totalRunsExecuted")}
           </span>
-          <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-content-primary)", marginTop: "0.25rem" }}>
-            <bdi>{totalRuns}</bdi>
+          <div style={{ fontSize: "1.375rem", fontWeight: 700, color: "var(--color-content-primary)", marginTop: "0.375rem" }}>
+            {totalRuns}
           </div>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.25rem", display: "block" }}>
+            {t("reports.totalRunsDesc")}
+          </span>
         </div>
       </div>
 
@@ -218,16 +262,17 @@ export function PayrollReportsTab({
           flexWrap: "wrap",
           padding: "1rem 1.25rem",
           background: "var(--color-surface-card)",
-          borderRadius: "var(--radius-lg)",
+          borderRadius: "var(--radius-md)",
           border: "1px solid var(--color-border-default)"
         }}
       >
-        <div style={{ width: "240px" }}>
+        <div style={{ minWidth: "200px" }}>
           <Select
-            label={t("reports.runType")}
+            label={t("reports.filterByRunType")}
             selectedKey={runTypeFilter}
-            onSelectionChange={(val) => {
-              if (val) setRunTypeFilter(String(val));
+            onSelectionChange={(key) => {
+              setRunTypeFilter(String(key));
+              setPage(1);
             }}
             options={runTypeOptions}
           />
@@ -237,7 +282,10 @@ export function PayrollReportsTab({
           <TextField
             label={t("common.search")}
             value={searchTerm}
-            onChange={setSearchTerm}
+            onChange={(val) => {
+              setSearchTerm(val);
+              setPage(1);
+            }}
             placeholder={t("reports.searchPlaceholder")}
           />
         </div>
@@ -279,15 +327,26 @@ export function PayrollReportsTab({
                   {t("reports.status")}
                 </th>
                 <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>
-                  {t("reports.ledgerStatus")}
+                  {t("reports.glIntegration")}
                 </th>
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {isLoading ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: "2.5rem 1rem", textAlign: "center", color: "var(--color-content-muted)" }}>
-                    {isLoading ? t("common.loading") : t("reports.emptyTitle")}
+                  <td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>
+                    {t("common.loading")}
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ padding: "3rem 2rem", textAlign: "center" }}>
+                    <p style={{ margin: 0, fontWeight: 600, color: "var(--color-content-primary)" }}>
+                      {t("reports.emptyTitle")}
+                    </p>
+                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                      {t("reports.emptyDesc")}
+                    </p>
                   </td>
                 </tr>
               ) : (
@@ -296,7 +355,7 @@ export function PayrollReportsTab({
                     key={r.runId}
                     style={{
                       borderBottom: "1px solid var(--color-border-subtle)",
-                      transition: "background 0.15s ease"
+                      transition: "background-color 0.1s ease"
                     }}
                   >
                     <td style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-primary)" }}>
@@ -323,7 +382,7 @@ export function PayrollReportsTab({
                       <PayrollStatusBadge status={r.finalizationState} />
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
-                      {r.finalizationState === "Finalized" ? (
+                      {r.postedToLedger ? (
                         <span
                           style={{
                             display: "inline-flex",
@@ -365,6 +424,34 @@ export function PayrollReportsTab({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Server-Side Pagination Bar */}
+        <div
+          style={{
+            padding: "0.75rem 1.25rem",
+            borderTop: "1px solid var(--color-border-default)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.75rem"
+          }}
+        >
+          <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+            {t("reports.totalRecords", { count: totalRuns, defaultValue: `إجمالي السجلات: ${totalRuns}` })}
+          </span>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalRuns}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+          />
         </div>
       </div>
     </div>

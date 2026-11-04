@@ -111,19 +111,19 @@ export const payrollApi = {
     }),
 
   // Payslips
-  listPayslips: (legalEntityId: string, params?: { page?: number; pageSize?: number; employmentId?: string; search?: string }): Promise<readonly Payslip[]> => {
+  listPayslips: (legalEntityId: string, params?: { page?: number | undefined; pageSize?: number | undefined; employmentId?: string | undefined; search?: string | undefined } | undefined): Promise<readonly Payslip[]> => {
     const q = new URLSearchParams();
-    if (params?.page) q.set("page", String(params.page));
-    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
     if (params?.employmentId) q.set("employmentId", params.employmentId);
     if (params?.search) q.set("search", params.search);
     return httpClient<readonly Payslip[]>(`${BASE}/legal-entities/${legalEntityId}/payslips?${q.toString()}`);
   },
 
-  listSelfPayslips: (legalEntityId: string, params?: { page?: number; pageSize?: number }): Promise<readonly Payslip[]> => {
+  listSelfPayslips: (legalEntityId: string, params?: { page?: number | undefined; pageSize?: number | undefined } | undefined): Promise<readonly Payslip[]> => {
     const q = new URLSearchParams();
-    if (params?.page) q.set("page", String(params.page));
-    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
     return httpClient<readonly Payslip[]>(`${BASE}/legal-entities/${legalEntityId}/self/payslips?${q.toString()}`);
   },
 
@@ -177,13 +177,13 @@ export const payrollApi = {
     }),
 
   // Reports
-  getReport: (legalEntityId: string, params?: { from?: string; to?: string; runType?: string; page?: number; pageSize?: number }): Promise<PayrollReportSummary> => {
+  getReport: (legalEntityId: string, params?: { from?: string | undefined; to?: string | undefined; runType?: string | undefined; page?: number | undefined; pageSize?: number | undefined } | undefined): Promise<PayrollReportSummary> => {
     const q = new URLSearchParams();
     if (params?.from) q.set("from", params.from);
     if (params?.to) q.set("to", params.to);
     if (params?.runType) q.set("runType", params.runType);
-    if (params?.page) q.set("page", String(params.page));
-    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
     return httpClient<PayrollReportSummary>(`${BASE}/legal-entities/${legalEntityId}/reports/payroll?${q.toString()}`);
   },
 

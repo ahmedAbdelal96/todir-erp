@@ -37,6 +37,7 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
 
   // Active / Latest Run
   const latestRun: PayrollRun | undefined = runs[0];
+  const defaultCurrency = groups.find(g => g.id === latestRun?.payrollGroupId)?.currencyCode || groups[0]?.currencyCode || "EGP";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -85,8 +86,8 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
           value={
             <bdi>
               {formatMoneyAmount(
-                latestRun ? latestRun.totalNet : report?.totalNet ?? 0,
-                "EGP"
+                latestRun ? latestRun.totalNet : report?.totalNet != null ? report.totalNet : null,
+                defaultCurrency
               )}
             </bdi>
           }
@@ -99,8 +100,8 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
           value={
             <bdi>
               {formatMoneyAmount(
-                latestRun ? latestRun.totalGross : report?.totalGross ?? 0,
-                "EGP"
+                latestRun ? latestRun.totalGross : report?.totalGross != null ? report.totalGross : null,
+                defaultCurrency
               )}
             </bdi>
           }
@@ -114,10 +115,11 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
             <bdi>
               {formatMoneyAmount(
                 (() => {
-                  const ded = latestRun ? latestRun.totalDeductions : report?.totalDeductions ?? 0;
+                  const ded = latestRun ? latestRun.totalDeductions : report?.totalDeductions;
+                  if (ded == null) return null;
                   return ded > 0 ? -ded : ded;
                 })(),
-                "EGP"
+                defaultCurrency
               )}
             </bdi>
           }
@@ -127,7 +129,7 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
 
         <PayrollKpiCard
           title={t("reports.employees")}
-          value={latestRun ? latestRun.employeeCount : groups.length > 0 ? "80" : "0"}
+          value={latestRun ? latestRun.employeeCount : 0}
           subtitle={t("home.kpiEmployeesSubtitle")}
           tone="success"
         />

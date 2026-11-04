@@ -49,6 +49,7 @@ export function PayrollRunWorkspace({
   const finalizeMutation = useFinalizeRunMutation(legalEntityId, runId);
 
   const run = runQuery.data;
+  const runCurrency = (run as any)?.currencyCode || "EGP";
   const employees = employeesQuery.data ?? [];
   const employeesListQuery = useEmployees({ legalEntityId });
   const employeesList = employeesListQuery.data?.items ?? [];
@@ -248,21 +249,21 @@ export function PayrollRunWorkspace({
       <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
         <PayrollKpiCard
           title={t("runs.gross")}
-          value={<bdi>{run.totalGross.toLocaleString()} EGP</bdi>}
+          value={<bdi>{formatMoneyAmount(run.totalGross, runCurrency)}</bdi>}
           subtitle={t("runs.workspace.grossEarnings")}
           tone="default"
         />
 
         <PayrollKpiCard
           title={t("runs.workspace.deductions")}
-          value={<bdi>-{run.totalDeductions.toLocaleString()} EGP</bdi>}
+          value={<bdi>{formatMoneyAmount(run.totalDeductions > 0 ? -run.totalDeductions : run.totalDeductions, runCurrency)}</bdi>}
           subtitle={t("runs.workspace.deductions")}
           tone="warning"
         />
 
         <PayrollKpiCard
           title={t("runs.net")}
-          value={<bdi>{run.totalNet.toLocaleString()} EGP</bdi>}
+          value={<bdi>{formatMoneyAmount(run.totalNet, runCurrency)}</bdi>}
           subtitle={t("runs.workspace.netPay")}
           tone="primary"
         />
@@ -328,16 +329,16 @@ export function PayrollRunWorkspace({
                       {resolveEmployeeLabel(emp.employmentId, employeesList)}
                     </td>
                     <td style={{ padding: "0.875rem 1rem" }}>
-                      <bdi>{formatMoneyAmount(emp.gross, "EGP")}</bdi>
+                      <bdi>{formatMoneyAmount(emp.gross, runCurrency)}</bdi>
                     </td>
                     <td style={{ padding: "0.875rem 1rem", color: "var(--color-status-danger)" }}>
-                      <bdi>{formatMoneyAmount(emp.deductions > 0 ? -emp.deductions : emp.deductions, "EGP")}</bdi>
+                      <bdi>{formatMoneyAmount(emp.deductions > 0 ? -emp.deductions : emp.deductions, runCurrency)}</bdi>
                     </td>
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 700, color: "var(--color-status-success)" }}>
-                      <bdi>{formatMoneyAmount(emp.net, "EGP")}</bdi>
+                      <bdi>{formatMoneyAmount(emp.net, runCurrency)}</bdi>
                     </td>
                     <td style={{ padding: "0.875rem 1rem", color: "var(--color-content-secondary)" }}>
-                      <bdi>{formatMoneyAmount(emp.employerCost, "EGP")}</bdi>
+                      <bdi>{formatMoneyAmount(emp.employerCost, runCurrency)}</bdi>
                     </td>
                     <td style={{ padding: "0.875rem 1rem" }}>
                       <PayrollStatusBadge status={emp.status} type="calculation" />

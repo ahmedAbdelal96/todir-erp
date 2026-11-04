@@ -6,10 +6,10 @@
 export function formatMoneyAmount(
   amount: number | null | undefined,
   currency: string = "EGP",
-  options?: { isDeduction?: boolean }
+  options?: { isDeduction?: boolean; fallback?: string }
 ): string {
   if (amount == null || isNaN(amount)) {
-    return `0 ${currency}`;
+    return options?.fallback ?? "—";
   }
 
   // Prevent IEEE 754 negative zero (-0) or tiny floating point noise
@@ -29,16 +29,26 @@ export function formatMoneyValue(amount: number | null | undefined): string {
 }
 
 export function resolveEmployeeDisplay(
-  employmentId: string,
+  employmentIdOrItem: string | { employmentId?: string; employeeName?: string | null; employmentNumber?: string | null },
   employeesOrMap?: any,
   isAr: boolean = true
 ): string {
+  if (!employmentIdOrItem) return "—";
+
+  if (typeof employmentIdOrItem === "object") {
+    if (employmentIdOrItem.employeeName) {
+      return `${employmentIdOrItem.employeeName}${employmentIdOrItem.employmentNumber ? ` (${employmentIdOrItem.employmentNumber})` : ""}`;
+    }
+    return resolveEmployeeDisplay(employmentIdOrItem.employmentId || "", employeesOrMap, isAr);
+  }
+
+  const employmentId = employmentIdOrItem;
   if (!employmentId) return "—";
 
   // If array of employee objects
   if (Array.isArray(employeesOrMap) && employeesOrMap.length > 0) {
     const found = employeesOrMap.find(
-      (e: any) => e.id === employmentId || e.employmentId === employmentId
+      (e: any) => e.id === employmentId || e.employmentId === employmentId || e.employeeId === employmentId
     );
     if (found) {
       const name = found.displayName || `${found.firstName || ""} ${found.lastName || ""}`.trim() || employmentId;
@@ -51,7 +61,9 @@ export function resolveEmployeeDisplay(
   if (employeesOrMap && typeof employeesOrMap === "object" && !Array.isArray(employeesOrMap)) {
     const foundInMap = employeesOrMap[employmentId];
     if (foundInMap) {
-      return `${foundInMap.displayName}${foundInMap.employmentNumber ? ` (${foundInMap.employmentNumber})` : ""}`;
+      const name = typeof foundInMap === "string" ? foundInMap : foundInMap.displayName;
+      const num = typeof foundInMap === "object" ? (foundInMap.employmentNumber || foundInMap.employeeNumber) : null;
+      return `${name}${num ? ` (${num})` : ""}`;
     }
   }
 

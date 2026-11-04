@@ -105,6 +105,8 @@ export interface Payslip {
   readonly employerCost: number;
   readonly status: string;
   readonly finalizedAt?: string | null;
+  readonly employeeName?: string | null;
+  readonly employmentNumber?: string | null;
 }
 
 export interface EmployeeReceivable {
@@ -199,6 +201,7 @@ export interface PayrollReportItem {
   readonly deductions: number;
   readonly net: number;
   readonly employeeCount: number;
+  readonly postedToLedger?: boolean;
 }
 
 export interface PayrollReportSummary {

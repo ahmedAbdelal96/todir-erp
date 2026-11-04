@@ -31,7 +31,7 @@ export function PayslipViewModal({
     window.print();
   };
 
-  const employeeLabel = resolveEmployeeLabel(payslip.employmentId, employeesList, isAr);
+  const employeeLabel = resolveEmployeeLabel(payslip, employeesList, isAr);
 
   return (
     <Dialog

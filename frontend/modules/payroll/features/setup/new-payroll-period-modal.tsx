@@ -4,8 +4,9 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
 import { PayrollGroupPicker } from "../../components/payroll-group-picker.tsx";
-import { useCreatePayrollPeriodMutation } from "../../hooks/use-payroll-queries.ts";
+import { usePayrollGroups, useCreatePayrollPeriodMutation } from "../../hooks/use-payroll-queries.ts";
 import { mapPayrollError } from "../../services/payroll-error-map.ts";
+import type { PayrollGroup } from "../../types.ts";
 
 export interface NewPayrollPeriodModalProps {
   readonly isOpen: boolean;
@@ -14,7 +15,7 @@ export interface NewPayrollPeriodModalProps {
   readonly defaultGroupId?: string | undefined;
 }
 
-const getDefaultPeriodDates = () => {
+const computePeriodDates = (group?: PayrollGroup) => {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
@@ -22,12 +23,16 @@ const getDefaultPeriodDates = () => {
   const monthStr = pad(month + 1);
   const lastDay = new Date(year, month + 1, 0).getDate();
 
+  const payDay = Math.min(Math.max(group?.payDay ?? 28, 1), lastDay);
+  const cutoffDay = Math.max(1, payDay - 5);
+  const calcDay = Math.min(lastDay, Math.max(cutoffDay + 1, payDay - 2));
+
   return {
     periodStart: `${year}-${monthStr}-01`,
     periodEnd: `${year}-${monthStr}-${pad(lastDay)}`,
-    inputCutoff: `${year}-${monthStr}-23`,
-    calculationDate: `${year}-${monthStr}-25`,
-    plannedPayDate: `${year}-${monthStr}-28`
+    inputCutoff: `${year}-${monthStr}-${pad(cutoffDay)}`,
+    calculationDate: `${year}-${monthStr}-${pad(calcDay)}`,
+    plannedPayDate: `${year}-${monthStr}-${pad(payDay)}`
   };
 };
 
@@ -38,9 +43,13 @@ export function NewPayrollPeriodModal({
   defaultGroupId
 }: NewPayrollPeriodModalProps): React.JSX.Element {
   const { t } = useTranslation("payroll");
-  const defaults = getDefaultPeriodDates();
+  const groupsQuery = usePayrollGroups(legalEntityId);
+  const groups = groupsQuery.data ?? [];
 
   const [groupId, setGroupId] = useState(defaultGroupId ?? "");
+  const selectedGroup = groups.find((g) => g.id === (groupId || defaultGroupId));
+  const defaults = computePeriodDates(selectedGroup);
+
   const [periodStart, setPeriodStart] = useState(defaults.periodStart);
   const [periodEnd, setPeriodEnd] = useState(defaults.periodEnd);
   const [inputCutoff, setInputCutoff] = useState(defaults.inputCutoff);
@@ -50,8 +59,22 @@ export function NewPayrollPeriodModal({
 
   const createMutation = useCreatePayrollPeriodMutation(legalEntityId, groupId);
 
+  const handleGroupChange = (newGroupId: string) => {
+    setGroupId(newGroupId);
+    const g = groups.find((item) => item.id === newGroupId);
+    if (g) {
+      const dates = computePeriodDates(g);
+      setPeriodStart(dates.periodStart);
+      setPeriodEnd(dates.periodEnd);
+      setInputCutoff(dates.inputCutoff);
+      setCalculationDate(dates.calculationDate);
+      setPlannedPayDate(dates.plannedPayDate);
+    }
+  };
+
   const reset = () => {
-    const freshDefaults = getDefaultPeriodDates();
+    const freshGroup = groups.find((g) => g.id === defaultGroupId);
+    const freshDefaults = computePeriodDates(freshGroup);
     setGroupId(defaultGroupId ?? "");
     setPeriodStart(freshDefaults.periodStart);
     setPeriodEnd(freshDefaults.periodEnd);
@@ -133,7 +156,7 @@ export function NewPayrollPeriodModal({
         <PayrollGroupPicker
           label={t("setup.selectGroup")}
           value={groupId}
-          onChange={setGroupId}
+          onChange={handleGroupChange}
           legalEntityId={legalEntityId}
           isRequired
         />

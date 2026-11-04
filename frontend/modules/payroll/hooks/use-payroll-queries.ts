@@ -94,7 +94,7 @@ export function usePayrollRunEmployees(legalEntityId: string, runId: string | nu
   });
 }
 
-export function usePayslips(legalEntityId: string, params?: { page?: number; pageSize?: number; employmentId?: string; search?: string }) {
+export function usePayslips(legalEntityId: string, params?: { page?: number | undefined; pageSize?: number | undefined; employmentId?: string | undefined; search?: string | undefined } | undefined) {
   return useQuery({
     queryKey: [...payrollQueryKeys.payslips(legalEntityId), params],
     queryFn: () => payrollApi.listPayslips(legalEntityId, params),
@@ -102,7 +102,7 @@ export function usePayslips(legalEntityId: string, params?: { page?: number; pag
   });
 }
 
-export function useSelfPayslips(legalEntityId: string, params?: { page?: number; pageSize?: number }) {
+export function useSelfPayslips(legalEntityId: string, params?: { page?: number | undefined; pageSize?: number | undefined } | undefined) {
   return useQuery({
     queryKey: [...payrollQueryKeys.selfPayslips(legalEntityId), params],
     queryFn: () => payrollApi.listSelfPayslips(legalEntityId, params),
@@ -110,7 +110,7 @@ export function useSelfPayslips(legalEntityId: string, params?: { page?: number;
   });
 }
 
-export function usePayrollReport(legalEntityId: string, params?: { from?: string; to?: string; runType?: string; page?: number; pageSize?: number }) {
+export function usePayrollReport(legalEntityId: string, params?: { from?: string | undefined; to?: string | undefined; runType?: string | undefined; page?: number | undefined; pageSize?: number | undefined } | undefined) {
   return useQuery({
     queryKey: [...payrollQueryKeys.reports(legalEntityId), params],
     queryFn: () => payrollApi.getReport(legalEntityId, params),

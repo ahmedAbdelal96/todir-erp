@@ -27,11 +27,26 @@ public sealed class PayrollService(PayrollRepository repository, IHumanResources
     public Task<IReadOnlyList<PayrollEmployeeDto>> ListRunEmployeesAsync(TenantId tenant, Guid entity, Guid run, int page, int size, string? status, string? search, CancellationToken ct) => repository.ListRunEmployeesAsync(tenant, entity, run, page, size, status, search, ct);
     public Task CalculateRunAsync(TenantId tenant, Guid entity, Guid run, CancellationToken ct) => repository.CalculateRunAsync(tenant, entity, run, ct);
     public Task FinalizeRunAsync(TenantId tenant, Guid entity, Guid run, CancellationToken ct) => repository.FinalizeRunAsync(tenant, entity, run, ct);
-    public Task<IReadOnlyList<PayslipDto>> ListPayslipsAsync(TenantId tenant, Guid entity, int page, int size, Guid? employmentId, string? search, CancellationToken ct) => repository.ListPayslipsAsync(tenant, entity, page, size, employmentId, search, ct);
+    public async Task<IReadOnlyList<PayslipDto>> ListPayslipsAsync(TenantId tenant, Guid entity, int page, int size, Guid? employmentId, string? search, CancellationToken ct)
+    {
+        var slips = await repository.ListPayslipsAsync(tenant, entity, page, size, employmentId, search, ct);
+        if (slips.Count == 0) return slips;
+        var empIds = slips.Select(s => s.EmploymentId).Distinct().ToArray();
+        var identities = await hrPayroll.ResolveEmploymentIdentitiesAsync(tenant, entity, empIds, ct);
+        return slips.Select(s => identities.TryGetValue(s.EmploymentId, out var ident)
+            ? s with { EmployeeName = ident.DisplayName, EmploymentNumber = ident.EmploymentNumber }
+            : s).ToArray();
+    }
     public async Task<IReadOnlyList<PayslipDto>> ListSelfPayslipsAsync(TenantId tenant, Guid membershipId, Guid entity, int page, int size, CancellationToken ct)
     {
         var employmentId = await hrPayroll.GetSelfEmploymentAsync(tenant, membershipId, entity, ct);
-        return employmentId is null ? [] : await repository.ListSelfPayslipsAsync(tenant, entity, employmentId.Value, page, size, ct);
+        if (employmentId is null) return [];
+        var slips = await repository.ListSelfPayslipsAsync(tenant, entity, employmentId.Value, page, size, ct);
+        if (slips.Count == 0) return slips;
+        var identities = await hrPayroll.ResolveEmploymentIdentitiesAsync(tenant, entity, [employmentId.Value], ct);
+        return slips.Select(s => identities.TryGetValue(s.EmploymentId, out var ident)
+            ? s with { EmployeeName = ident.DisplayName, EmploymentNumber = ident.EmploymentNumber }
+            : s).ToArray();
     }
     public Task<PayrollInputDto> CreateInputAsync(TenantId tenant, CreatePayrollInputRequest request, CancellationToken ct) => repository.CreateInputAsync(tenant, request, ct);
     public Task<PayrollInputDto> ApproveInputAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ApproveInputAsync(tenant, entity, id, ct);

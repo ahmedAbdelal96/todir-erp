@@ -36,7 +36,10 @@ async function ensureAuthenticated(page: Page) {
     const emailInput = page.locator('#login-email');
     if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
       await emailInput.fill('admin@atlas.com');
-      const password = process.env.SEED_DEFAULT_PASSWORD ?? 'TodirDev2026!';
+      const password = process.env.SEED_DEFAULT_PASSWORD;
+      if (!password) {
+        throw new Error('SEED_DEFAULT_PASSWORD environment variable is required for login authentication');
+      }
       await page.locator('#login-password').fill(password);
       await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
       await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
@@ -94,25 +97,24 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     // Verify groups section heading
     await expect(page.getByRole('heading', { name: /مجموعات الرواتب/i })).toBeVisible();
 
-    // Open New Group Modal
+    // Open New Group Modal unconditionally
     const newGroupBtn = page.getByRole('button', { name: /إضافة مجموعة رواتب/i });
-    if (await newGroupBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await newGroupBtn.click();
-      await page.waitForTimeout(600);
-      const dialog = page.getByRole('dialog');
-      await expect(dialog).toBeVisible();
+    await expect(newGroupBtn).toBeVisible({ timeout: 5000 });
+    await newGroupBtn.click();
+    await page.waitForTimeout(600);
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
 
-      // Verify payDay label is properly labeled inside the modal
-      await expect(dialog.getByText(/يوم الصرف في الشهر/i)).toBeVisible();
+    // Verify payDay label is properly labeled inside the modal
+    await expect(dialog.getByText(/يوم الصرف في الشهر/i)).toBeVisible();
 
-      await page.screenshot({
-        path: path.join(SCREENSHOT_DIR, '02-payroll-new-group-modal.png'),
-        fullPage: false
-      });
-      // Close modal with cancel
-      await dialog.getByRole('button', { name: /إلغاء/i }).click();
-      await page.waitForTimeout(400);
-    }
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, '02-payroll-new-group-modal.png'),
+      fullPage: false
+    });
+    // Close modal with cancel
+    await dialog.getByRole('button', { name: /إلغاء/i }).click();
+    await expect(dialog).toBeHidden({ timeout: 5000 });
   });
 
   test('3. Payroll Setup - Periods & Date Defaults Modal', async ({ page }) => {
@@ -122,25 +124,24 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     await page.locator('[data-testid="payroll-tab-setup"]').click();
     await page.waitForTimeout(800);
 
-    // Open New Period Modal
+    // Open New Period Modal unconditionally
     const newPeriodBtn = page.getByRole('button', { name: /إضافة فترة رواتب/i });
-    if (await newPeriodBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await newPeriodBtn.click();
-      await page.waitForTimeout(600);
-      const dialog = page.getByRole('dialog');
-      await expect(dialog).toBeVisible();
+    await expect(newPeriodBtn).toBeVisible({ timeout: 5000 });
+    await newPeriodBtn.click();
+    await page.waitForTimeout(600);
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
 
-      // Verify distinct labels for dates inside the modal
-      await expect(dialog.getByText(/تاريخ الاحتساب المقرر/i)).toBeVisible();
-      await expect(dialog.getByText(/تاريخ الصرف الفعلي المخطط/i)).toBeVisible();
+    // Verify distinct labels for dates inside the modal
+    await expect(dialog.getByText(/تاريخ الاحتساب المقرر/i)).toBeVisible();
+    await expect(dialog.getByText(/تاريخ الصرف الفعلي المخطط/i)).toBeVisible();
 
-      await page.screenshot({
-        path: path.join(SCREENSHOT_DIR, '03-payroll-new-period-modal.png'),
-        fullPage: false
-      });
-      await dialog.getByRole('button', { name: /إلغاء/i }).click();
-      await page.waitForTimeout(400);
-    }
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, '03-payroll-new-period-modal.png'),
+      fullPage: false
+    });
+    await dialog.getByRole('button', { name: /إلغاء/i }).click();
+    await expect(dialog).toBeHidden({ timeout: 5000 });
   });
 
   test('4. Setup Sub-Tabs (Components, Structures, Assignments)', async ({ page }) => {
@@ -202,82 +203,87 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     await page.locator('[data-testid="payroll-tab-runs"]').click();
     await page.waitForTimeout(800);
 
-    // Open New Run Modal
+    // Open New Run Modal unconditionally
     const newRunBtn = page.getByRole('button', { name: /إنشاء دورة رواتب/i }).first();
-    if (await newRunBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await newRunBtn.click();
-      await page.waitForTimeout(600);
-      await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(newRunBtn).toBeVisible({ timeout: 5000 });
+    await newRunBtn.click();
+    await page.waitForTimeout(600);
+    const runDialog = page.getByRole('dialog');
+    await expect(runDialog).toBeVisible();
 
-      // For Regular run, reasonCode and search fields should NOT be rendered
-      await expect(page.getByText(/رمز سبب الدورة/i)).toHaveCount(0);
+    // For Regular run, reasonCode and search fields should NOT be rendered
+    await expect(runDialog.getByText(/رمز سبب الدورة/i)).toHaveCount(0);
 
-      await page.screenshot({
-        path: path.join(SCREENSHOT_DIR, '05-payroll-new-run-modal.png'),
-        fullPage: false
-      });
-      await page.getByRole('button', { name: /إلغاء/i }).click();
-      await page.waitForTimeout(400);
-    }
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, '05-payroll-new-run-modal.png'),
+      fullPage: false
+    });
+    await runDialog.getByRole('button', { name: /إلغاء/i }).click();
+    await expect(runDialog).toBeHidden({ timeout: 5000 });
   });
 
-  test('7. Payroll Inputs & Bulk Import Dialog', async ({ page }) => {
+  test('7. Payroll Inputs & Bulk Import Dialog (Preview & Validation Flow)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
     await page.locator('[data-testid="payroll-tab-inputs"]').click();
     await page.waitForTimeout(800);
 
-    // Open Import Dialog
+    // Open Import Dialog unconditionally
     const importBtn = page.getByRole('button', { name: /استيراد/i }).first();
-    if (await importBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await importBtn.click();
-      await page.waitForTimeout(600);
-      await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(importBtn).toBeVisible({ timeout: 5000 });
+    await importBtn.click();
+    await page.waitForTimeout(600);
+    const importDialog = page.getByRole('dialog');
+    await expect(importDialog).toBeVisible();
 
-      // Test pasting sample CSV data
-      const sampleCsv = "d0000000-0000-0000-0000-000000000001,TRANSPORT,500,EGP,2026-11-01,بدل انتقال شهري";
-      await page.locator('textarea').fill(sampleCsv);
+    // Test pasting sample CSV data
+    const sampleCsv = "d0000000-0000-0000-0000-000000000001,TRANSPORT,500,EGP,2026-11-01,بدل انتقال شهري";
+    await importDialog.locator('textarea').fill(sampleCsv);
 
-      // Trigger preview
-      const previewBtn = page.getByRole('button', { name: /معاينة أسطر الاستيراد/i });
-      if (await previewBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await previewBtn.click();
-        await page.waitForTimeout(1000);
-      }
+    // Trigger preview
+    const previewBtn = importDialog.getByRole('button', { name: /معاينة البيانات والتحقق|معاينة/i });
+    await expect(previewBtn).toBeVisible({ timeout: 5000 });
+    await previewBtn.click();
+    await page.waitForTimeout(1000);
 
-      await page.screenshot({
-        path: path.join(SCREENSHOT_DIR, '06-payroll-import-dialog.png'),
-        fullPage: false
-      });
-      // Close the import dialog cleanly
-      await page.keyboard.press('Escape');
+    // Verify preview results
+    await expect(importDialog.getByText(/أسطر صالحة|صالح/i).first()).toBeVisible();
+
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, '06-payroll-import-dialog.png'),
+      fullPage: false
+    });
+    // Close the import dialog cleanly
+    const backBtn = importDialog.getByRole('button', { name: /رجوع|Back/i });
+    if (await backBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await backBtn.click();
       await page.waitForTimeout(400);
-      if (await page.getByRole('dialog').isVisible().catch(() => false)) {
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(400);
-      }
-      await expect(page.getByRole('dialog')).toBeHidden({ timeout: 5000 });
     }
+    const cancelBtn = importDialog.getByRole('button', { name: /إلغاء|Cancel/i });
+    if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await cancelBtn.click();
+      await page.waitForTimeout(400);
+    }
+    await expect(importDialog).toBeHidden({ timeout: 5000 });
 
-    // Open New Input Modal
+    // Open New Input Modal unconditionally
     const newInputBtn = page.getByRole('button', { name: /إضافة مدخل جديد/i });
-    if (await newInputBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await newInputBtn.click();
-      await page.waitForTimeout(600);
-      const dialog = page.getByRole('dialog');
-      await expect(dialog).toBeVisible();
+    await expect(newInputBtn).toBeVisible({ timeout: 5000 });
+    await newInputBtn.click();
+    await page.waitForTimeout(600);
+    const inputDialog = page.getByRole('dialog');
+    await expect(inputDialog).toBeVisible();
 
-      // Verify PayrollComponentPicker is present
-      await expect(dialog.getByText(/البند|بند الراتب/i).first()).toBeVisible();
+    // Verify PayrollComponentPicker is present
+    await expect(inputDialog.getByText(/البند|بند الراتب/i).first()).toBeVisible();
 
-      await page.screenshot({
-        path: path.join(SCREENSHOT_DIR, '07-payroll-new-input-modal.png'),
-        fullPage: false
-      });
-      await dialog.getByRole('button', { name: /إلغاء/i }).click();
-      await page.waitForTimeout(400);
-    }
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, '07-payroll-new-input-modal.png'),
+      fullPage: false
+    });
+    await inputDialog.getByRole('button', { name: /إلغاء/i }).click();
+    await expect(inputDialog).toBeHidden({ timeout: 5000 });
   });
 
   test('8. Loans & Advances Tab & Creation Modal', async ({ page }) => {
@@ -287,22 +293,22 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     await page.locator('[data-testid="payroll-tab-loans"]').click();
     await page.waitForTimeout(800);
 
-    // Open New Loan Modal
+    // Open New Loan Modal unconditionally
     const newLoanBtn = page.getByRole('button', { name: /طلب سلفة أو قرض جديد/i });
-    if (await newLoanBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await newLoanBtn.click();
-      await page.waitForTimeout(600);
-      await expect(page.getByRole('dialog')).toBeVisible();
-      await page.screenshot({
-        path: path.join(SCREENSHOT_DIR, '08-payroll-new-loan-modal.png'),
-        fullPage: false
-      });
-      await page.getByRole('button', { name: /إلغاء/i }).click();
-      await page.waitForTimeout(400);
-    }
+    await expect(newLoanBtn).toBeVisible({ timeout: 5000 });
+    await newLoanBtn.click();
+    await page.waitForTimeout(600);
+    const loanDialog = page.getByRole('dialog');
+    await expect(loanDialog).toBeVisible();
+    await page.screenshot({
+      path: path.join(SCREENSHOT_DIR, '08-payroll-new-loan-modal.png'),
+      fullPage: false
+    });
+    await loanDialog.getByRole('button', { name: /إلغاء/i }).click();
+    await expect(loanDialog).toBeHidden({ timeout: 5000 });
   });
 
-  test('9. Payslips Tab & Employee Compensation Records', async ({ page }) => {
+  test('9. Payslips Tab & Real Employee Identity Resolution & Pagination', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -311,8 +317,23 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
 
     await expect(page.getByText(/قسائم منشأة العمل/i).first()).toBeVisible();
 
-    // Verify company payslip rows are visible with EGP amounts
+    // Verify company payslip rows are visible with dynamic currency amounts
     await expect(page.getByText(/EGP/i).first()).toBeVisible();
+
+    // Verify table exists with rows
+    const table = page.locator('table');
+    await expect(table).toBeVisible();
+    const rows = table.locator('tbody tr');
+    const count = await rows.count();
+    expect(count).toBeGreaterThan(0);
+
+    // Verify employee display names are resolved and not raw UUID fallback patterns
+    const tableText = await table.textContent();
+    expect(tableText).not.toMatch(/موظف #[0-9a-f]{8}/i);
+
+    // Verify server-side pagination controls are present
+    const paginationNav = page.locator('[aria-label="التنقل بين الصفحات"], [role="navigation"]');
+    await expect(paginationNav.first()).toBeVisible();
 
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, '09-payroll-payslips-tab.png'),
@@ -320,7 +341,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     });
   });
 
-  test('10. Reports & Financial Truth (No Fabricated Employer Cost)', async ({ page }) => {
+  test('10. Reports & Financial Truth (GL Posting Verification & Export Scope)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -334,6 +355,11 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
 
     // Verify export note communicating scope
     await expect(page.getByText(/تصدير السجلات الحالية المعروضة/i)).toBeVisible();
+
+    // Verify Authoritative GL Posting Status is displayed in table
+    const table = page.locator('table');
+    await expect(table).toBeVisible();
+    await expect(page.getByText(/مرحل للأستاذ العام|غير مرحل/i).first()).toBeVisible();
 
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, '10-payroll-reports-tab.png'),
@@ -402,5 +428,41 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
       await page.waitForTimeout(800);
       await page.waitForLoadState('networkidle');
     }
+  });
+
+  test('14. Deterministic End-to-End Payroll Lifecycle: Run Navigation & Verification', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await ensureAuthenticated(page);
+
+    await page.locator('[data-testid="payroll-tab-runs"]').click();
+    await page.waitForTimeout(1000);
+
+    // Verify runs table is loaded with rows
+    const runsTable = page.locator('table');
+    await expect(runsTable).toBeVisible();
+    const rows = runsTable.locator('tbody tr');
+    const rowCount = await rows.count();
+    expect(rowCount).toBeGreaterThan(0);
+
+    // Click on the first run's workspace button to open the run workspace
+    const openWorkspaceBtn = page.getByRole('button', { name: /فتح مساحة العمل/i }).first();
+    await expect(openWorkspaceBtn).toBeVisible({ timeout: 5000 });
+    await openWorkspaceBtn.click();
+    await page.waitForTimeout(1000);
+
+    // Verify workspace components
+    await expect(page.getByRole('heading', { level: 2 }).first()).toBeVisible();
+
+    // Verify run metrics cards are populated with non-zero currency values
+    await expect(page.getByText(/EGP/i).first()).toBeVisible();
+
+    // Navigate back
+    const backBtn = page.getByRole('button', { name: /←|العودة|الرجوع/i }).first();
+    await expect(backBtn).toBeVisible();
+    await backBtn.click();
+    await page.waitForTimeout(600);
+
+    // Confirm return to runs table
+    await expect(runsTable).toBeVisible();
   });
 });

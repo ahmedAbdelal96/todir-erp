@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
 import {
   useSelfPayslips,
   usePayslips
 } from "../../hooks/use-payroll-queries.ts";
+import { payrollApi } from "../../services/payroll-api.ts";
 import { PayrollStatusBadge } from "../../components/payroll-status-badge.tsx";
 import { PayslipViewModal } from "./payslip-view-modal.tsx";
 import { useEmployees } from "../../../hr/public.ts";
@@ -23,16 +25,26 @@ export function PayslipsTab({
   const isAr = i18n.language.startsWith("ar");
   const [viewMode, setViewMode] = useState<"self" | "company">("company");
   const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Self payslips query
-  const selfQuery = useSelfPayslips(legalEntityId, { pageSize: 50 });
+  const selfQuery = useSelfPayslips(legalEntityId, {
+    page,
+    pageSize
+  });
 
   // Company payslips query
-  const companyQuery = usePayslips(legalEntityId, { pageSize: 50 });
+  const companyQuery = usePayslips(legalEntityId, {
+    page,
+    pageSize,
+    search: searchTerm.trim() || undefined
+  });
 
-  // Employees for label resolution
+  // Employees for label resolution fallback
   const employeesListQuery = useEmployees(legalEntityId ? { legalEntityId } : undefined);
   const employeesList = employeesListQuery.data?.items ?? [];
 
@@ -43,20 +55,57 @@ export function PayslipsTab({
 
   const isLoading = viewMode === "self" ? selfQuery.isLoading : companyQuery.isLoading;
 
-  const filtered = displayItems.filter((item: Payslip) => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    const empLabel = resolveEmployeeDisplay(item.employmentId, employeesList, isAr).toLowerCase();
-    return (
-      empLabel.includes(term) ||
-      item.employmentId.toLowerCase().includes(term) ||
-      item.payslipNumber.toLowerCase().includes(term)
-    );
-  });
-
   const openPayslip = (item: Payslip) => {
     setSelectedPayslip(item);
     setModalOpen(true);
+  };
+
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      const fullList = await payrollApi.listPayslips(legalEntityId, {
+        page: 1,
+        pageSize: 500,
+        search: searchTerm.trim() || undefined
+      });
+      const rowsToExport = fullList ?? [];
+      const headers = [
+        "PayslipNumber",
+        "EmployeeName",
+        "EmploymentNumber",
+        "EmploymentId",
+        "Gross",
+        "Deductions",
+        "NetPay",
+        "EmployerCost",
+        "Status",
+        "FinalizedAt"
+      ];
+      const rows = rowsToExport.map((p) => [
+        `"${p.payslipNumber}"`,
+        `"${(p.employeeName || resolveEmployeeDisplay(p.employmentId, employeesList, isAr)).replace(/"/g, '""')}"`,
+        `"${p.employmentNumber ?? ""}"`,
+        `"${p.employmentId}"`,
+        p.gross,
+        p.deductions,
+        p.net,
+        p.employerCost,
+        p.status,
+        p.finalizedAt ?? ""
+      ]);
+      const csvContent =
+        "data:text/csv;charset=utf-8,\uFEFF" +
+        [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `payroll_payslips_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -98,7 +147,10 @@ export function PayslipsTab({
         >
           <button
             type="button"
-            onClick={() => setViewMode("self")}
+            onClick={() => {
+              setViewMode("self");
+              setPage(1);
+            }}
             style={{
               padding: "0.375rem 0.875rem",
               borderRadius: "var(--radius-sm)",
@@ -116,7 +168,10 @@ export function PayslipsTab({
           </button>
           <button
             type="button"
-            onClick={() => setViewMode("company")}
+            onClick={() => {
+              setViewMode("company");
+              setPage(1);
+            }}
             style={{
               padding: "0.375rem 0.875rem",
               borderRadius: "var(--radius-sm)",
@@ -141,6 +196,7 @@ export function PayslipsTab({
           display: "flex",
           gap: "1rem",
           alignItems: "center",
+          justifyContent: "space-between",
           flexWrap: "wrap",
           padding: "1rem 1.25rem",
           background: "var(--color-surface-card)",
@@ -148,14 +204,32 @@ export function PayslipsTab({
           border: "1px solid var(--color-border-default)"
         }}
       >
-        <div style={{ flex: 1, minWidth: "240px" }}>
+        <div style={{ flex: 1, minWidth: "240px", maxWidth: "450px" }}>
           <TextField
             label={t("common.search")}
             value={searchTerm}
-            onChange={setSearchTerm}
+            onChange={(val) => {
+              setSearchTerm(val);
+              setPage(1);
+            }}
             placeholder={t("payslips.searchPlaceholder")}
           />
         </div>
+
+        <Button
+          variant="secondary"
+          size="compact"
+          onPress={handleExportCsv}
+          isDisabled={isExporting || displayItems.length === 0}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          {isExporting ? t("common.exporting", "جارٍ التصدير...") : t("reports.exportCsv")}
+        </Button>
       </div>
 
       {/* Payslips Table */}
@@ -173,8 +247,8 @@ export function PayslipsTab({
             <thead>
               <tr
                 style={{
+                  borderBottom: "1px solid var(--color-border-subtle)",
                   background: "var(--color-surface-subtle)",
-                  borderBottom: "1px solid var(--color-border-default)",
                   textAlign: "start"
                 }}
               >
@@ -194,7 +268,7 @@ export function PayslipsTab({
                     {t("common.loading")}
                   </td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : displayItems.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ padding: "3rem 2rem", textAlign: "center" }}>
                     <p style={{ margin: 0, fontWeight: 600, color: "var(--color-content-primary)" }}>
@@ -206,7 +280,7 @@ export function PayslipsTab({
                   </td>
                 </tr>
               ) : (
-                filtered.map((item: Payslip) => (
+                displayItems.map((item: Payslip) => (
                   <tr
                     key={item.id}
                     style={{
@@ -216,7 +290,7 @@ export function PayslipsTab({
                   >
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <div style={{ fontWeight: 600, color: "var(--color-content-primary)" }}>
-                        {resolveEmployeeDisplay(item.employmentId, employeesList, isAr)}
+                        {resolveEmployeeDisplay(item, employeesList, isAr)}
                       </div>
                       <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
                         #{item.payslipNumber}
@@ -256,6 +330,33 @@ export function PayslipsTab({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Server-Side Pagination Bar */}
+        <div
+          style={{
+            padding: "0.75rem 1.25rem",
+            borderTop: "1px solid var(--color-border-default)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.75rem"
+          }}
+        >
+          <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+            {t("payslips.totalRecords", { count: displayItems.length, defaultValue: `السجلات المعروضة: ${displayItems.length}` })}
+          </span>
+          <Pagination
+            page={page}
+            totalPages={displayItems.length === pageSize ? page + 1 : page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+          />
         </div>
       </div>
 
