@@ -5,7 +5,7 @@ public sealed record CreatePayrollPeriodRequest(Guid PayrollGroupId, DateOnly Pe
 public sealed record CreatePayrollRunRequest(Guid PayrollGroupId, Guid? PeriodId, string RunType = "Regular", Guid? SourceRunId = null, Guid? SourcePeriodId = null, Guid? SettlementEmploymentId = null, DateOnly? EffectiveDate = null, string? ReasonCode = null, string? Notes = null);
 public sealed record CreatePayrollInputRequest(Guid LegalEntityId, Guid EmploymentId, Guid ComponentId, DateOnly InputDate, decimal Amount, string CurrencyCode, string Source, string? IdempotencyKey = null, string? Notes = null);
 public sealed record CreateReceivableRequest(Guid LegalEntityId, Guid EmploymentId, string Type, decimal Principal, string CurrencyCode, decimal? InstallmentAmount = null, int? InstallmentCount = null);
-public sealed record PayrollGroupDto(Guid Id, Guid LegalEntityId, string Code, string Name, string Frequency, short PayDay, string CurrencyCode, string Status);
+public sealed record PayrollGroupDto(Guid Id, Guid LegalEntityId, string Code, string Name, string Frequency, short PayDay, string CurrencyCode, string Status, string HolidayAdjustment = "NextWorkingDay");
 public sealed record PayrollPeriodDto(Guid Id, Guid PayrollGroupId, DateOnly PeriodStart, DateOnly PeriodEnd, DateOnly InputCutoff, DateOnly PlannedPayDate, string Status);
 public sealed record PayrollRunDto(Guid Id, Guid PayrollGroupId, Guid? PeriodId, string RunNumber, string RunType, string CalculationState, string FinalizationState, string PaymentState, decimal TotalGross, decimal TotalDeductions, decimal TotalNet, int EmployeeCount);
 public sealed record PayrollEmployeeDto(Guid EmploymentId, string Status, decimal Gross, decimal Deductions, decimal Net, decimal EmployerCost, string? ExceptionCode);

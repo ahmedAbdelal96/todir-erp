@@ -8,6 +8,7 @@ public interface IHumanResourcesPayrollCapability
     Task<HrPayrollPeriodSnapshotContract> CreatePeriodSnapshotAsync(TenantId tenantId, HrPayrollPeriodSnapshotRequest request, CancellationToken cancellationToken = default);
     Task<HrAttendancePeriodLockContract> LockAttendancePeriodAsync(TenantId tenantId, HrAttendancePeriodLockRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<HrPayrollAttendanceCorrectionDelta>> ListAttendanceCorrectionDeltasAsync(TenantId tenantId, Guid snapshotId, CancellationToken cancellationToken = default);
+    Task<Guid?> GetSelfEmploymentAsync(TenantId tenantId, Guid membershipId, Guid legalEntityId, CancellationToken cancellationToken = default);
 }
 
 public sealed record HrPayrollPeriodSnapshotRequest(Guid LegalEntityId, DateOnly PeriodStart, DateOnly PeriodEnd, DateTimeOffset CutoffAt);

@@ -251,6 +251,15 @@ public sealed class PayrollIntegrationRepository(ITransactionCoordinator transac
         }, cancellationToken);
     }
 
+    public Task<Guid?> GetSelfEmploymentAsync(TenantId tenantId, Guid membershipId, Guid legalEntityId, CancellationToken cancellationToken = default) =>
+        transactions.ExecuteAsync<Guid?>(tenantId, async (context, token) =>
+        {
+            await using var command = new NpgsqlCommand("select em.id from business_hr.employee e join business_hr.employment em on em.tenant_id=e.tenant_id and em.employee_id=e.id where e.tenant_id=$1 and e.membership_id=$2 and e.status<>'Archived' and em.legal_entity_id=$3 and em.status in ('Active','Suspended','NoticePeriod') order by em.start_date desc,em.id limit 1", context.Connection, context.Transaction);
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(membershipId); command.Parameters.AddWithValue(legalEntityId);
+            var value = await command.ExecuteScalarAsync(token);
+            return value is Guid id ? id : null;
+        }, cancellationToken);
+
     private static HrPayrollPeriodSnapshotContract ReadSnapshot(NpgsqlDataReader reader)
     {
         var employments = JsonSerializer.Deserialize<HrPayrollEmploymentInput[]>(reader.GetString(8), JsonOptions) ?? [];

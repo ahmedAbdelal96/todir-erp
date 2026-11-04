@@ -14,6 +14,7 @@ public sealed class PayrollService(PayrollRepository repository, IHumanResources
     public Task<IReadOnlyList<PayrollRunDto>> ListRunsAsync(TenantId tenant, Guid entity, int page, int size, CancellationToken ct) => repository.ListRunsAsync(tenant, entity, page, size, ct);
     public Task<PayrollRunDto> CreateRunAsync(TenantId tenant, Guid entity, CreatePayrollRunRequest request, CancellationToken ct) => repository.CreateRunAsync(tenant, entity, request, ct);
     public Task<PayrollRunDto?> GetRunAsync(TenantId tenant, Guid entity, Guid run, CancellationToken ct) => repository.GetRunAsync(tenant, entity, run, ct);
+    public Task<PayrollRunDto> ApproveRunAsync(TenantId tenant, Guid entity, Guid run, CancellationToken ct) => repository.ApproveRunAsync(tenant, entity, run, ct);
     public async Task<PayrollSnapshotDto> CaptureInputsAsync(TenantId tenant, Guid entity, Guid run, CancellationToken ct)
     {
         var context = await repository.GetRunContextAsync(tenant, entity, run, ct) ?? throw new PayrollRepositoryException("payroll.run_not_found");
@@ -27,6 +28,11 @@ public sealed class PayrollService(PayrollRepository repository, IHumanResources
     public Task CalculateRunAsync(TenantId tenant, Guid entity, Guid run, CancellationToken ct) => repository.CalculateRunAsync(tenant, entity, run, ct);
     public Task FinalizeRunAsync(TenantId tenant, Guid entity, Guid run, CancellationToken ct) => repository.FinalizeRunAsync(tenant, entity, run, ct);
     public Task<IReadOnlyList<PayslipDto>> ListPayslipsAsync(TenantId tenant, Guid entity, CancellationToken ct) => repository.ListPayslipsAsync(tenant, entity, ct);
+    public async Task<IReadOnlyList<PayslipDto>> ListSelfPayslipsAsync(TenantId tenant, Guid membershipId, Guid entity, CancellationToken ct)
+    {
+        var employmentId = await hrPayroll.GetSelfEmploymentAsync(tenant, membershipId, entity, ct);
+        return employmentId is null ? [] : await repository.ListSelfPayslipsAsync(tenant, entity, employmentId.Value, ct);
+    }
     public Task<PayrollInputDto> CreateInputAsync(TenantId tenant, CreatePayrollInputRequest request, CancellationToken ct) => repository.CreateInputAsync(tenant, request, ct);
     public Task<PayrollInputDto> ApproveInputAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ApproveInputAsync(tenant, entity, id, ct);
     public Task<PayrollInputDto?> GetInputAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetInputAsync(tenant, entity, id, ct);
