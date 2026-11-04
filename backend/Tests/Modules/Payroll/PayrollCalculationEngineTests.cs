@@ -64,4 +64,21 @@ public sealed class PayrollCalculationEngineTests
 
         Assert.Equal("payroll.negative_net_pay", exception.Code);
     }
+
+    [Fact]
+    public void SupplementalRunWithZeroBaseCannotDuplicateRegularSalary()
+    {
+        var rules = new[]
+        {
+            new PayrollComponentRule("BONUS", "Earning", FixedAmount: 2500m),
+            new PayrollComponentRule("HOUSING", "Earning", PercentageOf: "BASE", Percentage: 25m)
+        };
+
+        var result = PayrollCalculationEngine.Calculate(
+            new PayrollCalculationInput(0m, new Dictionary<string, decimal>(), new Dictionary<string, decimal>()),
+            rules);
+
+        Assert.Equal(2500m, result.Gross);
+        Assert.Contains(result.Lines, line => line.Code == "HOUSING" && line.Amount == 0m);
+    }
 }

@@ -24,5 +24,5 @@ public sealed record PayrollImportRowRequest(int RowNumber, string RowKey, decim
 public sealed record PayrollImportRequest(string ImportType, string SourceSystem, string BatchReference, string FileSha256, IReadOnlyList<PayrollImportRowRequest> Rows);
 public sealed record PayrollImportRowResult(int RowNumber, string RowKey, string Status, string? IssueCode, Guid? InputId);
 public sealed record PayrollImportResult(Guid BatchId, string Status, int RowCount, IReadOnlyList<PayrollImportRowResult> Rows);
-public sealed record PayrollOpeningBalanceRequest(Guid EmploymentId, string BalanceType, decimal Amount, string CurrencyCode, DateOnly AsOfDate, string SourceReference);
+public sealed record PayrollOpeningBalanceRequest(Guid EmploymentId, string BalanceType, decimal Amount, string CurrencyCode, DateOnly AsOfDate, string SourceReference, decimal? InstallmentAmount = null, int? InstallmentCount = null);
 public sealed record PayrollOpeningBalanceDto(Guid Id, Guid EmploymentId, string BalanceType, decimal Amount, string CurrencyCode, DateOnly AsOfDate, string SourceReference, string Status);

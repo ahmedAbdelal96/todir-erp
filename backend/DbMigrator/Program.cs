@@ -565,6 +565,7 @@ static int MigrationPriority(string fileName) => fileName switch
     // Calculation evidence adds columns to the statutory settings table; keep the
     // settings table migration ahead of it for fresh database bootstrap.
     _ when fileName.Equals("payroll-forward-fix-statutory-settings.sql", StringComparison.Ordinal) => 4,
+    _ when fileName.Equals("payroll-forward-fix-opening-balance-loan-schedule.sql", StringComparison.Ordinal) => 6,
     _ => 5
 };
 

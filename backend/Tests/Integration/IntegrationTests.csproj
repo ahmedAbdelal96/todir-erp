@@ -16,6 +16,7 @@
     <ProjectReference Include="../../Modules/Sample/Sample.csproj" />
     <ProjectReference Include="../../Modules/Accounting/Accounting.csproj" />
     <ProjectReference Include="../../Modules/Hr/Hr.csproj" />
+    <ProjectReference Include="../../Modules/Payroll/Payroll.csproj" />
     <ProjectReference Include="../../Modules/Ledger/Ledger.csproj" />
     <ProjectReference Include="../../Api/Api.csproj" />
   </ItemGroup>
