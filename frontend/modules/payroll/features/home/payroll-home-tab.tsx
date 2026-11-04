@@ -4,7 +4,7 @@ import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { PayrollKpiCard } from "../../components/payroll-kpi-card.tsx";
 import { PayrollStatusBadge } from "../../components/payroll-status-badge.tsx";
-import { formatMoneyAmount } from "../../utils/payroll-formatters.ts";
+import { formatMoneyAmount, formatRunType } from "../../utils/payroll-formatters.ts";
 import { usePayrollGroups, usePayrollRuns, usePayrollReport, usePayrollStatutorySettings } from "../../hooks/use-payroll-queries.ts";
 import { NewPayrollRunModal } from "../runs/new-payroll-run-modal.tsx";
 import { NewPayrollInputModal } from "../inputs/new-payroll-input-modal.tsx";
@@ -18,7 +18,8 @@ export interface PayrollHomeTabProps {
 }
 
 export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: PayrollHomeTabProps): React.JSX.Element {
-  const { t } = useTranslation("payroll");
+  const { t, i18n } = useTranslation("payroll");
+  const isAr = i18n.language.startsWith("ar");
 
   const [isNewRunOpen, setIsNewRunOpen] = useState(false);
   const [isNewInputOpen, setIsNewInputOpen] = useState(false);
@@ -89,7 +90,7 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
               )}
             </bdi>
           }
-          subtitle={latestRun ? latestRun.runNumber : t("reports.totalNetPayroll")}
+          subtitle={t("home.kpiNetSubtitle")}
           tone="primary"
         />
 
@@ -103,7 +104,7 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
               )}
             </bdi>
           }
-          subtitle={t("reports.gross")}
+          subtitle={t("home.kpiGrossSubtitle")}
           tone="default"
         />
 
@@ -120,14 +121,14 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
               )}
             </bdi>
           }
-          subtitle={t("reports.totalDeductions")}
+          subtitle={t("home.kpiDeductionsSubtitle")}
           tone="warning"
         />
 
         <PayrollKpiCard
           title={t("reports.employees")}
           value={latestRun ? latestRun.employeeCount : groups.length > 0 ? "80" : "0"}
-          subtitle={t("reports.employees")}
+          subtitle={t("home.kpiEmployeesSubtitle")}
           tone="success"
         />
       </div>
@@ -194,7 +195,7 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
                 {runs.map((r) => (
                   <tr key={r.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 600, color: "var(--color-brand-primary, #102a43)" }}>
-                      {r.runType}
+                      {formatRunType(r.runType, isAr)}
                     </td>
                     <td style={{ padding: "0.875rem 1rem" }}>{r.employeeCount}</td>
                     <td style={{ padding: "0.875rem 1rem" }}><bdi>{(r.totalGross ?? 0).toLocaleString()} EGP</bdi></td>

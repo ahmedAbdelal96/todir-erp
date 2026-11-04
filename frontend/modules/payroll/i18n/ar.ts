@@ -11,7 +11,7 @@ export const payrollAr = {
     loans: "السلف والقروض",
     payslips: "قسائم الرواتب",
     reports: "التقارير والمطابقة",
-    setup: "إعدادات المجموعات والفترات",
+    setup: "المجموعات والفترات",
     settings: "الضرائب والتأمينات",
     openingBalances: "الأرصدة الافتتاحية"
   },
@@ -39,7 +39,7 @@ export const payrollAr = {
     runType: "نوع الدورة"
   },
   statutoryBanner: {
-    title: "نظام الضرائب والتأمينات محدد حالياً كـ NotManaged (غير مدار آلياً)",
+    title: "نظام الضرائب والتأمينات: وضع غير مدار (تسجيل مباشر)",
     description: "المحددات القانونية لا تخصم ضرائب أو تأمينات تلقائياً. بإمكانك التبديل إلى الوضع اليدوي أو التلقائي من تبويب الضرائب والتأمينات وفق سياسات المنشأة.",
     manageSettings: "ضبط الإعدادات القانونية"
   },
@@ -79,7 +79,11 @@ export const payrollAr = {
     statutoryStatusCard: "المحددات القانونية",
     exceptionsCard: "الملاحظات والاستثناءات",
     totalNetCard: "صافي الرواتب المتوقع",
-    statutoryBannerTitle: "نظام الضرائب والتأمينات محدد حالياً كـ NotManaged (غير مدار آلياً)",
+    kpiNetSubtitle: "المبلغ الفعلي المستحق للتحويل البنكي",
+    kpiGrossSubtitle: "الراتب الأساسي بالإضافة للبدلات والحوافز",
+    kpiDeductionsSubtitle: "التأمينات، الضرائب، وأقساط السلف",
+    kpiEmployeesSubtitle: "إجمالي القوة العاملة المسجلة بالدورة",
+    statutoryBannerTitle: "نظام الضرائب والتأمينات: وضع غير مدار (تسجيل مباشر)",
     statutoryBannerDesc: "المحددات القانونية لا تخصم ضرائب أو تأمينات تلقائياً. بإمكانك التبديل إلى الوضع اليدوي أو التلقائي من تبويب الضرائب والتأمينات وفق سياسات المنشأة.",
     configureSettingsAction: "ضبط الإعدادات القانونية",
     quickActions: "إجراءات سريعة",
@@ -197,6 +201,7 @@ export const payrollAr = {
     employee: "الموظف",
     employeeRequired: "يرجى اختيار الموظف المستهدف",
     componentRequired: "يرجى تحديد بند الراتب",
+    selectComponentPlaceholder: "اختر بند الاستحقاق أو الاستقطاع...",
     targetEmployee: "الموظف المستهدف",
     selectEmployeePlaceholder: "اختر الموظف...",
     employeeNumber: "الرقم الوظيفي",

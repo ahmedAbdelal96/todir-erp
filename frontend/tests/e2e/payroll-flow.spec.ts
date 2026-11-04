@@ -84,7 +84,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     });
   });
 
-  test('2. Payroll Setup Tab & Creation Modals', async ({ page }) => {
+  test('2. Payroll Setup - Groups & Creation Modal', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -113,6 +113,14 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
       await dialog.getByRole('button', { name: /إلغاء/i }).click();
       await page.waitForTimeout(400);
     }
+  });
+
+  test('3. Payroll Setup - Periods & Date Defaults Modal', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await ensureAuthenticated(page);
+
+    await page.locator('[data-testid="payroll-tab-setup"]').click();
+    await page.waitForTimeout(800);
 
     // Open New Period Modal
     const newPeriodBtn = page.getByRole('button', { name: /إضافة فترة رواتب/i });
@@ -135,7 +143,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     }
   });
 
-  test('3. Setup Sub-Tabs (Components, Structures, Assignments)', async ({ page }) => {
+  test('4. Setup Sub-Tabs (Components, Structures, Assignments)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -169,7 +177,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     }
   });
 
-  test('4. Company Tax & Social Insurance Statutory Settings', async ({ page }) => {
+  test('5. Company Tax & Social Insurance Statutory Settings', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -187,7 +195,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     });
   });
 
-  test('5. Payroll Runs Tab & New Run Modal', async ({ page }) => {
+  test('6. Payroll Runs Tab & New Run Modal', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -213,7 +221,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     }
   });
 
-  test('6. Payroll Inputs & Bulk Import Dialog', async ({ page }) => {
+  test('7. Payroll Inputs & Bulk Import Dialog', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -272,7 +280,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     }
   });
 
-  test('7. Loans & Advances Tab & Creation Modal', async ({ page }) => {
+  test('8. Loans & Advances Tab & Creation Modal', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -294,21 +302,25 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     }
   });
 
-  test('8. Payslips & Employee Self-Service', async ({ page }) => {
+  test('9. Payslips Tab & Employee Compensation Records', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
     await page.locator('[data-testid="payroll-tab-payslips"]').click();
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(1000);
 
     await expect(page.getByText(/قسائم منشأة العمل/i).first()).toBeVisible();
+
+    // Verify company payslip rows are visible with EGP amounts
+    await expect(page.getByText(/EGP/i).first()).toBeVisible();
+
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, '09-payroll-payslips-tab.png'),
       fullPage: false
     });
   });
 
-  test('9. Reports & Financial Truth (No Fabricated Employer Cost)', async ({ page }) => {
+  test('10. Reports & Financial Truth (No Fabricated Employer Cost)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -329,7 +341,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     });
   });
 
-  test('10. Migration & Opening Balances Modal', async ({ page }) => {
+  test('11. Migration & Opening Balances Modal', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -350,7 +362,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     }
   });
 
-  test('11. Mobile Responsive Layout (390px Viewport)', async ({ page }) => {
+  test('12. Mobile Responsive Layout (390px Viewport)', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await ensureAuthenticated(page);
 
@@ -363,7 +375,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     });
   });
 
-  test('12. English LTR Parity & Formatting', async ({ page }) => {
+  test('13. English LTR Parity & Formatting', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 

@@ -20,7 +20,8 @@ export function PayslipViewModal({
   payslip,
   legalEntityId
 }: PayslipViewModalProps): React.JSX.Element | null {
-  const { t } = useTranslation("payroll");
+  const { t, i18n } = useTranslation("payroll");
+  const isAr = i18n.language.startsWith("ar");
   const employeesListQuery = useEmployees(legalEntityId ? { legalEntityId } : undefined);
   const employeesList = employeesListQuery.data?.items ?? [];
 
@@ -30,7 +31,7 @@ export function PayslipViewModal({
     window.print();
   };
 
-  const employeeLabel = resolveEmployeeLabel(payslip.employmentId, employeesList);
+  const employeeLabel = resolveEmployeeLabel(payslip.employmentId, employeesList, isAr);
 
   return (
     <Dialog

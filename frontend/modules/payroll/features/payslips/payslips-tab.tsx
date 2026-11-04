@@ -8,6 +8,8 @@ import {
 } from "../../hooks/use-payroll-queries.ts";
 import { PayrollStatusBadge } from "../../components/payroll-status-badge.tsx";
 import { PayslipViewModal } from "./payslip-view-modal.tsx";
+import { useEmployees } from "../../../hr/public.ts";
+import { formatMoneyAmount, resolveEmployeeDisplay } from "../../utils/payroll-formatters.ts";
 import type { Payslip } from "../../types.ts";
 
 export interface PayslipsTabProps {
@@ -17,8 +19,9 @@ export interface PayslipsTabProps {
 export function PayslipsTab({
   legalEntityId
 }: PayslipsTabProps): React.JSX.Element {
-  const { t } = useTranslation("payroll");
-  const [viewMode, setViewMode] = useState<"self" | "company">("self");
+  const { t, i18n } = useTranslation("payroll");
+  const isAr = i18n.language.startsWith("ar");
+  const [viewMode, setViewMode] = useState<"self" | "company">("company");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -28,6 +31,10 @@ export function PayslipsTab({
 
   // Company payslips query
   const companyQuery = usePayslips(legalEntityId, { pageSize: 50 });
+
+  // Employees for label resolution
+  const employeesListQuery = useEmployees(legalEntityId ? { legalEntityId } : undefined);
+  const employeesList = employeesListQuery.data?.items ?? [];
 
   const displayItems: readonly Payslip[] =
     viewMode === "self"
@@ -39,7 +46,9 @@ export function PayslipsTab({
   const filtered = displayItems.filter((item: Payslip) => {
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
+    const empLabel = resolveEmployeeDisplay(item.employmentId, employeesList, isAr).toLowerCase();
     return (
+      empLabel.includes(term) ||
       item.employmentId.toLowerCase().includes(term) ||
       item.payslipNumber.toLowerCase().includes(term)
     );
@@ -207,23 +216,23 @@ export function PayslipsTab({
                   >
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <div style={{ fontWeight: 600, color: "var(--color-content-primary)" }}>
-                        {item.employmentId}
+                        {resolveEmployeeDisplay(item.employmentId, employeesList, isAr)}
                       </div>
                       <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
                         #{item.payslipNumber}
                       </div>
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
-                      <bdi>{item.gross.toLocaleString()} EGP</bdi>
+                      <bdi>{formatMoneyAmount(item.gross, "EGP")}</bdi>
                     </td>
                     <td style={{ padding: "0.75rem 1rem", color: "var(--color-status-danger)" }}>
-                      <bdi>-{item.deductions.toLocaleString()} EGP</bdi>
+                      <bdi>{formatMoneyAmount(item.deductions > 0 ? -item.deductions : item.deductions, "EGP")}</bdi>
                     </td>
                     <td style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "var(--color-status-success)" }}>
-                      <bdi>{item.net.toLocaleString()} EGP</bdi>
+                      <bdi>{formatMoneyAmount(item.net, "EGP")}</bdi>
                     </td>
                     <td style={{ padding: "0.75rem 1rem", color: "var(--color-content-secondary)" }}>
-                      <bdi>{item.employerCost.toLocaleString()} EGP</bdi>
+                      <bdi>{formatMoneyAmount(item.employerCost, "EGP")}</bdi>
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <PayrollStatusBadge status={item.status} />

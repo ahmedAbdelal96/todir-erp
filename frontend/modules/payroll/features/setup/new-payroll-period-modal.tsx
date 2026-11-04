@@ -14,6 +14,23 @@ export interface NewPayrollPeriodModalProps {
   readonly defaultGroupId?: string | undefined;
 }
 
+const getDefaultPeriodDates = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const monthStr = pad(month + 1);
+  const lastDay = new Date(year, month + 1, 0).getDate();
+
+  return {
+    periodStart: `${year}-${monthStr}-01`,
+    periodEnd: `${year}-${monthStr}-${pad(lastDay)}`,
+    inputCutoff: `${year}-${monthStr}-23`,
+    calculationDate: `${year}-${monthStr}-25`,
+    plannedPayDate: `${year}-${monthStr}-28`
+  };
+};
+
 export function NewPayrollPeriodModal({
   isOpen,
   onClose,
@@ -21,24 +38,26 @@ export function NewPayrollPeriodModal({
   defaultGroupId
 }: NewPayrollPeriodModalProps): React.JSX.Element {
   const { t } = useTranslation("payroll");
+  const defaults = getDefaultPeriodDates();
 
   const [groupId, setGroupId] = useState(defaultGroupId ?? "");
-  const [periodStart, setPeriodStart] = useState("");
-  const [periodEnd, setPeriodEnd] = useState("");
-  const [inputCutoff, setInputCutoff] = useState("");
-  const [calculationDate, setCalculationDate] = useState("");
-  const [plannedPayDate, setPlannedPayDate] = useState("");
+  const [periodStart, setPeriodStart] = useState(defaults.periodStart);
+  const [periodEnd, setPeriodEnd] = useState(defaults.periodEnd);
+  const [inputCutoff, setInputCutoff] = useState(defaults.inputCutoff);
+  const [calculationDate, setCalculationDate] = useState(defaults.calculationDate);
+  const [plannedPayDate, setPlannedPayDate] = useState(defaults.plannedPayDate);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const createMutation = useCreatePayrollPeriodMutation(legalEntityId, groupId);
 
   const reset = () => {
+    const freshDefaults = getDefaultPeriodDates();
     setGroupId(defaultGroupId ?? "");
-    setPeriodStart("");
-    setPeriodEnd("");
-    setInputCutoff("");
-    setCalculationDate("");
-    setPlannedPayDate("");
+    setPeriodStart(freshDefaults.periodStart);
+    setPeriodEnd(freshDefaults.periodEnd);
+    setInputCutoff(freshDefaults.inputCutoff);
+    setCalculationDate(freshDefaults.calculationDate);
+    setPlannedPayDate(freshDefaults.plannedPayDate);
     setErrorMessage(null);
   };
 

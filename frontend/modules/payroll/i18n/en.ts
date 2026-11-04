@@ -39,7 +39,7 @@ export const payrollEn = {
     runType: "Run Type"
   },
   statutoryBanner: {
-    title: "Statutory Calculation Mode is currently NotManaged",
+    title: "Tax & Social Insurance: Not Managed Mode (Direct Entry)",
     description: "Statutory settings do not automatically deduct income tax or social insurance. You can switch to Manual or Automatic mode in the Tax & Insurance tab according to company policy.",
     manageSettings: "Configure Statutory Settings"
   },
@@ -79,7 +79,11 @@ export const payrollEn = {
     statutoryStatusCard: "Statutory Policy",
     exceptionsCard: "Alerts & Exceptions",
     totalNetCard: "Projected Net Payroll",
-    statutoryBannerTitle: "Statutory Calculation Mode is currently NotManaged",
+    kpiNetSubtitle: "Net payable for bank transfer",
+    kpiGrossSubtitle: "Base salary plus earnings & allowances",
+    kpiDeductionsSubtitle: "Taxes, social insurance & loan deductions",
+    kpiEmployeesSubtitle: "Total enrolled workforce in payroll run",
+    statutoryBannerTitle: "Tax & Social Insurance: Not Managed Mode (Direct Entry)",
     statutoryBannerDesc: "Statutory settings do not automatically deduct income tax or social insurance. You can switch to Manual or Automatic mode in the Tax & Insurance tab according to company policy.",
     configureSettingsAction: "Configure Statutory Settings",
     quickActions: "Quick Actions",
@@ -197,6 +201,7 @@ export const payrollEn = {
     employee: "Employee",
     employeeRequired: "Please select a target employee",
     componentRequired: "Please select a payroll component",
+    selectComponentPlaceholder: "Select earning or deduction component...",
     targetEmployee: "Target Employee",
     selectEmployeePlaceholder: "Select employee...",
     employeeNumber: "Employee #",

@@ -4,6 +4,12 @@ import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
 import {
+  formatComponentCategory,
+  formatInputMode,
+  formatComponentDirection,
+  formatLifecycleStatus
+} from "../../utils/payroll-formatters.ts";
+import {
   usePayrollGroups,
   usePayrollPeriods,
   usePayrollComponents,
@@ -19,7 +25,8 @@ export interface PayrollSetupTabProps {
 }
 
 export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.JSX.Element {
-  const { t } = useTranslation("payroll");
+  const { t, i18n } = useTranslation("payroll");
+  const isAr = i18n.language.startsWith("ar");
 
   const [activeSubTab, setActiveSubTab] = useState<"groups" | "components" | "structures" | "assignments">("groups");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -212,7 +219,7 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
                           <td style={{ padding: "0.875rem 1rem" }}>
                             <StatusBadge
                               status={p.status === "Open" ? "info" : p.status === "Finalized" ? "success" : "neutral"}
-                              label={p.status}
+                              label={formatLifecycleStatus(p.status, isAr)}
                             />
                           </td>
                         </tr>
@@ -254,15 +261,15 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
                   <tr key={c.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 600, fontFamily: "var(--font-mono)", fontSize: "0.8125rem" }}>{c.code}</td>
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 600 }}>{c.name}</td>
-                    <td style={{ padding: "0.875rem 1rem" }}>{c.category}</td>
+                    <td style={{ padding: "0.875rem 1rem" }}>{formatComponentCategory(c.category, isAr)}</td>
                     <td style={{ padding: "0.875rem 1rem" }}>
                       <span style={{ color: c.direction === "Credit" ? "var(--color-status-success)" : c.direction === "Debit" ? "var(--color-status-danger)" : "var(--color-content-muted)", fontWeight: 600 }}>
-                        {c.direction === "Credit" ? "+ استحقاق" : c.direction === "Debit" ? "- استقطاع" : "إحصائي"}
+                        {formatComponentDirection(c.direction, isAr)}
                       </span>
                     </td>
-                    <td style={{ padding: "0.875rem 1rem" }}>{c.inputMode}</td>
+                    <td style={{ padding: "0.875rem 1rem" }}>{formatInputMode(c.inputMode, isAr)}</td>
                     <td style={{ padding: "0.875rem 1rem" }}>
-                      <StatusBadge status={c.status === "Active" ? "success" : "neutral"} label={c.status} />
+                      <StatusBadge status={c.status === "Active" ? "success" : "neutral"} label={formatLifecycleStatus(c.status, isAr)} />
                     </td>
                   </tr>
                 ))}
@@ -300,7 +307,7 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 600 }}>{s.name}</td>
                     <td style={{ padding: "0.875rem 1rem" }}>{s.componentsCount ? `${s.componentsCount} بند` : "—"}</td>
                     <td style={{ padding: "0.875rem 1rem" }}>
-                      <StatusBadge status={s.status === "Active" ? "success" : "neutral"} label={s.status} />
+                      <StatusBadge status={s.status === "Active" ? "success" : "neutral"} label={formatLifecycleStatus(s.status, isAr)} />
                     </td>
                   </tr>
                 ))}

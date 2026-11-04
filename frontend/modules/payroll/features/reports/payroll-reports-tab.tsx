@@ -5,7 +5,7 @@ import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Select } from "../../../../components/primitives/select.tsx";
 import { usePayrollReport } from "../../hooks/use-payroll-queries.ts";
 import { PayrollStatusBadge } from "../../components/payroll-status-badge.tsx";
-import { formatMoneyAmount } from "../../utils/payroll-formatters.ts";
+import { formatMoneyAmount, formatRunType } from "../../utils/payroll-formatters.ts";
 import type { PayrollReportItem } from "../../types.ts";
 
 export interface PayrollReportsTabProps {
@@ -15,7 +15,8 @@ export interface PayrollReportsTabProps {
 export function PayrollReportsTab({
   legalEntityId
 }: PayrollReportsTabProps): React.JSX.Element {
-  const { t } = useTranslation("payroll");
+  const { t, i18n } = useTranslation("payroll");
+  const isAr = i18n.language.startsWith("ar");
   const [runTypeFilter, setRunTypeFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -303,7 +304,7 @@ export function PayrollReportsTab({
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <span style={{ padding: "0.2rem 0.5rem", borderRadius: "var(--radius-sm)", background: "var(--color-surface-subtle)", fontSize: "0.75rem", fontWeight: 600 }}>
-                        {r.runType}
+                        {formatRunType(r.runType, isAr)}
                       </span>
                     </td>
                     <td style={{ padding: "0.75rem 1rem", color: "var(--color-content-secondary)" }}>
