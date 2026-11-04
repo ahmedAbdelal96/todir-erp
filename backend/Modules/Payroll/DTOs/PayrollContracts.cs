@@ -3,7 +3,7 @@ namespace Modules.Payroll.DTOs;
 public sealed record CreatePayrollGroupRequest(Guid LegalEntityId, string Code, string Name, string Frequency, short PayDay, string CurrencyCode, string? HolidayAdjustment = null);
 public sealed record CreatePayrollPeriodRequest(Guid PayrollGroupId, DateOnly PeriodStart, DateOnly PeriodEnd, DateOnly InputCutoff, DateOnly CalculationDate, DateOnly PlannedPayDate);
 public sealed record CreatePayrollRunRequest(Guid PayrollGroupId, Guid? PeriodId, string RunType = "Regular", Guid? SourceRunId = null, Guid? SourcePeriodId = null, Guid? SettlementEmploymentId = null, DateOnly? EffectiveDate = null, string? ReasonCode = null, string? Notes = null);
-public sealed record CreatePayrollInputRequest(Guid LegalEntityId, Guid EmploymentId, Guid ComponentId, DateOnly InputDate, decimal Amount, string CurrencyCode, string Source, string? IdempotencyKey = null, string? Notes = null);
+public sealed record CreatePayrollInputRequest(Guid LegalEntityId, Guid EmploymentId, Guid ComponentId, DateOnly InputDate, decimal Amount, string CurrencyCode, string Source, string? IdempotencyKey = null, string? Notes = null, Guid? SupplementalRunId = null);
 public sealed record CreateReceivableRequest(Guid LegalEntityId, Guid EmploymentId, string Type, decimal Principal, string CurrencyCode, decimal? InstallmentAmount = null, int? InstallmentCount = null);
 public sealed record PayrollGroupDto(Guid Id, Guid LegalEntityId, string Code, string Name, string Frequency, short PayDay, string CurrencyCode, string Status, string HolidayAdjustment = "NextWorkingDay");
 public sealed record PayrollPeriodDto(Guid Id, Guid PayrollGroupId, DateOnly PeriodStart, DateOnly PeriodEnd, DateOnly InputCutoff, DateOnly PlannedPayDate, string Status);
@@ -21,7 +21,7 @@ public sealed record PayrollLoanActionDto(Guid Id, Guid ReceivableId, string Act
 public sealed record PayrollReportItem(Guid RunId, string RunNumber, string RunType, DateOnly? PeriodEnd, string FinalizationState, string PaymentState, decimal Gross, decimal Deductions, decimal Net, int EmployeeCount);
 public sealed record PayrollReportSummaryDto(IReadOnlyList<PayrollReportItem> Items, int Page, int PageSize, int TotalCount, decimal TotalGross, decimal TotalDeductions, decimal TotalNet);
 public sealed record PayrollImportRowRequest(int RowNumber, string RowKey, decimal Amount, string CurrencyCode, Guid EmploymentId, string ComponentCode, DateOnly InputDate, string? Notes = null);
-public sealed record PayrollImportRequest(string ImportType, string SourceSystem, string BatchReference, string FileSha256, IReadOnlyList<PayrollImportRowRequest> Rows);
+public sealed record PayrollImportRequest(string ImportType, string SourceSystem, string BatchReference, string FileSha256, IReadOnlyList<PayrollImportRowRequest> Rows, Guid? SupplementalRunId = null);
 public sealed record PayrollImportRowResult(int RowNumber, string RowKey, string Status, string? IssueCode, Guid? InputId);
 public sealed record PayrollImportResult(Guid BatchId, string Status, int RowCount, IReadOnlyList<PayrollImportRowResult> Rows);
 public sealed record PayrollOpeningBalanceRequest(Guid EmploymentId, string BalanceType, decimal Amount, string CurrencyCode, DateOnly AsOfDate, string SourceReference, decimal? InstallmentAmount = null, int? InstallmentCount = null);

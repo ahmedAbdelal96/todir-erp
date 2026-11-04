@@ -105,6 +105,7 @@ jobs:
             backend/Tests/Modules/Invoicing/InvoicingTests.csproj
             backend/Tests/Modules/Ledger/LedgerTests.csproj
             backend/Tests/Modules/Payments/PaymentsTests.csproj
+            backend/Tests/Modules/Payroll/PayrollTests.csproj
             backend/Tests/Modules/Pricing/PricingTests.csproj
             backend/Tests/Modules/Purchasing/PurchasingTests.csproj
             backend/Tests/Modules/Sales/SalesTests.csproj
@@ -139,6 +140,7 @@ jobs:
           TODIR_P03_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=postgres;Password=postgres;Maximum Pool Size=32
           TODIR_P04_ADMIN_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=postgres;Password=postgres;Maximum Pool Size=32
           TODIR_P04_RUNTIME_CONNECTION: Host=localhost;Port=5432;Database=todir_invoice_p03;Username=erp_app;Password=todir-app-dev;Maximum Pool Size=32
+          TODIR_PAYROLL_TEST_DATABASE: "1"
           TODIR_RABBITMQ_HOST: localhost
           TODIR_RABBITMQ_PORT: 5672
           TODIR_RABBITMQ_USER: todir

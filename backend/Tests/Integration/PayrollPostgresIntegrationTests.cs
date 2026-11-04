@@ -20,6 +20,7 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
         var batchId = Guid.Empty;
         var inputId = Guid.Empty;
         var openingId = Guid.Empty;
+        var runId = Guid.Empty;
         await using var dataSource = NpgsqlDataSource.Create(runtimeConnectionString);
         var repository = new PayrollRepository(dataSource, new PayrollCountryProviderRegistry());
         var tenant = new TenantId(fixture.TenantId);
@@ -27,11 +28,16 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
         {
             var input = new PayrollImportRequest("Acceptance", source, source, source,
                 [new(1, "transport-1", 725m, "EGP", fixture.EmploymentId, "TRANSPORT", new DateOnly(2026, 10, 15))]);
+            var run = await repository.CreateRunAsync(tenant, fixture.LegalEntityId,
+                new(fixture.PayrollGroupId, fixture.PeriodId, "OffCycle"), default);
+            runId = run.Id;
+            input = input with { SupplementalRunId = runId };
             var imported = await repository.ImportInputsAsync(tenant, fixture.LegalEntityId, Guid.CreateVersion7(), input, true, default);
             batchId = imported.BatchId;
             inputId = imported.Rows.Single().InputId!.Value;
             Assert.Equal("Draft", (await repository.GetInputAsync(tenant, fixture.LegalEntityId, inputId, default))!.Status);
             await repository.ApproveInputAsync(tenant, fixture.LegalEntityId, inputId, default);
+            Assert.Equal(1L, await CountAsync(adminConnectionString, "select count(*) from business_payroll.payroll_input where tenant_id=$1 and id=$2 and supplemental_run_id=$3", fixture.TenantId, inputId, runId));
             var replay = await repository.ImportInputsAsync(tenant, fixture.LegalEntityId, Guid.CreateVersion7(), input, true, default);
             Assert.Equal("Committed", replay.Status);
             Assert.Equal(1L, await CountAsync(adminConnectionString, "select count(*) from business_payroll.payroll_input where tenant_id=$1 and idempotency_key=$2", fixture.TenantId, $"payroll-import:{batchId:D}:transport-1"));
@@ -46,7 +52,7 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
         }
         finally
         {
-            await CleanupAsync(adminConnectionString, fixture.TenantId, batchId, inputId, openingId);
+            await CleanupAsync(adminConnectionString, fixture.TenantId, batchId, inputId, openingId, runId);
         }
     }
 
@@ -54,10 +60,10 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
-        await using var command = new NpgsqlCommand("select t.id,e.id,em.id from platform.tenant t join platform.legal_entity e on e.tenant_id=t.id and e.status='Active' join business_hr.employment em on em.tenant_id=t.id and em.legal_entity_id=e.id and em.status='Active' where t.slug='atlas-trading' order by em.employment_number limit 1", connection);
+        await using var command = new NpgsqlCommand("select t.id,e.id,em.id,g.id,p.id from platform.tenant t join platform.legal_entity e on e.tenant_id=t.id and e.status='Active' join business_hr.employment em on em.tenant_id=t.id and em.legal_entity_id=e.id and em.status='Active' join business_payroll.payroll_group g on g.tenant_id=t.id and g.legal_entity_id=e.id and g.status='Active' join business_payroll.payroll_period p on p.tenant_id=g.tenant_id and p.legal_entity_id=g.legal_entity_id and p.payroll_group_id=g.id and p.status='Open' where t.slug='atlas-trading' order by em.employment_number,p.period_end desc limit 1", connection);
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) throw new InvalidOperationException("The canonical development seed must contain Atlas active payroll data.");
-        return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2));
+        return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetGuid(4));
     }
 
     private static async Task<long> CountAsync(string connectionString, string sql, params object[] values)
@@ -67,7 +73,7 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
         return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    private static async Task CleanupAsync(string connectionString, Guid tenantId, Guid batchId, Guid inputId, Guid openingId)
+    private static async Task CleanupAsync(string connectionString, Guid tenantId, Guid batchId, Guid inputId, Guid openingId, Guid runId)
     {
         await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
@@ -78,16 +84,17 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
             "delete from business_payroll.payroll_opening_balance where tenant_id=$1 and id=$2",
             "delete from business_payroll.payroll_input where tenant_id=$1 and id=$2",
             "delete from business_payroll.payroll_import_row where tenant_id=$1 and batch_id=$2",
-            "delete from business_payroll.payroll_import_batch where tenant_id=$1 and id=$2"
+            "delete from business_payroll.payroll_import_batch where tenant_id=$1 and id=$2",
+            "delete from business_payroll.payroll_run where tenant_id=$1 and id=$2"
         })
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction); command.Parameters.AddWithValue(tenantId); if (sql.Contains("$2")) command.Parameters.AddWithValue(sql.Contains("opening_balance") || sql.Contains("receivable") ? openingId : sql.Contains("payroll_input") ? inputId : batchId); await command.ExecuteNonQueryAsync();
+            await using var command = new NpgsqlCommand(sql, connection, transaction); command.Parameters.AddWithValue(tenantId); if (sql.Contains("$2")) command.Parameters.AddWithValue(sql.Contains("opening_balance") || sql.Contains("receivable") ? openingId : sql.Contains("payroll_input") ? inputId : sql.Contains("payroll_run where") ? runId : batchId); await command.ExecuteNonQueryAsync();
         }
         await transaction.CommitAsync();
     }
 
     private static void Add(NpgsqlCommand command, params object[] values) { foreach (var value in values) command.Parameters.AddWithValue(value); }
-    private sealed record PayrollFixture(Guid TenantId, Guid LegalEntityId, Guid EmploymentId);
+    private sealed record PayrollFixture(Guid TenantId, Guid LegalEntityId, Guid EmploymentId, Guid PayrollGroupId, Guid PeriodId);
 
     private sealed class PayrollPostgresFactAttribute : FactAttribute
     {

@@ -566,6 +566,7 @@ static int MigrationPriority(string fileName) => fileName switch
     // settings table migration ahead of it for fresh database bootstrap.
     _ when fileName.Equals("payroll-forward-fix-statutory-settings.sql", StringComparison.Ordinal) => 4,
     _ when fileName.Equals("payroll-forward-fix-opening-balance-loan-schedule.sql", StringComparison.Ordinal) => 6,
+    _ when fileName.Equals("payroll-forward-fix-supplemental-input-target.sql", StringComparison.Ordinal) => 7,
     _ => 5
 };
 
