@@ -12,5 +12,7 @@ public sealed record PayrollEmployeeDto(Guid EmploymentId, string Status, decima
 public sealed record PayslipDto(Guid Id, string PayslipNumber, Guid EmploymentId, decimal Gross, decimal Deductions, decimal Net, decimal EmployerCost, string Status, DateTimeOffset? FinalizedAt);
 public sealed record EmployeeReceivableDto(Guid Id, Guid EmploymentId, string Type, decimal Principal, decimal OutstandingPrincipal, string CurrencyCode, string Status);
 public sealed record ReceivableDisbursementDto(Guid Id, Guid ReceivableId, decimal Amount, string CurrencyCode, string Status, string? ProviderReference);
+public sealed record PayrollStatutorySettingsDto(Guid Id, Guid LegalEntityId, string TaxMode, string InsuranceMode, DateOnly EffectiveFrom, int Version, DateTimeOffset CreatedAt);
+public sealed record UpdatePayrollStatutorySettingsRequest(string TaxMode, string InsuranceMode, DateOnly EffectiveFrom, int ExpectedVersion);
 public sealed record PayrollInputDto(Guid Id, Guid EmploymentId, Guid ComponentId, DateOnly InputDate, decimal Amount, string CurrencyCode, string Source, string Status, string? Notes);
 public sealed record PayrollSnapshotDto(Guid SnapshotId, Guid RunId, DateOnly PeriodStart, DateOnly PeriodEnd, DateTimeOffset CutoffAt, string PayloadSha256, int EmploymentCount);

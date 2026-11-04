@@ -4,6 +4,7 @@ using NpgsqlTypes;
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.Hr;
 using Modules.Payroll.Services;
+using Core.Services;
 using System.Text.Json;
 
 namespace Modules.Payroll.Repositories;
@@ -102,13 +103,21 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCount
         await using var clearEmployees = new NpgsqlCommand("delete from business_payroll.payroll_run_employee where tenant_id=$1 and run_id=$2", c, tx); Add(clearEmployees, tenant.Value, runId); await clearEmployees.ExecuteNonQueryAsync(ct);
         await using var insert = new NpgsqlCommand("insert into business_payroll.payroll_run_employee(tenant_id,id,run_id,employment_id,hr_snapshot_id,snapshot_employment_number,status,gross,deductions,net,employer_cost,calculated_at) select $1,gen_random_uuid(),r.id,(h.item->>'employmentId')::uuid,s.id,h.item->>'employmentNumber','Pending',0,0,0,0,now() from business_payroll.payroll_run r join business_payroll.payroll_hr_snapshot s on s.tenant_id=r.tenant_id and s.payroll_run_id=r.id and s.id=r.hr_snapshot_id cross join lateral jsonb_array_elements(s.payload->'employments') h(item) where r.tenant_id=$1 and r.id=$2 and r.legal_entity_id=$3", c, tx); Add(insert, tenant.Value, runId, legalEntityId); await insert.ExecuteNonQueryAsync(ct);
         var snapshotPayload = await ReadSnapshotPayloadAsync(c, tx, tenant, snapshotId.Value, ct);
+        var statutoryModes = await ReadStatutoryModesAsync(c, tx, tenant, legalEntityId, snapshotPayload.PeriodEnd, ct);
         var components = new Dictionary<string, (Guid Id, string Category, string InputMode, string? ProviderCode)>(StringComparer.OrdinalIgnoreCase);
         await using (var componentCommand = new NpgsqlCommand("select c.id,c.code,c.category,c.input_mode,(select v.provider_code from business_payroll.payroll_component_version v where v.tenant_id=c.tenant_id and v.component_id=c.id and v.status='Published' order by v.effective_from desc limit 1) from business_payroll.payroll_component c where c.tenant_id=$1 and c.status='Active'", c, tx))
         { Add(componentCommand, tenant.Value); await using var reader = await componentCommand.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) components[reader.GetString(1)] = (reader.GetGuid(0), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4)); await reader.CloseAsync(); }
         if (!components.ContainsKey("BASE")) throw new PayrollRepositoryException("payroll.component_invalid");
-        foreach (var provider in components.Values.Where(component => string.Equals(component.InputMode, "Provider", StringComparison.OrdinalIgnoreCase)))
-            if (string.IsNullOrWhiteSpace(provider.ProviderCode) || countryProviders.Find(provider.ProviderCode) is not { LegallyCertified: true })
-                throw new PayrollRepositoryException("payroll.country_configuration_missing");
+        var providerModes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var provider in components.Where(pair => string.Equals(pair.Value.InputMode, "Provider", StringComparison.OrdinalIgnoreCase)).ToArray())
+        {
+            var domain = StatutoryDomain(provider.Key);
+            var mode = domain == "Tax" ? statutoryModes.TaxMode : domain == "Insurance" ? statutoryModes.InsuranceMode : "Automatic";
+            providerModes[provider.Key] = mode;
+            if (mode == "NotManaged") components.Remove(provider.Key);
+            else if (mode == "Automatic" && (string.IsNullOrWhiteSpace(provider.Value.ProviderCode) || countryProviders.Find(provider.Value.ProviderCode) is not { LegallyCertified: true }))
+                throw new PayrollRepositoryException($"payroll.country_configuration_missing:{domain}");
+        }
         var approvedInputs = new Dictionary<(Guid EmploymentId, string Code), decimal>();
         await using (var inputCommand = new NpgsqlCommand("select input.employment_id,component.code,sum(input.amount) from business_payroll.payroll_input input join business_payroll.payroll_component component on component.tenant_id=input.tenant_id and component.id=input.component_id where input.tenant_id=$1 and input.status='Approved' and input.input_date between $2 and $3 group by input.employment_id,component.code", c, tx))
         { Add(inputCommand, tenant.Value, snapshotPayload.PeriodStart, snapshotPayload.PeriodEnd); await using var reader = await inputCommand.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) approvedInputs[(reader.GetGuid(0), reader.GetString(1))] = reader.GetDecimal(2); await reader.CloseAsync(); }
@@ -121,6 +130,8 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCount
             var inputs = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
             foreach (var component in components.Keys.Where(code => !string.Equals(code, "BASE", StringComparison.OrdinalIgnoreCase)))
             {
+                if (providerModes.TryGetValue(component, out var providerMode) && providerMode == "Manual" && !approvedInputs.ContainsKey((row.EmploymentId, component)))
+                    throw new PayrollRepositoryException($"payroll.manual_statutory_input_missing:{component}");
                 approvedInputs.TryGetValue((row.EmploymentId, component), out var amount);
                 amount += employment.ApprovedAdjustments.Where(item => string.Equals(item.TypeCode, component, StringComparison.OrdinalIgnoreCase) && item.EffectiveFrom <= snapshotPayload.PeriodEnd && (item.EffectiveTo is null || item.EffectiveTo >= snapshotPayload.PeriodStart)).Sum(item => item.Amount);
                 inputs[component] = amount;
@@ -215,6 +226,30 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCount
         return result;
     }
 
+    public async Task<PayrollStatutorySettingsDto> GetStatutorySettingsAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct)
+    {
+        await using var c = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select id,legal_entity_id,tax_mode,insurance_mode,effective_from,version,created_at from business_payroll.payroll_statutory_setting where tenant_id=$1 and legal_entity_id=$2 and effective_from<=current_date order by effective_from desc,version desc limit 1", c);
+        Add(command, tenant.Value, legalEntityId); await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct) ? ReadStatutorySettings(reader) : new(Guid.Empty, legalEntityId, "NotManaged", "NotManaged", DateOnly.MinValue, 0, DateTimeOffset.UnixEpoch);
+    }
+
+    public async Task<IReadOnlyList<PayrollStatutorySettingsDto>> ListStatutorySettingsHistoryAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct)
+    {
+        await using var c = await OpenAsync(tenant, ct); await using var command = new NpgsqlCommand("select id,legal_entity_id,tax_mode,insurance_mode,effective_from,version,created_at from business_payroll.payroll_statutory_setting where tenant_id=$1 and legal_entity_id=$2 order by effective_from desc,version desc limit 100", c); Add(command, tenant.Value, legalEntityId); await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<PayrollStatutorySettingsDto>(); while (await reader.ReadAsync(ct)) result.Add(ReadStatutorySettings(reader)); return result;
+    }
+
+    public async Task<PayrollStatutorySettingsDto> UpdateStatutorySettingsAsync(TenantId tenant, Guid legalEntityId, Guid actor, UpdatePayrollStatutorySettingsRequest request, CancellationToken ct)
+    {
+        var taxMode = NormalizeStatutoryMode(request.TaxMode); var insuranceMode = NormalizeStatutoryMode(request.InsuranceMode); if (request.EffectiveFrom == default) throw new PayrollRepositoryException("payroll.settings_effective_date_required");
+        await using var c = await OpenAsync(tenant, ct); await using var tx = await c.BeginTransactionAsync(ct);
+        await using var current = new NpgsqlCommand("select coalesce(max(version),0) from business_payroll.payroll_statutory_setting where tenant_id=$1 and legal_entity_id=$2", c, tx); Add(current, tenant.Value, legalEntityId); var version = Convert.ToInt32(await current.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture); if (version != request.ExpectedVersion) throw new PayrollRepositoryException("payroll.settings_version_conflict");
+        await using var finalized = new NpgsqlCommand("select exists(select 1 from business_payroll.payroll_run r join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id where r.tenant_id=$1 and r.legal_entity_id=$2 and r.finalization_state='Finalized' and p.period_end >= $3)", c, tx); Add(finalized, tenant.Value, legalEntityId, request.EffectiveFrom); if (request.EffectiveFrom <= DateOnly.FromDateTime(DateTime.UtcNow.Date) && (bool)(await finalized.ExecuteScalarAsync(ct) ?? false)) throw new PayrollRepositoryException("payroll.settings_historical_change_blocked");
+        var id = Guid.CreateVersion7(); var now = DateTimeOffset.UtcNow; await using var insert = new NpgsqlCommand("insert into business_payroll.payroll_statutory_setting(tenant_id,legal_entity_id,id,tax_mode,insurance_mode,effective_from,version,actor_id,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9)", c, tx); Add(insert, tenant.Value, legalEntityId, id, taxMode, insuranceMode, request.EffectiveFrom, version + 1, actor, now); await insert.ExecuteNonQueryAsync(ct);
+        await NpgsqlAuditWriter.WriteAsync(c, tx, new AuditEntry(Guid.CreateVersion7(), tenant, legalEntityId, null, "Human", actor, null, "payroll", "payroll.statutory_settings.updated", "payroll_statutory_setting", id, null, JsonSerializer.Serialize(new { taxMode, insuranceMode, request.EffectiveFrom, version = version + 1 }), null, "payroll-api", Guid.CreateVersion7(), null, now, null), ct);
+        await tx.CommitAsync(ct); return new(id, legalEntityId, taxMode, insuranceMode, request.EffectiveFrom, version + 1, now);
+    }
+
     private async Task<NpgsqlConnection> OpenAsync(TenantId tenant, CancellationToken ct)
     {
         var connection = await dataSource.OpenConnectionAsync(ct);
@@ -238,6 +273,15 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCount
         var payload = (string?)await command.ExecuteScalarAsync(ct) ?? throw new PayrollRepositoryException("payroll.hr_snapshot_missing");
         return JsonSerializer.Deserialize<HrPayrollPeriodSnapshotContract>(payload, JsonOptions) ?? throw new PayrollRepositoryException("payroll.hr_snapshot_invalid");
     }
+
+    private static async Task<(string TaxMode, string InsuranceMode)> ReadStatutoryModesAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid legalEntityId, DateOnly asOf, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select tax_mode,insurance_mode from business_payroll.payroll_statutory_setting where tenant_id=$1 and legal_entity_id=$2 and effective_from<=$3 order by effective_from desc,version desc limit 1", connection, transaction); Add(command, tenant.Value, legalEntityId, asOf); await using var reader = await command.ExecuteReaderAsync(ct); return await reader.ReadAsync(ct) ? (reader.GetString(0), reader.GetString(1)) : ("NotManaged", "NotManaged");
+    }
+
+    private static PayrollStatutorySettingsDto ReadStatutorySettings(NpgsqlDataReader reader) => new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetFieldValue<DateOnly>(4), reader.GetInt32(5), reader.GetFieldValue<DateTimeOffset>(6));
+    private static string NormalizeStatutoryMode(string value) => value.Trim() is "NotManaged" or "Manual" or "Automatic" ? value.Trim() : throw new PayrollRepositoryException("payroll.settings_mode_invalid");
+    private static string StatutoryDomain(string code) => code.Contains("INSURANCE", StringComparison.OrdinalIgnoreCase) || code.Contains("SOCIAL", StringComparison.OrdinalIgnoreCase) ? "Insurance" : code.Contains("TAX", StringComparison.OrdinalIgnoreCase) ? "Tax" : "Tax";
 
     private static object Db(Guid? value) => value is null ? DBNull.Value : value.Value;
     private static object DbValue(object? value) => value ?? DBNull.Value;
