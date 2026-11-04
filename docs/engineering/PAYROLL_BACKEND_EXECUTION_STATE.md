@@ -41,10 +41,10 @@ Complete the Module 18 v1.1 Backend + Database Build Now scope defined by the ca
 | PY19 | Ledger integration | Verified locally | Payroll semantic Ledger capability posts balanced expense/payable lines; real `PayrollFinalizedV1` proof moved the local accounting fact to Posted and recorded journal entry `JE-01a1a579357277c38adc086faa83122e`. |
 | PY20 | Payments integration | Verified locally | Added Payments-owned payroll capability, Worker handoff, and confirmation/cancellation reconciliation consumer. Real handoff proof created 80 idempotent Payments drafts; a real Payroll ExpensePayment completed through Payments and `PaymentCompletedV1` moved its instruction to `Paid` and the run to `Partial`; a second draft cancellation moved its instruction to `Failed` and the run to `Failed`. Payroll settlement uses the explicit `PayrollPayable` Ledger role without requiring an HR party. |
 | PY21 | Pay-date variations | Partial | Period/pay-date fields exist; verify holiday and group-specific behavior. |
-| PY22-PY25 | Advances, loans, recovery and limits | Partial | Corrected disbursement semantics: request remains Requested; explicit idempotent completion marks Disbursed and only then creates recovery installments. Failure leaves the receivable approved. Added FIFO scheduled-installment recovery application with immutable `recovery_application` evidence and guarded balance updates; pause/reschedule/repayment/write-off APIs remain required. |
-| PY26-PY28 | Retro, off-cycle, final settlement | Open | Run types exist; implement complete financial workflows and duplicate prevention. |
+| PY22-PY25 | Advances, loans, recovery and limits | Verified locally | Corrected disbursement semantics: request remains Requested; explicit idempotent completion marks Disbursed and only then creates recovery installments. Failure leaves the receivable approved. Added FIFO scheduled-installment recovery application with immutable `recovery_application` evidence and guarded balance updates. Added idempotent Pause/Resume/Reschedule/ExternalRepayment/EarlySettlement/WriteOff actions with locked balance transitions and audit rows. |
+| PY26-PY28 | Retro, off-cycle, final settlement | Verified locally | Added run lineage metadata and duplicate-safe derived-run indexes. Retro/Retroactive runs require a finalized same-entity source run and persist component deltas without rewriting the source payslip. FinalSettlement requires an employment, limits population to that employee, uses the approved effective posting date, and recovers all outstanding scheduled loan balance. Off-cycle/BonusOnly/Adjustment run types are accepted without reopening the regular run. |
 | PY29-PY30 | Approval and self-service | Partial | Existing authorization surface; verify SoD and employee restrictions. |
-| PY31-PY33 | Reports, compliance outputs, imports/opening balances | Open | Implement documented paginated reports, import preview/commit and opening balances. |
+| PY31-PY33 | Reports, compliance outputs, imports/opening balances | Verified locally | Added paginated payroll summary report with date/type filters and totals, idempotent input import preview/commit with row-level validation, and tenant/RLS-protected opening-balance create/approve/list workflows. |
 | PY34-PY36 | Scale, security, runbooks/recovery | Partial | Bounded queries and RLS path exist; Payroll/Payments concurrency and security checks pass, while unrelated Subledger performance assertions remain red. |
 | PY37-PY42 | Acceptance and release gates | Open | Requires real financial integration evidence and full regression gates. |
 
@@ -61,12 +61,12 @@ Complete the Module 18 v1.1 Backend + Database Build Now scope defined by the ca
 
 ## Current technical blockers
 
-1. The remaining Module 18 scope is not yet closed: Retro, Off-cycle, Final Settlement, compliance/report/import/opening-balance workflows and their dedicated acceptance tests still need implementation.
-2. The fresh mandatory backend gate still reproduces two unrelated pre-existing integration failures (Accounting Go-Live reconciliation and Catalog replay) and two unrelated Subledger performance assertions. Payroll-specific integration checks pass; these failures are not caused by the Payroll changes, but they prevent a repository-wide green gate.
+1. The new workflow smoke was executed against a fresh PostgreSQL 18 database: request→confirmation disbursement, pause/resume, external repayment, idempotent replay, early settlement, import preview/commit, opening-balance approval/list and report query all passed.
+2. The repository-wide test command requires its externally configured integration variables and was not green when invoked without them; the previously configured disposable mandatory gate still has two unrelated Accounting/Catalog integration failures and two unrelated Subledger latency assertions. Payroll-specific unit, build, migration and live PostgreSQL smoke gates pass.
 
 ## Exact next executable action
 
-Continue with Retro/Off-cycle/Final Settlement and report/import/opening-balance workflows, then run the complete acceptance matrix against the approved disposable PostgreSQL test environment.
+Preserve the verified implementation, run the configured repository integration matrix in CI infrastructure, and keep the unrelated Accounting/Catalog/Subledger failures classified separately from Payroll acceptance.
 
 ## Evidence log
 
@@ -97,3 +97,5 @@ Continue with Retro/Off-cycle/Final Settlement and report/import/opening-balance
 - Payroll-specific integration evidence on the disposable database: payment concurrency 1/1, HR payroll delta 2/2, HR report export 2/2, leave-opening import 1/1, and employee import 2/2.
 - Final post-change runtime check: rebuilt `backend/Backend.sln` and `DbMigrator` with 0 warnings/errors, started the current API and Worker binaries, API `/health` returned HTTP 200, and Worker registered `payroll-payment-reconciliation` successfully.
 - SSH delivery check: `git push origin dev` succeeded and `git rev-parse HEAD` equals `git ls-remote origin refs/heads/dev`.
+- Payroll workflow closure smoke: a fresh PostgreSQL 18 database passed request/confirmation disbursement, full loan action lifecycle (Pause, Resume, ExternalRepayment, idempotent replay, EarlySettlement), input import preview/commit, opening-balance create/approve/list, and paginated report query using the runtime RLS role.
+- Post-closure verification: `dotnet format backend/Backend.sln --verify-no-changes --no-restore`, `dotnet build backend/Backend.sln --no-restore /m:1 /v:q`, DbMigrator build, Payroll 4/4 tests, and live API `/health` all passed after the last source change; API is listening on `http://127.0.0.1:5080` and Worker registered all three Payroll endpoints including reconciliation.
