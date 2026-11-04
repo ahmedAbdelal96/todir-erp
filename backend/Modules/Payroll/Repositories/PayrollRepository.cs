@@ -29,6 +29,120 @@ public sealed class PayrollRepository(
         return result;
     }
 
+    public async Task<IReadOnlyList<PayrollComponentDto>> ListComponentsAsync(TenantId tenant, int page, int pageSize, string? search, string? status, CancellationToken ct)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        var normalizedStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var command = new NpgsqlCommand("select id,code,name,category,direction,input_mode,status from business_payroll.payroll_component where tenant_id=$1 and ($2::text is null or code ilike '%'||$2||'%' or name ilike '%'||$2||'%') and ($3::text is null or status=$3) order by code offset $4 limit $5", c, tx);
+        Add(command, tenant.Value, DbValue(term), DbValue(normalizedStatus), (page - 1) * pageSize, pageSize);
+        await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<PayrollComponentDto>();
+        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6)));
+        await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
+    }
+
+    public async Task<PayrollComponentDto> CreateComponentAsync(TenantId tenant, CreatePayrollComponentRequest request, CancellationToken ct)
+    {
+        var id = Guid.CreateVersion7(); var now = DateTimeOffset.UtcNow;
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var command = new NpgsqlCommand("insert into business_payroll.payroll_component(tenant_id,id,code,name,category,direction,input_mode,status,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,'Active',$8,$8)", c, tx);
+        Add(command, tenant.Value, id, request.Code.Trim().ToUpperInvariant(), request.Name.Trim(), request.Category.Trim(), request.Direction.Trim(), request.InputMode.Trim(), now);
+        try { await command.ExecuteNonQueryAsync(ct); } catch (PostgresException ex) when (ex.SqlState == "23505") { throw new PayrollRepositoryException("payroll.component_duplicate"); }
+        await tx.CommitAsync(ct);
+        return new(id, request.Code.Trim().ToUpperInvariant(), request.Name.Trim(), request.Category.Trim(), request.Direction.Trim(), request.InputMode.Trim(), "Active");
+    }
+
+    public async Task<PayrollComponentVersionDto> CreateComponentVersionAsync(TenantId tenant, Guid componentId, CreatePayrollComponentVersionRequest request, CancellationToken ct)
+    {
+        var id = Guid.CreateVersion7(); var formula = request.Formula.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ? "{}" : request.Formula.GetRawText();
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var component = new NpgsqlCommand("select 1 from business_payroll.payroll_component where tenant_id=$1 and id=$2", c, tx); Add(component, tenant.Value, componentId); if (await component.ExecuteScalarAsync(ct) is null) throw new PayrollRepositoryException("payroll.component_not_found");
+        await using var command = new NpgsqlCommand("insert into business_payroll.payroll_component_version(tenant_id,id,component_id,effective_from,formula,rounding_scale,provider_code,status,created_at) values($1,$2,$3,$4,$5::jsonb,$6,$7,'Draft',now())", c, tx);
+        Add(command, tenant.Value, id, componentId, request.EffectiveFrom, formula, request.RoundingScale, DbValue(request.ProviderCode?.Trim()));
+        try { await command.ExecuteNonQueryAsync(ct); } catch (PostgresException ex) when (ex.SqlState == "23505") { throw new PayrollRepositoryException("payroll.component_version_duplicate"); }
+        await tx.CommitAsync(ct); return new(id, componentId, request.EffectiveFrom, null, "Draft", request.RoundingScale, request.ProviderCode?.Trim());
+    }
+
+    public async Task<PayrollComponentVersionDto> PublishComponentVersionAsync(TenantId tenant, Guid componentVersionId, CancellationToken ct)
+    {
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        Guid componentId; DateOnly effectiveFrom; DateOnly? effectiveTo; short scale; string? provider;
+        await using (var load = new NpgsqlCommand("select component_id,effective_from,effective_to,rounding_scale,provider_code from business_payroll.payroll_component_version where tenant_id=$1 and id=$2", c, tx))
+        { Add(load, tenant.Value, componentVersionId); await using var reader = await load.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.component_version_not_found"); componentId = reader.GetGuid(0); effectiveFrom = reader.GetFieldValue<DateOnly>(1); effectiveTo = reader.IsDBNull(2) ? null : reader.GetFieldValue<DateOnly>(2); scale = reader.GetInt16(3); provider = reader.IsDBNull(4) ? null : reader.GetString(4); }
+        await using var retire = new NpgsqlCommand("update business_payroll.payroll_component_version set status='Retired' where tenant_id=$1 and component_id=$2 and id<>$3 and status='Published'", c, tx); Add(retire, tenant.Value, componentId, componentVersionId); await retire.ExecuteNonQueryAsync(ct);
+        await using var publish = new NpgsqlCommand("update business_payroll.payroll_component_version set status='Published' where tenant_id=$1 and id=$2", c, tx); Add(publish, tenant.Value, componentVersionId); await publish.ExecuteNonQueryAsync(ct); await tx.CommitAsync(ct);
+        return new(componentVersionId, componentId, effectiveFrom, effectiveTo, "Published", scale, provider);
+    }
+
+    public async Task<IReadOnlyList<SalaryStructureDto>> ListSalaryStructuresAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? search, string? status, CancellationToken ct)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        var normalizedStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var command = new NpgsqlCommand("select s.id,s.legal_entity_id,s.code,s.name,s.status,(select count(*) from business_payroll.salary_structure_component sc where sc.tenant_id=s.tenant_id and sc.structure_version_id=(select sv.id from business_payroll.salary_structure_version sv where sv.tenant_id=s.tenant_id and sv.salary_structure_id=s.id and sv.status='Published' order by sv.effective_from desc,sv.version_number desc limit 1)) from business_payroll.salary_structure s where s.tenant_id=$1 and s.legal_entity_id=$2 and ($3::text is null or s.code ilike '%'||$3||'%' or s.name ilike '%'||$3||'%') and ($4::text is null or s.status=$4) order by s.code offset $5 limit $6", c, tx);
+        Add(command, tenant.Value, legalEntityId, DbValue(term), DbValue(normalizedStatus), (page - 1) * pageSize, pageSize);
+        await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<SalaryStructureDto>();
+        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetInt64(5) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(5)));
+        await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
+    }
+
+    public async Task<SalaryStructureDto> CreateSalaryStructureAsync(TenantId tenant, CreateSalaryStructureRequest request, CancellationToken ct)
+    {
+        var id = Guid.CreateVersion7(); var now = DateTimeOffset.UtcNow;
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var command = new NpgsqlCommand("insert into business_payroll.salary_structure(tenant_id,legal_entity_id,id,code,name,status,created_at,updated_at) values($1,$2,$3,$4,$5,'Active',$6,$6)", c, tx);
+        Add(command, tenant.Value, request.LegalEntityId, id, request.Code.Trim().ToUpperInvariant(), request.Name.Trim(), now);
+        try { await command.ExecuteNonQueryAsync(ct); } catch (PostgresException ex) when (ex.SqlState == "23505") { throw new PayrollRepositoryException("payroll.salary_structure_duplicate"); }
+        await tx.CommitAsync(ct); return new(id, request.LegalEntityId, request.Code.Trim().ToUpperInvariant(), request.Name.Trim(), "Active", 0);
+    }
+
+    public async Task<SalaryStructureVersionDto> CreateSalaryStructureVersionAsync(TenantId tenant, Guid legalEntityId, Guid structureId, CreateSalaryStructureVersionRequest request, CancellationToken ct)
+    {
+        var id = Guid.CreateVersion7();
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var next = new NpgsqlCommand("select coalesce(max(version_number),0)+1 from business_payroll.salary_structure_version where tenant_id=$1 and salary_structure_id=$2", c, tx); Add(next, tenant.Value, structureId); var version = Convert.ToInt32(await next.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand("insert into business_payroll.salary_structure_version(tenant_id,id,salary_structure_id,version_number,effective_from,status,currency_code,created_at) select $1,$2,id,$3,$4,'Draft',$5,now() from business_payroll.salary_structure where tenant_id=$1 and legal_entity_id=$6 and id=$7", c, tx);
+        Add(command, tenant.Value, id, version, request.EffectiveFrom, request.CurrencyCode.Trim().ToUpperInvariant(), legalEntityId, structureId);
+        if (await command.ExecuteNonQueryAsync(ct) != 1) throw new PayrollRepositoryException("payroll.salary_structure_not_found");
+        await tx.CommitAsync(ct); return new(id, structureId, version, request.EffectiveFrom, null, "Draft", request.CurrencyCode.Trim().ToUpperInvariant());
+    }
+
+    public async Task<SalaryStructureVersionDto> PublishSalaryStructureVersionAsync(TenantId tenant, Guid versionId, CancellationToken ct)
+    {
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        Guid structureId; int version; DateOnly effectiveFrom; DateOnly? effectiveTo; string currency;
+        await using (var load = new NpgsqlCommand("select salary_structure_id,version_number,effective_from,effective_to,currency_code from business_payroll.salary_structure_version where tenant_id=$1 and id=$2", c, tx))
+        { Add(load, tenant.Value, versionId); await using var reader = await load.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.salary_structure_version_not_found"); structureId = reader.GetGuid(0); version = reader.GetInt32(1); effectiveFrom = reader.GetFieldValue<DateOnly>(2); effectiveTo = reader.IsDBNull(3) ? null : reader.GetFieldValue<DateOnly>(3); currency = reader.GetString(4).Trim(); }
+        await using var retire = new NpgsqlCommand("update business_payroll.salary_structure_version set status='Archived' where tenant_id=$1 and salary_structure_id=$2 and id<>$3 and status='Published'", c, tx); Add(retire, tenant.Value, structureId, versionId); await retire.ExecuteNonQueryAsync(ct);
+        await using var publish = new NpgsqlCommand("update business_payroll.salary_structure_version set status='Published' where tenant_id=$1 and id=$2", c, tx); Add(publish, tenant.Value, versionId); await publish.ExecuteNonQueryAsync(ct); await tx.CommitAsync(ct);
+        return new(versionId, structureId, version, effectiveFrom, effectiveTo, "Published", currency);
+    }
+
+    public async Task<IReadOnlyList<EmployeePayrollAssignmentDto>> ListEmployeeAssignmentsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? search, string? status, IReadOnlyList<Guid>? matchingEmploymentIds, CancellationToken ct)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var command = new NpgsqlCommand("select a.id,a.employment_id,a.payroll_group_id,g.name,a.base_salary,a.currency_code,a.effective_from,a.effective_to from business_payroll.employee_payroll_assignment a join business_payroll.payroll_group g on g.tenant_id=a.tenant_id and g.legal_entity_id=a.legal_entity_id and g.id=a.payroll_group_id where a.tenant_id=$1 and a.legal_entity_id=$2 and ($3::text is null or a.employment_id::text ilike '%'||$3||'%' or g.code ilike '%'||$3||'%' or g.name ilike '%'||$3||'%') and (coalesce(cardinality($4::uuid[]),0)=0 or a.employment_id=any($4::uuid[])) and ($5::text is null or ($5='Active' and (a.effective_to is null or a.effective_to>=current_date)) or ($5='Expired' and a.effective_to<current_date)) order by a.effective_from desc,a.employment_id offset $6 limit $7", c, tx);
+        Add(command, tenant.Value, legalEntityId, DbValue(term), matchingEmploymentIds is null ? DBNull.Value : matchingEmploymentIds.ToArray(), DbValue(status), (page - 1) * pageSize, pageSize);
+        await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<EmployeePayrollAssignmentDto>();
+        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), null, null, reader.GetGuid(2), reader.GetString(3), reader.GetDecimal(4), reader.GetString(5).Trim(), reader.GetFieldValue<DateOnly>(6), reader.IsDBNull(7) ? null : reader.GetFieldValue<DateOnly>(7)));
+        await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
+    }
+
+    public async Task<EmployeePayrollAssignmentDto> CreateEmployeeAssignmentAsync(TenantId tenant, Guid employmentId, CreatePayrollAssignmentRequest request, CancellationToken ct)
+    {
+        var id = Guid.CreateVersion7(); var now = DateTimeOffset.UtcNow;
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var command = new NpgsqlCommand("insert into business_payroll.employee_payroll_assignment(tenant_id,legal_entity_id,id,employment_id,payroll_group_id,salary_structure_version_id,effective_from,effective_to,base_salary,currency_code,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", c, tx);
+        Add(command, tenant.Value, request.LegalEntityId, id, employmentId, request.PayrollGroupId, request.SalaryStructureVersionId, request.EffectiveFrom, Db(request.EffectiveTo), request.BaseSalary, request.CurrencyCode.Trim().ToUpperInvariant(), now);
+        try { await command.ExecuteNonQueryAsync(ct); } catch (PostgresException ex) when (ex.SqlState == "23P01") { throw new PayrollRepositoryException("payroll.assignment_overlap"); }
+        await using var group = new NpgsqlCommand("select name from business_payroll.payroll_group where tenant_id=$1 and legal_entity_id=$2 and id=$3", c, tx); Add(group, tenant.Value, request.LegalEntityId, request.PayrollGroupId); var groupName = (string?)await group.ExecuteScalarAsync(ct) ?? throw new PayrollRepositoryException("payroll.group_not_found");
+        await tx.CommitAsync(ct); return new(id, employmentId, null, null, request.PayrollGroupId, groupName, request.BaseSalary, request.CurrencyCode.Trim().ToUpperInvariant(), request.EffectiveFrom, request.EffectiveTo);
+    }
+
     public async Task<PayrollGroupDto> CreateGroupAsync(TenantId tenant, CreatePayrollGroupRequest request, CancellationToken ct)
     {
         var id = Guid.CreateVersion7(); var now = DateTimeOffset.UtcNow; var frequency = request.Frequency.Trim(); var holidayAdjustment = NormalizeHolidayAdjustment(request.HolidayAdjustment);
@@ -327,7 +441,7 @@ public sealed class PayrollRepository(
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200); var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         Guid[]? ids = matchingEmploymentIds != null && matchingEmploymentIds.Count > 0 ? matchingEmploymentIds.ToArray() : null;
         await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
-        
+
         await using var countCmd = new NpgsqlCommand("select count(*) from business_payroll.payslip where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or employment_id=$3) and ($4::text is null or payslip_number ilike '%'||$4||'%' or employment_id::text ilike '%'||$4||'%' or ($5::uuid[] is not null and employment_id = any($5)))", c, tx);
         Add(countCmd, tenant.Value, legalEntityId, Db(employmentId), DbValue(term));
         countCmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ids ?? DBNull.Value });
@@ -394,6 +508,30 @@ public sealed class PayrollRepository(
         await using var cmd = new NpgsqlCommand("select id,payslip_number,employment_id,gross,deductions,net,employer_cost,status,finalized_at from business_payroll.payslip where tenant_id=$1 and legal_entity_id=$2 and employment_id=$3 order by finalized_at desc nulls last offset $4 limit $5", c, tx); Add(cmd, tenant.Value, legalEntityId, employmentId, (page - 1) * pageSize, pageSize); await using var r = await cmd.ExecuteReaderAsync(ct); var result = new List<PayslipDto>(); while (await r.ReadAsync(ct)) result.Add(new(r.GetGuid(0), r.GetString(1), r.GetGuid(2), r.GetDecimal(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6), r.GetString(7), r.IsDBNull(8) ? null : r.GetFieldValue<DateTimeOffset>(8))); await r.CloseAsync(); await tx.CommitAsync(ct); return result;
     }
 
+    public async Task<IReadOnlyList<PayrollInputDto>> ListInputsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? search, string? status, Guid? employmentId, Guid? componentId, IReadOnlyList<Guid>? matchingEmploymentIds, CancellationToken ct)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim(); var normalizedStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var command = new NpgsqlCommand("select i.id,i.employment_id,i.component_id,i.input_date,i.amount,i.currency_code,i.source,i.status,i.notes,pc.code,pc.name from business_payroll.payroll_input i join business_payroll.payroll_component pc on pc.tenant_id=i.tenant_id and pc.id=i.component_id where i.tenant_id=$1 and i.legal_entity_id=$2 and ($3::text is null or i.employment_id::text ilike '%'||$3||'%' or pc.code ilike '%'||$3||'%' or pc.name ilike '%'||$3||'%' or coalesce(i.notes,'') ilike '%'||$3||'%') and ($4::text is null or i.status=$4) and ($5::uuid is null or i.employment_id=$5) and ($6::uuid is null or i.component_id=$6) and (coalesce(cardinality($7::uuid[]),0)=0 or i.employment_id=any($7::uuid[])) order by i.input_date desc,i.created_at desc offset $8 limit $9", c, tx);
+        Add(command, tenant.Value, legalEntityId, DbValue(term), DbValue(normalizedStatus), Db(employmentId), Db(componentId), matchingEmploymentIds is null ? DBNull.Value : matchingEmploymentIds.ToArray(), (page - 1) * pageSize, pageSize);
+        await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<PayrollInputDto>();
+        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetDecimal(4), reader.GetString(5).Trim(), reader.GetString(6), reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), null, null, reader.GetString(9), reader.GetString(10)));
+        await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
+    }
+
+    public async Task<IReadOnlyList<EmployeeReceivableDto>> ListReceivablesAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? search, string? status, Guid? employmentId, IReadOnlyList<Guid>? matchingEmploymentIds, CancellationToken ct)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim(); var normalizedStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var command = new NpgsqlCommand("select id,employment_id,type,principal,outstanding_principal,currency_code,status from business_payroll.employee_receivable where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or employment_id::text ilike '%'||$3||'%' or type ilike '%'||$3||'%') and ($4::text is null or status=$4) and ($5::uuid is null or employment_id=$5) and (coalesce(cardinality($6::uuid[]),0)=0 or employment_id=any($6::uuid[])) order by created_at desc offset $7 limit $8", c, tx);
+        Add(command, tenant.Value, legalEntityId, DbValue(term), DbValue(normalizedStatus), Db(employmentId), matchingEmploymentIds is null ? DBNull.Value : matchingEmploymentIds.ToArray(), (page - 1) * pageSize, pageSize);
+        await using var reader = await command.ExecuteReaderAsync(ct); var result = new List<EmployeeReceivableDto>();
+        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetDecimal(3), reader.GetDecimal(4), reader.GetString(5).Trim(), reader.GetString(6)));
+        await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
+    }
+
     public async Task<PayrollInputDto> CreateInputAsync(TenantId tenant, CreatePayrollInputRequest request, CancellationToken ct)
     {
         var id = Guid.CreateVersion7(); var now = DateTimeOffset.UtcNow;
@@ -406,6 +544,16 @@ public sealed class PayrollRepository(
     public async Task<PayrollInputDto> ApproveInputAsync(TenantId tenant, Guid legalEntityId, Guid inputId, CancellationToken ct)
     {
         await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction; await using var cmd = new NpgsqlCommand("update business_payroll.payroll_input set status='Approved',approved_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Draft' returning employment_id,component_id,input_date,amount,currency_code,source,status,notes", c, tx); Add(cmd, tenant.Value, legalEntityId, inputId); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.input_not_found_or_not_draft"); var input = new PayrollInputDto(inputId, r.GetGuid(0), r.GetGuid(1), r.GetFieldValue<DateOnly>(2), r.GetDecimal(3), r.GetString(4).Trim(), r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7)); await r.CloseAsync(); await tx.CommitAsync(ct); return input;
+    }
+
+    public async Task<PayrollInputDto> CancelInputAsync(TenantId tenant, Guid legalEntityId, Guid inputId, CancellationToken ct)
+    {
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var cmd = new NpgsqlCommand("update business_payroll.payroll_input set status='Cancelled' where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status in ('Draft','Approved') returning employment_id,component_id,input_date,amount,currency_code,source,status,notes", c, tx);
+        Add(cmd, tenant.Value, legalEntityId, inputId); await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.input_not_found_or_not_cancellable");
+        var input = new PayrollInputDto(inputId, r.GetGuid(0), r.GetGuid(1), r.GetFieldValue<DateOnly>(2), r.GetDecimal(3), r.GetString(4).Trim(), r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7));
+        await r.CloseAsync(); await tx.CommitAsync(ct); return input;
     }
 
     public async Task<PayrollInputDto?> GetInputAsync(TenantId tenant, Guid legalEntityId, Guid inputId, CancellationToken ct)

@@ -8,6 +8,32 @@ namespace Modules.Payroll.Services;
 public sealed class PayrollService(PayrollRepository repository, IHumanResourcesPayrollCapability hrPayroll)
 {
     public Task<IReadOnlyList<PayrollGroupDto>> ListGroupsAsync(TenantId tenant, Guid entity, int page, int size, string? search, CancellationToken ct) => repository.ListGroupsAsync(tenant, entity, page, size, search, ct);
+    public Task<IReadOnlyList<PayrollComponentDto>> ListComponentsAsync(TenantId tenant, int page, int size, string? search, string? status, CancellationToken ct) => repository.ListComponentsAsync(tenant, page, size, search, status, ct);
+    public Task<PayrollComponentDto> CreateComponentAsync(TenantId tenant, CreatePayrollComponentRequest request, CancellationToken ct) => repository.CreateComponentAsync(tenant, request, ct);
+    public Task<PayrollComponentVersionDto> CreateComponentVersionAsync(TenantId tenant, Guid componentId, CreatePayrollComponentVersionRequest request, CancellationToken ct) => repository.CreateComponentVersionAsync(tenant, componentId, request, ct);
+    public Task<PayrollComponentVersionDto> PublishComponentVersionAsync(TenantId tenant, Guid componentVersionId, CancellationToken ct) => repository.PublishComponentVersionAsync(tenant, componentVersionId, ct);
+    public Task<IReadOnlyList<SalaryStructureDto>> ListSalaryStructuresAsync(TenantId tenant, Guid entity, int page, int size, string? search, string? status, CancellationToken ct) => repository.ListSalaryStructuresAsync(tenant, entity, page, size, search, status, ct);
+    public Task<SalaryStructureDto> CreateSalaryStructureAsync(TenantId tenant, CreateSalaryStructureRequest request, CancellationToken ct) => repository.CreateSalaryStructureAsync(tenant, request, ct);
+    public Task<SalaryStructureVersionDto> CreateSalaryStructureVersionAsync(TenantId tenant, Guid entity, Guid structureId, CreateSalaryStructureVersionRequest request, CancellationToken ct) => repository.CreateSalaryStructureVersionAsync(tenant, entity, structureId, request, ct);
+    public Task<SalaryStructureVersionDto> PublishSalaryStructureVersionAsync(TenantId tenant, Guid versionId, CancellationToken ct) => repository.PublishSalaryStructureVersionAsync(tenant, versionId, ct);
+    public async Task<IReadOnlyList<EmployeePayrollAssignmentDto>> ListEmployeeAssignmentsAsync(TenantId tenant, Guid entity, int page, int size, string? search, string? status, CancellationToken ct)
+    {
+        IReadOnlyList<Guid>? matchingEmploymentIds = null;
+        if (!string.IsNullOrWhiteSpace(search)) matchingEmploymentIds = await hrPayroll.SearchEmploymentIdsAsync(tenant, entity, search, ct);
+        var assignments = await repository.ListEmployeeAssignmentsAsync(tenant, entity, page, size, search, status, matchingEmploymentIds, ct);
+        if (assignments.Count == 0) return assignments;
+        var identities = await hrPayroll.ResolveEmploymentIdentitiesAsync(tenant, entity, assignments.Select(item => item.EmploymentId).Distinct().ToArray(), ct);
+        return assignments.Select(item => identities.TryGetValue(item.EmploymentId, out var identity)
+            ? item with { EmployeeName = identity.DisplayName, EmploymentNumber = identity.EmploymentNumber }
+            : item).ToArray();
+    }
+    public async Task<EmployeePayrollAssignmentDto> CreateEmployeeAssignmentAsync(TenantId tenant, Guid employmentId, CreatePayrollAssignmentRequest request, CancellationToken ct)
+    {
+        var identity = await hrPayroll.ResolveEmploymentIdentitiesAsync(tenant, request.LegalEntityId, [employmentId], ct);
+        if (!identity.ContainsKey(employmentId)) throw new PayrollRepositoryException("payroll.employment_not_found");
+        var assignment = await repository.CreateEmployeeAssignmentAsync(tenant, employmentId, request, ct);
+        return assignment with { EmployeeName = identity[employmentId].DisplayName, EmploymentNumber = identity[employmentId].EmploymentNumber };
+    }
     public Task<PayrollGroupDto> CreateGroupAsync(TenantId tenant, CreatePayrollGroupRequest request, CancellationToken ct) => repository.CreateGroupAsync(tenant, request, ct);
     public Task<PayrollPeriodDto> CreatePeriodAsync(TenantId tenant, Guid entity, CreatePayrollPeriodRequest request, CancellationToken ct) => repository.CreatePeriodAsync(tenant, entity, request, ct);
     public Task<IReadOnlyList<PayrollPeriodDto>> ListPeriodsAsync(TenantId tenant, Guid entity, Guid group, int page, int size, string? status, CancellationToken ct) => repository.ListPeriodsAsync(tenant, entity, group, page, size, status, ct);
@@ -70,9 +96,32 @@ public sealed class PayrollService(PayrollRepository repository, IHumanResources
             : s).ToArray();
     }
     public Task<PayrollInputDto> CreateInputAsync(TenantId tenant, CreatePayrollInputRequest request, CancellationToken ct) => repository.CreateInputAsync(tenant, request, ct);
+    public async Task<IReadOnlyList<PayrollInputDto>> ListInputsAsync(TenantId tenant, Guid entity, int page, int size, string? search, string? status, Guid? employmentId, Guid? componentId, CancellationToken ct)
+    {
+        IReadOnlyList<Guid>? matchingEmploymentIds = null;
+        if (!string.IsNullOrWhiteSpace(search)) matchingEmploymentIds = await hrPayroll.SearchEmploymentIdsAsync(tenant, entity, search, ct);
+        var inputs = await repository.ListInputsAsync(tenant, entity, page, size, search, status, employmentId, componentId, matchingEmploymentIds, ct);
+        if (inputs.Count == 0) return inputs;
+        var identities = await hrPayroll.ResolveEmploymentIdentitiesAsync(tenant, entity, inputs.Select(item => item.EmploymentId).Distinct().ToArray(), ct);
+        return inputs.Select(item => identities.TryGetValue(item.EmploymentId, out var identity)
+            ? item with { EmployeeName = identity.DisplayName, EmploymentNumber = identity.EmploymentNumber }
+            : item).ToArray();
+    }
     public Task<PayrollInputDto> ApproveInputAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ApproveInputAsync(tenant, entity, id, ct);
+    public Task<PayrollInputDto> CancelInputAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.CancelInputAsync(tenant, entity, id, ct);
     public Task<PayrollInputDto?> GetInputAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetInputAsync(tenant, entity, id, ct);
     public Task<EmployeeReceivableDto> CreateReceivableAsync(TenantId tenant, CreateReceivableRequest request, CancellationToken ct) => repository.CreateReceivableAsync(tenant, request, ct);
+    public async Task<IReadOnlyList<EmployeeReceivableDto>> ListReceivablesAsync(TenantId tenant, Guid entity, int page, int size, string? search, string? status, Guid? employmentId, CancellationToken ct)
+    {
+        IReadOnlyList<Guid>? matchingEmploymentIds = null;
+        if (!string.IsNullOrWhiteSpace(search)) matchingEmploymentIds = await hrPayroll.SearchEmploymentIdsAsync(tenant, entity, search, ct);
+        var receivables = await repository.ListReceivablesAsync(tenant, entity, page, size, search, status, employmentId, matchingEmploymentIds, ct);
+        if (receivables.Count == 0) return receivables;
+        var identities = await hrPayroll.ResolveEmploymentIdentitiesAsync(tenant, entity, receivables.Select(item => item.EmploymentId).Distinct().ToArray(), ct);
+        return receivables.Select(item => identities.TryGetValue(item.EmploymentId, out var identity)
+            ? item with { EmployeeName = identity.DisplayName, EmploymentNumber = identity.EmploymentNumber }
+            : item).ToArray();
+    }
     public Task<EmployeeReceivableDto> ApproveReceivableAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ApproveReceivableAsync(tenant, entity, id, ct);
     public Task<ReceivableDisbursementDto> RequestReceivableDisbursementAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.RequestReceivableDisbursementAsync(tenant, entity, id, ct);
     public Task<ReceivableDisbursementDto> CompleteReceivableDisbursementAsync(TenantId tenant, Guid entity, Guid id, string? providerReference, CancellationToken ct) => repository.CompleteReceivableDisbursementAsync(tenant, entity, id, providerReference, ct);
