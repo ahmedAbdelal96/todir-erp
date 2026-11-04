@@ -167,6 +167,11 @@ export function useLegalEntityContext(): LegalEntityContext {
   return useRuntimeContext().legalEntity;
 }
 
+/** Returns the active legal entity when a screen is rendered outside the shell provider. */
+export function useOptionalLegalEntityContext(): LegalEntityContext | undefined {
+  return useContext(RuntimeContextState)?.context.legalEntity;
+}
+
 export function useBranchContext(): BranchContext | undefined {
   return useRuntimeContext().branch;
 }

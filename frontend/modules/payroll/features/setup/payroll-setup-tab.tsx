@@ -49,6 +49,13 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
   const assignmentsQuery = useEmployeeAssignments(legalEntityId);
   const assignments = assignmentsQuery.data ?? [];
 
+  const unavailablePanel = (
+    <div role="alert" style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--color-content-secondary)" }}>
+      <p style={{ margin: 0, fontWeight: 700, color: "var(--color-content-primary)" }}>{t("common.dataUnavailableTitle")}</p>
+      <p style={{ margin: "0.5rem 0 0", fontSize: "0.8125rem" }}>{t("common.dataUnavailableDescription")}</p>
+    </div>
+  );
+
   const subTabs = [
     { id: "groups", label: t("setup.groupsSectionTitle", "مجموعات وفترات الرواتب") },
     { id: "components", label: t("setup.componentsSectionTitle", "بنود الراتب (Components)") },
@@ -244,16 +251,16 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
             </p>
           </div>
 
-          <div style={{ overflowX: "auto" }}>
+          {componentsQuery.isError ? unavailablePanel : <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start", fontSize: "0.875rem" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)", background: "var(--color-surface-subtle, #f8fafc)" }}>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>الرمز (Code)</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>اسم البند</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>التصنيف</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>الاتجاه</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>طريقة الاحتساب</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>الحالة</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.componentsCode")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.componentsName")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.componentsCategory")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.componentsDirection")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.componentsInputMode")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.componentsStatus")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -275,7 +282,7 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
         </Surface>
       )}
 
@@ -290,14 +297,14 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
             </p>
           </div>
 
-          <div style={{ overflowX: "auto" }}>
+          {structuresQuery.isError ? unavailablePanel : <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start", fontSize: "0.875rem" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)", background: "var(--color-surface-subtle, #f8fafc)" }}>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>الرمز</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>اسم الهيكل</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>عدد البنود</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>الحالة</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.structuresCode")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.structuresName")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.structuresComponentCount")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.structuresStatus")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -305,7 +312,7 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
                   <tr key={s.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 600, fontFamily: "var(--font-mono)" }}>{s.code}</td>
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 600 }}>{s.name}</td>
-                    <td style={{ padding: "0.875rem 1rem" }}>{s.componentsCount ? `${s.componentsCount} بند` : "—"}</td>
+                    <td style={{ padding: "0.875rem 1rem" }}>{s.componentsCount ?? "—"}</td>
                     <td style={{ padding: "0.875rem 1rem" }}>
                       <StatusBadge status={s.status === "Active" ? "success" : "neutral"} label={formatLifecycleStatus(s.status, isAr)} />
                     </td>
@@ -313,7 +320,7 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
         </Surface>
       )}
 
@@ -328,15 +335,15 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
             </p>
           </div>
 
-          <div style={{ overflowX: "auto" }}>
+          {assignmentsQuery.isError ? unavailablePanel : <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "start", fontSize: "0.875rem" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)", background: "var(--color-surface-subtle, #f8fafc)" }}>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>الموظف</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>مجموعة الرواتب</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>الراتب الأساسي</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>تاريخ البدء</th>
-                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>تاريخ الانتهاء</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.assignmentsEmployee")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.assignmentsGroup")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.assignmentsBaseSalary")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.assignmentsEffectiveFrom")}</th>
+                  <th style={{ padding: "0.75rem 1rem", fontWeight: 600, color: "var(--color-content-muted)" }}>{t("setup.assignmentsEffectiveTo")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -346,12 +353,12 @@ export function PayrollSetupTab({ legalEntityId }: PayrollSetupTabProps): React.
                     <td style={{ padding: "0.875rem 1rem" }}>{a.payrollGroupName || a.payrollGroupId}</td>
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 600 }}>{a.baseSalary ? `${a.baseSalary.toLocaleString()} ${a.currencyCode}` : "—"}</td>
                     <td style={{ padding: "0.875rem 1rem" }}>{a.effectiveFrom}</td>
-                    <td style={{ padding: "0.875rem 1rem", color: "var(--color-content-secondary)" }}>{a.effectiveTo || "مستمر"}</td>
+                    <td style={{ padding: "0.875rem 1rem", color: "var(--color-content-secondary)" }}>{a.effectiveTo || t("setup.ongoing")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
         </Surface>
       )}
 

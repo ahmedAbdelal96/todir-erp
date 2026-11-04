@@ -78,7 +78,7 @@ export function PayslipViewModal({
             </div>
             <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", marginTop: "0.25rem" }}>
               {t("payslips.payslipNumber")}: #{payslip.payslipNumber}
-              {payslip.finalizedAt && ` • ${new Date(payslip.finalizedAt).toLocaleDateString()}`}
+              {payslip.finalizedAt && `${t("common.listSeparator")}${new Date(payslip.finalizedAt).toLocaleDateString()}`}
             </div>
           </div>
 
@@ -148,7 +148,7 @@ export function PayslipViewModal({
             }}
           >
             <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.875rem", fontWeight: 700, color: "var(--color-content-primary)" }}>
-              {t("payslips.grossEarnings")} (Earnings)
+              {t("payslips.grossEarnings")} ({t("payslips.earningsLabel")})
             </h4>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.8125rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "0.375rem 0", borderBottom: "1px dashed var(--color-border-subtle)" }}>
@@ -172,7 +172,7 @@ export function PayslipViewModal({
             }}
           >
             <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.875rem", fontWeight: 700, color: "var(--color-status-danger)" }}>
-              {t("payslips.totalDeductions")} (Deductions)
+              {t("payslips.totalDeductions")} ({t("payslips.deductionsLabel")})
             </h4>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.8125rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "0.375rem 0", borderBottom: "1px dashed var(--color-border-subtle)" }}>

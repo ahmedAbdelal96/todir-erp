@@ -2,7 +2,9 @@ export const payrollEn = {
   page: {
     title: "Payroll & Compensation",
     description: "Manage payroll cycles, salary calculations, statutory deductions, employee loans, and payslips",
-    helpButton: "Payroll Guide"
+    helpButton: "Payroll Guide",
+    contextRequiredTitle: "Select a legal entity to continue",
+    contextRequiredDescription: "Payroll data is scoped to the selected legal entity. Choose one from the workspace header and try again."
   },
   tabs: {
     home: "Overview",
@@ -36,7 +38,11 @@ export const payrollEn = {
     currency: "Currency",
     search: "Search",
     status: "Status",
-    runType: "Run Type"
+    runType: "Run Type",
+    dataUnavailableTitle: "This list is not available yet",
+    dataUnavailableDescription: "The backend does not currently expose the read contract for this data. You can continue with the available actions, but no records are shown until that contract is delivered.",
+    dataLoadError: "We could not load this data. Try again or contact your administrator.",
+    listSeparator: " • "
   },
   statutoryBanner: {
     title: "Tax & Social Insurance: Not Managed Mode (Direct Entry)",
@@ -350,7 +356,9 @@ export const payrollEn = {
       paid: "Paid Successfully",
       failed: "Transfer Failed",
       cancelled: "Cancelled"
-    }
+    },
+    earningsLabel: "Earnings",
+    deductionsLabel: "Deductions"
   },
   reports: {
     tabTitle: "Reports & Financial Reconciliation",
@@ -416,6 +424,22 @@ export const payrollEn = {
     assignmentsSectionSubtitle: "Assign employees to appropriate payroll groups and salary structures",
     salaryStructuresNoticeTitle: "Salary Structures & Compensation Integration",
     salaryStructuresNoticeDescription: "Base salary and allowance components are managed in the HR module and automatically link to payroll groups to ensure calculation accuracy and single source of truth.",
+    componentsCode: "Code",
+    componentsName: "Component Name",
+    componentsCategory: "Classification",
+    componentsDirection: "Direction",
+    componentsInputMode: "Calculation Method",
+    componentsStatus: "Status",
+    structuresCode: "Code",
+    structuresName: "Structure Name",
+    structuresComponentCount: "Component Count",
+    structuresStatus: "Status",
+    assignmentsEmployee: "Employee",
+    assignmentsGroup: "Payroll Group",
+    assignmentsBaseSalary: "Base Salary",
+    assignmentsEffectiveFrom: "Start Date",
+    assignmentsEffectiveTo: "End Date",
+    ongoing: "Ongoing",
     newPeriodAction: "Add Payroll Period",
     newPeriodModalTitle: "Create New Payroll Period",
     newPeriodModalDesc: "Associate period with a payroll group and schedule start/end dates",

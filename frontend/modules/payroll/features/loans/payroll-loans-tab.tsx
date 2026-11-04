@@ -13,6 +13,7 @@ import { NewLoanModal } from "./new-loan-modal.tsx";
 import { LoanActionModal, type ModalLoanAction } from "./loan-action-modal.tsx";
 import { mapPayrollError } from "../../services/payroll-error-map.ts";
 import type { EmployeeReceivable } from "../../types.ts";
+import { ApiError } from "../../../../core/api/http-client.ts";
 
 export interface PayrollLoansTabProps {
   readonly legalEntityId: string;
@@ -30,7 +31,12 @@ export function PayrollLoansTab({
   const [activeActionType, setActiveActionType] = useState<ModalLoanAction>("pause");
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const { data: receivables = [], isLoading } = useReceivables(legalEntityId);
+  const receivablesQuery = useReceivables(legalEntityId, {
+    ...(searchTerm ? { search: searchTerm } : {}),
+    ...(statusFilter !== "all" ? { status: statusFilter } : {})
+  });
+  const { data: receivables = [], isLoading } = receivablesQuery;
+  const isContractUnavailable = receivablesQuery.isError && receivablesQuery.error instanceof ApiError && [404, 405].includes(receivablesQuery.error.status);
   const approveMutation = useApproveReceivableMutation(legalEntityId);
   const disburseMutation = useRequestDisbursementMutation(legalEntityId);
 
@@ -179,6 +185,18 @@ export function PayrollLoansTab({
           overflow: "hidden"
         }}
       >
+        {receivablesQuery.isError ? (
+          <div role="alert" style={{ padding: "3rem 2rem", textAlign: "center", color: "var(--color-content-secondary)" }}>
+            <p style={{ margin: 0, fontWeight: 700, color: "var(--color-content-primary)" }}>
+              {isContractUnavailable ? t("common.dataUnavailableTitle") : t("common.dataLoadError")}
+            </p>
+            {isContractUnavailable && (
+              <p style={{ margin: "0.5rem 0 0", fontSize: "0.8125rem" }}>
+                {t("common.dataUnavailableDescription")}
+              </p>
+            )}
+          </div>
+        ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
             <thead>
@@ -343,6 +361,7 @@ export function PayrollLoansTab({
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* Modals */}

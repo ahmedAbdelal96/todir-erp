@@ -34,6 +34,7 @@ export function usePayrollComponents(legalEntityId: string) {
   return useQuery({
     queryKey: payrollQueryKeys.components(legalEntityId),
     queryFn: () => payrollApi.listComponents(legalEntityId),
+    retry: false,
     enabled: Boolean(legalEntityId)
   });
 }
@@ -42,6 +43,7 @@ export function useSalaryStructures(legalEntityId: string) {
   return useQuery({
     queryKey: payrollQueryKeys.salaryStructures(legalEntityId),
     queryFn: () => payrollApi.listSalaryStructures(legalEntityId),
+    retry: false,
     enabled: Boolean(legalEntityId)
   });
 }
@@ -50,6 +52,7 @@ export function useEmployeeAssignments(legalEntityId: string) {
   return useQuery({
     queryKey: payrollQueryKeys.employeeAssignments(legalEntityId),
     queryFn: () => payrollApi.listEmployeeAssignments(legalEntityId),
+    retry: false,
     enabled: Boolean(legalEntityId)
   });
 }
@@ -147,24 +150,20 @@ export function usePayrollOpeningBalances(legalEntityId: string, params?: { page
   });
 }
 
-export function usePayrollInputs(legalEntityId: string) {
+export function usePayrollInputs(legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }) {
   return useQuery({
-    queryKey: [...payrollQueryKeys.all, "inputs", legalEntityId],
-    queryFn: async (): Promise<readonly import("../types.ts").PayrollInput[]> => {
-      // Contract gap: backend currently lacks GET /legal-entities/{id}/inputs
-      return [];
-    },
+    queryKey: [...payrollQueryKeys.all, "inputs", legalEntityId, params],
+    queryFn: () => payrollApi.listInputs(legalEntityId, params),
+    retry: false,
     enabled: Boolean(legalEntityId)
   });
 }
 
-export function useReceivables(legalEntityId: string) {
+export function useReceivables(legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }) {
   return useQuery({
-    queryKey: [...payrollQueryKeys.all, "receivables", legalEntityId],
-    queryFn: async (): Promise<readonly import("../types.ts").EmployeeReceivable[]> => {
-      // Contract gap: backend currently lacks GET /legal-entities/{id}/employee-receivables
-      return [];
-    },
+    queryKey: [...payrollQueryKeys.all, "receivables", legalEntityId, params],
+    queryFn: () => payrollApi.listReceivables(legalEntityId, params),
+    retry: false,
     enabled: Boolean(legalEntityId)
   });
 }

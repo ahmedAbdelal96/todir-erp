@@ -67,9 +67,10 @@ export function resolveEmployeeDisplay(
     }
   }
 
-  // Clean presentation fallback if unmapped: Avoid raw ugly UUIDs on business screens
+  // Never expose opaque identifiers as employee names. The API should provide an
+  // employee identity; if it does not, show an honest unavailable label instead.
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(employmentId)) {
-    return isAr ? `موظف #${employmentId.slice(0, 8).toUpperCase()}` : `Employee #${employmentId.slice(0, 8).toUpperCase()}`;
+    return isAr ? "موظف غير متاح" : "Employee unavailable";
   }
 
   return employmentId;

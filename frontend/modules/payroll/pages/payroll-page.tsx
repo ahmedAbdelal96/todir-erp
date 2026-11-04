@@ -14,7 +14,7 @@ import { PayrollReportsTab } from "../features/reports/payroll-reports-tab.tsx";
 import { OpeningBalancesTab } from "../features/opening-balances/opening-balances-tab.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
-import { useLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
+import { useOptionalLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 
 export function PayrollPage(): React.JSX.Element {
@@ -22,16 +22,17 @@ export function PayrollPage(): React.JSX.Element {
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  let contextEntityId: string | undefined;
-  try {
-    const context = useLegalEntityContext();
-    contextEntityId = context?.legalEntityId;
-  } catch {
-    // Outside RuntimeProvider
-  }
+  const runtimeContext = useOptionalLegalEntityContext();
+  const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || "";
 
-  const legalEntityId =
-    outletCtx?.legalEntityId || contextEntityId || "00000000-0000-0000-0000-000000000001";
+  if (!legalEntityId) {
+    return (
+      <div role="alert" style={{ margin: "1.5rem", padding: "2rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-lg)", background: "var(--color-surface-card)", color: "var(--color-content-primary)" }}>
+        <h1 style={{ margin: "0 0 0.5rem", fontSize: "1.25rem" }}>{t("page.contextRequiredTitle")}</h1>
+        <p style={{ margin: 0, color: "var(--color-content-secondary)" }}>{t("page.contextRequiredDescription")}</p>
+      </div>
+    );
+  }
 
   // Active tab & Run Workspace selection derived from searchParams
   const activeTab = (searchParams.get("tab") as PayrollTabId | null) ?? "home";

@@ -2,7 +2,9 @@ export const payrollAr = {
   page: {
     title: "الرواتب والأجور",
     description: "إدارة دورات الرواتب، احتساب المستحقات، الاستقطاعات القانونية، السلف وقسائم الموظفين",
-    helpButton: "دليل إدارة الرواتب"
+    helpButton: "دليل إدارة الرواتب",
+    contextRequiredTitle: "اختر كياناً قانونياً للمتابعة",
+    contextRequiredDescription: "بيانات الرواتب مرتبطة بالكيان القانوني المحدد. اختر كياناً من شريط مساحة العمل ثم حاول مرة أخرى."
   },
   tabs: {
     home: "الرئيسية",
@@ -36,7 +38,11 @@ export const payrollAr = {
     currency: "العملة",
     search: "بحث",
     status: "الحالة",
-    runType: "نوع الدورة"
+    runType: "نوع الدورة",
+    dataUnavailableTitle: "هذه القائمة غير متاحة حالياً",
+    dataUnavailableDescription: "لا يوفر الخادم حالياً عقد القراءة الخاص بهذه البيانات. يمكنك متابعة الإجراءات المتاحة، لكن لن تظهر السجلات حتى يتم توفير العقد.",
+    dataLoadError: "تعذر تحميل البيانات. حاول مرة أخرى أو تواصل مع مسؤول النظام.",
+    listSeparator: " • "
   },
   statutoryBanner: {
     title: "نظام الضرائب والتأمينات: وضع غير مدار (تسجيل مباشر)",
@@ -350,7 +356,9 @@ export const payrollAr = {
       paid: "تم الصرف بنجاح",
       failed: "تعذر التحويل",
       cancelled: "ملغى"
-    }
+    },
+    earningsLabel: "المستحقات",
+    deductionsLabel: "الاستقطاعات"
   },
   reports: {
     tabTitle: "التقارير والمطابقة المالية",
@@ -416,6 +424,22 @@ export const payrollAr = {
     assignmentsSectionSubtitle: "ربط الموظفين بهياكل ومجموعات الرواتب المحددة",
     salaryStructuresNoticeTitle: "تكامل هياكل الرواتب والتعويضات",
     salaryStructuresNoticeDescription: "تتم إدارة عناصر الراتب الأساسية والبدلات عبر وحدة الموارد البشرية (HR)، وترتبط تلقائياً بمجموعات الرواتب لضمان دقة الاحتساب وتفادي ازدواجية مصادر البيانات.",
+    componentsCode: "الرمز",
+    componentsName: "اسم البند",
+    componentsCategory: "التصنيف",
+    componentsDirection: "الاتجاه",
+    componentsInputMode: "طريقة الاحتساب",
+    componentsStatus: "الحالة",
+    structuresCode: "الرمز",
+    structuresName: "اسم الهيكل",
+    structuresComponentCount: "عدد البنود",
+    structuresStatus: "الحالة",
+    assignmentsEmployee: "الموظف",
+    assignmentsGroup: "مجموعة الرواتب",
+    assignmentsBaseSalary: "الراتب الأساسي",
+    assignmentsEffectiveFrom: "تاريخ البدء",
+    assignmentsEffectiveTo: "تاريخ الانتهاء",
+    ongoing: "مستمر",
     newPeriodAction: "إضافة فترة رواتب",
     newPeriodModalTitle: "إنشاء فترة رواتب جديدة",
     newPeriodModalDesc: "اربط الفترة بمجموعة رواتب محددة وحدد تواريخ الاستحقاق",

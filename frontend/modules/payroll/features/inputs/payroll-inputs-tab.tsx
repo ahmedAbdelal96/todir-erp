@@ -12,6 +12,7 @@ import { NewPayrollInputModal } from "./new-payroll-input-modal.tsx";
 import { PayrollImportDialog } from "./payroll-import-dialog.tsx";
 import { mapPayrollError } from "../../services/payroll-error-map.ts";
 import type { PayrollInput } from "../../types.ts";
+import { ApiError } from "../../../../core/api/http-client.ts";
 
 export interface PayrollInputsTabProps {
   readonly legalEntityId: string;
@@ -28,7 +29,12 @@ export function PayrollInputsTab({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const { data: inputs = [], isLoading } = usePayrollInputs(legalEntityId);
+  const inputsQuery = usePayrollInputs(legalEntityId, {
+    ...(searchTerm ? { search: searchTerm } : {}),
+    ...(statusFilter !== "all" ? { status: statusFilter } : {})
+  });
+  const { data: inputs = [], isLoading } = inputsQuery;
+  const isContractUnavailable = inputsQuery.isError && inputsQuery.error instanceof ApiError && [404, 405].includes(inputsQuery.error.status);
   const approveMutation = useApprovePayrollInputMutation(legalEntityId);
 
   const filtered = inputs.filter((item: PayrollInput) => {
@@ -205,6 +211,18 @@ export function PayrollInputsTab({
           overflow: "hidden"
         }}
       >
+        {inputsQuery.isError ? (
+          <div role="alert" style={{ padding: "3rem 2rem", textAlign: "center", color: "var(--color-content-secondary)" }}>
+            <p style={{ margin: 0, fontWeight: 700, color: "var(--color-content-primary)" }}>
+              {isContractUnavailable ? t("common.dataUnavailableTitle") : t("common.dataLoadError")}
+            </p>
+            {isContractUnavailable && (
+              <p style={{ margin: "0.5rem 0 0", fontSize: "0.8125rem" }}>
+                {t("common.dataUnavailableDescription")}
+              </p>
+            )}
+          </div>
+        ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
             <thead>
@@ -297,6 +315,7 @@ export function PayrollInputsTab({
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* Creation Modal */}

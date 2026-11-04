@@ -157,8 +157,9 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
       await componentsTab.click();
       await page.waitForTimeout(600);
       await expect(page.getByRole('heading', { level: 3, name: /بنود الراتب/i })).toBeVisible();
-      // Verify seeded component code BASE or TRANSPORT
-      await expect(page.getByText(/TRANSPORT/i)).toBeVisible();
+      // The current backend does not expose the component read contract. The UI
+      // must state that limitation instead of fabricating seeded rows.
+      await expect(page.getByRole('alert').getByText(/هذه القائمة غير متاحة حالياً/i)).toBeVisible();
     }
 
     // Click Structures sub-tab

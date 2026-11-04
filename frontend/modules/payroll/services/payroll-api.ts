@@ -150,6 +150,15 @@ export const payrollApi = {
       method: "POST"
     }),
 
+  listInputs: (legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }): Promise<readonly PayrollInput[]> => {
+    const q = new URLSearchParams();
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
+    if (params?.search) q.set("search", params.search);
+    if (params?.status) q.set("status", params.status);
+    return httpClient<readonly PayrollInput[]>(`${BASE}/legal-entities/${legalEntityId}/inputs?${q.toString()}`);
+  },
+
   // Receivables (Loans & Advances)
   createReceivable: (legalEntityId: string, request: CreateReceivableRequest): Promise<EmployeeReceivable> =>
     httpClient<EmployeeReceivable>(`${BASE}/legal-entities/${legalEntityId}/employee-receivables`, {
@@ -161,6 +170,15 @@ export const payrollApi = {
     httpClient<EmployeeReceivable>(`${BASE}/legal-entities/${legalEntityId}/employee-receivables/${receivableId}/approve`, {
       method: "POST"
     }),
+
+  listReceivables: (legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }): Promise<readonly EmployeeReceivable[]> => {
+    const q = new URLSearchParams();
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
+    if (params?.search) q.set("search", params.search);
+    if (params?.status) q.set("status", params.status);
+    return httpClient<readonly EmployeeReceivable[]>(`${BASE}/legal-entities/${legalEntityId}/employee-receivables?${q.toString()}`);
+  },
 
   requestDisbursement: (legalEntityId: string, receivableId: string): Promise<ReceivableDisbursement> =>
     httpClient<ReceivableDisbursement>(`${BASE}/legal-entities/${legalEntityId}/employee-receivables/${receivableId}/disburse`, {
@@ -270,119 +288,12 @@ export const payrollApi = {
     }),
 
   // Components, Structures, and Assignments
-  listComponents: async (legalEntityId?: string): Promise<readonly PayrollComponent[]> => {
-    try {
-      const q = legalEntityId ? `?legalEntityId=${encodeURIComponent(legalEntityId)}` : "";
-      return await httpClient<readonly PayrollComponent[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId || "")}/components${q}`);
-    } catch {
-      // Authoritative database-seeded components for tenant / legal entity
-      return [
-        {
-          id: "a79a0a10-0627-5f51-afa1-eb21b15265ee",
-          code: "TRANSPORT",
-          name: "بدل انتقالات",
-          category: "Earning",
-          direction: "Credit",
-          inputMode: "Manual",
-          status: "Active"
-        },
-        {
-          id: "79f84bd0-8a34-3f5a-a558-a7c4e02d871e",
-          code: "BASE",
-          name: "الراتب الأساسي",
-          category: "Earning",
-          direction: "Credit",
-          inputMode: "Formula",
-          status: "Active"
-        },
-        {
-          id: "2409ddf2-5596-575f-ab09-bbdeaf06f464",
-          code: "TAX",
-          name: "ضريبة كسب العمل",
-          category: "EmployeeDeduction",
-          direction: "Debit",
-          inputMode: "Provider",
-          status: "Active"
-        },
-        {
-          id: "f38e7a17-a9f6-cd57-85dd-29d8152532d1",
-          code: "LOAN-RECOVERY",
-          name: "استرداد سلفة أو قرض",
-          category: "Recovery",
-          direction: "Debit",
-          inputMode: "Formula",
-          status: "Active"
-        }
-      ];
-    }
-  },
+  listComponents: (legalEntityId: string): Promise<readonly PayrollComponent[]> =>
+    httpClient<readonly PayrollComponent[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/components`),
 
-  listSalaryStructures: async (legalEntityId?: string): Promise<readonly SalaryStructure[]> => {
-    try {
-      const q = legalEntityId ? `?legalEntityId=${encodeURIComponent(legalEntityId)}` : "";
-      return await httpClient<readonly SalaryStructure[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId || "")}/salary-structures${q}`);
-    } catch {
-      return [
-        {
-          id: "3e0bd83a-e18d-4a1b-90f1-000000000001",
-          legalEntityId: legalEntityId || "",
-          code: "STANDARD_GRADE_A",
-          name: "هيكل الرواتب القياسي — الدرجة الأولى (Executive/HQ)",
-          status: "Active",
-          componentsCount: 4
-        },
-        {
-          id: "3e0bd83a-e18d-4a1b-90f1-000000000002",
-          legalEntityId: legalEntityId || "",
-          code: "OPERATIONS_GRADE_B",
-          name: "هيكل الرواتب التشغيلي — العمليات والفروع (Branch Operations)",
-          status: "Active",
-          componentsCount: 3
-        }
-      ];
-    }
-  },
+  listSalaryStructures: (legalEntityId: string): Promise<readonly SalaryStructure[]> =>
+    httpClient<readonly SalaryStructure[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/salary-structures`),
 
-  listEmployeeAssignments: async (legalEntityId?: string): Promise<readonly EmployeePayrollAssignment[]> => {
-    try {
-      const q = legalEntityId ? `?legalEntityId=${encodeURIComponent(legalEntityId)}` : "";
-      return await httpClient<readonly EmployeePayrollAssignment[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId || "")}/assignments${q}`);
-    } catch {
-      return [
-        {
-          id: "01a1a179-79bb-70bf-bf8e-0ed91d079cd5",
-          employmentId: "01a1a179-79bb-70bf-bf8e-0ed91d079cd5",
-          employeeName: "حسام عبد الرحمن الشريف",
-          employmentNumber: "EMP-000083",
-          payrollGroupId: "c9d64cb2-6419-74d1-be71-cf95cae7284b",
-          payrollGroupName: "الرواتب الشهرية - يوم 10",
-          baseSalary: 30000,
-          currencyCode: "EGP",
-          effectiveFrom: "2026-01-01"
-        },
-        {
-          id: "980f8b8e-deef-8e5e-88d7-7b4e29f7eb39",
-          employmentId: "980f8b8e-deef-8e5e-88d7-7b4e29f7eb39",
-          employeeName: "ياسمين عبدالله",
-          employmentNumber: "EMP-000047",
-          payrollGroupId: "c9d64cb2-6419-74d1-be71-cf95cae7284b",
-          payrollGroupName: "الرواتب الشهرية - يوم 10",
-          baseSalary: 28000,
-          currencyCode: "EGP",
-          effectiveFrom: "2026-01-01"
-        },
-        {
-          id: "9644af29-f8c7-965c-afbe-62404cecf903",
-          employmentId: "9644af29-f8c7-965c-afbe-62404cecf903",
-          employeeName: "مريم محمود",
-          employmentNumber: "EMP-000049",
-          payrollGroupId: "c9d64cb2-6419-74d1-be71-cf95cae7284b",
-          payrollGroupName: "الرواتب الشهرية - يوم 10",
-          baseSalary: 26500,
-          currencyCode: "EGP",
-          effectiveFrom: "2026-01-01"
-        }
-      ];
-    }
-  }
+  listEmployeeAssignments: (legalEntityId: string): Promise<readonly EmployeePayrollAssignment[]> =>
+    httpClient<readonly EmployeePayrollAssignment[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/assignments`)
 };
