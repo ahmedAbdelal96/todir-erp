@@ -27,8 +27,15 @@ import type {
   PayrollStatutorySettings,
   UpdatePayrollStatutorySettingsRequest,
   PayrollComponent,
+  CreatePayrollComponentRequest,
+  CreatePayrollComponentVersionRequest,
+  PayrollComponentVersion,
   SalaryStructure,
-  EmployeePayrollAssignment
+  CreateSalaryStructureRequest,
+  CreateSalaryStructureVersionRequest,
+  SalaryStructureVersion,
+  EmployeePayrollAssignment,
+  CreatePayrollAssignmentRequest
 } from "../types.ts";
 
 const BASE = "/api/v1/payroll";
@@ -150,6 +157,11 @@ export const payrollApi = {
       method: "POST"
     }),
 
+  cancelInput: (legalEntityId: string, inputId: string): Promise<PayrollInput> =>
+    httpClient<PayrollInput>(`${BASE}/legal-entities/${legalEntityId}/inputs/${inputId}/cancel`, {
+      method: "POST"
+    }),
+
   listInputs: (legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }): Promise<readonly PayrollInput[]> => {
     const q = new URLSearchParams();
     if (params?.page != null) q.set("page", String(params.page));
@@ -181,6 +193,11 @@ export const payrollApi = {
   },
 
   requestDisbursement: (legalEntityId: string, receivableId: string): Promise<ReceivableDisbursement> =>
+    httpClient<ReceivableDisbursement>(`${BASE}/legal-entities/${legalEntityId}/employee-receivables/${receivableId}/disburse`, {
+      method: "POST"
+    }),
+
+  disburseReceivable: (legalEntityId: string, receivableId: string): Promise<ReceivableDisbursement> =>
     httpClient<ReceivableDisbursement>(`${BASE}/legal-entities/${legalEntityId}/employee-receivables/${receivableId}/disburse`, {
       method: "POST"
     }),
@@ -287,13 +304,73 @@ export const payrollApi = {
       body: JSON.stringify(request)
     }),
 
-  // Components, Structures, and Assignments
-  listComponents: (legalEntityId: string): Promise<readonly PayrollComponent[]> =>
-    httpClient<readonly PayrollComponent[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/components`),
+  // Components
+  listComponents: (legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }): Promise<readonly PayrollComponent[]> => {
+    const q = new URLSearchParams();
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
+    if (params?.search) q.set("search", params.search);
+    if (params?.status) q.set("status", params.status);
+    return httpClient<readonly PayrollComponent[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/components?${q.toString()}`);
+  },
 
-  listSalaryStructures: (legalEntityId: string): Promise<readonly SalaryStructure[]> =>
-    httpClient<readonly SalaryStructure[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/salary-structures`),
+  createComponent: (legalEntityId: string, request: CreatePayrollComponentRequest): Promise<PayrollComponent> =>
+    httpClient<PayrollComponent>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/components`, {
+      method: "POST",
+      body: JSON.stringify(request)
+    }),
 
-  listEmployeeAssignments: (legalEntityId: string): Promise<readonly EmployeePayrollAssignment[]> =>
-    httpClient<readonly EmployeePayrollAssignment[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/assignments`)
+  createComponentVersion: (legalEntityId: string, componentId: string, request: CreatePayrollComponentVersionRequest): Promise<PayrollComponentVersion> =>
+    httpClient<PayrollComponentVersion>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/components/${componentId}/versions`, {
+      method: "POST",
+      body: JSON.stringify(request)
+    }),
+
+  publishComponentVersion: (legalEntityId: string, componentVersionId: string): Promise<PayrollComponentVersion> =>
+    httpClient<PayrollComponentVersion>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/component-versions/${componentVersionId}/publish`, {
+      method: "POST"
+    }),
+
+  // Salary Structures
+  listSalaryStructures: (legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }): Promise<readonly SalaryStructure[]> => {
+    const q = new URLSearchParams();
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
+    if (params?.search) q.set("search", params.search);
+    if (params?.status) q.set("status", params.status);
+    return httpClient<readonly SalaryStructure[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/salary-structures?${q.toString()}`);
+  },
+
+  createSalaryStructure: (legalEntityId: string, request: CreateSalaryStructureRequest): Promise<SalaryStructure> =>
+    httpClient<SalaryStructure>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/salary-structures`, {
+      method: "POST",
+      body: JSON.stringify(request)
+    }),
+
+  createSalaryStructureVersion: (legalEntityId: string, structureId: string, request: CreateSalaryStructureVersionRequest): Promise<SalaryStructureVersion> =>
+    httpClient<SalaryStructureVersion>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/salary-structures/${structureId}/versions`, {
+      method: "POST",
+      body: JSON.stringify(request)
+    }),
+
+  publishSalaryStructureVersion: (legalEntityId: string, versionId: string): Promise<SalaryStructureVersion> =>
+    httpClient<SalaryStructureVersion>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/salary-structure-versions/${versionId}/publish`, {
+      method: "POST"
+    }),
+
+  // Employee Assignments
+  listEmployeeAssignments: (legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }): Promise<readonly EmployeePayrollAssignment[]> => {
+    const q = new URLSearchParams();
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
+    if (params?.search) q.set("search", params.search);
+    if (params?.status) q.set("status", params.status);
+    return httpClient<readonly EmployeePayrollAssignment[]>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/assignments?${q.toString()}`);
+  },
+
+  createEmployeeAssignment: (legalEntityId: string, employmentId: string, request: CreatePayrollAssignmentRequest): Promise<EmployeePayrollAssignment> =>
+    httpClient<EmployeePayrollAssignment>(`${BASE}/legal-entities/${encodeURIComponent(legalEntityId)}/employments/${employmentId}/assignments`, {
+      method: "POST",
+      body: JSON.stringify(request)
+    })
 };

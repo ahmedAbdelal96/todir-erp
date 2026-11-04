@@ -36,7 +36,6 @@ export function PayrollLoansTab({
     ...(statusFilter !== "all" ? { status: statusFilter } : {})
   });
   const { data: receivables = [], isLoading } = receivablesQuery;
-  const isContractUnavailable = receivablesQuery.isError && receivablesQuery.error instanceof ApiError && [404, 405].includes(receivablesQuery.error.status);
   const approveMutation = useApproveReceivableMutation(legalEntityId);
   const disburseMutation = useRequestDisbursementMutation(legalEntityId);
 
@@ -45,6 +44,8 @@ export function PayrollLoansTab({
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
     return (
+      (item.employeeName && item.employeeName.toLowerCase().includes(term)) ||
+      (item.employmentNumber && item.employmentNumber.toLowerCase().includes(term)) ||
       item.employmentId.toLowerCase().includes(term) ||
       item.type.toLowerCase().includes(term)
     );
@@ -186,15 +187,18 @@ export function PayrollLoansTab({
         }}
       >
         {receivablesQuery.isError ? (
-          <div role="alert" style={{ padding: "3rem 2rem", textAlign: "center", color: "var(--color-content-secondary)" }}>
+          <div role="alert" style={{ padding: "3rem 2rem", textAlign: "center", color: "var(--color-status-danger)" }}>
             <p style={{ margin: 0, fontWeight: 700, color: "var(--color-content-primary)" }}>
-              {isContractUnavailable ? t("common.dataUnavailableTitle") : t("common.dataLoadError")}
+              {t("common.dataLoadError")}
             </p>
-            {isContractUnavailable && (
-              <p style={{ margin: "0.5rem 0 0", fontSize: "0.8125rem" }}>
-                {t("common.dataUnavailableDescription")}
-              </p>
-            )}
+            <Button
+              variant="secondary"
+              size="compact"
+              onPress={() => void receivablesQuery.refetch()}
+              style={{ marginTop: "0.75rem" }}
+            >
+              {t("common.retry", "إعادة المحاولة")}
+            </Button>
           </div>
         ) : (
         <div style={{ overflowX: "auto" }}>
@@ -244,8 +248,13 @@ export function PayrollLoansTab({
                   >
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <div style={{ fontWeight: 600, color: "var(--color-content-primary)" }}>
-                        {item.employmentId}
+                        {item.employeeName || item.employmentId}
                       </div>
+                      {item.employmentNumber && (
+                        <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", fontFamily: "var(--font-mono)" }}>
+                          {item.employmentNumber}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <span

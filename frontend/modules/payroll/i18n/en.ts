@@ -451,6 +451,64 @@ export const payrollEn = {
     plannedPayDate: "Scheduled Payment Date",
     targetPayDate: "Scheduled Pay Date",
     savePeriodAction: "Save Period",
+    components: {
+      emptyTitle: "No payroll components found",
+      emptyDesc: "Add earnings, allowances, and deductions to configure payroll.",
+      newComponentAction: "Add Payroll Component",
+      newComponentModalTitle: "Add New Payroll Component",
+      newComponentModalDesc: "Define component code, accounting direction, and calculation mode",
+      searchPlaceholder: "Search by component code or name...",
+      codeRequired: "Component code is required",
+      codePlaceholder: "e.g. HOUSING, BONUS",
+      nameRequired: "Component name is required",
+      namePlaceholder: "e.g. Housing Allowance, Performance Bonus"
+    },
+    structures: {
+      emptyTitle: "No salary structures found",
+      emptyDesc: "Create salary structures to associate employees with wage elements.",
+      newStructureAction: "Add Salary Structure",
+      newStructureModalTitle: "Add New Salary Structure",
+      newStructureModalDesc: "Define a salary structure to group employee earnings and deductions",
+      searchPlaceholder: "Search by structure code or name...",
+      codeRequired: "Structure code is required",
+      codePlaceholder: "e.g. EXEC-GRADE, SALES-REP",
+      currencyPlaceholder: "EGP",
+      nameRequired: "Structure name is required",
+      namePlaceholder: "e.g. Executive Grade Structure",
+      standardStructure: "Standard Salary Structure (STANDARD-EG)"
+    },
+    assignments: {
+      emptyTitle: "No employee assignments found",
+      emptyDesc: "Start assigning employees to payroll groups and salary structures.",
+      newAssignmentAction: "Assign Employee",
+      newAssignmentModalTitle: "Assign Employee to Payroll",
+      newAssignmentModalDesc: "Assign an employee to a payroll group with base salary and effective dates",
+      searchPlaceholder: "Search by employee name or number...",
+      employeeRequired: "Target employee is required",
+      groupRequired: "Payroll group is required",
+      salaryPositiveRequired: "Base salary must be greater than zero",
+      effectiveFromRequired: "Effective date is required",
+      selectEmployeePlaceholder: "Select employee to assign..."
+    },
+    componentCategories: {
+      earning: "Earning",
+      employeeDeduction: "Deduction",
+      employerContribution: "Employer Contribution",
+      informational: "Informational",
+      recovery: "Recovery"
+    },
+    componentDirections: {
+      credit: "Credit",
+      debit: "Debit",
+      memo: "Memo"
+    },
+    componentInputModes: {
+      manual: "Manual",
+      formula: "Formula",
+      import: "Import",
+      provider: "Provider",
+      timeAndAttendance: "Time & Attendance"
+    },
     groups: {
       emptyTitle: "No payroll groups found",
       emptyDesc: "Create your first group to organize company employees.",

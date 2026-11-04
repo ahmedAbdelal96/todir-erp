@@ -5,7 +5,8 @@ import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Select } from "../../../../components/primitives/select.tsx";
 import {
   usePayrollInputs,
-  useApprovePayrollInputMutation
+  useApprovePayrollInputMutation,
+  useCancelPayrollInputMutation
 } from "../../hooks/use-payroll-queries.ts";
 import { PayrollStatusBadge } from "../../components/payroll-status-badge.tsx";
 import { NewPayrollInputModal } from "./new-payroll-input-modal.tsx";
@@ -34,14 +35,18 @@ export function PayrollInputsTab({
     ...(statusFilter !== "all" ? { status: statusFilter } : {})
   });
   const { data: inputs = [], isLoading } = inputsQuery;
-  const isContractUnavailable = inputsQuery.isError && inputsQuery.error instanceof ApiError && [404, 405].includes(inputsQuery.error.status);
   const approveMutation = useApprovePayrollInputMutation(legalEntityId);
+  const cancelMutation = useCancelPayrollInputMutation(legalEntityId);
 
   const filtered = inputs.filter((item: PayrollInput) => {
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
     return (
+      (item.employeeName && item.employeeName.toLowerCase().includes(term)) ||
+      (item.employmentNumber && item.employmentNumber.toLowerCase().includes(term)) ||
+      (item.componentName && item.componentName.toLowerCase().includes(term)) ||
+      (item.componentCode && item.componentCode.toLowerCase().includes(term)) ||
       item.employmentId.toLowerCase().includes(term) ||
       item.componentId.toLowerCase().includes(term) ||
       (item.notes && item.notes.toLowerCase().includes(term))
@@ -212,15 +217,18 @@ export function PayrollInputsTab({
         }}
       >
         {inputsQuery.isError ? (
-          <div role="alert" style={{ padding: "3rem 2rem", textAlign: "center", color: "var(--color-content-secondary)" }}>
+          <div role="alert" style={{ padding: "3rem 2rem", textAlign: "center", color: "var(--color-status-danger)" }}>
             <p style={{ margin: 0, fontWeight: 700, color: "var(--color-content-primary)" }}>
-              {isContractUnavailable ? t("common.dataUnavailableTitle") : t("common.dataLoadError")}
+              {t("common.dataLoadError")}
             </p>
-            {isContractUnavailable && (
-              <p style={{ margin: "0.5rem 0 0", fontSize: "0.8125rem" }}>
-                {t("common.dataUnavailableDescription")}
-              </p>
-            )}
+            <Button
+              variant="secondary"
+              size="compact"
+              onPress={() => void inputsQuery.refetch()}
+              style={{ marginTop: "0.75rem" }}
+            >
+              {t("common.retry", "إعادة المحاولة")}
+            </Button>
           </div>
         ) : (
         <div style={{ overflowX: "auto" }}>
@@ -251,18 +259,19 @@ export function PayrollInputsTab({
                 <th style={{ padding: "0.75rem 1rem" }}>{t("inputs.date")}</th>
                 <th style={{ padding: "0.75rem 1rem" }}>{t("inputs.status")}</th>
                 <th style={{ padding: "0.75rem 1rem" }}>{t("inputs.notes")}</th>
+                <th style={{ padding: "0.75rem 1rem" }}>{t("runs.actionsTitle", "الإجراءات")}</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>
+                  <td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>
                     {t("common.loading")}
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: "3rem 2rem", textAlign: "center" }}>
+                  <td colSpan={8} style={{ padding: "3rem 2rem", textAlign: "center" }}>
                     <p style={{ margin: 0, fontWeight: 600, color: "var(--color-content-primary)" }}>
                       {t("inputs.emptyTitle")}
                     </p>
@@ -293,10 +302,22 @@ export function PayrollInputsTab({
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <div style={{ fontWeight: 600, color: "var(--color-content-primary)" }}>
-                        {item.employmentId}
+                        {item.employeeName || item.employmentId}
                       </div>
+                      {item.employmentNumber && (
+                        <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", fontFamily: "var(--font-mono)" }}>
+                          {item.employmentNumber}
+                        </div>
+                      )}
                     </td>
-                    <td style={{ padding: "0.75rem 1rem", fontWeight: 600 }}>{item.componentId}</td>
+                    <td style={{ padding: "0.75rem 1rem" }}>
+                      <div style={{ fontWeight: 600 }}>{item.componentName || item.componentCode || item.componentId}</div>
+                      {item.componentCode && item.componentName && (
+                        <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", fontFamily: "var(--font-mono)" }}>
+                          {item.componentCode}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: "0.75rem 1rem", fontWeight: 600 }}>
                       <bdi>{item.amount.toLocaleString()} {item.currencyCode}</bdi>
                     </td>
@@ -308,6 +329,47 @@ export function PayrollInputsTab({
                     </td>
                     <td style={{ padding: "0.75rem 1rem", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
                       {item.notes || "—"}
+                    </td>
+                    <td style={{ padding: "0.75rem 1rem" }}>
+                      {item.status === "Draft" ? (
+                        <div style={{ display: "flex", gap: "0.375rem" }}>
+                          <Button
+                            variant="secondary"
+                            size="compact"
+                            onPress={async () => {
+                              setActionError(null);
+                              try {
+                                await approveMutation.mutateAsync(item.id);
+                              } catch (err: unknown) {
+                                const mapped = mapPayrollError(err);
+                                setActionError(t(mapped.messageKey, mapped.defaultMessage));
+                              }
+                            }}
+                            isDisabled={approveMutation.isPending || cancelMutation.isPending}
+                          >
+                            {t("actions.approve", "اعتماد")}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="compact"
+                            onPress={async () => {
+                              setActionError(null);
+                              try {
+                                await cancelMutation.mutateAsync(item.id);
+                              } catch (err: unknown) {
+                                const mapped = mapPayrollError(err);
+                                setActionError(t(mapped.messageKey, mapped.defaultMessage));
+                              }
+                            }}
+                            isDisabled={approveMutation.isPending || cancelMutation.isPending}
+                            style={{ color: "var(--color-status-danger)" }}
+                          >
+                            {t("actions.cancel", "إلغاء")}
+                          </Button>
+                        </div>
+                      ) : (
+                        <span style={{ color: "var(--color-content-muted)" }}>—</span>
+                      )}
                     </td>
                   </tr>
                 ))

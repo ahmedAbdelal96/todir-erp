@@ -451,6 +451,64 @@ export const payrollAr = {
     plannedPayDate: "تاريخ الصرف الفعلي المخطط",
     targetPayDate: "تاريخ الاستحقاق المقرر",
     savePeriodAction: "حفظ الفترة",
+    components: {
+      emptyTitle: "لا توجد بنود رواتب مسجلة",
+      emptyDesc: "أضف بنود الأجور والبدلات والاستقطاعات لتهيئة مسير الرواتب.",
+      newComponentAction: "إضافة بند راتب جديد",
+      newComponentModalTitle: "إضافة بند راتب جديد",
+      newComponentModalDesc: "تعريف رمز البند، الاتجاه المحاسبي وطريقة الاحتساب",
+      searchPlaceholder: "البحث برمز البند أو اسمه...",
+      codeRequired: "رمز البند مطلوب",
+      codePlaceholder: "مثال: HOUSING, BONUS",
+      nameRequired: "اسم البند مطلوب",
+      namePlaceholder: "مثال: بدل سكن، مكافأة أداء"
+    },
+    structures: {
+      emptyTitle: "لا توجد هياكل رواتب مسجلة",
+      emptyDesc: "قم بإنشاء هيكل رواتب لربط الموظفين ببنود الأجور والبدلات.",
+      newStructureAction: "إضافة هيكل رواتب",
+      newStructureModalTitle: "إضافة هيكل رواتب جديد",
+      newStructureModalDesc: "تعريف هيكل أجور لربط الموظفين ببنود الاستحقاق والاستقطاع",
+      searchPlaceholder: "البحث برمز الهيكل أو اسمه...",
+      codeRequired: "رمز الهيكل مطلوب",
+      codePlaceholder: "مثال: EXEC-GRADE, SALES-REP",
+      currencyPlaceholder: "EGP",
+      nameRequired: "اسم هيكل الرواتب مطلوب",
+      namePlaceholder: "مثال: هيكل رواتب الإدارة التنفيذية",
+      standardStructure: "هيكل الرواتب القياسي (STANDARD-EG)"
+    },
+    assignments: {
+      emptyTitle: "لا يوجد موظفون مسكنون بعد",
+      emptyDesc: "ابدأ بتسكين موظفي المنشأة على مجموعات الرواتب وهياكل الأجور.",
+      newAssignmentAction: "تسكين موظف جديد",
+      newAssignmentModalTitle: "تسكين موظف على دورة الرواتب",
+      newAssignmentModalDesc: "ربط الموظف بمجموعة الرواتب وتحديد الراتب الأساسي وتاريخ السريان",
+      searchPlaceholder: "البحث بالموظف أو الرقم الوظيفي...",
+      employeeRequired: "يجب تحديد الموظف",
+      groupRequired: "يجب اختيار مجموعة الرواتب",
+      salaryPositiveRequired: "يجب أن يكون الراتب الأساسي أكبر من صفر",
+      effectiveFromRequired: "تاريخ البدء مطلوب",
+      selectEmployeePlaceholder: "اختر الموظف لتسكينه..."
+    },
+    componentCategories: {
+      earning: "استحقاق (Earning)",
+      employeeDeduction: "استقطاع موظف (Deduction)",
+      employerContribution: "مساهمة منشأة (Employer Contribution)",
+      informational: "معلوماتي (Informational)",
+      recovery: "استرداد سلفة (Recovery)"
+    },
+    componentDirections: {
+      credit: "إضافة للراتب (Credit)",
+      debit: "خصم من الراتب (Debit)",
+      memo: "قيد بياني (Memo)"
+    },
+    componentInputModes: {
+      manual: "يدوي (Manual)",
+      formula: "معادلة / آلي (Formula)",
+      import: "استيراد ملف (Import)",
+      provider: "مزود قانوني (Provider)",
+      timeAndAttendance: "حضور وانصراف (Time & Attendance)"
+    },
     groups: {
       emptyTitle: "لا توجد مجموعات رواتب",
       emptyDesc: "قم بإنشاء أول مجموعة لتنظيم موظفي المنشأة.",

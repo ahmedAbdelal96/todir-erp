@@ -64,8 +64,9 @@ export function Dialog({
         backgroundColor: "rgba(15, 23, 42, 0.6)",
         zIndex: 1400,
         backdropFilter: "blur(3px)",
-        display: "grid",
-        placeItems: "center",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         padding: "1.25rem",
         boxSizing: "border-box"
       }}
@@ -80,7 +81,7 @@ export function Dialog({
           zIndex: 1401,
           display: "flex",
           flexDirection: "column",
-          margin: 0
+          margin: "auto"
         }}
       >
         <AriaDialog

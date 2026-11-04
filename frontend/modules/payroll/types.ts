@@ -12,9 +12,9 @@ export type ReceivableType = "Advance" | "Loan";
 export type ReceivableStatus = "Draft" | "Approved" | "Disbursed" | "Paused" | "Settled" | "WrittenOff" | "Cancelled";
 export type LoanActionType = "Pause" | "Resume" | "Reschedule" | "ExternalRepayment" | "EarlySettlement" | "WriteOff";
 export type OpeningBalanceType = "NetPay" | "Tax" | "Insurance" | "Loan" | "Advance" | "Other";
-export type ComponentCategory = "Earning" | "EmployeeDeduction" | "EmployerContribution" | "Informational" | "Recovery";
+export type ComponentCategory = "Earning" | "EmployeeDeduction" | "EmployerContribution" | "Informational" | "Recovery" | "Deduction";
 export type ComponentDirection = "Credit" | "Debit" | "Memo";
-export type ComponentInputMode = "Formula" | "Manual" | "Provider";
+export type ComponentInputMode = "Formula" | "Manual" | "Provider" | "Import" | "TimeAndAttendance";
 
 export interface PayrollComponent {
   readonly id: string;
@@ -23,7 +23,32 @@ export interface PayrollComponent {
   readonly category: ComponentCategory;
   readonly direction: ComponentDirection;
   readonly inputMode: ComponentInputMode;
-  readonly status: "Active" | "Retired";
+  readonly status: "Active" | "Retired" | "Draft";
+}
+
+export interface CreatePayrollComponentRequest {
+  readonly code: string;
+  readonly name: string;
+  readonly category: string;
+  readonly direction: string;
+  readonly inputMode: string;
+}
+
+export interface CreatePayrollComponentVersionRequest {
+  readonly effectiveFrom: string;
+  readonly formula: unknown;
+  readonly roundingScale?: number;
+  readonly providerCode?: string | null;
+}
+
+export interface PayrollComponentVersion {
+  readonly id: string;
+  readonly componentId: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | null;
+  readonly status: string;
+  readonly roundingScale: number;
+  readonly providerCode?: string | null;
 }
 
 export interface SalaryStructure {
@@ -31,21 +56,53 @@ export interface SalaryStructure {
   readonly legalEntityId: string;
   readonly code: string;
   readonly name: string;
-  readonly status: "Active" | "Archived";
+  readonly status: "Active" | "Archived" | "Draft";
   readonly componentsCount?: number;
+}
+
+export interface CreateSalaryStructureRequest {
+  readonly legalEntityId: string;
+  readonly code: string;
+  readonly name: string;
+  readonly currencyCode: string;
+}
+
+export interface CreateSalaryStructureVersionRequest {
+  readonly effectiveFrom: string;
+  readonly currencyCode: string;
+}
+
+export interface SalaryStructureVersion {
+  readonly id: string;
+  readonly salaryStructureId: string;
+  readonly versionNumber: number;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | null;
+  readonly status: string;
+  readonly currencyCode: string;
 }
 
 export interface EmployeePayrollAssignment {
   readonly id: string;
   readonly employmentId: string;
-  readonly employeeName?: string;
-  readonly employmentNumber?: string;
+  readonly employeeName?: string | null;
+  readonly employmentNumber?: string | null;
   readonly payrollGroupId: string;
-  readonly payrollGroupName?: string;
+  readonly payrollGroupName?: string | null;
   readonly baseSalary: number;
   readonly currencyCode: string;
   readonly effectiveFrom: string;
   readonly effectiveTo?: string | null;
+}
+
+export interface CreatePayrollAssignmentRequest {
+  readonly legalEntityId: string;
+  readonly payrollGroupId: string;
+  readonly salaryStructureVersionId: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | null;
+  readonly baseSalary: number;
+  readonly currencyCode: string;
 }
 
 export interface PayrollGroup {
@@ -125,6 +182,8 @@ export interface EmployeeReceivable {
   readonly outstandingPrincipal: number;
   readonly currencyCode: string;
   readonly status: ReceivableStatus;
+  readonly employeeName?: string | null;
+  readonly employmentNumber?: string | null;
 }
 
 export interface ReceivableDisbursement {
@@ -165,6 +224,10 @@ export interface PayrollInput {
   readonly source: string;
   readonly status: string;
   readonly notes?: string | null;
+  readonly employeeName?: string | null;
+  readonly employmentNumber?: string | null;
+  readonly componentCode?: string | null;
+  readonly componentName?: string | null;
 }
 
 export interface PayrollSnapshot {

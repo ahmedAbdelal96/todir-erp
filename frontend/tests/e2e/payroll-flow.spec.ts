@@ -151,31 +151,73 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     await page.locator('[data-testid="payroll-tab-setup"]').click();
     await page.waitForTimeout(800);
 
-    // Click Components sub-tab
+    // 1. Click Components sub-tab
     const componentsTab = page.getByRole('tab', { name: /بنود الراتب/i });
     if (await componentsTab.isVisible({ timeout: 3000 }).catch(() => false)) {
       await componentsTab.click();
       await page.waitForTimeout(600);
       await expect(page.getByRole('heading', { level: 3, name: /بنود الراتب/i })).toBeVisible();
-      // The current backend does not expose the component read contract. The UI
-      // must state that limitation instead of fabricating seeded rows.
-      await expect(page.getByRole('alert').getByText(/هذه القائمة غير متاحة حالياً/i)).toBeVisible();
+
+      // Verify positive component rows exist from backend
+      await expect(page.getByText('BASE').first()).toBeVisible({ timeout: 5000 });
+
+      // Verify New Component Modal opens cleanly
+      const newCompBtn = page.getByRole('button', { name: /إضافة بند راتب جديد/i });
+      if (await newCompBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await newCompBtn.click();
+        await page.waitForTimeout(500);
+        const compDialog = page.getByRole('dialog');
+        await expect(compDialog).toBeVisible();
+        await compDialog.getByRole('button', { name: /إلغاء/i }).click();
+        await expect(compDialog).toBeHidden({ timeout: 5000 });
+      }
     }
 
-    // Click Structures sub-tab
+    // 2. Click Structures sub-tab
     const structuresTab = page.getByRole('tab', { name: /هياكل الرواتب/i });
     if (await structuresTab.isVisible({ timeout: 3000 }).catch(() => false)) {
       await structuresTab.click();
       await page.waitForTimeout(600);
       await expect(page.getByRole('heading', { level: 3, name: /هياكل الرواتب/i })).toBeVisible();
+
+      // Verify positive salary structure rows exist from backend
+      await expect(page.getByText('STANDARD-EG').first()).toBeVisible({ timeout: 5000 });
+
+      // Verify New Salary Structure Modal opens cleanly
+      const newStructBtn = page.getByRole('button', { name: /إضافة هيكل رواتب/i });
+      if (await newStructBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await newStructBtn.click();
+        await page.waitForTimeout(500);
+        const structDialog = page.getByRole('dialog');
+        await expect(structDialog).toBeVisible();
+        await structDialog.getByRole('button', { name: /إلغاء/i }).click();
+        await expect(structDialog).toBeHidden({ timeout: 5000 });
+      }
     }
 
-    // Click Assignments sub-tab
+    // 3. Click Assignments sub-tab
     const assignmentsTab = page.getByRole('tab', { name: /تسكين الموظفين/i });
     if (await assignmentsTab.isVisible({ timeout: 3000 }).catch(() => false)) {
       await assignmentsTab.click();
       await page.waitForTimeout(600);
       await expect(page.getByRole('heading', { level: 3, name: /تسكين الموظفين/i })).toBeVisible();
+
+      // Verify positive employee assignment rows exist without raw UUIDs
+      const assignTable = page.locator('table').first();
+      await expect(assignTable).toBeVisible({ timeout: 5000 });
+      const assignText = await assignTable.textContent();
+      expect(assignText).not.toMatch(/موظف #[0-9a-f]{8}/i);
+
+      // Verify New Payroll Assignment Modal opens cleanly
+      const newAssignBtn = page.getByRole('button', { name: /تسكين موظف جديد/i });
+      if (await newAssignBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await newAssignBtn.click();
+        await page.waitForTimeout(500);
+        const assignDialog = page.getByRole('dialog');
+        await expect(assignDialog).toBeVisible();
+        await assignDialog.getByRole('button', { name: /إلغاء/i }).click();
+        await expect(assignDialog).toBeHidden({ timeout: 5000 });
+      }
     }
   });
 

@@ -9,7 +9,10 @@ import type {
   PayrollLoanActionRequest,
   PayrollImportRequest,
   PayrollOpeningBalanceRequest,
-  UpdatePayrollStatutorySettingsRequest
+  UpdatePayrollStatutorySettingsRequest,
+  CreatePayrollComponentRequest,
+  CreateSalaryStructureRequest,
+  CreatePayrollAssignmentRequest
 } from "../types.ts";
 
 export const payrollQueryKeys = {
@@ -23,35 +26,35 @@ export const payrollQueryKeys = {
   selfPayslips: (legalEntityId: string) => [...payrollQueryKeys.all, "self-payslips", legalEntityId] as const,
   reports: (legalEntityId: string) => [...payrollQueryKeys.all, "reports", legalEntityId] as const,
   openingBalances: (legalEntityId: string) => [...payrollQueryKeys.all, "opening-balances", legalEntityId] as const,
-  components: (legalEntityId: string) => [...payrollQueryKeys.all, "components", legalEntityId] as const,
-  salaryStructures: (legalEntityId: string) => [...payrollQueryKeys.all, "salary-structures", legalEntityId] as const,
-  employeeAssignments: (legalEntityId: string) => [...payrollQueryKeys.all, "employee-assignments", legalEntityId] as const,
+  components: (legalEntityId: string, params?: object) => [...payrollQueryKeys.all, "components", legalEntityId, params] as const,
+  salaryStructures: (legalEntityId: string, params?: object) => [...payrollQueryKeys.all, "salary-structures", legalEntityId, params] as const,
+  employeeAssignments: (legalEntityId: string, params?: object) => [...payrollQueryKeys.all, "employee-assignments", legalEntityId, params] as const,
   statutorySettings: (legalEntityId: string) => [...payrollQueryKeys.all, "statutory-settings", legalEntityId] as const,
   statutoryHistory: (legalEntityId: string) => [...payrollQueryKeys.all, "statutory-history", legalEntityId] as const
 };
 
-export function usePayrollComponents(legalEntityId: string) {
+export function usePayrollComponents(legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }) {
   return useQuery({
-    queryKey: payrollQueryKeys.components(legalEntityId),
-    queryFn: () => payrollApi.listComponents(legalEntityId),
+    queryKey: payrollQueryKeys.components(legalEntityId, params),
+    queryFn: () => payrollApi.listComponents(legalEntityId, params),
     retry: false,
     enabled: Boolean(legalEntityId)
   });
 }
 
-export function useSalaryStructures(legalEntityId: string) {
+export function useSalaryStructures(legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }) {
   return useQuery({
-    queryKey: payrollQueryKeys.salaryStructures(legalEntityId),
-    queryFn: () => payrollApi.listSalaryStructures(legalEntityId),
+    queryKey: payrollQueryKeys.salaryStructures(legalEntityId, params),
+    queryFn: () => payrollApi.listSalaryStructures(legalEntityId, params),
     retry: false,
     enabled: Boolean(legalEntityId)
   });
 }
 
-export function useEmployeeAssignments(legalEntityId: string) {
+export function useEmployeeAssignments(legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string }) {
   return useQuery({
-    queryKey: payrollQueryKeys.employeeAssignments(legalEntityId),
-    queryFn: () => payrollApi.listEmployeeAssignments(legalEntityId),
+    queryKey: payrollQueryKeys.employeeAssignments(legalEntityId, params),
+    queryFn: () => payrollApi.listEmployeeAssignments(legalEntityId, params),
     retry: false,
     enabled: Boolean(legalEntityId)
   });
@@ -386,6 +389,57 @@ export function useUpdateStatutorySettingsMutation(legalEntityId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: payrollQueryKeys.statutorySettings(legalEntityId) });
       void queryClient.invalidateQueries({ queryKey: payrollQueryKeys.statutoryHistory(legalEntityId) });
+    }
+  });
+}
+
+export function useCreatePayrollComponentMutation(legalEntityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreatePayrollComponentRequest) => payrollApi.createComponent(legalEntityId, request),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: payrollQueryKeys.all });
+    }
+  });
+}
+
+export function useCreateSalaryStructureMutation(legalEntityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreateSalaryStructureRequest) => payrollApi.createSalaryStructure(legalEntityId, request),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: payrollQueryKeys.all });
+    }
+  });
+}
+
+export function useCreateEmployeeAssignmentMutation(legalEntityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employmentId, request }: { employmentId: string; request: CreatePayrollAssignmentRequest }) =>
+      payrollApi.createEmployeeAssignment(legalEntityId, employmentId, request),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: payrollQueryKeys.all });
+    }
+  });
+}
+
+export function useCancelPayrollInputMutation(legalEntityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (inputId: string) => payrollApi.cancelInput(legalEntityId, inputId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: payrollQueryKeys.all });
+    }
+  });
+}
+
+export function useDisburseReceivableMutation(legalEntityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (receivableId: string) => payrollApi.disburseReceivable(legalEntityId, receivableId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: payrollQueryKeys.all });
     }
   });
 }
