@@ -25,41 +25,35 @@ export function PayrollReportsTab({
   const [pageSize, setPageSize] = useState(25);
   const [isExporting, setIsExporting] = useState(false);
 
-  const reportParams: { from?: string; to?: string; runType?: string; page?: number; pageSize?: number } = {
+  const reportParams: { from?: string; to?: string; runType?: string; search?: string; page?: number; pageSize?: number } = {
     page,
     pageSize
   };
   if (runTypeFilter !== "all") {
     reportParams.runType = runTypeFilter;
   }
+  if (searchTerm.trim()) {
+    reportParams.search = searchTerm.trim();
+  }
 
   const { data: reportData, isLoading } = usePayrollReport(legalEntityId, reportParams);
 
   const items = reportData?.items ?? [];
-  const filtered = items.filter((r: PayrollReportItem) => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      r.runNumber.toLowerCase().includes(term) ||
-      r.runType.toLowerCase().includes(term)
-    );
-  });
 
-  const totalGross = reportData?.totalGross ?? filtered.reduce((acc: number, r: PayrollReportItem) => acc + r.gross, 0);
-  const totalNet = reportData?.totalNet ?? filtered.reduce((acc: number, r: PayrollReportItem) => acc + r.net, 0);
-  const totalDeductions = reportData?.totalDeductions ?? filtered.reduce((acc: number, r: PayrollReportItem) => acc + r.deductions, 0);
-  const totalRuns = reportData?.totalCount ?? filtered.length;
+  const totalGross = reportData?.totalGross ?? items.reduce((acc: number, r: PayrollReportItem) => acc + r.gross, 0);
+  const totalNet = reportData?.totalNet ?? items.reduce((acc: number, r: PayrollReportItem) => acc + r.net, 0);
+  const totalDeductions = reportData?.totalDeductions ?? items.reduce((acc: number, r: PayrollReportItem) => acc + r.deductions, 0);
+  const totalRuns = reportData?.totalCount ?? items.length;
   const totalPages = Math.ceil(totalRuns / pageSize) || 1;
 
   const handleExportCsv = async () => {
     setIsExporting(true);
     try {
-      const fullReport = await payrollApi.getReport(legalEntityId, {
-        page: 1,
-        pageSize: 500,
-        runType: runTypeFilter !== "all" ? runTypeFilter : undefined
+      const fullReport = await payrollApi.exportReport(legalEntityId, {
+        runType: runTypeFilter !== "all" ? runTypeFilter : undefined,
+        search: searchTerm.trim() || undefined
       });
-      const exportItems = fullReport.items ?? [];
+      const exportItems = fullReport ?? [];
       const headers = [
         "RunNumber",
         "RunType",
@@ -70,6 +64,8 @@ export function PayrollReportsTab({
         "NetPay",
         "FinalizationStatus",
         "PaymentState",
+        "AccountingState",
+        "JournalEntryNumber",
         "PostedToLedger"
       ];
       const rows = exportItems.map((r: PayrollReportItem) => [
@@ -82,6 +78,8 @@ export function PayrollReportsTab({
         r.net,
         r.finalizationState,
         r.paymentState,
+        r.accountingState ?? "",
+        `"${r.journalEntryNumber ?? ""}"`,
         r.postedToLedger ? "Posted" : "Unposted"
       ]);
       const csvContent =
@@ -138,7 +136,7 @@ export function PayrollReportsTab({
           <Button
             variant="secondary"
             onPress={handleExportCsv}
-            isDisabled={isExporting || filtered.length === 0}
+            isDisabled={isExporting || items.length === 0}
             style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -149,7 +147,7 @@ export function PayrollReportsTab({
             {isExporting ? t("common.exporting", "جارٍ التصدير...") : t("reports.exportCsv")}
           </Button>
           <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-            {t("reports.exportNote", { count: filtered.length })}
+            {t("reports.exportNote", { count: items.length })}
           </span>
         </div>
       </div>
@@ -286,7 +284,7 @@ export function PayrollReportsTab({
               setSearchTerm(val);
               setPage(1);
             }}
-            placeholder={t("reports.searchPlaceholder")}
+            placeholder={t("reports.searchPlaceholder", "بحث برقم المسير...")}
           />
         </div>
       </div>
@@ -338,7 +336,7 @@ export function PayrollReportsTab({
                     {t("common.loading")}
                   </td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={8} style={{ padding: "3rem 2rem", textAlign: "center" }}>
                     <p style={{ margin: 0, fontWeight: 600, color: "var(--color-content-primary)" }}>
@@ -350,7 +348,7 @@ export function PayrollReportsTab({
                   </td>
                 </tr>
               ) : (
-                filtered.map((r: PayrollReportItem) => (
+                items.map((r: PayrollReportItem) => (
                   <tr
                     key={r.runId}
                     style={{
@@ -382,7 +380,7 @@ export function PayrollReportsTab({
                       <PayrollStatusBadge status={r.finalizationState} />
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
-                      {r.postedToLedger ? (
+                      {r.postedToLedger && r.accountingState === "Posted" ? (
                         <span
                           style={{
                             display: "inline-flex",
@@ -399,7 +397,43 @@ export function PayrollReportsTab({
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
-                          {t("reports.postedToLedger")}
+                          {r.journalEntryNumber ? `${t("reports.postedToLedger")}: ${r.journalEntryNumber}` : t("reports.postedToLedger")}
+                        </span>
+                      ) : r.accountingState === "Ready" ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.375rem",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            padding: "0.2rem 0.5rem",
+                            borderRadius: "var(--radius-sm)",
+                            background: "var(--color-status-warning-subtle, #fef3c7)",
+                            color: "var(--color-status-warning, #92400e)"
+                          }}
+                        >
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
+                          </svg>
+                          {t("reports.accountingReady", "قيد الترحيل / بانتظار المطابقة")}
+                        </span>
+                      ) : r.accountingState === "Failed" ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.375rem",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            padding: "0.2rem 0.5rem",
+                            borderRadius: "var(--radius-sm)",
+                            background: "var(--color-status-danger-subtle, #fee2e2)",
+                            color: "var(--color-status-danger, #b91c1c)"
+                          }}
+                        >
+                          {t("reports.accountingFailed", "فشل الترحيل المحاسبي")}
                         </span>
                       ) : (
                         <span

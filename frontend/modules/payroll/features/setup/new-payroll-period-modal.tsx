@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
@@ -6,7 +6,7 @@ import { LocalDateField } from "../../../../components/fields/local-date-field.t
 import { PayrollGroupPicker } from "../../components/payroll-group-picker.tsx";
 import { usePayrollGroups, useCreatePayrollPeriodMutation } from "../../hooks/use-payroll-queries.ts";
 import { mapPayrollError } from "../../services/payroll-error-map.ts";
-import type { PayrollGroup } from "../../types.ts";
+import type { PayrollGroup, HolidayAdjustment } from "../../types.ts";
 
 export interface NewPayrollPeriodModalProps {
   readonly isOpen: boolean;
@@ -15,24 +15,52 @@ export interface NewPayrollPeriodModalProps {
   readonly defaultGroupId?: string | undefined;
 }
 
+function adjustForWeekend(date: Date, rule: HolidayAdjustment = "NextWorkingDay"): Date {
+  if (rule === "None") return date;
+  const d = new Date(date.getTime());
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + (rule === "PreviousWorkingDay" ? -1 : 1));
+  }
+  return d;
+}
+
+const formatDate = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
 const computePeriodDates = (group?: PayrollGroup) => {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const monthStr = pad(month + 1);
   const lastDay = new Date(year, month + 1, 0).getDate();
 
-  const payDay = Math.min(Math.max(group?.payDay ?? 28, 1), lastDay);
-  const cutoffDay = Math.max(1, payDay - 5);
-  const calcDay = Math.min(lastDay, Math.max(cutoffDay + 1, payDay - 2));
+  const periodStartDate = new Date(year, month, 1);
+  const periodEndDate = new Date(year, month, lastDay);
+
+  const rawPayDay = group?.payDay ?? 28;
+  const targetPayDay = Math.min(Math.max(rawPayDay, 1), 31);
+
+  // If payday is early in the month (< 15), pay date applies to the 1st week of next month.
+  // Otherwise, it falls within the current period month.
+  const payMonth = targetPayDay < 15 ? month + 1 : month;
+  const maxDayInPayMonth = new Date(year, payMonth + 1, 0).getDate();
+  const plannedPayDateRaw = new Date(year, payMonth, Math.min(targetPayDay, maxDayInPayMonth));
+
+  const plannedPayDateObj = adjustForWeekend(plannedPayDateRaw, group?.holidayAdjustment);
+  // Cutoff is 4 days before pay date
+  const cutoffObj = new Date(plannedPayDateObj.getTime() - 4 * 24 * 60 * 60 * 1000);
+  // Calculation is 2 days before pay date
+  const calcObj = new Date(plannedPayDateObj.getTime() - 2 * 24 * 60 * 60 * 1000);
 
   return {
-    periodStart: `${year}-${monthStr}-01`,
-    periodEnd: `${year}-${monthStr}-${pad(lastDay)}`,
-    inputCutoff: `${year}-${monthStr}-${pad(cutoffDay)}`,
-    calculationDate: `${year}-${monthStr}-${pad(calcDay)}`,
-    plannedPayDate: `${year}-${monthStr}-${pad(payDay)}`
+    periodStart: formatDate(periodStartDate),
+    periodEnd: formatDate(periodEndDate),
+    inputCutoff: formatDate(cutoffObj),
+    calculationDate: formatDate(calcObj),
+    plannedPayDate: formatDate(plannedPayDateObj)
   };
 };
 
@@ -56,6 +84,27 @@ export function NewPayrollPeriodModal({
   const [calculationDate, setCalculationDate] = useState(defaults.calculationDate);
   const [plannedPayDate, setPlannedPayDate] = useState(defaults.plannedPayDate);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if ((!groupId || !selectedGroup) && groups.length > 0) {
+      const firstGroup = groups[0];
+      const activeId = defaultGroupId && groups.some((g) => g.id === defaultGroupId)
+        ? defaultGroupId
+        : (firstGroup ? firstGroup.id : "");
+      if (activeId) {
+        setGroupId(activeId);
+        const matched = groups.find((g) => g.id === activeId);
+        if (matched) {
+          const dates = computePeriodDates(matched);
+          setPeriodStart(dates.periodStart);
+          setPeriodEnd(dates.periodEnd);
+          setInputCutoff(dates.inputCutoff);
+          setCalculationDate(dates.calculationDate);
+          setPlannedPayDate(dates.plannedPayDate);
+        }
+      }
+    }
+  }, [groups, defaultGroupId, groupId, selectedGroup]);
 
   const createMutation = useCreatePayrollPeriodMutation(legalEntityId, groupId);
 

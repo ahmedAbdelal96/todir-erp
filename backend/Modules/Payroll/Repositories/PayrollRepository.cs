@@ -3,13 +3,19 @@ using Npgsql;
 using NpgsqlTypes;
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.Hr;
+using Shared.Contracts.Ledger;
+using Core.Transactions;
 using Modules.Payroll.Services;
 using Core.Services;
 using System.Text.Json;
 
 namespace Modules.Payroll.Repositories;
 
-public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCountryProviderRegistry countryProviders)
+public sealed class PayrollRepository(
+    NpgsqlDataSource dataSource,
+    IPayrollCountryProviderRegistry countryProviders,
+    ITransactionCoordinator? transactions = null,
+    ITransactionalLedgerPostingCapability? ledgerPosting = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     public async Task<IReadOnlyList<PayrollGroupDto>> ListGroupsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? search, CancellationToken ct)
@@ -297,9 +303,42 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCount
         }
     }
 
-    public async Task<IReadOnlyList<PayslipDto>> ListPayslipsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, Guid? employmentId, string? search, CancellationToken ct)
+    public async Task<PayslipsPageDto> ListPayslipsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, Guid? employmentId, string? search, IReadOnlyList<Guid>? matchingEmploymentIds, CancellationToken ct)
     {
-        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200); var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim(); await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction; await using var cmd = new NpgsqlCommand("select id,payslip_number,employment_id,gross,deductions,net,employer_cost,status,finalized_at from business_payroll.payslip where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or employment_id=$3) and ($4::text is null or payslip_number ilike '%'||$4||'%' or employment_id::text ilike '%'||$4||'%') order by finalized_at desc nulls last offset $5 limit $6", c, tx); Add(cmd, tenant.Value, legalEntityId, Db(employmentId), DbValue(term), (page - 1) * pageSize, pageSize); await using var r = await cmd.ExecuteReaderAsync(ct); var result = new List<PayslipDto>(); while (await r.ReadAsync(ct)) result.Add(new(r.GetGuid(0), r.GetString(1), r.GetGuid(2), r.GetDecimal(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6), r.GetString(7), r.IsDBNull(8) ? null : r.GetFieldValue<DateTimeOffset>(8))); await r.CloseAsync(); await tx.CommitAsync(ct); return result;
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200); var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        Guid[]? ids = matchingEmploymentIds != null && matchingEmploymentIds.Count > 0 ? matchingEmploymentIds.ToArray() : null;
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        
+        await using var countCmd = new NpgsqlCommand("select count(*) from business_payroll.payslip where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or employment_id=$3) and ($4::text is null or payslip_number ilike '%'||$4||'%' or employment_id::text ilike '%'||$4||'%' or ($5::uuid[] is not null and employment_id = any($5)))", c, tx);
+        Add(countCmd, tenant.Value, legalEntityId, Db(employmentId), DbValue(term));
+        countCmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ids ?? DBNull.Value });
+        var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct) ?? 0, System.Globalization.CultureInfo.InvariantCulture);
+
+        await using var cmd = new NpgsqlCommand("select id,payslip_number,employment_id,gross,deductions,net,employer_cost,status,finalized_at from business_payroll.payslip where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or employment_id=$3) and ($4::text is null or payslip_number ilike '%'||$4||'%' or employment_id::text ilike '%'||$4||'%' or ($5::uuid[] is not null and employment_id = any($5))) order by finalized_at desc nulls last offset $6 limit $7", c, tx);
+        Add(cmd, tenant.Value, legalEntityId, Db(employmentId), DbValue(term));
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ids ?? DBNull.Value });
+        Add(cmd, (page - 1) * pageSize, pageSize);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var result = new List<PayslipDto>();
+        while (await r.ReadAsync(ct)) result.Add(new(r.GetGuid(0), r.GetString(1), r.GetGuid(2), r.GetDecimal(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6), r.GetString(7), r.IsDBNull(8) ? null : r.GetFieldValue<DateTimeOffset>(8)));
+        await r.CloseAsync(); await tx.CommitAsync(ct);
+        return new PayslipsPageDto(result, page, pageSize, totalCount, (page * pageSize) < totalCount);
+    }
+
+    public async Task<IReadOnlyList<PayslipDto>> ExportPayslipsAsync(TenantId tenant, Guid legalEntityId, Guid? employmentId, string? search, IReadOnlyList<Guid>? matchingEmploymentIds, int maxRecords, CancellationToken ct)
+    {
+        var limit = Math.Clamp(maxRecords, 1, 5000); var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        Guid[]? ids = matchingEmploymentIds != null && matchingEmploymentIds.Count > 0 ? matchingEmploymentIds.ToArray() : null;
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var cmd = new NpgsqlCommand("select id,payslip_number,employment_id,gross,deductions,net,employer_cost,status,finalized_at from business_payroll.payslip where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or employment_id=$3) and ($4::text is null or payslip_number ilike '%'||$4||'%' or employment_id::text ilike '%'||$4||'%' or ($5::uuid[] is not null and employment_id = any($5))) order by finalized_at desc nulls last limit $6", c, tx);
+        Add(cmd, tenant.Value, legalEntityId, Db(employmentId), DbValue(term));
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ids ?? DBNull.Value });
+        Add(cmd, limit);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var result = new List<PayslipDto>();
+        while (await r.ReadAsync(ct)) result.Add(new(r.GetGuid(0), r.GetString(1), r.GetGuid(2), r.GetDecimal(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6), r.GetString(7), r.IsDBNull(8) ? null : r.GetFieldValue<DateTimeOffset>(8)));
+        await r.CloseAsync(); await tx.CommitAsync(ct);
+        return result;
     }
 
     public async Task<IReadOnlyList<PayslipDto>> ListSelfPayslipsAsync(TenantId tenant, Guid legalEntityId, Guid employmentId, int page, int pageSize, CancellationToken ct)
@@ -327,12 +366,175 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCount
         await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction; await using var cmd = new NpgsqlCommand("select employment_id,component_id,input_date,amount,currency_code,source,status,notes from business_payroll.payroll_input where tenant_id=$1 and legal_entity_id=$2 and id=$3", c, tx); Add(cmd, tenant.Value, legalEntityId, inputId); await using var r = await cmd.ExecuteReaderAsync(ct); var input = await r.ReadAsync(ct) ? new PayrollInputDto(inputId, r.GetGuid(0), r.GetGuid(1), r.GetFieldValue<DateOnly>(2), r.GetDecimal(3), r.GetString(4).Trim(), r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7)) : null; await r.CloseAsync(); await tx.CommitAsync(ct); return input;
     }
 
-    public async Task<PayrollReportSummaryDto> GetReportAsync(TenantId tenant, Guid legalEntityId, DateOnly? from, DateOnly? to, string? runType, int page, int pageSize, CancellationToken ct)
+    public async Task<PayrollReportSummaryDto> GetReportAsync(TenantId tenant, Guid legalEntityId, DateOnly? from, DateOnly? to, string? runType, string? search, int page, int pageSize, CancellationToken ct)
     {
-        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200); await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
-        const string filter = " where r.tenant_id=$1 and r.legal_entity_id=$2 and ($3::date is null or p.period_end >= $3) and ($4::date is null or p.period_end <= $4) and ($5::text is null or r.run_type=$5)";
-        await using var summary = new NpgsqlCommand("select count(*),coalesce(sum(r.total_gross),0),coalesce(sum(r.total_deductions),0),coalesce(sum(r.total_net),0) from business_payroll.payroll_run r left join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id" + filter, c, tx); Add(summary, tenant.Value, legalEntityId, Db(from), Db(to), DbValue(string.IsNullOrWhiteSpace(runType) ? null : runType.Trim())); await using var sr = await summary.ExecuteReaderAsync(ct); await sr.ReadAsync(ct); var totalCount = sr.GetInt32(0); var totalGross = sr.GetDecimal(1); var totalDeductions = sr.GetDecimal(2); var totalNet = sr.GetDecimal(3); await sr.CloseAsync();
-        await using var rows = new NpgsqlCommand("select r.id,r.run_number,r.run_type,p.period_end,r.finalization_state,r.payment_state,r.total_gross,r.total_deductions,r.total_net,r.employee_count,exists(select 1 from business_payroll.accounting_fact af where af.tenant_id=r.tenant_id and af.run_id=r.id and af.fact_type='PayrollPosted') as posted_to_ledger from business_payroll.payroll_run r left join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id" + filter + " order by coalesce(p.period_end,'0001-01-01') desc,r.created_at desc offset $6 limit $7", c, tx); Add(rows, tenant.Value, legalEntityId, Db(from), Db(to), DbValue(string.IsNullOrWhiteSpace(runType) ? null : runType.Trim()), (page - 1) * pageSize, pageSize); await using var reader = await rows.ExecuteReaderAsync(ct); var items = new List<PayrollReportItem>(); while (await reader.ReadAsync(ct)) items.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetFieldValue<DateOnly>(3), reader.GetString(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.GetInt32(9), reader.GetBoolean(10))); await reader.CloseAsync(); await tx.CommitAsync(ct); return new(items, page, pageSize, totalCount, totalGross, totalDeductions, totalNet);
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200); var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        const string filter = " where r.tenant_id=$1 and r.legal_entity_id=$2 and ($3::date is null or p.period_end >= $3) and ($4::date is null or p.period_end <= $4) and ($5::text is null or r.run_type=$5) and ($6::text is null or r.run_number ilike '%'||$6||'%' or g.name ilike '%'||$6||'%' or g.code ilike '%'||$6||'%')";
+        await using var summary = new NpgsqlCommand("select count(*),coalesce(sum(r.total_gross),0),coalesce(sum(r.total_deductions),0),coalesce(sum(r.total_net),0) from business_payroll.payroll_run r left join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id left join business_payroll.payroll_group g on g.tenant_id=r.tenant_id and g.id=r.payroll_group_id" + filter, c, tx);
+        Add(summary, tenant.Value, legalEntityId, Db(from), Db(to), DbValue(string.IsNullOrWhiteSpace(runType) ? null : runType.Trim()), DbValue(term));
+        await using var sr = await summary.ExecuteReaderAsync(ct); await sr.ReadAsync(ct);
+        var totalCount = sr.GetInt32(0); var totalGross = sr.GetDecimal(1); var totalDeductions = sr.GetDecimal(2); var totalNet = sr.GetDecimal(3);
+        await sr.CloseAsync();
+
+        await using var rows = new NpgsqlCommand("""
+            select r.id,r.run_number,r.run_type,p.period_end,r.finalization_state,r.payment_state,r.total_gross,r.total_deductions,r.total_net,r.employee_count,
+                   (r.accounting_state = 'Posted' and exists(select 1 from business_payroll.accounting_fact af where af.tenant_id=r.tenant_id and af.run_id=r.id and af.status='Posted')) as posted_to_ledger,
+                   r.accounting_state,
+                   (select af.payload->>'ledgerEntryNumber' from business_payroll.accounting_fact af where af.tenant_id=r.tenant_id and af.run_id=r.id and af.status='Posted' limit 1) as journal_entry_number
+            from business_payroll.payroll_run r
+            left join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id
+            left join business_payroll.payroll_group g on g.tenant_id=r.tenant_id and g.id=r.payroll_group_id
+            """ + filter + " order by coalesce(p.period_end,'0001-01-01') desc,r.created_at desc offset $7 limit $8", c, tx);
+        Add(rows, tenant.Value, legalEntityId, Db(from), Db(to), DbValue(string.IsNullOrWhiteSpace(runType) ? null : runType.Trim()), DbValue(term), (page - 1) * pageSize, pageSize);
+        await using var reader = await rows.ExecuteReaderAsync(ct);
+        var items = new List<PayrollReportItem>();
+        while (await reader.ReadAsync(ct))
+            items.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetFieldValue<DateOnly>(3), reader.GetString(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.GetInt32(9), reader.GetBoolean(10), reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetString(12)));
+        await reader.CloseAsync(); await tx.CommitAsync(ct);
+        return new(items, page, pageSize, totalCount, totalGross, totalDeductions, totalNet);
+    }
+
+    public async Task<IReadOnlyList<PayrollReportItem>> ExportReportAsync(TenantId tenant, Guid legalEntityId, DateOnly? from, DateOnly? to, string? runType, string? search, int maxRecords, CancellationToken ct)
+    {
+        var limit = Math.Clamp(maxRecords, 1, 5000); var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        const string filter = " where r.tenant_id=$1 and r.legal_entity_id=$2 and ($3::date is null or p.period_end >= $3) and ($4::date is null or p.period_end <= $4) and ($5::text is null or r.run_type=$5) and ($6::text is null or r.run_number ilike '%'||$6||'%' or g.name ilike '%'||$6||'%' or g.code ilike '%'||$6||'%')";
+        await using var rows = new NpgsqlCommand("""
+            select r.id,r.run_number,r.run_type,p.period_end,r.finalization_state,r.payment_state,r.total_gross,r.total_deductions,r.total_net,r.employee_count,
+                   (r.accounting_state = 'Posted' and exists(select 1 from business_payroll.accounting_fact af where af.tenant_id=r.tenant_id and af.run_id=r.id and af.status='Posted')) as posted_to_ledger,
+                   r.accounting_state,
+                   (select af.payload->>'ledgerEntryNumber' from business_payroll.accounting_fact af where af.tenant_id=r.tenant_id and af.run_id=r.id and af.status='Posted' limit 1) as journal_entry_number
+            from business_payroll.payroll_run r
+            left join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id
+            left join business_payroll.payroll_group g on g.tenant_id=r.tenant_id and g.id=r.payroll_group_id
+            """ + filter + " order by coalesce(p.period_end,'0001-01-01') desc,r.created_at desc limit $7", c, tx);
+        Add(rows, tenant.Value, legalEntityId, Db(from), Db(to), DbValue(string.IsNullOrWhiteSpace(runType) ? null : runType.Trim()), DbValue(term), limit);
+        await using var reader = await rows.ExecuteReaderAsync(ct);
+        var items = new List<PayrollReportItem>();
+        while (await reader.ReadAsync(ct))
+            items.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetFieldValue<DateOnly>(3), reader.GetString(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.GetInt32(9), reader.GetBoolean(10), reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetString(12)));
+        await reader.CloseAsync(); await tx.CommitAsync(ct);
+        return items;
+    }
+
+    public async Task<PayrollAccountingReconciliationDto> GetAccountingStateAsync(TenantId tenant, Guid legalEntityId, Guid runId, CancellationToken ct)
+    {
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        await using var check = new NpgsqlCommand("""
+            select r.run_number, r.finalization_state, r.accounting_state, r.total_gross, r.total_net, r.currency_code,
+                   (select af.payload->>'ledgerEntryNumber' from business_payroll.accounting_fact af where af.tenant_id=r.tenant_id and af.run_id=r.id and af.status='Posted' limit 1),
+                   (select (af.payload->>'ledgerJournalEntryId')::uuid from business_payroll.accounting_fact af where af.tenant_id=r.tenant_id and af.run_id=r.id and af.status='Posted' limit 1)
+            from business_payroll.payroll_run r where r.tenant_id=$1 and r.legal_entity_id=$2 and r.id=$3
+            """, c, tx);
+        Add(check, tenant.Value, legalEntityId, runId);
+        await using var rr = await check.ExecuteReaderAsync(ct);
+        if (!await rr.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.run_not_found");
+        var runNumber = rr.GetString(0);
+        var finalState = rr.GetString(1);
+        var accountingState = rr.GetString(2);
+        var totalGross = rr.GetDecimal(3);
+        var totalNet = rr.GetDecimal(4);
+        var currency = rr.GetString(5).Trim();
+        var entryNumber = rr.IsDBNull(6) ? null : rr.GetString(6);
+        var entryId = rr.IsDBNull(7) ? (Guid?)null : rr.GetGuid(7);
+        await rr.CloseAsync();
+        await tx.CommitAsync(ct);
+        return new PayrollAccountingReconciliationDto(runId, accountingState, accountingState == "Posted", entryNumber, entryId, totalGross, totalNet, currency);
+    }
+
+    public async Task<PayrollAccountingReconciliationDto> ReconcileAccountingAsync(TenantId tenant, Guid legalEntityId, Guid runId, Guid actorId, CancellationToken ct)
+    {
+        await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; var tx = scope.Transaction;
+        await using var check = new NpgsqlCommand("select run_number, finalization_state, accounting_state, total_gross, total_net, currency_code from business_payroll.payroll_run where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", c, tx);
+        Add(check, tenant.Value, legalEntityId, runId);
+        await using var reader = await check.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.run_not_found");
+        var runNumber = reader.GetString(0);
+        var finalState = reader.GetString(1);
+        var accountingState = reader.GetString(2);
+        var totalGross = reader.GetDecimal(3);
+        var totalNet = reader.GetDecimal(4);
+        var currency = reader.GetString(5).Trim();
+        await reader.CloseAsync();
+
+        if (finalState != "Finalized")
+            throw new PayrollRepositoryException("payroll.run_not_finalized");
+
+        if (accountingState == "Posted")
+        {
+            await using var getExisting = new NpgsqlCommand("select (payload->>'ledgerEntryNumber'), (payload->>'ledgerJournalEntryId')::uuid from business_payroll.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and run_id=$3 and status='Posted' limit 1", c, tx);
+            Add(getExisting, tenant.Value, legalEntityId, runId);
+            await using var er = await getExisting.ExecuteReaderAsync(ct);
+            string? en = null; Guid? ejId = null;
+            if (await er.ReadAsync(ct)) { en = er.IsDBNull(0) ? null : er.GetString(0); ejId = er.IsDBNull(1) ? null : er.GetGuid(1); }
+            await er.CloseAsync();
+            await tx.CommitAsync(ct);
+            return new PayrollAccountingReconciliationDto(runId, "Posted", true, en, ejId, totalGross, totalNet, currency);
+        }
+
+        await using var factCmd = new NpgsqlCommand("select id, status, total_amount, currency_code, (payload->>'gross')::numeric, (payload->>'deductions')::numeric, (payload->>'payable')::numeric, coalesce((payload->>'tax')::numeric,0), coalesce((payload->>'insurance')::numeric,0), coalesce((payload->>'recovery')::numeric,0), created_at from business_payroll.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and run_id=$3 for update", c, tx);
+        Add(factCmd, tenant.Value, legalEntityId, runId);
+        await using var fr = await factCmd.ExecuteReaderAsync(ct);
+        if (!await fr.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.accounting_fact_missing");
+        var factId = fr.GetGuid(0);
+        var factStatus = fr.GetString(1);
+        var total = fr.GetDecimal(2);
+        var factCurrency = fr.GetString(3).Trim();
+        var gross = fr.IsDBNull(4) ? total : fr.GetDecimal(4);
+        var deductions = fr.IsDBNull(5) ? gross - (fr.IsDBNull(6) ? total : fr.GetDecimal(6)) : fr.GetDecimal(5);
+        var payable = fr.IsDBNull(6) ? total : fr.GetDecimal(6);
+        var tax = fr.GetDecimal(7);
+        var insurance = fr.GetDecimal(8);
+        var recovery = fr.GetDecimal(9);
+        var factCreatedAt = fr.GetFieldValue<DateTimeOffset>(10);
+        await fr.CloseAsync();
+
+        if (ledgerPosting == null || transactions == null)
+        {
+            await tx.CommitAsync(ct);
+            return new PayrollAccountingReconciliationDto(runId, accountingState, false, null, null, totalGross, totalNet, currency);
+        }
+
+        var postingDate = DateOnly.FromDateTime(factCreatedAt.UtcDateTime);
+        var source = $"payroll:{runId:D}";
+        var payload = new PayrollPostedPayload(gross, payable, currency, deductions, tax, insurance, recovery);
+        var factEnvelope = new AccountingFactEnvelope<IAccountingFactPayload>(
+            factId,
+            tenant,
+            new LegalEntityId(legalEntityId),
+            AccountingFactTypes.PayrollPosted,
+            1,
+            "payroll",
+            source,
+            source,
+            postingDate,
+            postingDate,
+            payload,
+            Guid.CreateVersion7(),
+            actorId);
+
+        await tx.CommitAsync(ct);
+        await scope.DisposeAsync();
+
+        var result = await transactions.ExecuteAsync(tenant, async (transactionContext, token) =>
+        {
+            var postResult = await ledgerPosting.PostPayrollAsync(transactionContext, factEnvelope, payload, token);
+            await using var updateFact = new NpgsqlCommand(
+                "update business_payroll.accounting_fact set status='Posted',payload=payload || jsonb_build_object('ledgerJournalEntryId',$4,'ledgerEntryNumber',$5),created_at=created_at where tenant_id=$1 and legal_entity_id=$2 and id=$3",
+                transactionContext.Connection, transactionContext.Transaction);
+            Add(updateFact, tenant.Value, legalEntityId, factId, postResult.JournalEntryId, postResult.EntryNumber);
+            await updateFact.ExecuteNonQueryAsync(token);
+
+            await using var updateRun = new NpgsqlCommand(
+                "update business_payroll.payroll_run set accounting_state='Posted',updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3",
+                transactionContext.Connection, transactionContext.Transaction);
+            Add(updateRun, tenant.Value, legalEntityId, runId);
+            await updateRun.ExecuteNonQueryAsync(token);
+            return postResult;
+        }, ct);
+
+        return new PayrollAccountingReconciliationDto(runId, "Posted", true, result.EntryNumber, result.JournalEntryId, totalGross, totalNet, currency);
     }
 
     public async Task<PayrollImportResult> ImportInputsAsync(TenantId tenant, Guid legalEntityId, Guid actorId, PayrollImportRequest request, bool commit, CancellationToken ct)

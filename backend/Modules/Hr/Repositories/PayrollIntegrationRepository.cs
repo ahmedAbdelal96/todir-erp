@@ -277,6 +277,21 @@ public sealed class PayrollIntegrationRepository(ITransactionCoordinator transac
             return map;
         }, cancellationToken);
 
+    public Task<IReadOnlyList<Guid>> SearchEmploymentIdsAsync(TenantId tenantId, Guid legalEntityId, string searchTerm, CancellationToken cancellationToken = default) =>
+        transactions.ExecuteAsync<IReadOnlyList<Guid>>(tenantId, async (context, token) =>
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm)) return [];
+            var term = searchTerm.Trim();
+            await using var command = new NpgsqlCommand("select em.id from business_hr.employment em join business_hr.employee e on e.tenant_id=em.tenant_id and e.id=em.employee_id where em.tenant_id=$1 and em.legal_entity_id=$2 and (e.display_name ilike '%'||$3||'%' or e.arabic_name ilike '%'||$3||'%' or coalesce(e.english_name,'') ilike '%'||$3||'%' or em.employment_number ilike '%'||$3||'%') limit 200", context.Connection, context.Transaction);
+            command.Parameters.AddWithValue(tenantId.Value);
+            command.Parameters.AddWithValue(legalEntityId);
+            command.Parameters.AddWithValue(term);
+            var list = new List<Guid>();
+            await using var reader = await command.ExecuteReaderAsync(token);
+            while (await reader.ReadAsync(token)) list.Add(reader.GetGuid(0));
+            return list;
+        }, cancellationToken);
+
     private static HrPayrollPeriodSnapshotContract ReadSnapshot(NpgsqlDataReader reader)
     {
         var employments = JsonSerializer.Deserialize<HrPayrollEmploymentInput[]>(reader.GetString(8), JsonOptions) ?? [];

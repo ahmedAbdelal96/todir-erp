@@ -50,8 +50,15 @@ export function PayslipsTab({
 
   const displayItems: readonly Payslip[] =
     viewMode === "self"
-      ? selfQuery.data ?? []
-      : companyQuery.data ?? [];
+      ? (selfQuery.data ?? [])
+      : (companyQuery.data?.items ?? []);
+
+  const totalRecords =
+    viewMode === "self"
+      ? (selfQuery.data?.length ?? 0)
+      : (companyQuery.data?.totalCount ?? 0);
+
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
 
   const isLoading = viewMode === "self" ? selfQuery.isLoading : companyQuery.isLoading;
 
@@ -63,9 +70,7 @@ export function PayslipsTab({
   const handleExportCsv = async () => {
     setIsExporting(true);
     try {
-      const fullList = await payrollApi.listPayslips(legalEntityId, {
-        page: 1,
-        pageSize: 500,
+      const fullList = await payrollApi.exportPayslips(legalEntityId, {
         search: searchTerm.trim() || undefined
       });
       const rowsToExport = fullList ?? [];
@@ -345,11 +350,11 @@ export function PayslipsTab({
           }}
         >
           <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-            {t("payslips.totalRecords", { count: displayItems.length, defaultValue: `السجلات المعروضة: ${displayItems.length}` })}
+            {t("payslips.totalRecords", { count: totalRecords, defaultValue: `إجمالي السجلات: ${totalRecords}` })}
           </span>
           <Pagination
             page={page}
-            totalPages={displayItems.length === pageSize ? page + 1 : page}
+            totalPages={totalPages}
             pageSize={pageSize}
             onPageChange={setPage}
             onPageSizeChange={(newSize) => {

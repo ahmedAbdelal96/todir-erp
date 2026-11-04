@@ -110,11 +110,32 @@ export function useSelfPayslips(legalEntityId: string, params?: { page?: number 
   });
 }
 
-export function usePayrollReport(legalEntityId: string, params?: { from?: string | undefined; to?: string | undefined; runType?: string | undefined; page?: number | undefined; pageSize?: number | undefined } | undefined) {
+export function usePayrollReport(legalEntityId: string, params?: { from?: string | undefined; to?: string | undefined; runType?: string | undefined; search?: string | undefined; page?: number | undefined; pageSize?: number | undefined } | undefined) {
   return useQuery({
     queryKey: [...payrollQueryKeys.reports(legalEntityId), params],
     queryFn: () => payrollApi.getReport(legalEntityId, params),
     enabled: Boolean(legalEntityId)
+  });
+}
+
+export function usePayrollAccounting(legalEntityId: string, runId: string | null | undefined) {
+  return useQuery({
+    queryKey: [...payrollQueryKeys.all, "accounting", legalEntityId, runId ?? ""],
+    queryFn: () => payrollApi.getAccountingState(legalEntityId, runId ?? ""),
+    enabled: Boolean(legalEntityId) && Boolean(runId)
+  });
+}
+
+export function useReconcileAccountingMutation(legalEntityId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => payrollApi.reconcileAccounting(legalEntityId, runId),
+    onSuccess: (_, runId) => {
+      queryClient.invalidateQueries({ queryKey: payrollQueryKeys.reports(legalEntityId) });
+      queryClient.invalidateQueries({ queryKey: payrollQueryKeys.runs(legalEntityId) });
+      queryClient.invalidateQueries({ queryKey: payrollQueryKeys.run(legalEntityId, runId) });
+      queryClient.invalidateQueries({ queryKey: [...payrollQueryKeys.all, "accounting", legalEntityId, runId] });
+    }
   });
 }
 

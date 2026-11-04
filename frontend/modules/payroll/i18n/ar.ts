@@ -313,6 +313,7 @@ export const payrollAr = {
   payslips: {
     tabTitle: "قسائم الرواتب",
     tabSubtitle: "استعراض قسائم رواتب الموظفين مع إمكانية الطباعة والخدمة الذاتية",
+    totalRecords: "إجمالي السجلات: {{count}}",
     searchPlaceholder: "البحث باسم الموظف أو رقمه الوظيفي...",
     emptyTitle: "لا توجد قسائم رواتب متاحة",
     emptyDesc: "تظهر القسائم هنا بمجرد اعتماد وإقفال دورة الرواتب للشهر المعني.",
@@ -384,6 +385,8 @@ export const payrollAr = {
     glIntegration: "حالة الترحيل المحاسبي",
     postedToLedger: "مرحل للأستاذ العام (General Ledger)",
     unpostedToLedger: "غير مرحل (بانتظار الإقفال)",
+    accountingReady: "قيد الترحيل / بانتظار المطابقة",
+    accountingFailed: "فشل الترحيل المحاسبي",
     totalRunsCount: "إجمالي الدورات المسجلة",
     exportNote: "تصدير السجلات الحالية المعروضة (عدد: {{count}} دورة)"
   },

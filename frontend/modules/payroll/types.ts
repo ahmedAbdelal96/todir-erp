@@ -109,6 +109,14 @@ export interface Payslip {
   readonly employmentNumber?: string | null;
 }
 
+export interface PayslipsPage {
+  readonly items: readonly Payslip[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly totalCount: number;
+  readonly hasMore: boolean;
+}
+
 export interface EmployeeReceivable {
   readonly id: string;
   readonly employmentId: string;
@@ -202,6 +210,19 @@ export interface PayrollReportItem {
   readonly net: number;
   readonly employeeCount: number;
   readonly postedToLedger?: boolean;
+  readonly accountingState?: string;
+  readonly journalEntryNumber?: string | null;
+}
+
+export interface PayrollAccountingReconciliation {
+  readonly runId: string;
+  readonly accountingState: string;
+  readonly isPosted: boolean;
+  readonly journalEntryNumber?: string | null;
+  readonly journalEntryId?: string | null;
+  readonly totalGross: number;
+  readonly totalNet: number;
+  readonly currencyCode: string;
 }
 
 export interface PayrollReportSummary {

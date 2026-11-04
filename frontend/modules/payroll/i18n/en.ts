@@ -313,6 +313,7 @@ export const payrollEn = {
   payslips: {
     tabTitle: "Payslips",
     tabSubtitle: "View employee monthly payslips with self-service visibility and export capabilities",
+    totalRecords: "Total records: {{count}}",
     searchPlaceholder: "Search by employee name or number...",
     emptyTitle: "No payslips available",
     emptyDesc: "Payslips will appear once a monthly payroll run is approved and finalized.",
@@ -384,6 +385,8 @@ export const payrollEn = {
     glIntegration: "GL Posting Status",
     postedToLedger: "Posted to General Ledger",
     unpostedToLedger: "Unposted (Pending Finalization)",
+    accountingReady: "Posting / Pending Reconciliation",
+    accountingFailed: "Ledger Posting Failed",
     totalRunsCount: "Total Runs Recorded",
     exportNote: "Exporting visible filtered records (Count: {{count}})"
   },

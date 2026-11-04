@@ -9,6 +9,7 @@ import type {
   PayrollEmployee,
   PayrollSnapshot,
   Payslip,
+  PayslipsPage,
   PayrollInput,
   CreatePayrollInputRequest,
   EmployeeReceivable,
@@ -17,6 +18,8 @@ import type {
   PayrollLoanAction,
   PayrollLoanActionRequest,
   PayrollReportSummary,
+  PayrollReportItem,
+  PayrollAccountingReconciliation,
   PayrollImportRequest,
   PayrollImportResult,
   PayrollOpeningBalance,
@@ -111,13 +114,20 @@ export const payrollApi = {
     }),
 
   // Payslips
-  listPayslips: (legalEntityId: string, params?: { page?: number | undefined; pageSize?: number | undefined; employmentId?: string | undefined; search?: string | undefined } | undefined): Promise<readonly Payslip[]> => {
+  listPayslips: (legalEntityId: string, params?: { page?: number | undefined; pageSize?: number | undefined; employmentId?: string | undefined; search?: string | undefined } | undefined): Promise<PayslipsPage> => {
     const q = new URLSearchParams();
     if (params?.page != null) q.set("page", String(params.page));
     if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
     if (params?.employmentId) q.set("employmentId", params.employmentId);
     if (params?.search) q.set("search", params.search);
-    return httpClient<readonly Payslip[]>(`${BASE}/legal-entities/${legalEntityId}/payslips?${q.toString()}`);
+    return httpClient<PayslipsPage>(`${BASE}/legal-entities/${legalEntityId}/payslips?${q.toString()}`);
+  },
+
+  exportPayslips: (legalEntityId: string, params?: { employmentId?: string | undefined; search?: string | undefined } | undefined): Promise<readonly Payslip[]> => {
+    const q = new URLSearchParams();
+    if (params?.employmentId) q.set("employmentId", params.employmentId);
+    if (params?.search) q.set("search", params.search);
+    return httpClient<readonly Payslip[]>(`${BASE}/legal-entities/${legalEntityId}/payslips/export?${q.toString()}`);
   },
 
   listSelfPayslips: (legalEntityId: string, params?: { page?: number | undefined; pageSize?: number | undefined } | undefined): Promise<readonly Payslip[]> => {
@@ -177,15 +187,33 @@ export const payrollApi = {
     }),
 
   // Reports
-  getReport: (legalEntityId: string, params?: { from?: string | undefined; to?: string | undefined; runType?: string | undefined; page?: number | undefined; pageSize?: number | undefined } | undefined): Promise<PayrollReportSummary> => {
+  getReport: (legalEntityId: string, params?: { from?: string | undefined; to?: string | undefined; runType?: string | undefined; search?: string | undefined; page?: number | undefined; pageSize?: number | undefined } | undefined): Promise<PayrollReportSummary> => {
     const q = new URLSearchParams();
     if (params?.from) q.set("from", params.from);
     if (params?.to) q.set("to", params.to);
     if (params?.runType) q.set("runType", params.runType);
+    if (params?.search) q.set("search", params.search);
     if (params?.page != null) q.set("page", String(params.page));
     if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
     return httpClient<PayrollReportSummary>(`${BASE}/legal-entities/${legalEntityId}/reports/payroll?${q.toString()}`);
   },
+
+  exportReport: (legalEntityId: string, params?: { from?: string | undefined; to?: string | undefined; runType?: string | undefined; search?: string | undefined } | undefined): Promise<readonly PayrollReportItem[]> => {
+    const q = new URLSearchParams();
+    if (params?.from) q.set("from", params.from);
+    if (params?.to) q.set("to", params.to);
+    if (params?.runType) q.set("runType", params.runType);
+    if (params?.search) q.set("search", params.search);
+    return httpClient<readonly PayrollReportItem[]>(`${BASE}/legal-entities/${legalEntityId}/reports/payroll/export?${q.toString()}`);
+  },
+
+  getAccountingState: (legalEntityId: string, runId: string): Promise<PayrollAccountingReconciliation> =>
+    httpClient<PayrollAccountingReconciliation>(`${BASE}/legal-entities/${legalEntityId}/runs/${runId}/accounting`),
+
+  reconcileAccounting: (legalEntityId: string, runId: string): Promise<PayrollAccountingReconciliation> =>
+    httpClient<PayrollAccountingReconciliation>(`${BASE}/legal-entities/${legalEntityId}/runs/${runId}/reconcile-accounting`, {
+      method: "POST"
+    }),
 
   // Imports
   importInputsPreview: (legalEntityId: string, request: PayrollImportRequest): Promise<PayrollImportResult> =>

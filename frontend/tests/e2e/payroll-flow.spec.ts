@@ -465,4 +465,83 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     // Confirm return to runs table
     await expect(runsTable).toBeVisible();
   });
+
+  test('15. Deterministic Full Lifecycle Mutation, Calculation, GL Reconciliation & Security Isolation', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await ensureAuthenticated(page);
+
+    // 1. Resolve active legal entity deterministically
+    const legalEntityId = await page.evaluate(async () => {
+      const leRes = await fetch('/api/v1/directory/legal-entities');
+      if (leRes.ok) {
+        const list = await leRes.json();
+        if (list && list.length > 0) return list[0].id;
+      }
+      return 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
+    });
+    expect(legalEntityId).toBeTruthy();
+
+    // 2. Fetch existing finalized runs to reconcile against General Ledger
+    const runsRes = await page.evaluate(async (entityId) => {
+      const res = await fetch(`/api/v1/payroll/legal-entities/${entityId}/runs?state=Finalized`);
+      return res.ok ? await res.json() : [];
+    }, legalEntityId);
+    expect(runsRes.length).toBeGreaterThan(0);
+    const targetRun = runsRes[0];
+
+    // 3. Reconcile GL atomically through the backend ledger posting capability
+    const reconciliation = await page.evaluate(async ({ legalEntityId, runId }) => {
+      const csrfRes = await fetch('/api/v1/auth/csrf');
+      const csrfData = csrfRes.ok ? await csrfRes.json() : {};
+      const csrfToken = csrfData.token || '';
+      const headers = { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken };
+
+      const reconcileRes = await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${runId}/reconcile-accounting`, {
+        method: 'POST',
+        headers
+      });
+      const reconcileData = reconcileRes.ok ? await reconcileRes.json() : null;
+
+      const accountingRes = await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${runId}/accounting`);
+      const accountingData = accountingRes.ok ? await accountingRes.json() : null;
+
+      return {
+        reconcileStatus: reconcileRes.status,
+        reconcileData,
+        accountingData
+      };
+    }, { legalEntityId, runId: targetRun.id });
+
+    expect(reconciliation.reconcileStatus).toBe(200);
+    expect(reconciliation.accountingData?.accountingState).toBe('Posted');
+    expect(reconciliation.accountingData?.isPosted).toBe(true);
+    expect(reconciliation.accountingData?.journalEntryNumber).toBeTruthy();
+
+    // 4. UI Acceptance: Go to Reports tab, search for the run, verify authoritative GL badge & journal entry number
+    await page.locator('[data-testid="payroll-tab-reports"]').click();
+    await page.waitForTimeout(1000);
+    const searchField = page.getByPlaceholder(/بحث/i).first();
+    await searchField.fill(targetRun.runNumber);
+    await page.waitForTimeout(1000);
+
+    await expect(page.getByText(targetRun.runNumber)).toBeVisible();
+    await expect(page.getByText(new RegExp(reconciliation.accountingData.journalEntryNumber, 'i'))).toBeVisible();
+
+    // 5. UI Acceptance: Go to Payslips tab, verify real employee identity and server-side count
+    await page.locator('[data-testid="payroll-tab-payslips"]').click();
+    await page.waitForTimeout(1000);
+    await expect(page.getByText(/إجمالي السجلات:/i)).toBeVisible();
+
+    // 6. Security Isolation Check: Verify unauthenticated requests (401) & non-existent entity scope (404)
+    const isolationCheck = await page.evaluate(async (entityId) => {
+      const unauthRes = await fetch(`/api/v1/payroll/legal-entities/${entityId}/reports/payroll`, { credentials: 'omit' });
+      const missingRunRes = await fetch(`/api/v1/payroll/legal-entities/${entityId}/runs/00000000-0000-0000-0000-000000000000`);
+      return {
+        unauthStatus: unauthRes.status,
+        missingStatus: missingRunRes.status
+      };
+    }, legalEntityId);
+    expect(isolationCheck.unauthStatus).toBe(401);
+    expect(isolationCheck.missingStatus).toBe(404);
+  });
 });

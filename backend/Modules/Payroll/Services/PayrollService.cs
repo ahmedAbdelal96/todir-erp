@@ -27,9 +27,30 @@ public sealed class PayrollService(PayrollRepository repository, IHumanResources
     public Task<IReadOnlyList<PayrollEmployeeDto>> ListRunEmployeesAsync(TenantId tenant, Guid entity, Guid run, int page, int size, string? status, string? search, CancellationToken ct) => repository.ListRunEmployeesAsync(tenant, entity, run, page, size, status, search, ct);
     public Task CalculateRunAsync(TenantId tenant, Guid entity, Guid run, CancellationToken ct) => repository.CalculateRunAsync(tenant, entity, run, ct);
     public Task FinalizeRunAsync(TenantId tenant, Guid entity, Guid run, CancellationToken ct) => repository.FinalizeRunAsync(tenant, entity, run, ct);
-    public async Task<IReadOnlyList<PayslipDto>> ListPayslipsAsync(TenantId tenant, Guid entity, int page, int size, Guid? employmentId, string? search, CancellationToken ct)
+    public async Task<PayslipsPageDto> ListPayslipsAsync(TenantId tenant, Guid entity, int page, int size, Guid? employmentId, string? search, CancellationToken ct)
     {
-        var slips = await repository.ListPayslipsAsync(tenant, entity, page, size, employmentId, search, ct);
+        IReadOnlyList<Guid>? matchingEmploymentIds = null;
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            matchingEmploymentIds = await hrPayroll.SearchEmploymentIdsAsync(tenant, entity, search, ct);
+        }
+        var pageResult = await repository.ListPayslipsAsync(tenant, entity, page, size, employmentId, search, matchingEmploymentIds, ct);
+        if (pageResult.Items.Count == 0) return pageResult;
+        var empIds = pageResult.Items.Select(s => s.EmploymentId).Distinct().ToArray();
+        var identities = await hrPayroll.ResolveEmploymentIdentitiesAsync(tenant, entity, empIds, ct);
+        var enriched = pageResult.Items.Select(s => identities.TryGetValue(s.EmploymentId, out var ident)
+            ? s with { EmployeeName = ident.DisplayName, EmploymentNumber = ident.EmploymentNumber }
+            : s).ToArray();
+        return pageResult with { Items = enriched };
+    }
+    public async Task<IReadOnlyList<PayslipDto>> ExportPayslipsAsync(TenantId tenant, Guid entity, Guid? employmentId, string? search, CancellationToken ct)
+    {
+        IReadOnlyList<Guid>? matchingEmploymentIds = null;
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            matchingEmploymentIds = await hrPayroll.SearchEmploymentIdsAsync(tenant, entity, search, ct);
+        }
+        var slips = await repository.ExportPayslipsAsync(tenant, entity, employmentId, search, matchingEmploymentIds, 5000, ct);
         if (slips.Count == 0) return slips;
         var empIds = slips.Select(s => s.EmploymentId).Distinct().ToArray();
         var identities = await hrPayroll.ResolveEmploymentIdentitiesAsync(tenant, entity, empIds, ct);
@@ -57,7 +78,10 @@ public sealed class PayrollService(PayrollRepository repository, IHumanResources
     public Task<ReceivableDisbursementDto> CompleteReceivableDisbursementAsync(TenantId tenant, Guid entity, Guid id, string? providerReference, CancellationToken ct) => repository.CompleteReceivableDisbursementAsync(tenant, entity, id, providerReference, ct);
     public Task<ReceivableDisbursementDto> FailReceivableDisbursementAsync(TenantId tenant, Guid entity, Guid id, string? failureCode, CancellationToken ct) => repository.FailReceivableDisbursementAsync(tenant, entity, id, failureCode, ct);
     public Task<PayrollLoanActionDto> ApplyLoanActionAsync(TenantId tenant, Guid entity, Guid receivableId, Guid actor, PayrollLoanActionRequest request, CancellationToken ct) => repository.ApplyLoanActionAsync(tenant, entity, receivableId, actor, request, ct);
-    public Task<PayrollReportSummaryDto> GetReportAsync(TenantId tenant, Guid entity, DateOnly? from, DateOnly? to, string? runType, int page, int size, CancellationToken ct) => repository.GetReportAsync(tenant, entity, from, to, runType, page, size, ct);
+    public Task<PayrollReportSummaryDto> GetReportAsync(TenantId tenant, Guid entity, DateOnly? from, DateOnly? to, string? runType, string? search, int page, int size, CancellationToken ct) => repository.GetReportAsync(tenant, entity, from, to, runType, search, page, size, ct);
+    public Task<IReadOnlyList<PayrollReportItem>> ExportReportAsync(TenantId tenant, Guid entity, DateOnly? from, DateOnly? to, string? runType, string? search, CancellationToken ct) => repository.ExportReportAsync(tenant, entity, from, to, runType, search, 5000, ct);
+    public Task<PayrollAccountingReconciliationDto> GetAccountingStateAsync(TenantId tenant, Guid entity, Guid runId, CancellationToken ct) => repository.GetAccountingStateAsync(tenant, entity, runId, ct);
+    public Task<PayrollAccountingReconciliationDto> ReconcileAccountingAsync(TenantId tenant, Guid entity, Guid runId, Guid actorId, CancellationToken ct) => repository.ReconcileAccountingAsync(tenant, entity, runId, actorId, ct);
     public Task<PayrollImportResult> ImportInputsAsync(TenantId tenant, Guid entity, Guid actor, PayrollImportRequest request, bool commit, CancellationToken ct) => repository.ImportInputsAsync(tenant, entity, actor, request, commit, ct);
     public Task<PayrollOpeningBalanceDto> CreateOpeningBalanceAsync(TenantId tenant, Guid entity, Guid actor, PayrollOpeningBalanceRequest request, CancellationToken ct) => repository.CreateOpeningBalanceAsync(tenant, entity, actor, request, ct);
     public Task<IReadOnlyList<PayrollOpeningBalanceDto>> ListOpeningBalancesAsync(TenantId tenant, Guid entity, int page, int size, Guid? employmentId, string? balanceType, string? search, CancellationToken ct) => repository.ListOpeningBalancesAsync(tenant, entity, page, size, employmentId, balanceType, search, ct);
