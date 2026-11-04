@@ -111,5 +111,14 @@ export function buildCommandPaletteItems({
     onSelect: () => navigate("/tax")
   });
 
+  items.push({
+    id: "action-payroll-run",
+    title: t("commandPalette.actionPayrollRun", "إدارة دورات الرواتب والأجور"),
+    subtitle: t("commandPalette.subtitlePayroll", "احتساب الرواتب، السلف وقسائم الموظفين"),
+    category: "actions",
+    keywords: ["رواتب", "أجور", "سلف", "مرتبات", "payroll", "salary", "payslip"],
+    onSelect: () => navigate("/payroll")
+  });
+
   return items;
 }

@@ -13,6 +13,7 @@ import { inventoryRoutes } from "@modules/inventory/public.ts";
 import { salesRoutes } from "@modules/sales/public.ts";
 import { purchasingRoutes } from "@modules/purchasing/public.ts";
 import { hrRoutes } from "@modules/hr/public.ts";
+import { payrollRoutes } from "@modules/payroll/public.ts";
 import { identityRoutes } from "@modules/identity/public.ts";
 import { invoicingRoutes } from "@modules/invoicing/public.ts";
 import { migrationRoutes } from "@modules/migration/public.ts";
@@ -77,6 +78,7 @@ const workspaceRoutes: RouteObject = {
     ...salesRoutes.routes,
     ...purchasingRoutes.routes,
     ...hrRoutes.routes,
+    ...payrollRoutes.routes,
     { path: "preview", element: <PreviewPage /> },
     { path: "settings", element: <SettingsRoute /> },
     { path: "*", element: <NotFoundRoute /> }
