@@ -18,7 +18,7 @@ export interface NewPayrollPeriodModalProps {
 function adjustForWeekend(date: Date, rule: HolidayAdjustment = "NextWorkingDay"): Date {
   if (rule === "None") return date;
   const d = new Date(date.getTime());
-  while (d.getDay() === 0 || d.getDay() === 6) {
+  while (d.getDay() === 0 || d.getDay() === 5 || d.getDay() === 6) {
     d.setDate(d.getDate() + (rule === "PreviousWorkingDay" ? -1 : 1));
   }
   return d;
@@ -50,10 +50,21 @@ const computePeriodDates = (group?: PayrollGroup) => {
   const plannedPayDateRaw = new Date(year, payMonth, Math.min(targetPayDay, maxDayInPayMonth));
 
   const plannedPayDateObj = adjustForWeekend(plannedPayDateRaw, group?.holidayAdjustment);
-  // Cutoff is 4 days before pay date
-  const cutoffObj = new Date(plannedPayDateObj.getTime() - 4 * 24 * 60 * 60 * 1000);
-  // Calculation is 2 days before pay date
-  const calcObj = new Date(plannedPayDateObj.getTime() - 2 * 24 * 60 * 60 * 1000);
+
+  // Input cutoff must be within the period window (strictly enforced by database check: input_cutoff <= period_end)
+  let cutoffObj = new Date(plannedPayDateObj.getTime() - 4 * 24 * 60 * 60 * 1000);
+  if (cutoffObj.getTime() > periodEndDate.getTime()) {
+    cutoffObj = new Date(periodEndDate.getTime());
+  }
+  if (cutoffObj.getTime() < periodStartDate.getTime()) {
+    cutoffObj = new Date(periodStartDate.getTime());
+  }
+
+  // Calculation date is between input cutoff and planned pay date
+  let calcObj = new Date(cutoffObj.getTime() + 2 * 24 * 60 * 60 * 1000);
+  if (calcObj.getTime() > plannedPayDateObj.getTime()) {
+    calcObj = new Date(plannedPayDateObj.getTime());
+  }
 
   return {
     periodStart: formatDate(periodStartDate),

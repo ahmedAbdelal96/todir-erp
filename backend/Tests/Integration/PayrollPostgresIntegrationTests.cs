@@ -120,6 +120,15 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
             Assert.Equal(1L, await CountAsync(adminConnectionString, "select count(*) from business_payroll.payment_instruction where tenant_id=$1 and legal_entity_id=$2 and run_id=$3 and amount=725", fixture.TenantId, fixture.LegalEntityId, runId));
             Assert.Equal(1L, await CountAsync(adminConnectionString, "select count(*) from business_payroll.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and run_id=$3 and total_amount=725 and status='Ready'", fixture.TenantId, fixture.LegalEntityId, runId));
             Assert.Equal(1L, await CountAsync(adminConnectionString, "select count(*) from business_payroll.payroll_input where tenant_id=$1 and id=$2 and status='Consumed' and consumed_run_id=$3", fixture.TenantId, inputId, runId));
+
+            // Verify authoritatively stored posting date in accounting fact payload
+            var storedPostingDate = await ScalarStringAsync(adminConnectionString, "select (payload->>'postingDate') from business_payroll.accounting_fact where tenant_id=$1 and run_id=$2", fixture.TenantId, runId);
+            Assert.False(string.IsNullOrWhiteSpace(storedPostingDate));
+
+            // Verify outbox message payload contains authoritative posting date
+            var outboxPostingDate = await ScalarStringAsync(adminConnectionString, "select (payload->>'postingDate') from platform.outbox_message where tenant_id=$1 and correlation_id=$2 and message_type='PayrollFinalizedV1'", fixture.TenantId, runId);
+            Assert.False(string.IsNullOrWhiteSpace(outboxPostingDate));
+            Assert.Equal(storedPostingDate, outboxPostingDate);
         }
         finally
         {
@@ -206,6 +215,14 @@ public sealed class PayrollPostgresIntegrationTests : DatabaseIntegrationTestBas
     private static async Task<decimal> DecimalAsync(string connectionString, string sql, params object[] values)
     {
         await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); await using var command = new NpgsqlCommand(sql, connection); Add(command, values); return Convert.ToDecimal(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<string?> ScalarStringAsync(string connectionString, string sql, params object[] values)
+    {
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection); Add(command, values);
+        var res = await command.ExecuteScalarAsync();
+        return res is DBNull or null ? null : res.ToString();
     }
 
     private static async Task CleanupLifecycleAsync(string connectionString, Guid tenantId, Guid legalEntityId, Guid runId, Guid inputId, Guid snapshotId)

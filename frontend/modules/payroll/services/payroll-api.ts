@@ -127,6 +127,7 @@ export const payrollApi = {
     const q = new URLSearchParams();
     if (params?.employmentId) q.set("employmentId", params.employmentId);
     if (params?.search) q.set("search", params.search);
+    q.set("format", "json");
     return httpClient<readonly Payslip[]>(`${BASE}/legal-entities/${legalEntityId}/payslips/export?${q.toString()}`);
   },
 
@@ -204,6 +205,7 @@ export const payrollApi = {
     if (params?.to) q.set("to", params.to);
     if (params?.runType) q.set("runType", params.runType);
     if (params?.search) q.set("search", params.search);
+    q.set("format", "json");
     return httpClient<readonly PayrollReportItem[]>(`${BASE}/legal-entities/${legalEntityId}/reports/payroll/export?${q.toString()}`);
   },
 

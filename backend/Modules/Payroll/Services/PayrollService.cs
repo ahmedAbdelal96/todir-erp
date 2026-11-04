@@ -80,6 +80,16 @@ public sealed class PayrollService(PayrollRepository repository, IHumanResources
     public Task<PayrollLoanActionDto> ApplyLoanActionAsync(TenantId tenant, Guid entity, Guid receivableId, Guid actor, PayrollLoanActionRequest request, CancellationToken ct) => repository.ApplyLoanActionAsync(tenant, entity, receivableId, actor, request, ct);
     public Task<PayrollReportSummaryDto> GetReportAsync(TenantId tenant, Guid entity, DateOnly? from, DateOnly? to, string? runType, string? search, int page, int size, CancellationToken ct) => repository.GetReportAsync(tenant, entity, from, to, runType, search, page, size, ct);
     public Task<IReadOnlyList<PayrollReportItem>> ExportReportAsync(TenantId tenant, Guid entity, DateOnly? from, DateOnly? to, string? runType, string? search, CancellationToken ct) => repository.ExportReportAsync(tenant, entity, from, to, runType, search, 5000, ct);
+    public Task WriteReportExportCsvAsync(TenantId tenant, Guid entity, DateOnly? from, DateOnly? to, string? runType, string? search, Stream output, CancellationToken ct) => repository.WriteReportExportCsvAsync(tenant, entity, from, to, runType, search, output, ct);
+    public async Task WritePayslipsExportCsvAsync(TenantId tenant, Guid entity, Guid? employmentId, string? search, Stream output, CancellationToken ct)
+    {
+        IReadOnlyList<Guid>? matchingEmploymentIds = null;
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            matchingEmploymentIds = await hrPayroll.SearchEmploymentIdsAsync(tenant, entity, search, ct);
+        }
+        await repository.WritePayslipsExportCsvAsync(tenant, entity, employmentId, search, matchingEmploymentIds, output, ct);
+    }
     public Task<PayrollAccountingReconciliationDto> GetAccountingStateAsync(TenantId tenant, Guid entity, Guid runId, CancellationToken ct) => repository.GetAccountingStateAsync(tenant, entity, runId, ct);
     public Task<PayrollAccountingReconciliationDto> ReconcileAccountingAsync(TenantId tenant, Guid entity, Guid runId, Guid actorId, CancellationToken ct) => repository.ReconcileAccountingAsync(tenant, entity, runId, actorId, ct);
     public Task<PayrollImportResult> ImportInputsAsync(TenantId tenant, Guid entity, Guid actor, PayrollImportRequest request, bool commit, CancellationToken ct) => repository.ImportInputsAsync(tenant, entity, actor, request, commit, ct);

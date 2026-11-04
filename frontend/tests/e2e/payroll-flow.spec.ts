@@ -470,37 +470,121 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
-    // 1. Resolve active legal entity deterministically
+    // 1. Resolve active legal entity deterministically without any hardcoded UUID fallback
     const legalEntityId = await page.evaluate(async () => {
-      const leRes = await fetch('/api/v1/directory/legal-entities');
+      const sessionRes = await fetch('/api/v1/session/context');
+      if (sessionRes.ok) {
+        const session = await sessionRes.json();
+        if (session.context?.legalEntities?.length > 0) {
+          return session.context.legalEntities[0].id;
+        }
+      }
+      const leRes = await fetch('/api/v1/platform/legal-entities');
       if (leRes.ok) {
         const list = await leRes.json();
         if (list && list.length > 0) return list[0].id;
       }
-      return 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
+      throw new Error('Unable to resolve legal entity id from session context');
     });
     expect(legalEntityId).toBeTruthy();
 
-    // 2. Fetch existing finalized runs to reconcile against General Ledger
-    const runsRes = await page.evaluate(async (entityId) => {
-      const res = await fetch(`/api/v1/payroll/legal-entities/${entityId}/runs?state=Finalized`);
-      return res.ok ? await res.json() : [];
-    }, legalEntityId);
-    expect(runsRes.length).toBeGreaterThan(0);
-    const targetRun = runsRes[0];
+    // 2. Resolve active payroll group and open period
+    const groupContext = await page.evaluate(async (entityId) => {
+      const groupsRes = await fetch(`/api/v1/payroll/legal-entities/${entityId}/groups`);
+      if (!groupsRes.ok) throw new Error('Failed to fetch payroll groups');
+      const groups = await groupsRes.json();
+      if (!groups || groups.length === 0) throw new Error('No payroll groups found');
+      const group = groups[0];
 
-    // 3. Reconcile GL atomically through the backend ledger posting capability
+      const periodsRes = await fetch(`/api/v1/payroll/legal-entities/${entityId}/groups/${group.id}/periods`);
+      if (!periodsRes.ok) throw new Error('Failed to fetch payroll periods');
+      const periods = await periodsRes.json();
+      if (!periods || periods.length === 0) throw new Error('No payroll periods found');
+      return { groupId: group.id, periodId: periods[0].id };
+    }, legalEntityId);
+    expect(groupContext.groupId).toBeTruthy();
+    expect(groupContext.periodId).toBeTruthy();
+
+    // 3. Deterministic Lifecycle Mutation: Create/Finalize run and verify persistence
+    const lifecycleResult = await page.evaluate(async ({ legalEntityId, groupId, periodId }) => {
+      const csrfRes = await fetch('/api/v1/auth/csrf');
+      const csrfData = csrfRes.ok ? await csrfRes.json() : {};
+      const csrfToken = csrfData.token || '';
+      const headers = { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken };
+
+      const runsRes = await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs`);
+      const existingRuns = runsRes.ok ? await runsRes.json() : [];
+      let targetRun = existingRuns.find((r: any) => r.finalizationState === 'Finalized');
+
+      if (!targetRun) {
+        // Create a period and run for complete lifecycle execution
+        const pRes = await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/groups/${groupId}/periods`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            payrollGroupId: groupId,
+            periodStart: '2026-11-01',
+            periodEnd: '2026-11-30',
+            inputCutoff: '2026-11-25',
+            calculationDate: '2026-11-26',
+            plannedPayDate: '2026-11-27'
+          })
+        });
+        const period = pRes.ok ? await pRes.json() : null;
+        const targetPeriodId = period ? period.id : periodId;
+
+        const createRes = await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            payrollGroupId: groupId,
+            periodId: targetPeriodId,
+            runType: 'Regular'
+          })
+        });
+        if (createRes.ok) {
+          const newRun = await createRes.json();
+          await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${newRun.id}/capture-inputs`, { method: 'POST', headers });
+          await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${newRun.id}/calculate`, { method: 'POST', headers });
+          await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${newRun.id}/approve`, { method: 'POST', headers });
+          await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${newRun.id}/finalize`, { method: 'POST', headers });
+          targetRun = newRun;
+        } else if (existingRuns.length > 0) {
+          const r = existingRuns[0];
+          await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${r.id}/calculate`, { method: 'POST', headers });
+          await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${r.id}/approve`, { method: 'POST', headers });
+          await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${r.id}/finalize`, { method: 'POST', headers });
+          targetRun = r;
+        }
+      }
+
+      return { run: targetRun };
+    }, { legalEntityId, groupId: groupContext.groupId, periodId: groupContext.periodId });
+
+    expect(lifecycleResult.run).toBeTruthy();
+    const runId = lifecycleResult.run.id;
+    const runNumber = lifecycleResult.run.runNumber;
+
+    // 4. Reconcile GL atomically through the backend ledger posting capability
     const reconciliation = await page.evaluate(async ({ legalEntityId, runId }) => {
       const csrfRes = await fetch('/api/v1/auth/csrf');
       const csrfData = csrfRes.ok ? await csrfRes.json() : {};
       const csrfToken = csrfData.token || '';
       const headers = { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken };
 
+      // First reconciliation call
       const reconcileRes = await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${runId}/reconcile-accounting`, {
         method: 'POST',
         headers
       });
       const reconcileData = reconcileRes.ok ? await reconcileRes.json() : null;
+
+      // Second reconciliation call to verify strict concurrency idempotency
+      const idempotentRes = await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${runId}/reconcile-accounting`, {
+        method: 'POST',
+        headers
+      });
+      const idempotentData = idempotentRes.ok ? await idempotentRes.json() : null;
 
       const accountingRes = await fetch(`/api/v1/payroll/legal-entities/${legalEntityId}/runs/${runId}/accounting`);
       const accountingData = accountingRes.ok ? await accountingRes.json() : null;
@@ -508,40 +592,68 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
       return {
         reconcileStatus: reconcileRes.status,
         reconcileData,
+        idempotentStatus: idempotentRes.status,
+        idempotentData,
         accountingData
       };
-    }, { legalEntityId, runId: targetRun.id });
+    }, { legalEntityId, runId });
 
     expect(reconciliation.reconcileStatus).toBe(200);
+    expect(reconciliation.idempotentStatus).toBe(200);
+    expect(reconciliation.reconcileData?.journalEntryNumber).toBeTruthy();
+    expect(reconciliation.idempotentData?.journalEntryNumber).toBe(reconciliation.reconcileData?.journalEntryNumber);
     expect(reconciliation.accountingData?.accountingState).toBe('Posted');
     expect(reconciliation.accountingData?.isPosted).toBe(true);
-    expect(reconciliation.accountingData?.journalEntryNumber).toBeTruthy();
+    expect(reconciliation.accountingData?.journalEntryNumber).toBe(reconciliation.reconcileData?.journalEntryNumber);
 
-    // 4. UI Acceptance: Go to Reports tab, search for the run, verify authoritative GL badge & journal entry number
+    // 5. Test Streaming CSV Export Endpoint Correctness
+    const csvExportCheck = await page.evaluate(async (entityId) => {
+      const res = await fetch(`/api/v1/payroll/legal-entities/${entityId}/reports/payroll/export`);
+      const contentType = res.headers.get('content-type') || '';
+      const isComplete = res.headers.get('x-export-complete') === 'true';
+      const text = await res.text();
+      return {
+        status: res.status,
+        contentType,
+        isComplete,
+        hasHeader: text.includes('RunNumber,RunType,PeriodEnd'),
+        lineCount: text.split('\n').filter(Boolean).length
+      };
+    }, legalEntityId);
+    expect(csvExportCheck.status).toBe(200);
+    expect(csvExportCheck.contentType).toContain('text/csv');
+    expect(csvExportCheck.isComplete).toBe(true);
+    expect(csvExportCheck.hasHeader).toBe(true);
+    expect(csvExportCheck.lineCount).toBeGreaterThan(1);
+
+    // 6. UI Acceptance: Go to Reports tab, search for the run, verify authoritative GL badge & journal entry number
     await page.locator('[data-testid="payroll-tab-reports"]').click();
     await page.waitForTimeout(1000);
     const searchField = page.getByPlaceholder(/بحث/i).first();
-    await searchField.fill(targetRun.runNumber);
+    await searchField.fill(runNumber);
     await page.waitForTimeout(1000);
 
-    await expect(page.getByText(targetRun.runNumber)).toBeVisible();
+    await expect(page.getByText(runNumber)).toBeVisible();
     await expect(page.getByText(new RegExp(reconciliation.accountingData.journalEntryNumber, 'i'))).toBeVisible();
 
-    // 5. UI Acceptance: Go to Payslips tab, verify real employee identity and server-side count
+    // 7. UI Acceptance: Go to Payslips tab, verify real employee identity and server-side count
     await page.locator('[data-testid="payroll-tab-payslips"]').click();
     await page.waitForTimeout(1000);
     await expect(page.getByText(/إجمالي السجلات:/i)).toBeVisible();
 
-    // 6. Security Isolation Check: Verify unauthenticated requests (401) & non-existent entity scope (404)
+    // 8. Security Isolation Check: Verify unauthenticated requests (401) & non-existent entity scope (404/403)
     const isolationCheck = await page.evaluate(async (entityId) => {
       const unauthRes = await fetch(`/api/v1/payroll/legal-entities/${entityId}/reports/payroll`, { credentials: 'omit' });
       const missingRunRes = await fetch(`/api/v1/payroll/legal-entities/${entityId}/runs/00000000-0000-0000-0000-000000000000`);
+      const foreignEntityRes = await fetch(`/api/v1/payroll/legal-entities/00000000-0000-0000-0000-000000000000/reports/payroll`);
       return {
         unauthStatus: unauthRes.status,
-        missingStatus: missingRunRes.status
+        missingStatus: missingRunRes.status,
+        foreignEntityStatus: foreignEntityRes.status
       };
     }, legalEntityId);
     expect(isolationCheck.unauthStatus).toBe(401);
     expect(isolationCheck.missingStatus).toBe(404);
+    expect([403, 404]).toContain(isolationCheck.foreignEntityStatus);
   });
 });

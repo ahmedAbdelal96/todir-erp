@@ -41,7 +41,21 @@ public static class PayrollModuleExtensions
         group.MapGet("/legal-entities/{legalEntityId:guid}/runs/{runId:guid}/accounting", async (Guid legalEntityId, Guid runId, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.accounting_preview.read", legalEntityId, () => service.GetAccountingStateAsync(AccessTenant(http), legalEntityId, runId, ct)));
         group.MapPost("/legal-entities/{legalEntityId:guid}/runs/{runId:guid}/reconcile-accounting", async (Guid legalEntityId, Guid runId, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.run.finalize", legalEntityId, () => service.ReconcileAccountingAsync(AccessTenant(http), legalEntityId, runId, Actor(http), ct)));
         group.MapGet("/legal-entities/{legalEntityId:guid}/payslips", async (Guid legalEntityId, int? page, int? pageSize, Guid? employmentId, string? search, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.payslip.read", legalEntityId, () => service.ListPayslipsAsync(AccessTenant(http), legalEntityId, page ?? 1, pageSize ?? 50, employmentId, search, ct)));
-        group.MapGet("/legal-entities/{legalEntityId:guid}/payslips/export", async (Guid legalEntityId, Guid? employmentId, string? search, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.payslip.export", legalEntityId, () => service.ExportPayslipsAsync(AccessTenant(http), legalEntityId, employmentId, search, ct)));
+        group.MapGet("/legal-entities/{legalEntityId:guid}/payslips/export", async (Guid legalEntityId, Guid? employmentId, string? search, string? format, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) =>
+        {
+            if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(http.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
+            var claimEntity = Guid.TryParse(http.User.FindFirstValue("legal_entity_id"), out var ce) ? ce : (Guid?)null;
+            if (claimEntity is not null && claimEntity != legalEntityId) return Results.Forbid();
+            var tenant = new TenantId(tenantId); var subject = await subjects.LoadAsync(tenant, membershipId, ct); if (subject is null) return Results.Unauthorized();
+            if (!auth.Authorize(subject, "payroll.payslip.export", PermissionScope.ForLegalEntity(tenant, new(legalEntityId)))) return Results.Forbid();
+            if (string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
+                return Results.Ok(await service.ExportPayslipsAsync(tenant, legalEntityId, employmentId, search, ct));
+            http.Response.ContentType = "text/csv; charset=utf-8";
+            http.Response.Headers["Content-Disposition"] = $"attachment; filename=\"payslips-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv\"";
+            http.Response.Headers["X-Export-Complete"] = "true";
+            await service.WritePayslipsExportCsvAsync(tenant, legalEntityId, employmentId, search, http.Response.Body, ct);
+            return Results.Empty;
+        });
         group.MapGet("/legal-entities/{legalEntityId:guid}/self/payslips", async (Guid legalEntityId, int? page, int? pageSize, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) =>
         {
             if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(http.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
@@ -58,7 +72,21 @@ public static class PayrollModuleExtensions
         group.MapPost("/legal-entities/{legalEntityId:guid}/employee-receivables/disbursements/{disbursementId:guid}/fail", async (Guid legalEntityId, Guid disbursementId, string? failureCode, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.payment.prepare", legalEntityId, () => service.FailReceivableDisbursementAsync(AccessTenant(http), legalEntityId, disbursementId, failureCode, ct)));
         group.MapPost("/legal-entities/{legalEntityId:guid}/employee-receivables/{receivableId:guid}/actions", async (Guid legalEntityId, Guid receivableId, PayrollLoanActionRequest request, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, request.Action is "WriteOff" ? "payroll.loan.writeoff" : request.Action is "Reschedule" ? "payroll.loan.reschedule" : "payroll.loan.approve", legalEntityId, () => service.ApplyLoanActionAsync(AccessTenant(http), legalEntityId, receivableId, Actor(http), request, ct)));
         group.MapGet("/legal-entities/{legalEntityId:guid}/reports/payroll", async (Guid legalEntityId, DateOnly? from, DateOnly? to, string? runType, string? search, int? page, int? pageSize, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.home.read", legalEntityId, () => service.GetReportAsync(AccessTenant(http), legalEntityId, from, to, runType, search, page ?? 1, pageSize ?? 50, ct)));
-        group.MapGet("/legal-entities/{legalEntityId:guid}/reports/payroll/export", async (Guid legalEntityId, DateOnly? from, DateOnly? to, string? runType, string? search, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.home.read", legalEntityId, () => service.ExportReportAsync(AccessTenant(http), legalEntityId, from, to, runType, search, ct)));
+        group.MapGet("/legal-entities/{legalEntityId:guid}/reports/payroll/export", async (Guid legalEntityId, DateOnly? from, DateOnly? to, string? runType, string? search, string? format, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) =>
+        {
+            if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(http.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
+            var claimEntity = Guid.TryParse(http.User.FindFirstValue("legal_entity_id"), out var ce) ? ce : (Guid?)null;
+            if (claimEntity is not null && claimEntity != legalEntityId) return Results.Forbid();
+            var tenant = new TenantId(tenantId); var subject = await subjects.LoadAsync(tenant, membershipId, ct); if (subject is null) return Results.Unauthorized();
+            if (!auth.Authorize(subject, "payroll.home.read", PermissionScope.ForLegalEntity(tenant, new(legalEntityId)))) return Results.Forbid();
+            if (string.Equals(format, "json", StringComparison.OrdinalIgnoreCase))
+                return Results.Ok(await service.ExportReportAsync(tenant, legalEntityId, from, to, runType, search, ct));
+            http.Response.ContentType = "text/csv; charset=utf-8";
+            http.Response.Headers["Content-Disposition"] = $"attachment; filename=\"payroll-report-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv\"";
+            http.Response.Headers["X-Export-Complete"] = "true";
+            await service.WriteReportExportCsvAsync(tenant, legalEntityId, from, to, runType, search, http.Response.Body, ct);
+            return Results.Empty;
+        });
         group.MapPost("/legal-entities/{legalEntityId:guid}/imports/inputs/preview", async (Guid legalEntityId, PayrollImportRequest request, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.input.create", legalEntityId, () => service.ImportInputsAsync(AccessTenant(http), legalEntityId, Actor(http), request, false, ct)));
         group.MapPost("/legal-entities/{legalEntityId:guid}/imports/inputs/commit", async (Guid legalEntityId, PayrollImportRequest request, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.input.create", legalEntityId, () => service.ImportInputsAsync(AccessTenant(http), legalEntityId, Actor(http), request, true, ct)));
         group.MapGet("/legal-entities/{legalEntityId:guid}/opening-balances", async (Guid legalEntityId, int? page, int? pageSize, Guid? employmentId, string? balanceType, string? search, HttpContext http, PayrollService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Execute(http, subjects, auth, "payroll.run.read", legalEntityId, () => service.ListOpeningBalancesAsync(AccessTenant(http), legalEntityId, page ?? 1, pageSize ?? 50, employmentId, balanceType, search, ct)));
@@ -75,6 +103,8 @@ public static class PayrollModuleExtensions
     private static async Task<IResult> Execute<T>(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, string permission, Guid entity, Func<Task<T>> action, int status = 200)
     {
         if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(http.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
+        var claimEntity = Guid.TryParse(http.User.FindFirstValue("legal_entity_id"), out var ce) ? ce : (Guid?)null;
+        if (claimEntity is not null && claimEntity != entity) return Results.Forbid();
         var tenant = new TenantId(tenantId); var subject = await subjects.LoadAsync(tenant, membershipId, http.RequestAborted); if (subject is null) return Results.Unauthorized(); if (!auth.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new(entity)))) return Results.Forbid();
         try { var result = await action(); return status == 201 ? Results.Created(http.Request.Path, result) : Results.Ok(result); } catch (PayrollRepositoryException ex) { return Results.Problem(statusCode: ex.Code.Contains("not_found") ? 404 : ex.Code.Contains("duplicate") || ex.Code.Contains("finalized") ? 409 : 400, title: ex.Code, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); }
     }
