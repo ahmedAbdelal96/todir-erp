@@ -200,19 +200,22 @@ export function NewPayrollRunModal({
           />
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.875rem" }}>
-          <LocalDateField
-            label={t("runs.payDate")}
-            value={effectiveDate}
-            onChange={setEffectiveDate}
-          />
+        {runType !== "Regular" && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.875rem" }}>
+            <LocalDateField
+              label={t("runs.payDate")}
+              value={effectiveDate}
+              onChange={setEffectiveDate}
+            />
 
-          <TextField
-            label={t("common.search")}
-            value={reasonCode}
-            onChange={setReasonCode}
-          />
-        </div>
+            <TextField
+              label={t("runs.workspace.reasonCode")}
+              value={reasonCode}
+              onChange={setReasonCode}
+              placeholder={t("runs.reasonCodePlaceholder", "مثال: مكافأة سنوية، تسوية نهاية خدمة")}
+            />
+          </div>
+        )}
 
         <TextField
           label={t("loans.notes")}

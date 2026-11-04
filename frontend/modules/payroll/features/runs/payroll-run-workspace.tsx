@@ -14,6 +14,8 @@ import {
   useApproveRunMutation,
   useFinalizeRunMutation
 } from "../../hooks/use-payroll-queries.ts";
+import { useEmployees } from "../../../hr/public.ts";
+import { formatMoneyAmount, resolveEmployeeLabel } from "../../utils/payroll-formatters.ts";
 import { mapPayrollError } from "../../services/payroll-error-map.ts";
 
 export interface PayrollRunWorkspaceProps {
@@ -48,6 +50,8 @@ export function PayrollRunWorkspace({
 
   const run = runQuery.data;
   const employees = employeesQuery.data ?? [];
+  const employeesListQuery = useEmployees({ legalEntityId });
+  const employeesList = employeesListQuery.data?.items ?? [];
 
   const handleCapture = async () => {
     setActionError(null);
@@ -321,19 +325,19 @@ export function PayrollRunWorkspace({
                 {employees.map((emp, index) => (
                   <tr key={emp.employmentId || index} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 600, color: "var(--color-content-primary)" }}>
-                      {emp.employmentId}
+                      {resolveEmployeeLabel(emp.employmentId, employeesList)}
                     </td>
                     <td style={{ padding: "0.875rem 1rem" }}>
-                      <bdi>{emp.gross.toLocaleString()} EGP</bdi>
+                      <bdi>{formatMoneyAmount(emp.gross, "EGP")}</bdi>
                     </td>
                     <td style={{ padding: "0.875rem 1rem", color: "var(--color-status-danger)" }}>
-                      <bdi>-{emp.deductions.toLocaleString()} EGP</bdi>
+                      <bdi>{formatMoneyAmount(emp.deductions > 0 ? -emp.deductions : emp.deductions, "EGP")}</bdi>
                     </td>
                     <td style={{ padding: "0.875rem 1rem", fontWeight: 700, color: "var(--color-status-success)" }}>
-                      <bdi>{emp.net.toLocaleString()} EGP</bdi>
+                      <bdi>{formatMoneyAmount(emp.net, "EGP")}</bdi>
                     </td>
                     <td style={{ padding: "0.875rem 1rem", color: "var(--color-content-secondary)" }}>
-                      <bdi>{emp.employerCost.toLocaleString()} EGP</bdi>
+                      <bdi>{formatMoneyAmount(emp.employerCost, "EGP")}</bdi>
                     </td>
                     <td style={{ padding: "0.875rem 1rem" }}>
                       <PayrollStatusBadge status={emp.status} type="calculation" />

@@ -15,6 +15,30 @@ export interface PayrollImportDialogProps {
   readonly legalEntityId: string;
 }
 
+function parseCsvLine(text: string): string[] {
+  const result: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
 export function PayrollImportDialog({
   isOpen,
   onClose,
@@ -25,6 +49,7 @@ export function PayrollImportDialog({
   const commitMutation = useImportInputsCommitMutation(legalEntityId);
 
   const [rawText, setRawText] = useState<string>("");
+  const [currentBatchRef, setCurrentBatchRef] = useState<string>("");
   const [previewResult, setPreviewResult] = useState<PayrollImportResult | null>(null);
   const [parsedRowsState, setParsedRowsState] = useState<readonly PayrollImportRowRequest[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -32,6 +57,7 @@ export function PayrollImportDialog({
 
   const reset = () => {
     setRawText("");
+    setCurrentBatchRef("");
     setPreviewResult(null);
     setParsedRowsState([]);
     setErrorMessage(null);
@@ -41,24 +67,50 @@ export function PayrollImportDialog({
   const parseCsvToRows = (text: string): PayrollImportRowRequest[] => {
     const lines = text.trim().split(/\r?\n/).filter((l) => l.trim().length > 0);
     const rows: PayrollImportRowRequest[] = [];
+    if (lines.length === 0) return rows;
 
-    const firstLine = lines[0]?.toLowerCase() || "";
-    const startIndex = firstLine.includes("employee") || firstLine.includes("component") ? 1 : 0;
+    const firstLineParts = parseCsvLine(lines[0] || "").map((p) => p.toLowerCase());
+    const hasHeader = firstLineParts.some((p) => p.includes("emp") || p.includes("component") || p.includes("amount"));
+    const startIndex = hasHeader ? 1 : 0;
 
     for (let i = startIndex; i < lines.length; i++) {
       const line = lines[i];
       if (!line) continue;
-      const parts = line.split(",").map((p) => p.trim());
-      if (parts.length >= 4) {
+      const parts = parseCsvLine(line);
+      if (parts.length >= 3) {
+        // Support:
+        // Format 1 (6 cols): EmploymentId, ComponentCode, Amount, Currency, InputDate, Notes
+        // Format 2 (7 cols): EmploymentId, ComponentCode, ComponentType, InputDate, Amount, Currency, Notes
+        let employmentId = parts[0] || "";
+        let componentCode = parts[1] || "TRANSPORT";
+        let amount = 0;
+        let currencyCode = "EGP";
+        let inputDate = new Date().toISOString().slice(0, 10);
+        let notes: string | null = null;
+
+        if (parts.length >= 7) {
+          // Format 2: employmentId, componentCode, componentType, inputDate, amount, currency, notes
+          inputDate = parts[3] || inputDate;
+          amount = parseFloat(parts[4] || "0") || 0;
+          currencyCode = parts[5] || "EGP";
+          notes = parts[6] || null;
+        } else {
+          // Format 1: employmentId, componentCode, amount, currency, inputDate, notes
+          amount = parseFloat(parts[2] || "0") || 0;
+          currencyCode = parts[3] || "EGP";
+          inputDate = parts[4] || inputDate;
+          notes = parts[5] || null;
+        }
+
         rows.push({
-          rowNumber: i + 1,
-          rowKey: `row-${i + 1}`,
-          employmentId: parts[0] || "",
-          componentCode: parts[1] || "BONUS",
-          inputDate: parts[2] || new Date().toISOString().slice(0, 10),
-          amount: parseFloat(parts[3] || "0") || 0,
-          currencyCode: parts[4] || "EGP",
-          notes: parts[5] || null
+          rowNumber: rows.length + 1,
+          rowKey: `row-${rows.length + 1}`,
+          employmentId,
+          componentCode: componentCode.toUpperCase(),
+          inputDate,
+          amount,
+          currencyCode,
+          notes
         });
       }
     }
@@ -69,16 +121,18 @@ export function PayrollImportDialog({
     setErrorMessage(null);
     const parsedRows = parseCsvToRows(rawText);
     if (parsedRows.length === 0) {
-      setErrorMessage(t("inputs.importNoValidRows"));
+      setErrorMessage(t("inputs.importNoValidRows", "لم يتم العثور على أسطر صالحة للاستيراد"));
       return;
     }
 
+    const batchRef = `BATCH-${Date.now()}`;
+    setCurrentBatchRef(batchRef);
     setParsedRowsState(parsedRows);
 
     const request: PayrollImportRequest = {
       importType: "Inputs",
       sourceSystem: "CSV",
-      batchReference: `BATCH-${Date.now()}`,
+      batchReference: batchRef,
       fileSha256: "manual-entry",
       rows: parsedRows
     };
@@ -100,7 +154,7 @@ export function PayrollImportDialog({
     const request: PayrollImportRequest = {
       importType: "Inputs",
       sourceSystem: "CSV",
-      batchReference: previewResult.batchId || `BATCH-${Date.now()}`,
+      batchReference: currentBatchRef,
       fileSha256: "manual-entry",
       rows: parsedRowsState
     };
@@ -288,25 +342,40 @@ export function PayrollImportDialog({
                   </tr>
                 </thead>
                 <tbody>
-                  {previewResult.rows.map((r, idx) => (
-                    <tr
-                      key={idx}
-                      style={{
-                        borderBottom: "1px solid var(--color-border-subtle)",
-                        background: r.status === "Valid" ? "transparent" : "var(--color-status-danger-subtle, #fef2f2)"
-                      }}
-                    >
-                      <td style={{ padding: "0.5rem 0.75rem" }}>{r.rowNumber}</td>
-                      <td style={{ padding: "0.5rem 0.75rem" }}>{r.rowKey}</td>
-                      <td style={{ padding: "0.5rem 0.75rem" }}>{r.issueCode || "—"}</td>
-                      <td style={{ padding: "0.5rem 0.75rem" }}>{r.status}</td>
-                      <td style={{ padding: "0.5rem 0.75rem" }}>
-                        <span style={{ color: r.status === "Valid" ? "var(--color-status-success)" : "var(--color-status-danger)", fontWeight: 600 }}>
-                          {r.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {previewResult.rows.map((r, idx) => {
+                    const parsed = parsedRowsState[r.rowNumber - 1];
+                    const isOk = r.status === "Ready" || r.status === "Imported" || r.status === "Valid";
+                    return (
+                      <tr
+                        key={idx}
+                        style={{
+                          borderBottom: "1px solid var(--color-border-subtle)",
+                          background: isOk ? "transparent" : "var(--color-status-danger-subtle, #fef2f2)"
+                        }}
+                      >
+                        <td style={{ padding: "0.5rem 0.75rem" }}>{r.rowNumber}</td>
+                        <td style={{ padding: "0.5rem 0.75rem", fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>
+                          {parsed?.employmentId || r.rowKey}
+                        </td>
+                        <td style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>
+                          {parsed?.componentCode || "—"}
+                        </td>
+                        <td style={{ padding: "0.5rem 0.75rem" }}>
+                          {parsed ? `${parsed.amount.toLocaleString()} ${parsed.currencyCode}` : "—"}
+                        </td>
+                        <td style={{ padding: "0.5rem 0.75rem" }}>
+                          <span
+                            style={{
+                              color: isOk ? "var(--color-status-success, #16a34a)" : "var(--color-status-danger, #dc2626)",
+                              fontWeight: 600
+                            }}
+                          >
+                            {r.issueCode ? t(`errors.${r.issueCode}`, r.issueCode) : r.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -2,10 +2,10 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
-import { Select } from "../../../../components/primitives/select.tsx";
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { HrEmployeePicker } from "../../../hr/public.ts";
+import { PayrollComponentPicker } from "../../components/payroll-component-picker.tsx";
 import { useCreatePayrollInputMutation } from "../../hooks/use-payroll-queries.ts";
 import { mapPayrollError } from "../../services/payroll-error-map.ts";
 
@@ -24,8 +24,7 @@ export function NewPayrollInputModal({
   const createMutation = useCreatePayrollInputMutation(legalEntityId);
 
   const [employmentId, setEmploymentId] = useState<string>("");
-  const [componentCode, setComponentCode] = useState<string>("BONUS");
-  const [componentType, setComponentType] = useState<string>("Earning");
+  const [componentId, setComponentId] = useState<string>("");
   const [inputDate, setInputDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState<number>(0);
   const [currencyCode, setCurrencyCode] = useState<string>("EGP");
@@ -34,8 +33,7 @@ export function NewPayrollInputModal({
 
   const reset = () => {
     setEmploymentId("");
-    setComponentCode("BONUS");
-    setComponentType("Earning");
+    setComponentId("");
     setInputDate(new Date().toISOString().slice(0, 10));
     setAmount(0);
     setCurrencyCode("EGP");
@@ -49,6 +47,10 @@ export function NewPayrollInputModal({
       setErrorMessage(t("inputs.employeeRequired"));
       return;
     }
+    if (!componentId) {
+      setErrorMessage(t("inputs.componentRequired", "يرجى تحديد بند الراتب"));
+      return;
+    }
     if (amount <= 0) {
       setErrorMessage(t("inputs.amountPositiveRequired"));
       return;
@@ -58,7 +60,7 @@ export function NewPayrollInputModal({
       await createMutation.mutateAsync({
         legalEntityId,
         employmentId,
-        componentId: componentCode.trim().toUpperCase(),
+        componentId: componentId.trim(),
         inputDate,
         amount,
         currencyCode,
@@ -73,11 +75,6 @@ export function NewPayrollInputModal({
       setErrorMessage(t(mapped.messageKey, mapped.defaultMessage));
     }
   };
-
-  const componentTypeOptions = [
-    { id: "Earning", label: t("components.types.earning") },
-    { id: "Deduction", label: t("components.types.deduction") }
-  ];
 
   return (
     <Dialog
@@ -143,24 +140,14 @@ export function NewPayrollInputModal({
           placeholder={t("inputs.selectEmployeePlaceholder")}
         />
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-          <Select
-            label={t("inputs.componentType")}
-            selectedKey={componentType}
-            onSelectionChange={(val) => {
-              if (val) setComponentType(String(val));
-            }}
-            options={componentTypeOptions}
-          />
-
-          <TextField
-            label={t("inputs.componentCode")}
-            value={componentCode}
-            onChange={setComponentCode}
-            isRequired
-            placeholder={t("inputs.componentCodePlaceholder")}
-          />
-        </div>
+        <PayrollComponentPicker
+          label={t("inputs.component", "بند الراتب")}
+          value={componentId}
+          onChange={(id) => setComponentId(id)}
+          legalEntityId={legalEntityId}
+          isRequired
+          placeholder={t("inputs.selectComponentPlaceholder", "اختر بند الاستحقاق أو الاستقطاع")}
+        />
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <TextField

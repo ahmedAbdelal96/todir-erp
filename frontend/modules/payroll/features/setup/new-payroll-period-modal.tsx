@@ -144,14 +144,14 @@ export function NewPayrollPeriodModal({
           />
 
           <LocalDateField
-            label={t("setup.targetPayDate")}
+            label={t("setup.calculationDate")}
             value={calculationDate}
             onChange={setCalculationDate}
             isRequired
           />
 
           <LocalDateField
-            label={t("setup.targetPayDate")}
+            label={t("setup.plannedPayDate")}
             value={plannedPayDate}
             onChange={setPlannedPayDate}
             isRequired

@@ -4,6 +4,7 @@ import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { PayrollKpiCard } from "../../components/payroll-kpi-card.tsx";
 import { PayrollStatusBadge } from "../../components/payroll-status-badge.tsx";
+import { formatMoneyAmount } from "../../utils/payroll-formatters.ts";
 import { usePayrollGroups, usePayrollRuns, usePayrollReport, usePayrollStatutorySettings } from "../../hooks/use-payroll-queries.ts";
 import { NewPayrollRunModal } from "../runs/new-payroll-run-modal.tsx";
 import { NewPayrollInputModal } from "../inputs/new-payroll-input-modal.tsx";
@@ -81,13 +82,12 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
         <PayrollKpiCard
           title={t("reports.totalNetPayroll")}
           value={
-            latestRun ? (
-              <bdi>{(latestRun.totalNet ?? 0).toLocaleString()} EGP</bdi>
-            ) : report ? (
-              <bdi>{(report.totalNet ?? 0).toLocaleString()} EGP</bdi>
-            ) : (
-              "0.00 EGP"
-            )
+            <bdi>
+              {formatMoneyAmount(
+                latestRun ? latestRun.totalNet : report?.totalNet ?? 0,
+                "EGP"
+              )}
+            </bdi>
           }
           subtitle={latestRun ? latestRun.runNumber : t("reports.totalNetPayroll")}
           tone="primary"
@@ -96,13 +96,12 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
         <PayrollKpiCard
           title={t("reports.totalGrossPayroll")}
           value={
-            latestRun ? (
-              <bdi>{(latestRun.totalGross ?? 0).toLocaleString()} EGP</bdi>
-            ) : report ? (
-              <bdi>{(report.totalGross ?? 0).toLocaleString()} EGP</bdi>
-            ) : (
-              "0.00 EGP"
-            )
+            <bdi>
+              {formatMoneyAmount(
+                latestRun ? latestRun.totalGross : report?.totalGross ?? 0,
+                "EGP"
+              )}
+            </bdi>
           }
           subtitle={t("reports.gross")}
           tone="default"
@@ -111,13 +110,15 @@ export function PayrollHomeTab({ legalEntityId, onOpenRun, onNavigateTab }: Payr
         <PayrollKpiCard
           title={t("reports.totalDeductions")}
           value={
-            latestRun ? (
-              <bdi>-{(latestRun.totalDeductions ?? 0).toLocaleString()} EGP</bdi>
-            ) : report ? (
-              <bdi>-{(report.totalDeductions ?? 0).toLocaleString()} EGP</bdi>
-            ) : (
-              "0.00 EGP"
-            )
+            <bdi>
+              {formatMoneyAmount(
+                (() => {
+                  const ded = latestRun ? latestRun.totalDeductions : report?.totalDeductions ?? 0;
+                  return ded > 0 ? -ded : ded;
+                })(),
+                "EGP"
+              )}
+            </bdi>
           }
           subtitle={t("reports.totalDeductions")}
           tone="warning"

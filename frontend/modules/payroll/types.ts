@@ -12,6 +12,41 @@ export type ReceivableType = "Advance" | "Loan";
 export type ReceivableStatus = "Draft" | "Approved" | "Disbursed" | "Paused" | "Settled" | "WrittenOff" | "Cancelled";
 export type LoanActionType = "Pause" | "Resume" | "Reschedule" | "ExternalRepayment" | "EarlySettlement" | "WriteOff";
 export type OpeningBalanceType = "NetPay" | "Tax" | "Insurance" | "Loan" | "Advance" | "Other";
+export type ComponentCategory = "Earning" | "EmployeeDeduction" | "EmployerContribution" | "Informational" | "Recovery";
+export type ComponentDirection = "Credit" | "Debit" | "Memo";
+export type ComponentInputMode = "Formula" | "Manual" | "Provider";
+
+export interface PayrollComponent {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly category: ComponentCategory;
+  readonly direction: ComponentDirection;
+  readonly inputMode: ComponentInputMode;
+  readonly status: "Active" | "Retired";
+}
+
+export interface SalaryStructure {
+  readonly id: string;
+  readonly legalEntityId: string;
+  readonly code: string;
+  readonly name: string;
+  readonly status: "Active" | "Archived";
+  readonly componentsCount?: number;
+}
+
+export interface EmployeePayrollAssignment {
+  readonly id: string;
+  readonly employmentId: string;
+  readonly employeeName?: string;
+  readonly employmentNumber?: string;
+  readonly payrollGroupId: string;
+  readonly payrollGroupName?: string;
+  readonly baseSalary: number;
+  readonly currencyCode: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | null;
+}
 
 export interface PayrollGroup {
   readonly id: string;

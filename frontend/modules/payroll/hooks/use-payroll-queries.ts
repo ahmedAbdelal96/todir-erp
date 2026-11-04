@@ -23,9 +23,36 @@ export const payrollQueryKeys = {
   selfPayslips: (legalEntityId: string) => [...payrollQueryKeys.all, "self-payslips", legalEntityId] as const,
   reports: (legalEntityId: string) => [...payrollQueryKeys.all, "reports", legalEntityId] as const,
   openingBalances: (legalEntityId: string) => [...payrollQueryKeys.all, "opening-balances", legalEntityId] as const,
+  components: (legalEntityId: string) => [...payrollQueryKeys.all, "components", legalEntityId] as const,
+  salaryStructures: (legalEntityId: string) => [...payrollQueryKeys.all, "salary-structures", legalEntityId] as const,
+  employeeAssignments: (legalEntityId: string) => [...payrollQueryKeys.all, "employee-assignments", legalEntityId] as const,
   statutorySettings: (legalEntityId: string) => [...payrollQueryKeys.all, "statutory-settings", legalEntityId] as const,
   statutoryHistory: (legalEntityId: string) => [...payrollQueryKeys.all, "statutory-history", legalEntityId] as const
 };
+
+export function usePayrollComponents(legalEntityId: string) {
+  return useQuery({
+    queryKey: payrollQueryKeys.components(legalEntityId),
+    queryFn: () => payrollApi.listComponents(legalEntityId),
+    enabled: Boolean(legalEntityId)
+  });
+}
+
+export function useSalaryStructures(legalEntityId: string) {
+  return useQuery({
+    queryKey: payrollQueryKeys.salaryStructures(legalEntityId),
+    queryFn: () => payrollApi.listSalaryStructures(legalEntityId),
+    enabled: Boolean(legalEntityId)
+  });
+}
+
+export function useEmployeeAssignments(legalEntityId: string) {
+  return useQuery({
+    queryKey: payrollQueryKeys.employeeAssignments(legalEntityId),
+    queryFn: () => payrollApi.listEmployeeAssignments(legalEntityId),
+    enabled: Boolean(legalEntityId)
+  });
+}
 
 export function usePayrollGroups(legalEntityId: string, params?: { page?: number; pageSize?: number; search?: string }) {
   return useQuery({

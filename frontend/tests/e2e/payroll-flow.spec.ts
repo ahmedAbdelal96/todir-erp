@@ -36,7 +36,8 @@ async function ensureAuthenticated(page: Page) {
     const emailInput = page.locator('#login-email');
     if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
       await emailInput.fill('admin@atlas.com');
-      await page.locator('#login-password').fill('DevSeed2026Apmjuoj1oZjHEDcxSsOc27HKY8yOv0B7');
+      const password = process.env.SEED_DEFAULT_PASSWORD ?? 'TodirDev2026!';
+      await page.locator('#login-password').fill(password);
       await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
       await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
       await page.waitForLoadState('networkidle');
@@ -98,13 +99,18 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     if (await newGroupBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await newGroupBtn.click();
       await page.waitForTimeout(600);
-      await expect(page.getByRole('dialog')).toBeVisible();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+
+      // Verify payDay label is properly labeled inside the modal
+      await expect(dialog.getByText(/يوم الصرف في الشهر/i)).toBeVisible();
+
       await page.screenshot({
         path: path.join(SCREENSHOT_DIR, '02-payroll-new-group-modal.png'),
         fullPage: false
       });
       // Close modal with cancel
-      await page.getByRole('button', { name: /إلغاء/i }).click();
+      await dialog.getByRole('button', { name: /إلغاء/i }).click();
       await page.waitForTimeout(400);
     }
 
@@ -113,17 +119,57 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     if (await newPeriodBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await newPeriodBtn.click();
       await page.waitForTimeout(600);
-      await expect(page.getByRole('dialog')).toBeVisible();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+
+      // Verify distinct labels for dates inside the modal
+      await expect(dialog.getByText(/تاريخ الاحتساب المقرر/i)).toBeVisible();
+      await expect(dialog.getByText(/تاريخ الصرف الفعلي المخطط/i)).toBeVisible();
+
       await page.screenshot({
         path: path.join(SCREENSHOT_DIR, '03-payroll-new-period-modal.png'),
         fullPage: false
       });
-      await page.getByRole('button', { name: /إلغاء/i }).click();
+      await dialog.getByRole('button', { name: /إلغاء/i }).click();
       await page.waitForTimeout(400);
     }
   });
 
-  test('3. Company Tax & Social Insurance Statutory Settings', async ({ page }) => {
+  test('3. Setup Sub-Tabs (Components, Structures, Assignments)', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await ensureAuthenticated(page);
+
+    await page.locator('[data-testid="payroll-tab-setup"]').click();
+    await page.waitForTimeout(800);
+
+    // Click Components sub-tab
+    const componentsTab = page.getByRole('tab', { name: /بنود الراتب/i });
+    if (await componentsTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await componentsTab.click();
+      await page.waitForTimeout(600);
+      await expect(page.getByRole('heading', { level: 3, name: /بنود الراتب/i })).toBeVisible();
+      // Verify seeded component code BASE or TRANSPORT
+      await expect(page.getByText(/TRANSPORT/i)).toBeVisible();
+    }
+
+    // Click Structures sub-tab
+    const structuresTab = page.getByRole('tab', { name: /هياكل الرواتب/i });
+    if (await structuresTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await structuresTab.click();
+      await page.waitForTimeout(600);
+      await expect(page.getByRole('heading', { level: 3, name: /هياكل الرواتب/i })).toBeVisible();
+    }
+
+    // Click Assignments sub-tab
+    const assignmentsTab = page.getByRole('tab', { name: /تسكين الموظفين/i });
+    if (await assignmentsTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await assignmentsTab.click();
+      await page.waitForTimeout(600);
+      await expect(page.getByRole('heading', { level: 3, name: /تسكين الموظفين/i })).toBeVisible();
+    }
+  });
+
+  test('4. Company Tax & Social Insurance Statutory Settings', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -141,7 +187,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     });
   });
 
-  test('4. Payroll Runs Tab & New Run Modal', async ({ page }) => {
+  test('5. Payroll Runs Tab & New Run Modal', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -154,6 +200,10 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
       await newRunBtn.click();
       await page.waitForTimeout(600);
       await expect(page.getByRole('dialog')).toBeVisible();
+
+      // For Regular run, reasonCode and search fields should NOT be rendered
+      await expect(page.getByText(/رمز سبب الدورة/i)).toHaveCount(0);
+
       await page.screenshot({
         path: path.join(SCREENSHOT_DIR, '05-payroll-new-run-modal.png'),
         fullPage: false
@@ -163,7 +213,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     }
   });
 
-  test('5. Payroll Inputs & Bulk Import Dialog', async ({ page }) => {
+  test('6. Payroll Inputs & Bulk Import Dialog', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -176,12 +226,30 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
       await importBtn.click();
       await page.waitForTimeout(600);
       await expect(page.getByRole('dialog')).toBeVisible();
+
+      // Test pasting sample CSV data
+      const sampleCsv = "d0000000-0000-0000-0000-000000000001,TRANSPORT,500,EGP,2026-11-01,بدل انتقال شهري";
+      await page.locator('textarea').fill(sampleCsv);
+
+      // Trigger preview
+      const previewBtn = page.getByRole('button', { name: /معاينة أسطر الاستيراد/i });
+      if (await previewBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await previewBtn.click();
+        await page.waitForTimeout(1000);
+      }
+
       await page.screenshot({
         path: path.join(SCREENSHOT_DIR, '06-payroll-import-dialog.png'),
         fullPage: false
       });
-      await page.getByRole('button', { name: /إلغاء/i }).click();
+      // Close the import dialog cleanly
+      await page.keyboard.press('Escape');
       await page.waitForTimeout(400);
+      if (await page.getByRole('dialog').isVisible().catch(() => false)) {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(400);
+      }
+      await expect(page.getByRole('dialog')).toBeHidden({ timeout: 5000 });
     }
 
     // Open New Input Modal
@@ -189,17 +257,22 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     if (await newInputBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await newInputBtn.click();
       await page.waitForTimeout(600);
-      await expect(page.getByRole('dialog')).toBeVisible();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+
+      // Verify PayrollComponentPicker is present
+      await expect(dialog.getByText(/البند|بند الراتب/i).first()).toBeVisible();
+
       await page.screenshot({
         path: path.join(SCREENSHOT_DIR, '07-payroll-new-input-modal.png'),
         fullPage: false
       });
-      await page.getByRole('button', { name: /إلغاء/i }).click();
+      await dialog.getByRole('button', { name: /إلغاء/i }).click();
       await page.waitForTimeout(400);
     }
   });
 
-  test('6. Loans & Advances Tab & Creation Modal', async ({ page }) => {
+  test('7. Loans & Advances Tab & Creation Modal', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -221,7 +294,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     }
   });
 
-  test('7. Payslips & Employee Self-Service', async ({ page }) => {
+  test('8. Payslips & Employee Self-Service', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -235,7 +308,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     });
   });
 
-  test('8. Reports & Financial Reconciliation', async ({ page }) => {
+  test('9. Reports & Financial Truth (No Fabricated Employer Cost)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -243,13 +316,20 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     await page.waitForTimeout(800);
 
     await expect(page.getByText(/التقارير والمطابقة المالية/i).first()).toBeVisible();
+
+    // Verify 4th KPI card is Total Runs Count, not fabricated employer cost
+    await expect(page.getByText(/إجمالي الدورات المسجلة/i)).toBeVisible();
+
+    // Verify export note communicating scope
+    await expect(page.getByText(/تصدير السجلات الحالية المعروضة/i)).toBeVisible();
+
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, '10-payroll-reports-tab.png'),
       fullPage: false
     });
   });
 
-  test('9. Migration & Opening Balances Modal', async ({ page }) => {
+  test('10. Migration & Opening Balances Modal', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 
@@ -270,7 +350,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     }
   });
 
-  test('10. Mobile Responsive Layout (390px Viewport)', async ({ page }) => {
+  test('11. Mobile Responsive Layout (390px Viewport)', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await ensureAuthenticated(page);
 
@@ -283,7 +363,7 @@ test.describe('TODIR Payroll Module 18 Full-Stack Verification & UX Acceptance S
     });
   });
 
-  test('11. English LTR Parity & Formatting', async ({ page }) => {
+  test('12. English LTR Parity & Formatting', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await ensureAuthenticated(page);
 

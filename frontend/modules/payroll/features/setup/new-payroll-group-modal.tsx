@@ -152,7 +152,7 @@ export function NewPayrollGroupModal({
           />
 
           <TextField
-            label={t("setup.cutoffDaysBeforePayDate")}
+            label={t("setup.payDayLabel")}
             value={payDay}
             onChange={setPayDay}
             isRequired

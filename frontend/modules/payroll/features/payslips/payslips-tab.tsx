@@ -258,6 +258,7 @@ export function PayslipsTab({
           setSelectedPayslip(null);
         }}
         payslip={selectedPayslip}
+        legalEntityId={legalEntityId}
       />
     </div>
   );
