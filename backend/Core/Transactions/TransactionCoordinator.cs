@@ -22,6 +22,7 @@ public interface ITransactionCoordinator
 public interface ITransactionalLedgerPostingCapability
 {
     Task<LedgerPostingResult> PostExplicitAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, ExplicitLedgerPostingPayload payload, CancellationToken cancellationToken = default);
+    Task<LedgerPostingResult> PostPayrollAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, PayrollPostedPayload payload, CancellationToken cancellationToken = default);
     Task<LedgerPostingResult> PostSettlementFxDifferenceAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementFxDifferencePayload payload, CancellationToken cancellationToken = default);
     Task<LedgerPostingResult> PostSettlementWriteOffAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementWriteOffPayload payload, CancellationToken cancellationToken = default);
 }

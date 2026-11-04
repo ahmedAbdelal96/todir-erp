@@ -9,6 +9,7 @@ using Modules.Payments.DTOs;
 using Modules.Payments.Entities;
 using Modules.Payments.Repositories;
 using Modules.Payments.Services;
+using Shared.Contracts.Payments;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Payments;
@@ -20,6 +21,7 @@ public static class PaymentsModuleExtensions
         services.AddSingleton<IModuleManifestProvider, PaymentsModuleManifestProvider>();
         services.AddSingleton<PaymentsRepository>();
         services.AddSingleton<PaymentsService>();
+        services.AddSingleton<IPayrollPaymentCapability, PayrollPaymentCapability>();
         services.AddSingleton<IReferencePaymentProvider, ReferencePaymentProvider>();
         services.AddSingleton<IProviderSecretResolver, EnvironmentProviderSecretResolver>();
         return services;

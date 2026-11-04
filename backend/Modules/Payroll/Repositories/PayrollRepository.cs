@@ -237,6 +237,13 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCount
     public async Task<ReceivableDisbursementDto> RequestReceivableDisbursementAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct)
     {
         await using var scope = await OpenTransactionAsync(tenant, ct); var c = scope.Connection; await using var tx = scope.Transaction;
+        decimal principal; decimal? installmentAmount; int? installmentCount;
+        await using (var load = new NpgsqlCommand("select principal,installment_amount,installment_count from business_payroll.employee_receivable where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Approved' for update", c, tx))
+        {
+            Add(load, tenant.Value, legalEntityId, id); await using var loadReader = await load.ExecuteReaderAsync(ct);
+            if (!await loadReader.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.receivable_not_approved");
+            principal = loadReader.GetDecimal(0); installmentAmount = loadReader.IsDBNull(1) ? null : loadReader.GetDecimal(1); installmentCount = loadReader.IsDBNull(2) ? null : loadReader.GetInt32(2);
+        }
         await using var command = new NpgsqlCommand("""
             insert into business_payroll.receivable_disbursement
                 (tenant_id,legal_entity_id,id,receivable_id,amount,currency_code,idempotency_key,status,requested_at,created_at,updated_at)
@@ -251,6 +258,17 @@ public sealed class PayrollRepository(NpgsqlDataSource dataSource, IPayrollCount
         if (!await reader.ReadAsync(ct)) throw new PayrollRepositoryException("payroll.receivable_not_approved");
         var result = new ReceivableDisbursementDto(reader.GetGuid(0), reader.GetGuid(1), reader.GetDecimal(2), reader.GetString(3).Trim(), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5));
         await reader.CloseAsync();
+        await using (var mark = new NpgsqlCommand("update business_payroll.employee_receivable set status='Disbursed',disbursed_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Approved'", c, tx))
+        { Add(mark, tenant.Value, legalEntityId, id); await mark.ExecuteNonQueryAsync(ct); }
+        var count = installmentCount.GetValueOrDefault(1); var scheduledAmount = installmentAmount.GetValueOrDefault(principal);
+        var remaining = principal;
+        for (var number = 1; number <= count && remaining > 0m; number++)
+        {
+            var amount = number == count ? remaining : Math.Min(scheduledAmount, remaining);
+            await using var installment = new NpgsqlCommand("insert into business_payroll.recovery_installment(tenant_id,id,receivable_id,installment_number,due_date,amount,applied_amount,status) values($1,gen_random_uuid(),$2,$3,$4,$5,0,'Scheduled') on conflict (tenant_id,receivable_id,installment_number) do nothing", c, tx);
+            Add(installment, tenant.Value, id, number, DateOnly.FromDateTime(DateTime.UtcNow.Date).AddMonths(number), amount); await installment.ExecuteNonQueryAsync(ct);
+            remaining -= amount;
+        }
         await tx.CommitAsync(ct);
         return result;
     }

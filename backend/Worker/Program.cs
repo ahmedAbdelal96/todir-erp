@@ -32,6 +32,8 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<CatalogImportConsumer, CatalogImportConsumerDefinition>();
     bus.AddConsumer<PaymentProviderOperationConsumer, PaymentProviderOperationConsumerDefinition>();
     bus.AddConsumer<HrMembershipDeactivationConsumer, HrMembershipDeactivationConsumerDefinition>();
+    bus.AddConsumer<PayrollLedgerPostingConsumer, PayrollLedgerPostingConsumerDefinition>();
+    bus.AddConsumer<PayrollPaymentRequestedConsumer, PayrollPaymentRequestedConsumerDefinition>();
 });
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();

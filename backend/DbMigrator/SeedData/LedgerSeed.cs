@@ -39,6 +39,8 @@ public static class LedgerSeed
             var inventoryOffset = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 17);
             var inventoryAdjustmentGain = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 18);
             var inventoryAdjustmentLoss = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 19);
+            var payrollExpense = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 20);
+            var payrollPayable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 21);
             var fxGain = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 8);
             var fxLoss = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 9);
             var retainedEarnings = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 10);
@@ -60,6 +62,8 @@ public static class LedgerSeed
                 (inventoryOffset, "210300", "بضاعة مستلمة غير مفوترة", "Goods received not invoiced", "Liability", "InventoryClearing", liabilityCategory, (Guid?)null, true),
                 (inventoryAdjustmentGain, "430000", "أرباح تسويات المخزون", "Inventory adjustment gains", "Revenue", "InventoryVariance", revenueCategory, (Guid?)revenue, true),
                 (inventoryAdjustmentLoss, "530100", "خسائر وتسويات المخزون", "Inventory adjustment losses", "Expense", "InventoryVariance", expenseCategory, (Guid?)null, true),
+                (payrollExpense, "520100", "مصروف الرواتب", "Payroll expense", "Expense", "Payroll", expenseCategory, (Guid?)null, true),
+                (payrollPayable, "210400", "التزام الرواتب", "Payroll payable", "Liability", "Payroll", liabilityCategory, (Guid?)null, true),
                 (fxGain, "999000", "أرباح فروق العملة", "FX gain", "Revenue", "FXGain", revenueCategory, (Guid?)null, true),
                 (fxLoss, "999100", "خسائر فروق العملة", "FX loss", "Expense", "FXLoss", expenseCategory, (Guid?)null, true),
                 (retainedEarnings, "310000", "الأرباح المحتجزة", "Retained earnings", "Equity", "RetainedEarnings", equityCategory, (Guid?)null, true),
@@ -110,6 +114,8 @@ public static class LedgerSeed
             var roleInventoryOffset = await AddRoleAsync(context, entityId, suffix, 16, "InventoryOffset", "بضاعة مستلمة غير مفوترة", "Goods received not invoiced", cancellationToken);
             var roleInventoryGain = await AddRoleAsync(context, entityId, suffix, 17, "InventoryAdjustmentGain", "أرباح تسويات المخزون", "Inventory adjustment gains", cancellationToken);
             var roleInventoryLoss = await AddRoleAsync(context, entityId, suffix, 18, "InventoryAdjustmentLoss", "خسائر وتسويات المخزون", "Inventory adjustment losses", cancellationToken);
+            var rolePayrollExpense = await AddRoleAsync(context, entityId, suffix, 21, "PayrollExpense", "مصروف الرواتب", "Payroll expense", cancellationToken);
+            var rolePayrollPayable = await AddRoleAsync(context, entityId, suffix, 22, "PayrollPayable", "التزام الرواتب", "Payroll payable", cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 1, roleReceivable, receivable, "Receivable", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 2, roleRevenue, salesRevenue, "SalesRevenue", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 3, roleTax, outputTax, "OutputTax", null, null, "VAT14", cancellationToken);
@@ -130,6 +136,8 @@ public static class LedgerSeed
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 18, roleInventoryOffset, inventoryOffset, "InventoryOffset", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 19, roleInventoryGain, inventoryAdjustmentGain, "InventoryAdjustmentGain", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 20, roleInventoryLoss, inventoryAdjustmentLoss, "InventoryAdjustmentLoss", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 21, rolePayrollExpense, payrollExpense, "PayrollExpense", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 22, rolePayrollPayable, payrollPayable, "PayrollPayable", null, null, null, cancellationToken);
 
             var ruleId = SeedIds.Child(context.Tenant.Id, $"ledger-rule:{suffix}", 1); var ruleVersionId = SeedIds.Child(context.Tenant.Id, $"ledger-rule-version:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.posting_rule (tenant_id,legal_entity_id,id,fact_type,fact_version,code,status,version,created_at) values ($1,$2,$3,'CustomerInvoicePosted',1,'CUSTOMER_INVOICE_V1','Active',1,$4) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, ruleId, context.AsOf);
@@ -156,6 +164,7 @@ public static class LedgerSeed
             await AddSimpleRuleAsync(context, entityId, suffix, 22, "InventoryIssueValued", "INVENTORY_ISSUE_VALUED_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 23, "InventoryCostAdjustment", "INVENTORY_COST_ADJUSTMENT_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 24, "UnrealizedFxRevaluation", "UNREALIZED_FX_REVALUATION_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 25, "PayrollPosted", "PAYROLL_POSTED_V1", cancellationToken);
         }
         return new SeedLedgerSummary(entities.Length, accountCount, periodCount, true);
     }
@@ -175,6 +184,7 @@ public static class LedgerSeed
             "PaymentFeeRecognized" => new[] { (1, "PaymentFeeExpense", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
             "PaymentFeeReversed" => new[] { (1, "Cash", "BaseAmount", "Debit"), (2, "PaymentFeeExpense", "BaseAmount", "Credit") },
             "InternalTransferCompleted" => new[] { (1, "Cash", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
+            "PayrollPosted" => new[] { (1, "PayrollExpense", "BaseAmount", "Debit"), (2, "PayrollPayable", "BaseAmount", "Credit") },
             "UnrealizedFxRevaluation" => new[] { (1, "Receivable", "BaseAmount", "Debit"), (2, "Payable", "BaseAmount", "Credit"), (3, "FXGain", "BaseAmount", "Credit"), (4, "FXLoss", "BaseAmount", "Debit") },
             _ => Array.Empty<(int, string, string, string)>()
         };

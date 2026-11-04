@@ -603,6 +603,39 @@ public sealed class LedgerRepository(
         Guid? configurationVersionOverride = null, CancellationToken cancellationToken = default) =>
         PostExplicitCoreInTransactionAsync(context, fact, posting, configurationVersionOverride, semanticPayload, cancellationToken);
 
+    public async Task<LedgerPostingResult> PostPayrollInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, PayrollPostedPayload payload, CancellationToken ct)
+    {
+        if (fact.SourceModule != "payroll" || fact.FactType != AccountingFactTypes.PayrollPosted
+            || payload.GrossAmount < 0m || payload.PayableAmount < 0m || payload.DeductionsAmount < 0m
+            || payload.PayableAmount + payload.DeductionsAmount != payload.GrossAmount
+            || payload.CurrencyCode.Trim().Length != 3)
+            throw new LedgerDomainException("ledger.payroll_fact_invalid", "The Payroll accounting fact is incomplete or financially inconsistent.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct))
+            throw new LedgerDomainException("ledger.fact_producer_unregistered", "Payroll is not registered for this accounting fact type.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var currency = payload.CurrencyCode.Trim().ToUpperInvariant();
+        if (!string.Equals(currency, baseCurrency, StringComparison.OrdinalIgnoreCase))
+            throw new LedgerDomainException("ledger.currency_mismatch", "Payroll posting currently requires the legal-entity base currency.");
+        var configuration = await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, ct);
+        var expense = await ResolveSemanticAccountIdAsync(context, fact, configuration, "PayrollExpense", ct);
+        var payable = await ResolveSemanticAccountIdAsync(context, fact, configuration, "PayrollPayable", ct);
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var lines = new List<LedgerPostingLinePayload>
+        {
+            new(expense, payload.GrossAmount, 0m, currency, payload.GrossAmount, 0m, payload.GrossAmount, 0m, 1m, [], "Payroll expense", null),
+            new(payable, 0m, payload.PayableAmount, currency, 0m, payload.PayableAmount, 0m, payload.PayableAmount, 1m, [], "Payroll payable", null)
+        };
+        if (payload.DeductionsAmount > 0m)
+        {
+            lines.Add(new(payable, 0m, payload.DeductionsAmount, currency, 0m, payload.DeductionsAmount, 0m, payload.DeductionsAmount, 1m, [], "Payroll deductions payable", null));
+        }
+        var posting = new ExplicitLedgerPostingPayload(journal, "Payroll posting", currency, lines);
+        return await PostSemanticExplicitInTransactionAsync(context, fact, posting, payload, configuration, ct);
+    }
+
     public async Task<LedgerPostingResult> PostInventoryValuationInTransactionAsync(ITransactionContext context,
         AccountingFactEnvelope<IAccountingFactPayload> fact, InventoryValuationFactPayload payload, CancellationToken ct)
     {

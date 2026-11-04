@@ -9,6 +9,7 @@ using Npgsql;
 using Shared.Contracts.FinanceBase;
 using Shared.Contracts.Ledger;
 using Shared.Contracts.Subledger;
+using Shared.Contracts.Payments;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Payments.Repositories;
@@ -242,6 +243,59 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             return new PaymentRecord(id, request.LegalEntityId, number, request.BranchId, request.Direction, request.Type, request.PartyId,
                 PaymentRules.ParseAmount(request.Amount), PaymentRules.NormalizeCurrency(request.CurrencyCode), request.Method, request.PaymentAccountId,
                 request.PaymentDate, request.PostingDate, request.ValueDate, Clean(request.BankReference), Clean(request.CustomerReference), Clean(request.SupplierReference), Clean(request.SourceType), Clean(request.SourceReference), PaymentBusinessState.Draft, null, 1);
+        }, ct);
+
+    public Task<IReadOnlyList<Guid>> PreparePayrollPaymentsAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId,
+        Guid legalEntityId, Guid runId, IReadOnlyList<PayrollDisbursementInstruction> instructions, CancellationToken ct) =>
+        transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var result = new List<Guid>(instructions.Count);
+            foreach (var instruction in instructions)
+            {
+                if (instruction.Amount <= 0m) continue;
+                var currency = PaymentRules.NormalizeCurrency(instruction.CurrencyCode);
+                Guid accountId;
+                await using (var account = new NpgsqlCommand("select a.id from finance_payments.payment_account a join finance_payments.payment_method_config m on m.tenant_id=a.tenant_id and m.legal_entity_id=a.legal_entity_id and m.payment_account_id=a.id where a.tenant_id=$1 and a.legal_entity_id=$2 and a.account_type='Bank' and a.status='Active' and a.currency_policy='SingleCurrency' and a.currency_code=$3 and m.method='BankTransfer' and m.status='Active' and m.effective_from<=current_date and (m.effective_to is null or m.effective_to>=current_date) order by a.id limit 1", context.Connection, context.Transaction))
+                {
+                    Add(account, tenant.Value, legalEntityId, currency);
+                    accountId = (Guid?)await account.ExecuteScalarAsync(token) ?? throw new PaymentException("payments.payroll_account_unavailable", "No active payroll bank account is configured for this currency.");
+                }
+
+                var sourceReference = $"{runId:D}:{instruction.InstructionId:D}";
+                await using (var existing = new NpgsqlCommand("select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='Payroll' and source_reference=$3", context.Connection, context.Transaction))
+                {
+                    Add(existing, tenant.Value, legalEntityId, sourceReference);
+                    var existingId = await existing.ExecuteScalarAsync(token);
+                    if (existingId is Guid already) { result.Add(already); continue; }
+                }
+
+                var paymentId = Guid.CreateVersion7();
+                var now = clock.GetUtcNow();
+                var paymentDate = DateOnly.FromDateTime(now.UtcDateTime);
+                var number = await sequences.AllocateAsync(context, new("payments.payment", tenant, legalEntityId, null, null,
+                    paymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
+                await using (var insert = new NpgsqlCommand("insert into finance_payments.payment(tenant_id,legal_entity_id,id,payment_number,branch_id,direction,payment_type,party_id,amount,currency_code,method,payment_account_id,payment_date,posting_date,value_date,source_type,source_reference,business_state,row_version,created_at,updated_at) values($1,$2,$3,$4,null,'Outgoing','ExpensePayment',null,$5,$6,'BankTransfer',$7,$8,$8,null,'Payroll',$9,'Draft',1,$10,$10)", context.Connection, context.Transaction))
+                {
+                    Add(insert, tenant.Value, legalEntityId, paymentId, number, instruction.Amount, currency, accountId, paymentDate, sourceReference, now);
+                    await insert.ExecuteNonQueryAsync(token);
+                }
+                await UpsertProjectionAsync(context, tenant, legalEntityId, paymentId, number, instruction.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), currency, "Outgoing", "BankTransfer", "Draft", null, now, token);
+                await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction, new(Guid.CreateVersion7(), tenant, legalEntityId, null,
+                    "Payroll", actor, membership, "payments", "payment.created", "payment", paymentId, null,
+                    JsonSerializer.Serialize(new { number, amount = instruction.Amount, currencyCode = currency, runId, instructionId = instruction.InstructionId }, JsonOptions),
+                    null, "worker", correlationId, null, now, null), token);
+                context.AddOutbox(new(Guid.CreateVersion7(), "PaymentCreatedV1", JsonSerializer.Serialize(new
+                {
+                    paymentId,
+                    legalEntityId,
+                    number,
+                    sourceType = "Payroll",
+                    runId,
+                    instructionId = instruction.InstructionId
+                }, JsonOptions), tenant, now, correlationId, paymentId, "payments"));
+                result.Add(paymentId);
+            }
+            return (IReadOnlyList<Guid>)result;
         }, ct);
 
     public Task<InternalTransferResult> CreateInternalTransferAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId,
