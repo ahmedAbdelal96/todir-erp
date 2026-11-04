@@ -3,8 +3,9 @@
 **File:** `18_ERP_SAAS_PAYROLL_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
 **Product:** **TODIR**  
 **Status:** PRODUCT + PAYROLL ENGINE + COMPENSATION CALCULATION + EMPLOYEE RECEIVABLES + PAYMENT/ACCOUNTING HANDOFF + IMPLEMENTATION BASELINE  
-**Version:** v1.0  
-**Date:** 2026-10-06  
+**Version:** v1.1 — Tenant Self-Service Payroll Configuration  
+**Date:** 2026-11-04  
+**Original baseline:** 2026-10-06  
 **Audience:** Product Owner, Product Architect, Payroll Manager, HR Manager, Finance/Accounting Lead, Country Payroll Specialist, Backend/Frontend Leads, Security Engineer, Data Architect, Performance Engineer, QA, Implementation Agent  
 **Risk Class:** **CRITICAL — EMPLOYEE MONEY + STATUTORY COMPLIANCE + ACCOUNTING + COMPANY TRUST**
 
@@ -48,6 +49,63 @@ Employee Loan/Advance Recovery Schedule
 The central question is:
 
 > **For this employee, in this payroll period, under these exact rules and inputs, how much is owed, how much is deducted, why, when should it be paid, and can TODIR reproduce the answer exactly years later?**
+
+---
+
+# 0A. LOCKED PRODUCT DECISION — COMPANY SELF-SERVICE STATUTORY MANAGEMENT (2026-11-04)
+
+**Decision owner:** TODIR Product Owner. **Status:** Approved product requirement, Build Now. This decision takes precedence over any earlier unqualified wording in this pack requiring a Country Provider, tax configuration, or insurance configuration for every Payroll run.
+
+**Product principle:** TODIR provides complete Payroll capabilities without forcing every customer company to adopt workflows it does not use. Each subscribing company's authorized administrators manage its own Payroll feature settings inside TODIR. Platform owner, development team, and support do not perform routine per-customer activation. A separate purchased third-party service, external tax API, or support ticket is never a prerequisite for basic Payroll.
+
+## 0A.1 Per-Legal-Entity Modes
+
+Tax and social insurance are **two separate company-controlled features**. Persist one effective-dated, tenant-owned, Legal-Entity-scoped configuration for each feature:
+
+| Mode | Calculation and UX contract |
+|---|---|
+| **NotManaged** (default for new entity) | TODIR does not calculate, deduct, or report this statutory domain as calculated inside TODIR. Basic Payroll and finalization continue normally. Do not insert fabricated zero statutory lines or imply the business/employee is legally exempt. |
+| **Manual** | Authorized company staff enter period/Employment-specific statutory amounts calculated or approved outside TODIR. Approved typed inputs enter Gross-to-Net, payslip, Ledger/payable and reconciliation as appropriate. Preserve source, actor, approval, effective period and audit; do not silently infer missing amounts are zero or auto-calculate them. |
+| **Automatic** | TODIR computes this domain using locally available, versioned, effective-dated, reviewed country rules. No external runtime API is required. Validation, golden vectors and production-approved rule versions apply to the enabled domain. |
+
+**TaxCalculationMode** and **SocialInsuranceCalculationMode** are independent. A company can select NotManaged tax + Automatic insurance, Manual tax + NotManaged insurance, or any other permitted combination. Payroll Groups inherit Legal Entity settings; do not require repeated per-group configuration for the normal case.
+
+**Default onboarding:** enable core Payroll without mandatory Country Provider, tax form, insurance form or formula editor. Set both statutory management modes to NotManaged. A company may calculate, finalize, prepare payment and perform genuine Ledger/Payments handoffs for its enabled payroll components. No missing-provider error is allowed merely because an unused tax/insurance component exists in the tenant's global catalog or development seed.
+
+## 0A.2 Self-Service, Permissions, and Historical Integrity
+
+- Provide an understandable **Company Settings → Payroll → Tax & Social Insurance** surface with independent mode choices, effective date, a short description, and minimal relevant fields. Progressive disclosure: show statutory rule/provider fields only when Automatic is selected, manual input instructions only when Manual is selected. Do not prompt ordinary Payroll operators repeatedly for unused features.
+- Company users with the Legal Entity's **payroll.settings.manage** permission can activate/deactivate/change these modes themselves. Read access uses **payroll.settings.read** or the canonical authorized settings-read capability. Verify tenant, entity and permission server-side; employees and unauthorized managers cannot change the modes. No platform-superadmin or vendor intervention is necessary for routine configuration.
+- Store settings, effective dates, version, actor, reason/change metadata and audit in an owned, RLS/FORCE-RLS protected table. Expose authorized read/update/history APIs. Changes apply prospectively by effective date; never rewrite finalized payslips, historical snapshots, prior payroll facts, recorded liabilities or paid movements. Historical changes require the approved Retro/Correction lifecycle.
+- On capture/calculation/finalization, freeze the **mode and configuration version per statutory domain** for the affected run, plus manual input references or an Automatic provider/rule version where applicable. Recalculation with the same frozen inputs and configuration must be deterministic.
+- A switch to NotManaged is **a workflow/configuration choice, not a declaration of legal exemption**. Display a concise, non-intrusive note in settings and relevant statutory/compliance exports: "Not calculated or managed in TODIR; the company remains responsible for applicable legal obligations." Do not nag the user during every payroll run or claim the company is compliant/exempt.
+- Never offer an override that hides a detected configured mandatory component or bypasses an active Automatic validation merely to finalize. Changes require authorized, effective-dated, audited configuration, with historic financial truth preserved.
+
+## 0A.3 Calculation and Blocking Semantics
+
+1. Resolve the effective Legal Entity Payroll settings before selecting statutory components; do **not** scan all active tenant components and require every published Provider component to be configured.
+2. **NotManaged:** exclude only that domain's tax/insurance statutory computation; do not disable unrelated compensation, approved HR/policy deductions, employer costs, loan recovery, Ledger or Payments. No Country Provider lookup, country-missing exception or statutory certification check for this domain.
+3. **Manual:** consume only authorized/approved, currency- and employment-scoped manual statutory amounts with immutable trace. Missing required manual values follow the company's explicitly configured validation policy; absence must not silently be represented as a legal zero or block all core Payroll by default.
+4. **Automatic:** select the approved effective-date-local country-rule provider for that domain, validate it and calculate its employee deductions, employer contributions and statutory bases inside the deterministic engine. A missing/expired/unapproved rule blocks affected statutory processing/finalization with a precise actionable error. Do not silently fall back to NotManaged or zero.
+5. A missing Country Provider **blocks only an enabled Automatic domain that requires it**, not all Payroll companies, Legal Entities or periods. A synthetic test-only provider may be used for isolated engineering tests, never for legally certified production payroll.
+6. Compliance outputs can be **NotRequired/NotManaged** when the domain is not managed in TODIR; these statuses must not be reported as government acceptance or exemption. Actual mandatory legal obligations remain the company's responsibility.
+
+## 0A.4 Engineering and Acceptance Contract
+
+**Backend + Database Build Now:** implement the effective-dated settings entity, history, authorization, audit, RLS, validation, endpoints, deterministic snapshots, mode-aware component selection and financial trace. Country rules remain optional extension capabilities; no customer-specific vendor setup or external API dependency for basic payroll.
+
+**Frontend Build Now:** authorized company admin can configure the two modes without developer assistance; ordinary Payroll screens hide unused statutory setup while keeping full core workflows available. Each domain can be enabled later without altering old runs.
+
+**Required tests:**
+
+- Fresh Atlas/Delta Legal Entities with default NotManaged modes complete core calculation and finalization without a Country Provider, even when unused TAX/provider components are seeded.
+- Company-admin self-service settings save, reload and persist only for its authorized Legal Entity; another tenant/entity, employee and unauthorized manager cannot read protected details or change modes.
+- Tax and social insurance toggle independently; Manual inputs affect only their selected domain and reconcile with payslip/GL results.
+- Automatic mode calls the correct locally versioned rule engine; missing or unapproved rules fail safely and do not mark the run finalized; no network dependency is required.
+- Future effective-date mode change influences future runs only; frozen historical Payslips, snapshots, manual inputs, Ledger facts and payments remain unchanged.
+- No active Automatic dependency is silently bypassed by a NotManaged fallback; no NotManaged state is presented as a legal exemption or certified statutory compliance.
+
+**Release distinction:** engineering completion of generic Payroll and self-service modes does **not** require an Egyptian provider's legal certification. Only the production **Automatic** country-rule feature for a jurisdiction requires its own reviewed legal sources, golden vectors and approval. The core product must not be held hostage by that optional capability.
 
 ---
 
@@ -418,7 +476,7 @@ PayrollGroup
     PayDateRule
     HolidayAdjustmentRule
 
-    CountryPayrollProviderId
+    CountryPayrollProviderId? // Optional; resolved only for the enabled Automatic statutory domain(s)
     DefaultSalaryStructureId?
 
     Status
@@ -1226,7 +1284,7 @@ Recommended:
 8. Resolve attendance/leave quantities
 9. Apply proration
 10. Evaluate earnings
-11. Evaluate statutory bases/components
+11. Evaluate enabled Automatic statutory bases/components, or approved Manual statutory inputs; skip NotManaged domains
 12. Evaluate deductions/recoveries
 13. Apply limits/priorities
 14. Compute employer contributions
@@ -2528,7 +2586,7 @@ At minimum:
 ```text
 all employees calculated
 blocking exceptions resolved
-Country Provider validation
+Country Provider validation ONLY for statutory domains set to Automatic; Manual/NotManaged follow their mode policies
 approval satisfied if required
 period/cutoff valid
 no stale HR snapshots if refresh required
@@ -3209,6 +3267,8 @@ Initial vocabulary:
 
 ```text
 payroll.home.read
+payroll.settings.read
+payroll.settings.manage
 
 payroll.group.read
 payroll.group.manage
@@ -3814,6 +3874,21 @@ GET  /groups/{id}/periods
 
 ---
 
+
+# 304A. Self-Service Statutory Settings APIs (Build Now)
+
+Representative endpoints under /api/v1/payroll:
+
+~~~text
+GET  /legal-entities/{legalEntityId}/settings/statutory
+POST /legal-entities/{legalEntityId}/settings/statutory/changes
+GET  /legal-entities/{legalEntityId}/settings/statutory/history
+~~~
+
+Each domain is independently configured as NotManaged, Manual, or Automatic with an effective date and optimistic concurrency/version. Mutations require payroll.settings.manage; read/history requires payroll.settings.read or explicitly authorized canonical equivalent. Server verifies Legal Entity/tenant boundary, records actor/audit, prevents retrospective finalized-payroll mutation, and returns usable validation errors. A company administrator performs these actions without vendor intervention.
+
+---
+
 # 305. Structure APIs
 
 ```text
@@ -4047,7 +4122,7 @@ policy
 
 # 323. Friendly Error — Missing Country Config
 
-Explain exact missing statutory setup.
+Only emit payroll.country_configuration_missing when an enabled **Automatic** tax/insurance domain actually needs missing/invalid approved rules. Explain the specific Legal Entity, statutory domain, effective date and missing configuration. Never emit this error for **NotManaged** or **Manual** modes.
 
 ---
 
@@ -4845,7 +4920,7 @@ Load inputs
 Load recoveries
 Apply proration
 Evaluate components
-Country Provider
+Apply per-domain statutory mode: NotManaged / approved Manual / locally versioned Automatic Provider
 Validate deductions
 Calculate totals
 Persist
@@ -4975,6 +5050,13 @@ Use extensive pure unit/property tests for calculator.
 # 411. Test — Same Inputs Same Result
 
 Byte/semantic result equality for monetary lines under same versions.
+
+---
+
+
+# 411A. Test — Company Self-Service Tax and Insurance Modes
+
+In a disposable real-PostgreSQL environment, assert independent effective-dated modes, same-entity authorized changes, cross-tenant/entity denial, unavailable Automatic rule rejection, approved Manual input trace, default NotManaged core finalization, immutability of prior runs, and no external provider/API dependency for standard payroll. Include a seeded unused provider component to prove catalog presence does not cause a false country_configuration_missing exception.
 
 ---
 
@@ -5685,7 +5767,7 @@ Finalize
 Prepare payment
 ```
 
-without formula/admin complexity.
+without formula/admin complexity. A company with both statutory modes set to NotManaged can calculate and finalize without configuring any Country Provider, and its administrator can later choose Manual or Automatic independently in Company Payroll Settings without contacting TODIR support.
 
 ---
 
@@ -6180,7 +6262,7 @@ Same input/versions always same result.
 
 # 567. PY07 — Goal
 
-Make country statutory payroll pluggable/versioned.
+Make **optional Automatic** country statutory payroll pluggable/versioned, while preserving self-service NotManaged/Manual operation without an active provider.
 
 ---
 
@@ -6372,19 +6454,19 @@ Attendance corrections after cutoff behave per policy.
 
 # 591. PY14 — Goal
 
-Apply statutory tax/insurance/provider results.
+Apply **only the statutory tax/insurance domains enabled by the company's effective-dated Payroll settings**. NotManaged bypasses that domain; Manual consumes approved inputs; Automatic computes locally versioned rules.
 
 ---
 
 # 592. PY14 Build
 
-Provider calculation inside deterministic pipeline.
+Mode-aware statutory selection and provider calculation inside the deterministic pipeline, with per-domain snapshots, source trace, approvals, and no external runtime API requirement.
 
 ---
 
 # 593. PY14 Exit Gate
 
-Country golden vectors pass at boundaries.
+NotManaged and Manual paths complete without a provider; enabled Automatic paths pass reviewed country golden vectors and reject unavailable/invalid rules.
 
 ---
 
@@ -7111,7 +7193,7 @@ Zero unexplained difference.
 
 # 681. PY40 — Country Golden-Vector Acceptance
 
-Country payroll specialist validates current enabled provider.
+Country payroll specialist validates every **production-enabled Automatic statutory provider** for a jurisdiction. This is not a gate for NotManaged/Manual company modes or generic core Payroll engineering completion.
 
 ---
 
@@ -7336,7 +7418,9 @@ Variance Review            ON
 Loans/Advances             ON simple
 Retro                      available
 Off-Cycle                  available
-Country Provider           required for statutory payroll
+Tax Calculation             NotManaged by default; company may choose Manual / Automatic
+Social Insurance            NotManaged by default; company may choose Manual / Automatic
+Country Provider            only for enabled Automatic statutory calculation
 Payment Integration        simple
 Employee Self-Service      optional
 ```
@@ -7514,7 +7598,7 @@ without recalculating Payroll.
 
 # 712. Final Country Rule
 
-> **Statutory payroll calculation belongs a versioned Payroll Country Provider with reviewed golden test vectors; generic Payroll Core never guesses local law.**
+> **Company-controlled tax and social-insurance management is optional and independent: NotManaged, Manual, or Automatic, configured self-service per Legal Entity. Only Automatic statutory calculation uses a locally versioned, reviewed Country Provider; generic Payroll Core never guesses local law. NotManaged is not legal exemption.**
 
 ---
 
@@ -7585,6 +7669,8 @@ Configure Pay Date
 ```
 
 ---
+
+**For any run, statutory components in the following flow are included only where the company's effective settings require Manual/Automatic treatment; they are absent in NotManaged mode without blocking the rest of Payroll.**
 
 # 718. Final Monthly Employee Calculation
 
