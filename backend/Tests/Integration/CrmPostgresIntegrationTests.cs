@@ -40,6 +40,30 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
         Assert.Equal(0, otherTenantCount.TotalCount);
     }
 
+    [CrmPostgresFact]
+    public async Task TeamVisibilityAndConversionUniquenessAreEnforced()
+    {
+        var admin = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")!;
+        var runtime = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")!;
+        var fixture = await FixtureAsync(admin);
+        await using var dataSource = NpgsqlDataSource.Create(runtime);
+        var repository = new CrmRepository(dataSource);
+        var tenant = new TenantId(fixture.TenantId);
+        var seller = Guid.CreateVersion7();
+        var team = await repository.CreateTeamAsync(tenant, new(fixture.EntityId, "TEST-TEAM-" + Guid.CreateVersion7().ToString("N"), "CRM Test Team"), default);
+        await repository.AddTeamMemberAsync(tenant, fixture.EntityId, team.Id, new(seller), default);
+        var lead = await repository.CreateLeadAsync(tenant, fixture.ActorId, new(fixture.EntityId, "Team lead", null, "team-lead@example.test", null, "Integration", null, team.Id), "team-lead-" + Guid.CreateVersion7().ToString("N"), default);
+        var visible = await repository.ListLeadsAsync(tenant, fixture.EntityId, seller, null, "team-lead@example.test", 1, 20, "mine", default);
+        Assert.Contains(visible.Items, x => x.Id == lead.Id);
+        var qualified = await repository.QualifyLeadAsync(tenant, fixture.ActorId, fixture.EntityId, lead.Id, new(null, "Need", null, null, null, lead.Version), default);
+        var first = await repository.CreateOpportunityAsync(tenant, fixture.ActorId, new(fixture.EntityId, null, qualified.Id, fixture.PipelineId, fixture.OpenStageId, "Converted once", 100m, "EGP", null), default);
+        var second = await repository.CreateOpportunityAsync(tenant, fixture.ActorId, new(fixture.EntityId, null, qualified.Id, fixture.PipelineId, fixture.OpenStageId, "Converted retry", 100m, "EGP", null), default);
+        Assert.Equal(first.Id, second.Id);
+        await repository.CreateActivityAsync(tenant, fixture.ActorId, new(fixture.EntityId, null, first.Id, null, "Call", "Overdue follow-up", DateTimeOffset.UtcNow.AddDays(-2), null, fixture.ActorId, "attention-" + Guid.CreateVersion7().ToString("N")), default);
+        var attention = await repository.ListSellerActivitiesAsync(tenant, fixture.EntityId, fixture.ActorId, "attention", false, 1, 20, default);
+        Assert.Contains(attention.Items, x => x.Subject == "Overdue follow-up");
+    }
+
     private static async Task<Fixture> FixtureAsync(string connectionString)
     {
         await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync();

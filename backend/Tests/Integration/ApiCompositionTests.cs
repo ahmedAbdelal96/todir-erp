@@ -158,6 +158,15 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase
         Assert.True(paths.TryGetProperty("/api/v1/inventory/legal-entities/{entityId}/scan/resolve", out _));
         Assert.True(paths.TryGetProperty("/api/v1/inventory/legal-entities/{entityId}/transfers/{transferId}/ship", out _));
         Assert.True(paths.TryGetProperty("/api/v1/inventory/legal-entities/{entityId}/counts/{countId}/post", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/crm/legal-entities/{entityId}/leads/import", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/crm/legal-entities/{entityId}/leads/merge", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/crm/legal-entities/{entityId}/leads/export", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/crm/legal-entities/{entityId}/opportunities/{id}/assign", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/crm/legal-entities/{entityId}/opportunities/{id}/forecast-category", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/crm/legal-entities/{entityId}/teams/{teamId}/members", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/crm/legal-entities/{entityId}/home", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/crm/legal-entities/{entityId}/worklist", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/crm/legal-entities/{entityId}/attention", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/facts", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/facts", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/entries/{entryId}", out _));

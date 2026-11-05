@@ -31,6 +31,19 @@ All scalable list contracts return `CrmPage<T>` with server-side page size, sear
 | PostgreSQL business journey | PASS | `CrmPostgresIntegrationTests.LeadOpportunityActivityForecastLifecyclePersistsAndIsIdempotent`: persisted lead idempotent replay, duplicate candidate detection, qualification, opportunity creation/stage transition, activity completion, forecast delta, and cross-tenant isolation. 1 passed. |
 | Migration checksum safety | PASS | Existing `crm-schema.sql` checksum preserved; runtime grants delivered as forward-fix. |
 
-## Explicit limitations / deferred pack scope
+## Current Build Now evidence (latest local run)
 
-The Build Next/Build Later items remain intentionally outside this backend handoff: advanced cadence/automation, email/WhatsApp/calendar connectors, AI scoring, territory/target suite, marketing attribution, and external lead-provider connectors. CSV import/export and full manager/team CRUD require a subsequent bounded contract pass; no fake implementation is exposed. Frontend remains a separate mission.
+The security/contract closure pass added owner and active-team visibility enforcement to detail reads and mutations, defaulted list scope to the authenticated seller, added active team membership management, idempotent lead import/export contracts, lead merge, opportunity assignment and forecast-category commands, activity update/cancel, distinct prioritized seller home/worklist/attention queries, and a unique lead→opportunity conversion constraint. Conversion retries now keep the first persisted opportunity and conversion record authoritative.
+
+| Scenario | Result | Evidence |
+| --- | --- | --- |
+| PostgreSQL lead/opportunity/activity/forecast lifecycle | PASS | `CrmPostgresIntegrationTests.LeadOpportunityActivityForecastLifecyclePersistsAndIsIdempotent` (real PostgreSQL, 1 passed) |
+| Team-member visibility + conversion retry uniqueness | PASS | `CrmPostgresIntegrationTests.TeamVisibilityAndConversionUniquenessAreEnforced` (real PostgreSQL, 1 passed) |
+| Seller attention prioritization | PASS | Same integration test persists an overdue activity and asserts it is returned by the `attention` query |
+| API/OpenAPI composition | PASS | `ApiCompositionTests` (2 passed) and OpenAPI assertions cover CRM import/export, team members and seller worklist routes |
+| Build and formatting | PASS | `dotnet build backend/Backend.sln --no-restore` (0 warnings/errors); CRM `dotnet format --verify-no-changes` |
+| Migration safety | PASS | `crm-forward-fix-conversion-uniqueness.sql` applied by DbMigrator; existing CRM baseline checksum unchanged |
+
+## Remaining canonical Build Now gaps
+
+The canonical pack still has capabilities not represented by the current backend contract and therefore are not marked complete: generic CRM audit projections, stage-specific custom-field definitions/validation, opportunity buying-committee and interest management APIs, pipeline edit/reorder APIs, forecast snapshot persistence endpoint, full core report/read-model contracts, and event consumers for quotation/invoice/payment synchronization. These are explicitly FAIL/deferred in this checkpoint; no `MODULE 19 ... COMPLETE` claim is made. Advanced cadences/automation, external email/WhatsApp/calendar connectors, AI scoring, territory/targets, marketing attribution and other Build Next/Later items remain out of scope. Frontend remains a separate mission.
