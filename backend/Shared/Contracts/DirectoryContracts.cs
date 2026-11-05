@@ -16,6 +16,13 @@ public interface IDirectoryPartyRoleCapabilities
     Task<bool> HasActiveRoleAsync(TenantId tenantId, Guid partyId, Guid legalEntityId, string roleCode, CancellationToken cancellationToken = default);
 }
 
+public sealed record DirectoryPartyCreateContract(string PartyType, string DisplayName, string? LegalName, string? CountryCode, string? PrimaryLanguage);
+public interface IDirectoryPartyWriteCapabilities
+{
+    Task<Guid> CreateCustomerPartyAsync(TenantId tenantId, Guid actorId, Guid membershipId, DirectoryPartyCreateContract request, string idempotencyKey, CancellationToken cancellationToken = default);
+    Task EnsureCustomerRoleAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid partyId, Guid legalEntityId, CancellationToken cancellationToken = default);
+}
+
 public sealed record InvoicePartyIdentifierContract(string Type, string Value, string? CountryCode, string? Authority);
 public sealed record InvoicePartyAddressContract(Guid AddressId, string Usage, string CountryCode, string? City, string? Region, string? PostalCode, string Line1, string? Line2, bool IsDefault);
 public sealed record InvoicePartySnapshotContract(Guid PartyId, string DisplayName, string? LegalName, string? TradeName, string? CountryCode,

@@ -24,6 +24,7 @@ public static class DirectoryModuleExtensions
         services.AddSingleton<Shared.Contracts.Directory.IDirectoryCapabilities>(provider => provider.GetRequiredService<Services.DirectoryCapabilities>());
         services.AddSingleton<Shared.Contracts.Directory.IDirectoryPartyRoleCapabilities>(provider => provider.GetRequiredService<Services.DirectoryCapabilities>());
         services.AddSingleton<Shared.Contracts.Directory.IDirectoryImportCapabilities>(provider => provider.GetRequiredService<Services.DirectoryCapabilities>());
+        services.AddSingleton<Shared.Contracts.Directory.IDirectoryPartyWriteCapabilities>(provider => provider.GetRequiredService<Services.DirectoryCapabilities>());
         return services;
     }
 

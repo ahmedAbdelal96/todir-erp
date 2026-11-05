@@ -19,6 +19,8 @@ public static class SalesModuleExtensions
         services.AddSingleton<IModuleManifestProvider, SalesModuleManifestProvider>();
         services.AddSingleton<Repositories.SalesRepository>();
         services.AddSingleton<SalesService>();
+        services.AddSingleton<SalesCapabilities>();
+        services.AddSingleton<Todir.Sales.Contracts.ISalesQuotationCapabilities>(provider => provider.GetRequiredService<SalesCapabilities>());
         return services;
     }
 

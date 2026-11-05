@@ -1,0 +1,28 @@
+namespace Modules.CRM.DTOs;
+
+public sealed record CrmPage<T>(IReadOnlyList<T> Items, int TotalCount, int Page, int PageSize);
+public sealed record LeadDto(Guid Id, Guid LegalEntityId, string DisplayName, string? CompanyName, string? Email, string? Phone, string Source, string Status, Guid? OwnerId, Guid? TeamId, string Priority, int Score, Guid? PartyId, Guid? OpportunityId, DateTimeOffset? NextActionAt, long Version, DateTimeOffset CreatedAt, IReadOnlyList<Guid> DuplicateCandidateIds);
+public sealed record CreateLeadRequest(Guid LegalEntityId, string DisplayName, string? CompanyName, string? Email, string? Phone, string Source, Guid? OwnerId = null, Guid? TeamId = null, string Priority = "Normal", string? Interest = null, string? Notes = null);
+public sealed record UpdateLeadRequest(string DisplayName, string? CompanyName, string? Email, string? Phone, string Source, string Priority, long Version);
+public sealed record AssignLeadRequest(Guid? OwnerId, Guid? TeamId, long Version);
+public sealed record QualifyLeadRequest(Guid? PartyId, string? Need, string? Budget, string? Timing, string? DecisionRole, long Version);
+public sealed record DisqualifyLeadRequest(string Reason, long Version);
+public sealed record ConvertLeadRequest(Guid? ExistingPartyId, string? NewPartyType, string? NewPartyName, Guid PipelineId, Guid StageId, string OpportunityName, decimal EstimatedAmount, string CurrencyCode, DateOnly? ExpectedCloseDate, string IdempotencyKey, long Version);
+public sealed record OpportunityDto(Guid Id, Guid LegalEntityId, Guid? PartyId, Guid? LeadId, Guid PipelineId, Guid StageId, string PipelineName, string StageName, string Name, Guid? OwnerId, Guid? TeamId, decimal EstimatedAmount, string CurrencyCode, DateOnly? ExpectedCloseDate, string ForecastCategory, string Status, string? LossReason, string? Competitor, DateTimeOffset? NextActionAt, int HealthScore, string HealthStatus, long Version, DateTimeOffset CreatedAt);
+public sealed record CreateOpportunityRequest(Guid LegalEntityId, Guid? PartyId, Guid? LeadId, Guid PipelineId, Guid StageId, string Name, decimal EstimatedAmount, string CurrencyCode, DateOnly? ExpectedCloseDate, Guid? OwnerId = null, Guid? TeamId = null, string ForecastCategory = "Pipeline");
+public sealed record UpdateOpportunityRequest(string Name, decimal EstimatedAmount, DateOnly? ExpectedCloseDate, string ForecastCategory, long Version);
+public sealed record MoveOpportunityStageRequest(Guid StageId, long Version, string? Note = null);
+public sealed record CloseOpportunityRequest(long Version, string? Reason = null, string? Competitor = null);
+public sealed record CreateActivityRequest(Guid LegalEntityId, Guid? LeadId, Guid? OpportunityId, Guid? PartyId, string Type, string Subject, DateTimeOffset DueAt, string? Notes = null, Guid? OwnerId = null, string? IdempotencyKey = null);
+public sealed record ActivityDto(Guid Id, Guid LegalEntityId, Guid? LeadId, Guid? OpportunityId, Guid? PartyId, string Type, string Subject, string State, DateTimeOffset DueAt, DateTimeOffset? CompletedAt, string? Outcome, string? Notes, Guid? OwnerId, long Version);
+public sealed record CompleteActivityRequest(long Version, string? Outcome = null, string? Notes = null, bool CreateNextAction = false, DateTimeOffset? NextDueAt = null, string? NextSubject = null);
+public sealed record CreatePipelineRequest(Guid LegalEntityId, string Code, string Name, bool IsDefault = false);
+public sealed record CreateStageRequest(string Name, short Sequence, decimal Probability = 0, int StaleAfterDays = 14, bool IsWon = false, bool IsLost = false);
+public sealed record PipelineDto(Guid Id, Guid LegalEntityId, string Code, string Name, string Status, bool IsDefault, IReadOnlyList<PipelineStageDto> Stages);
+public sealed record PipelineStageDto(Guid Id, Guid PipelineId, string Name, short Sequence, decimal Probability, int StaleAfterDays, bool IsWon, bool IsLost, string Status);
+public sealed record CreateTeamRequest(Guid LegalEntityId, string Code, string Name, Guid? ManagerId = null);
+public sealed record TeamDto(Guid Id, Guid LegalEntityId, string Code, string Name, Guid? ManagerId, string Status);
+public sealed record ForecastDto(decimal PipelineAmount, decimal WeightedAmount, decimal BestCaseAmount, decimal CommitAmount, decimal WonAmount, int OpenOpportunityCount, int StaleOpportunityCount, int OverdueCloseCount, string CurrencyCode);
+public sealed record Customer360Dto(Guid PartyId, Guid LegalEntityId, string DisplayName, int OpenOpportunityCount, decimal OpenPipelineAmount, DateTimeOffset? LastContactAt, DateTimeOffset? NextActionAt, string RelationshipHealth, bool DoNotContact);
+public sealed record QuoteHandoffRequest(string IdempotencyKey, DateOnly QuoteDate, DateOnly? ValidUntil, string CurrencyCode, IReadOnlyList<QuoteHandoffLine> Lines, string? CustomerReference = null);
+public sealed record QuoteHandoffLine(Guid? ProductVariantId, Guid? UnitOfMeasureId, string Description, decimal Quantity, decimal UnitPrice, decimal DiscountAmount = 0, string? UomCode = null);

@@ -1,0 +1,2 @@
+GRANT USAGE ON SCHEMA business_crm TO erp_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA business_crm TO erp_app;

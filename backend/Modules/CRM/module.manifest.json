@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "crm",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L3",
+  "type": "module",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": { "hard": ["platform-kernel", "directory"], "optionalCapabilities": ["sales.quotations", "platform.outbox"] },
+  "owns": { "schema": "business_crm", "entities": ["lead", "lead_assignment_history", "lead_conversion", "lead_external_ref", "crm_pipeline", "crm_pipeline_stage", "opportunity", "opportunity_stage_history", "opportunity_interest", "opportunity_contact_role", "opportunity_source_link", "crm_activity", "crm_party_profile", "crm_sales_team", "crm_sales_team_member", "crm_loss_reason", "crm_forecast_snapshot"] },
+  "permissions": ["crm.home.read", "crm.lead.read", "crm.lead.create", "crm.lead.edit", "crm.lead.assign", "crm.lead.qualify", "crm.lead.convert", "crm.lead.import", "crm.opportunity.read", "crm.opportunity.create", "crm.opportunity.edit", "crm.opportunity.assign", "crm.opportunity.stage", "crm.opportunity.close", "crm.opportunity.quote", "crm.activity.read", "crm.activity.create", "crm.activity.edit", "crm.activity.complete", "crm.pipeline.read", "crm.pipeline.manage", "crm.team.read", "crm.team.manage", "crm.forecast.read", "crm.forecast.snapshot", "crm.customer360.read", "crm.export", "crm.audit.read"],
+  "capabilities": { "provides": ["crm.leads", "crm.opportunities", "crm.activities", "crm.pipeline", "crm.forecast", "crm.customer360"], "consumes": ["directory.party", "sales.quotations", "platform.outbox"] },
+  "messaging": { "publishes": ["CrmLeadCreatedV1", "CrmLeadConvertedV1", "CrmOpportunityStageChangedV1", "CrmOpportunityClosedV1", "CrmActivityCompletedV1"], "consumes": ["QuotationAcceptedV1", "QuotationDeclinedV1", "InvoicePostedV1", "PaymentCompletedV1"] },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}
