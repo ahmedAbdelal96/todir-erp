@@ -242,7 +242,10 @@ export const crmApi = {
     }
   ): Promise<CrmPage<Activity>> => {
     const q = new URLSearchParams();
-    if (params?.state) q.set("state", params.state);
+    if (params?.state) {
+      const stateParam = params.state === "Pending" ? "Scheduled" : params.state;
+      q.set("state", stateParam);
+    }
     if (params?.scope) q.set("scope", params.scope);
     if (params?.search) q.set("search", params.search);
     if (params?.page) q.set("page", String(params.page));

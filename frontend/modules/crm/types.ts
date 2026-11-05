@@ -106,7 +106,7 @@ export interface ImportLeadsResult {
 
 export type OpportunityStatus = "Open" | "Won" | "Lost";
 export type ForecastCategory = "Pipeline" | "BestCase" | "Commit" | "Closed";
-export type DealHealthStatus = "Good" | "Fair" | "AtRisk" | "Stale";
+export type DealHealthStatus = "Healthy" | "Good" | "Fair" | "AtRisk" | "Stale";
 
 export interface Opportunity {
   readonly id: string;
@@ -209,7 +209,7 @@ export interface UpsertOpportunityContactRoleRequest {
 }
 
 export type ActivityType = "Call" | "Meeting" | "Task" | "FollowUp" | "Note";
-export type ActivityState = "Pending" | "Completed" | "Cancelled";
+export type ActivityState = "Pending" | "Scheduled" | "Completed" | "Cancelled";
 
 export interface Activity {
   readonly id: string;

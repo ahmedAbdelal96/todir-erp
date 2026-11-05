@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
-import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Select } from "../../../../components/primitives/select.tsx";
+import { Checkbox } from "../../../../components/primitives/checkbox.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { generateKey } from "../../../../core/api/http-client.ts";
 import { useOpportunityContactRoles, useAddOpportunityContactRoleMutation } from "../../hooks/use-crm-queries.ts";
@@ -79,7 +79,7 @@ export function BuyingCommitteeModal({
             style={{
               padding: "0.625rem 0.875rem",
               borderRadius: "var(--radius-sm)",
-              background: "var(--color-status-danger-subtle, #fee2e2)",
+              backgroundColor: "var(--color-status-danger-subtle, #fee2e2)",
               color: "var(--color-status-danger, #b91c1c)",
               fontSize: "0.8125rem"
             }}
@@ -88,24 +88,21 @@ export function BuyingCommitteeModal({
           </div>
         )}
 
-        <form onSubmit={handleAdd} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
-          <div style={{ flex: 2 }}>
+        <form onSubmit={handleAdd} style={{ display: "flex", gap: "0.75rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 200px" }}>
             <Select
               label={t("opportunities.committeeModal.role")}
               selectedKey={role}
-              onSelectionChange={(k) => setRole(String(k))}
+              onSelectionChange={(k) => {
+                if (k) setRole(String(k));
+              }}
               options={roleOptions}
             />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", paddingBottom: "0.5rem" }}>
-            <label style={{ fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.375rem", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={isPrimary}
-                onChange={(e) => setIsPrimary(e.target.checked)}
-              />
+          <div style={{ paddingBottom: "0.5rem" }}>
+            <Checkbox isSelected={isPrimary} onChange={setIsPrimary}>
               {t("opportunities.committeeModal.isPrimary")}
-            </label>
+            </Checkbox>
           </div>
           <Button type="submit" variant="primary" isDisabled={addMutation.isPending} style={{ marginBottom: "2px" }}>
             {addMutation.isPending ? t("actions.saving") : t("actions.add")}
@@ -140,10 +137,19 @@ export function BuyingCommitteeModal({
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span style={{ fontWeight: 600 }}>{t(`contactRoles.${item.role}`, item.role)}</span>
+                    <span style={{ fontWeight: 600 }}>{t(`contactRoles.${item.role}` as any)}</span>
                     {item.isPrimary && (
-                      <span style={{ fontSize: "0.6875rem", backgroundColor: "var(--color-brand-primary)", color: "white", padding: "0.125rem 0.375rem", borderRadius: "9999px" }}>
-                        {t("opportunities.committeeModal.primaryBadge")}
+                      <span
+                        style={{
+                          fontSize: "0.6875rem",
+                          padding: "0.125rem 0.375rem",
+                          borderRadius: "var(--radius-sm)",
+                          backgroundColor: "#eff6ff",
+                          color: "#1e40af",
+                          fontWeight: 700
+                        }}
+                      >
+                        {t("opportunities.committeeModal.isPrimary")}
                       </span>
                     )}
                   </div>

@@ -6,34 +6,42 @@ This document records frontend-owned acceptance evidence for the supported CRM s
 
 ## Delivered Frontend Scope
 
-- **High-Contrast Design System Compliance**: Codified with authentic Dark Oxford Navy header anchor (`#102a43`), cool neutral slate background canvas (`#f0f4f8`), and crisp pure white surface cards (`#ffffff`) with solid perimeter borders (`#cbd5e1`) and dual-layer elevation shadows. Low-contrast ghost screens are strictly eliminated.
+- **High-Contrast Design System Compliance (Zero Tailwind Utility Classes)**: Completely eliminated uncompiled Tailwind utility classes (`grid`, `bg-white`, `p-4`, `rounded-lg`, etc.). Fully codified with authentic Dark Oxford Navy header anchor (`#102a43`), cool neutral slate background canvas (`#f0f4f8`), and crisp pure white surface cards (`#ffffff`) with solid perimeter borders (`#cbd5e1`) and dual-layer elevation shadows using ToDir design tokens and reusable primitives (`Surface`, `CrmKpiCard`, `Table`, `Button`, `Dialog`, `TextField`, `Select`, `Checkbox`). Low-contrast ghost screens and unstyled HTML elements are strictly eliminated.
 - **Strict Separation of Concerns (Zero Mixed View/Form Collision)**: Data browsing screens (tables, Kanban boards, 360-degree profiles) are cleanly separated from data entry and modification. All mutations are triggered via explicit Primary Action buttons opening dedicated Centered Modal Dialogs (`Dialog` primitive) with background overlay shielding.
-- **Full Arabic RTL & English LTR Parity**: 100% key parity between `frontend/modules/crm/i18n/ar.ts` and `en.ts` with natural business Arabic terminology and zero raw developer jargon or exposed technical GUIDs.
-- **My Sales Today (Seller Home)**: Real-time prioritized worklist featuring due/overdue follow-ups, new uncontacted leads, stale deals (>14 days without activity), and immediate inline action triggers.
-- **Lead Inbox & Lifecycle**: Dedicated lead management with status sub-navigation pills (All, New, Working, Qualified, Disqualified, Converted), server-side search, scope toggles (My Leads vs. All Leads), Qualify modal documenting BANT requirements, Disqualify modal with mandatory reasons, Convert Lead modal creating commercial parties and linked pipeline opportunities, Duplicate Merge modal, and CSV import modal.
-- **Opportunity Pipeline (Kanban & List)**: Interactive multi-stage Kanban board with stage progress bars, deal health badges, probability-weighted stage totals, and instant view-mode toggle to structured data table.
+- **Full Arabic RTL & English LTR Parity**: 100% key parity between `frontend/modules/crm/i18n/ar.ts` and `en.ts` with natural business Arabic terminology, authentic LTR direction toggling, and zero raw developer jargon or exposed technical GUIDs.
+- **My Sales Today (Seller Home)**: Real-time prioritized worklist featuring due/overdue follow-ups, new uncontacted leads, stale deals (>14 days without activity), authentic KPI cards with distinctive semantic color tones, and immediate inline action triggers.
+- **Lead Inbox & Lifecycle**: Dedicated lead management with status sub-navigation pills (All, New, Working, Qualified, Disqualified, Converted), server-side search, scope toggles (My Leads vs. All Leads), Qualify modal documenting BANT requirements, Disqualify modal with mandatory reasons, Convert Lead modal creating commercial parties and linked pipeline opportunities (with authentic user-entered deal amounts, zero fabricated defaults), Duplicate Merge modal, and CSV import modal.
+- **Opportunity Pipeline (Kanban & List)**: Interactive multi-stage Kanban board with stage progress bars, deal health badges (`Healthy`, `AtRisk`, `Stale`), probability-weighted stage totals, and instant view-mode toggle to structured data table.
 - **Opportunity 360 Workspace**: Comprehensive record inspector supporting Buying Committee role matrix (Champion, Decision Maker, Economic Buyer, Influencer, Gatekeeper, Technical Evaluator), Commercial Interests tracking with product catalog linking, and Quotation Handoff transition into Module 17 Sales.
-- **Activities & Follow-ups**: Centralized activity management for Calls, Meetings, Follow-ups, and Tasks with state filtering, overdue warnings, and rapid completion dialog documenting outcomes and scheduling subsequent next actions.
-- **Sales Management & Forecasting**: Revenue projections across Pipeline, Best Case, and Commit categories, pipeline inspection table, sales team hierarchy management, pipeline/stage designer, and custom field configuration.
+- **Activities & Follow-ups**: Centralized activity management for Calls, Meetings, Follow-ups, and Tasks with database-aligned state filtering (`Scheduled`, `Completed`), overdue warnings, and rapid completion dialog documenting outcomes and scheduling subsequent next actions.
+- **Sales Management & Forecasting**: Revenue projections across Pipeline, Best Case, and Commit categories, pipeline inspection table, sales team hierarchy management, pipeline/stage designer, and custom field configuration with backend TitleCase type enforcement.
+
+## Resolved Root Causes & Data Alignment
+
+1. **Design System Migration**: Replaced all Tailwind utility class layouts across all CRM tabs and modals with ToDir's codified design system components (`Surface`, `CrmKpiCard`, `Table`, `Button`, `TextField`, `Select`, `Checkbox`, `Dialog`), CSS variables (`var(--color-surface-card)`, `var(--color-border-default)`, `var(--shadow-sm)`), and flex/grid style helpers.
+2. **PostgreSQL Activity State Parity**: Normalized activity states between frontend (`Pending`/`Scheduled`) and the backend `business_crm.crm_activity` schema (`state = 'Scheduled'`), ensuring open activities render and complete accurately.
+3. **Custom Field TitleCase Validation**: Updated `new-custom-field-modal.tsx` to emit TitleCase data types (`Text`, `Integer`, `Decimal`, `Boolean`, `Date`) required by backend validation (`CrmRepository.cs`), resolving 400 Bad Request rejections.
+4. **Deal Health Status Parity**: Aligned DealHealthBadge and translation keys with database check constraint (`Healthy`, `AtRisk`, `Stale`), preventing missing label fallbacks.
+5. **Elimination of Fabricated Financial Defaults**: Removed hardcoded prefilled amounts (e.g., `50000`) in lead conversion and opportunity modals; users specify authentic financial values or leave them unassigned.
 
 ## Runtime Acceptance Evidence
 
 Executed against the local Vite frontend, local .NET API daemon, PostgreSQL database in Docker (`todir-postgres-1`), and authenticated session:
 
-| Journey | Evidence |
-| --- | --- |
-| 01. Seller Home "My Sales Today" | Playwright test 01 passed; Oxford Navy header anchor, daily worklist, and revenue KPIs rendered. |
-| 02. Lead Capture Modal | Playwright test 02 passed; Centered Modal Dialog opened, form fields validated, cleanly cancelled. |
-| 03. Lead Qualification | Playwright test 03 passed; Qualify modal captures needs, budget, timing, and decision role. |
-| 04. Lead Conversion | Playwright test 04 passed; Convert modal creates directory party and associated pipeline opportunity. |
-| 05. Duplicate Merge & CSV Import | Playwright test 05 passed; Merge duplicate records and CSV bulk import modals verified. |
-| 06. Opportunities Pipeline | Playwright test 06 passed; Kanban board rendered with stage columns, probability, and list view toggle. |
-| 07. New Opportunity Creation | Playwright test 07 passed; dedicated modal dialog captures deal title, value, pipeline, and initial stage. |
-| 08. Opportunity 360 Workspace | Playwright test 08 passed; 360 view, Buying Committee matrix, commercial interests, and Quotation handoff verified. |
-| 09. Activities Management | Playwright test 09 passed; activity schedule dialog, state filters, and complete action verified. |
-| 10. Sales Management & Forecasts | Playwright test 10 passed; revenue forecasts, sales teams modal, and custom fields modal verified. |
-| 11. Mobile Viewport (390px) | Playwright test 11 passed; responsive layout verified without horizontal overflow. |
-| 12. English LTR Parity | Playwright test 12 passed; natural English microcopy, proper LTR direction, zero untranslated text. |
+| Test # | Journey | Persisted Workflow & Verification |
+| --- | --- | --- |
+| 01 | Visual & Layout Architecture Verification | Oxford Navy header `#102a43`, Slate background `#f0f4f8`, Surface cards `#ffffff`, borders `#cbd5e1`, semantic KPI cards verified via computed CSS. |
+| 02 | Lead Management (Capture & Persistence) | New Lead modal opened, form fields entered, persisted to backend database, verified in lead table. |
+| 03 | Lead Qualification (BANT Criteria) | Qualify modal captures budget, authority, need, and timeline; transitions lead state to Qualified in backend. |
+| 04 | Lead Conversion | Convert modal links or creates commercial party and pipeline opportunity without fabricated defaults. |
+| 05 | Opportunities Pipeline (Kanban & List Toggle) | Kanban board rendered with stage columns, probability, deal cards, and view-mode toggle to data table. |
+| 06 | Opportunities Creation | Dedicated modal dialog captures deal title, authentic numeric value, pipeline, and initial stage. |
+| 07 | Opportunity Workspace (360 View & Committee) | Full 360 inspector, Buying Committee role matrix addition, commercial interests, and Quotation handoff. |
+| 08 | Activities Management (Schedule & Complete) | Schedule activity, persist as Scheduled, complete with outcome note and next follow-up action. |
+| 09 | Sales Management (Forecasts, Teams, Custom Fields) | Revenue forecasts across categories, team creation, custom field definition persisted to backend. |
+| 10 | Lead Inbox (Search, Filtering & Pagination) | Server-side search, status pill filtering, scope toggling, and data navigation verified. |
+| 11 | Mobile Viewport (390px) | Responsive layout on iPhone viewport (390x844), verified zero horizontal overflow or clipping. |
+| 12 | English LTR Parity | Toggle via `button.topbar-lang-btn`, verify `dir="ltr"`, complete English typography, and zero missing copy. |
 
 ## Verification Suite Results
 
@@ -42,9 +50,9 @@ Executed against the local Vite frontend, local .NET API daemon, PostgreSQL data
 - `pnpm run architecture:frontend` — PASS: module boundaries, alias rules, and all 9 architectural fixtures clean.
 - `pnpm run test:frontend` — PASS: 189 tests, 189 passed, 0 failed.
 - `pnpm run api:drift` — PASS: 64 API paths validated with zero drift.
-- `pnpm --dir frontend build` — PASS: Vite production build clean in 3.38s.
-- `pnpm --dir frontend test:e2e tests/e2e/crm-flow.spec.ts` — PASS: 12 tests passed, 0 failed (28.0s).
+- `pnpm --dir frontend build` — PASS: Vite production build clean in 1.06s.
+- `pnpm --dir frontend test:e2e tests/e2e/crm-flow.spec.ts` — PASS: 12 tests passed, 0 failed (32.6s).
 
 ## Frontend Delivery Status
 
-`MODULE 19 CRM FRONTEND COMPLETE — REAL USER WORKFLOWS VERIFIED`
+`CRM FRONTEND COMPLETE — DESIGN SYSTEM COMPLIANT — REAL WORKFLOWS VERIFIED`

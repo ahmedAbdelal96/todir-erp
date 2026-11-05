@@ -2,13 +2,15 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { Select } from "../../../../components/primitives/select.tsx";
+import { Checkbox } from "../../../../components/primitives/checkbox.tsx";
 import { useCreateCustomFieldMutation } from "../../hooks/use-crm-queries.ts";
-import { Sliders, AlertCircle } from "../../components/crm-icons.tsx";
 
 interface NewCustomFieldModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  legalEntityId: string;
+  readonly isOpen: boolean;
+  readonly onClose: () => void;
+  readonly legalEntityId: string;
 }
 
 export const NewCustomFieldModal: React.FC<NewCustomFieldModalProps> = ({
@@ -20,12 +22,20 @@ export const NewCustomFieldModal: React.FC<NewCustomFieldModalProps> = ({
   const [targetType, setTargetType] = useState<"Lead" | "Opportunity">("Lead");
   const [fieldName, setFieldName] = useState("");
   const [fieldLabel, setFieldLabel] = useState("");
-  const [fieldType, setFieldType] = useState<"text" | "number" | "select" | "boolean" | "date">("text");
+  const [fieldType, setFieldType] = useState<string>("Text");
   const [isRequired, setIsRequired] = useState(false);
-  const [optionsText, setOptionsText] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const createMutation = useCreateCustomFieldMutation(legalEntityId);
+
+  const reset = () => {
+    setTargetType("Lead");
+    setFieldName("");
+    setFieldLabel("");
+    setFieldType("Text");
+    setIsRequired(false);
+    setErrorMessage(null);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,10 +45,6 @@ export const NewCustomFieldModal: React.FC<NewCustomFieldModalProps> = ({
       setErrorMessage(t("crm.validation.fieldsRequired", "يرجى تعبئة الحقول الإلزامية"));
       return;
     }
-
-    const options = fieldType === "select"
-      ? optionsText.split(",").map((s) => s.trim()).filter(Boolean)
-      : undefined;
 
     createMutation.mutate(
       {
@@ -50,6 +56,7 @@ export const NewCustomFieldModal: React.FC<NewCustomFieldModalProps> = ({
       },
       {
         onSuccess: () => {
+          reset();
           onClose();
         },
         onError: (err: any) => {
@@ -59,15 +66,33 @@ export const NewCustomFieldModal: React.FC<NewCustomFieldModalProps> = ({
     );
   };
 
+  const targetOptions = [
+    { id: "Lead", label: t("crm.customFields.targetLead", "عميل محتمل (Lead)") },
+    { id: "Opportunity", label: t("crm.customFields.targetOpportunity", "فرصة بيعية (Opportunity)") },
+  ];
+
+  const typeOptions = [
+    { id: "Text", label: t("crm.customFields.typeText", "نص عادي (Text)") },
+    { id: "Integer", label: t("crm.customFields.typeNumber", "رقمي (Integer)") },
+    { id: "Decimal", label: t("crm.customFields.typeDecimal", "رقم عشري (Decimal)") },
+    { id: "Date", label: t("crm.customFields.typeDate", "تاريخ (Date)") },
+    { id: "Boolean", label: t("crm.customFields.typeBoolean", "نعم / لا (Boolean)") },
+  ];
+
   return (
     <Dialog
       isOpen={isOpen}
-      onOpenChange={(open: boolean) => !open && onClose()}
+      onOpenChange={(open: boolean) => {
+        if (!open) {
+          reset();
+          onClose();
+        }
+      }}
       title={t("crm.customFields.newTitle", "تعريف حقل مخصص جديد")}
       size="medium"
       footer={
         <>
-          <Button variant="secondary" onPress={onClose} isDisabled={createMutation.isPending}>
+          <Button variant="secondary" onPress={() => { reset(); onClose(); }} isDisabled={createMutation.isPending}>
             {t("crm.common.cancel", "إلغاء")}
           </Button>
           <Button
@@ -81,99 +106,65 @@ export const NewCustomFieldModal: React.FC<NewCustomFieldModalProps> = ({
         </>
       }
     >
-      <form id="new-custom-field-form" onSubmit={handleSubmit} className="space-y-4">
+      <form id="new-custom-field-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {errorMessage && (
-          <div className="p-3 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{errorMessage}</span>
+          <div
+            role="alert"
+            style={{
+              padding: "0.625rem 0.875rem",
+              borderRadius: "var(--radius-sm)",
+              backgroundColor: "var(--color-status-danger-subtle, #fee2e2)",
+              color: "var(--color-status-danger, #b91c1c)",
+              fontSize: "0.8125rem"
+            }}
+          >
+            {errorMessage}
           </div>
         )}
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            {t("crm.customFields.targetEntity", "الجهة المستهدفة")}
-          </label>
-          <select
-            value={targetType}
-            onChange={(e) => setTargetType(e.target.value as "Lead" | "Opportunity")}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-          >
-            <option value="Lead">{t("crm.customFields.targetLead", "عميل محتمل (Lead)")}</option>
-            <option value="Opportunity">{t("crm.customFields.targetOpportunity", "فرصة بيعية (Opportunity)")}</option>
-          </select>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.875rem" }}>
+          <Select
+            label={t("crm.customFields.targetEntity", "الجهة المستهدفة")}
+            selectedKey={targetType}
+            onSelectionChange={(val) => {
+              if (val) setTargetType(String(val) as "Lead" | "Opportunity");
+            }}
+            options={targetOptions}
+          />
+          <Select
+            label={t("crm.customFields.fieldType", "نوع الحقل")}
+            selectedKey={fieldType}
+            onSelectionChange={(val) => {
+              if (val) setFieldType(String(val));
+            }}
+            options={typeOptions}
+          />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            {t("crm.customFields.fieldName", "اسم الحقل البرمجي (Field Key)")} <span className="text-rose-500">*</span>
-          </label>
-          <input
-            type="text"
-            required
-            placeholder={t("crm.customFields.fieldNamePlaceholder", "decision_role")}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.875rem" }}>
+          <TextField
+            label={t("crm.customFields.fieldName", "اسم الحقل البرمجي (Field Key)")}
             value={fieldName}
-            onChange={(e) => setFieldName(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono text-xs"
+            onChange={setFieldName}
+            placeholder={t("crm.customFields.fieldNamePlaceholder", "decision_role")}
+            isRequired
           />
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            {t("crm.customFields.fieldLabel", "تسمية الحقل الظاهرة (Label)")} <span className="text-rose-500">*</span>
-          </label>
-          <input
-            type="text"
-            required
-            placeholder={t("crm.customFields.labelPlaceholder", "مثال: حجم أسطول السيارات")}
+          <TextField
+            label={t("crm.customFields.fieldLabel", "تسمية الحقل الظاهرة (Label)")}
             value={fieldLabel}
-            onChange={(e) => setFieldLabel(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            onChange={setFieldLabel}
+            placeholder={t("crm.customFields.labelPlaceholder", "مثال: حجم أسطول السيارات")}
+            isRequired
           />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            {t("crm.customFields.fieldType", "نوع الحقل")}
-          </label>
-          <select
-            value={fieldType}
-            onChange={(e) => setFieldType(e.target.value as any)}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+        <div style={{ marginTop: "0.25rem" }}>
+          <Checkbox
+            isSelected={isRequired}
+            onChange={setIsRequired}
           >
-            <option value="text">{t("crm.customFields.typeText", "نص عادي (Text)")}</option>
-            <option value="number">{t("crm.customFields.typeNumber", "رقم (Number)")}</option>
-            <option value="select">{t("crm.customFields.typeSelect", "قائمة خيارات (Dropdown Select)")}</option>
-            <option value="boolean">{t("crm.customFields.typeBoolean", "نعم / لا (Boolean)")}</option>
-            <option value="date">{t("crm.customFields.typeDate", "تاريخ (Date)")}</option>
-          </select>
-        </div>
-
-        {fieldType === "select" && (
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              {t("crm.customFields.selectOptions", "الخيارات المتاحة (مفصولة بفاصلة)")}
-            </label>
-            <input
-              type="text"
-              placeholder={t("crm.customFields.selectOptionsPlaceholder", "خيار 1, خيار 2, خيار 3")}
-              value={optionsText}
-              onChange={(e) => setOptionsText(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 pt-1">
-          <input
-            type="checkbox"
-            id="isRequiredFieldCheck"
-            checked={isRequired}
-            onChange={(e) => setIsRequired(e.target.checked)}
-            className="h-4 w-4 text-primary-600 rounded border-slate-300"
-          />
-          <label htmlFor="isRequiredFieldCheck" className="text-xs font-medium text-slate-700 cursor-pointer">
-            {t("crm.customFields.isRequired", "حقل إلزامي عند الإدخال")}
-          </label>
+            {t("crm.customFields.isRequired", "إلزامي")}
+          </Checkbox>
         </div>
       </form>
     </Dialog>

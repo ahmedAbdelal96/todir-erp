@@ -2,15 +2,16 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { Checkbox } from "../../../../components/primitives/checkbox.tsx";
 import { useCreateStageMutation } from "../../hooks/use-crm-queries.ts";
-import { Layers, AlertCircle } from "../../components/crm-icons.tsx";
 
 interface NewStageModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  legalEntityId: string;
-  pipelineId: string;
-  currentStagesCount: number;
+  readonly isOpen: boolean;
+  readonly onClose: () => void;
+  readonly legalEntityId: string;
+  readonly pipelineId: string;
+  readonly currentStagesCount: number;
 }
 
 export const NewStageModal: React.FC<NewStageModalProps> = ({
@@ -23,12 +24,21 @@ export const NewStageModal: React.FC<NewStageModalProps> = ({
   const { t } = useTranslation("crm");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [probability, setProbability] = useState<number>(50);
+  const [probability, setProbability] = useState<string>("50");
   const [isWon, setIsWon] = useState(false);
   const [isLost, setIsLost] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const createMutation = useCreateStageMutation(legalEntityId, pipelineId);
+
+  const reset = () => {
+    setCode("");
+    setName("");
+    setProbability("50");
+    setIsWon(false);
+    setIsLost(false);
+    setErrorMessage(null);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +59,7 @@ export const NewStageModal: React.FC<NewStageModalProps> = ({
       },
       {
         onSuccess: () => {
+          reset();
           onClose();
         },
         onError: (err: any) => {
@@ -61,12 +72,17 @@ export const NewStageModal: React.FC<NewStageModalProps> = ({
   return (
     <Dialog
       isOpen={isOpen}
-      onOpenChange={(open: boolean) => !open && onClose()}
+      onOpenChange={(open: boolean) => {
+        if (!open) {
+          reset();
+          onClose();
+        }
+      }}
       title={t("crm.stages.newTitle", "إضافة مرحلة جديدة للمسار")}
       size="medium"
       footer={
         <>
-          <Button variant="secondary" onPress={onClose} isDisabled={createMutation.isPending}>
+          <Button variant="secondary" onPress={() => { reset(); onClose(); }} isDisabled={createMutation.isPending}>
             {t("crm.common.cancel", "إلغاء")}
           </Button>
           <Button
@@ -80,94 +96,67 @@ export const NewStageModal: React.FC<NewStageModalProps> = ({
         </>
       }
     >
-      <form id="new-stage-form" onSubmit={handleSubmit} className="space-y-4">
+      <form id="new-stage-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {errorMessage && (
-          <div className="p-3 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{errorMessage}</span>
+          <div
+            role="alert"
+            style={{
+              padding: "0.625rem 0.875rem",
+              borderRadius: "var(--radius-sm)",
+              backgroundColor: "var(--color-status-danger-subtle, #fee2e2)",
+              color: "var(--color-status-danger, #b91c1c)",
+              fontSize: "0.8125rem"
+            }}
+          >
+            {errorMessage}
           </div>
         )}
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            {t("crm.stages.code", "رمز المرحلة")} <span className="text-rose-500">*</span>
-          </label>
-          <input
-            type="text"
-            required
-            placeholder={t("crm.stages.codePlaceholder", "DEMO")}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.875rem" }}>
+          <TextField
+            label={t("crm.stages.code", "رمز المرحلة")}
             value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono uppercase"
+            onChange={(val) => setCode(val.toUpperCase())}
+            placeholder={t("crm.stages.codePlaceholder", "DEMO")}
+            isRequired
           />
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            {t("crm.stages.name", "اسم المرحلة")} <span className="text-rose-500">*</span>
-          </label>
-          <input
-            type="text"
-            required
-            placeholder={t("crm.stages.namePlaceholder", "مثال: تقديم العرض التوضيحي")}
+          <TextField
+            label={t("crm.stages.name", "اسم المرحلة")}
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            onChange={setName}
+            placeholder={t("crm.stages.namePlaceholder", "مثال: تقديم العرض التوضيحي")}
+            isRequired
           />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            {t("crm.stages.probability", "احتمالية الإغلاق (%)")}
-          </label>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={probability}
-            onChange={(e) => setProbability(Number(e.target.value))}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-          />
-        </div>
+        <TextField
+          label={t("crm.stages.probability", "احتمالية الإغلاق (%)")}
+          type="number"
+          value={probability}
+          onChange={setProbability}
+          placeholder="50"
+        />
 
-        <div className="flex items-center gap-6 pt-1">
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="isWonStage"
-              checked={isWon}
-              onChange={(e) => {
-                setIsWon(e.target.checked);
-                if (e.target.checked) {
-                  setIsLost(false);
-                  setProbability(100);
-                }
-              }}
-              className="h-4 w-4 text-emerald-600 rounded border-slate-300"
-            />
-            <label htmlFor="isWonStage" className="text-xs font-medium text-slate-700 cursor-pointer">
-              {t("crm.stages.isWon", "مرحلة نجاح وفوز")}
-            </label>
-          </div>
+        <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
+          <Checkbox
+            isSelected={isWon}
+            onChange={(checked) => {
+              setIsWon(checked);
+              if (checked) setIsLost(false);
+            }}
+          >
+            {t("crm.stages.isWon", "مرحلة نجاح وفوز")}
+          </Checkbox>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="isLostStage"
-              checked={isLost}
-              onChange={(e) => {
-                setIsLost(e.target.checked);
-                if (e.target.checked) {
-                  setIsWon(false);
-                  setProbability(0);
-                }
-              }}
-              className="h-4 w-4 text-rose-600 rounded border-slate-300"
-            />
-            <label htmlFor="isLostStage" className="text-xs font-medium text-slate-700 cursor-pointer">
-              {t("crm.stages.isLost", "مرحلة خسارة الصفقة")}
-            </label>
-          </div>
+          <Checkbox
+            isSelected={isLost}
+            onChange={(checked) => {
+              setIsLost(checked);
+              if (checked) setIsWon(false);
+            }}
+          >
+            {t("crm.stages.isLost", "مرحلة خسارة الصفقة")}
+          </Checkbox>
         </div>
       </form>
     </Dialog>

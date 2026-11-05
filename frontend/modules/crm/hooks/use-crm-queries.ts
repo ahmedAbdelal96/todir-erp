@@ -628,8 +628,8 @@ export function useCreateCustomFieldMutation(legalEntityId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: CreateCustomFieldDefinitionRequest) => crmApi.createCustomField(legalEntityId, request),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: crmKeys.customFields(legalEntityId, variables.entityType) });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [...crmKeys.all, "customFields", legalEntityId] });
     }
   });
 }

@@ -36,6 +36,7 @@ const fullCrmDictionary = {
     importing: "جاري الاستيراد...",
   },
   dealHealth: {
+    healthy: "جيد ومستقر",
     good: "جيد ومستقر",
     fair: "متوسط",
     atRisk: "معرض للخطر",

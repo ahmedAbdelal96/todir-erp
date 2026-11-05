@@ -156,11 +156,12 @@ export function CrmPipelineBoard({
                     </div>
 
                     <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-                      <MoneyDisplay
-                        value={{ amount: String(opp.estimatedAmount), currency: opp.currencyCode || DEFAULT_CURRENCY }}
-                        size="small"
-                        className="font-bold text-sky-700"
-                      />
+                      <div style={{ fontWeight: 700, color: "var(--color-brand-primary, #102a43)" }}>
+                        <MoneyDisplay
+                          value={{ amount: String(opp.estimatedAmount), currency: opp.currencyCode || DEFAULT_CURRENCY }}
+                          size="small"
+                        />
+                      </div>
                       <ForecastCategoryBadge category={opp.forecastCategory} />
                     </div>
 

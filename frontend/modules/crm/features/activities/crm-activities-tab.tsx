@@ -5,11 +5,16 @@ import { Activity, ActivityState } from "../../types.ts";
 import { ActivityTypeBadge } from "../../components/activity-type-badge.tsx";
 import { NewActivityModal } from "./new-activity-modal.tsx";
 import { CompleteActivityModal } from "./complete-activity-modal.tsx";
-import { Search, Plus, CheckCircle2, XCircle, Clock } from "../../components/crm-icons.tsx";
+import { FilterBar } from "../../../../components/primitives/filter-bar.tsx";
+import { SearchField } from "../../../../components/primitives/search-field.tsx";
+import { Button } from "../../../../components/primitives/button.tsx";
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "../../../../components/primitives/table.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
+import { CheckCircle2, XCircle, Clock } from "../../components/crm-icons.tsx";
 
 interface CrmActivitiesTabProps {
-  legalEntityId: string;
-  canManage?: boolean;
+  readonly legalEntityId: string;
+  readonly canManage?: boolean;
 }
 
 export const CrmActivitiesTab: React.FC<CrmActivitiesTabProps> = ({
@@ -17,7 +22,6 @@ export const CrmActivitiesTab: React.FC<CrmActivitiesTabProps> = ({
   canManage = false,
 }) => {
   const { t, i18n } = useTranslation("crm");
-  const isRtl = i18n.dir() === "rtl";
 
   // Filter & Pagination States
   const [scope, setScope] = useState<"mine" | "all">("mine");
@@ -54,77 +58,85 @@ export const CrmActivitiesTab: React.FC<CrmActivitiesTabProps> = ({
   const totalCount = data?.totalCount || 0;
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
+  const stateTabs = [
+    { id: "Pending", label: t("crm.activities.states.pending", "قيد الانتظار") },
+    { id: "Completed", label: t("crm.activities.states.completed", "مكتملة") },
+    { id: "", label: t("crm.activities.states.all", "الكل") },
+  ];
+
   return (
-    <div className="space-y-4">
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       {/* Top Filter and Actions Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Search Box */}
-          <div className="relative min-w-[240px]">
-            <Search className={`absolute top-2.5 ${isRtl ? "right-3" : "left-3"} h-4 w-4 text-slate-400`} />
-            <input
-              type="text"
+      <FilterBar>
+        <div style={{ display: "flex", gap: "0.75rem", flex: 1, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ minWidth: "260px", maxWidth: "380px", flex: 1 }}>
+            <SearchField
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
+              onChange={(val) => {
+                setSearchTerm(val);
                 setPage(1);
               }}
               placeholder={t("crm.activities.searchPlaceholder", "بحث في الأنشطة والملاحظات...")}
-              className={`w-full py-1.5 text-sm bg-slate-50 border border-slate-300 rounded-md focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                isRtl ? "pr-9 pl-3" : "pl-9 pr-3"
-              }`}
             />
           </div>
 
           {/* State Filter Buttons */}
-          <div className="inline-flex rounded-md border border-slate-200 p-0.5 bg-slate-100 text-xs">
-            <button
-              type="button"
-              onClick={() => { setStateFilter("Pending"); setPage(1); }}
-              className={`px-3 py-1 font-medium rounded-sm transition-colors ${
-                stateFilter === "Pending" ? "bg-white text-slate-800 shadow-xs" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              {t("crm.activities.states.pending", "قيد الانتظار")}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setStateFilter("Completed"); setPage(1); }}
-              className={`px-3 py-1 font-medium rounded-sm transition-colors ${
-                stateFilter === "Completed" ? "bg-white text-slate-800 shadow-xs" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              {t("crm.activities.states.completed", "مكتملة")}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setStateFilter(""); setPage(1); }}
-              className={`px-3 py-1 font-medium rounded-sm transition-colors ${
-                stateFilter === "" ? "bg-white text-slate-800 shadow-xs" : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              {t("crm.activities.states.all", "الكل")}
-            </button>
+          <div style={{ display: "inline-flex", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+            {stateTabs.map((st, index) => {
+              const isSelected = stateFilter === st.id;
+              return (
+                <button
+                  key={st.id || "all"}
+                  type="button"
+                  onClick={() => { setStateFilter(st.id); setPage(1); }}
+                  style={{
+                    padding: "0.375rem 0.75rem",
+                    fontSize: "0.8125rem",
+                    fontWeight: 600,
+                    border: "none",
+                    borderInlineStart: index > 0 ? "1px solid var(--color-border-default)" : "none",
+                    cursor: "pointer",
+                    backgroundColor: isSelected ? "var(--color-surface-subtle, #f1f5f9)" : "var(--color-surface-card, #ffffff)",
+                    color: isSelected ? "var(--color-brand-primary, #102a43)" : "var(--color-content-muted, #64748b)"
+                  }}
+                >
+                  {st.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Scope switch if manager */}
           {canManage && (
-            <div className="inline-flex rounded-md border border-slate-200 p-0.5 bg-slate-100 text-xs">
+            <div style={{ display: "inline-flex", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
               <button
                 type="button"
                 onClick={() => { setScope("mine"); setPage(1); }}
-                className={`px-3 py-1 font-medium rounded-sm transition-colors ${
-                  scope === "mine" ? "bg-white text-slate-800 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                }`}
+                style={{
+                  padding: "0.375rem 0.75rem",
+                  fontSize: "0.8125rem",
+                  fontWeight: 600,
+                  border: "none",
+                  cursor: "pointer",
+                  backgroundColor: scope === "mine" ? "var(--color-surface-subtle)" : "var(--color-surface-card)",
+                  color: scope === "mine" ? "var(--color-brand-primary)" : "var(--color-content-muted)"
+                }}
               >
                 {t("crm.common.myScope", "أنشطتي")}
               </button>
               <button
                 type="button"
                 onClick={() => { setScope("all"); setPage(1); }}
-                className={`px-3 py-1 font-medium rounded-sm transition-colors ${
-                  scope === "all" ? "bg-white text-slate-800 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                }`}
+                style={{
+                  padding: "0.375rem 0.75rem",
+                  fontSize: "0.8125rem",
+                  fontWeight: 600,
+                  border: "none",
+                  borderInlineStart: "1px solid var(--color-border-default)",
+                  cursor: "pointer",
+                  backgroundColor: scope === "all" ? "var(--color-surface-subtle)" : "var(--color-surface-card)",
+                  color: scope === "all" ? "var(--color-brand-primary)" : "var(--color-content-muted)"
+                }}
               >
                 {t("crm.common.allTeamScope", "أنشطة الفريق")}
               </button>
@@ -132,188 +144,185 @@ export const CrmActivitiesTab: React.FC<CrmActivitiesTabProps> = ({
           )}
         </div>
 
-        {/* Primary Action Button */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setIsNewModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-md shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            <span>{t("crm.activities.createButton", "تسجيل نشاط جديد")}</span>
-          </button>
-        </div>
-      </div>
+        <Button variant="primary" size="comfortable" onPress={() => setIsNewModalOpen(true)}>
+          + {t("crm.activities.createButton", "تسجيل نشاط جديد")}
+        </Button>
+      </FilterBar>
 
       {/* Activities Table */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
-        {isLoading ? (
-          <div className="p-8 text-center text-slate-500 text-sm">
-            {t("crm.common.loading", "جاري تحميل البيانات...")}
-          </div>
-        ) : isError ? (
-          <div className="p-8 text-center text-rose-600 text-sm font-medium">
-            {t("crm.common.errorLoading", "حدث خطأ أثناء تحميل الأنشطة.")}
-          </div>
-        ) : activities.length === 0 ? (
-          <div className="p-12 text-center">
-            <Clock className="mx-auto h-12 w-12 text-slate-300 mb-3" />
-            <h3 className="text-base font-semibold text-slate-800">
-              {t("crm.activities.emptyTitle", "لا توجد أنشطة مجدولة")}
-            </h3>
-            <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">
-              {t("crm.activities.emptyDescription", "قم بجدولة اتصال أو اجتماع أو مهمة متابعة مع العميل لضمان سير الصفقة.")}
-            </p>
-            <button
-              type="button"
-              onClick={() => setIsNewModalOpen(true)}
-              className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-md shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              <span>{t("crm.activities.createFirst", "جدولة أول نشاط")}</span>
-            </button>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50 text-slate-700 font-medium">
-                <tr>
-                  <th scope="col" className="px-4 py-3 text-start">{t("crm.activities.typeAndSubject", "النوع والموضوع")}</th>
-                  <th scope="col" className="px-4 py-3 text-start">{t("crm.activities.linkedRecord", "الجهة المرتبطة")}</th>
-                  <th scope="col" className="px-4 py-3 text-start">{t("crm.activities.dueDate", "تاريخ الاستحقاق")}</th>
-                  <th scope="col" className="px-4 py-3 text-start">{t("crm.activities.status", "الحالة")}</th>
-                  <th scope="col" className="px-4 py-3 text-end">{t("crm.common.actions", "الإجراءات")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 bg-white">
-                {activities.map((activity) => {
-                  const isPending = activity.state === "Pending";
-                  const isOverdue = isPending && activity.dueAt && new Date(activity.dueAt) < new Date();
+      <div style={{ background: "var(--color-surface-card)", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+        <Table aria-label={t("tabs.activities", "الأنشطة والمتابعات")}>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("crm.activities.typeAndSubject", "النوع والموضوع")}</TableHead>
+              <TableHead>{t("crm.activities.linkedRecord", "الجهة المرتبطة")}</TableHead>
+              <TableHead>{t("crm.activities.dueDate", "تاريخ الاستحقاق")}</TableHead>
+              <TableHead>{t("crm.activities.status", "الحالة")}</TableHead>
+              <TableHead style={{ textAlign: "end" }}>{t("crm.common.actions", "الإجراءات")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={5} style={{ textAlign: "center", padding: "2.5rem" }}>
+                  {t("crm.common.loading", "جاري تحميل البيانات...")}
+                </TableCell>
+              </TableRow>
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={5} style={{ textAlign: "center", padding: "2.5rem", color: "var(--color-status-danger)" }}>
+                  {t("crm.common.errorLoading", "حدث خطأ أثناء تحميل الأنشطة.")}
+                </TableCell>
+              </TableRow>
+            ) : activities.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} style={{ textAlign: "center", padding: "3rem 1.5rem" }}>
+                  <Clock style={{ margin: "0 auto 0.75rem", width: "2.5rem", height: "2.5rem", color: "var(--color-content-muted)" }} />
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: "0.9375rem", color: "var(--color-content-primary)" }}>
+                    {t("crm.activities.emptyTitle", "لا توجد أنشطة مجدولة")}
+                  </p>
+                  <p style={{ margin: "0.25rem 0 1rem", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                    {t("crm.activities.emptyDescription", "قم بجدولة اتصال أو اجتماع أو مهمة متابعة مع العميل لضمان سير الصفقة.")}
+                  </p>
+                  <Button variant="primary" size="compact" onPress={() => setIsNewModalOpen(true)}>
+                    + {t("crm.activities.createFirst", "جدولة أول نشاط")}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ) : (
+              activities.map((activity) => {
+                const isPending = activity.state === "Pending" || (activity.state as string) === "Scheduled";
+                const isOverdue = isPending && activity.dueAt && new Date(activity.dueAt) < new Date();
 
-                  return (
-                    <tr key={activity.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <ActivityTypeBadge type={activity.type} />
-                          <div>
-                            <div className="font-semibold text-slate-900">{activity.subject}</div>
-                            {activity.notes && (
-                              <div className="text-xs text-slate-500 line-clamp-1 max-w-xs">{activity.notes}</div>
-                            )}
-                          </div>
+                return (
+                  <TableRow key={activity.id} data-testid="crm-activity-row">
+                    <TableCell>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
+                        <ActivityTypeBadge type={activity.type} />
+                        <div>
+                          <span style={{ fontWeight: 600, color: "var(--color-content-primary)" }}>
+                            {activity.subject}
+                          </span>
+                          {activity.notes && (
+                            <p style={{ margin: "0.125rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                              {activity.notes}
+                            </p>
+                          )}
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {activity.leadId ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                            {t("crm.activities.leadContext", "عميل محتمل")}
-                          </span>
-                        ) : activity.opportunityId ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200">
-                            {t("crm.activities.opportunityContext", "فرصة بيعية")}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {activity.dueAt ? (
-                          <div className={`text-xs ${isOverdue ? "text-rose-600 font-bold" : "text-slate-700 font-medium"}`}>
-                            {new Date(activity.dueAt).toLocaleDateString(i18n.language, {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                            {isOverdue && (
-                              <span className="ms-1.5 px-1.5 py-0.2 rounded text-[10px] bg-rose-100 text-rose-800">
-                                {t("crm.activities.overdue", "متأخر")}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          activity.state === "Completed"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            : activity.state === "Cancelled"
-                            ? "bg-slate-100 text-slate-600 border border-slate-200 line-through"
-                            : "bg-blue-50 text-blue-700 border border-blue-200"
-                        }`}>
-                          {activity.state === "Completed" && <CheckCircle2 className="h-3 w-3" />}
-                          {activity.state === "Cancelled" && <XCircle className="h-3 w-3" />}
-                          {activity.state === "Pending" && <Clock className="h-3 w-3" />}
-                          {t(`crm.activities.states.${activity.state.toLowerCase()}`, activity.state)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-end">
-                        {isPending && (
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedActivityForComplete(activity)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              <span>{t("crm.activities.completeAction", "إكمال")}</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleCancelActivity(activity)}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                              title={t("crm.activities.cancelAction", "إلغاء النشاط")}
-                            >
-                              <XCircle className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        )}
-                        {activity.state === "Completed" && activity.completedAt && (
-                          <span className="text-[11px] text-slate-500">
-                            {t("crm.activities.completedAt", "أُنجز بتاريخ")}{" "}
-                            {new Date(activity.completedAt).toLocaleDateString(i18n.language)}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                      </div>
+                    </TableCell>
 
-        {/* Pagination Bar */}
+                    <TableCell>
+                      {activity.leadId ? (
+                        <span style={{ padding: "0.125rem 0.5rem", borderRadius: "var(--radius-sm)", fontSize: "0.75rem", fontWeight: 600, backgroundColor: "#fffbeb", color: "#92400e", border: "1px solid #fde68a" }}>
+                          {t("crm.activities.leadContext", "عميل محتمل")}
+                        </span>
+                      ) : activity.opportunityId ? (
+                        <span style={{ padding: "0.125rem 0.5rem", borderRadius: "var(--radius-sm)", fontSize: "0.75rem", fontWeight: 600, backgroundColor: "#eff6ff", color: "#1e40af", border: "1px solid #bfdbfe" }}>
+                          {t("crm.activities.opportunityContext", "فرصة بيعية")}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--color-content-muted)" }}>—</span>
+                      )}
+                    </TableCell>
+
+                    <TableCell style={{ whiteSpace: "nowrap" }}>
+                      {activity.dueAt ? (
+                        <span style={{ fontSize: "0.8125rem", fontWeight: isOverdue ? 700 : 500, color: isOverdue ? "var(--color-status-danger, #dc2626)" : "var(--color-content-primary)" }}>
+                          {new Date(activity.dueAt).toLocaleDateString(i18n.language, {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                          {isOverdue && (
+                            <span style={{ marginInlineStart: "0.375rem", padding: "0.125rem 0.375rem", borderRadius: "var(--radius-sm)", fontSize: "0.6875rem", backgroundColor: "#fef2f2", color: "#dc2626" }}>
+                              {t("crm.activities.overdue", "متأخر")}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--color-content-muted)" }}>—</span>
+                      )}
+                    </TableCell>
+
+                    <TableCell style={{ whiteSpace: "nowrap" }}>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "0.25rem",
+                          padding: "0.25rem 0.625rem",
+                          borderRadius: "9999px",
+                          fontSize: "0.75rem",
+                          fontWeight: 600,
+                          backgroundColor:
+                            activity.state === "Completed" ? "var(--color-status-success-subtle, #ecfdf5)" :
+                            activity.state === "Cancelled" ? "var(--color-surface-subtle, #f1f5f9)" :
+                            "var(--color-status-info-subtle, #eff6ff)",
+                          color:
+                            activity.state === "Completed" ? "var(--color-status-success, #059669)" :
+                            activity.state === "Cancelled" ? "var(--color-content-muted, #64748b)" :
+                            "var(--color-brand-primary, #102a43)",
+                          border: `1px solid ${
+                            activity.state === "Completed" ? "#a7f3d0" :
+                            activity.state === "Cancelled" ? "var(--color-border-default)" :
+                            "#bfdbfe"
+                          }`
+                        }}
+                      >
+                        {activity.state === "Completed" && <CheckCircle2 style={{ width: "0.75rem", height: "0.75rem" }} />}
+                        {activity.state === "Cancelled" && <XCircle style={{ width: "0.75rem", height: "0.75rem" }} />}
+                        {(activity.state === "Pending" || (activity.state as string) === "Scheduled") && <Clock style={{ width: "0.75rem", height: "0.75rem" }} />}
+                        {(activity.state as string) === "Scheduled" ? t("crm.activities.states.pending", "قيد الانتظار") : t(`crm.activities.states.${activity.state.toLowerCase()}`, activity.state)}
+                      </span>
+                    </TableCell>
+
+                    <TableCell style={{ textAlign: "end", whiteSpace: "nowrap" }}>
+                      {isPending && (
+                        <div style={{ display: "inline-flex", gap: "0.375rem", alignItems: "center" }}>
+                          <Button
+                            variant="secondary"
+                            size="compact"
+                            onPress={() => setSelectedActivityForComplete(activity)}
+                          >
+                            <CheckCircle2 style={{ width: "0.75rem", height: "0.75rem", marginInlineEnd: "0.25rem", color: "var(--color-status-success)" }} />
+                            {t("crm.activities.completeAction", "إكمال")}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="compact"
+                            onPress={() => handleCancelActivity(activity)}
+                          >
+                            <XCircle style={{ width: "0.75rem", height: "0.75rem", marginInlineEnd: "0.25rem", color: "var(--color-status-danger)" }} />
+                            {t("crm.activities.cancelAction", "إلغاء")}
+                          </Button>
+                        </div>
+                      )}
+                      {!isPending && activity.completedAt && (
+                        <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                          {t("crm.activities.completedAt", "أُنجز بتاريخ")}{" "}
+                          {new Date(activity.completedAt).toLocaleDateString(i18n.language)}
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
-            <div>
-              {t("crm.common.pageInfo", "صفحة {{current}} من {{total}} (إجمالي {{count}})", {
-                current: page,
-                total: totalPages,
-                count: totalCount,
-              })}
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="px-2.5 py-1 rounded border border-slate-300 bg-white font-medium disabled:opacity-50 hover:bg-slate-50"
-              >
-                {t("crm.common.prev", "السابق")}
-              </button>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="px-2.5 py-1 rounded border border-slate-300 bg-white font-medium disabled:opacity-50 hover:bg-slate-50"
-              >
-                {t("crm.common.next", "التالي")}
-              </button>
-            </div>
+          <div style={{ padding: "0.75rem 1.25rem", borderTop: "1px solid var(--color-border-default)" }}>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+            />
           </div>
         )}
       </div>
@@ -329,10 +338,10 @@ export const CrmActivitiesTab: React.FC<CrmActivitiesTabProps> = ({
 
       {selectedActivityForComplete && (
         <CompleteActivityModal
-          isOpen={!!selectedActivityForComplete}
+          isOpen={Boolean(selectedActivityForComplete)}
           onClose={() => setSelectedActivityForComplete(null)}
-          legalEntityId={legalEntityId}
           activity={selectedActivityForComplete}
+          legalEntityId={legalEntityId}
         />
       )}
     </div>

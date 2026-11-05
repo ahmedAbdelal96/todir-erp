@@ -28,7 +28,7 @@ export function NewOpportunityModal({
   const [name, setName] = useState("");
   const [selectedPipelineId, setSelectedPipelineId] = useState("");
   const [selectedStageId, setSelectedStageId] = useState("");
-  const [estimatedAmount, setEstimatedAmount] = useState("50000");
+  const [estimatedAmount, setEstimatedAmount] = useState("");
   const [currencyCode, setCurrencyCode] = useState("EGP");
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [forecastCategory, setForecastCategory] = useState<ForecastCategory>("Pipeline");
@@ -36,7 +36,7 @@ export function NewOpportunityModal({
 
   const reset = () => {
     setName("");
-    setEstimatedAmount("50000");
+    setEstimatedAmount("");
     setCurrencyCode("EGP");
     setExpectedCloseDate(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
     setForecastCategory("Pipeline");

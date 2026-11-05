@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { Checkbox } from "../../../../components/primitives/checkbox.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { useCompleteActivityMutation } from "../../hooks/use-crm-queries.ts";
 import { mapCrmError } from "../../services/crm-error-map.ts";
@@ -106,7 +107,7 @@ export function CompleteActivityModal({
             style={{
               padding: "0.625rem 0.875rem",
               borderRadius: "var(--radius-sm)",
-              background: "var(--color-status-danger-subtle, #fee2e2)",
+              backgroundColor: "var(--color-status-danger-subtle, #fee2e2)",
               color: "var(--color-status-danger, #b91c1c)",
               fontSize: "0.8125rem"
             }}
@@ -140,14 +141,14 @@ export function CompleteActivityModal({
 
         {/* Next Action Checkbox & Fields */}
         <div style={{ border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)", padding: "0.875rem", backgroundColor: "var(--color-surface-subtle)" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={createNextAction}
-              onChange={(e) => setCreateNextAction(e.target.checked)}
-            />
-            {t("activities.completeModal.createNextAction")}
-          </label>
+          <Checkbox
+            isSelected={createNextAction}
+            onChange={setCreateNextAction}
+          >
+            <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>
+              {t("activities.completeModal.createNextAction")}
+            </span>
+          </Checkbox>
 
           {createNextAction && (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.75rem" }}>

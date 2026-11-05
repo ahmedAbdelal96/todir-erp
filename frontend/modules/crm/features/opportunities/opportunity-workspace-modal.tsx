@@ -117,11 +117,12 @@ export function OpportunityWorkspaceModal({
               <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>
                 {t("opportunities.fields.estimatedAmount")}
               </span>
-              <MoneyDisplay
-                value={{ amount: String(opportunity.estimatedAmount), currency: opportunity.currencyCode || "EGP" }}
-                size="large"
-                className="font-black text-2xl text-sky-700"
-              />
+              <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-brand-primary, #102a43)" }}>
+                <MoneyDisplay
+                  value={{ amount: String(opportunity.estimatedAmount), currency: opportunity.currencyCode || "EGP" }}
+                  size="large"
+                />
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>

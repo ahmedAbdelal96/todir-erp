@@ -12,6 +12,7 @@ export function DealHealthBadge({ status, score }: DealHealthBadgeProps): React.
 
   const getStyle = (): { bg: string; text: string; border: string } => {
     switch (status) {
+      case "Healthy":
       case "Good":
         return {
           bg: "var(--color-status-success-subtle, #ecfdf5)",
@@ -65,7 +66,13 @@ export function DealHealthBadge({ status, score }: DealHealthBadgeProps): React.
           backgroundColor: style.text
         }}
       />
-      {t(`dealHealth.${status === "AtRisk" ? "atRisk" : status.toLowerCase()}` as any, status)}
+      {status === "Healthy" || status === "Good"
+        ? t("dealHealth.good", "جيد ومستقر")
+        : status === "AtRisk"
+        ? t("dealHealth.atRisk", "معرض للخطر")
+        : status === "Stale"
+        ? t("dealHealth.stale", "متوقف وراكد")
+        : t(`dealHealth.${(status as string).toLowerCase()}` as any, status)}
       {score !== undefined && (
         <span style={{ opacity: 0.85, marginInlineStart: "0.125rem" }}>({score})</span>
       )}

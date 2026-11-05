@@ -36,6 +36,7 @@ const fullCrmDictionary = {
     importing: "Importing...",
   },
   dealHealth: {
+    healthy: "Good & Healthy",
     good: "Good & Healthy",
     fair: "Fair",
     atRisk: "At Risk",

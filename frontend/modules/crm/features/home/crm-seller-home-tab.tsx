@@ -1,39 +1,38 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  useCrmSellerHomeQuery,
   useCrmSellerWorklistQuery,
-  useCrmSellerAttentionQuery,
+  useLeads,
   useCrmPipelineInspectionQuery,
-  useCrmReportsSummaryQuery,
   useCrmForecastQuery,
-} from "../../hooks/use-crm-queries";
-import { Activity, Lead, Opportunity } from "../../types";
-import { ActivityTypeBadge } from "../../components/activity-type-badge";
-import { DealHealthBadge } from "../../components/deal-health-badge";
-import { PriorityBadge } from "../../components/priority-badge";
-import { CompleteActivityModal } from "../activities/complete-activity-modal";
-import { NewActivityModal } from "../activities/new-activity-modal";
-import { QualifyLeadModal } from "../leads/qualify-lead-modal";
-import { OpportunityWorkspaceModal } from "../opportunities/opportunity-workspace-modal";
+} from "../../hooks/use-crm-queries.ts";
+import { Activity, Lead, Opportunity } from "../../types.ts";
+import { ActivityTypeBadge } from "../../components/activity-type-badge.tsx";
+import { DealHealthBadge } from "../../components/deal-health-badge.tsx";
+import { PriorityBadge } from "../../components/priority-badge.tsx";
+import { CrmKpiCard } from "../../components/crm-kpi-card.tsx";
+import { CompleteActivityModal } from "../activities/complete-activity-modal.tsx";
+import { NewActivityModal } from "../activities/new-activity-modal.tsx";
+import { QualifyLeadModal } from "../leads/qualify-lead-modal.tsx";
+import { OpportunityWorkspaceModal } from "../opportunities/opportunity-workspace-modal.tsx";
+import { Surface } from "../../../../components/pages/surface.tsx";
+import { Button } from "../../../../components/primitives/button.tsx";
 import {
   CalendarCheck,
   AlertTriangle,
   Flame,
   CheckCircle2,
   Clock,
-  ArrowRight,
   TrendingUp,
-  UserCheck,
   DollarSign,
   Plus,
 } from "../../components/crm-icons.tsx";
 
 interface CrmSellerHomeTabProps {
-  legalEntityId: string;
-  onNavigateToLeads: () => void;
-  onNavigateToOpportunities: () => void;
-  onNavigateToActivities: () => void;
+  readonly legalEntityId: string;
+  readonly onNavigateToLeads: () => void;
+  readonly onNavigateToOpportunities: () => void;
+  readonly onNavigateToActivities: () => void;
 }
 
 export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
@@ -43,7 +42,6 @@ export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
   onNavigateToActivities,
 }) => {
   const { t, i18n } = useTranslation("crm");
-  const isRtl = i18n.dir() === "rtl";
 
   // Modal states
   const [completeActivity, setCompleteActivity] = useState<Activity | null>(null);
@@ -52,10 +50,9 @@ export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
 
   // Queries
-  const { data: reportsSummary } = useCrmReportsSummaryQuery(legalEntityId);
   const { data: forecastData } = useCrmForecastQuery(legalEntityId);
   const { data: worklistActivities, isLoading: loadingWorklist } = useCrmSellerWorklistQuery(legalEntityId);
-  const { data: attentionLeads, isLoading: loadingAttention } = useCrmSellerAttentionQuery(legalEntityId);
+  const { data: newLeadsData, isLoading: loadingAttention } = useLeads(legalEntityId, { status: "New", pageSize: 6 });
   const { data: inspectionDeals, isLoading: loadingInspection } = useCrmPipelineInspectionQuery(legalEntityId);
 
   const formatCurrency = (val: number) => {
@@ -67,289 +64,311 @@ export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
   };
 
   const activities = worklistActivities?.items || [];
-  const leads = attentionLeads?.items || [];
+  const leads = newLeadsData?.items || [];
   const staleDeals = inspectionDeals?.items || [];
 
   return (
-    <div className="space-y-6">
-      {/* Welcome & KPI Banner */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {/* KPI Cards Row - Responsive Auto-fit Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
         {/* KPI 1: Due & Overdue Tasks */}
-        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold">{t("crm.sellerHome.kpiDueTasks", "متابعات اليوم")}</span>
-            <CalendarCheck className="h-4 w-4 text-primary-600" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900">
-            {activities.length}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {t("crm.sellerHome.kpiDueTasksHint", "تتطلب اتصال أو مقابلة اليوم")}
-          </p>
-        </div>
+        <CrmKpiCard
+          title={t("crm.sellerHome.kpiDueTasks", "متابعات اليوم")}
+          value={activities.length}
+          subtitle={t("crm.sellerHome.kpiDueTasksHint", "تتطلب اتصال أو مقابلة اليوم")}
+          tone="primary"
+          icon={<CalendarCheck style={{ width: "1.125rem", height: "1.125rem" }} />}
+          onClick={onNavigateToActivities}
+        />
 
         {/* KPI 2: Attention Leads */}
-        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-amber-600 mb-2">
-            <span className="text-xs font-semibold text-slate-600">{t("crm.sellerHome.kpiAttentionLeads", "عملاء بحاجة لمتابعة")}</span>
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900">
-            {leads.length}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {t("crm.sellerHome.kpiAttentionLeadsHint", "عملاء جدد لم يُتصل بهم بعد")}
-          </p>
-        </div>
+        <CrmKpiCard
+          title={t("crm.sellerHome.kpiAttentionLeads", "عملاء بحاجة لمتابعة")}
+          value={leads.length}
+          subtitle={t("crm.sellerHome.kpiAttentionLeadsHint", "عملاء جدد لم يُتصل بهم بعد")}
+          tone="warning"
+          icon={<AlertTriangle style={{ width: "1.125rem", height: "1.125rem" }} />}
+          onClick={onNavigateToLeads}
+        />
 
         {/* KPI 3: Pipeline Stale Deals */}
-        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-rose-600 mb-2">
-            <span className="text-xs font-semibold text-slate-600">{t("crm.sellerHome.kpiStaleDeals", "صفقات متوقفة")}</span>
-            <Flame className="h-4 w-4 text-rose-500" />
-          </div>
-          <div className="text-2xl font-bold text-slate-900">
-            {staleDeals.length}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {t("crm.sellerHome.kpiStaleDealsHint", "بلا نشاط مسجل لأكثر من 14 يوم")}
-          </p>
-        </div>
+        <CrmKpiCard
+          title={t("crm.sellerHome.kpiStaleDeals", "صفقات متوقفة")}
+          value={staleDeals.length}
+          subtitle={t("crm.sellerHome.kpiStaleDealsHint", "بلا نشاط مسجل لأكثر من 14 يوم")}
+          tone="danger"
+          icon={<Flame style={{ width: "1.125rem", height: "1.125rem" }} />}
+          onClick={onNavigateToOpportunities}
+        />
 
         {/* KPI 4: Open Pipeline Total */}
-        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-emerald-600 mb-2">
-            <span className="text-xs font-semibold text-slate-600">{t("crm.sellerHome.kpiOpenPipeline", "إجمالي قيد التفاوض")}</span>
-            <DollarSign className="h-4 w-4 text-emerald-600" />
-          </div>
-          <div className="text-xl font-bold text-emerald-700 truncate">
-            {formatCurrency(forecastData?.pipelineAmount || 0)}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {t("crm.sellerHome.kpiOpenPipelineHint", "قيمة الصفقات النشطة الخاصة بك")}
-          </p>
-        </div>
+        <CrmKpiCard
+          title={t("crm.sellerHome.kpiOpenPipeline", "إجمالي قيد التفاوض")}
+          value={<bdi>{formatCurrency(forecastData?.pipelineAmount || 0)}</bdi>}
+          subtitle={t("crm.sellerHome.kpiOpenPipelineHint", "قيمة الصفقات النشطة الخاصة بك")}
+          tone="success"
+          icon={<DollarSign style={{ width: "1.125rem", height: "1.125rem" }} />}
+          onClick={onNavigateToOpportunities}
+        />
       </div>
 
-      {/* Main Grid: Worklist on Left/Top, Attention Leads on Right/Bottom */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column (8 cols): Worklist of Follow-ups */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CalendarCheck className="h-5 w-5 text-primary-600" />
-                <h3 className="text-sm font-bold text-slate-900">
+      {/* Main Grid: Worklist on Left, Attention Leads & Stale Deals on Right */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "1.5rem", alignItems: "start" }}>
+        {/* Left Column: Worklist of Follow-ups */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          <Surface padding="none" variant="card">
+            {/* Header */}
+            <div
+              style={{
+                padding: "1rem 1.25rem",
+                backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                borderBottom: "1px solid var(--color-border-default, #cbd5e1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "0.75rem"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <CalendarCheck style={{ width: "1.25rem", height: "1.25rem", color: "var(--color-brand-primary, #102a43)" }} />
+                <h2 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
                   {t("crm.sellerHome.worklistTitle", "متابعات ومهام اليوم")}
-                </h3>
+                </h2>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setNewActivityOpen(true)}
-                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-primary-600 hover:bg-primary-700 text-white rounded font-medium shadow-xs"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>{t("crm.activities.createButton", "نشاط جديد")}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onNavigateToActivities}
-                  className="text-xs text-primary-600 hover:text-primary-800 font-semibold"
-                >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Button variant="primary" size="compact" onPress={() => setNewActivityOpen(true)}>
+                  + {t("crm.activities.createButton", "نشاط جديد")}
+                </Button>
+                <Button variant="secondary" size="compact" onPress={onNavigateToActivities}>
                   {t("crm.common.viewAll", "عرض الكل")}
-                </button>
+                </Button>
               </div>
             </div>
 
-            <div className="p-0 divide-y divide-slate-100">
+            {/* Content List */}
+            <div style={{ display: "flex", flexDirection: "column" }}>
               {loadingWorklist ? (
-                <div className="p-8 text-center text-slate-400 text-sm">
+                <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted, #64748b)", fontSize: "0.875rem" }}>
                   {t("crm.common.loading", "جاري تحميل المهام...")}
                 </div>
               ) : activities.length === 0 ? (
-                <div className="p-8 text-center">
-                  <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500 mb-2" />
-                  <p className="text-sm font-medium text-slate-700">
+                <div style={{ padding: "2.5rem 1.5rem", textAlign: "center" }}>
+                  <CheckCircle2 style={{ margin: "0 auto 0.5rem", width: "2rem", height: "2rem", color: "var(--color-status-success, #059669)" }} />
+                  <p style={{ margin: 0, fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-primary, #0f172a)" }}>
                     {t("crm.sellerHome.noPendingActivities", "ممتاز! لا توجد مهام متأخرة أو مستحقة اليوم.")}
                   </p>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
                     {t("crm.sellerHome.allCaughtUp", "حافظ على زخم المبيعات بجدولة مكالمات أو عروض جديدة.")}
                   </p>
                 </div>
               ) : (
-                activities.slice(0, 5).map((act) => {
+                activities.slice(0, 5).map((act, index) => {
                   const isOverdue = act.dueAt && new Date(act.dueAt) < new Date();
                   return (
                     <div
                       key={act.id}
-                      className="p-3.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3"
+                      style={{
+                        padding: "0.875rem 1.25rem",
+                        borderBottom: index < activities.length - 1 ? "1px solid var(--color-border-subtle, #e2e8f0)" : "none",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "0.75rem",
+                        backgroundColor: isOverdue ? "rgba(254, 242, 242, 0.5)" : "transparent"
+                      }}
                     >
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className="mt-0.5">
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem", minWidth: 0, flex: 1 }}>
+                        <div style={{ marginTop: "0.125rem" }}>
                           <ActivityTypeBadge type={act.type} />
                         </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-slate-900 truncate">
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-primary, #0f172a)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {act.subject}
                           </div>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
-                            {act.dueAt && (
-                              <span className={`inline-flex items-center gap-1 ${isOverdue ? "text-rose-600 font-bold" : ""}`}>
-                                <Clock className="h-3 w-3" />
+                          {act.dueAt && (
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginTop: "0.25rem", fontSize: "0.75rem", color: isOverdue ? "var(--color-status-danger, #dc2626)" : "var(--color-content-muted, #64748b)" }}>
+                              <Clock style={{ width: "0.75rem", height: "0.75rem" }} />
+                              <span style={{ fontWeight: isOverdue ? 700 : 400 }}>
                                 {new Date(act.dueAt).toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit" })}
                                 {isOverdue && ` (${t("crm.activities.overdue", "متأخر")})`}
                               </span>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setCompleteActivity(act)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                      <div style={{ flexShrink: 0 }}>
+                        <Button
+                          variant="secondary"
+                          size="compact"
+                          onPress={() => setCompleteActivity(act)}
                         >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          <span>{t("crm.activities.completeAction", "إكمال")}</span>
-                        </button>
+                          <CheckCircle2 style={{ width: "0.875rem", height: "0.875rem", marginInlineEnd: "0.25rem", color: "var(--color-status-success, #059669)" }} />
+                          {t("crm.activities.completeAction", "إكمال")}
+                        </Button>
                       </div>
                     </div>
                   );
                 })
               )}
             </div>
-          </div>
+          </Surface>
 
-          {/* Stale Opportunities Alert Section */}
-          <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Flame className="h-5 w-5 text-rose-500" />
-                <h3 className="text-sm font-bold text-slate-900">
+          {/* Stale Deals Alert Card */}
+          <Surface padding="none" variant="card">
+            <div
+              style={{
+                padding: "1rem 1.25rem",
+                backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                borderBottom: "1px solid var(--color-border-default, #cbd5e1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "0.75rem"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Flame style={{ width: "1.25rem", height: "1.25rem", color: "var(--color-status-danger, #dc2626)" }} />
+                <h2 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
                   {t("crm.sellerHome.staleDealsTitle", "صفقات متوقفة بحاجة لتحريك")}
-                </h3>
+                </h2>
               </div>
-              <button
-                type="button"
-                onClick={onNavigateToOpportunities}
-                className="text-xs text-primary-600 hover:text-primary-800 font-semibold"
-              >
+              <Button variant="secondary" size="compact" onPress={onNavigateToOpportunities}>
                 {t("crm.common.viewPipeline", "عرض المسار")}
-              </button>
+              </Button>
             </div>
 
-            <div className="p-0 divide-y divide-slate-100">
+            <div style={{ display: "flex", flexDirection: "column" }}>
               {loadingInspection ? (
-                <div className="p-8 text-center text-slate-400 text-sm">
+                <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted, #64748b)", fontSize: "0.875rem" }}>
                   {t("crm.common.loading", "جاري فحص المسار...")}
                 </div>
               ) : staleDeals.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-500">
+                <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-content-muted, #64748b)", fontSize: "0.8125rem" }}>
                   {t("crm.sellerHome.noStaleDeals", "جميع الصفقات في المسار تتم متابعتها بانتظام.")}
                 </div>
               ) : (
-                staleDeals.slice(0, 4).map((opp) => (
+                staleDeals.slice(0, 4).map((opp, index) => (
                   <div
                     key={opp.id}
                     onClick={() => setSelectedOpportunity(opp)}
-                    className="p-3 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                    style={{
+                      padding: "0.875rem 1.25rem",
+                      borderBottom: index < staleDeals.length - 1 ? "1px solid var(--color-border-subtle, #e2e8f0)" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "0.75rem",
+                      cursor: "pointer"
+                    }}
                   >
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 truncate">
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-primary, #0f172a)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {opp.name}
                       </div>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
-                        <span className="font-bold text-slate-700">
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                        <span style={{ fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
                           {formatCurrency(opp.estimatedAmount)}
                         </span>
                         <span>•</span>
                         <DealHealthBadge status={opp.healthStatus} score={opp.healthScore} />
                       </div>
                     </div>
-                    <div>
-                      <span className="text-xs font-semibold text-primary-600 hover:underline">
-                        {t("crm.common.openWorkspace", "فتح")}
-                      </span>
-                    </div>
+                    <Button variant="secondary" size="compact" onPress={() => setSelectedOpportunity(opp)}>
+                      {t("crm.common.openWorkspace", "فتح")}
+                    </Button>
                   </div>
                 ))
               )}
             </div>
-          </div>
+          </Surface>
         </div>
 
-        {/* Right Column (5 cols): Attention Leads */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                <h3 className="text-sm font-bold text-slate-900">
+        {/* Right Column: Attention Leads */}
+        <div>
+          <Surface padding="none" variant="card">
+            <div
+              style={{
+                padding: "1rem 1.25rem",
+                backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+                borderBottom: "1px solid var(--color-border-default, #cbd5e1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "0.75rem"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <AlertTriangle style={{ width: "1.25rem", height: "1.25rem", color: "var(--color-status-warning, #d97706)" }} />
+                <h2 style={{ margin: 0, fontSize: "0.9375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
                   {t("crm.sellerHome.attentionLeadsTitle", "عملاء محتملون بحاجة لمتابعة")}
-                </h3>
+                </h2>
               </div>
-              <button
-                type="button"
-                onClick={onNavigateToLeads}
-                className="text-xs text-primary-600 hover:text-primary-800 font-semibold"
-              >
+              <Button variant="secondary" size="compact" onPress={onNavigateToLeads}>
                 {t("crm.common.viewInbox", "صندوق العملاء")}
-              </button>
+              </Button>
             </div>
 
-            <div className="p-0 divide-y divide-slate-100">
+            <div style={{ display: "flex", flexDirection: "column" }}>
               {loadingAttention ? (
-                <div className="p-8 text-center text-slate-400 text-sm">
-                  {t("crm.common.loading", "جاري التحميل...")}
+                <div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted, #64748b)", fontSize: "0.875rem" }}>
+                  {t("crm.common.loading", "جاري تحميل العملاء...")}
                 </div>
               ) : leads.length === 0 ? (
-                <div className="p-8 text-center">
-                  <UserCheck className="mx-auto h-8 w-8 text-slate-300 mb-2" />
-                  <p className="text-sm font-medium text-slate-700">
-                    {t("crm.sellerHome.noAttentionLeads", "لا يوجد عملاء جدد عالقون بدون تواصل.")}
-                  </p>
+                <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-content-muted, #64748b)", fontSize: "0.8125rem" }}>
+                  {t("crm.sellerHome.noAttentionLeads", "لا يوجد عملاء جدد عالقون بدون تواصل.")}
                 </div>
               ) : (
-                leads.slice(0, 6).map((ld: Activity) => (
+                leads.slice(0, 6).map((lead, index) => (
                   <div
-                    key={ld.id}
-                    className="p-3.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-2"
+                    key={lead.id}
+                    style={{
+                      padding: "0.875rem 1.25rem",
+                      borderBottom: index < leads.length - 1 ? "1px solid var(--color-border-subtle, #e2e8f0)" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "0.75rem"
+                    }}
                   >
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 truncate">
-                        {ld.subject}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-primary, #0f172a)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {lead.displayName}
                       </div>
-                      <div className="text-xs text-slate-500 truncate">
-                        {ld.notes || t("crm.leads.noContact", "لا توجد تفاصيل")}
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                        {lead.companyName && <span>{lead.companyName}</span>}
+                        {lead.companyName && <span>•</span>}
+                        <PriorityBadge priority={lead.priority} />
                       </div>
                     </div>
 
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => setCompleteActivity(ld)}
-                        className="px-2.5 py-1 text-xs font-semibold rounded bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200 cursor-pointer"
+                    <div style={{ flexShrink: 0 }}>
+                      <Button
+                        variant="secondary"
+                        size="compact"
+                        onPress={() => setQualifyLead(lead)}
                       >
-                        {t("crm.activities.completeAction", "إكمال")}
-                      </button>
+                        {t("leads.actions.qualify", "تأهيل")}
+                      </Button>
                     </div>
                   </div>
                 ))
               )}
             </div>
-          </div>
+          </Surface>
         </div>
       </div>
 
-      {/* Modals */}
+      {/* Active Workspace / Action Modals */}
       {completeActivity && (
         <CompleteActivityModal
-          isOpen={!!completeActivity}
+          isOpen={Boolean(completeActivity)}
           onClose={() => setCompleteActivity(null)}
-          legalEntityId={legalEntityId}
           activity={completeActivity}
+          legalEntityId={legalEntityId}
         />
       )}
 
@@ -363,19 +382,19 @@ export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
 
       {qualifyLead && (
         <QualifyLeadModal
-          isOpen={!!qualifyLead}
+          isOpen={Boolean(qualifyLead)}
           onClose={() => setQualifyLead(null)}
-          legalEntityId={legalEntityId}
           lead={qualifyLead}
+          legalEntityId={legalEntityId}
         />
       )}
 
       {selectedOpportunity && (
         <OpportunityWorkspaceModal
-          isOpen={!!selectedOpportunity}
+          isOpen={Boolean(selectedOpportunity)}
           onClose={() => setSelectedOpportunity(null)}
-          legalEntityId={legalEntityId}
           opportunity={selectedOpportunity}
+          legalEntityId={legalEntityId}
         />
       )}
     </div>

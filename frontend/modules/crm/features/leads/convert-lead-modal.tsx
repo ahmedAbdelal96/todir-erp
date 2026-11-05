@@ -34,7 +34,7 @@ export function ConvertLeadModal({
   const [selectedPipelineId, setSelectedPipelineId] = useState("");
   const [selectedStageId, setSelectedStageId] = useState("");
   const [opportunityName, setOpportunityName] = useState("");
-  const [estimatedAmount, setEstimatedAmount] = useState("50000");
+  const [estimatedAmount, setEstimatedAmount] = useState("");
   const [currencyCode, setCurrencyCode] = useState("EGP");
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -44,7 +44,7 @@ export function ConvertLeadModal({
       setNewPartyName(lead.companyName || lead.displayName);
       setNewPartyType(lead.companyName ? "Organization" : "Individual");
       setOpportunityName(`فرصة - ${lead.companyName || lead.displayName}`);
-      setEstimatedAmount("50000");
+      setEstimatedAmount("");
       setCurrencyCode("EGP");
       setExpectedCloseDate(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
       setErrorMessage(null);

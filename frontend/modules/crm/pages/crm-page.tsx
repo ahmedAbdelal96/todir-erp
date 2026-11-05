@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider";
@@ -21,8 +21,7 @@ import {
 export type CrmTabId = "home" | "leads" | "opportunities" | "activities" | "management";
 
 export function CrmPage(): React.JSX.Element {
-  const { t, i18n } = useTranslation("crm");
-  const isRtl = i18n.dir() === "rtl";
+  const { t } = useTranslation("crm");
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const runtimeContext = useOptionalLegalEntityContext();
@@ -51,124 +50,159 @@ export function CrmPage(): React.JSX.Element {
 
   if (!legalEntityId) {
     return (
-      <div className="m-6 p-8 bg-white border border-slate-200 rounded-lg shadow-sm text-center">
-        <Building2 className="mx-auto h-12 w-12 text-slate-400 mb-3" />
-        <h2 className="text-lg font-bold text-slate-900 mb-1">
+      <div
+        role="alert"
+        style={{
+          margin: "1.5rem",
+          padding: "2rem",
+          backgroundColor: "var(--color-surface-card, #ffffff)",
+          border: "1px solid var(--color-border-default, #cbd5e1)",
+          borderRadius: "var(--radius-lg, 0.75rem)",
+          boxShadow: "var(--shadow-sm, 0 1px 3px 0 rgba(15, 23, 42, 0.08))",
+          textAlign: "center"
+        }}
+      >
+        <Building2 style={{ margin: "0 auto 0.75rem", height: "3rem", width: "3rem", color: "var(--color-content-muted, #64748b)" }} />
+        <h2 style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)", marginBottom: "0.25rem" }}>
           {t("page.contextRequiredTitle", "يلزم اختيار الكيان القانوني")}
         </h2>
-        <p className="text-sm text-slate-500">
+        <p style={{ fontSize: "0.875rem", color: "var(--color-content-muted, #64748b)", margin: 0 }}>
           {t("page.contextRequiredDescription", "يرجى تحديد الشركة أو الكيان القانوني من شريط التنقل للوصول إلى إدارة علاقات العملاء.")}
         </p>
       </div>
     );
   }
 
+  const tabs: Array<{ id: CrmTabId; label: string; icon: React.ReactNode }> = [
+    { id: "home", label: t("tabs.home", "مبيعاتي اليوم"), icon: <CalendarCheck style={{ width: "1rem", height: "1rem" }} /> },
+    { id: "leads", label: t("tabs.leads", "العملاء المحتملين"), icon: <Users style={{ width: "1rem", height: "1rem" }} /> },
+    { id: "opportunities", label: t("tabs.opportunities", "الفرص والمسار البيعي"), icon: <Kanban style={{ width: "1rem", height: "1rem" }} /> },
+    { id: "activities", label: t("tabs.activities", "الأنشطة والمتابعات"), icon: <CheckSquare style={{ width: "1rem", height: "1rem" }} /> },
+    { id: "management", label: t("tabs.management", "إدارة المبيعات والتقارير"), icon: <BarChart2 style={{ width: "1rem", height: "1rem" }} /> },
+  ];
+
   return (
-    <div data-testid="crm-page" className="min-h-screen bg-[#f0f4f8] pb-12">
+    <div
+      data-testid="crm-page"
+      style={{
+        minHeight: "100%",
+        display: "flex",
+        flexDirection: "column",
+        backgroundColor: "var(--color-surface-page, #f0f4f8)",
+        paddingBottom: "3rem"
+      }}
+    >
       {/* Top Header Anchor - High Contrast Oxford Navy */}
-      <div className="bg-[#102a43] text-white border-b border-slate-800 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-primary-600 rounded-lg shadow-inner">
-                <Target className="h-6 w-6 text-white" />
+      <header
+        style={{
+          backgroundColor: "var(--color-brand-primary, #102a43)",
+          color: "#ffffff",
+          borderBottom: "1px solid #0c1f31",
+          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)",
+          padding: "1.25rem 1.5rem 0",
+          boxSizing: "border-box"
+        }}
+      >
+        <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <div
+                style={{
+                  padding: "0.625rem",
+                  backgroundColor: "rgba(255, 255, 255, 0.12)",
+                  borderRadius: "var(--radius-md, 0.5rem)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "1px solid rgba(255, 255, 255, 0.2)"
+                }}
+              >
+                <Target style={{ height: "1.5rem", width: "1.5rem", color: "#60a5fa" }} />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-white tracking-tight">
+                <h1 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.01em" }}>
                   {t("page.title", "إدارة علاقات العملاء (CRM)")}
                 </h1>
-                <p className="text-xs text-slate-300 mt-0.5">
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.8125rem", color: "#94a3b8" }}>
                   {t("page.subtitle", "متابعة العملاء المحتملين، مسارات الصفقات، والأنشطة البيعية")}
                 </p>
               </div>
             </div>
 
-            {/* Quick stats or context indicator */}
-            <div className="flex items-center gap-2 text-xs text-slate-300 bg-slate-800/80 px-3 py-1.5 rounded-md border border-slate-700">
-              <Building2 className="h-4 w-4 text-primary-400" />
-              <span>{runtimeContext?.name || t("page.currentEntity", "الكيان النشط")}</span>
+            {/* Entity Context Badge */}
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                fontSize: "0.8125rem",
+                color: "#e2e8f0",
+                backgroundColor: "rgba(255, 255, 255, 0.08)",
+                padding: "0.375rem 0.75rem",
+                borderRadius: "var(--radius-md, 0.5rem)",
+                border: "1px solid rgba(255, 255, 255, 0.15)"
+              }}
+            >
+              <Building2 style={{ width: "1rem", height: "1rem", color: "#38bdf8" }} />
+              <span style={{ fontWeight: 600 }}>{runtimeContext?.name || t("page.currentEntity", "الكيان النشط")}</span>
             </div>
           </div>
 
           {/* Navigation Tab Bar */}
-          <div className="mt-6 border-b border-slate-700/60">
-            <nav className="flex space-x-6 rtl:space-x-reverse overflow-x-auto pb-px" aria-label={t("page.tabsNavAria", "تبويبات إدارة علاقات العملاء")}>
-              {/* Tab 1: Home / My Sales Today */}
-              <button
-                type="button"
-                onClick={() => handleTabChange("home")}
-                className={`pb-3 px-1 border-b-2 font-semibold text-sm inline-flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
-                  activeTab === "home"
-                    ? "border-primary-400 text-primary-300"
-                    : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-500"
-                }`}
-              >
-                <CalendarCheck className="h-4 w-4" />
-                <span>{t("tabs.home", "مبيعاتي اليوم")}</span>
-              </button>
-
-              {/* Tab 2: Leads Inbox */}
-              <button
-                type="button"
-                onClick={() => handleTabChange("leads")}
-                className={`pb-3 px-1 border-b-2 font-semibold text-sm inline-flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
-                  activeTab === "leads"
-                    ? "border-primary-400 text-primary-300"
-                    : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-500"
-                }`}
-              >
-                <Users className="h-4 w-4" />
-                <span>{t("tabs.leads", "العملاء المحتملين")}</span>
-              </button>
-
-              {/* Tab 3: Opportunities & Pipeline */}
-              <button
-                type="button"
-                onClick={() => handleTabChange("opportunities")}
-                className={`pb-3 px-1 border-b-2 font-semibold text-sm inline-flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
-                  activeTab === "opportunities"
-                    ? "border-primary-400 text-primary-300"
-                    : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-500"
-                }`}
-              >
-                <Kanban className="h-4 w-4" />
-                <span>{t("tabs.opportunities", "الفرص والمسار البيعي")}</span>
-              </button>
-
-              {/* Tab 4: Activities */}
-              <button
-                type="button"
-                onClick={() => handleTabChange("activities")}
-                className={`pb-3 px-1 border-b-2 font-semibold text-sm inline-flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
-                  activeTab === "activities"
-                    ? "border-primary-400 text-primary-300"
-                    : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-500"
-                }`}
-              >
-                <CheckSquare className="h-4 w-4" />
-                <span>{t("tabs.activities", "الأنشطة والمتابعات")}</span>
-              </button>
-
-              {/* Tab 5: Sales Management */}
-              <button
-                type="button"
-                onClick={() => handleTabChange("management")}
-                className={`pb-3 px-1 border-b-2 font-semibold text-sm inline-flex items-center gap-2 whitespace-nowrap transition-colors cursor-pointer ${
-                  activeTab === "management"
-                    ? "border-primary-400 text-primary-300"
-                    : "border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-500"
-                }`}
-              >
-                <BarChart2 className="h-4 w-4" />
-                <span>{t("tabs.management", "إدارة المبيعات والتقارير")}</span>
-              </button>
-            </nav>
-          </div>
+          <nav
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              overflowX: "auto",
+              paddingBottom: 0,
+              marginTop: "1.25rem",
+              borderBottom: "1px solid rgba(255, 255, 255, 0.12)"
+            }}
+            aria-label={t("page.tabsNavAria", "تبويبات إدارة علاقات العملاء")}
+          >
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => handleTabChange(tab.id)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    padding: "0.625rem 1rem",
+                    background: isActive ? "rgba(255, 255, 255, 0.15)" : "transparent",
+                    color: isActive ? "#ffffff" : "#94a3b8",
+                    fontWeight: isActive ? 700 : 500,
+                    fontSize: "0.875rem",
+                    border: "none",
+                    borderBottom: `2px solid ${isActive ? "#38bdf8" : "transparent"}`,
+                    borderRadius: "var(--radius-md, 0.5rem) var(--radius-md, 0.5rem) 0 0",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    transition: "all 0.15s ease"
+                  }}
+                >
+                  {tab.icon}
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
-      </div>
+      </header>
 
       {/* Main Tab Content Canvas */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <main
+        style={{
+          width: "100%",
+          maxWidth: "1400px",
+          margin: "0 auto",
+          padding: "1.5rem",
+          boxSizing: "border-box"
+        }}
+      >
         {activeTab === "home" && (
           <CrmSellerHomeTab
             legalEntityId={legalEntityId}
@@ -197,4 +231,5 @@ export function CrmPage(): React.JSX.Element {
     </div>
   );
 }
+
 export default CrmPage;
