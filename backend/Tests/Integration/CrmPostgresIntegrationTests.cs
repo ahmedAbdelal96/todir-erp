@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Modules.CRM.DTOs;
 using Modules.CRM.Repositories;
 using Npgsql;
@@ -62,6 +63,37 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
         await repository.CreateActivityAsync(tenant, fixture.ActorId, new(fixture.EntityId, null, first.Id, null, "Call", "Overdue follow-up", DateTimeOffset.UtcNow.AddDays(-2), null, fixture.ActorId, "attention-" + Guid.CreateVersion7().ToString("N")), default);
         var attention = await repository.ListSellerActivitiesAsync(tenant, fixture.EntityId, fixture.ActorId, "attention", false, 1, 20, default);
         Assert.Contains(attention.Items, x => x.Subject == "Overdue follow-up");
+    }
+
+    [CrmPostgresFact]
+    public async Task ConfigurationCustomFieldsAndForecastSnapshotPersistWithConcurrencyTokens()
+    {
+        var admin = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")!;
+        var runtime = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")!;
+        var fixture = await FixtureAsync(admin);
+        await using var dataSource = NpgsqlDataSource.Create(runtime);
+        var repository = new CrmRepository(dataSource);
+        var tenant = new TenantId(fixture.TenantId);
+        var fieldKey = "budget_" + Guid.CreateVersion7().ToString("N");
+        var definition = await repository.CreateCustomFieldDefinitionAsync(tenant, new(fixture.EntityId, "Lead", fieldKey, "Budget", "Decimal"), default);
+        var lead = await repository.CreateLeadAsync(tenant, fixture.ActorId, new(fixture.EntityId, "Custom field lead", null, "custom-field@example.test", null, "Integration"), "custom-field-" + Guid.CreateVersion7().ToString("N"), default);
+        using var budget = JsonDocument.Parse("12500.50");
+        var values = await repository.SetCustomFieldValuesAsync(tenant, fixture.ActorId, fixture.EntityId, new("Lead", lead.Id, new Dictionary<string, JsonElement> { [fieldKey] = budget.RootElement.Clone() }), default);
+        Assert.Equal(fieldKey, values.Single().FieldKey);
+        Assert.Contains((await repository.ListCustomFieldDefinitionsAsync(tenant, fixture.EntityId, "Lead", default)), item => item.Id == definition.Id);
+        var pipeline = (await repository.ListPipelinesAsync(tenant, fixture.EntityId, default)).Single(x => x.Id == fixture.PipelineId);
+        var reordered = await repository.ReorderStagesAsync(tenant, fixture.EntityId, fixture.PipelineId, new(pipeline.Stages.Reverse().Select(x => x.Id).ToArray(), pipeline.Version), default);
+        Assert.Equal(pipeline.Stages.Count, reordered.Count);
+        var requiredKey = "decision_" + Guid.CreateVersion7().ToString("N");
+        await repository.CreateCustomFieldDefinitionAsync(tenant, new(fixture.EntityId, "Opportunity", requiredKey, "Decision maker", "Text", fixture.ProposalStageId), default);
+        var opportunity = await repository.CreateOpportunityAsync(tenant, fixture.ActorId, new(fixture.EntityId, null, null, fixture.PipelineId, fixture.OpenStageId, "Required field transition", 100m, "EGP", null), default);
+        await Assert.ThrowsAsync<CrmException>(() => repository.MoveStageAsync(tenant, fixture.ActorId, fixture.EntityId, opportunity.Id, new(fixture.ProposalStageId, opportunity.Version), default));
+        using var decision = JsonDocument.Parse("\"CFO\"");
+        await repository.SetCustomFieldValuesAsync(tenant, fixture.ActorId, fixture.EntityId, new("Opportunity", opportunity.Id, new Dictionary<string, JsonElement> { [requiredKey] = decision.RootElement.Clone() }), default);
+        var moved = await repository.MoveStageAsync(tenant, fixture.ActorId, fixture.EntityId, opportunity.Id, new(fixture.ProposalStageId, opportunity.Version), default);
+        Assert.Equal(fixture.ProposalStageId, moved.StageId);
+        var snapshot = await repository.CreateForecastSnapshotAsync(tenant, fixture.ActorId, fixture.EntityId, new(DateOnly.FromDateTime(DateTime.UtcNow), "EGP"), default);
+        Assert.True(snapshot.OpenOpportunityCount >= 0);
     }
 
     private static async Task<Fixture> FixtureAsync(string connectionString)

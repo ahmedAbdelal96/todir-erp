@@ -35,6 +35,7 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<PayrollLedgerPostingConsumer, PayrollLedgerPostingConsumerDefinition>();
     bus.AddConsumer<PayrollPaymentRequestedConsumer, PayrollPaymentRequestedConsumerDefinition>();
     bus.AddConsumer<PayrollPaymentReconciliationConsumer, PayrollPaymentReconciliationConsumerDefinition>();
+    bus.AddConsumer<CrmExternalEventConsumer, CrmExternalEventConsumerDefinition>();
 });
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();

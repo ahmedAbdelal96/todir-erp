@@ -10,7 +10,7 @@ public sealed record TenantContextSnapshot(Guid TenantId, string Slug, string Di
 public sealed record RoleSummary(Guid Id, string Code, string Name, bool IsSystemTemplate, bool IsActive, long Version, IReadOnlyList<string> Permissions);
 public sealed record ModuleInstanceSummary(Guid Id, string ModuleId, string ScopeType, Guid? ScopeId, string Status, string ManifestVersion, long Version);
 public sealed record SettingSummary(Guid DefinitionId, string Key, string DataType, string Scope, bool Sensitive, JsonElement? Value, long Version);
-public sealed record AuditSummary(Guid Id, string ActorType, Guid? ActorId, Guid? MembershipId, string Module, string Action, string EntityType, Guid EntityId, string? Reason, DateTimeOffset OccurredAt, string? TraceId);
+public sealed record AuditSummary(Guid Id, Guid? LegalEntityId, Guid? BranchId, string ActorType, Guid? ActorId, Guid? MembershipId, string Module, string Action, string EntityType, Guid EntityId, string? Reason, DateTimeOffset OccurredAt, string? TraceId);
 public sealed record EntitlementSummary(long SnapshotVersion, DateTimeOffset IssuedAt, DateTimeOffset ValidUntil, string KeyId, IReadOnlyList<string> Modules, IReadOnlyList<string> Features, IReadOnlyDictionary<string, long> Limits);
 
 public interface IPlatformAdminSurfaceStore
@@ -138,11 +138,11 @@ public sealed class NpgsqlPlatformAdminSurfaceStore(NpgsqlDataSource dataSource)
         ValidatePage(offset, limit);
         return await WithTenantTransactionAsync(tenantId, async (connection, transaction, token) =>
         {
-            await using var command = new NpgsqlCommand("select id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, reason, occurred_at, trace_id from platform.audit_entry where tenant_id = $1 order by occurred_at desc, id desc limit $2 offset $3", connection, transaction);
+            await using var command = new NpgsqlCommand("select id, legal_entity_id, branch_id, actor_type, actor_id, membership_id, module, action, entity_type, entity_id, reason, occurred_at, trace_id from platform.audit_entry where tenant_id = $1 order by occurred_at desc, id desc limit $2 offset $3", connection, transaction);
             command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
             await using var reader = await command.ExecuteReaderAsync(token);
             var result = new List<AuditSummary>();
-            while (await reader.ReadAsync(token)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.IsDBNull(3) ? null : reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetGuid(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetFieldValue<DateTimeOffset>(9), reader.IsDBNull(10) ? null : reader.GetString(10)));
+            while (await reader.ReadAsync(token)) result.Add(new(reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetGuid(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetGuid(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.GetFieldValue<DateTimeOffset>(11), reader.IsDBNull(12) ? null : reader.GetString(12)));
             return result;
         }, cancellationToken);
     }
