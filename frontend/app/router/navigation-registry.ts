@@ -10,6 +10,7 @@ import { salesRoutes } from "@modules/sales/public.ts";
 import { purchasingRoutes } from "@modules/purchasing/public.ts";
 import { hrRoutes } from "@modules/hr/public.ts";
 import { payrollRoutes } from "@modules/payroll/public.ts";
+import { crmRoutes } from "@modules/crm/public.ts";
 import { identityRoutes } from "@modules/identity/public.ts";
 import { invoicingRoutes } from "@modules/invoicing/public.ts";
 import { migrationRoutes } from "@modules/migration/public.ts";
@@ -49,6 +50,7 @@ export const navigationRegistry: readonly ModuleNavigationRegistration[] = [
   purchasingRoutes.navigation,
   hrRoutes.navigation,
   payrollRoutes.navigation,
+  crmRoutes.navigation,
   previewNavigation,
   settingsNavigation
 ];
