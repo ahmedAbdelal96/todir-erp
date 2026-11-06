@@ -1,14 +1,21 @@
 extern alias WorkerAssembly;
 
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
+using Core.Identity;
 using Core.Messaging;
 using MassTransit;
 using MassTransit.Testing;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Modules.CRM.DTOs;
 using Modules.CRM.Repositories;
 using Modules.CRM.Services;
 using Npgsql;
+using RabbitMQ.Client;
 using Shared.Primitives.Identifiers;
 using WorkerAssembly::Worker;
 using Xunit;
@@ -135,13 +142,14 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
         var inboxStore = new NpgsqlInboxStore(dataSource);
         var tenant = new TenantId(fixture.TenantId);
 
-        // 1. Create opportunity and sales quotation source link
+        // 1. Create opportunity and source links for quotation, invoice, and payment
         var opportunity = await repository.CreateOpportunityAsync(tenant, fixture.ActorId, new(fixture.EntityId, null, null, fixture.PipelineId, fixture.OpenStageId, "Event Lifecycle Deal", 50000m, "EGP", DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30))), default);
         var quotationId = Guid.CreateVersion7();
         var quoteKey = "quote-link-" + Guid.CreateVersion7().ToString("N");
         await repository.RecordQuoteLinkAsync(tenant, fixture.EntityId, opportunity.Id, quotationId, quoteKey, default);
 
         var invoiceId = Guid.CreateVersion7();
+        var paymentId = Guid.CreateVersion7();
         await using (var conn = await dataSource.OpenConnectionAsync())
         {
             await using var setTenant = new NpgsqlCommand("select set_config('app.tenant_id', $1, false)", conn);
@@ -157,37 +165,88 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
             insertInvoiceLink.Parameters.AddWithValue("invoice-key-" + invoiceId.ToString("N"));
             insertInvoiceLink.Parameters.AddWithValue(new string('a', 64));
             await insertInvoiceLink.ExecuteNonQueryAsync();
+
+            await using var insertPaymentLink = new NpgsqlCommand("insert into business_crm.opportunity_source_link(tenant_id,id,legal_entity_id,opportunity_id,target_module,target_type,target_id,purpose,idempotency_key,payload_hash,created_at) values($1,$2,$3,$4,'payments','Payment',$5,'CreatePayment',$6,$7,now()) on conflict do nothing", conn);
+            insertPaymentLink.Parameters.AddWithValue(tenant.Value);
+            insertPaymentLink.Parameters.AddWithValue(Guid.CreateVersion7());
+            insertPaymentLink.Parameters.AddWithValue(fixture.EntityId);
+            insertPaymentLink.Parameters.AddWithValue(opportunity.Id);
+            insertPaymentLink.Parameters.AddWithValue(paymentId);
+            insertPaymentLink.Parameters.AddWithValue("payment-key-" + paymentId.ToString("N"));
+            insertPaymentLink.Parameters.AddWithValue(new string('b', 64));
+            await insertPaymentLink.ExecuteNonQueryAsync();
         }
 
-        // 2. Setup MassTransit Test Harness with real CrmExternalEventConsumer and PostgreSQL
-        var services = new ServiceCollection();
-        services.AddSingleton(dataSource);
-        services.AddSingleton<IInboxStore>(inboxStore);
-        services.AddMassTransitTestHarness(x =>
-        {
-            x.AddConsumer<CrmExternalEventConsumer>();
-        });
-        await using var provider = services.BuildServiceProvider();
-        var harness = provider.GetRequiredService<ITestHarness>();
+        // 2. Start genuine RabbitMQ Worker OS process
+        var rabbitHost = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_HOST") ?? "localhost";
+        var rabbitPort = int.TryParse(Environment.GetEnvironmentVariable("TODIR_RABBITMQ_PORT"), out var p) ? p : 5672;
+        var rabbitUser = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_USER") ?? "todir";
+        var rabbitPassword = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_PASSWORD") ?? "todir-dev-only";
+        var rabbitVHost = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_VHOST") ?? "/erp-dev";
 
-        await harness.Start();
+        var worker = StartWorker(runtime, rabbitHost, rabbitPort, rabbitUser, rabbitPassword, rabbitVHost);
+        IBusControl? busControl = null;
+
         try
         {
-            // 3. Deliver QuotationAcceptedV1 message
+            // 3. Connect to RabbitMQ and wait for Worker to declare queue crm-external-event-projection
+            var rabbitFactory = new ConnectionFactory
+            {
+                HostName = rabbitHost,
+                Port = rabbitPort,
+                VirtualHost = rabbitVHost,
+                UserName = rabbitUser,
+                Password = rabbitPassword
+            };
+            await using (var rabbitConn = await rabbitFactory.CreateConnectionAsync())
+            {
+                var declared = false;
+                for (var i = 0; i < 40; i++)
+                {
+                    try
+                    {
+                        await using var ch = await rabbitConn.CreateChannelAsync();
+                        await ch.QueueDeclarePassiveAsync(CrmExternalEventConsumer.EndpointName);
+                        declared = true;
+                        break;
+                    }
+                    catch
+                    {
+                        await Task.Delay(500);
+                    }
+                }
+                Assert.True(declared, "Worker failed to declare the CRM consumer queue in RabbitMQ within 20 seconds.");
+            }
+
+            // 4. Start MassTransit RabbitMQ client to publish events over the real broker
+            var hostUri = new UriBuilder("rabbitmq", rabbitHost)
+            {
+                Port = rabbitPort,
+                Path = $"/{Uri.EscapeDataString(rabbitVHost.StartsWith('/') ? rabbitVHost : "/" + rabbitVHost)}"
+            }.Uri;
+
+            busControl = Bus.Factory.CreateUsingRabbitMq(cfg =>
+            {
+                cfg.Host(hostUri, h =>
+                {
+                    h.Username(rabbitUser);
+                    h.Password(rabbitPassword);
+                });
+            });
+            await busControl.StartAsync();
+
+            // 5. Deliver QuotationAcceptedV1 message through real RabbitMQ
             var quoteMsgId = Guid.CreateVersion7();
             var quotePayload = JsonSerializer.Serialize(new { tenantId = tenant.Value, legalEntityId = fixture.EntityId, quotationId });
             var quoteMessage = new OutboxPublishedMessage(quoteMsgId, "QuotationAcceptedV1", quotePayload, tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), Guid.CreateVersion7(), "sales", null);
 
-            await harness.Bus.Publish(quoteMessage);
-            Assert.True(await harness.Consumed.Any<OutboxPublishedMessage>(x => x.Context.Message.MessageId == quoteMsgId), "QuotationAcceptedV1 was not consumed.");
+            await busControl.Publish(quoteMessage);
 
-            // Verify CRM timeline has the external event
-            var events = await repository.ListExternalEventsAsync(tenant, fixture.EntityId, "QuotationAcceptedV1", 1, 10, default);
-            Assert.Contains(events.Items, x => x.MessageId == quoteMsgId && x.MessageType == "QuotationAcceptedV1" && x.EntityId == quotationId);
-
-            // Verify source link state transition to Accepted
-            await using (var conn = await dataSource.OpenConnectionAsync())
+            // Poll PostgreSQL until source link transitions to Accepted
+            var quoteAccepted = false;
+            for (var i = 0; i < 30; i++)
             {
+                await using var conn = await dataSource.OpenConnectionAsync();
                 await using var setTenant = new NpgsqlCommand("select set_config('app.tenant_id', $1, false)", conn);
                 setTenant.Parameters.AddWithValue(tenant.Value.ToString("D"));
                 await setTenant.ExecuteNonQueryAsync();
@@ -197,14 +256,22 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
                 checkLink.Parameters.AddWithValue(opportunity.Id);
                 checkLink.Parameters.AddWithValue(quotationId);
                 await using var rdr = await checkLink.ExecuteReaderAsync();
-                Assert.True(await rdr.ReadAsync());
-                Assert.Equal("Accepted", rdr.GetString(0));
-                Assert.False(rdr.IsDBNull(1));
+                if (await rdr.ReadAsync() && !rdr.IsDBNull(0) && rdr.GetString(0) == "Accepted")
+                {
+                    quoteAccepted = true;
+                    break;
+                }
+                await Task.Delay(500);
             }
+            Assert.True(quoteAccepted, "QuotationAcceptedV1 did not transition source-link to Accepted via genuine RabbitMQ + Worker.");
 
-            // 4. Test Event Replay & Inbox Idempotency: Send the exact same message again!
-            await harness.Bus.Publish(quoteMessage);
-            await Task.Delay(500);
+            // Verify CRM timeline has the external event
+            var events = await repository.ListExternalEventsAsync(tenant, fixture.EntityId, "QuotationAcceptedV1", 1, 10, default);
+            Assert.Contains(events.Items, x => x.MessageId == quoteMsgId && x.MessageType == "QuotationAcceptedV1" && x.EntityId == quotationId);
+
+            // 6. Test Event Replay & Inbox Idempotency: Send the exact same message again over RabbitMQ!
+            await busControl.Publish(quoteMessage);
+            await Task.Delay(1500);
 
             // Verify zero duplicates in crm_external_event
             await using (var conn = await dataSource.OpenConnectionAsync())
@@ -220,15 +287,16 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
                 Assert.Equal(1L, eventCount);
             }
 
-            // 5. Test InvoicePostedV1 transition
+            // 7. Test InvoicePostedV1 delivery through real RabbitMQ
             var invMsgId = Guid.CreateVersion7();
             var invPayload = JsonSerializer.Serialize(new { tenantId = tenant.Value, legalEntityId = fixture.EntityId, invoiceId });
             var invMessage = new OutboxPublishedMessage(invMsgId, "InvoicePostedV1", invPayload, tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), Guid.CreateVersion7(), "invoicing", null);
-            await harness.Bus.Publish(invMessage);
-            Assert.True(await harness.Consumed.Any<OutboxPublishedMessage>(x => x.Context.Message.MessageId == invMsgId), "InvoicePostedV1 was not consumed.");
+            await busControl.Publish(invMessage);
 
-            await using (var conn = await dataSource.OpenConnectionAsync())
+            var invoicePosted = false;
+            for (var i = 0; i < 30; i++)
             {
+                await using var conn = await dataSource.OpenConnectionAsync();
                 await using var setTenant = new NpgsqlCommand("select set_config('app.tenant_id', $1, false)", conn);
                 setTenant.Parameters.AddWithValue(tenant.Value.ToString("D"));
                 await setTenant.ExecuteNonQueryAsync();
@@ -237,11 +305,45 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
                 checkInvLink.Parameters.AddWithValue(tenant.Value);
                 checkInvLink.Parameters.AddWithValue(opportunity.Id);
                 checkInvLink.Parameters.AddWithValue(invoiceId);
-                var invState = (string)(await checkInvLink.ExecuteScalarAsync())!;
-                Assert.Equal("InvoicePosted", invState);
+                var checkInvRaw = await checkInvLink.ExecuteScalarAsync();
+                if (checkInvRaw is string invState && invState == "InvoicePosted")
+                {
+                    invoicePosted = true;
+                    break;
+                }
+                await Task.Delay(500);
             }
+            Assert.True(invoicePosted, "InvoicePostedV1 did not transition source-link to InvoicePosted via genuine RabbitMQ + Worker.");
 
-            // 6. Test Inbox Abandon & Retry behavior
+            // 8. Test PaymentCompletedV1 delivery through real RabbitMQ
+            var payMsgId = Guid.CreateVersion7();
+            var payPayload = JsonSerializer.Serialize(new { tenantId = tenant.Value, legalEntityId = fixture.EntityId, paymentId });
+            var payMessage = new OutboxPublishedMessage(payMsgId, "PaymentCompletedV1", payPayload, tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), Guid.CreateVersion7(), "payments", null);
+            await busControl.Publish(payMessage);
+
+            var paymentCompleted = false;
+            for (var i = 0; i < 30; i++)
+            {
+                await using var conn = await dataSource.OpenConnectionAsync();
+                await using var setTenant = new NpgsqlCommand("select set_config('app.tenant_id', $1, false)", conn);
+                setTenant.Parameters.AddWithValue(tenant.Value.ToString("D"));
+                await setTenant.ExecuteNonQueryAsync();
+
+                await using var checkPayLink = new NpgsqlCommand("select external_state from business_crm.opportunity_source_link where tenant_id=$1 and opportunity_id=$2 and target_module='payments' and target_id=$3", conn);
+                checkPayLink.Parameters.AddWithValue(tenant.Value);
+                checkPayLink.Parameters.AddWithValue(opportunity.Id);
+                checkPayLink.Parameters.AddWithValue(paymentId);
+                var checkPayRaw = await checkPayLink.ExecuteScalarAsync();
+                if (checkPayRaw is string payState && payState == "PaymentCompleted")
+                {
+                    paymentCompleted = true;
+                    break;
+                }
+                await Task.Delay(500);
+            }
+            Assert.True(paymentCompleted, "PaymentCompletedV1 did not transition source-link to PaymentCompleted via genuine RabbitMQ + Worker.");
+
+            // 9. Test Inbox Lease Abandon & Retry behavior directly against PostgreSQL Inbox Store
             var retryMsgId = Guid.CreateVersion7();
             var beganFirst = await inboxStore.TryBeginAsync("test-retry-endpoint", retryMsgId, tenant, default);
             Assert.True(beganFirst, "Initial TryBeginAsync should succeed.");
@@ -253,7 +355,11 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
         }
         finally
         {
-            await harness.Stop();
+            if (busControl is not null)
+            {
+                try { await busControl.StopAsync(); } catch { }
+            }
+            await StopWorkerAsync(worker);
         }
     }
 
@@ -371,6 +477,12 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
             insertRole.Parameters.AddWithValue(partyId);
             insertRole.Parameters.AddWithValue(fixture.ActorId);
             await insertRole.ExecuteNonQueryAsync();
+
+            await using var insertVis = new NpgsqlCommand("insert into foundation_directory.party_visibility(tenant_id, party_id, scope_type, visibility_id) values($1, $2, 'TenantWide', $3) on conflict do nothing", conn);
+            insertVis.Parameters.AddWithValue(tenant.Value);
+            insertVis.Parameters.AddWithValue(partyId);
+            insertVis.Parameters.AddWithValue(Guid.CreateVersion7());
+            await insertVis.ExecuteNonQueryAsync();
         }
 
         var conversionOpportunity = await repository.CreateOpportunityAsync(tenant, fixture.ActorId, new(fixture.EntityId, partyId, qualified.Id, fixture.PipelineId, fixture.OpenStageId, "مشروع أنظمة العربي", 250000m, "EGP", DateOnly.FromDateTime(DateTime.UtcNow.AddDays(45))), default);
@@ -385,36 +497,123 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
         var existingConv = await repository.FindConversionAsync(tenant, fixture.EntityId, qualified.Id, default);
         Assert.Equal(conversionOpportunity.Id, existingConv);
 
-        // 4. Sales Quotation Handoff: Link quote to opportunity
-        var quotationId = Guid.CreateVersion7();
-        var quoteHandoffKey = "quote-handoff-" + Guid.CreateVersion7().ToString("N");
-        await repository.RecordQuoteLinkAsync(tenant, fixture.EntityId, conversionOpportunity.Id, quotationId, quoteHandoffKey, default);
+        // 4. Genuine CRM-to-Sales Quotation Handoff via WebApplicationFactory
+        await using var adminConn = new NpgsqlConnection(admin);
+        await adminConn.OpenAsync();
+        var suffix = Guid.CreateVersion7().ToString("N");
+        var quoteUserEmail = $"crm-quoter-{suffix}@{fixture.TenantLoginDomain}";
+        var quoteUserIdentity = Guid.CreateVersion7();
+        var quoteUserMembership = Guid.CreateVersion7();
+        var quoteUserRole = Guid.CreateVersion7();
+        const string quotePassword = "QuoteUserPass123!Secure";
 
-        // Idempotent replay: calling RecordQuoteLinkAsync with the same key
-        await repository.RecordQuoteLinkAsync(tenant, fixture.EntityId, conversionOpportunity.Id, quotationId, quoteHandoffKey, default);
+        await CreateTestIdentityAsync(adminConn, fixture.TenantId, quoteUserIdentity, quoteUserMembership, quoteUserRole, quoteUserEmail, quotePassword,
+            ["crm.opportunity.read", "crm.opportunity.quote", "sales.quotation.create", "crm.team.manage"]);
 
-        // Verify exactly 1 link was created (no duplicates)
-        await using (var conn = await dataSource.OpenConnectionAsync())
+        try
         {
-            await using var setTenant = new NpgsqlCommand("select set_config('app.tenant_id', $1, false)", conn);
-            setTenant.Parameters.AddWithValue(tenant.Value.ToString("D"));
-            await setTenant.ExecuteNonQueryAsync();
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+                .UseEnvironment("Development")
+                .UseSetting("TODIR_DATABASE_CONNECTION", runtime)
+                .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+            await LoginAsync(client, quoteUserEmail, quotePassword, fixture.TenantId);
+            await SetContextAsync(client, fixture.EntityId);
 
-            await using var countCmd = new NpgsqlCommand("select count(*) from business_crm.opportunity_source_link where tenant_id=$1 and opportunity_id=$2 and purpose='CreateQuotation'", conn);
-            countCmd.Parameters.AddWithValue(tenant.Value);
-            countCmd.Parameters.AddWithValue(conversionOpportunity.Id);
-            var linkCount = (long)(await countCmd.ExecuteScalarAsync())!;
-            Assert.Equal(1L, linkCount);
+            var quoteHandoffKey = "quote-handoff-" + Guid.CreateVersion7().ToString("N");
+            var handoffReq = new QuoteHandoffRequest(
+                quoteHandoffKey,
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+                "EGP",
+                [new QuoteHandoffLine(null, null, "باقة استشارات ERP معتمدة", 1m, 85000m, 0m, "EA")],
+                "REF-CRM-SALES-HANDOFF"
+            );
 
-            await using var getLinkCmd = new NpgsqlCommand("select legal_entity_id, target_module, target_type, target_id from business_crm.opportunity_source_link where tenant_id=$1 and opportunity_id=$2", conn);
-            getLinkCmd.Parameters.AddWithValue(tenant.Value);
-            getLinkCmd.Parameters.AddWithValue(conversionOpportunity.Id);
-            await using var rdr = await getLinkCmd.ExecuteReaderAsync();
-            Assert.True(await rdr.ReadAsync());
-            Assert.Equal(fixture.EntityId, rdr.GetGuid(0));
-            Assert.Equal("sales", rdr.GetString(1));
-            Assert.Equal("Quotation", rdr.GetString(2));
-            Assert.Equal(quotationId, rdr.GetGuid(3));
+            var handoffRes = await PostJsonAsync(client, $"/api/v1/crm/legal-entities/{fixture.EntityId}/opportunities/{conversionOpportunity.Id}/quotation", handoffReq);
+            var handoffContent = await handoffRes.Content.ReadAsStringAsync();
+            Assert.True(handoffRes.StatusCode == HttpStatusCode.Created, $"Expected Created but got {handoffRes.StatusCode}: {handoffContent}");
+            var quotationId = await handoffRes.Content.ReadFromJsonAsync<Guid>();
+            Assert.NotEqual(Guid.Empty, quotationId);
+
+            // 5. Verify Real Persisted Quotation in PostgreSQL (business_sales.quotation & quotation_revision)
+            await using (var conn = await dataSource.OpenConnectionAsync())
+            {
+                await using var setTenant = new NpgsqlCommand("select set_config('app.tenant_id', $1, false)", conn);
+                setTenant.Parameters.AddWithValue(tenant.Value.ToString("D"));
+                await setTenant.ExecuteNonQueryAsync();
+
+                await using var quoteCmd = new NpgsqlCommand("select state, party_id, legal_entity_id, currency_code from business_sales.quotation where tenant_id=$1 and id=$2", conn);
+                quoteCmd.Parameters.AddWithValue(tenant.Value);
+                quoteCmd.Parameters.AddWithValue(quotationId);
+                await using var quoteRdr = await quoteCmd.ExecuteReaderAsync();
+                Assert.True(await quoteRdr.ReadAsync(), "Quotation was not found in business_sales.quotation table.");
+                Assert.Equal("Draft", quoteRdr.GetString(0));
+                Assert.Equal(partyId, quoteRdr.GetGuid(1));
+                Assert.Equal(fixture.EntityId, quoteRdr.GetGuid(2));
+                Assert.Equal("EGP", quoteRdr.GetString(3));
+                await quoteRdr.CloseAsync();
+
+                await using var revCmd = new NpgsqlCommand("select gross_total, net_total from business_sales.quotation_revision where tenant_id=$1 and quotation_id=$2 and revision_number=1", conn);
+                revCmd.Parameters.AddWithValue(tenant.Value);
+                revCmd.Parameters.AddWithValue(quotationId);
+                await using var revRdr = await revCmd.ExecuteReaderAsync();
+                Assert.True(await revRdr.ReadAsync(), "Quotation revision was not found in business_sales.quotation_revision.");
+                Assert.Equal(85000m, revRdr.GetDecimal(0));
+                Assert.Equal(85000m, revRdr.GetDecimal(1));
+                await revRdr.CloseAsync();
+
+                // Verify source link in business_crm.opportunity_source_link
+                await using var linkCmd = new NpgsqlCommand("select target_module, target_type, target_id, purpose, idempotency_key from business_crm.opportunity_source_link where tenant_id=$1 and opportunity_id=$2 and purpose='CreateQuotation'", conn);
+                linkCmd.Parameters.AddWithValue(tenant.Value);
+                linkCmd.Parameters.AddWithValue(conversionOpportunity.Id);
+                await using var linkRdr = await linkCmd.ExecuteReaderAsync();
+                Assert.True(await linkRdr.ReadAsync(), "Source link was not recorded in business_crm.opportunity_source_link.");
+                Assert.Equal("sales", linkRdr.GetString(0));
+                Assert.Equal("Quotation", linkRdr.GetString(1));
+                Assert.Equal(quotationId, linkRdr.GetGuid(2));
+                Assert.Equal("CreateQuotation", linkRdr.GetString(3));
+                Assert.Equal(quoteHandoffKey, linkRdr.GetString(4));
+                await linkRdr.CloseAsync();
+
+                // Verify audit entry in platform.audit_entry
+                await using var auditCmd = new NpgsqlCommand("select action, entity_type from platform.audit_entry where tenant_id=$1 and module='crm' and action='opportunity.quotation_created' and entity_id=$2", conn);
+                auditCmd.Parameters.AddWithValue(tenant.Value);
+                auditCmd.Parameters.AddWithValue(conversionOpportunity.Id);
+                await using var auditRdr = await auditCmd.ExecuteReaderAsync();
+                Assert.True(await auditRdr.ReadAsync(), "Audit entry was not written for opportunity quotation handoff.");
+                await auditRdr.CloseAsync();
+            }
+
+            // 6. Test Idempotent Retry: Calling the handoff endpoint again with the same request & key
+            var replayRes = await PostJsonAsync(client, $"/api/v1/crm/legal-entities/{fixture.EntityId}/opportunities/{conversionOpportunity.Id}/quotation", handoffReq);
+            Assert.Equal(HttpStatusCode.Created, replayRes.StatusCode);
+            var replayQuotationId = await replayRes.Content.ReadFromJsonAsync<Guid>();
+            Assert.Equal(quotationId, replayQuotationId);
+
+            // Verify zero duplicate quotations and zero duplicate links in PostgreSQL
+            await using (var conn = await dataSource.OpenConnectionAsync())
+            {
+                await using var setTenant = new NpgsqlCommand("select set_config('app.tenant_id', $1, false)", conn);
+                setTenant.Parameters.AddWithValue(tenant.Value.ToString("D"));
+                await setTenant.ExecuteNonQueryAsync();
+
+                await using var countQuoteCmd = new NpgsqlCommand("select count(*) from business_sales.quotation where tenant_id=$1 and party_id=$2 and customer_reference='REF-CRM-SALES-HANDOFF'", conn);
+                countQuoteCmd.Parameters.AddWithValue(tenant.Value);
+                countQuoteCmd.Parameters.AddWithValue(partyId);
+                var quoteCount = (long)(await countQuoteCmd.ExecuteScalarAsync())!;
+                Assert.Equal(1L, quoteCount);
+
+                await using var countLinkCmd = new NpgsqlCommand("select count(*) from business_crm.opportunity_source_link where tenant_id=$1 and opportunity_id=$2 and purpose='CreateQuotation'", conn);
+                countLinkCmd.Parameters.AddWithValue(tenant.Value);
+                countLinkCmd.Parameters.AddWithValue(conversionOpportunity.Id);
+                var linkCount = (long)(await countLinkCmd.ExecuteScalarAsync())!;
+                Assert.Equal(1L, linkCount);
+            }
+        }
+        finally
+        {
+            await CleanupTestIdentityAsync(adminConn, fixture.TenantId, quoteUserIdentity, quoteUserMembership, quoteUserRole);
         }
     }
 
@@ -428,93 +627,272 @@ public sealed class CrmPostgresIntegrationTests : DatabaseIntegrationTestBase
         var repository = new CrmRepository(dataSource);
         var tenant = new TenantId(fixture.TenantId);
 
-        var seller1 = Guid.CreateVersion7();
-        var seller2 = Guid.CreateVersion7();
+        await using var adminConn = new NpgsqlConnection(admin);
+        await adminConn.OpenAsync();
 
-        // 1. Create a Sales Team and add Seller 1
-        var team = await repository.CreateTeamAsync(tenant, new(fixture.EntityId, "AUDIT-TEAM-" + Guid.CreateVersion7().ToString("N"), "Enterprise Sales Team"), default);
-        await repository.AddTeamMemberAsync(tenant, fixture.EntityId, team.Id, new(seller1), default);
+        var suffix = Guid.CreateVersion7().ToString("N");
+        const string password = "TestPassword123!Secure";
 
-        // 2. Seller 1 creates an opportunity assigned to their team
-        var opp = await repository.CreateOpportunityAsync(tenant, seller1, new(fixture.EntityId, null, null, fixture.PipelineId, fixture.OpenStageId, "Audit Deal " + Guid.CreateVersion7().ToString("N"), 75000m, "EGP", DateOnly.FromDateTime(DateTime.UtcNow.AddDays(15)), seller1, team.Id), default);
+        // 1. Seller Identity in Tenant A: has lead/opportunity permissions, NO audit permission
+        var sellerEmail = $"seller-{suffix}@{fixture.TenantLoginDomain}";
+        var sellerIdentity = Guid.CreateVersion7();
+        var sellerMembership = Guid.CreateVersion7();
+        var sellerRole = Guid.CreateVersion7();
+        await CreateTestIdentityAsync(adminConn, fixture.TenantId, sellerIdentity, sellerMembership, sellerRole, sellerEmail, password,
+            ["crm.lead.create", "crm.lead.read", "crm.lead.edit", "crm.opportunity.create", "crm.opportunity.read", "crm.activity.create", "crm.activity.complete"]);
 
-        // 3. Visibility isolation: Seller 1 sees deal in "mine" scope, Seller 2 does NOT
-        var seller1Deals = await repository.ListOpportunitiesAsync(tenant, fixture.EntityId, seller1, null, fixture.PipelineId, opp.Name, 1, 20, "mine", default);
-        Assert.Contains(seller1Deals.Items, x => x.Id == opp.Id);
+        // 2. Manager Identity in Tenant A: has audit read and team manage permissions
+        var managerEmail = $"manager-{suffix}@{fixture.TenantLoginDomain}";
+        var managerIdentity = Guid.CreateVersion7();
+        var managerMembership = Guid.CreateVersion7();
+        var managerRole = Guid.CreateVersion7();
+        await CreateTestIdentityAsync(adminConn, fixture.TenantId, managerIdentity, managerMembership, managerRole, managerEmail, password,
+            ["crm.lead.read", "crm.opportunity.read", "crm.audit.read", "crm.team.manage", "crm.pipeline.manage"]);
 
-        var seller2Deals = await repository.ListOpportunitiesAsync(tenant, fixture.EntityId, seller2, null, fixture.PipelineId, opp.Name, 1, 20, "mine", default);
-        Assert.DoesNotContain(seller2Deals.Items, x => x.Id == opp.Id);
+        // 3. Unauthorized Identity in Tenant A: no CRM permissions
+        var unauthEmail = $"unauth-{suffix}@{fixture.TenantLoginDomain}";
+        var unauthIdentity = Guid.CreateVersion7();
+        var unauthMembership = Guid.CreateVersion7();
+        var unauthRole = Guid.CreateVersion7();
+        await CreateTestIdentityAsync(adminConn, fixture.TenantId, unauthIdentity, unauthMembership, unauthRole, unauthEmail, password,
+            ["platform.organization.read"]);
 
-        // 4. Team membership grants visibility: Add Seller 2 to the team
-        await repository.AddTeamMemberAsync(tenant, fixture.EntityId, team.Id, new(seller2), default);
-        var seller2TeamDeals = await repository.ListOpportunitiesAsync(tenant, fixture.EntityId, seller2, null, fixture.PipelineId, opp.Name, 1, 20, "mine", default);
-        Assert.Contains(seller2TeamDeals.Items, x => x.Id == opp.Id);
+        // 4. Cross-Tenant Identity in Tenant B (delta.com)
+        var crossEmail = $"cross-{suffix}@{fixture.OtherTenantLoginDomain}";
+        var crossIdentity = Guid.CreateVersion7();
+        var crossMembership = Guid.CreateVersion7();
+        var crossRole = Guid.CreateVersion7();
+        await CreateTestIdentityAsync(adminConn, fixture.OtherTenantId, crossIdentity, crossMembership, crossRole, crossEmail, password,
+            ["crm.lead.read", "crm.audit.read"]);
 
-        // 5. Manager with allAuthorized = true sees all deals across legal entity
-        var managerDeals = await repository.ListOpportunitiesAsync(tenant, fixture.EntityId, null, null, fixture.PipelineId, opp.Name, 1, 20, "all", default);
-        Assert.Contains(managerDeals.Items, x => x.Id == opp.Id);
-
-        // 6. Cross-tenant isolation: Querying from another tenant cannot see Tenant 1's opportunity
-        var crossTenantOpp = await repository.GetOpportunityAsync(new TenantId(fixture.OtherTenantId), fixture.OtherEntityId, opp.Id, default);
-        Assert.Null(crossTenantOpp);
-        var crossTenantDeals = await repository.ListOpportunitiesAsync(new TenantId(fixture.OtherTenantId), fixture.OtherEntityId, seller1, null, null, opp.Name, 1, 20, "mine", default);
-        Assert.Equal(0, crossTenantDeals.TotalCount);
-
-        // 7. Audit trail verification: Write CRM audit entry via NpgsqlAuditWriter
-        var auditWriter = new Core.Services.NpgsqlAuditWriter(dataSource);
-        var auditId = Guid.CreateVersion7();
-        await auditWriter.WriteAsync(new Core.Services.AuditEntry(
-            auditId,
-            tenant,
-            fixture.EntityId,
-            null,
-            "Human",
-            seller1,
-            null,
-            "crm",
-            "opportunity.created",
-            "Opportunity",
-            opp.Id,
-            null,
-            JsonSerializer.Serialize(new { opp.Id, opp.Name, opp.EstimatedAmount }),
-            null,
-            "integration-test",
-            Guid.CreateVersion7(),
-            null,
-            DateTimeOffset.UtcNow,
-            null
-        ));
-
-        // Verify audit entry is persisted in platform.audit_entry
-        await using (var conn = await dataSource.OpenConnectionAsync())
+        try
         {
-            await using var setTenant = new NpgsqlCommand("select set_config('app.tenant_id', $1, false)", conn);
-            setTenant.Parameters.AddWithValue(tenant.Value.ToString("D"));
-            await setTenant.ExecuteNonQueryAsync();
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+                .UseEnvironment("Development")
+                .UseSetting("TODIR_DATABASE_CONNECTION", runtime)
+                .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
 
-            await using var auditCmd = new NpgsqlCommand("select action, entity_type, entity_id, actor_id from platform.audit_entry where tenant_id=$1 and id=$2", conn);
-            auditCmd.Parameters.AddWithValue(tenant.Value);
-            auditCmd.Parameters.AddWithValue(auditId);
-            await using var rdr = await auditCmd.ExecuteReaderAsync();
-            Assert.True(await rdr.ReadAsync());
-            Assert.Equal("opportunity.created", rdr.GetString(0));
-            Assert.Equal("Opportunity", rdr.GetString(1));
-            Assert.Equal(opp.Id, rdr.GetGuid(2));
-            Assert.Equal(seller1, rdr.GetGuid(3));
+            // Test 1: Anonymous request is rejected with 401 Unauthorized
+            using var anonymousClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+            var anonRes = await anonymousClient.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityId}/leads");
+            Assert.Equal(HttpStatusCode.Unauthorized, anonRes.StatusCode);
+
+            // Test 2: Unauthorized identity is rejected with 403 Forbidden
+            using var unauthClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+            await LoginAsync(unauthClient, unauthEmail, password, fixture.TenantId);
+            await SetContextAsync(unauthClient, fixture.EntityId);
+            var unauthLeadsRes = await unauthClient.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityId}/leads");
+            Assert.Equal(HttpStatusCode.Forbidden, unauthLeadsRes.StatusCode);
+            var unauthAuditRes = await unauthClient.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityId}/audit");
+            Assert.Equal(HttpStatusCode.Forbidden, unauthAuditRes.StatusCode);
+
+            // Test 3: Seller creates a lead via HTTP API -> 201 Created and audit entry is written
+            using var sellerClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+            await LoginAsync(sellerClient, sellerEmail, password, fixture.TenantId);
+            await SetContextAsync(sellerClient, fixture.EntityId);
+
+            var createLeadReq = new CreateLeadRequest(fixture.EntityId, "عميل تجريبي بائع", "شركة التقنية الذكية", $"lead-{suffix}@example.test", "01099887766", "Campaign");
+            var leadKey = "lead-key-" + Guid.CreateVersion7().ToString("N");
+            var createRes = await PostJsonAsync(sellerClient, $"/api/v1/crm/legal-entities/{fixture.EntityId}/leads", createLeadReq, leadKey);
+            Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
+            var createdLead = await createRes.Content.ReadFromJsonAsync<LeadDto>();
+            Assert.NotNull(createdLead);
+
+            // Seller sees own lead in "mine" scope
+            var sellerLeadsRes = await sellerClient.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityId}/leads?scope=mine");
+            Assert.Equal(HttpStatusCode.OK, sellerLeadsRes.StatusCode);
+            var sellerLeads = await sellerLeadsRes.Content.ReadFromJsonAsync<CrmPage<LeadDto>>();
+            Assert.Contains(sellerLeads!.Items, x => x.Id == createdLead!.Id);
+
+            // Seller CANNOT view audit (lacks crm.audit.read) -> 403 Forbidden
+            var sellerAuditRes = await sellerClient.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityId}/audit");
+            Assert.Equal(HttpStatusCode.Forbidden, sellerAuditRes.StatusCode);
+
+            // Test 4: Manager (has crm.audit.read) retrieves audit trail -> 200 OK
+            using var managerClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+            await LoginAsync(managerClient, managerEmail, password, fixture.TenantId);
+            await SetContextAsync(managerClient, fixture.EntityId);
+
+            var managerAuditRes = await managerClient.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityId}/audit");
+            Assert.Equal(HttpStatusCode.OK, managerAuditRes.StatusCode);
+            var auditEntries = await managerAuditRes.Content.ReadFromJsonAsync<List<AuditEntryResponse>>();
+            Assert.NotNull(auditEntries);
+            Assert.Contains(auditEntries!, x => x.Action == "lead.created" && x.ActorId == sellerIdentity && x.EntityId == createdLead!.Id);
+
+            // Manager with crm.team.manage sees seller's lead in "all" scope
+            var managerAllLeadsRes = await managerClient.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityId}/leads?scope=all");
+            Assert.Equal(HttpStatusCode.OK, managerAllLeadsRes.StatusCode);
+            var managerLeads = await managerAllLeadsRes.Content.ReadFromJsonAsync<CrmPage<LeadDto>>();
+            Assert.Contains(managerLeads!.Items, x => x.Id == createdLead!.Id);
+
+            // Test 5: Cross-Tenant identity (from Delta) attempting to access Atlas legal entity is rejected
+            using var crossClient = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+            await LoginAsync(crossClient, crossEmail, password, fixture.OtherTenantId);
+            await SetContextAsync(crossClient, fixture.OtherEntityId);
+            var crossLeadsRes = await crossClient.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityId}/leads");
+            Assert.Equal(HttpStatusCode.Forbidden, crossLeadsRes.StatusCode);
+            var crossAuditRes = await crossClient.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityId}/audit");
+            Assert.Equal(HttpStatusCode.Forbidden, crossAuditRes.StatusCode);
         }
+        finally
+        {
+            await CleanupTestIdentityAsync(adminConn, fixture.TenantId, sellerIdentity, sellerMembership, sellerRole);
+            await CleanupTestIdentityAsync(adminConn, fixture.TenantId, managerIdentity, managerMembership, managerRole);
+            await CleanupTestIdentityAsync(adminConn, fixture.TenantId, unauthIdentity, unauthMembership, unauthRole);
+            await CleanupTestIdentityAsync(adminConn, fixture.OtherTenantId, crossIdentity, crossMembership, crossRole);
+        }
+    }
+
+    private static Process StartWorker(string connectionString, string rabbitHost, int rabbitPort, string rabbitUser, string rabbitPassword, string rabbitVHost)
+    {
+        var repository = new DirectoryInfo(Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT") ?? AppContext.BaseDirectory);
+        while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "backend", "DbMigrator", "DbMigrator.csproj"))) repository = repository.Parent;
+        if (repository is null) throw new InvalidOperationException("The repository root could not be located for the Worker process.");
+        var worker = new Process
+        {
+            StartInfo = new ProcessStartInfo("dotnet", "run --project backend/Worker/Worker.csproj --no-build --no-restore --no-launch-profile")
+            {
+                WorkingDirectory = repository.FullName,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+        worker.StartInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
+        worker.StartInfo.Environment["TODIR_DATABASE_CONNECTION"] = connectionString;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_HOST"] = rabbitHost;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_PORT"] = rabbitPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        worker.StartInfo.Environment["TODIR_RABBITMQ_USER"] = rabbitUser;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_PASSWORD"] = rabbitPassword;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_VHOST"] = rabbitVHost;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_CONSUMER"] = "true";
+        worker.Start();
+        return worker;
+    }
+
+    private static async Task StopWorkerAsync(Process? worker)
+    {
+        if (worker is null) return;
+        if (!worker.HasExited)
+        {
+            try { worker.Kill(true); } catch { }
+            await worker.WaitForExitAsync();
+        }
+        worker.Dispose();
+    }
+
+    private static async Task LoginAsync(HttpClient client, string email, string password, Guid tenantId)
+    {
+        var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
+        Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
+        var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfTokenResponse>();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login")
+        {
+            Content = JsonContent.Create(new { email, password })
+        };
+        if (csrf?.Token is not null) request.Headers.Add("X-CSRF-TOKEN", csrf.Token);
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Authenticated", body.GetProperty("state").GetString());
+        Assert.Equal(tenantId, body.GetProperty("tenantId").GetGuid());
+    }
+
+    private static async Task SetContextAsync(HttpClient client, Guid legalEntityId)
+    {
+        var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
+        Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
+        var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfTokenResponse>();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/context/organization")
+        {
+            Content = JsonContent.Create(new { legalEntityId })
+        };
+        if (csrf?.Token is not null) request.Headers.Add("X-CSRF-TOKEN", csrf.Token);
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    private static async Task<HttpResponseMessage> PostJsonAsync(HttpClient client, string path, object body, string? idempotencyKey = null)
+    {
+        var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
+        Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
+        var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfTokenResponse>();
+        using var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(body)
+        };
+        if (csrf?.Token is not null) request.Headers.Add("X-CSRF-TOKEN", csrf.Token);
+        if (!string.IsNullOrWhiteSpace(idempotencyKey)) request.Headers.Add("Idempotency-Key", idempotencyKey);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task CreateTestIdentityAsync(NpgsqlConnection admin, Guid tenantId, Guid identityId, Guid membershipId, Guid roleId, string email, string password, string[] permissions)
+    {
+        var hash = IdentityConventions.HashPassword(password);
+        var prefix = "u" + Guid.CreateVersion7().ToString("N")[..20];
+        var stamp = Guid.CreateVersion7();
+
+        await using var cmd = new NpgsqlCommand($@"
+            set role erp_owner;
+            set app.tenant_id = '{tenantId}';
+            insert into platform.identity (id, tenant_id, email, normalized_email, login_prefix, name, email_verified, password_hash, status, created_at, security_stamp, version)
+            values ('{identityId}', '{tenantId}', '{email}', '{email.ToUpperInvariant()}', '{prefix}', 'Test User {prefix}', true, '{hash}', 'Active', now(), '{stamp}', 1)
+            on conflict (tenant_id, id) do nothing;
+
+            insert into platform.membership (id, tenant_id, identity_id, display_name, status, created_at, version)
+            values ('{membershipId}', '{tenantId}', '{identityId}', 'Test User {prefix}', 'Active', now(), 1)
+            on conflict (tenant_id, id) do nothing;
+
+            insert into platform.role (id, tenant_id, code, name, is_system_template, is_active, version)
+            values ('{roleId}', '{tenantId}', 'role-{prefix}', 'Test Role {prefix}', false, true, 1)
+            on conflict (tenant_id, id) do nothing;
+
+            insert into platform.membership_role_assignment (tenant_id, membership_id, role_id, scope_type)
+            values ('{tenantId}', '{membershipId}', '{roleId}', 'Tenant')
+            on conflict do nothing;
+        ", admin);
+        await cmd.ExecuteNonQueryAsync();
+
+        foreach (var p in permissions)
+        {
+            await using var pCmd = new NpgsqlCommand($"insert into platform.role_permission (tenant_id, role_id, permission_code) values ('{tenantId}', '{roleId}', '{p}') on conflict do nothing;", admin);
+            await pCmd.ExecuteNonQueryAsync();
+        }
+
+        await using var resetCmd = new NpgsqlCommand("reset app.tenant_id; reset role;", admin);
+        await resetCmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task CleanupTestIdentityAsync(NpgsqlConnection admin, Guid tenantId, Guid identityId, Guid membershipId, Guid roleId)
+    {
+        await using var cmd = new NpgsqlCommand($@"
+            set role erp_owner;
+            set app.tenant_id = '{tenantId}';
+            delete from platform.membership_role_assignment where tenant_id = '{tenantId}' and membership_id = '{membershipId}';
+            delete from platform.role_permission where tenant_id = '{tenantId}' and role_id = '{roleId}';
+            delete from platform.role where tenant_id = '{tenantId}' and id = '{roleId}';
+            delete from platform.membership where tenant_id = '{tenantId}' and id = '{membershipId}';
+            delete from platform.identity where tenant_id = '{tenantId}' and id = '{identityId}';
+            reset app.tenant_id;
+            reset role;
+        ", admin);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     private static async Task<Fixture> FixtureAsync(string connectionString)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
-        const string sql = "select t.id, e.id, i.id, p.id, (select id from business_crm.crm_pipeline_stage where tenant_id=t.id and pipeline_id=p.id and not is_won and not is_lost order by sequence limit 1), (select id from business_crm.crm_pipeline_stage where tenant_id=t.id and pipeline_id=p.id and not is_won and not is_lost order by sequence desc limit 1), (select id from business_crm.crm_pipeline_stage where tenant_id=t.id and pipeline_id=p.id and is_won limit 1), (select id from business_crm.crm_pipeline_stage where tenant_id=t.id and pipeline_id=p.id and is_lost limit 1), t2.id, e2.id from platform.tenant t join platform.legal_entity e on e.tenant_id=t.id join platform.identity i on i.tenant_id=t.id and i.login_prefix='admin' join business_crm.crm_pipeline p on p.tenant_id=t.id and p.legal_entity_id=e.id and p.code='DEFAULT' join platform.tenant t2 on t2.id <> t.id join platform.legal_entity e2 on e2.tenant_id=t2.id order by t.id limit 1";
+        const string sql = "select t.id, t.login_domain, e.id, i.id, p.id, (select id from business_crm.crm_pipeline_stage where tenant_id=t.id and pipeline_id=p.id and not is_won and not is_lost order by sequence limit 1), (select id from business_crm.crm_pipeline_stage where tenant_id=t.id and pipeline_id=p.id and not is_won and not is_lost order by sequence desc limit 1), (select id from business_crm.crm_pipeline_stage where tenant_id=t.id and pipeline_id=p.id and is_won limit 1), (select id from business_crm.crm_pipeline_stage where tenant_id=t.id and pipeline_id=p.id and is_lost limit 1), t2.id, t2.login_domain, e2.id from platform.tenant t join platform.legal_entity e on e.tenant_id=t.id join platform.identity i on i.tenant_id=t.id and i.login_prefix='admin' join business_crm.crm_pipeline p on p.tenant_id=t.id and p.legal_entity_id=e.id and p.code='DEFAULT' join platform.tenant t2 on t2.id <> t.id join platform.legal_entity e2 on e2.tenant_id=t2.id order by t.id limit 1";
         await using var command = new NpgsqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) throw new InvalidOperationException("CRM seed fixture is missing.");
-        return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetGuid(4), reader.GetGuid(5), reader.GetGuid(6), reader.GetGuid(7), reader.GetGuid(8), reader.GetGuid(9));
+        return new(reader.GetGuid(0), reader.GetString(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetGuid(4), reader.GetGuid(5), reader.GetGuid(6), reader.GetGuid(7), reader.GetGuid(8), reader.GetGuid(9), reader.GetString(10), reader.GetGuid(11));
     }
 
-    private sealed record Fixture(Guid TenantId, Guid EntityId, Guid ActorId, Guid PipelineId, Guid OpenStageId, Guid ProposalStageId, Guid WonStageId, Guid LostStageId, Guid OtherTenantId, Guid OtherEntityId);
+    private sealed record AuditEntryResponse(Guid Id, Guid? LegalEntityId, Guid? BranchId, string ActorType, Guid? ActorId, Guid? MembershipId, string Module, string Action, string EntityType, Guid EntityId, string? Reason, DateTimeOffset OccurredAt, string? TraceId);
+    private sealed record CsrfTokenResponse(string Token);
+    private sealed record Fixture(Guid TenantId, string TenantLoginDomain, Guid EntityId, Guid ActorId, Guid PipelineId, Guid OpenStageId, Guid ProposalStageId, Guid WonStageId, Guid LostStageId, Guid OtherTenantId, string OtherTenantLoginDomain, Guid OtherEntityId);
     private sealed class CrmPostgresFactAttribute : FactAttribute { public CrmPostgresFactAttribute() { if (Environment.GetEnvironmentVariable("TODIR_CRM_TEST_DATABASE") != "1") Skip = "Set TODIR_CRM_TEST_DATABASE=1 for the disposable PostgreSQL CRM acceptance gate."; } }
 }

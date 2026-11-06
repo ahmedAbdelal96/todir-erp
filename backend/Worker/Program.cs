@@ -16,6 +16,7 @@ using Modules.Invoicing.Controllers;
 using Modules.Tax;
 using Modules.Hr;
 using Modules.Payroll;
+using Modules.CRM;
 using Quartz;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -51,6 +52,7 @@ builder.Services.AddSalesModule();
 builder.Services.AddTaxModule();
 builder.Services.AddHrModule();
 builder.Services.AddPayrollModule();
+builder.Services.AddCrmModule();
 builder.Services.AddScheduling(builder.Configuration, options =>
 {
     options.AddJob<HrExpiryReminderJob>(job => job
