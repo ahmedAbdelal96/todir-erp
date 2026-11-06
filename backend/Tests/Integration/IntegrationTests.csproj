@@ -19,6 +19,7 @@
     <ProjectReference Include="../../Modules/Payroll/Payroll.csproj" />
     <ProjectReference Include="../../Modules/CRM/CRM.csproj" />
     <ProjectReference Include="../../Modules/Ledger/Ledger.csproj" />
+    <ProjectReference Include="../../Worker/Worker.csproj" Aliases="WorkerAssembly" />
     <ProjectReference Include="../../Api/Api.csproj" />
   </ItemGroup>
 </Project>
