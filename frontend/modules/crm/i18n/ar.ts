@@ -636,9 +636,12 @@ const fullCrmDictionary = {
   },
   reports: {
     kpiTitle: "مؤشرات أداء تحويل المبيعات (Sales KPIs)",
-    winRate: "معدل الفوز (Win Rate)",
+    winRate: "معدل الفوز بالصفقات (Win Rate)",
+    leadConversionRate: "معدل تحويل العملاء (Lead Conversion)",
+    totalWonRevenue: "إجمالي الصفقات الناجحة",
     totalPipeline: "إجمالي قيمة المسار",
     openDealsCount: "عدد الصفقات النشطة",
+    totalLeads: "إجمالي العملاء المحتملين",
     avgDealSize: "متوسط حجم الصفقة",
   },
   inspection: {

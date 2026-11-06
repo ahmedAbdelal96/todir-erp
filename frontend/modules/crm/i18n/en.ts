@@ -636,9 +636,12 @@ const fullCrmDictionary = {
   },
   reports: {
     kpiTitle: "Sales Performance KPIs",
-    winRate: "Win Rate",
+    winRate: "Opportunity Win Rate",
+    leadConversionRate: "Lead Conversion Rate",
+    totalWonRevenue: "Total Won Revenue",
     totalPipeline: "Total Pipeline Value",
-    openDealsCount: "Open Deals",
+    openDealsCount: "Open Opportunities",
+    totalLeads: "Total Leads",
     avgDealSize: "Average Deal Size",
   },
   inspection: {

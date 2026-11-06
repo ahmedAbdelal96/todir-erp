@@ -367,6 +367,7 @@ export interface CrmReportDto {
   readonly lostAmount: number;
   readonly staleOpportunityCount: number;
   readonly currencyCode: string;
+  readonly opportunityWinRate: number;
 }
 
 export interface Customer360Dto {

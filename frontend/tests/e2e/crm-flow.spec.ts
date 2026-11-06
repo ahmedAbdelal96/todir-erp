@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 const SCREENSHOT_DIR = process.env.CRM_SCREENSHOT_DIR ||
-  path.resolve('C:/Users/Adham/.gemini/antigravity/brain/2cce5b52-1525-442e-8037-81105c0347eb/crm-acceptance');
+  path.resolve('artifacts/crm-acceptance');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -460,6 +460,14 @@ test.describe('Module 19 — CRM (Customer Relationships) Frontend & Seller Work
     await expect(page.locator('text=في المسار').first()).toBeVisible();
     await expect(page.locator('text=أفضل سيناريو').first()).toBeVisible();
     await expect(page.locator('text=مؤكدة للإغلاق').first()).toBeVisible();
+
+    // Assert separate Opportunity Win Rate and Lead Conversion Rate KPIs
+    const winRateEl = page.locator('[data-testid="opportunity-win-rate"]');
+    const convRateEl = page.locator('[data-testid="lead-conversion-rate"]');
+    await expect(winRateEl).toBeVisible();
+    await expect(convRateEl).toBeVisible();
+    await expect(page.locator('text=معدل الفوز بالصفقات').first()).toBeVisible();
+    await expect(page.locator('text=معدل تحويل العملاء').first()).toBeVisible();
 
     await page.screenshot({
       path: path.join(SCREENSHOT_DIR, '18-crm-management-forecast.png'),

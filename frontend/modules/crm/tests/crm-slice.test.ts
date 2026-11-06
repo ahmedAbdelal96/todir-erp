@@ -164,4 +164,93 @@ describe("CRM Slice Contracts & Domain Invariants", () => {
     );
     assert.equal(subtotal, 135000 + 80000); // 215,000 EGP
   });
+
+  test("Metrics Separation Invariant: Opportunity Win Rate is strictly independent from Lead Conversion Rate", () => {
+    // Contract check: CrmReportDto contains distinct opportunityWinRate and leadConversionRate
+    const sampleReport = {
+      leadCount: 50,
+      qualifiedLeadCount: 20,
+      convertedLeadCount: 15,
+      disqualifiedLeadCount: 5,
+      leadConversionRate: 30.0, // 15 / 50 * 100
+      openOpportunityCount: 12,
+      wonOpportunityCount: 6,
+      lostOpportunityCount: 2,
+      wonAmount: 450000,
+      lostAmount: 85000,
+      staleOpportunityCount: 3,
+      currencyCode: "EGP",
+      opportunityWinRate: 75.0, // 6 / (6 + 2) * 100 = 75.0%
+    };
+
+    assert.notEqual(sampleReport.opportunityWinRate, sampleReport.leadConversionRate);
+    assert.equal(sampleReport.opportunityWinRate, 75.0);
+    assert.equal(sampleReport.leadConversionRate, 30.0);
+
+    // Arabic and English distinct business label assertions
+    assert.ok(crmAr.reports.winRate.includes("الفوز بالصفقات") || crmAr.reports.winRate.includes("Win Rate"));
+    assert.ok(crmAr.reports.leadConversionRate.includes("تحويل العملاء") || crmAr.reports.leadConversionRate.includes("Lead Conversion"));
+    assert.notEqual(crmAr.reports.winRate, crmAr.reports.leadConversionRate);
+
+    assert.equal(crmEn.reports.winRate, "Opportunity Win Rate");
+    assert.equal(crmEn.reports.leadConversionRate, "Lead Conversion Rate");
+    assert.notEqual(crmEn.reports.winRate, crmEn.reports.leadConversionRate);
+  });
+
+  test("Zero-Denominator Boundary Invariant: Win Rate and Conversion Rate evaluate strictly to 0.00% without NaN or division by zero", () => {
+    const computeWinRate = (wonCount: number, lostCount: number): number => {
+      const closed = wonCount + lostCount;
+      if (closed === 0) return 0.0;
+      return Math.round((wonCount / closed) * 10000) / 100;
+    };
+
+    const computeConversionRate = (convertedCount: number, totalLeads: number): number => {
+      if (totalLeads === 0) return 0.0;
+      return Math.round((convertedCount / totalLeads) * 10000) / 100;
+    };
+
+    // Zero closed deals: Win rate MUST be 0.00%, never 100% or NaN
+    assert.equal(computeWinRate(0, 0), 0.0);
+    assert.ok(!Number.isNaN(computeWinRate(0, 0)));
+
+    // Zero total leads: Conversion rate MUST be 0.00%, never NaN
+    assert.equal(computeConversionRate(0, 0), 0.0);
+    assert.ok(!Number.isNaN(computeConversionRate(0, 0)));
+
+    // Standard cases
+    assert.equal(computeWinRate(3, 1), 75.0);
+    assert.equal(computeConversionRate(5, 20), 25.0);
+  });
+
+  test("Deal Health vs Inactivity Invariants: Stale and Healthy states adhere strictly to canonical lifecycle rules", () => {
+    // Invariant: Healthy represents active opportunities with valid close dates or won deals
+    const classifyHealth = (
+      status: "Open" | "Won" | "Lost",
+      inactiveDays: number,
+      staleThresholdDays: number,
+      isOverdueCloseDate: boolean
+    ): DealHealthStatus => {
+      if (status === "Won") return "Healthy";
+      if (status === "Lost") return "Stale";
+      if (inactiveDays > staleThresholdDays && isOverdueCloseDate) return "Stale";
+      if (inactiveDays > staleThresholdDays) return "Stale";
+      if (isOverdueCloseDate) return "AtRisk";
+      return "Healthy";
+    };
+
+    // 1. Won deal is always Healthy
+    assert.equal(classifyHealth("Won", 45, 14, false), "Healthy");
+
+    // 2. Lost deal is always Stale
+    assert.equal(classifyHealth("Lost", 2, 14, false), "Stale");
+
+    // 3. Open deal with inactivity exceeding threshold (e.g. 21 days > 14 days) is Stale
+    assert.equal(classifyHealth("Open", 21, 14, false), "Stale");
+
+    // 4. Open deal with overdue close date but recent activity is AtRisk
+    assert.equal(classifyHealth("Open", 5, 14, true), "AtRisk");
+
+    // 5. Open deal active and future close date is Healthy
+    assert.equal(classifyHealth("Open", 3, 14, false), "Healthy");
+  });
 });

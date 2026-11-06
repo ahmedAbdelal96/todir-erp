@@ -50,17 +50,18 @@ export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
 
   // Queries
-  const { data: forecastData } = useCrmForecastQuery(legalEntityId);
+  const { data: forecastData, isLoading: loadingForecast } = useCrmForecastQuery(legalEntityId);
   const { data: worklistActivities, isLoading: loadingWorklist } = useCrmSellerWorklistQuery(legalEntityId);
   const { data: newLeadsData, isLoading: loadingAttention } = useLeads(legalEntityId, { status: "New", pageSize: 6 });
   const { data: inspectionDeals, isLoading: loadingInspection } = useCrmPipelineInspectionQuery(legalEntityId);
 
-  const formatCurrency = (val: number) => {
+  const formatCurrency = (val?: number | null) => {
+    if (val === null || val === undefined) return "—";
     return new Intl.NumberFormat(i18n.language, {
       style: "currency",
-      currency: "EGP",
+      currency: forecastData?.currencyCode || "EGP",
       maximumFractionDigits: 0,
-    }).format(val || 0);
+    }).format(val);
   };
 
   const activities = worklistActivities?.items || [];
@@ -74,7 +75,7 @@ export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
         {/* KPI 1: Due & Overdue Tasks */}
         <CrmKpiCard
           title={t("crm.sellerHome.kpiDueTasks", "متابعات اليوم")}
-          value={activities.length}
+          value={loadingWorklist ? "..." : (worklistActivities?.totalCount ?? activities.length)}
           subtitle={t("crm.sellerHome.kpiDueTasksHint", "تتطلب اتصال أو مقابلة اليوم")}
           tone="primary"
           icon={<CalendarCheck style={{ width: "1.125rem", height: "1.125rem" }} />}
@@ -84,7 +85,7 @@ export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
         {/* KPI 2: Attention Leads */}
         <CrmKpiCard
           title={t("crm.sellerHome.kpiAttentionLeads", "عملاء بحاجة لمتابعة")}
-          value={leads.length}
+          value={loadingAttention ? "..." : (newLeadsData?.totalCount ?? leads.length)}
           subtitle={t("crm.sellerHome.kpiAttentionLeadsHint", "عملاء جدد لم يُتصل بهم بعد")}
           tone="warning"
           icon={<AlertTriangle style={{ width: "1.125rem", height: "1.125rem" }} />}
@@ -94,7 +95,7 @@ export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
         {/* KPI 3: Pipeline Stale Deals */}
         <CrmKpiCard
           title={t("crm.sellerHome.kpiStaleDeals", "صفقات متوقفة")}
-          value={staleDeals.length}
+          value={loadingForecast && loadingInspection ? "..." : (forecastData?.staleOpportunityCount ?? inspectionDeals?.totalCount ?? staleDeals.length)}
           subtitle={t("crm.sellerHome.kpiStaleDealsHint", "بلا نشاط مسجل لأكثر من 14 يوم")}
           tone="danger"
           icon={<Flame style={{ width: "1.125rem", height: "1.125rem" }} />}
@@ -104,7 +105,7 @@ export const CrmSellerHomeTab: React.FC<CrmSellerHomeTabProps> = ({
         {/* KPI 4: Open Pipeline Total */}
         <CrmKpiCard
           title={t("crm.sellerHome.kpiOpenPipeline", "إجمالي قيد التفاوض")}
-          value={<bdi>{formatCurrency(forecastData?.pipelineAmount || 0)}</bdi>}
+          value={loadingForecast ? "..." : <bdi>{formatCurrency(forecastData?.pipelineAmount)}</bdi>}
           subtitle={t("crm.sellerHome.kpiOpenPipelineHint", "قيمة الصفقات النشطة الخاصة بك")}
           tone="success"
           icon={<DollarSign style={{ width: "1.125rem", height: "1.125rem" }} />}

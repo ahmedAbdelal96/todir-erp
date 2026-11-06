@@ -14,15 +14,17 @@ This document records frontend-owned acceptance evidence for the supported CRM s
 - **Opportunity Pipeline (Kanban & List)**: Interactive multi-stage Kanban board with stage progress bars, deal health badges (`Healthy`, `AtRisk`, `Stale`), probability-weighted stage totals, and instant view-mode toggle to structured data table.
 - **Opportunity 360 Workspace**: Comprehensive record inspector supporting Buying Committee role matrix (Champion, Decision Maker, Economic Buyer, Influencer, Gatekeeper, Technical Evaluator), Commercial Interests tracking with product catalog linking, and Quotation Handoff transition into Module 17 Sales.
 - **Activities & Follow-ups**: Centralized activity management for Calls, Meetings, Follow-ups, and Tasks with database-aligned state filtering (`Scheduled`, `Completed`), overdue warnings, and rapid completion dialog documenting outcomes and scheduling subsequent next actions.
-- **Sales Management & Forecasting**: Revenue projections across Pipeline, Best Case, and Commit categories, pipeline inspection table, sales team hierarchy management, pipeline/stage designer, and custom field configuration with backend TitleCase type enforcement.
+- **Sales Management & Forecasting**: Revenue projections across Pipeline, Best Case, and Commit categories, separate Opportunity Win Rate (`reportsSummary.opportunityWinRate`) and Lead Conversion Rate (`reportsSummary.leadConversionRate`) KPI cards with locale formatting, pipeline inspection table, sales team hierarchy management, pipeline/stage designer, and custom field configuration with backend TitleCase type enforcement.
 
 ## Resolved Root Causes & Data Alignment
 
 1. **Design System Migration**: Replaced all Tailwind utility class layouts across all CRM tabs and modals with ToDir's codified design system components (`Surface`, `CrmKpiCard`, `Table`, `Button`, `TextField`, `Select`, `Checkbox`, `Dialog`), CSS variables (`var(--color-surface-card)`, `var(--color-border-default)`, `var(--shadow-sm)`), and flex/grid style helpers.
 2. **PostgreSQL Activity State Parity**: Normalized activity states between frontend (`Pending`/`Scheduled`) and the backend `business_crm.crm_activity` schema (`state = 'Scheduled'`), ensuring open activities render and complete accurately.
 3. **Custom Field TitleCase Validation**: Updated `new-custom-field-modal.tsx` to emit TitleCase data types (`Text`, `Integer`, `Decimal`, `Boolean`, `Date`) required by backend validation (`CrmRepository.cs`), resolving 400 Bad Request rejections.
-4. **Deal Health Status Parity**: Aligned DealHealthBadge and translation keys with database check constraint (`Healthy`, `AtRisk`, `Stale`), preventing missing label fallbacks.
-5. **Elimination of Fabricated Financial Defaults**: Removed hardcoded prefilled amounts (e.g., `50000`) in lead conversion and opportunity modals; users specify authentic financial values or leave them unassigned.
+4. **Authoritative Deal Health Status & Badges**: Aligned DealHealthBadge, contract types, and translation keys with the authoritative backend contract (`Healthy`, `Good`, `Fair`, `AtRisk`, `Stale`), eliminating missing label fallbacks.
+5. **Separation of Opportunity Win Rate & Lead Conversion Rate**: Fixed the management dashboard to bind the Win Rate KPI strictly to `reportsSummary.opportunityWinRate` (deals won / total closed deals) while displaying Lead Conversion Rate strictly from `reportsSummary.leadConversionRate` (leads converted / total leads) with distinct Arabic and English labels. Added automated assertions ensuring zero-denominator division produces `0.00%` rather than NaN or 100%.
+6. **KPI Counting & Missing Financial Data Invariants**: Seller home counts now query full server-side counts (`totalCount`) rather than inferring from paginated client arrays. Formatted missing or null financial values safely as em-dash (`"—"`) instead of silently fabricating zero.
+7. **Elimination of Fabricated Financial Defaults**: Removed hardcoded prefilled amounts in lead conversion and opportunity modals; users specify authentic financial values or leave them unassigned.
 
 ## Runtime Acceptance Evidence
 
@@ -38,7 +40,7 @@ Executed against the local Vite frontend, local .NET API daemon, PostgreSQL data
 | 06 | Opportunities Creation | Dedicated modal dialog captures deal title, authentic numeric value, pipeline, and initial stage. |
 | 07 | Opportunity Workspace (360 View & Committee) | Full 360 inspector, Buying Committee role matrix addition, commercial interests, and Quotation handoff. |
 | 08 | Activities Management (Schedule & Complete) | Schedule activity, persist as Scheduled, complete with outcome note and next follow-up action. |
-| 09 | Sales Management (Forecasts, Teams, Custom Fields) | Revenue forecasts across categories, team creation, custom field definition persisted to backend. |
+| 09 | Sales Management (Forecasts, Teams, Custom Fields, Metrics) | Revenue forecasts across categories, team creation, custom field definition, and distinct Opportunity Win Rate vs Lead Conversion Rate KPIs with separate Arabic/English business labels verified. |
 | 10 | Lead Inbox (Search, Filtering & Pagination) | Server-side search, status pill filtering, scope toggling, and data navigation verified. |
 | 11 | Mobile Viewport (390px) | Responsive layout on iPhone viewport (390x844), verified zero horizontal overflow or clipping. |
 | 12 | English LTR Parity | Toggle via `button.topbar-lang-btn`, verify `dir="ltr"`, complete English typography, and zero missing copy. |
@@ -48,11 +50,11 @@ Executed against the local Vite frontend, local .NET API daemon, PostgreSQL data
 - `pnpm --dir frontend typecheck` — PASS (0 errors).
 - `pnpm run localization:verify` — PASS: resource parity and hardcoded-copy guard clean.
 - `pnpm run architecture:frontend` — PASS: module boundaries, alias rules, and all 9 architectural fixtures clean.
-- `pnpm run test:frontend` — PASS: 189 tests, 189 passed, 0 failed.
+- `pnpm run test:frontend` — PASS: 192 tests, 192 passed, 0 failed (includes metric separation, zero-denominator, and deal health slice tests).
 - `pnpm run api:drift` — PASS: 64 API paths validated with zero drift.
-- `pnpm --dir frontend build` — PASS: Vite production build clean in 1.06s.
-- `pnpm --dir frontend test:e2e tests/e2e/crm-flow.spec.ts` — PASS: 12 tests passed, 0 failed (32.6s).
+- `pnpm --dir frontend build` — PASS: Vite production build clean in 1.35s.
+- `pnpm --dir frontend test:e2e tests/e2e/crm-flow.spec.ts` — PASS: 12 tests passed, 0 failed (53.9s against real backend & PostgreSQL).
 
 ## Frontend Delivery Status
 
-`CRM FRONTEND COMPLETE — DESIGN SYSTEM COMPLIANT — REAL WORKFLOWS VERIFIED`
+`MODULE 19 CRM FRONTEND COMPLETE — METRICS CORRECT — FINAL UX ACCEPTANCE PASSED`

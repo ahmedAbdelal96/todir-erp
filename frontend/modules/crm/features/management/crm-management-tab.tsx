@@ -23,6 +23,7 @@ import { NewCustomFieldModal } from "./new-custom-field-modal.tsx";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "../../../../components/primitives/table.tsx";
+import { formatPercentage } from "../../../../components/formatting/quantity-formatter.ts";
 import {
   BarChart3,
   Search,
@@ -58,8 +59,8 @@ export const CrmManagementTab: React.FC<CrmManagementTabProps> = ({ legalEntityI
   const [isNewCustomFieldOpen, setIsNewCustomFieldOpen] = useState(false);
 
   // Queries
-  const { data: forecastData } = useCrmForecastQuery(legalEntityId);
-  const { data: reportsSummary } = useCrmReportsSummaryQuery(legalEntityId);
+  const { data: forecastData, isLoading: loadingForecast } = useCrmForecastQuery(legalEntityId);
+  const { data: reportsSummary, isLoading: loadingReports, isError: errorReports } = useCrmReportsSummaryQuery(legalEntityId);
   const { data: inspectionDeals, isLoading: loadingInspection } = useCrmPipelineInspectionQuery(legalEntityId);
   const { data: teams, isLoading: loadingTeams } = useCrmTeamsQuery(legalEntityId);
   const { data: pipelines, isLoading: loadingPipelines } = useCrmPipelinesQuery(legalEntityId);
@@ -76,12 +77,13 @@ export const CrmManagementTab: React.FC<CrmManagementTabProps> = ({ legalEntityI
   // Snapshot mutation
   const snapshotMutation = useCreateForecastSnapshotMutation(legalEntityId);
 
-  const formatCurrency = (val: number) => {
+  const formatCurrency = (val?: number | null, currency?: string) => {
+    if (val === null || val === undefined) return "—";
     return new Intl.NumberFormat(i18n.language, {
       style: "currency",
-      currency: "EGP",
+      currency: currency || forecastData?.currencyCode || reportsSummary?.currencyCode || "EGP",
       maximumFractionDigits: 0,
-    }).format(val || 0);
+    }).format(val);
   };
 
   const handleTakeSnapshot = () => {
@@ -174,25 +176,25 @@ export const CrmManagementTab: React.FC<CrmManagementTabProps> = ({ legalEntityI
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
             <CrmKpiCard
               title={t("crm.forecast.catPipeline", "في المسار (Pipeline)")}
-              value={<bdi>{formatCurrency(forecastData?.pipelineAmount || 0)}</bdi>}
-              subtitle={`${t("crm.forecast.weighted", "القيمة الموزونة:")} ${formatCurrency(forecastData?.weightedAmount || 0)}`}
+              value={loadingForecast ? "..." : <bdi>{formatCurrency(forecastData?.pipelineAmount)}</bdi>}
+              subtitle={`${t("crm.forecast.weighted", "القيمة الموزونة:")} ${loadingForecast ? "..." : formatCurrency(forecastData?.weightedAmount)}`}
               tone="primary"
             />
             <CrmKpiCard
               title={t("crm.forecast.catBestCase", "أفضل سيناريو (Best Case)")}
-              value={<bdi>{formatCurrency(forecastData?.bestCaseAmount || 0)}</bdi>}
+              value={loadingForecast ? "..." : <bdi>{formatCurrency(forecastData?.bestCaseAmount)}</bdi>}
               subtitle={t("forecastCategories.BestCase", "أفضل سيناريو")}
               tone="warning"
             />
             <CrmKpiCard
               title={t("crm.forecast.catCommit", "مؤكدة للإغلاق (Commit)")}
-              value={<bdi>{formatCurrency(forecastData?.commitAmount || 0)}</bdi>}
+              value={loadingForecast ? "..." : <bdi>{formatCurrency(forecastData?.commitAmount)}</bdi>}
               subtitle={t("forecastCategories.Commit", "مؤكدة للإغلاق")}
               tone="success"
             />
             <CrmKpiCard
               title={t("crm.forecast.catClosed", "صفقات مغلقة وناجحة")}
-              value={<bdi>{formatCurrency(forecastData?.wonAmount || 0)}</bdi>}
+              value={loadingForecast ? "..." : <bdi>{formatCurrency(forecastData?.wonAmount)}</bdi>}
               subtitle={t("crm.forecast.actualAchieved", "محقق فعلياً")}
               tone="default"
             />
@@ -203,43 +205,73 @@ export const CrmManagementTab: React.FC<CrmManagementTabProps> = ({ legalEntityI
             <h3 style={{ margin: "0 0 1rem", fontSize: "0.8125rem", fontWeight: 700, color: "var(--color-content-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
               {t("crm.reports.kpiTitle", "مؤشرات أداء تحويل المبيعات (Sales KPIs)")}
             </h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1.5rem" }}>
-              <div>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                  {t("crm.reports.winRate", "معدل التحويل (Conversion Rate)")}
-                </span>
-                <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-content-primary)", marginTop: "0.25rem" }}>
-                  {reportsSummary?.leadConversionRate || 0}%
-                </div>
+            {loadingReports ? (
+              <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-content-muted)" }}>
+                {t("common.loading", "جاري تحميل البيانات...")}
               </div>
+            ) : errorReports ? (
+              <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-status-danger)" }}>
+                {t("common.errorLoading", "حدث خطأ أثناء تحميل البيانات.")}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1.5rem" }}>
+                {/* 1. Opportunity Win Rate */}
+                <div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                    {t("crm.reports.winRate", "معدل الفوز بالصفقات (Win Rate)")}
+                  </span>
+                  <div
+                    data-testid="opportunity-win-rate"
+                    style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-content-primary)", marginTop: "0.25rem" }}
+                  >
+                    {formatPercentage(reportsSummary?.opportunityWinRate, { locale: i18n.language, decimals: 1 })}
+                  </div>
+                </div>
 
-              <div>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                  {t("crm.reports.totalPipeline", "إجمالي الصفقات الناجحة")}
-                </span>
-                <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-status-success, #059669)", marginTop: "0.25rem" }}>
-                  <bdi>{formatCurrency(reportsSummary?.wonAmount || 0)}</bdi>
+                {/* 2. Lead Conversion Rate */}
+                <div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                    {t("crm.reports.leadConversionRate", "معدل تحويل العملاء (Lead Conversion)")}
+                  </span>
+                  <div
+                    data-testid="lead-conversion-rate"
+                    style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-content-primary)", marginTop: "0.25rem" }}
+                  >
+                    {formatPercentage(reportsSummary?.leadConversionRate, { locale: i18n.language, decimals: 1 })}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                  {t("crm.reports.openDealsCount", "عدد الصفقات النشطة")}
-                </span>
-                <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-content-primary)", marginTop: "0.25rem" }}>
-                  {reportsSummary?.openOpportunityCount || 0}
+                {/* 3. Won Deals Total */}
+                <div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                    {t("crm.reports.totalWonRevenue", "إجمالي الصفقات الناجحة")}
+                  </span>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-status-success, #059669)", marginTop: "0.25rem" }}>
+                    <bdi>{reportsSummary ? formatCurrency(reportsSummary.wonAmount) : "—"}</bdi>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                  {t("crm.reports.avgDealSize", "عدد العملاء المحتملين")}
-                </span>
-                <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-content-primary)", marginTop: "0.25rem" }}>
-                  {reportsSummary?.leadCount || 0}
+                {/* 4. Open Deals Count */}
+                <div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                    {t("crm.reports.openDealsCount", "عدد الصفقات النشطة")}
+                  </span>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-content-primary)", marginTop: "0.25rem" }}>
+                    {reportsSummary ? reportsSummary.openOpportunityCount : "—"}
+                  </div>
+                </div>
+
+                {/* 5. Total Leads */}
+                <div>
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                    {t("crm.reports.totalLeads", "إجمالي العملاء المحتملين")}
+                  </span>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-content-primary)", marginTop: "0.25rem" }}>
+                    {reportsSummary ? reportsSummary.leadCount : "—"}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </Surface>
         </div>
       )}
