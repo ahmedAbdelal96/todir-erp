@@ -85,12 +85,25 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         if (request.CountedCash < 0) throw new ArgumentException("pos.counted_cash_invalid");
         return await coordinator.ExecuteAsync<SessionResponse>(tenant, async (ctx, token) =>
         {
-            await using var command = new NpgsqlCommand("update business_pos.pos_session set status='Closed',closed_at=$4,counted_cash=$3,variance=$3-expected_cash,variance_reason=$5,row_version=row_version+1 where tenant_id=$1 and id=$2 and status='Open' returning register_id,terminal_id,business_date,opening_float,status,counted_cash,variance", ctx.Connection, ctx.Transaction);
+            await using var blockers = new NpgsqlCommand("select exists(select 1 from business_pos.pos_cart where tenant_id=$1 and session_id=$2 and state='Held'), exists(select 1 from business_pos.pos_checkout where tenant_id=$1 and cart_id in (select id from business_pos.pos_cart where tenant_id=$1 and session_id=$2) and state not in ('Completed','PaymentFailed'))", ctx.Connection, ctx.Transaction);
+            blockers.Parameters.AddWithValue(tenant.Value); blockers.Parameters.AddWithValue(sessionId); await using var blockerReader = await blockers.ExecuteReaderAsync(token); await blockerReader.ReadAsync(token); var held = blockerReader.GetBoolean(0); var pending = blockerReader.GetBoolean(1); await blockerReader.CloseAsync(); if (held) throw new InvalidOperationException("pos.session_has_held_cart"); if (pending) throw new InvalidOperationException("pos.session_has_pending_checkout");
+            await using var expectedCommand = new NpgsqlCommand("select expected_cash from business_pos.pos_session where tenant_id=$1 and id=$2 and status='Open'", ctx.Connection, ctx.Transaction); expectedCommand.Parameters.AddWithValue(tenant.Value); expectedCommand.Parameters.AddWithValue(sessionId); var expectedValue = await expectedCommand.ExecuteScalarAsync(token); if (expectedValue is not decimal expectedCash) throw new InvalidOperationException("pos.session_not_open"); if (request.CountedCash != expectedCash && string.IsNullOrWhiteSpace(request.VarianceReason)) throw new ArgumentException("pos.variance_reason_required");
+            await using var command = new NpgsqlCommand("update business_pos.pos_session set status=case when $3=expected_cash then 'Closed' else 'Reconciling' end,closed_at=$4,counted_cash=$3,variance=$3-expected_cash,variance_reason=$5,row_version=row_version+1 where tenant_id=$1 and id=$2 and status='Open' returning register_id,terminal_id,business_date,opening_float,status,counted_cash,variance", ctx.Connection, ctx.Transaction);
             command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(sessionId); command.Parameters.AddWithValue(request.CountedCash); command.Parameters.AddWithValue(DateTimeOffset.UtcNow); command.Parameters.AddWithValue((object?)request.VarianceReason ?? DBNull.Value);
             await using var reader = await command.ExecuteReaderAsync(token); if (!await reader.ReadAsync(token)) throw new InvalidOperationException("pos.session_not_open");
             var response = new SessionResponse(sessionId, reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetString(4), reader.GetDecimal(3), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6));
             await reader.CloseAsync();
             return response;
+        }, ct);
+    }
+
+    public async Task<SessionResponse> ApproveSessionVarianceAsync(TenantId tenant, Guid actor, Guid sessionId, CancellationToken ct)
+    {
+        return await coordinator.ExecuteAsync<SessionResponse>(tenant, async (ctx, token) =>
+        {
+            await using var command = new NpgsqlCommand("update business_pos.pos_session set status='Closed',approved_by=$3,row_version=row_version+1 where tenant_id=$1 and id=$2 and status='Reconciling' and variance is not null and variance_reason is not null and length(trim(variance_reason)) > 0 returning register_id,terminal_id,business_date,opening_float,status,counted_cash,variance", ctx.Connection, ctx.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(sessionId); command.Parameters.AddWithValue(actor); await using var reader = await command.ExecuteReaderAsync(token); if (!await reader.ReadAsync(token)) throw new InvalidOperationException("pos.session_variance_not_pending");
+            var response = new SessionResponse(sessionId, reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetString(4), reader.GetDecimal(3), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6)); await reader.CloseAsync(); return response;
         }, ct);
     }
 
