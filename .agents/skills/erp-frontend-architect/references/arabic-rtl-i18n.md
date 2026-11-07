@@ -1,114 +1,145 @@
-# TODIR ERP Arabic-First, RTL-Native & Localization Standards
+# TODIR ERP — ميثاق لغة السوق العربية ومعايير الـ RTL
 
-In TODIR ERP, Arabic is the primary market language and RTL is the foundational layout mode, not a mirrored afterthought. Misaligned punctuation, scrambled codes, or literal machine translations destroy enterprise trust.
-
----
-
-## 1. CSS Standard Logical Properties
-
-Never use physical `left` or `right` directions in styles. Always use modern CSS logical properties:
-
-| Avoid (Physical) | Mandated (Logical) | Behavior in RTL / LTR |
-|---|---|---|
-| `marginLeft` | `marginInlineStart` | Right in RTL, Left in LTR |
-| `marginRight` | `marginInlineEnd` | Left in RTL, Right in LTR |
-| `paddingLeft` | `paddingInlineStart` | Right in RTL, Left in LTR |
-| `paddingRight` | `paddingInlineEnd` | Left in RTL, Right in LTR |
-| `left: 0` | `insetInlineStart: 0` | Right edge in RTL, Left in LTR |
-| `right: 0` | `insetInlineEnd: 0` | Left edge in RTL, Right in LTR |
-| `textAlign: "left"` | `textAlign: "start"` | Aligns with natural reading direction |
-| `textAlign: "right"` | `textAlign: "end"` | Aligns with opposite reading direction |
-| `borderLeft` | `borderInlineStart` | Leading border |
-| `borderRight` | `borderInlineEnd` | Trailing border |
+> **مبدأ حاكم غير قابل للتفاوض:**  
+> في نظام TODIR ERP، اللغة العربية ليست ترجمة ميكانيكية أو قشرة مضافة فوق نظام إنجليزي. **العربية هي اللغة الأم والأولى للنظام**. المستخدم العربي (محاسب، مدير مالي، أمين مخزن، مسؤول مشتريات، مدير مبيعات) لن يثق في نظام مالي يستخدم ألفاظاً ركيكة أو مصطلحات مترجمة حرفياً من قواميس عامة. يجب أن تكون كل كلمة معروضة مطابقة تماماً لما يتداوله المهنيون في أسواق مصر والسعودية والخليج العربي.
 
 ---
 
-## 2. Direction-Aware Component & Icon Behavior
+## 1. القواعد الخمس الذهبية لصياغة الواجهات العربية (Microcopy Charter)
 
-- **Directional Icons (Must Flip in RTL)**:
-  - Navigation arrows, chevrons (`ChevronRight` becomes leading back arrow), "Send", breadcrumbs separators, and back/forward buttons must be rotated 180 degrees or flipped via CSS `transform: scaleX(-1)`.
-- **Non-Directional Icons (Must NEVER Flip)**:
-  - Checkmarks, clocks, search magnifiers, status badges, currency symbols, and phone icons must never flip.
-- **Drawers & Modals**:
-  - Side Drawers slide in from `inline-start` (the right edge in RTL).
-  - Steppers and progress timelines advance from right to left (`start -> end`).
+1. **الحديث بلغة أصحاب المهنة (Domain Terminology over Dictionary Translation):**
+   - المحاسب يقول **"قيد يومية"** ولا يقول "إدخال اليومية" أو "مجلة".
+   - ويقول **"ميزان المراجعة"** ولا يقول "توازن التجربة".
+   - ويقول **"إشعار دائن"** و **"إشعار مدين"** ولا يقول "مذكرة ائتمان" و "مذكرة خصم".
+   - أمين المخزن يقول **"إذن استلام بضاعة"** و **"إذن صرف"** ولا يقول "إيصال سلع" أو "مذكرة تسليم".
+2. **منع التسريب البرمجي والتقني نهائياً (Zero Technical Jargon Leakage):**
+   - يمنع منعاً باتاً ظهور مصطلحات مثل: `Tenant` (مستأجر)، `EntityId`، `Payload`، `String`، `Boolean`، `Null`، `Array`، أو أكواد الأخطاء التقنية مثل `InternalServerError` أو أسماء الجداول وقواعد البيانات.
+   - الكيان المؤسسي يُسمى **"الشركة"** أو **"المؤسسة"** أو **"الفرع"**، وليس "الكيان القانوني" إلا في شاشات الإعدادات الضريبية والرسمية.
+   - حالات السجلات لا تُعرض كرموز إنجليزية (`PENDING`, `APPROVED`, `STALE`) بل بتسمياتها المهنية المترجمة.
+3. **أفعال الحركة المهنية في الأزرار والإجراءات:**
+   - للإرسال للمراجعة: **"إرسال للاعتماد"** (وليس "تقديم" أو "إرسال").
+   - للترحيل المالي: **"ترحيل القيد"** (وليس "نشر" أو "بوست").
+   - للمطابقة: **"تأكيد المطابقة"** (وليس "تسوية").
+   - للتصحيح المحاسبي: **"إصدار قيد عكسي"** أو **"إشعار تسوية"** (وليس "عكس" أو "تراجع").
+   - لإلغاء السند: **"إلغاء السند"** أو **"إلغاء المسودة"** (وليس "حذف نهائي" للسجلات المرحلة).
+4. **وضوح رسائل التحقق والتنبيهات (Actionable, Courteous Guidance):**
+   - بدلاً من: "فشل التحقق من الصحة" -> قل: **"يرجى استكمال البيانات الإلزامية المحددة أدناه"**.
+   - بدلاً من: "القيمة غير صالحة" -> قل: **"يرجى إدخال مبلغ مالي صحيح أكبر من الصفر"**.
+   - بدلاً من: "تمت العملية بنجاح" -> قل بالضبط ما حدث: **"تم حفظ وترحيل القيد المحاسبي بنجاح"**.
+   - في نصوص البحث: استخدم نصوصاً إرشادية شارحة: **"ابحث بالاسم، كود الصنف، أو رقم الهاتف..."** بدلاً من "بحث...".
+5. **احترام التنسيق اللغوي العربي والاتساق:**
+   - التمييز الدقيق بين التاء المربوطة (ـة) والهاء (ـه)، وهمزات القطع والوصل (إضافة، استلام، إنشاء، اعتماد).
+   - توحيد الصياغة بصيغة الأمر الإرشادي اللطيف ("اختر الحساب"، "أدخل الكمية") بدلاً من الصياغات التقريرية الجافة.
 
 ---
 
-## 3. Mandatory Bidirectional Text Isolation (`<BdiText>` / `<bdi>`)
+## 2. القاموس المعتمد لمصطلحات السوق العربي في TODIR ERP
 
-When Latin identifiers, numbers, dates, or emails appear within Arabic text, the Unicode Bidirectional Algorithm can scramble punctuation (e.g. turning `(INV-2026-001)` into `-001)INV-2026(`).
+### أولاً: المالية والمحاسبة العامة (Financials & General Ledger)
 
-**Rules:**
-1. Wrap all reference codes, invoice numbers, SKUs, phone numbers, units, and emails inside `BdiText` (`frontend/components/formatting/bidi-text.tsx`) or `<bdi>`:
+| المفهوم المالي الإنجليزي | مصطلح السوق العربي المعتمد (إلزامي) | الألفاظ الممنوعة والترجمات الحرفية |
+|:---|:---|:---|
+| General Ledger | **دفتر الأستاذ العام** | الليدجر / سجل الحسابات |
+| Subledger | **دفتر الأستاذ المساعد / الحسابات الفرعية** | الحسابات الجزئية / السبليدجر |
+| Journal Entry | **قيد يومية** | إدخال اليومية / مجلة / إدخال دفتري |
+| Chart of Accounts (COA) | **شجرة الحسابات / دليل الحسابات** | مخطط الحسابات / رسم بياني |
+| Debit / Credit | **مدين / دائن** | خصم وإضافة / دائن ومدين بغير موضعها |
+| Trial Balance | **ميزان المراجعة** | توازن التجربة / ميزان تجريبي |
+| Balance Sheet | **قائمة المركز المالي** | ورقة الميزانية / الميزانية العمومية |
+| Income Statement / P&L | **قائمة الدخل (الأرباح والخسائر)** | بيان الدخل / بيان الربح والخسارة |
+| Accounts Receivable (AR) | **ذمم مدينة / حسابات العملاء** | المقبوضات / الحسابات المستحقة للقبض |
+| Accounts Payable (AP) | **ذمم دائنة / حسابات الموردين** | المدفوعات / الحسابات واجبة الدفع |
+| Credit Note | **إشعار دائن** | مذكرة ائتمان / سند ائتمان |
+| Debit Note | **إشعار مدين** | مذكرة خصم / سند خصم |
+| Payment Voucher | **سند صرف** | قسيمة دفع / إيصال دفع |
+| Receipt Voucher | **سند قبض** | قسيمة استلام / إيصال استلام |
+| Bank Reconciliation | **مطابقة كشف الحساب البنكي** | تسوية البنك / مصالحة بنكية |
+| FX Revaluation | **إعادة تقييم فروق أسعار العملات** | إعادة تقييم النقد الأجنبي |
+| Aging Report | **تقرير أعمار الديون** | تقرير التقادم / تقرير الشيخوخة |
+| Opening Balance | **رصيد افتتاحي** | رصيد بداية / توازن الافتتاح |
+| Retained Earnings | **أرباح مبقاة (مرحلة)** | أرباح محتجزة حرفياً |
+| Depreciation | **إهلاك الأصول** | انخفاض القيمة / استهلاك |
+| Posting | **ترحيل القيود** | نشر / إرسال / بوست |
+| Reversal | **قيد عكسي / عكس القيد** | إرجاع / استرجاع / تراجع |
+
+---
+
+### ثانياً: المخازن وسلاسل الإمداد والمشتريات (Supply Chain & Inventory)
+
+| المفهوم الإنجليزي | مصطلح السوق العربي المعتمد (إلزامي) | الألفاظ الممنوعة والترجمات الحرفية |
+|:---|:---|:---|
+| Purchase Requisition (PR) | **طلب شراء داخلي** | التماس شراء / طلبية |
+| Purchase Order (PO) | **أمر شراء** | طلب شراء (PO هو أمر الشراء المعتمد للمورد) |
+| Goods Receipt (GRN) | **إذن استلام بضاعة (مخزني)** | إيصال سلع / استلام بضائع / إيصال |
+| Delivery Note / Dispatch | **إذن صرف بضاعة / إذن تسليم** | مذكرة تسليم / تسليم البضائع |
+| Stock Transfer | **تحويل مخزني** | نقل المخزون / تحويل الأسهم |
+| Inventory Adjustment | **تسوية مخزنية (جردية)** | تعديل المخزون / تصحيح السلع |
+| Physical Stock Count | **جرد مخزني (فعلي)** | عد المخزون / إحصاء المخازن |
+| Stocked / Inventory Tracked | **صنف مخزني (مُتتبع)** | مخزن / سلعة مخزنة |
+| Non-Stock / Service Line | **خدمة / بند غير مخزني** | خط خدمة / بند غير مسجل |
+| Reorder Point | **حد إعادة الطلب** | نقطة إعادة الطلب / نقطة الترتيب |
+| Safety Stock | **مخزون الأمان / المخزون الاحتياطي** | مخزون السلامة |
+| Unit of Measure (UoM) | **وحدة القياس** | وحدة التدبير / وحدة الحساب |
+| Batch / Lot Number | **رقم التشغيلة (الوجبة)** | رقم الدفعة الحرفي |
+| Bin / Shelf Location | **موقع التخزين / الرف** | سلة / صندوق / بن |
+| Lead Time | **مدة التوريد (بالأيام)** | وقت الرصاص / وقت القيادة |
+
+---
+
+### ثالثاً: المبيعات والعلاقات مع العملاء (Sales & CRM)
+
+| المفهوم الإنجليزي | مصطلح السوق العربي المعتمد (إلزامي) | الألفاظ الممنوعة والترجمات الحرفية |
+|:---|:---|:---|
+| Lead | **عميل محتمل** | ليد / عميل متوقع / عميل رصاصي |
+| Opportunity | **فرصة مبيعات / فرصة بيع** | فرصة تجارية / فرصة حظ |
+| Pipeline | **مسار الصفقات / مراحل المبيعات** | خط الأنابيب / بايب لاين |
+| Sales Quotation | **عرض أسعار** | اقتباس مالي / تسعيرة / كوتيشن |
+| Sales Order (SO) | **أمر بيع** | طلب بيع |
+| Opportunity Win Rate | **معدل الفوز بالصفقات (Win Rate)** | معدل الربح / نسبة الفوز |
+| Lead Conversion Rate | **معدل تحويل العملاء (Conversion)** | نسبة التحويل العامة |
+| Customer 360 | **ملف العميل الشامل (360°)** | رؤية العميل 360 |
+| Buying Committee | **أصحاب القرار ولجنة الشراء** | لجنة الشراء الحرفية |
+| Stale Opportunity | **صفقة راكدة (بدون تفاعل)** | فرصة قديمة / فرصة فاسدة |
+| Loss Reason | **سبب خسارة الصفقة** | سبب الفقدان |
+| Competitor | **المنافس التجاري** | الخصم / المنافس |
+
+---
+
+### رابعاً: الموارد البشرية والرواتب (HR & Payroll)
+
+| المفهوم الإنجليزي | مصطلح السوق العربي المعتمد (إلزامي) | الألفاظ الممنوعة والترجمات الحرفية |
+|:---|:---|:---|
+| Payroll Run | **مسير رواتب (كشف الرواتب)** | تشغيل الرواتب / دورة الأجور |
+| Payslip | **قسيمة راتب (مسير الموظف)** | زلة الراتب / إشعار الأجر |
+| Basic Salary | **الراتب الأساسي** | أجر القاعدة |
+| Allowances | **البدلات (سكن، انتقال، طبيعة عمل)** | العلاوات الحرفية |
+| Deductions | **الاستقطاعات والخصومات** | الاقتطاعات / الطرح |
+| Overtime | **العمل الإضافي (ساعات إضافية)** | الوقت الإضافي |
+| Leave Balance | **رصيد الإجازات** | ميزان الإجازات |
+| End of Service / Offboarding | **إجراءات نهاية الخدمة (مكافأة)** | النزول من الخدمة / إنهاء الخدمة |
+| Social Insurance | **التأمينات الاجتماعية** | الضمان الاجتماعي بغير محله |
+
+---
+
+## 3. معايير النصوص ثنائية الاتجاه (Bidi Isolation)
+
+عند عرض أكواد لاتينية (مثل `INV-2026-001`, `PO-099`) أو أرقام هواتف داخل جملة عربية:
+1. **استخدام مكوّن `<BdiText>` أو عنصر `<bdi>` إلزامياً:**
    ```tsx
    import { BdiText } from "frontend/components/formatting/bidi-text";
 
-   <span>
-     {t("invoicing.invoiceNumber")}: <BdiText>{invoice.number}</BdiText>
-   </span>
+   <p>
+     تم إنشاء فاتورة المبيعات رقم <BdiText>{invoice.number}</BdiText> بقيمة <BdiText>{formatCurrency(invoice.total, "EGP")}</BdiText>
+   </p>
    ```
-2. Never concatenate translated fragments around variables using `+`. Always use ICU-style interpolation:
-   - Correct: `t("crm.lead.assignedTo", { name: user.name })` -> `"تم التعيين إلى {{name}}"`
-   - Prohibited: `t("crm.lead.assignedTo") + " " + user.name`
+2. **منع دمج الجمل باستخدام علامة الجمع (`+`):**
+   - **ممنوع:** `t("assigned_to") + " " + user.name`
+   - **إلزامي:** `t("assigned_to", { name: user.name })` حيث القالب: `"تم التعيين إلى {{name}}"`
 
 ---
 
-## 4. Central Formatting & Currency Invariants
+## 4. التنسيق المالي الموحد (Formatters)
 
-All numbers, monetary amounts, percentages, and dates must be formatted strictly through:
-`frontend/components/formatting/quantity-formatter.ts`
-
-```tsx
-import { formatCurrency, formatQuantity, formatPercentage, formatDate } from "frontend/components/formatting/quantity-formatter";
-
-// Money formatting
-formatCurrency(invoice.totalAmount, invoice.currencyCode); // "1,250.00 EGP" or "1,250.00 ر.س"
-
-// Null/Missing Money Invariant:
-formatCurrency(null, "EGP"); // Returns "—" (em-dash), never "0.00"
-
-// Quantity formatting with unit:
-formatQuantity(150, "طن"); // "150 طن"
-
-// Percentage formatting:
-formatPercentage(0.85); // "85.00%"
-```
-
-**Financial Rules:**
-- Never use `.toFixed(2)` or manual string template concatenation for money.
-- Currency code must derive authoritatively from backend DTO (`currencyCode`). Never hardcode `SAR` or `EGP`.
-- Digits: Use Latin digits (`0-9`) in data tables and financials with Western grouping separators (`,` and `.`) for uniform column alignment.
-
----
-
-## 5. 100% Arabic & English Key Parity
-
-1. Every business module owns `modules/<module>/i18n/ar.ts` and `en.ts`.
-2. Both files must have **identical keys** with zero missing translations.
-3. Every screen must undergo automated verification via `pnpm run localization:verify`.
-4. Hardcoded Arabic or English text in JSX is strictly forbidden.
-
----
-
-## 6. Authoritative Enterprise Arabic Vocabulary
-
-| Concept | Market Arabic Term (Mandatory) | Prohibited Literal / English |
-|---|---|---|
-| General Ledger | دفتر الأستاذ العام | الليدجر / سجل الحسابات |
-| Journal Entry | قيد يومية | إدخال يومي / Journal |
-| Debit / Credit | مدين / دائن | خصم / إضافة |
-| Trial Balance | ميزان المراجعة | توازن التجربة |
-| Accounts Payable | حسابات الموردين (ذمم دائنة) | الدفعيات / AP |
-| Accounts Receivable | حسابات العملاء (ذمم مدينة) | المقبوضات / AR |
-| Purchase Order | أمر شراء | طلب شراء / PO |
-| Goods Receipt | إذن استلام بضاعة | إيصال سلع / استلام مخزني |
-| Delivery Note | إذن صرف / تسليم بضاعة | مذكرة تسليم |
-| Sales Quotation | عرض أسعار | تسعيرة / Quote |
-| Opportunity | فرصة مبيعات | فرصة تجارية |
-| Lead | عميل محتمل | عميل متوقع / ليد |
-| Win Rate | معدل الفوز بالصفقات | معدل الربح |
-| Lead Conversion Rate | معدل تحويل العملاء | نسبة التحويل |
-| Credit Note | إشعار دائن | مذكرة ائتمان |
-| Debit Note | إشعار مدين | مذكرة خصم |
-| Reversal | قيد عكسي / إلغاء تسوية | إرجاع / استرجاع |
+- المبالغ المالية تُعرض بالأرقام اللاتينية (`0-9`) لضمان محاذاة الفواصل العشرية عمودياً في الجداول المالية.
+- رمز العملة يأتي من بيانات النظام (`currencyCode`) ولا يُكتب باليد أبداً.
+- المبالغ المعدومة أو غير المحددة تُعرض كشرطة طويلة (`"—"`) ولا تُعرض كصفر (`0.00`) تجنباً لتضليل المحاسبين.

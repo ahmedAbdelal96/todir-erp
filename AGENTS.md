@@ -122,6 +122,19 @@ To compete with global ERP leaders (such as Odoo) in the Arabic enterprise marke
 - **Edit Workflows**: Must always be triggered by an explicit edit action on a specific record, which opens a dedicated **Edit Modal Dialog** or navigates to a dedicated **Edit Route**.
 - **Self-Explanatory microcopy**: No developer terminology, database identifiers, or raw status codes. Obvious next actions with clear visual hierarchy.
 
+## 3.2 Arabic Market Vocabulary Charter: Zero Literal Machine Translation
+
+To earn deep enterprise trust across Egypt, Saudi Arabia, and the Gulf, user-facing Arabic copy must strictly use **authentic market ERP terminology**. Literal dictionary or machine translations are strictly forbidden as product defects.
+
+Every user-facing screen, label, status badge, validation message, and document title must follow the authoritative enterprise glossary codified in `.agents/skills/erp-frontend-architect/references/arabic-rtl-i18n.md`:
+- **Accounting & Finance**: Use `قيد يومية` (never `إدخال اليومية` or `مجلة`); `ميزان المراجعة` (never `توازن التجربة`); `إشعار دائن` / `إشعار مدين` (never `مذكرة ائتمان` / `مذكرة خصم`); `دفتر الأستاذ العام` (never `سجل الحسابات`); `سند صرف` / `سند قبض` (never `قسيمة دفع` / `إيصال دفع`); `مطابقة كشف الحساب البنكي` (never `تسوية البنك`); `أرباح مبقاة` (never `أرباح محتجزة`).
+- **Supply Chain & Inventory**: Use `أمر شراء` for Purchase Order (never `طلب شراء`, which is reserved for internal Requisitions); `إذن استلام بضاعة` for Goods Receipt (never `إيصال سلع`); `إذن صرف بضاعة` for Delivery Note (never `مذكرة تسليم`); `تسوية مخزنية` for Inventory Adjustment (never `تعديل المخزون`); `جرد مخزني` for Stock Count (never `عد المخزون`).
+- **Commercial & CRM**: Use `عميل محتمل` for Lead (never `ليد` or `عميل متوقع`); `فرصة مبيعات` for Opportunity; `عرض أسعار` for Quotation (never `اقتباس` or `تسعيرة`); `مسار الصفقات` for Pipeline (never `خط الأنابيب`).
+- **HR & Payroll**: Use `مسير رواتب` for Payroll Run; `قسيمة راتب` for Payslip (never `زلة الراتب`); `الراتب الأساسي` and `البدلات` (never literal machine words).
+- **Actions & System States**: Use `إرسال للاعتماد` (never `تقديم`); `اعتماد` (never `موافقة`); `ترحيل` for Post (never `نشر`); `قيد عكسي` for Reversal (never `عكس` or `استرجاع`).
+
+---
+
 # 4. Locked repository structure
 
 The repository structure is closed. Approved navigation roots are:

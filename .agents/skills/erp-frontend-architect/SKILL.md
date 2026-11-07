@@ -81,10 +81,12 @@ Before writing any component or markup, answer these 10 points:
    - **Surface Cards**: Pure crisp white (`#ffffff`) with solid perimeter borders (`#cbd5e1`) and dual-layer elevation shadows.
    - **Zero Ghost Screens**: Low-contrast, borderless, pale cards blending into the background are strictly prohibited defects.
    - **Zero Tailwind Utility Classes**: TODIR does not use Tailwind. Use CSS variables, inline layout styles with logical properties, or CSS modules.
-3. **Arabic-First & RTL-Native Discipline**:
+3. **Arabic-First, RTL-Native & Market Vocabulary Charter**:
+   - **Market Arabic Over Literal Translation**: Every user-facing term, label, badge, and message MUST follow the authoritative enterprise glossary in `references/arabic-rtl-i18n.md`. Machine translations and literal dictionary terms are strictly forbidden (e.g. use `قيد يومية` not `إدخال اليومية`; `ميزان المراجعة` not `توازن التجربة`; `إشعار دائن` not `مذكرة ائتمان`; `إذن استلام بضاعة` not `إيصال سلع`; `عميل محتمل` not `ليد` or `عميل متوقع`; `أمر شراء` not `طلب شراء`).
    - Layouts use standard CSS logical properties (`margin-inline-start`, `padding-inline-end`, `inset-inline-start`, `text-align: start`).
    - Direction-aware icons: Flip directional chevrons/arrows in RTL; do not flip non-directional icons (checkmarks, search, clocks).
    - **Strict Bidirectional Isolation**: Always wrap Latin codes (`INV-2026-001`, `PO-099`), phone numbers, dates, units, and amounts inside `<BdiText>` or `<bdi>` to prevent reversed punctuation.
+   - **Zero Technical Leakage**: No UUIDs, database error strings, table names, raw English enums (`APPROVED`, `IN_PROGRESS`), or translation keys shown to the user.
 4. **ERP Domain & Financial Safety**:
    - **Zero Float Math**: Never calculate money with JavaScript floating point (`0.1 + 0.2`). All arithmetic is display-only or performed authoritatively by the backend.
    - **Central Formatting**: All money, quantities, and dates pass through `frontend/components/formatting/quantity-formatter.ts`.

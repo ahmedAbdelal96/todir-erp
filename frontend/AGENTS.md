@@ -22,10 +22,12 @@ Before writing or modifying any frontend code, the agent must strictly execute:
    - Medium entry / line items (5-12 fields) -> Side Drawer.
    - Large documents / multi-stage (13+ fields) -> dedicated creation page with stepper.
    - Clicking a table row MUST open the Detail Drawer (preserving URL filters, pagination, and scroll position).
-3. **Arabic-First & RTL-Native Discipline**:
+3. **Arabic-First, RTL-Native & Market Vocabulary Charter**:
+   - **Market Arabic Over Literal Translation**: Every user-facing term, label, badge, and message MUST strictly follow the authoritative enterprise glossary in `.agents/skills/erp-frontend-architect/references/arabic-rtl-i18n.md`. Never use literal machine translations (e.g. use `قيد يومية` not `إدخال اليومية`; `ميزان المراجعة` not `توازن التجربة`; `إشعار دائن` not `مذكرة ائتمان`; `إذن استلام بضاعة` not `إيصال سلع`; `عميل محتمل` not `ليد` or `عميل متوقع`; `أمر شراء` not `طلب شراء`).
    - Strictly use logical CSS properties (`margin-inline-start`, `padding-inline-end`, `start`, `end`).
    - Flip directional icons in RTL; do not flip non-directional icons (checks, search).
-   - Strict bidirectional text isolation (`<bdi>` or `unicode-bidi: isolate`) around Latin codes (`INV-2026-001`), phone numbers, dates, and amounts inside Arabic copy.
+   - Strict bidirectional text isolation (`<bdi>` or `unicode-bidi: isolate` / `<BdiText>`) around Latin codes (`INV-2026-001`), phone numbers, dates, and amounts inside Arabic copy.
+   - Zero technical leakage: Never expose database IDs, table names, raw enum codes, or untranslated fallback English to Arabic business users.
 4. **TODIR Design System Precedence**:
    - All visual layouts must strictly use TODIR's codified design tokens: authentic Dark Oxford Navy header (`#102a43`), slate background canvas (`#f0f4f8`), crisp white surface cards (`#ffffff`) with solid perimeter borders (`#cbd5e1`) and dual-layer elevation shadows.
    - Reusable primitives from `frontend/components/` must be used; uncompiled Tailwind utility classes are strictly prohibited.
