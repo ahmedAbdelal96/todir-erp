@@ -568,6 +568,11 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("payroll-forward-fix-statutory-settings.sql", StringComparison.Ordinal) => 4,
     _ when fileName.Equals("payroll-forward-fix-opening-balance-loan-schedule.sql", StringComparison.Ordinal) => 6,
     _ when fileName.Equals("payroll-forward-fix-supplemental-input-target.sql", StringComparison.Ordinal) => 7,
+    // The exchange table is introduced by this forward-fix and must exist before
+    // its grants and seeded permission rows are applied on a fresh database.
+    _ when fileName.Equals("pos-forward-fix-exchanges.sql", StringComparison.Ordinal) => 4,
+    _ when fileName.Equals("pos-forward-fix-exchanges-permissions.sql", StringComparison.Ordinal) => 5,
+    _ when fileName.Equals("pos-forward-fix-exchanges-role-permissions.sql", StringComparison.Ordinal) => 6,
     _ => 5
 };
 

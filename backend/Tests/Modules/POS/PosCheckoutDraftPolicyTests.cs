@@ -4,6 +4,16 @@ namespace POSTests;
 
 public sealed class PosCheckoutDraftPolicyTests
 {
+    [Theory]
+    [InlineData("Succeeded", true)]
+    [InlineData("RequiresAction", false)]
+    [InlineData("Failed", false)]
+    [InlineData(null, false)]
+    public void CashIsCapturedOnlyAfterProviderSuccess(string? providerState, bool expected)
+    {
+        Assert.Equal(expected, Modules.POS.PosPaymentBoundaryPolicy.IsProviderSuccess(providerState));
+    }
+
     [Fact]
     public void ExternalPaymentStartsWithDurablePendingState()
     {
