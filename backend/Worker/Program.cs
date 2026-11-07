@@ -17,6 +17,7 @@ using Modules.Tax;
 using Modules.Hr;
 using Modules.Payroll;
 using Modules.CRM;
+using Modules.POS;
 using Quartz;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -29,6 +30,7 @@ builder.Services.AddRouting();
 builder.Services.AddCore(builder.Configuration, bus =>
 {
     SampleModuleExtensions.ConfigureSampleMessaging(bus);
+    PosModuleExtensions.ConfigurePosMessaging(bus);
     bus.AddConsumer<CatalogProjectionConsumer, CatalogProjectionConsumerDefinition>();
     bus.AddConsumer<CatalogImportConsumer, CatalogImportConsumerDefinition>();
     bus.AddConsumer<PaymentProviderOperationConsumer, PaymentProviderOperationConsumerDefinition>();
@@ -53,6 +55,7 @@ builder.Services.AddTaxModule();
 builder.Services.AddHrModule();
 builder.Services.AddPayrollModule();
 builder.Services.AddCrmModule();
+builder.Services.AddPosModule();
 builder.Services.AddScheduling(builder.Configuration, options =>
 {
     options.AddJob<HrExpiryReminderJob>(job => job
