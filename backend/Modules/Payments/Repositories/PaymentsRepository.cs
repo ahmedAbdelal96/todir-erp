@@ -1379,7 +1379,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
                 if (await updateRefund.ExecuteNonQueryAsync(token) != 1) throw new PaymentException("payments.refund_state_invalid", "The refund request is not ready to complete.");
             }
             var eventType = payment.Type == PaymentType.CustomerRefund ? "PaymentRefundedV1" : "PaymentCompletedV1";
-            context.AddOutbox(new(Guid.CreateVersion7(), eventType, JsonSerializer.Serialize(new { paymentId = payment.Id, payment.LegalEntityId, payment.Number, payment.Direction, payment.Amount, payment.CurrencyCode, payment.PartyId }, JsonOptions), tenant, completedAt, correlationId, payment.Id, "payments"));
+            context.AddOutbox(new(Guid.CreateVersion7(), eventType, JsonSerializer.Serialize(new { paymentId = payment.Id, payment.LegalEntityId, payment.Number, payment.Direction, payment.Amount, payment.CurrencyCode, payment.PartyId, payment.SourceType, payment.SourceReference }, JsonOptions), tenant, completedAt, correlationId, payment.Id, "payments"));
             await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction, new(Guid.CreateVersion7(), tenant, legalEntityId, payment.BranchId, "User", actor, membership, "payments", "payment.completed", "payment", payment.Id, null, JsonSerializer.Serialize(new { payment.Number, payment.Amount, payment.CurrencyCode, payment.Direction, accountType }, JsonOptions), null, "api", correlationId, null, completedAt, null), token);
             return payment with { State = PaymentBusinessState.Completed, CompletedAt = completedAt, Version = payment.Version + 1 };
         }, ct);

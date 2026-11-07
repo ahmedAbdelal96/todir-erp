@@ -7,21 +7,21 @@ Scope: Module 20 backend, PostgreSQL, API, Worker, cross-module contracts, secur
 
 - Status: IN PROGRESS
 - Branch: `dev`
-- Baseline: `c2d77a82d1879206fc58f5fd07ad518d7c579e7d`
-- Last meaningful change: added validated multi-tender cash checkout with one Payments capture and per-tender change allocation, while preserving the existing stocked issue, invoice, journal, and recovery flow.
-- Next executable action: implement provider/card payment and asynchronous provider-success recovery, then continue returns/refunds, offline sync, permissions, concurrency, and release gates.
-- Evidence still valid: disposable PostgreSQL runtime proved a two-tender cash checkout with two persisted POS tenders, one payment totaling the sale, one Inventory issue, one finalized invoice, and one journal reference. Full M1 certification has not been granted.
+- Baseline: `46bfc5a06341536a6c5c04523c842cb0fa589188`
+- Last meaningful change: secured POS routes with explicit permissions, completed provider/card payment initiation and webhook/recovery convergence, preserved provider idempotency across retries, added sale-line UOM/source references, durable cash-drawer sale movements, bounded return processing with inventory restock recovery, and validated offline envelope identity/sequence invariants.
+- Next executable action: complete refund/credit-note ownership, session variance approval and held/pending close guards, manager overrides, offline package signing/conflict resolution, operational reports, concurrency/security integration tests, and final backend release gates.
+- Evidence still valid: disposable PostgreSQL runtime proved authenticated POS register access, a card checkout moving from provider action required to Completed through signed provider success and recovery, a cash checkout with a persisted Sale drawer movement and expected-cash update, bounded damaged and restock return flows, over-return rejection, and migration application for the POS sale-line UOM forward fix. Full M1 certification has not been granted.
 
 ## PS00–PS41 matrix
 
 | Phase | Backend deliverable | Status | Evidence |
 |---|---|---|---|
 | PS00 | Dependency and ownership matrix | PASS | Existing module/API/schema inspection; canonical pack and scoped manuals read |
-| PS01–PS04 | POS schema, register/session/cart, calculation seams | PARTIAL | `pos-schema.sql`, forced tenant RLS, runtime role proof, API smoke; fine-grained permissions and full invariant coverage remain |
+| PS01–PS04 | POS schema, register/session/cart, calculation seams | PARTIAL | `pos-schema.sql`, forced tenant RLS, runtime role proof, fine-grained route permissions, cash expected-balance locking, and API smoke; full invariant coverage remains |
 | PS05–PS08 | Catalog/Pricing/Tax validation and checkout state | PARTIAL | Active Catalog variant, Pricing resolution, and Tax calculation are invoked when authoritative line context is supplied; Tax snapshot is persisted on the line; complete checkout ownership is not implemented |
-| PS09–PS15 | Cash/card checkout, inventory/document/ledger/payment orchestration, recovery and split tender | PARTIAL | Stocked cash checkout and durable recovery are proven; a two-tender cash split is proven with one payment aggregate and two POS tender rows. Card/provider flow and failure-injection coverage remain |
-| PS16–PS23 | Cash controls, returns/refunds/exchanges, lot/serial, customer/credit, overrides | PARTIAL | Cash/session foundation and pending return persistence exist; full return/refund/exchange, lot/serial, customer/credit, and override authorization remain |
-| PS24–PS28 | Fiscal/hardware seams and offline package/sync server contracts | NOT COMPLETE | Offline envelope storage is present, but signed/versioned package validation, conflict resolution, and fiscal/hardware contracts are not complete |
+| PS09–PS15 | Cash/card checkout, inventory/document/ledger/payment orchestration, recovery and split tender | PARTIAL | Stocked cash/card checkout, durable provider-success recovery, stable payment idempotency, UOM validation, source references, and split tender persistence are proven; failure-injection breadth remains |
+| PS16–PS23 | Cash controls, returns/refunds/exchanges, lot/serial, customer/credit, overrides | PARTIAL | Cash expected-balance movements and quantity-safe return/restock recovery are implemented; refunds/exchanges, lot/serial exactness, credit sale, and override authorization remain |
+| PS24–PS28 | Fiscal/hardware seams and offline package/sync server contracts | PARTIAL | Offline envelopes now validate register/device/payload/sequence and persist conflict records; signed package verification, conflict resolution workflow, fiscal, and hardware contracts remain |
 | PS29–PS34 | Concurrency, reports, security, performance, migration/go-live, runbooks | PARTIAL | Forced RLS and bounded sales query exist; concurrency, performance, report read model, authorization matrix, and operational evidence remain |
 | PS35–PS41 | API readiness, manager/finance/compliance/E2E/release gates | NOT COMPLETE | Only basic API/runtime smoke and 2 pure unit tests pass; required contract, integration, security, recovery, and release gates remain |
 

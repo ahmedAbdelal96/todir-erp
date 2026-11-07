@@ -30,6 +30,28 @@ public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCap
             draft.Id, $"{request.IdempotencyKey}:complete", correlationId, cancellationToken);
         return new(completed.Id, completed.State.ToString(), completed.Amount, completed.CurrencyCode, completed.Method.ToString());
     }
+
+    public async Task<PosProviderPaymentResult> BeginCardAsync(Guid tenantId, Guid actorId, Guid membershipId,
+        PosCardPaymentRequest request, Guid correlationId, CancellationToken cancellationToken = default)
+    {
+        var tenant = new TenantId(tenantId);
+        var intent = await CreatePaymentIntentAsync(tenant, actorId, membershipId, correlationId,
+            new CreatePaymentIntentRequest(request.LegalEntityId, request.BranchId, request.ProviderConfigId, request.PartyId,
+                request.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), request.CurrencyCode,
+                "POS", request.SourceReference, null), request.IdempotencyKey, cancellationToken);
+        var operationId = await repository.GetLatestReferenceProviderOperationIdAsync(tenant, request.LegalEntityId, intent.Id, cancellationToken)
+            ?? throw new PaymentException("payments.provider_operation_not_found", "The payment request has no provider operation.");
+        await StartReferenceProviderOperationAsync(tenant, operationId, cancellationToken);
+        var current = await repository.GetPaymentIntentAsync(tenant, request.LegalEntityId, intent.Id, cancellationToken) ?? intent;
+        return new(current.Id, current.State, current.Amount, current.CurrencyCode, current.MerchantReference);
+    }
+
+    public async Task<PosProviderPaymentResult> SyncCardAsync(Guid tenantId, Guid legalEntityId, Guid paymentRequestId,
+        CancellationToken cancellationToken = default)
+    {
+        var current = await SyncReferenceProviderStatusAsync(new TenantId(tenantId), legalEntityId, paymentRequestId, cancellationToken);
+        return new(current.Id, current.State, current.Amount, current.CurrencyCode, current.MerchantReference);
+    }
     public async Task<PaymentAccount> CreateAccountAsync(TenantId tenant, Guid actor, Guid membership, CreatePaymentAccountRequest request, Guid correlationId, CancellationToken ct)
     {
         if (request.BranchId is { } branch && !await organization.BranchBelongsToLegalEntityAsync(tenant, new(request.LegalEntityId), branch, ct))

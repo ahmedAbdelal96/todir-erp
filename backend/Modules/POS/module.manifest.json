@@ -20,6 +20,6 @@
     "provides": ["pos.checkout", "pos.cash-session", "pos.offline-sync"],
     "consumes": ["catalog.lookup", "pricing.resolve", "tax.calculate", "inventory.issue", "payments.money-movement", "invoicing.documents", "ledger.semantic-facts", "directory.party"]
   },
-  "messaging": { "publishes": ["PosSaleCompletedV1", "PosCheckoutRecoveryRequiredV1", "PosOfflineConflictV1"], "consumes": [] },
+  "messaging": { "publishes": ["PosSaleCompletedV1", "PosCheckoutRecoveryRequiredV1", "PosOfflineConflictV1"], "consumes": ["PaymentCompletedV1"] },
   "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
 }
