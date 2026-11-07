@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Core.Services;
 using Core.Transactions;
 using Npgsql;
 using Shared.Primitives.Identifiers;
@@ -27,7 +28,9 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) =>
         {
             await using var command = new NpgsqlCommand("insert into business_pos.pos_manager_override(tenant_id,id,scope,target_id,reason,approved_by,expires_at,created_at) values($1,$2,$3,$4,$5,$6,$7,$8)", ctx.Connection, ctx.Transaction);
-            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(request.Scope.Trim()); command.Parameters.AddWithValue(request.TargetId); command.Parameters.AddWithValue(request.Reason.Trim()); command.Parameters.AddWithValue(actor); command.Parameters.AddWithValue(request.ExpiresAt); command.Parameters.AddWithValue(DateTimeOffset.UtcNow); await command.ExecuteNonQueryAsync(token); return null;
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(request.Scope.Trim()); command.Parameters.AddWithValue(request.TargetId); command.Parameters.AddWithValue(request.Reason.Trim()); command.Parameters.AddWithValue(actor); command.Parameters.AddWithValue(request.ExpiresAt); command.Parameters.AddWithValue(DateTimeOffset.UtcNow); await command.ExecuteNonQueryAsync(token);
+            await NpgsqlAuditWriter.WriteAsync(ctx.Connection, ctx.Transaction, new AuditEntry(Guid.CreateVersion7(), tenant, null, null, "Human", actor, null, "pos", "manager_override_created", "manager_override", id, null, JsonSerializer.Serialize(new { request.Scope, request.TargetId, request.ExpiresAt }), request.Reason.Trim(), "pos-api", id, System.Diagnostics.Activity.Current?.Id, DateTimeOffset.UtcNow, null), token);
+            return null;
         }, ct);
         return id;
     }
@@ -179,7 +182,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
                 {
                     await using var terminal = new NpgsqlCommand("select 1 from business_pos.pos_terminal where tenant_id=$1 and id=$2 and register_id=$3 and status='Ready'", ctx.Connection, ctx.Transaction); terminal.Parameters.AddWithValue(tenant.Value); terminal.Parameters.AddWithValue(terminalId); terminal.Parameters.AddWithValue(request.RegisterId); if (await terminal.ExecuteScalarAsync(token) is null) throw new ArgumentException("pos.terminal_not_ready");
                 }
-                await using var command = new NpgsqlCommand("insert into business_pos.pos_session(tenant_id,id,register_id,terminal_id,cashier_user_id,business_date,opened_at,status,opening_float,expected_cash,row_version) values($1,$2,$3,$4,$5,$6,$7,'Open',$8,$8,1)", ctx.Connection, ctx.Transaction);
+                await using var command = new NpgsqlCommand("insert into business_pos.pos_session(tenant_id,id,register_id,terminal_id,cashier_user_id,business_date,opened_at,status,opening_float,expected_cash,row_version) values($1,$2,$3,$4,$5,$6,$7,'Open',$8,0,1)", ctx.Connection, ctx.Transaction);
                 command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(request.RegisterId); command.Parameters.AddWithValue((object?)request.TerminalId ?? DBNull.Value); command.Parameters.AddWithValue(actor); command.Parameters.AddWithValue(request.BusinessDate); command.Parameters.AddWithValue(now); command.Parameters.AddWithValue(request.OpeningFloat);
                 await command.ExecuteNonQueryAsync(token);
                 if (request.OpeningFloat > 0) await AddCashMovementInContextAsync(ctx, tenant, id, actor, "OpeningFloat", request.OpeningFloat, request.CurrencyCode, "Opening float", token);
@@ -265,7 +268,9 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         {
             await using var command = new NpgsqlCommand("update business_pos.pos_session set status='Closed',approved_by=$3,row_version=row_version+1 where tenant_id=$1 and id=$2 and status='Reconciling' and variance is not null and variance_reason is not null and length(trim(variance_reason)) > 0 returning register_id,terminal_id,business_date,opening_float,status,counted_cash,variance", ctx.Connection, ctx.Transaction);
             command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(sessionId); command.Parameters.AddWithValue(actor); await using var reader = await command.ExecuteReaderAsync(token); if (!await reader.ReadAsync(token)) throw new InvalidOperationException("pos.session_variance_not_pending");
-            var response = new SessionResponse(sessionId, reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetString(4), reader.GetDecimal(3), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6)); await reader.CloseAsync(); return response;
+            var response = new SessionResponse(sessionId, reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetString(4), reader.GetDecimal(3), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6)); await reader.CloseAsync();
+            await NpgsqlAuditWriter.WriteAsync(ctx.Connection, ctx.Transaction, new AuditEntry(Guid.CreateVersion7(), tenant, null, null, "Human", actor, null, "pos", "session_variance_approved", "pos_session", sessionId, null, JsonSerializer.Serialize(new { response.CountedCash, response.Variance, response.Status }), null, "pos-api", sessionId, System.Diagnostics.Activity.Current?.Id, DateTimeOffset.UtcNow, null), token);
+            return response;
         }, ct);
     }
 
@@ -311,7 +316,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             if (state != "Active") throw new InvalidOperationException("pos.cart_not_editable"); if (version != expected) throw new InvalidOperationException("pos.cart_version_conflict");
             if (request.DiscountAmount > 0)
             {
-                await using var overrideCheck = new NpgsqlCommand("select 1 from business_pos.pos_manager_override where tenant_id=$1 and scope='Discount' and target_id=$2 and expires_at > now() limit 1", ctx.Connection, ctx.Transaction); overrideCheck.Parameters.AddWithValue(tenant.Value); overrideCheck.Parameters.AddWithValue(cartId); if (await overrideCheck.ExecuteScalarAsync(token) is null) throw new InvalidOperationException("pos.discount_override_required");
+                await using var overrideCheck = new NpgsqlCommand("delete from business_pos.pos_manager_override where tenant_id=$1 and scope='Discount' and target_id=$2 and expires_at > now() returning id", ctx.Connection, ctx.Transaction); overrideCheck.Parameters.AddWithValue(tenant.Value); overrideCheck.Parameters.AddWithValue(cartId); if (await overrideCheck.ExecuteScalarAsync(token) is null) throw new InvalidOperationException("pos.discount_override_required");
             }
             var lineTotal = PosTotals.LineTotal(request.Quantity, authoritativePrice, request.DiscountAmount, authoritativeTax);
             await using var line = new NpgsqlCommand("insert into business_pos.pos_cart_line(tenant_id,id,cart_id,line_no,variant_id,description,uom_code,unit_of_measure_id,quantity,unit_price,tax_amount,discount_amount,line_total,lot_id,serial_ids,price_snapshot,tax_snapshot,created_at) values($1,$2,$3,(select coalesce(max(line_no),0)+1 from business_pos.pos_cart_line where tenant_id=$1 and cart_id=$3),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17)", ctx.Connection, ctx.Transaction);
@@ -340,7 +345,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             if (version != request.ExpectedVersion) throw new InvalidOperationException("pos.cart_version_conflict");
             if (request.DiscountAmount > 0m)
             {
-                await using var approval = new NpgsqlCommand("select 1 from business_pos.pos_manager_override where tenant_id=$1 and scope='Discount' and target_id=$2 and expires_at > now() limit 1", ctx.Connection, ctx.Transaction);
+                await using var approval = new NpgsqlCommand("delete from business_pos.pos_manager_override where tenant_id=$1 and scope='Discount' and target_id=$2 and expires_at > now() returning id", ctx.Connection, ctx.Transaction);
                 approval.Parameters.AddWithValue(tenant.Value); approval.Parameters.AddWithValue(cartId);
                 if (await approval.ExecuteScalarAsync(token) is null) throw new InvalidOperationException("pos.discount_override_required");
             }
@@ -387,7 +392,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             if (version != request.ExpectedVersion) throw new InvalidOperationException("pos.cart_version_conflict");
             if (request.Amount > 0m)
             {
-                await using var approval = new NpgsqlCommand("select 1 from business_pos.pos_manager_override where tenant_id=$1 and scope='Discount' and target_id=$2 and expires_at > now() limit 1", ctx.Connection, ctx.Transaction);
+                await using var approval = new NpgsqlCommand("delete from business_pos.pos_manager_override where tenant_id=$1 and scope='Discount' and target_id=$2 and expires_at > now() returning id", ctx.Connection, ctx.Transaction);
                 approval.Parameters.AddWithValue(tenant.Value); approval.Parameters.AddWithValue(cartId); if (await approval.ExecuteScalarAsync(token) is null) throw new InvalidOperationException("pos.discount_override_required");
             }
             await using var line = new NpgsqlCommand("select quantity,unit_price,tax_amount from business_pos.pos_cart_line where tenant_id=$1 and id=$2 and cart_id=$3", ctx.Connection, ctx.Transaction);
@@ -1022,6 +1027,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(conflictId); update.Parameters.AddWithValue(actor); update.Parameters.AddWithValue(now); update.Parameters.AddWithValue(decision); update.Parameters.AddWithValue(request.Note.Trim()); await update.ExecuteNonQueryAsync(token);
             await using var envelope = new NpgsqlCommand("update business_pos.pos_offline_envelope set state=$3,processed_at=$4 where tenant_id=$1 and id=$2", ctx.Connection, ctx.Transaction);
             envelope.Parameters.AddWithValue(tenant.Value); envelope.Parameters.AddWithValue(envelopeId); envelope.Parameters.AddWithValue(decision == "AutoRecover" ? "Accepted" : "NeedsReview"); envelope.Parameters.AddWithValue(now); await envelope.ExecuteNonQueryAsync(token);
+            await NpgsqlAuditWriter.WriteAsync(ctx.Connection, ctx.Transaction, new AuditEntry(Guid.CreateVersion7(), tenant, null, null, "Human", actor, null, "pos", "offline_conflict_resolved", "pos_sync_conflict", conflictId, null, JsonSerializer.Serialize(new { decision, note = request.Note.Trim(), envelopeId }), request.Note.Trim(), "pos-api", conflictId, System.Diagnostics.Activity.Current?.Id, now, null), token);
             ctx.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "PosOfflineConflictResolvedV1", JsonSerializer.Serialize(new { conflictId, envelopeId, decision }), tenant, now, conflictId, envelopeId, "pos", System.Diagnostics.Activity.Current?.Id));
             return new { conflictId, envelopeId, state = "Resolved", decision };
         }, ct);

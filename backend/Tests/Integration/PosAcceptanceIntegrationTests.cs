@@ -247,6 +247,20 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         webhookRequest.Headers.Add("X-Provider-Signature", "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes("pos-acceptance-webhook-key"), rawWebhook)).ToLowerInvariant());
         using var webhookResponse = await client.SendAsync(webhookRequest);
         Assert.Equal(HttpStatusCode.NoContent, webhookResponse.StatusCode);
+        var providerBurstWatch = System.Diagnostics.Stopwatch.StartNew();
+        var providerBurst = await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            using var duplicate = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/payments/webhooks/reference/{AtlasTenant:D}/{providerConfigId:D}") { Content = new ByteArrayContent(rawWebhook) };
+            duplicate.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            duplicate.Headers.Add("X-Provider-Signature", "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes("pos-acceptance-webhook-key"), rawWebhook)).ToLowerInvariant());
+            return await client.SendAsync(duplicate);
+        }));
+        providerBurstWatch.Stop();
+        foreach (var duplicate in providerBurst)
+        {
+            using (duplicate) Assert.Equal(HttpStatusCode.NoContent, duplicate.StatusCode);
+        }
+        Console.WriteLine($"POS_PERF provider_webhook_burst=8 elapsed_ms={providerBurstWatch.Elapsed.TotalMilliseconds:F1}; errors=0");
 
         using var recovery = await PostJsonAsync(client, $"/api/v1/pos/checkouts/{checkoutId:D}/recover", new { });
         Assert.True(recovery.IsSuccessStatusCode, await recovery.Content.ReadAsStringAsync());
@@ -254,6 +268,9 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_sale where tenant_id=$1 and id=$2", AtlasTenant, saleId));
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_tender where tenant_id=$1 and checkout_id=$2 and method='Card' and state='Captured'", AtlasTenant, checkoutId));
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and source_type='PaymentRequest' and source_reference=$2 and business_state='Completed'", AtlasTenant, providerRequestId.ToString("D")));
+        await using var sensitive = new NpgsqlCommand("select count(*) from platform.audit_entry where tenant_id=$1 and (coalesce(before_json::text,'') ilike any(array['%pan%','%cvv%','%pos-acceptance-webhook-key%']) or coalesce(after_json::text,'') ilike any(array['%pan%','%cvv%','%pos-acceptance-webhook-key%']))", admin);
+        sensitive.Parameters.AddWithValue(AtlasTenant);
+        Assert.Equal(0L, Convert.ToInt64(await sensitive.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [Fact]
@@ -461,6 +478,15 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         Assert.Equal(envelopeId, (await ReadJsonAsync(replay)).GetGuid());
         using var replayProcess = await PostJsonAsync(client, $"/api/v1/pos/offline/envelopes/{envelopeId:D}/process-cash-sale", new { });
         Assert.Equal(HttpStatusCode.Accepted, replayProcess.StatusCode);
+        var burst = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => PostJsonAsync(client, "/api/v1/pos/offline/sync", envelopeRequest)));
+        foreach (var response in burst)
+        {
+            using (response)
+            {
+                Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+                Assert.Equal(envelopeId, (await ReadJsonAsync(response)).GetGuid());
+            }
+        }
 
         await using var admin = new NpgsqlConnection(adminConnectionString);
         await admin.OpenAsync();
@@ -640,6 +666,9 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         Assert.Equal(HttpStatusCode.Created, overrideResponse.StatusCode);
         using var approvedDiscount = await PostJsonAsync(cashier, $"/api/v1/pos/carts/{cartId:D}/discount", new { lineId, amount = 1m, expectedVersion = cartVersion });
         Assert.Equal(HttpStatusCode.OK, approvedDiscount.StatusCode);
+        var discountedVersion = (await ReadJsonAsync(approvedDiscount)).GetProperty("version").GetInt32();
+        using var replayedDiscount = await PostJsonAsync(cashier, $"/api/v1/pos/carts/{cartId:D}/discount", new { lineId, amount = 2m, expectedVersion = discountedVersion });
+        Assert.Equal(HttpStatusCode.Conflict, replayedDiscount.StatusCode);
         using var cancelApproved = await PostJsonAsync(cashier, $"/api/v1/pos/carts/{cartId:D}/cancel", new { });
         Assert.Equal(HttpStatusCode.OK, cancelApproved.StatusCode);
 
@@ -656,6 +685,88 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         Assert.Equal(HttpStatusCode.Conflict, expiredDiscount.StatusCode);
         using var cancelExpired = await PostJsonAsync(cashier, $"/api/v1/pos/carts/{expiringCartId:D}/cancel", new { });
         Assert.Equal(HttpStatusCode.OK, cancelExpired.StatusCode);
+    }
+
+    [Fact]
+    public async Task ManagerVarianceAndOfflineConflictWorkflowsAreAuthorizedAuditedAndIdempotent()
+    {
+        var connectionString = Required("TODIR_DATABASE_CONNECTION");
+        var adminConnectionString = Required("TODIR_P04_ADMIN_CONNECTION");
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var manager = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        using var cashier = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        using var delta = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await Task.WhenAll(
+            LoginAsync(manager, "pos-manager@atlas.com", Required("SEED_DEFAULT_PASSWORD"), AtlasTenant),
+            LoginAsync(cashier, "pos-cashier@atlas.com", Required("SEED_DEFAULT_PASSWORD"), AtlasTenant),
+            LoginAsync(delta, "pos-manager@delta.com", Required("SEED_DEFAULT_PASSWORD"), DeltaTenant));
+
+        var branchId = await InsertBranchAsync(admin, AtlasTenant, AtlasEntity, $"POS-ACCEPT-{Guid.NewGuid():N}"[..18]);
+        var seededRegisterId = await GuidScalarAsync(admin, "select id from business_pos.pos_register where tenant_id=$1 and branch_id<>$2 order by id limit 1", AtlasTenant, branchId);
+        var branchScopedCashierEmail = await InsertBranchScopedCashierAsync(admin, branchId);
+        var registerCode = $"ACCEPT-{Guid.CreateVersion7():N}"[..15];
+        using var registerResponse = await PostJsonAsync(manager, "/api/v1/pos/registers", new { legalEntityId = AtlasEntity, branchId, code = registerCode, name = "Acceptance Branch Register", currencyCode = "EGP", offlineEnabled = true });
+        Assert.True(registerResponse.StatusCode == HttpStatusCode.Created, await registerResponse.Content.ReadAsStringAsync());
+        var register = await ReadJsonAsync(registerResponse);
+        var registerId = register.GetProperty("id").GetGuid();
+        using var terminalResponse = await PostJsonAsync(manager, $"/api/v1/pos/registers/{registerId:D}/terminals", new { registerId, deviceIdentity = $"accept-device-{Guid.CreateVersion7():N}", displayName = "Acceptance terminal" });
+        Assert.Equal(HttpStatusCode.Created, terminalResponse.StatusCode);
+        var terminal = await ReadJsonAsync(terminalResponse);
+        var terminalId = terminal.GetProperty("id").GetGuid();
+        var deviceIdentity = terminal.GetProperty("deviceIdentity").GetString()!;
+        var managerId = await GuidScalarAsync(admin, "select id from platform.identity where tenant_id=$1 and email=$2", AtlasTenant, "pos-manager@atlas.com");
+        using var openResponse = await PostJsonAsync(manager, "/api/v1/pos/sessions/open", new { registerId, terminalId, cashierUserId = managerId, businessDate = DateOnly.FromDateTime(DateTime.UtcNow), openingFloat = 100m, currencyCode = "EGP" });
+        Assert.Equal(HttpStatusCode.Created, openResponse.StatusCode);
+        var sessionId = (await ReadJsonAsync(openResponse)).GetProperty("id").GetGuid();
+        using var startClose = await PostJsonAsync(manager, $"/api/v1/pos/sessions/{sessionId:D}/start-close", new { });
+        Assert.Equal(HttpStatusCode.OK, startClose.StatusCode);
+        using var cashCount = await PostJsonAsync(manager, $"/api/v1/pos/sessions/{sessionId:D}/cash-count", new { sessionId, countedCash = 90m, varianceReason = "Acceptance variance" });
+        Assert.Equal(HttpStatusCode.OK, cashCount.StatusCode);
+        using var cashierApproval = await PostJsonAsync(cashier, $"/api/v1/pos/sessions/{sessionId:D}/approve-variance", new { });
+        Assert.Equal(HttpStatusCode.Forbidden, cashierApproval.StatusCode);
+        using var managerApproval = await PostJsonAsync(manager, $"/api/v1/pos/sessions/{sessionId:D}/approve-variance", new { });
+        Assert.Equal(HttpStatusCode.OK, managerApproval.StatusCode);
+        Assert.Equal("Closed", (await ReadJsonAsync(managerApproval)).GetProperty("status").GetString());
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from platform.audit_entry where tenant_id=$1 and action='session_variance_approved' and entity_id=$2", AtlasTenant, sessionId));
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_session where tenant_id=$1 and id=$2 and status='Closed' and variance=-10", AtlasTenant, sessionId));
+
+        using var package = await manager.GetAsync($"/api/v1/pos/offline/package?registerId={registerId:D}&deviceIdentity={deviceIdentity}");
+        Assert.Equal(HttpStatusCode.OK, package.StatusCode);
+
+        var envelopeId = Guid.CreateVersion7();
+        var conflictId = Guid.CreateVersion7();
+        await using (var insert = new NpgsqlCommand("insert into business_pos.pos_offline_envelope(tenant_id,id,register_id,device_identity,source_sequence,idempotency_key,package_version,payload,signature,state,received_at) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,'Received',$10)", admin))
+        {
+            insert.Parameters.AddWithValue(AtlasTenant); insert.Parameters.AddWithValue(envelopeId); insert.Parameters.AddWithValue(registerId); insert.Parameters.AddWithValue(deviceIdentity); insert.Parameters.AddWithValue(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()); insert.Parameters.AddWithValue($"accept-conflict-{Guid.CreateVersion7():N}"); insert.Parameters.AddWithValue(1L); insert.Parameters.AddWithValue("{}"); insert.Parameters.AddWithValue("acceptance-signature"); insert.Parameters.AddWithValue(DateTimeOffset.UtcNow); await insert.ExecuteNonQueryAsync();
+        }
+        await using (var insert = new NpgsqlCommand("insert into business_pos.pos_sync_conflict(tenant_id,id,envelope_id,code,details,state,created_at) values($1,$2,$3,'AcceptanceConflict',$4::jsonb,'Open',$5)", admin))
+        {
+            insert.Parameters.AddWithValue(AtlasTenant); insert.Parameters.AddWithValue(conflictId); insert.Parameters.AddWithValue(envelopeId); insert.Parameters.AddWithValue("{}"); insert.Parameters.AddWithValue(DateTimeOffset.UtcNow); await insert.ExecuteNonQueryAsync();
+        }
+        using var cashierConflict = await PostJsonAsync(cashier, $"/api/v1/pos/offline/conflicts/{conflictId:D}/resolve", new { decision = "ManagerDecision", note = "Not authorized" });
+        Assert.Equal(HttpStatusCode.Forbidden, cashierConflict.StatusCode);
+        using var managerConflict = await PostJsonAsync(manager, $"/api/v1/pos/offline/conflicts/{conflictId:D}/resolve", new { decision = "ManagerDecision", note = "Reviewed at branch" });
+        Assert.Equal(HttpStatusCode.OK, managerConflict.StatusCode);
+        Assert.Equal("Resolved", (await ReadJsonAsync(managerConflict)).GetProperty("state").GetString());
+        using var replayConflict = await PostJsonAsync(manager, $"/api/v1/pos/offline/conflicts/{conflictId:D}/resolve", new { decision = "ManagerDecision", note = "Replay" });
+        Assert.Equal(HttpStatusCode.Conflict, replayConflict.StatusCode);
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_sync_conflict where tenant_id=$1 and id=$2 and state='Resolved' and resolved_by=$3", AtlasTenant, conflictId, managerId));
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_offline_envelope where tenant_id=$1 and id=$2 and state='NeedsReview'", AtlasTenant, envelopeId));
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from platform.audit_entry where tenant_id=$1 and action='offline_conflict_resolved' and entity_id=$2", AtlasTenant, conflictId));
+        using var crossBranchRead = await cashier.GetAsync($"/api/v1/pos/registers/{registerId:D}");
+        Assert.Equal(HttpStatusCode.OK, crossBranchRead.StatusCode);
+        using var branchScopedCashier = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(branchScopedCashier, branchScopedCashierEmail, Required("SEED_DEFAULT_PASSWORD"), AtlasTenant);
+        using var isolatedBranchRead = await branchScopedCashier.GetAsync($"/api/v1/pos/registers/{seededRegisterId:D}");
+        Assert.Equal(HttpStatusCode.Forbidden, isolatedBranchRead.StatusCode);
+        using var crossTenantRead = await delta.GetAsync($"/api/v1/pos/registers/{registerId:D}");
+        Assert.NotEqual(HttpStatusCode.OK, crossTenantRead.StatusCode);
+        await CleanupAcceptanceScopeAsync(admin, branchId, registerId, sessionId, envelopeId, conflictId, branchScopedCashierEmail);
     }
 
     [Fact]
@@ -698,9 +809,54 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         var catalogP95 = Percentile(catalogSamples, 0.95);
         var reportP50 = Percentile(reportSamples, 0.50);
         var reportP95 = Percentile(reportSamples, 0.95);
-        Console.WriteLine($"POS_PERF catalog_requests=20 p50_ms={catalogP50:F1} p95_ms={catalogP95:F1}; report_requests=20 page_size=25 p50_ms={reportP50:F1} p95_ms={reportP95:F1}; concurrency=sequential_web_testserver; errors=0");
+        var searchPath = $"/api/v1/pos/catalog/search?query=EG-2-0001&legalEntityId={AtlasEntity:D}&page=1&pageSize=25";
+        var searchSamples = new List<double>();
+        for (var sample = 0; sample < 10; sample++)
+        {
+            var searchWatch = System.Diagnostics.Stopwatch.StartNew();
+            _ = await GetJsonAsync(client, searchPath);
+            searchWatch.Stop();
+            searchSamples.Add(searchWatch.Elapsed.TotalMilliseconds);
+        }
+        var searchP95 = Percentile(searchSamples, 0.95);
+        var concurrentWatch = System.Diagnostics.Stopwatch.StartNew();
+        var concurrentReads = await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            await GetJsonAsync(client, catalogPath);
+            await GetJsonAsync(client, reportPath);
+            return true;
+        }));
+        concurrentWatch.Stop();
+        Assert.Equal(8, concurrentReads.Length);
+
+        var registers = await GetJsonAsync(client, $"/api/v1/pos/registers?legalEntityId={AtlasEntity:D}");
+        var registerId = registers.EnumerateArray().First().GetProperty("id").GetGuid();
+        var sessionId = (await GetJsonAsync(client, $"/api/v1/pos/sessions/current?registerId={registerId:D}")).GetProperty("id").GetGuid();
+        var customerPartyId = (await GetJsonAsync(client, "/api/v1/directory/parties?partyType=Customer&role=Customer&page=1&pageSize=1")).GetProperty("items").EnumerateArray().First().GetProperty("id").GetGuid();
+        var priceListId = (await GetJsonAsync(client, $"/api/v1/pricing/price-lists?legalEntityId={AtlasEntity:D}")).EnumerateArray().Single(x => x.GetProperty("code").GetString() == "RETAIL").GetProperty("id").GetGuid();
+        using var largeCartResponse = await PostJsonAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP", customerPartyId });
+        Assert.Equal(HttpStatusCode.Created, largeCartResponse.StatusCode);
+        var largeCartId = (await ReadJsonAsync(largeCartResponse)).GetProperty("id").GetGuid();
+        var largeCartVersion = 1;
+        var scanSamples = new List<double>();
+        for (var line = 0; line < 20; line++)
+        {
+            var scanWatch = System.Diagnostics.Stopwatch.StartNew();
+            using var scan = await PostJsonAsync(client, $"/api/v1/pos/carts/{largeCartId:D}/scan", new { skuOrBarcode = "EG-2-0001", quantity = 1m, legalEntityId = AtlasEntity, priceListId, expectedVersion = largeCartVersion });
+            scanWatch.Stop();
+            Assert.Equal(HttpStatusCode.Created, scan.StatusCode);
+            largeCartVersion = (await ReadJsonAsync(scan)).GetProperty("version").GetInt32();
+            scanSamples.Add(scanWatch.Elapsed.TotalMilliseconds);
+        }
+        using var cancelLargeCart = await PostJsonAsync(client, $"/api/v1/pos/carts/{largeCartId:D}/cancel", new { });
+        Assert.Equal(HttpStatusCode.OK, cancelLargeCart.StatusCode);
+        var scanP95 = Percentile(scanSamples, 0.95);
+        Console.WriteLine($"POS_PERF catalog_requests=20 p50_ms={catalogP50:F1} p95_ms={catalogP95:F1}; search_requests=10 p95_ms={searchP95:F1}; report_requests=20 page_size=25 p50_ms={reportP50:F1} p95_ms={reportP95:F1}; large_cart_lines=20 scan_p95_ms={scanP95:F1}; concurrent_terminal_reads=8 elapsed_ms={concurrentWatch.Elapsed.TotalMilliseconds:F1}; offline_sync_burst=8; errors=0");
         Assert.True(catalogP95 < 2000d);
+        Assert.True(searchP95 < 2000d);
         Assert.True(reportP95 < 2000d);
+        Assert.True(scanP95 < 2000d);
+        Assert.True(concurrentWatch.Elapsed < TimeSpan.FromSeconds(10));
     }
 
     [Fact]
@@ -728,6 +884,21 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         var warehouse = warehouses.EnumerateArray().Single(x => x.GetProperty("id").GetGuid() == warehouseId);
         var locationId = warehouse.GetProperty("defaultLocationId").GetGuid();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var weightedCatalog = await GetJsonAsync(client, "/api/v1/pos/catalog/barcode/EG-2-0001?legalEntityId=" + AtlasEntity.ToString("D"));
+        var weightedVariantId = weightedCatalog.GetProperty("productVariantId").GetGuid();
+        var weightedUomId = weightedCatalog.GetProperty("baseUomId").GetGuid();
+        using var weightedReceipt = await PostJsonAsync(client, $"/api/v1/inventory/legal-entities/{AtlasEntity:D}/receipts/confirm", new { productVariantId = weightedVariantId, warehouseId, locationId, enteredUomId = weightedUomId, enteredQuantity = 5m, operationalDate = today, postingDate = today, idempotencyKey = $"pos-weighted-receipt-{Guid.CreateVersion7():N}", sourceModule = "pos-acceptance", status = "Available" });
+        Assert.True(weightedReceipt.StatusCode == HttpStatusCode.Created, await weightedReceipt.Content.ReadAsStringAsync());
+        using var weightedCartResponse = await PostJsonAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP", customerPartyId });
+        var weightedCartId = (await ReadJsonAsync(weightedCartResponse)).GetProperty("id").GetGuid();
+        using var weightedScan = await PostJsonAsync(client, $"/api/v1/pos/carts/{weightedCartId:D}/scan", new { skuOrBarcode = "EG-2-0001", quantity = 2.5m, legalEntityId = AtlasEntity, priceListId });
+        Assert.Equal(HttpStatusCode.Created, weightedScan.StatusCode);
+        var weightedBody = await ReadJsonAsync(weightedScan);
+        Assert.Equal(2, weightedBody.GetProperty("version").GetInt32());
+        var weightedTotal = weightedBody.GetProperty("grandTotal").GetDecimal();
+        var weightedCheckout = await CheckoutCashAsync(client, weightedCartId, weightedTotal, cashAccountId);
+        Assert.Equal(2.5m, await DecimalScalarAsync(admin, "select quantity from business_pos.pos_sale_line where tenant_id=$1 and sale_id=$2", AtlasTenant, weightedCheckout.SaleId));
 
         var lotCatalog = await GetJsonAsync(client, "/api/v1/pos/catalog/barcode/EG-1-0002?legalEntityId=" + AtlasEntity.ToString("D"));
         var lotVariantId = lotCatalog.GetProperty("productVariantId").GetGuid();
@@ -880,6 +1051,62 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_inventory.inventory_operation where tenant_id=$1 and source_document_id=$2 and operation_type='Receipt' and status='Confirmed'", AtlasTenant, saleLineId));
     }
 
+    private static async Task<Guid> InsertBranchAsync(NpgsqlConnection admin, Guid tenant, Guid legalEntity, string code)
+    {
+        var id = Guid.CreateVersion7();
+        await using var command = new NpgsqlCommand("insert into platform.branch(id,tenant_id,legal_entity_id,code,name,status,created_at,version) values($1,$2,$3,$4,$5,'Active',$6,1)", admin);
+        command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(tenant); command.Parameters.AddWithValue(legalEntity); command.Parameters.AddWithValue(code); command.Parameters.AddWithValue("POS acceptance branch"); command.Parameters.AddWithValue(DateTimeOffset.UtcNow);
+        await command.ExecuteNonQueryAsync();
+        return id;
+    }
+
+    private static async Task<string> InsertBranchScopedCashierAsync(NpgsqlConnection admin, Guid branchId)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var email = $"branch-cashier-{suffix}@atlas.com";
+        var identityId = Guid.CreateVersion7();
+        var membershipId = Guid.CreateVersion7();
+        var passwordHash = await StringScalarAsync(admin, "select password_hash from platform.identity where tenant_id=$1 and email=$2", AtlasTenant, "pos-cashier@atlas.com");
+        var roleId = await GuidScalarAsync(admin, "select id from platform.role where tenant_id=$1 and code='pos_cashier' and $2=$2", AtlasTenant, Guid.Empty);
+        await using (var identity = new NpgsqlCommand("insert into platform.identity(id,tenant_id,normalized_email,email,email_verified,password_hash,status,created_at,security_stamp,version,mfa_enabled,failed_login_count,name,login_prefix,must_change_password) values($1,$2,$3,$4,true,$5,'Active',$6,$7,1,false,0,$8,$9,false)", admin))
+        {
+            identity.Parameters.AddWithValue(identityId); identity.Parameters.AddWithValue(AtlasTenant); identity.Parameters.AddWithValue(email.ToUpperInvariant()); identity.Parameters.AddWithValue(email); identity.Parameters.AddWithValue(passwordHash); identity.Parameters.AddWithValue(DateTimeOffset.UtcNow); identity.Parameters.AddWithValue(Guid.NewGuid()); identity.Parameters.AddWithValue("Branch scoped cashier"); identity.Parameters.AddWithValue($"branch-cashier-{suffix}"); await identity.ExecuteNonQueryAsync();
+        }
+        await using (var membership = new NpgsqlCommand("insert into platform.membership(id,tenant_id,identity_id,display_name,status,default_legal_entity_id,default_branch_id,locale,timezone,created_at,version) values($1,$2,$3,$4,'Active',$5,$6,'ar-EG','Africa/Cairo',$7,1)", admin))
+        {
+            membership.Parameters.AddWithValue(membershipId); membership.Parameters.AddWithValue(AtlasTenant); membership.Parameters.AddWithValue(identityId); membership.Parameters.AddWithValue("Branch scoped cashier"); membership.Parameters.AddWithValue(AtlasEntity); membership.Parameters.AddWithValue(branchId); membership.Parameters.AddWithValue(DateTimeOffset.UtcNow); await membership.ExecuteNonQueryAsync();
+        }
+        await using (var assignment = new NpgsqlCommand("insert into platform.membership_role_assignment(tenant_id,membership_id,role_id,scope_type,scope_id) values($1,$2,$3,'Branch',$4)", admin))
+        {
+            assignment.Parameters.AddWithValue(AtlasTenant); assignment.Parameters.AddWithValue(membershipId); assignment.Parameters.AddWithValue(roleId); assignment.Parameters.AddWithValue(branchId); await assignment.ExecuteNonQueryAsync();
+        }
+        return email;
+    }
+
+    private static async Task CleanupAcceptanceScopeAsync(NpgsqlConnection admin, Guid branchId, Guid registerId, Guid sessionId, Guid envelopeId, Guid conflictId, string branchScopedCashierEmail)
+    {
+        foreach (var commandText in new[]
+        {
+            "delete from business_pos.pos_sync_conflict where tenant_id=$1 and id=$2",
+            "delete from business_pos.pos_offline_envelope where tenant_id=$1 and id=$2",
+            "delete from business_pos.pos_offline_package where tenant_id=$1 and register_id=$2",
+            "delete from business_pos.pos_cash_movement where tenant_id=$1 and session_id=$2",
+            "delete from business_pos.pos_session where tenant_id=$1 and id=$2",
+            "delete from business_pos.pos_terminal where tenant_id=$1 and register_id=$2",
+            "delete from business_pos.pos_register where tenant_id=$1 and id=$2",
+            "delete from platform.membership_role_assignment where tenant_id=$1 and membership_id=(select id from platform.membership where tenant_id=$1 and identity_id=(select id from platform.identity where tenant_id=$1 and email=$2))",
+            "delete from platform.membership where tenant_id=$1 and identity_id=(select id from platform.identity where tenant_id=$1 and email=$2)",
+            "delete from platform.identity where tenant_id=$1 and email=$2",
+            "delete from platform.branch where tenant_id=$1 and id=$2"
+        })
+        {
+            await using var command = new NpgsqlCommand(commandText, admin);
+            command.Parameters.AddWithValue(AtlasTenant);
+            command.Parameters.AddWithValue(commandText.Contains("email=$2", StringComparison.Ordinal) ? branchScopedCashierEmail : commandText.Contains("pos_sync_conflict", StringComparison.Ordinal) ? conflictId : commandText.Contains("pos_offline_envelope", StringComparison.Ordinal) ? envelopeId : commandText.Contains("pos_offline_package", StringComparison.Ordinal) || commandText.Contains("pos_terminal", StringComparison.Ordinal) || commandText.Contains("pos_register", StringComparison.Ordinal) ? registerId : commandText.Contains("pos_cash_movement", StringComparison.Ordinal) || commandText.Contains("pos_session", StringComparison.Ordinal) ? sessionId : branchId);
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+
     private static string Required(string name) => Environment.GetEnvironmentVariable(name) ?? throw new InvalidOperationException($"Set {name} for POS acceptance tests.");
 
     private static async Task<(Guid CartId, decimal Total)> CreateAndScanAsync(HttpClient client, Guid sessionId, Guid customerPartyId, Guid priceListId, string sku, Guid? lotId, Guid? serialId)
@@ -943,6 +1170,15 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(tenantId);
         command.Parameters.AddWithValue(value);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<long> ScalarAsync(NpgsqlConnection connection, string sql, Guid tenantId, object first, object second)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(tenantId);
+        command.Parameters.AddWithValue(first);
+        command.Parameters.AddWithValue(second);
         return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
