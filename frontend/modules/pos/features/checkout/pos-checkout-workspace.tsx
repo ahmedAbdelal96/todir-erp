@@ -2,7 +2,14 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
-import { BarcodeIcon, CashRegisterIcon, DrawerIcon, UserWalkInIcon, OfflineIcon, SyncIcon } from "../../components/pos-icons.tsx";
+import {
+  BarcodeIcon,
+  CashRegisterIcon,
+  DrawerIcon,
+  UserWalkInIcon,
+  OfflineIcon,
+  SyncIcon,
+} from "../../components/pos-icons.tsx";
 import { BidiText } from "../../../../components/primitives/bidi-text.tsx";
 import { PosCartLinesTable } from "./pos-cart-lines-table.tsx";
 import { PosCartTotalsPanel } from "./pos-cart-totals-panel.tsx";
@@ -11,6 +18,7 @@ import { DiscountModal } from "../../components/discount-modal.tsx";
 import { TenderModal } from "../../components/tender-modal.tsx";
 import { ReceiptModal } from "../../components/receipt-modal.tsx";
 import { CashMovementModal } from "../../components/cash-movement-modal.tsx";
+import { ManagerOverrideModal } from "../../components/manager-override-modal.tsx";
 import { usePosScanner } from "../../hooks/use-pos-scanner.ts";
 import { usePosOffline } from "../../hooks/use-pos-offline.ts";
 import {
@@ -28,6 +36,11 @@ import {
   useCheckoutMutation,
   useAddCashMovementMutation,
   useCatalogSearchQuery,
+  usePaymentAccountsQuery,
+  usePriceListsQuery,
+  usePaymentRequestsQuery,
+  useCreateManagerOverrideMutation,
+  useRecoverCheckoutMutation,
 } from "../../hooks/use-pos-queries.ts";
 import type {
   CartLineResponse,
@@ -59,6 +72,11 @@ export function PosCheckoutWorkspace({
   const [customerPartyId, setCustomerPartyId] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
 
+  // Stable idempotency key per checkout session
+  const [checkoutIdempotencyKey, setCheckoutIdempotencyKey] = useState<string>(() =>
+    window.crypto?.randomUUID ? window.crypto.randomUUID() : `checkout-${Date.now()}`
+  );
+
   // Barcode / Search input
   const [barcodeInput, setBarcodeInput] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -69,7 +87,9 @@ export function PosCheckoutWorkspace({
   const [isTenderModalOpen, setIsTenderModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
+  const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
   const [discountLine, setDiscountLine] = useState<CartLineResponse | null>(null);
+  const [pendingDiscountAmount, setPendingDiscountAmount] = useState<number | null>(null);
 
   // Completed checkout details for receipt
   const [completedCheckout, setCompletedCheckout] = useState<CheckoutResponse | null>(null);
@@ -87,57 +107,94 @@ export function PosCheckoutWorkspace({
   const cancelMutation = useCancelCartMutation();
   const checkoutMutation = useCheckoutMutation();
   const cashMovementMutation = useAddCashMovementMutation();
+  const createOverrideMutation = useCreateManagerOverrideMutation();
+  const recoverCheckoutMutation = useRecoverCheckoutMutation();
 
   // Queries
-  const { data: cartDetails } = useCartDetailsQuery(cartId);
+  const { data: cartDetails, refetch: refetchCart } = useCartDetailsQuery(cartId);
   const { data: catalogResults } = useCatalogSearchQuery(legalEntityId, searchQuery, 1, 10);
+  const { data: paymentAccountsData } = usePaymentAccountsQuery(legalEntityId);
+  const { data: priceListsData } = usePriceListsQuery(legalEntityId);
+  const { data: paymentRequestsData } = usePaymentRequestsQuery(legalEntityId);
+
+  // Dynamic configuration resolution
+  const paymentAccounts = paymentAccountsData || [];
+  const activePriceList =
+    (priceListsData || []).find(
+      (p) =>
+        (p.direction === "Selling" || p.direction?.toLowerCase() === "selling") &&
+        (p.status === "Active" || !p.status)
+    ) || (priceListsData || [])[0];
+  const dynamicPriceListId = activePriceList?.id || register.id;
+
+  const resolvedProviderConfigId =
+    (paymentRequestsData?.items || paymentRequestsData || [])[0]?.providerConfigId || null;
 
   // Offline Hook
-  const { isOnline, pendingSyncCount, enqueueOfflineSale } = usePosOffline();
+  const {
+    isOnline,
+    pendingSyncCount,
+    isOfflinePackageValid,
+    deviceIdentity,
+    enqueueOfflineSale,
+    syncOfflineQueue,
+  } = usePosOffline(register.id);
 
   // Initialize Cart if none exists
   useEffect(() => {
     if (!cartId && session?.id) {
-      createCartMutation.mutateAsync({
-        sessionId: session.id,
-        currencyCode: register.currencyCode || "EGP",
-        customerPartyId: customerPartyId ?? null,
-      }).then((newCart) => {
-        setCartId(newCart.id);
-      }).catch((err) => {
-        setStatusMessage(err instanceof Error ? err.message : "Failed to create cart");
-      });
+      createCartMutation
+        .mutateAsync({
+          sessionId: session.id,
+          currencyCode: register.currencyCode || "EGP",
+          customerPartyId: customerPartyId ?? null,
+        })
+        .then((newCart) => {
+          setCartId(newCart.id);
+        })
+        .catch((err) => {
+          setStatusMessage(err instanceof Error ? err.message : t("workspace.cartCreateFailed", "فشل إنشاء سلة مشتريات"));
+        });
     }
   }, [cartId, session?.id, register.currencyCode, customerPartyId]);
 
   // Handle barcode scanned from physical scanner or manual input
-  const handleBarcodeScanned = useCallback(async (code: string) => {
-    if (!cartId || !code.trim()) return;
-    setStatusMessage(null);
-    try {
-      await scanMutation.mutateAsync({
-        cartId,
-        request: {
-          skuOrBarcode: code.trim(),
-          quantity: 1,
-          legalEntityId,
-          priceListId: "4537199e-5f67-f251-8e46-8525a8f06144",
-        },
-      });
-      setBarcodeInput("");
-      setStatusMessage(`${t("workspace.scanned")}: ${code.trim()}`);
-    } catch (err: unknown) {
-      setStatusMessage(err instanceof Error ? err.message : t("workspace.scanFailed"));
-    }
-  }, [cartId, legalEntityId, scanMutation, t]);
+  const handleBarcodeScanned = useCallback(
+    async (code: string) => {
+      if (!cartId || !code.trim()) return;
+      setStatusMessage(null);
+      try {
+        await scanMutation.mutateAsync({
+          cartId,
+          request: {
+            skuOrBarcode: code.trim(),
+            quantity: 1,
+            legalEntityId,
+            priceListId: dynamicPriceListId,
+          },
+        });
+        setBarcodeInput("");
+        setStatusMessage(`${t("workspace.scanned")}: ${code.trim()}`);
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : t("workspace.scanFailed");
+        if (errorMsg.includes("cart_version_conflict")) {
+          await refetchCart();
+          setStatusMessage(t("workspace.cartVersionRefreshed", "تم تحديث السلة لتطابق أحدث إصدار."));
+        } else {
+          setStatusMessage(errorMsg);
+        }
+      }
+    },
+    [cartId, legalEntityId, dynamicPriceListId, scanMutation, refetchCart, t]
+  );
 
   // Keyboard barcode scanner hook listener
   usePosScanner({
     onScan: handleBarcodeScanned,
-    enabled: Boolean(cartId) && !isTenderModalOpen && !isReceiptModalOpen,
+    enabled: Boolean(cartId) && !isTenderModalOpen && !isReceiptModalOpen && !isOverrideModalOpen,
   });
 
-  // Quantity updates
+  // Quantity updates with version conflict resilience
   const handleUpdateQuantity = async (lineId: string, currentQty: number, delta: number, version: number) => {
     if (!cartId) return;
     const newQty = currentQty + delta;
@@ -153,11 +210,17 @@ export function PosCheckoutWorkspace({
         },
       });
     } catch (err: unknown) {
-      setStatusMessage(err instanceof Error ? err.message : "Update failed");
+      const errorMsg = err instanceof Error ? err.message : "Update failed";
+      if (errorMsg.includes("cart_version_conflict")) {
+        await refetchCart();
+        setStatusMessage(t("workspace.cartVersionRefreshed", "تم تحديث السلة لتطابق أحدث إصدار."));
+      } else {
+        setStatusMessage(errorMsg);
+      }
     }
   };
 
-  // Remove line
+  // Remove line with version conflict resilience
   const handleRemoveLine = async (lineId: string, version: number) => {
     if (!cartId) return;
     try {
@@ -167,11 +230,17 @@ export function PosCheckoutWorkspace({
         expectedVersion: version,
       });
     } catch (err: unknown) {
-      setStatusMessage(err instanceof Error ? err.message : "Remove failed");
+      const errorMsg = err instanceof Error ? err.message : "Remove failed";
+      if (errorMsg.includes("cart_version_conflict")) {
+        await refetchCart();
+        setStatusMessage(t("workspace.cartVersionRefreshed", "تم تحديث السلة لتطابق أحدث إصدار."));
+      } else {
+        setStatusMessage(errorMsg);
+      }
     }
   };
 
-  // Line Discount
+  // Line Discount with Manager Override prompt
   const handleApplyDiscount = async (amount: number) => {
     if (!cartId || !discountLine || !cartDetails) return;
     try {
@@ -184,8 +253,52 @@ export function PosCheckoutWorkspace({
         },
       });
       setDiscountLine(null);
+      setStatusMessage(t("workspace.discountApplied", "تم تطبيق الخصم على البند بنجاح"));
     } catch (err: unknown) {
-      setStatusMessage(err instanceof Error ? err.message : "Discount failed");
+      const errorMsg = err instanceof Error ? err.message : "Discount failed";
+      if (errorMsg.includes("discount_override_required")) {
+        setPendingDiscountAmount(amount);
+        setIsOverrideModalOpen(true);
+      } else if (errorMsg.includes("cart_version_conflict")) {
+        await refetchCart();
+        setStatusMessage(t("workspace.cartVersionRefreshed", "تم تحديث السلة لتطابق أحدث إصدار."));
+      } else {
+        setStatusMessage(errorMsg);
+      }
+    }
+  };
+
+  // Handle Manager Override Approval for Discount
+  const handleManagerAuthorize = async (reason: string) => {
+    if (!cartId || pendingDiscountAmount === null || !discountLine) return;
+    try {
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      await createOverrideMutation.mutateAsync({
+        scope: "Discount",
+        targetId: cartId,
+        reason,
+        expiresAt,
+      });
+
+      // Refetch cart to get latest version before re-applying
+      const latestCart = await refetchCart();
+      const currentVersion = latestCart.data?.cart?.version || cartDetails?.cart?.version || 1;
+
+      await discountMutation.mutateAsync({
+        cartId,
+        request: {
+          lineId: discountLine.id,
+          amount: pendingDiscountAmount,
+          expectedVersion: currentVersion,
+        },
+      });
+
+      setDiscountLine(null);
+      setPendingDiscountAmount(null);
+      setIsOverrideModalOpen(false);
+      setStatusMessage(t("workspace.discountApproved", "تم اعتماد وتطبيق الخصم بنجاح"));
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : t("override.authFailed"));
     }
   };
 
@@ -222,54 +335,137 @@ export function PosCheckoutWorkspace({
     setCartId(null);
   };
 
-  // Checkout with tenders
+  // Checkout with tenders and financial state machine handling
   const handleCheckout = async (tenders: readonly TenderRequest[]) => {
     if (!cartId) return;
+    setStatusMessage(null);
     try {
       const res = await checkoutMutation.mutateAsync({
         cartId,
         request: {
-          idempotencyKey: window.crypto?.randomUUID ? window.crypto.randomUUID() : String(Date.now()),
+          idempotencyKey: checkoutIdempotencyKey,
           tenders,
         },
       });
-      setCompletedCheckout(res);
-      setIsTenderModalOpen(false);
-      setIsReceiptModalOpen(true);
-    } catch (err: unknown) {
-      // If offline or network failure, queue offline sale
-      if (!isOnline && tenders.every((t) => t.method === "Cash")) {
-        const lines = (cartDetails?.lines || []).map((l) => ({
-          variantId: l.variantId,
-          description: l.description,
-          uomCode: l.uomCode,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          taxAmount: l.taxAmount,
-          discountAmount: l.discountAmount,
-          legalEntityId,
-          productTemplateId: "00000000-0000-0000-0000-000000000000",
-          unitOfMeasureId: "00000000-0000-0000-0000-000000000000",
-          priceListId: "00000000-0000-0000-0000-000000000000",
-          pricingDate: new Date().toISOString().slice(0, 10),
-        }));
 
-        await enqueueOfflineSale({
-          registerId: register.id,
-          deviceIdentity: "POS-WEB-COUNTER",
-          sessionId: session.id,
-          currencyCode: register.currencyCode || "EGP",
-          paymentAccountId: "00000000-0000-0000-0000-000000000000",
-          customerPartyId: customerPartyId ?? undefined,
-          lines,
-        });
-
+      if (
+        res.state === "Completed" ||
+        ((res.paymentState === "Completed" || res.paymentState === "Captured") && res.saleId)
+      ) {
+        setCompletedCheckout(res);
         setIsTenderModalOpen(false);
-        setStatusMessage(t("workspace.offlineQueued"));
-        setCartId(null);
+        setIsReceiptModalOpen(true);
+      } else if (
+        res.state === "RecoveryRequired" ||
+        res.paymentState === "Pending" ||
+        res.paymentState === "Unknown"
+      ) {
+        setIsTenderModalOpen(false);
+        setCompletedCheckout(res);
+        setStatusMessage(
+          t(
+            "workspace.checkoutPendingRecovery",
+            "الدفع قيد المعالجة أو يتطلب استرداد الحالة من مزود الدفع. يرجى الضغط على زر استرداد الحالة للتحقق."
+          )
+        );
+      } else if (res.paymentState === "Failed") {
+        setStatusMessage(
+          t("workspace.paymentFailed", "فشلت عملية التحصيل من مزود الدفع. يرجى اختيار وسيلة دفع أخرى أو إعادة المحاولة.")
+        );
       } else {
-        throw err;
+        setCompletedCheckout(res);
+        setIsTenderModalOpen(false);
+        setIsReceiptModalOpen(true);
       }
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      if (errorMsg.includes("cart_version_conflict")) {
+        await refetchCart();
+        setStatusMessage(t("workspace.cartVersionRefreshed", "تم تحديث السلة لتطابق أحدث إصدار."));
+      } else {
+        setStatusMessage(errorMsg);
+      }
+    }
+  };
+
+  // Recover Checkout Status
+  const handleRecoverCheckout = async (checkoutId: string) => {
+    try {
+      const res = await recoverCheckoutMutation.mutateAsync(checkoutId);
+      setCompletedCheckout(res);
+      if (res.state === "Completed" || res.paymentState === "Completed") {
+        setIsReceiptModalOpen(true);
+        setStatusMessage(t("workspace.checkoutRecoveredSuccess", "تم استرداد وتأكيد اكتمال العملية بنجاح"));
+      } else {
+        setStatusMessage(
+          `${t("workspace.currentStatus", "الحالة الحالية")}: ${res.paymentState} (${res.state})`
+        );
+      }
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : "Recovery check failed");
+    }
+  };
+
+  // Explicit Offline Cash Sale Queue
+  const handleQueueOfflineSale = async () => {
+    if (!isOfflinePackageValid) {
+      setStatusMessage(
+        t(
+          "workspace.offlinePackageInvalidError",
+          "لا يمكن إتمام البيع بدون اتصال لعدم وجود حزمة غير متصلة صالحة. يرجى الاتصال بالإنترنت وتحديث الحزمة."
+        )
+      );
+      return;
+    }
+
+    const defaultCashAccount =
+      paymentAccounts.find(
+        (a) =>
+          (a.type?.toLowerCase() === "cashbox" || a.type === "Cashbox") &&
+          (a.status === "Active" || !a.status)
+      ) || paymentAccounts[0];
+
+    if (!defaultCashAccount) {
+      setStatusMessage(t("tender.noCashAccountAvailable", "لا يوجد حساب خزينة متاح لإتمام البيع النقدي"));
+      return;
+    }
+
+    const cartLines = cartDetails?.lines || [];
+    if (cartLines.length === 0) {
+      setStatusMessage(t("workspace.cartEmpty", "السلة فارغة"));
+      return;
+    }
+
+    try {
+      const lines = cartLines.map((l) => ({
+        variantId: l.variantId,
+        description: l.description,
+        uomCode: l.uomCode,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        taxAmount: l.taxAmount,
+        discountAmount: l.discountAmount,
+        legalEntityId,
+        productTemplateId: null,
+        unitOfMeasureId: null,
+        priceListId: dynamicPriceListId,
+        pricingDate: new Date().toISOString().slice(0, 10),
+      }));
+
+      await enqueueOfflineSale({
+        registerId: register.id,
+        deviceIdentity,
+        sessionId: session.id,
+        currencyCode: register.currencyCode || "EGP",
+        paymentAccountId: defaultCashAccount.id,
+        customerPartyId: customerPartyId ?? undefined,
+        lines,
+      });
+
+      setStatusMessage(t("workspace.offlineQueuedSuccess", "تم حفظ العملية بنجاح في قاعدة البيانات المحلية (IndexedDB) للمزامنة لاحقاً"));
+      setCartId(null);
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : "Offline queue error");
     }
   };
 
@@ -294,12 +490,15 @@ export function PosCheckoutWorkspace({
     setStatusMessage(t("workspace.drawerOpened"));
   };
 
-  // Reset after completed receipt
+  // Reset after completed receipt for fresh new sale
   const handleNewSale = () => {
     setCartId(null);
     setCompletedCheckout(null);
     setCustomerPartyId(null);
     setCustomerName(null);
+    setCheckoutIdempotencyKey(
+      window.crypto?.randomUUID ? window.crypto.randomUUID() : `checkout-${Date.now()}`
+    );
   };
 
   const lines = cartDetails?.lines || [];
@@ -311,7 +510,17 @@ export function PosCheckoutWorkspace({
   const isHeld = cartDetails?.cart?.state === "Held";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem", minHeight: "80vh" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "1rem",
+        minHeight: "80vh",
+        maxWidth: "100%",
+        overflowX: "hidden",
+        boxSizing: "border-box",
+      }}
+    >
       {/* Top Workspace Header Bar */}
       <div
         style={{
@@ -325,9 +534,11 @@ export function PosCheckoutWorkspace({
           color: "#ffffff",
           borderRadius: "var(--radius-lg)",
           boxShadow: "0 2px 4px 0 rgba(0, 0, 0, 0.1)",
+          boxSizing: "border-box",
+          maxWidth: "100%",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <CashRegisterIcon size={24} style={{ color: "#60a5fa" }} />
             <div>
@@ -366,7 +577,7 @@ export function PosCheckoutWorkspace({
         </div>
 
         {/* Right side operational actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
           {/* Offline / Online Status */}
           <div
             style={{
@@ -388,6 +599,19 @@ export function PosCheckoutWorkspace({
               </span>
             )}
           </div>
+
+          {/* If offline and has items, offer explicit offline cash sale button */}
+          {!isOnline && lines.length > 0 && (
+            <Button
+              size="compact"
+              variant="primary"
+              onClick={handleQueueOfflineSale}
+              isDisabled={!isOfflinePackageValid}
+              style={{ fontSize: "0.75rem", backgroundColor: "#d97706" }}
+            >
+              ⚡ {t("workspace.queueOfflineCashSale", "تسجيل بيع غير متصل")}
+            </Button>
+          )}
 
           <Button
             size="compact"
@@ -427,14 +651,17 @@ export function PosCheckoutWorkspace({
           display: "flex",
           gap: "0.75rem",
           alignItems: "center",
+          flexWrap: "wrap",
           backgroundColor: "#ffffff",
           padding: "0.875rem 1.25rem",
           borderRadius: "var(--radius-lg)",
           border: "1px solid #cbd5e1",
           boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
+          boxSizing: "border-box",
+          maxWidth: "100%",
         }}
       >
-        <div style={{ flex: 1, display: "flex", gap: "0.5rem" }}>
+        <div style={{ flex: "1 1 18rem", display: "flex", gap: "0.5rem", maxWidth: "100%" }}>
           <div style={{ flex: 1 }}>
             <TextField
               placeholder={t("workspace.scanOrTypeBarcode")}
@@ -461,8 +688,8 @@ export function PosCheckoutWorkspace({
           </Button>
         </div>
 
-        {/* Quick Product Search dropdown input */}
-        <div style={{ width: "16rem" }}>
+        {/* Quick Product Search input */}
+        <div style={{ flex: "0 1 18rem", maxWidth: "100%" }}>
           <TextField
             placeholder={t("workspace.searchCatalog")}
             value={searchQuery}
@@ -479,18 +706,18 @@ export function PosCheckoutWorkspace({
         <Button
           size="compact"
           variant="secondary"
-          onClick={() => handleBarcodeScanned("EG-1-0002")}
-          style={{ fontSize: "0.8125rem" }}
-        >
-          {t("workspace.quickItemCable")}
-        </Button>
-        <Button
-          size="compact"
-          variant="secondary"
           onClick={() => handleBarcodeScanned("EG-2-0001")}
           style={{ fontSize: "0.8125rem" }}
         >
           {t("workspace.quickItemBreaker")}
+        </Button>
+        <Button
+          size="compact"
+          variant="secondary"
+          onClick={() => handleBarcodeScanned("EG-1-0002")}
+          style={{ fontSize: "0.8125rem" }}
+        >
+          {t("workspace.quickItemCable")}
         </Button>
         <Button
           size="compact"
@@ -518,13 +745,16 @@ export function PosCheckoutWorkspace({
           {catalogResults.items.map((item) => (
             <div
               key={item.variantId}
+              role="button"
+              tabIndex={0}
               style={{
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
                 padding: "0.5rem 0.75rem",
-                borderBottom: "1px solid #f1f5f9",
                 cursor: "pointer",
+                borderRadius: "var(--radius-sm)",
+                borderBottom: "1px solid #f1f5f9",
               }}
               onClick={async () => {
                 if (!cartId) return;
@@ -542,7 +772,9 @@ export function PosCheckoutWorkspace({
               }}
             >
               <div>
-                <strong style={{ color: "var(--color-content-default)" }}><BidiText>{item.displayName}</BidiText></strong>
+                <strong style={{ color: "var(--color-content-default)" }}>
+                  <BidiText>{item.displayName}</BidiText>
+                </strong>
                 <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginInlineStart: "0.5rem" }}>
                   <BidiText>{item.sku}</BidiText>
                 </span>
@@ -569,54 +801,68 @@ export function PosCheckoutWorkspace({
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.5rem",
           }}
         >
           <span>{statusMessage}</span>
-          <button
-            type="button"
-            onClick={() => setStatusMessage(null)}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1rem" }}
-          >
-            ×
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            {completedCheckout && completedCheckout.state === "RecoveryRequired" && (
+              <Button
+                size="compact"
+                variant="primary"
+                onClick={() => handleRecoverCheckout(completedCheckout.checkoutId)}
+              >
+                {t("workspace.recoverPaymentStatus", "استرداد حالة الدفع")}
+              </Button>
+            )}
+            <button
+              type="button"
+              onClick={() => setStatusMessage(null)}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1rem" }}
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Main Dual-Column Grid */}
+      {/* Main Responsive Layout: Auto-wrapping grid */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 22rem",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 22rem), 1fr))",
           gap: "1.25rem",
           alignItems: "start",
+          maxWidth: "100%",
+          boxSizing: "border-box",
         }}
       >
-        {/* Left Column: Cart Lines Table */}
-        <div>
+        {/* Cart Lines Table Panel */}
+        <div style={{ minWidth: 0, maxWidth: "100%", overflowX: "auto" }}>
           <PosCartLinesTable
             lines={lines}
             currencyCode={register.currencyCode}
+            cartVersion={cartVersion}
             onUpdateQuantity={handleUpdateQuantity}
             onOpenDiscount={(line) => setDiscountLine(line)}
             onRemoveLine={handleRemoveLine}
-            cartVersion={cartVersion}
-            disabled={isHeld}
           />
         </div>
 
-        {/* Right Column: Totals & Checkout Panel */}
-        <div>
+        {/* Cart Totals & Checkout Panel */}
+        <div style={{ minWidth: 0, maxWidth: "100%" }}>
           <PosCartTotalsPanel
             subtotal={subtotal}
             taxTotal={taxTotal}
             discountTotal={discountTotal}
             grandTotal={grandTotal}
             currencyCode={register.currencyCode}
-            onOpenTender={() => setIsTenderModalOpen(true)}
-            onHoldCart={handleHoldCart}
-            onCancelCart={handleCancelCart}
             isHeld={isHeld}
             lineCount={lines.length}
+            onHoldCart={handleHoldCart}
+            onCancelCart={handleCancelCart}
+            onOpenTender={() => setIsTenderModalOpen(true)}
           />
         </div>
       </div>
@@ -630,23 +876,34 @@ export function PosCheckoutWorkspace({
         currentPartyName={customerName}
       />
 
-      {discountLine && (
-        <DiscountModal
-          isOpen={Boolean(discountLine)}
-          onClose={() => setDiscountLine(null)}
-          onApply={handleApplyDiscount}
-          lineDescription={discountLine.description}
-          lineTotal={discountLine.lineTotal}
-          currentDiscount={discountLine.discountAmount}
-          currencyCode={register.currencyCode}
-        />
-      )}
+      <DiscountModal
+        isOpen={Boolean(discountLine)}
+        onClose={() => setDiscountLine(null)}
+        lineDescription={discountLine?.description}
+        currencyCode={register.currencyCode}
+        lineTotal={discountLine?.lineTotal || 0}
+        onApply={(amount) => handleApplyDiscount(amount)}
+      />
+
+      <ManagerOverrideModal
+        isOpen={isOverrideModalOpen}
+        onClose={() => {
+          setIsOverrideModalOpen(false);
+          setPendingDiscountAmount(null);
+        }}
+        scope="Discount"
+        targetId={cartId || ""}
+        onAuthorize={handleManagerAuthorize}
+        isSubmitting={createOverrideMutation.isPending || discountMutation.isPending}
+      />
 
       <TenderModal
         isOpen={isTenderModalOpen}
         onClose={() => setIsTenderModalOpen(false)}
         totalAmount={grandTotal}
         currencyCode={register.currencyCode}
+        paymentAccounts={paymentAccounts}
+        providerConfigId={resolvedProviderConfigId}
         onCheckout={handleCheckout}
         isSubmitting={checkoutMutation.isPending}
       />
@@ -662,14 +919,15 @@ export function PosCheckoutWorkspace({
         grandTotal={grandTotal}
         currencyCode={register.currencyCode}
         registerCode={register.code}
+        cashierName={session ? `User-${session.id.slice(0, 4)}` : "Cashier"}
         onNewSale={handleNewSale}
       />
 
       <CashMovementModal
         isOpen={isMovementModalOpen}
         onClose={() => setIsMovementModalOpen(false)}
-        onConfirm={handleCashMovement}
         currencyCode={register.currencyCode}
+        onConfirm={handleCashMovement}
         isSubmitting={cashMovementMutation.isPending}
       />
     </div>

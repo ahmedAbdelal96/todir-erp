@@ -38,9 +38,14 @@ export function PosSessionsTab({
 
   const handleOpenSession = async (registerId: string, openingFloat: number) => {
     try {
+      const activeCashierId =
+        (typeof window !== "undefined" ? window.sessionStorage.getItem("erp.current.userId") : null) ||
+        currentRegister?.branchId ||
+        registerId;
+
       await openSessionMutation.mutateAsync({
         registerId,
-        cashierUserId: "00000000-0000-0000-0000-000000000000",
+        cashierUserId: activeCashierId,
         businessDate: new Date().toISOString().slice(0, 10),
         openingFloat,
         currencyCode: currentRegister?.currencyCode || "EGP",

@@ -4,7 +4,8 @@ export type PosRegisterStatus = "Active" | "Disabled" | "Maintenance";
 export type PosTerminalStatus = "Ready" | "Active" | "Suspended" | "Revoked";
 export type PosSessionStatus = "Open" | "Reconciling" | "Closed";
 export type PosCartState = "Active" | "Held" | "Cancelled" | "CheckedOut";
-export type PosCheckoutState = "Pending" | "Completed" | "Failed" | "Cancelled";
+export type PosCheckoutState = "Pending" | "Completed" | "Failed" | "Cancelled" | "RecoveryRequired";
+export type PosPaymentState = "Pending" | "Completed" | "Failed" | "RecoveryRequired" | "Unknown";
 export type PosTenderMethod = "Cash" | "Card" | "CustomerCredit" | "ExternalTerminal";
 export type CashMovementType = "CashIn" | "CashOut" | "Drop";
 
@@ -187,8 +188,8 @@ export interface CheckoutForCartRequest {
 export interface CheckoutResponse {
   readonly checkoutId: string;
   readonly saleId: string | null;
-  readonly state: PosCheckoutState;
-  readonly paymentState: string;
+  readonly state: PosCheckoutState | string;
+  readonly paymentState: PosPaymentState | string;
   readonly inventoryState: string;
   readonly documentState: string;
   readonly accountingState: string;
@@ -365,3 +366,33 @@ export interface PosDiscountSummaryReport {
   readonly totalDiscounts: number;
   readonly discountedTransactionsCount: number;
 }
+
+export interface PosPaymentAccount {
+  readonly id: string;
+  readonly legalEntityId: string;
+  readonly branchId?: string | null;
+  readonly code: string;
+  readonly name: string;
+  readonly type: string;
+  readonly currencyCode?: string | null;
+  readonly status: string;
+}
+
+export interface PosPriceList {
+  readonly id: string;
+  readonly legalEntityId: string;
+  readonly code: string;
+  readonly name: string;
+  readonly direction: string;
+  readonly currencyCode: string;
+  readonly status: string;
+}
+
+export interface PosPaymentRequestDto {
+  readonly id: string;
+  readonly providerConfigId: string;
+  readonly amount: number;
+  readonly currencyCode: string;
+  readonly workflowState: string;
+}
+

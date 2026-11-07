@@ -11,6 +11,7 @@ export interface ReturnModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly sessionId: string;
+  readonly sales?: readonly any[] | undefined;
   readonly onCreateReturn: (request: CreateReturnRequest) => Promise<void>;
   readonly isSubmitting?: boolean | undefined;
 }
@@ -19,11 +20,13 @@ export function ReturnModal({
   isOpen,
   onClose,
   sessionId,
+  sales = [],
   onCreateReturn,
   isSubmitting = false,
 }: ReturnModalProps): React.JSX.Element | null {
   const { t } = useTranslation("pos");
   const [saleId, setSaleId] = useState<string>("");
+  const [selectedSaleSummary, setSelectedSaleSummary] = useState<string | null>(null);
   const [reason, setReason] = useState<string>("Defective");
   const [disposition, setDisposition] = useState<"ReturnToStock" | "Scrap">("ReturnToStock");
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +38,22 @@ export function ReturnModal({
 
   const quantity = parseFloat(quantityStr) || 0;
   const amount = parseFloat(amountStr) || 0;
+
+  const handleSelectSaleFromList = (selectedId: string) => {
+    setSaleId(selectedId);
+    setError(null);
+    const found = sales.find((s) => s.id === selectedId);
+    if (found) {
+      setAmountStr(String(found.total || 0));
+      setLineSaleId(found.id);
+      const saleRef = found.receiptNumber || (found.code ?? t("returns.saleNumberRef", { index: 1 }));
+      setSelectedSaleSummary(
+        `${saleRef} • ${found.businessDate || ""} • ${found.total || 0} ${found.currency || ""}`
+      );
+    } else {
+      setSelectedSaleSummary(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,6 +98,34 @@ export function ReturnModal({
       size="medium"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        {/* Sale Lookup from Recent Completed Sales */}
+        {sales.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+            <label style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-default)" }}>
+              {t("returns.selectOriginalSale", "اختر الفاتورة الأصلية من المبيعات المكتملة")}
+            </label>
+            <select
+              value={saleId}
+              onChange={(e) => handleSelectSaleFromList(e.target.value)}
+              style={{
+                padding: "0.625rem",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-border-default)",
+                backgroundColor: "var(--color-surface-default)",
+                color: "var(--color-content-default)",
+                fontSize: "0.875rem",
+              }}
+            >
+              <option value="">{t("returns.chooseSalePrompt", "-- اختر الفاتورة المطلوب إرجاعها --")}</option>
+              {sales.map((s, idx) => (
+                <option key={s.id} value={s.id}>
+                  {(s.receiptNumber || s.code || t("returns.saleNumberRef", { index: idx + 1 }))} • {s.businessDate} • {s.total} {s.currency}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <TextField
           label={t("returns.originalSaleIdLabel")}
           placeholder={t("returns.originalSaleIdPlaceholder")}
@@ -87,8 +134,23 @@ export function ReturnModal({
             setSaleId(v);
             setError(null);
           }}
-          autoFocus
+          autoFocus={sales.length === 0}
         />
+
+        {selectedSaleSummary && (
+          <div
+            style={{
+              padding: "0.5rem 0.75rem",
+              borderRadius: "var(--radius-sm)",
+              backgroundColor: "rgba(16, 185, 129, 0.1)",
+              border: "1px solid rgba(16, 185, 129, 0.3)",
+              fontSize: "0.8125rem",
+              color: "var(--color-status-success)",
+            }}
+          >
+            ✓ <strong>{t("returns.selectedSale", "الفاتورة المحددة")}:</strong> {selectedSaleSummary}
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <Select

@@ -35,6 +35,8 @@ import type {
   CatalogSearchResult,
   PosPaymentMixReport,
   PosDiscountSummaryReport,
+  PosPaymentAccount,
+  PosPriceList,
 } from "../types.ts";
 
 export const posQueryKeys = {
@@ -46,6 +48,9 @@ export const posQueryKeys = {
   session: (sessionId: string) => [...posQueryKeys.all, "session", sessionId] as const,
   cart: (cartId: string) => [...posQueryKeys.all, "cart", cartId] as const,
   checkout: (checkoutId: string) => [...posQueryKeys.all, "checkout", checkoutId] as const,
+  accounts: (entityId: string, branchId?: string) => [...posQueryKeys.all, "accounts", entityId, branchId || "all"] as const,
+  priceLists: (entityId: string) => [...posQueryKeys.all, "priceLists", entityId] as const,
+  paymentRequests: (entityId: string) => [...posQueryKeys.all, "paymentRequests", entityId] as const,
   reports: {
     all: () => [...posQueryKeys.all, "reports"] as const,
     sales: (entityId: string, from?: string, to?: string, page = 1) =>
@@ -138,6 +143,57 @@ export function useCheckout(checkoutId: string) {
   });
 }
 export const useCheckoutQuery = useCheckout;
+
+export function usePaymentAccounts(legalEntityId?: string, branchId?: string) {
+  return useQuery<readonly PosPaymentAccount[]>({
+    queryKey: posQueryKeys.accounts(legalEntityId || "", branchId),
+    queryFn: async () => {
+      if (!legalEntityId) return [];
+      try {
+        return await posApi.listPaymentAccounts(legalEntityId, branchId);
+      } catch {
+        return [];
+      }
+    },
+    enabled: Boolean(legalEntityId),
+    staleTime: 60_000,
+  });
+}
+export const usePaymentAccountsQuery = usePaymentAccounts;
+
+export function usePriceLists(legalEntityId?: string) {
+  return useQuery<readonly PosPriceList[]>({
+    queryKey: posQueryKeys.priceLists(legalEntityId || ""),
+    queryFn: async () => {
+      if (!legalEntityId) return [];
+      try {
+        return await posApi.listPriceLists(legalEntityId);
+      } catch {
+        return [];
+      }
+    },
+    enabled: Boolean(legalEntityId),
+    staleTime: 60_000,
+  });
+}
+export const usePriceListsQuery = usePriceLists;
+
+export function usePaymentRequests(legalEntityId?: string) {
+  return useQuery<any>({
+    queryKey: posQueryKeys.paymentRequests(legalEntityId || ""),
+    queryFn: async () => {
+      if (!legalEntityId) return null;
+      try {
+        return await posApi.listPaymentRequests(legalEntityId);
+      } catch {
+        return null;
+      }
+    },
+    enabled: Boolean(legalEntityId),
+    staleTime: 30_000,
+  });
+}
+export const usePaymentRequestsQuery = usePaymentRequests;
 
 export function useSalesReport(entityId: string, from?: string, to?: string, page = 1, pageSize = 25) {
   return useQuery({
@@ -451,3 +507,20 @@ export function useCompleteReturnMutation() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: posQueryKeys.reports.all() }),
   });
 }
+
+export function useCreateManagerOverrideMutation() {
+  return useMutation({
+    mutationFn: (request: ManagerOverrideRequest) => posApi.createManagerOverride(request),
+  });
+}
+
+export function useRecoverCheckoutMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (checkoutId: string) => posApi.recoverCheckout(checkoutId),
+    onSuccess: (checkout) => {
+      queryClient.invalidateQueries({ queryKey: posQueryKeys.checkout(checkout.checkoutId) });
+    },
+  });
+}
+

@@ -4,7 +4,6 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { BidiText } from "../../../../components/primitives/bidi-text.tsx";
 import { OfflineIcon, SyncIcon } from "../../components/pos-icons.tsx";
 import { usePosOffline, type StoredOfflineEnvelope } from "../../hooks/use-pos-offline.ts";
-import { useDownloadOfflinePackageQuery } from "../../hooks/use-pos-queries.ts";
 
 export interface PosOfflineTabProps {
   readonly registerId: string;
@@ -12,21 +11,26 @@ export interface PosOfflineTabProps {
 
 export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Element {
   const { t } = useTranslation("pos");
-  const { isOnline, pendingSyncCount, envelopes, syncPendingEnvelopes, clearQueue } = usePosOffline();
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const {
+    isOnline,
+    pendingSyncCount,
+    offlineQueue,
+    offlinePackage,
+    isOfflinePackageValid,
+    deviceIdentity,
+    refreshOfflinePackage,
+    syncOfflineQueue,
+  } = usePosOffline(registerId);
 
-  const { refetch: downloadPackage, isFetching: isDownloading } = useDownloadOfflinePackageQuery(
-    registerId,
-    "POS-COUNTER-01",
-    false
-  );
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const handleSyncNow = async () => {
     setIsSyncing(true);
     setStatusMessage(null);
     try {
-      const syncedCount = await syncPendingEnvelopes();
+      const syncedCount = await syncOfflineQueue();
       setStatusMessage(`${t("offline.syncedCount")}: ${syncedCount}`);
     } catch (err: unknown) {
       setStatusMessage(err instanceof Error ? err.message : t("offline.syncFailed"));
@@ -36,11 +40,20 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
   };
 
   const handleDownload = async () => {
+    setIsDownloading(true);
     try {
-      await downloadPackage();
-      setStatusMessage(t("offline.packageDownloaded"));
+      const pkg = await refreshOfflinePackage();
+      if (pkg) {
+        setStatusMessage(
+          `${t("offline.packageDownloaded")}: v${pkg.version} (${t("offline.validUntil", "صالحة حتى")}: ${new Date(pkg.expiresAt).toLocaleTimeString()})`
+        );
+      } else {
+        setStatusMessage(t("offline.downloadFailed", "فشل تحميل حزمة العمل بدون اتصال"));
+      }
     } catch (err: unknown) {
       setStatusMessage(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -103,8 +116,9 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
         </div>
       )}
 
-      {/* Network & Queue Health Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+      {/* Network, Device & Package Health Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}>
+        {/* Network Status Card */}
         <div
           style={{
             backgroundColor: "#ffffff",
@@ -137,6 +151,45 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
           </div>
         </div>
 
+        {/* Offline Package Validity Card */}
+        <div
+          style={{
+            backgroundColor: "#ffffff",
+            padding: "1.25rem",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid #cbd5e1",
+            boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
+            display: "flex",
+            alignItems: "center",
+            gap: "1rem",
+          }}
+        >
+          <div
+            style={{
+              padding: "0.75rem",
+              borderRadius: "var(--radius-md)",
+              backgroundColor: isOfflinePackageValid ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)",
+              color: isOfflinePackageValid ? "var(--color-status-success)" : "var(--color-status-warning)",
+            }}
+          >
+            <OfflineIcon size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+              {t("offline.packageStatus", "حزمة البيانات غير المتصلة")}
+            </div>
+            <div style={{ fontSize: "1rem", fontWeight: 700, color: "var(--color-content-default)" }}>
+              {isOfflinePackageValid
+                ? t("offline.packageActiveVersion", {
+                    version: offlinePackage?.version ?? 1,
+                    defaultValue: "Version v{{version}} (Active & Authorized)",
+                  })
+                : t("offline.packageMissingOrExpired", "غير متوفرة / منتهية")}
+            </div>
+          </div>
+        </div>
+
+        {/* Pending Queue Card */}
         <div
           style={{
             backgroundColor: "#ffffff",
@@ -170,7 +223,7 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
         </div>
       </div>
 
-      {/* Offline Envelopes Table */}
+      {/* Offline Envelopes Table (Durable IndexedDB storage) */}
       <div
         style={{
           backgroundColor: "#ffffff",
@@ -198,9 +251,9 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
             </tr>
           </thead>
           <tbody>
-            {envelopes.length > 0 ? (
-              envelopes.map((env: StoredOfflineEnvelope, idx: number) => (
-                <tr key={env.id} style={{ borderBottom: idx === envelopes.length - 1 ? "none" : "1px solid #e2e8f0" }}>
+            {offlineQueue.length > 0 ? (
+              offlineQueue.map((env: StoredOfflineEnvelope, idx: number) => (
+                <tr key={env.id} style={{ borderBottom: idx === offlineQueue.length - 1 ? "none" : "1px solid #e2e8f0" }}>
                   <td style={{ padding: "0.75rem 1rem", fontWeight: 700 }}>
                     <BidiText>{env.id.slice(0, 8)}</BidiText>
                   </td>
@@ -220,13 +273,13 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
                         backgroundColor:
                           env.status === "Synced"
                             ? "rgba(16, 185, 129, 0.1)"
-                            : env.status === "Failed"
+                            : env.status === "Failed" || env.status === "Conflicted"
                             ? "rgba(239, 68, 68, 0.1)"
                             : "rgba(245, 158, 11, 0.1)",
                         color:
                           env.status === "Synced"
                             ? "var(--color-status-success)"
-                            : env.status === "Failed"
+                            : env.status === "Failed" || env.status === "Conflicted"
                             ? "var(--color-status-danger)"
                             : "var(--color-status-warning)",
                       }}
@@ -249,14 +302,6 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
           </tbody>
         </table>
       </div>
-
-      {envelopes.length > 0 && (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <Button variant="secondary" size="compact" onClick={clearQueue}>
-            {t("offline.clearQueue")}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

@@ -35,6 +35,11 @@ export function PosRegistersTab({
   const activateMutation = useActivateRegisterMutation();
   const deactivateMutation = useDeactivateRegisterMutation();
 
+  const activeBranchId =
+    (typeof window !== "undefined" ? window.sessionStorage.getItem("erp.current.branchId") : null) ||
+    registers[0]?.branchId ||
+    "";
+
   const handleCreateRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code.trim() || !name.trim()) {
@@ -45,7 +50,7 @@ export function PosRegistersTab({
     try {
       await createMutation.mutateAsync({
         legalEntityId,
-        branchId: "00000000-0000-0000-0000-000000000000",
+        branchId: activeBranchId,
         code: code.trim(),
         name: name.trim(),
         currencyCode: currencyCode.trim() || "EGP",

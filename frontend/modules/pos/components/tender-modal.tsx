@@ -1,17 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { CashIcon, CreditCardIcon, SplitIcon } from "./pos-icons.tsx";
 import { BidiText } from "../../../components/primitives/bidi-text.tsx";
-import type { PosTenderMethod, TenderRequest } from "../types.ts";
+import type { PosPaymentAccount, PosTenderMethod, TenderRequest } from "../types.ts";
 
 export interface TenderModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly totalAmount: number;
   readonly currencyCode?: string | undefined;
+  readonly paymentAccounts: readonly PosPaymentAccount[];
+  readonly providerConfigId?: string | null | undefined;
   readonly onCheckout: (tenders: readonly TenderRequest[]) => Promise<void>;
   readonly isSubmitting?: boolean | undefined;
 }
@@ -21,14 +23,35 @@ export function TenderModal({
   onClose,
   totalAmount,
   currencyCode = "EGP",
+  paymentAccounts,
+  providerConfigId,
   onCheckout,
   isSubmitting = false,
 }: TenderModalProps): React.JSX.Element | null {
   const { t } = useTranslation("pos");
   const [activeTab, setActiveTab] = useState<"cash" | "card" | "split">("cash");
 
+  // Dynamically resolve the cashbox payment account
+  const defaultCashAccount =
+    paymentAccounts.find(
+      (a) =>
+        (a.type?.toLowerCase() === "cashbox" || a.type === "Cashbox") &&
+        (a.status === "Active" || !a.status)
+    ) ||
+    paymentAccounts.find((a) => a.status === "Active") ||
+    paymentAccounts[0];
+
   // Cash state
-  const [cashTenderedStr, setCashTenderedStr] = useState<string>(totalAmount > 0 ? totalAmount.toFixed(2) : "0");
+  const [cashTenderedStr, setCashTenderedStr] = useState<string>(
+    totalAmount > 0 ? totalAmount.toFixed(2) : "0"
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      setCashTenderedStr(totalAmount > 0 ? totalAmount.toFixed(2) : "0");
+      setError(null);
+    }
+  }, [isOpen, totalAmount]);
 
   // Split state
   const [splitTenders, setSplitTenders] = useState<Array<{ method: PosTenderMethod; amount: number }>>([]);
@@ -37,7 +60,7 @@ export function TenderModal({
 
   const [error, setError] = useState<string | null>(null);
 
-  // Calculations
+  // Exact math rounding
   const cashTendered = parseFloat(cashTenderedStr) || 0;
   const cashChange = Math.max(0, Math.round((cashTendered - totalAmount) * 100) / 100);
 
@@ -61,6 +84,10 @@ export function TenderModal({
   };
 
   const handleCashSubmit = async () => {
+    if (!defaultCashAccount?.id) {
+      setError(t("tender.noCashAccountAvailable", "No active cash account is configured for this legal entity."));
+      return;
+    }
     if (cashTendered < totalAmount) {
       setError(t("tender.insufficientCash"));
       return;
@@ -71,7 +98,7 @@ export function TenderModal({
         {
           method: "Cash",
           amount: totalAmount,
-          paymentAccountId: "6f72315c-5930-765b-bc01-79915b2f304a",
+          paymentAccountId: defaultCashAccount.id,
         },
       ];
       await onCheckout(tenders);
@@ -81,14 +108,18 @@ export function TenderModal({
   };
 
   const handleCardSubmit = async () => {
+    if (!providerConfigId) {
+      setError(t("tender.noCardProviderAvailable", "Card payment provider is not configured for this legal entity."));
+      return;
+    }
     setError(null);
     try {
       const tenders: TenderRequest[] = [
         {
           method: "Card",
           amount: totalAmount,
-          providerConfigId: "ea7b5b9d-b2b9-8858-89b2-3858fa6127b9",
-          externalReference: "POS-TERM-001",
+          providerConfigId,
+          externalReference: `POS-TERM-${Date.now().toString().slice(-6)}`,
         },
       ];
       await onCheckout(tenders);
@@ -102,13 +133,24 @@ export function TenderModal({
       setError(t("tender.splitIncomplete"));
       return;
     }
+    if (splitTenders.some((item) => item.method === "Cash") && !defaultCashAccount?.id) {
+      setError(t("tender.noCashAccountAvailable", "No active cash account is configured for this legal entity."));
+      return;
+    }
+    if (splitTenders.some((item) => item.method === "Card") && !providerConfigId) {
+      setError(t("tender.noCardProviderAvailable", "Card payment provider is not configured for this legal entity."));
+      return;
+    }
+
     setError(null);
     try {
       const tenders: TenderRequest[] = splitTenders.map((item) => ({
         method: item.method,
         amount: item.amount,
-        ...(item.method === "Cash" ? { paymentAccountId: "6f72315c-5930-765b-bc01-79915b2f304a" } : {}),
-        ...(item.method === "Card" ? { providerConfigId: "ea7b5b9d-b2b9-8858-89b2-3858fa6127b9", externalReference: "POS-SPLIT-CARD" } : {}),
+        ...(item.method === "Cash" && defaultCashAccount ? { paymentAccountId: defaultCashAccount.id } : {}),
+        ...(item.method === "Card" && providerConfigId
+          ? { providerConfigId, externalReference: `POS-SPLIT-${Date.now().toString().slice(-6)}` }
+          : {}),
       }));
       await onCheckout(tenders);
     } catch (err: unknown) {
@@ -149,27 +191,35 @@ export function TenderModal({
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <Button
             variant={activeTab === "cash" ? "primary" : "secondary"}
-            onClick={() => setActiveTab("cash")}
-            style={{ flex: 1, justifyContent: "center", display: "flex", gap: "0.5rem", alignItems: "center" }}
+            onClick={() => {
+              setActiveTab("cash");
+              setError(null);
+            }}
+            style={{ flex: 1, display: "flex", gap: "0.5rem", justifyContent: "center", alignItems: "center" }}
           >
             <CashIcon size={18} />
             <span>{t("tender.cash")}</span>
           </Button>
+
           <Button
             variant={activeTab === "card" ? "primary" : "secondary"}
-            onClick={() => setActiveTab("card")}
-            style={{ flex: 1, justifyContent: "center", display: "flex", gap: "0.5rem", alignItems: "center" }}
+            onClick={() => {
+              setActiveTab("card");
+              setError(null);
+            }}
+            style={{ flex: 1, display: "flex", gap: "0.5rem", justifyContent: "center", alignItems: "center" }}
           >
             <CreditCardIcon size={18} />
             <span>{t("tender.card")}</span>
           </Button>
+
           <Button
             variant={activeTab === "split" ? "primary" : "secondary"}
             onClick={() => {
               setActiveTab("split");
-              setSplitAmountStr(splitRemaining.toFixed(2));
+              setError(null);
             }}
-            style={{ flex: 1, justifyContent: "center", display: "flex", gap: "0.5rem", alignItems: "center" }}
+            style={{ flex: 1, display: "flex", gap: "0.5rem", justifyContent: "center", alignItems: "center" }}
           >
             <SplitIcon size={18} />
             <span>{t("tender.split")}</span>
@@ -180,7 +230,7 @@ export function TenderModal({
         {activeTab === "cash" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <TextField
-              label={`${t("tender.cashTendered")} (${currencyCode})`}
+              label={t("tender.cashTendered")}
               type="number"
               value={cashTenderedStr}
               onChange={(v) => {
@@ -190,132 +240,118 @@ export function TenderModal({
               autoFocus
             />
 
-            {/* Quick cash denomination chips */}
+            {/* Quick cash bill buttons */}
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <Button size="compact" variant="secondary" onClick={() => handleQuickCash(totalAmount)}>
-                {t("tender.exactAmount")} (<BidiText>{totalAmount.toFixed(2)}</BidiText>)
-              </Button>
-              {[50, 100, 200, 500].map((amt) => {
-                if (amt < totalAmount) return null;
-                return (
-                  <Button key={amt} size="compact" variant="secondary" onClick={() => handleQuickCash(amt)}>
-                    <BidiText>{amt} {currencyCode}</BidiText>
-                  </Button>
-                );
-              })}
+              {[totalAmount, Math.ceil(totalAmount / 10) * 10, 50, 100, 200, 500].map((amt, idx) => (
+                <Button
+                  key={idx}
+                  size="compact"
+                  variant="secondary"
+                  onClick={() => handleQuickCash(amt)}
+                >
+                  <BidiText>{amt.toFixed(0)} {currencyCode}</BidiText>
+                </Button>
+              ))}
             </div>
 
-            {/* Change returned display */}
+            {/* Change Due Display */}
             <div
               style={{
                 padding: "0.75rem 1rem",
                 borderRadius: "var(--radius-md)",
                 backgroundColor: cashChange > 0 ? "rgba(16, 185, 129, 0.1)" : "var(--color-surface-hover)",
-                border: "1px solid var(--color-border-subtle)",
+                border: "1px solid",
+                borderColor: cashChange > 0 ? "rgba(16, 185, 129, 0.3)" : "var(--color-border-default)",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
               }}
             >
-              <span style={{ fontWeight: 600 }}>{t("tender.changeDue")}:</span>
-              <span style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-status-success)" }}>
+              <span style={{ fontWeight: 600, color: "var(--color-content-muted)" }}>
+                {t("tender.changeDue")}:
+              </span>
+              <span
+                data-testid="tender-change-amount"
+                style={{
+                  fontSize: "1.25rem",
+                  fontWeight: 800,
+                  color: cashChange > 0 ? "var(--color-status-success)" : "var(--color-content-default)",
+                }}
+              >
                 <BidiText>{cashChange.toFixed(2)} {currencyCode}</BidiText>
               </span>
             </div>
 
-            <Button
-              variant="primary"
-              size="comfortable"
-              isDisabled={isSubmitting || cashTendered < totalAmount}
-              onClick={handleCashSubmit}
-              style={{ width: "100%", justifyContent: "center", marginTop: "0.5rem" }}
-            >
-              {isSubmitting ? t("common.submitting") : t("tender.completeCashSale")}
-            </Button>
+            {defaultCashAccount && (
+              <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                {t("tender.accountLabel", "حساب الخزينة")}: <BidiText>{defaultCashAccount.name} ({defaultCashAccount.code})</BidiText>
+              </div>
+            )}
           </div>
         )}
 
         {/* Card Tab Content */}
         {activeTab === "card" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div
-              style={{
-                padding: "1.5rem",
-                textAlign: "center",
-                borderRadius: "var(--radius-md)",
-                border: "1px dashed var(--color-border-default)",
-                backgroundColor: "var(--color-surface-card)",
-              }}
-            >
-              <CreditCardIcon size={40} style={{ margin: "0 auto 0.75rem", color: "var(--color-brand-primary)" }} />
-              <div style={{ fontWeight: 600, fontSize: "1.125rem" }}>
-                {t("tender.terminalSwipePrompt")}
-              </div>
-              <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)", marginTop: "0.25rem" }}>
-                {t("tender.terminalAuthReady")}
-              </div>
+          <div
+            style={{
+              padding: "1.5rem",
+              borderRadius: "var(--radius-md)",
+              backgroundColor: "var(--color-surface-hover)",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.75rem",
+              alignItems: "center",
+            }}
+          >
+            <CreditCardIcon size={36} style={{ color: "var(--color-brand-primary)" }} />
+            <div style={{ fontWeight: 600 }}>{t("tender.cardPrompt")}</div>
+            <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>
+              {t("tender.cardNotice")}
             </div>
-
-            <Button
-              variant="primary"
-              size="comfortable"
-              isDisabled={isSubmitting}
-              onClick={handleCardSubmit}
-              style={{ width: "100%", justifyContent: "center" }}
-            >
-              {isSubmitting ? t("common.submitting") : `${t("tender.chargeCard")} (${totalAmount.toFixed(2)} ${currencyCode})`}
-            </Button>
+            {providerConfigId && (
+              <div style={{ fontSize: "0.75rem", color: "var(--color-status-success)" }}>
+                ✓ {t("tender.providerConnected", "مزود الدفع الإلكتروني متصل وجاهز")}
+              </div>
+            )}
           </div>
         )}
 
         {/* Split Tab Content */}
         {activeTab === "split" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
-              <div style={{ width: "8rem" }}>
-                <label style={{ fontSize: "0.8125rem", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
-                  {t("tender.method")}
-                </label>
-                <select
-                  value={splitCurrentMethod}
-                  onChange={(e) => setSplitCurrentMethod(e.target.value as PosTenderMethod)}
-                  style={{
-                    width: "100%",
-                    padding: "0.5rem",
-                    borderRadius: "var(--radius-sm)",
-                    border: "1px solid var(--color-border-default)",
-                    background: "var(--color-surface-card)",
-                    color: "var(--color-content-default)",
-                  }}
-                >
-                  <option value="Cash">{t("tender.cash")}</option>
-                  <option value="Card">{t("tender.card")}</option>
-                  <option value="CustomerCredit">{t("tender.credit")}</option>
-                </select>
-              </div>
-
-              <div style={{ flex: 1 }}>
-                <TextField
-                  label={`${t("tender.amount")} (${currencyCode})`}
-                  type="number"
-                  value={splitAmountStr}
-                  onChange={(v) => setSplitAmountStr(v)}
-                />
-              </div>
-
-              <Button
-                variant="secondary"
-                onClick={handleAddSplitTender}
-                isDisabled={parseFloat(splitAmountStr) <= 0}
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <select
+                value={splitCurrentMethod}
+                onChange={(e) => setSplitCurrentMethod(e.target.value as PosTenderMethod)}
+                style={{
+                  padding: "0.5rem",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border-default)",
+                  backgroundColor: "var(--color-surface-default)",
+                  color: "var(--color-content-default)",
+                  fontSize: "0.875rem",
+                }}
               >
-                {t("tender.addPayment")}
+                <option value="Cash">{t("tender.cash")}</option>
+                <option value="Card">{t("tender.card")}</option>
+              </select>
+
+              <TextField
+                placeholder={t("tender.tenderAmount")}
+                value={splitAmountStr}
+                onChange={(v) => setSplitAmountStr(v)}
+              />
+
+              <Button variant="secondary" onClick={handleAddSplitTender}>
+                + {t("tender.addTender")}
               </Button>
             </div>
 
             {/* Split Tenders List */}
             {splitTenders.length > 0 && (
-              <div style={{ border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-sm)" }}>
-                {splitTenders.map((tItem, idx) => (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {splitTenders.map((item, idx) => (
                   <div
                     key={idx}
                     style={{
@@ -323,52 +359,104 @@ export function TenderModal({
                       justifyContent: "space-between",
                       alignItems: "center",
                       padding: "0.5rem 0.75rem",
-                      borderBottom: idx === splitTenders.length - 1 ? "none" : "1px solid var(--color-border-subtle)",
+                      borderRadius: "var(--radius-sm)",
+                      backgroundColor: "var(--color-surface-hover)",
+                      border: "1px solid var(--color-border-default)",
+                      fontSize: "0.875rem",
                     }}
                   >
-                    <span>{tItem.method === "Cash" ? t("tender.cash") : tItem.method === "Card" ? t("tender.card") : t("tender.credit")}</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <strong style={{ color: "var(--color-content-default)" }}>
-                        <BidiText>{tItem.amount.toFixed(2)} {currencyCode}</BidiText>
-                      </strong>
-                      <Button size="compact" variant="secondary" onClick={() => handleRemoveSplitTender(idx)}>
-                        ×
-                      </Button>
-                    </div>
+                    <span>
+                      {item.method === "Cash" ? t("tender.cash") : t("tender.card")}:{" "}
+                      <strong><BidiText>{item.amount.toFixed(2)} {currencyCode}</BidiText></strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSplitTender(idx)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--color-status-danger)",
+                        cursor: "pointer",
+                        fontWeight: 700,
+                      }}
+                    >
+                      ×
+                    </button>
                   </div>
                 ))}
               </div>
             )}
 
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem" }}>
-              <span>{t("tender.remainingDue")}:</span>
-              <strong style={{ color: splitRemaining > 0 ? "var(--color-status-danger)" : "var(--color-status-success)" }}>
-                <BidiText>{splitRemaining.toFixed(2)} {currencyCode}</BidiText>
-              </strong>
-            </div>
-
-            <Button
-              variant="primary"
-              size="comfortable"
-              isDisabled={isSubmitting || splitPaidTotal < totalAmount}
-              onClick={handleSplitSubmit}
-              style={{ width: "100%", justifyContent: "center" }}
+            {/* Split Status */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "0.5rem 0",
+                fontSize: "0.875rem",
+                fontWeight: 600,
+              }}
             >
-              {isSubmitting ? t("common.submitting") : t("tender.completeSplitSale")}
-            </Button>
+              <span>{t("tender.paid")}: <BidiText>{splitPaidTotal.toFixed(2)} {currencyCode}</BidiText></span>
+              <span style={{ color: splitRemaining > 0 ? "var(--color-status-danger)" : "var(--color-status-success)" }}>
+                {t("tender.remaining")}: <BidiText>{splitRemaining.toFixed(2)} {currencyCode}</BidiText>
+              </span>
+            </div>
           </div>
         )}
 
+        {/* Actionable Error Message */}
         {error && (
-          <div style={{ color: "var(--color-status-danger)", fontSize: "0.875rem" }} role="alert">
+          <div
+            style={{
+              padding: "0.5rem 0.75rem",
+              borderRadius: "var(--radius-sm)",
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              color: "var(--color-status-danger)",
+              fontSize: "0.875rem",
+            }}
+            role="alert"
+          >
             {error}
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        {/* Modal Footer Actions */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
           <Button variant="secondary" onClick={onClose} isDisabled={isSubmitting}>
             {t("common.cancel")}
           </Button>
+
+          {activeTab === "cash" && (
+            <Button
+              variant="primary"
+              onClick={handleCashSubmit}
+              isDisabled={isSubmitting || cashTendered < totalAmount || !defaultCashAccount}
+            >
+              {isSubmitting ? t("common.submitting") : t("tender.confirmCashCheckout")}
+            </Button>
+          )}
+
+          {activeTab === "card" && (
+            <Button
+              variant="primary"
+              onClick={handleCardSubmit}
+              isDisabled={isSubmitting || !providerConfigId}
+            >
+              {isSubmitting ? t("common.submitting") : t("tender.confirmCardCheckout")}
+            </Button>
+          )}
+
+          {activeTab === "split" && (
+            <Button
+              variant="primary"
+              onClick={handleSplitSubmit}
+              isDisabled={isSubmitting || splitPaidTotal < totalAmount}
+            >
+              {isSubmitting ? t("common.submitting") : t("tender.confirmSplitCheckout")}
+            </Button>
+          )}
         </div>
       </div>
     </Dialog>

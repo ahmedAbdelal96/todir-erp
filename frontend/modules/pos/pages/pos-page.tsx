@@ -23,17 +23,29 @@ export type PosTab = "checkout" | "sessions" | "registers" | "returns" | "offlin
 export function PosPage(): React.JSX.Element {
   const { t } = useTranslation("pos");
   const outletContext = useOutletContext<WorkspaceOutletContext | undefined>();
-  const legalEntityId = outletContext?.legalEntityId || "00000000-0000-0000-0000-000000000000";
+  const legalEntityId =
+    outletContext?.legalEntityId ||
+    (typeof window !== "undefined" ? window.sessionStorage.getItem("erp.current.legalEntityId") || "" : "");
 
   const [activeTab, setActiveTab] = useState<PosTab>("checkout");
+  const [selectedRegisterId, setSelectedRegisterId] = useState<string>(() => {
+    return typeof window !== "undefined" ? window.sessionStorage.getItem("erp.pos.selectedRegisterId") || "" : "";
+  });
 
   // Query registers
   const { data: registersData, refetch: refetchRegisters, isLoading: isRegistersLoading } = useRegistersQuery(legalEntityId);
   const registers = registersData || [];
-  const defaultRegister = registers[0];
+  const currentRegister = registers.find((r) => r.id === selectedRegisterId) || registers[0];
+
+  const handleSelectRegister = (regId: string) => {
+    setSelectedRegisterId(regId);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("erp.pos.selectedRegisterId", regId);
+    }
+  };
 
   // Query active session for register
-  const { data: sessionData, refetch: refetchSession } = useCurrentSessionQuery(defaultRegister?.id);
+  const { data: sessionData, refetch: refetchSession } = useCurrentSessionQuery(currentRegister?.id);
 
   const handleSessionChanged = () => {
     refetchSession();
@@ -95,7 +107,7 @@ export function PosPage(): React.JSX.Element {
           </div>
         </div>
 
-        {defaultRegister && (
+        {currentRegister && (
           <div
             style={{
               display: "inline-flex",
@@ -107,9 +119,31 @@ export function PosPage(): React.JSX.Element {
               padding: "0.4rem 0.85rem",
               borderRadius: "var(--radius-md, 0.5rem)",
               border: "1px solid rgba(255, 255, 255, 0.15)",
+              flexWrap: "wrap",
             }}
           >
-            <span>{defaultRegister.name} ({defaultRegister.code})</span>
+            {registers.length > 1 ? (
+              <select
+                value={currentRegister.id}
+                onChange={(e) => handleSelectRegister(e.target.value)}
+                style={{
+                  background: "rgba(0, 0, 0, 0.2)",
+                  color: "#ffffff",
+                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  borderRadius: "var(--radius-sm, 0.25rem)",
+                  padding: "0.2rem 0.5rem",
+                  fontSize: "0.8125rem",
+                }}
+              >
+                {registers.map((r) => (
+                  <option key={r.id} value={r.id} style={{ color: "#000000" }}>
+                    {r.name} ({r.code})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span>{currentRegister.name} ({currentRegister.code})</span>
+            )}
             <span style={{ color: "#94a3b8" }}>•</span>
             <span style={{ color: sessionData?.status === "Open" ? "#4ade80" : "#fbbf24", fontWeight: 600 }}>
               {sessionData?.status === "Open" ? t("workspace.online") : t("page.noActiveSessionTitle")}
@@ -204,10 +238,10 @@ export function PosPage(): React.JSX.Element {
 
       {/* Main Tab Content */}
       {activeTab === "checkout" && (
-        defaultRegister && sessionData ? (
+        currentRegister && sessionData ? (
           <PosCheckoutWorkspace
             legalEntityId={legalEntityId}
-            register={defaultRegister}
+            register={currentRegister}
             session={sessionData}
             onOpenSessionRequired={() => setActiveTab("sessions")}
             onManageSessions={() => setActiveTab("sessions")}
@@ -216,7 +250,7 @@ export function PosPage(): React.JSX.Element {
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted)" }}>
             {t("common.loading")}
           </div>
-        ) : !defaultRegister ? (
+        ) : !currentRegister ? (
           <div
             style={{
               padding: "3rem",
@@ -259,7 +293,7 @@ export function PosPage(): React.JSX.Element {
         <PosSessionsTab
           legalEntityId={legalEntityId}
           registers={registers}
-          currentRegister={defaultRegister}
+          currentRegister={currentRegister}
           activeSession={sessionData ?? null}
           onSessionChanged={handleSessionChanged}
         />
@@ -282,7 +316,7 @@ export function PosPage(): React.JSX.Element {
 
       {activeTab === "offline" && (
         <PosOfflineTab
-          registerId={defaultRegister?.id || "00000000-0000-0000-0000-000000000000"}
+          registerId={currentRegister?.id || ""}
         />
       )}
 

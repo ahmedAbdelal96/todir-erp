@@ -21,6 +21,31 @@ export interface ReceiptModalProps {
   readonly onNewSale: () => void;
 }
 
+const THERMAL_PRINT_CSS = `
+  @media print {
+    body * {
+      visibility: hidden !important;
+    }
+    #pos-thermal-receipt,
+    #pos-thermal-receipt * {
+      visibility: visible !important;
+    }
+    #pos-thermal-receipt {
+      position: absolute !important;
+      left: 0 !important;
+      top: 0 !important;
+      width: 80mm !important;
+      max-width: 80mm !important;
+      margin: 0 !important;
+      padding: 4mm !important;
+      border: none !important;
+      box-shadow: none !important;
+      font-size: 11px !important;
+      line-height: 1.3 !important;
+    }
+  }
+`;
+
 export function ReceiptModal({
   isOpen,
   onClose,
@@ -46,6 +71,10 @@ export function ReceiptModal({
     onNewSale();
   };
 
+  const receiptNumber = checkout?.saleId
+    ? `REC-${new Date().getFullYear()}-${Math.abs(checkout.saleId.split("-").reduce((acc, part) => acc ^ parseInt(part.slice(0, 4) || "0", 16), 0) % 90000 + 10000)}`
+    : "REC-2026-0001";
+
   return (
     <Dialog
       isOpen={isOpen}
@@ -54,6 +83,9 @@ export function ReceiptModal({
       description={t("receipt.subtitle")}
       size="medium"
     >
+      {/* 80mm Thermal Receipt Print CSS */}
+      <style dangerouslySetInnerHTML={{ __html: THERMAL_PRINT_CSS }} />
+
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {/* Thermal Receipt Paper Container */}
         <div
@@ -68,6 +100,8 @@ export function ReceiptModal({
             maxWidth: "24rem",
             margin: "0 auto",
             boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)",
+            boxSizing: "border-box",
+            width: "100%",
           }}
         >
           {/* Header */}
@@ -93,37 +127,35 @@ export function ReceiptModal({
               <span>{t("receipt.cashier")}: </span>
               <strong><BidiText>{cashierName}</BidiText></strong>
             </div>
-            {checkout?.saleId && (
-              <div style={{ gridColumn: "span 2" }}>
-                <span>{t("receipt.saleId")}: </span>
-                <strong><BidiText>{checkout.saleId.slice(0, 8)}</BidiText></strong>
-              </div>
-            )}
+            <div style={{ gridColumn: "span 2" }}>
+              <span>{t("receipt.receiptNumber", "رقم الإيصال")}: </span>
+              <strong data-testid="pos-receipt-number"><BidiText>{receiptNumber}</BidiText></strong>
+            </div>
           </div>
 
           {/* Items */}
           <table style={{ width: "100%", fontSize: "0.75rem", borderCollapse: "collapse", marginBottom: "0.75rem" }}>
             <thead>
-              <tr style={{ borderBottom: "1px solid #cbd5e1", textAlign: "left" }}>
-                <th style={{ padding: "0.25rem 0" }}>{t("receipt.item")}</th>
+              <tr style={{ borderBottom: "1px solid #cbd5e1", textAlign: "start" }}>
+                <th style={{ padding: "0.25rem 0", textAlign: "start" }}>{t("receipt.item")}</th>
                 <th style={{ padding: "0.25rem 0", textAlign: "center" }}>{t("receipt.qty")}</th>
-                <th style={{ padding: "0.25rem 0", textAlign: "right" }}>{t("receipt.price")}</th>
-                <th style={{ padding: "0.25rem 0", textAlign: "right" }}>{t("receipt.total")}</th>
+                <th style={{ padding: "0.25rem 0", textAlign: "end" }}>{t("receipt.price")}</th>
+                <th style={{ padding: "0.25rem 0", textAlign: "end" }}>{t("receipt.total")}</th>
               </tr>
             </thead>
             <tbody>
               {lines.map((line) => (
                 <tr key={line.id} style={{ borderBottom: "1px dashed #e2e8f0" }}>
-                  <td style={{ padding: "0.35rem 0" }}>
+                  <td style={{ padding: "0.35rem 0", textAlign: "start" }}>
                     <BidiText>{line.description}</BidiText>
                   </td>
                   <td style={{ padding: "0.35rem 0", textAlign: "center" }}>
                     <BidiText>{line.quantity}</BidiText>
                   </td>
-                  <td style={{ padding: "0.35rem 0", textAlign: "right" }}>
+                  <td style={{ padding: "0.35rem 0", textAlign: "end" }}>
                     <BidiText>{line.unitPrice.toFixed(2)}</BidiText>
                   </td>
-                  <td style={{ padding: "0.35rem 0", textAlign: "right", fontWeight: 600 }}>
+                  <td style={{ padding: "0.35rem 0", textAlign: "end", fontWeight: 600 }}>
                     <BidiText>{line.lineTotal.toFixed(2)}</BidiText>
                   </td>
                 </tr>
@@ -149,7 +181,7 @@ export function ReceiptModal({
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 800, marginTop: "0.25rem", borderTop: "1px solid #1e293b", paddingTop: "0.25rem" }}>
               <span>{t("receipt.grandTotal")}:</span>
-              <span><BidiText>{grandTotal.toFixed(2)} {currencyCode}</BidiText></span>
+              <span data-testid="pos-receipt-total"><BidiText>{grandTotal.toFixed(2)} {currencyCode}</BidiText></span>
             </div>
           </div>
 

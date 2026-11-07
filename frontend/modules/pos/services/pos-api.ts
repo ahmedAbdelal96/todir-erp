@@ -216,9 +216,12 @@ export const posApi = {
   },
 
   async setCartCustomer(cartId: string, customerPartyId: string | null): Promise<CartResponse> {
+    const validUuid = customerPartyId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerPartyId.trim())
+      ? customerPartyId.trim()
+      : null;
     return httpClient<CartResponse>(`${BASE}/carts/${cartId}/customer`, {
       method: "POST",
-      body: JSON.stringify({ customerPartyId }),
+      body: JSON.stringify({ customerPartyId: validUuid }),
     });
   },
 
@@ -417,5 +420,19 @@ export const posApi = {
 
   async lookupBarcode(barcode: string, legalEntityId: string): Promise<CatalogVariantSnapshot> {
     return httpClient<CatalogVariantSnapshot>(`${BASE}/catalog/barcode/${encodeURIComponent(barcode)}?legalEntityId=${legalEntityId}`);
+  },
+
+  // Authoritative Configuration & Dependencies
+  async listPaymentAccounts(legalEntityId: string, branchId?: string): Promise<readonly import("../types.ts").PosPaymentAccount[]> {
+    const url = `/api/v1/payments/legal-entities/${legalEntityId}/accounts${branchId ? `?branchId=${encodeURIComponent(branchId)}` : ""}`;
+    return httpClient<readonly import("../types.ts").PosPaymentAccount[]>(url);
+  },
+
+  async listPriceLists(legalEntityId: string): Promise<readonly import("../types.ts").PosPriceList[]> {
+    return httpClient<readonly import("../types.ts").PosPriceList[]>(`/api/v1/pricing/price-lists?legalEntityId=${encodeURIComponent(legalEntityId)}`);
+  },
+
+  async listPaymentRequests(legalEntityId: string): Promise<any> {
+    return httpClient<any>(`/api/v1/payments/legal-entities/${legalEntityId}/payment-requests`);
   },
 };

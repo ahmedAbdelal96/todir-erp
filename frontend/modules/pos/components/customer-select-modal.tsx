@@ -23,27 +23,27 @@ interface RetailCustomer {
 
 const RETAIL_CUSTOMERS: readonly RetailCustomer[] = [
   {
-    id: "party-atlas-trading",
-    nameAr: "أطلس للتجارة العامة",
-    nameEn: "Atlas Trading General",
+    id: "023b6cc2-2c8a-8756-b1e8-7664444e37e9",
+    nameAr: "شركة التميز للتوريدات",
+    nameEn: "Al Tamayoz Supplies Co.",
     code: "CUST-001",
   },
   {
-    id: "party-nour-supplies",
-    nameAr: "النور للتوريدات",
-    nameEn: "Al Nour Supplies",
+    id: "077927da-ca87-3454-9c1b-9d03182fe4e6",
+    nameAr: "شركة الوفاء للتوريدات",
+    nameEn: "Al Wafa Supplies Co.",
     code: "CUST-002",
   },
   {
-    id: "party-pioneers-equipment",
-    nameAr: "شركة الرواد للتجهيزات",
-    nameEn: "Pioneers Equipment Co.",
+    id: "02fff4cf-6a7b-295d-bb0a-1a2143e133a0",
+    nameAr: "منى شريف عبدالحميد",
+    nameEn: "Mona Sherif Abdelhamid",
     code: "CUST-003",
   },
   {
-    id: "party-future-electrical",
-    nameAr: "شركة المستقبل للأدوات الكهربائية",
-    nameEn: "Future Electrical Tools",
+    id: "09f8cc1f-a29c-135a-bdb2-794201268bd0",
+    nameAr: "المتحدة للمعدات الكهربائية",
+    nameEn: "United Electrical Equipment",
     code: "CUST-004",
   },
 ];
