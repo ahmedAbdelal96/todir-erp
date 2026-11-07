@@ -340,6 +340,33 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
 
     public Task<object> RecoverReturnAsync(TenantId tenant, Guid actor, Guid returnId, CancellationToken ct) => ProcessReturnAsync(tenant, actor, returnId, ct);
 
+    public async Task<PosRefundResult> RefundReturnAsync(TenantId tenant, Guid actor, Guid membership, Guid returnId, RefundReturnRequest request, CancellationToken ct)
+    {
+        if (request.Amount <= 0 || string.IsNullOrWhiteSpace(request.ReasonCode)) throw new ArgumentException("pos.refund_invalid");
+        var captured = await coordinator.ExecuteAsync<(Guid LegalEntityId, Guid PaymentId, string Currency, decimal Total)>(tenant, async (ctx, token) =>
+        {
+            await using var command = new NpgsqlCommand("select r.refund_state,r.total_amount,s.currency_code,t.method,t.external_reference,pr.legal_entity_id from business_pos.pos_return r join business_pos.pos_sale s on s.tenant_id=r.tenant_id and s.id=r.original_sale_id join business_pos.pos_session psn on psn.tenant_id=s.tenant_id and psn.id=s.session_id join business_pos.pos_register pr on pr.tenant_id=psn.tenant_id and pr.id=psn.register_id join business_pos.pos_tender t on t.tenant_id=s.tenant_id and t.checkout_id=s.checkout_id and t.method='Cash' where r.tenant_id=$1 and r.id=$2 and r.state='Completed' order by t.sequence_no limit 1 for update", ctx.Connection, ctx.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(returnId); await using var reader = await command.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token)) throw new ArgumentException("pos.refund_return_not_found");
+            var refundState = reader.GetString(0); var total = reader.GetDecimal(1); var currency = reader.GetString(2); var method = reader.GetString(3); var external = reader.IsDBNull(4) ? null : reader.GetString(4); var legalEntityId = reader.GetGuid(5); await reader.CloseAsync();
+            if (!string.Equals(refundState, "NotRequested", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("pos.refund_already_requested");
+            if (!string.Equals(method, "Cash", StringComparison.OrdinalIgnoreCase) || !Guid.TryParse(external, out var paymentId)) throw new InvalidOperationException("pos.provider_refund_required");
+            if (request.Amount > total) throw new InvalidOperationException("pos.refund_amount_exceeded");
+            await using var reserve = new NpgsqlCommand("update business_pos.pos_return set refund_state='Pending',refunded_amount=$3 where tenant_id=$1 and id=$2 and refund_state='NotRequested'", ctx.Connection, ctx.Transaction); reserve.Parameters.AddWithValue(tenant.Value); reserve.Parameters.AddWithValue(returnId); reserve.Parameters.AddWithValue(request.Amount); if (await reserve.ExecuteNonQueryAsync(token) != 1) throw new InvalidOperationException("pos.refund_already_requested");
+            return (legalEntityId, paymentId, currency, total);
+        }, ct);
+        try
+        {
+            var result = await payments.RefundCashAsync(tenant.Value, actor, membership, new PosCashRefundRequest(captured.LegalEntityId, captured.PaymentId, request.PaymentAccountId, request.Amount, captured.Currency, DateOnly.FromDateTime(DateTime.UtcNow), request.ReasonCode.Trim(), $"pos-return-refund:{returnId:D}"), returnId, ct);
+            await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) => { await using var update = new NpgsqlCommand("update business_pos.pos_return set refund_state='Completed',refund_payment_id=$3 where tenant_id=$1 and id=$2 and refund_state='Pending'", ctx.Connection, ctx.Transaction); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(returnId); update.Parameters.AddWithValue(result.RefundPaymentId); await update.ExecuteNonQueryAsync(token); return null; }, ct);
+            return result;
+        }
+        catch
+        {
+            await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) => { await using var update = new NpgsqlCommand("update business_pos.pos_return set refund_state='Failed',refunded_amount=0 where tenant_id=$1 and id=$2 and refund_state='Pending'", ctx.Connection, ctx.Transaction); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(returnId); await update.ExecuteNonQueryAsync(token); return null; }, ct); throw;
+        }
+    }
+
     private async Task<object> ProcessReturnAsync(TenantId tenant, Guid actor, Guid returnId, CancellationToken ct)
     {
         var lines = await coordinator.ExecuteAsync<List<ReturnInventoryLine>>(tenant, async (ctx, token) =>

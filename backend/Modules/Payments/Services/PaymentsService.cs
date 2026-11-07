@@ -52,6 +52,18 @@ public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCap
         var current = await SyncReferenceProviderStatusAsync(new TenantId(tenantId), legalEntityId, paymentRequestId, cancellationToken);
         return new(current.Id, current.State, current.Amount, current.CurrencyCode, current.MerchantReference);
     }
+
+    public async Task<PosRefundResult> RefundCashAsync(Guid tenantId, Guid actorId, Guid membershipId, PosCashRefundRequest request, Guid correlationId,
+        CancellationToken cancellationToken = default)
+    {
+        var tenant = new TenantId(tenantId);
+        var draft = await CreateRefundDraftAsync(tenant, actorId, membershipId, correlationId, request.LegalEntityId, request.OriginalPaymentId,
+            new CreateRefundRequest(request.PaymentAccountId, PaymentMethod.Cash, request.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                request.PaymentDate, request.PaymentDate, null, request.ReasonCode, null), request.IdempotencyKey, cancellationToken);
+        var completed = await CompleteManualAsync(tenant, actorId, membershipId, request.LegalEntityId, draft.Id,
+            $"{request.IdempotencyKey}:complete", correlationId, cancellationToken);
+        return new(completed.Id, completed.State.ToString(), completed.Amount, completed.CurrencyCode);
+    }
     public async Task<PaymentAccount> CreateAccountAsync(TenantId tenant, Guid actor, Guid membership, CreatePaymentAccountRequest request, Guid correlationId, CancellationToken ct)
     {
         if (request.BranchId is { } branch && !await organization.BranchBelongsToLegalEntityAsync(tenant, new(request.LegalEntityId), branch, ct))
