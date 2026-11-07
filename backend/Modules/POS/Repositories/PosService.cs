@@ -573,9 +573,12 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             await using var register = new NpgsqlCommand("select offline_enabled,status from business_pos.pos_register where tenant_id=$1 and id=$2", ctx.Connection, ctx.Transaction);
             register.Parameters.AddWithValue(tenant.Value); register.Parameters.AddWithValue(request.RegisterId); await using var registerReader = await register.ExecuteReaderAsync(token);
             if (!await registerReader.ReadAsync(token) || !registerReader.GetBoolean(0) || !string.Equals(registerReader.GetString(1), "Active", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("pos.offline_register_not_enabled"); await registerReader.CloseAsync();
-            await using var package = new NpgsqlCommand("select 1 from business_pos.pos_offline_package where tenant_id=$1 and register_id=$2 and version=$3 and revoked_at is null and valid_from <= $4 and expires_at > $4", ctx.Connection, ctx.Transaction);
+            await using var package = new NpgsqlCommand("select signature from business_pos.pos_offline_package where tenant_id=$1 and register_id=$2 and version=$3 and revoked_at is null and valid_from <= $4 and expires_at > $4", ctx.Connection, ctx.Transaction);
             package.Parameters.AddWithValue(tenant.Value); package.Parameters.AddWithValue(request.RegisterId); package.Parameters.AddWithValue(request.PackageVersion); package.Parameters.AddWithValue(now);
-            if (await package.ExecuteScalarAsync(token) is null) throw new InvalidOperationException("pos.offline_package_invalid");
+            var packageSignature = (string?)await package.ExecuteScalarAsync(token);
+            if (string.IsNullOrWhiteSpace(packageSignature)) throw new InvalidOperationException("pos.offline_package_invalid");
+            if (!PosOfflineSecurity.VerifyEnvelope(packageSignature, request.RegisterId, request.DeviceIdentity, request.SourceSequence, request.IdempotencyKey, request.PackageVersion, request.Payload, request.Signature))
+                throw new InvalidOperationException("pos.offline_signature_invalid");
             await using var terminal = new NpgsqlCommand("select 1 from business_pos.pos_terminal where tenant_id=$1 and register_id=$2 and device_identity=$3 and status='Ready' limit 1", ctx.Connection, ctx.Transaction);
             terminal.Parameters.AddWithValue(tenant.Value); terminal.Parameters.AddWithValue(request.RegisterId); terminal.Parameters.AddWithValue(request.DeviceIdentity); if (await terminal.ExecuteScalarAsync(token) is null) throw new InvalidOperationException("pos.offline_device_not_registered");
             await using var existing = new NpgsqlCommand("select id from business_pos.pos_offline_envelope where tenant_id=$1 and idempotency_key=$2", ctx.Connection, ctx.Transaction);
