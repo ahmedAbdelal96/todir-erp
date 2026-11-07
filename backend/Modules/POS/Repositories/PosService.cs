@@ -13,7 +13,7 @@ using Todir.Sales.Contracts;
 
 namespace Modules.POS;
 
-public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource, ICatalogCapabilities catalog, IPricingCapabilities pricing, ITaxCapabilities tax, IPosPaymentCapabilities payments, IPosInvoicingCapabilities invoicing, ISalesInventoryCapabilities inventory, IQuantityConversion quantityConversion)
+public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource, ICatalogCapabilities catalog, IPricingCapabilities pricing, ITaxCapabilities tax, IPosPaymentCapabilities payments, IPosInvoicingCapabilities invoicing, IInvoiceComplianceSnapshotCapability snapshots, ISalesInventoryCapabilities inventory, IQuantityConversion quantityConversion)
 {
     public async Task<Guid> CreateManagerOverrideAsync(TenantId tenant, Guid actor, ManagerOverrideRequest request, CancellationToken ct)
     {
@@ -389,6 +389,43 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) => { await using var update = new NpgsqlCommand("update business_pos.pos_return set refund_state='Failed',refunded_amount=0 where tenant_id=$1 and id=$2 and refund_state='Pending'", ctx.Connection, ctx.Transaction); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(returnId); await update.ExecuteNonQueryAsync(token); return null; }, ct); throw;
         }
     }
+
+    public async Task<PosInvoiceResult> CreateReturnCreditNoteAsync(TenantId tenant, Guid actor, Guid membership, Guid returnId, CancellationToken ct)
+    {
+        var source = await coordinator.ExecuteAsync<CreditNoteReturnSource>(tenant, async (ctx, token) =>
+        {
+            await using var command = new NpgsqlCommand("select r.credit_note_state,r.original_sale_id,r.reason,s.currency_code,pr.legal_entity_id,sl.line_no,sl.document_source_ref,rl.quantity from business_pos.pos_return r join business_pos.pos_return_line rl on rl.tenant_id=r.tenant_id and rl.return_id=r.id join business_pos.pos_sale_line sl on sl.tenant_id=rl.tenant_id and sl.id=rl.original_sale_line_id join business_pos.pos_sale s on s.tenant_id=sl.tenant_id and s.id=sl.sale_id join business_pos.pos_session psn on psn.tenant_id=s.tenant_id and psn.id=s.session_id join business_pos.pos_register pr on pr.tenant_id=psn.tenant_id and pr.id=psn.register_id where r.tenant_id=$1 and r.id=$2 and r.state='Completed' order by sl.line_no", ctx.Connection, ctx.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(returnId); await using var reader = await command.ExecuteReaderAsync(token); CreditNoteReturnSource? result = null;
+            while (await reader.ReadAsync(token))
+            {
+                if (reader.IsDBNull(6)) throw new InvalidOperationException("pos.credit_note_invoice_missing");
+                var invoiceId = reader.GetGuid(6);
+                result ??= new(reader.GetString(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3).Trim(), reader.GetGuid(4), invoiceId, []);
+                result = result with { Lines = [.. result.Lines, new(reader.GetInt32(5), reader.GetDecimal(7))] };
+            }
+            await reader.CloseAsync(); return result ?? throw new ArgumentException("pos.return_not_found");
+        }, ct);
+        if (!string.Equals(source.State, "NotRequested", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("pos.credit_note_already_requested");
+        var snapshot = await snapshots.GetInvoiceComplianceSnapshotAsync(tenant, source.LegalEntityId, source.InvoiceId, ct) ?? throw new InvalidOperationException("pos.credit_note_invoice_missing");
+        var invoiceLines = snapshot.Lines.OrderBy(line => line.Sequence).ToArray();
+        var correctionLines = source.Lines.Select(line => line.LineNo > 0 && line.LineNo <= invoiceLines.Length
+            ? new InvoiceCreditNoteLineContract(invoiceLines[line.LineNo - 1].LineId, line.Quantity)
+            : throw new InvalidOperationException("pos.credit_note_line_missing")).ToArray();
+        await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) => { await using var reserve = new NpgsqlCommand("update business_pos.pos_return set credit_note_state='Pending' where tenant_id=$1 and id=$2 and credit_note_state='NotRequested'", ctx.Connection, ctx.Transaction); reserve.Parameters.AddWithValue(tenant.Value); reserve.Parameters.AddWithValue(returnId); if (await reserve.ExecuteNonQueryAsync(token) != 1) throw new InvalidOperationException("pos.credit_note_already_requested"); return null; }, ct);
+        try
+        {
+            var result = await invoicing.CreateAndFinalizeCreditNoteAsync(tenant, actor, membership, new InvoiceCreditNoteRequest(source.InvoiceId, source.LegalEntityId, DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), null, source.Reason, $"pos-credit-note:{returnId:D}", correctionLines), returnId, ct);
+            await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) => { await using var update = new NpgsqlCommand("update business_pos.pos_return set credit_note_state='Completed',credit_note_id=$3 where tenant_id=$1 and id=$2 and credit_note_state='Pending'", ctx.Connection, ctx.Transaction); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(returnId); update.Parameters.AddWithValue(result.InvoiceId); await update.ExecuteNonQueryAsync(token); return null; }, ct);
+            return result;
+        }
+        catch
+        {
+            await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) => { await using var update = new NpgsqlCommand("update business_pos.pos_return set credit_note_state='Failed' where tenant_id=$1 and id=$2 and credit_note_state='Pending'", ctx.Connection, ctx.Transaction); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(returnId); await update.ExecuteNonQueryAsync(token); return null; }, ct); throw;
+        }
+    }
+
+    private sealed record CreditNoteReturnSource(string State, Guid SaleId, string Reason, string Currency, Guid LegalEntityId, Guid InvoiceId, IReadOnlyList<CreditNoteReturnLine> Lines);
+    private sealed record CreditNoteReturnLine(int LineNo, decimal Quantity);
 
     private async Task<object> ProcessReturnAsync(TenantId tenant, Guid actor, Guid returnId, CancellationToken ct)
     {

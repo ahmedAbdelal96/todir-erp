@@ -27,6 +27,9 @@ public interface IPosInvoicingCapabilities
 {
     Task<PosInvoiceResult> CreateAndFinalizeFromSourceAsync(TenantId tenantId, Guid actorId, Guid membershipId,
         InvoiceSourceDocumentContract request, Guid correlationId, CancellationToken cancellationToken = default);
+
+    Task<PosInvoiceResult> CreateAndFinalizeCreditNoteAsync(TenantId tenantId, Guid actorId, Guid membershipId,
+        InvoiceCreditNoteRequest request, Guid correlationId, CancellationToken cancellationToken = default);
 }
 
 public sealed record InvoiceCreditNoteLineContract(Guid OriginalLineId, decimal Quantity);

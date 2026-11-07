@@ -55,14 +55,31 @@ public sealed class InvoicingService(
         return new(finalized.InvoiceId, finalized.DocumentNumber, finalized.JournalEntryId);
     }
 
-    public Task<Guid> CreateCreditNoteDraftAsync(TenantId tenantId, Guid actorId, Guid membershipId,
+    public async Task<PosInvoiceResult> CreateAndFinalizeCreditNoteAsync(TenantId tenantId, Guid actorId, Guid membershipId,
         InvoiceCreditNoteRequest request, Guid correlationId, CancellationToken cancellationToken = default)
-        => CreateCorrectionDraftAsync(tenantId, actorId, membershipId, request.OriginalInvoiceId, request.LegalEntityId,
+    {
+        var invoiceId = await CreateCreditNoteDraftAsync(tenantId, actorId, membershipId, request, correlationId, cancellationToken);
+        var draft = await GetDraftAsync(tenantId, request.LegalEntityId, invoiceId, cancellationToken);
+        var finalized = await FinalizeAsync(tenantId, actorId, membershipId, invoiceId, request.LegalEntityId,
+            new InvoiceFinalizationRequest(draft.Version, request.IdempotencyKey + ":finalize"), correlationId, cancellationToken);
+        return new(finalized.InvoiceId, finalized.DocumentNumber, finalized.JournalEntryId);
+    }
+
+    public async Task<Guid> CreateCreditNoteDraftAsync(TenantId tenantId, Guid actorId, Guid membershipId,
+        InvoiceCreditNoteRequest request, Guid correlationId, CancellationToken cancellationToken = default)
+    {
+        var original = await repository.GetCorrectionSourceAsync(tenantId, request.LegalEntityId, request.OriginalInvoiceId, cancellationToken)
+            ?? throw NotFound();
+        if (!Enum.TryParse<InvoiceDirection>(original.Direction, ignoreCase: true, out var direction))
+            throw new InvoiceException("invoicing.correction_not_allowed", "The original invoice has an invalid workflow direction.");
+
+        return await CreateCorrectionDraftAsync(tenantId, actorId, membershipId, request.OriginalInvoiceId, request.LegalEntityId,
             new InvoiceCorrectionRequest("CreditNote", request.Reason, request.DocumentDate, request.PostingDate,
                 request.TaxDate, request.SupplyDate, request.IdempotencyKey,
                 request.Lines.Select(line => new InvoiceCorrectionLineInput(line.OriginalLineId,
                     line.Quantity.ToString("0.######", CultureInfo.InvariantCulture))).ToArray()),
-            InvoiceDirection.Payable, correlationId, cancellationToken);
+            direction, correlationId, cancellationToken);
+    }
 
     private async Task<Guid> CreateDraftCoreAsync(TenantId tenant, Guid actorId, Guid membershipId, CreateInvoiceDraftRequest request, InvoiceDirection direction,
         InvoiceSourceReferenceContract? source, Guid correlationId, CancellationToken ct)
