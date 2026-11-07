@@ -23,7 +23,7 @@ public sealed class SalesInventoryCapabilities(IInventoryCapabilities inventory)
         CancellationToken cancellationToken = default) => inventory.ReserveAsync(tenantId, actorId,
         new InventoryReservationRequest(request.ProductVariantId, request.LegalEntityId, request.WarehouseId, null,
             request.Quantity, "sales", request.SourceDocumentId, request.SourceLineId, request.IdempotencyKey,
-            request.ExpiresAt), cancellationToken);
+            request.ExpiresAt, request.LotId, request.SerialId), cancellationToken);
 
     public Task ReleaseAsync(Guid tenantId, Guid actorId, Guid legalEntityId, Guid reservationId,
         CancellationToken cancellationToken = default) => inventory.ReleaseReservationAsync(tenantId, actorId,
@@ -35,7 +35,7 @@ public sealed class SalesInventoryCapabilities(IInventoryCapabilities inventory)
         var operationId = await inventory.ConsumeReservationAsync(tenantId, actorId, request.ReservationId,
             new InventoryMovementRequest(request.ProductVariantId, request.LegalEntityId, request.WarehouseId, null,
                 request.Quantity, request.UnitOfMeasureId, 1m, "sales", request.SourceDocumentId, request.IdempotencyKey,
-                request.OperationalDate, request.PostingDate), cancellationToken);
+                request.OperationalDate, request.PostingDate, LotId: request.LotId, SerialId: request.SerialId), cancellationToken);
         return new SalesInventoryIssueResult(operationId, request.Quantity);
     }
 

@@ -23,7 +23,9 @@ public sealed record SalesInventoryReservationRequest(
     Guid SourceDocumentId,
     Guid SourceLineId,
     string IdempotencyKey,
-    DateTimeOffset? ExpiresAt = null);
+    DateTimeOffset? ExpiresAt = null,
+    Guid? LotId = null,
+    Guid? SerialId = null);
 
 public sealed record SalesInventoryIssueRequest(
     Guid LegalEntityId,
@@ -36,7 +38,9 @@ public sealed record SalesInventoryIssueRequest(
     Guid SourceLineId,
     string IdempotencyKey,
     DateOnly OperationalDate,
-    DateOnly PostingDate);
+    DateOnly PostingDate,
+    Guid? LotId = null,
+    Guid? SerialId = null);
 
 public sealed record SalesInventoryIssueResult(Guid OperationId, decimal FulfilledQuantity);
 
