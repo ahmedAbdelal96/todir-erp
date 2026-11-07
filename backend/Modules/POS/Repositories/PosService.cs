@@ -9,11 +9,12 @@ using Shared.Contracts.Pricing;
 using Shared.Contracts.Tax;
 using Shared.Contracts.Payments;
 using Shared.Contracts.Invoicing;
+using Shared.Contracts.Subledger;
 using Todir.Sales.Contracts;
 
 namespace Modules.POS;
 
-public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource, ICatalogCapabilities catalog, IPricingCapabilities pricing, ITaxCapabilities tax, IPosPaymentCapabilities payments, IPosInvoicingCapabilities invoicing, IInvoiceComplianceSnapshotCapability snapshots, ISalesInventoryCapabilities inventory, IQuantityConversion quantityConversion)
+public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource, ICatalogCapabilities catalog, IPricingCapabilities pricing, ITaxCapabilities tax, IPosPaymentCapabilities payments, IPosInvoicingCapabilities invoicing, IInvoiceComplianceSnapshotCapability snapshots, ISubledgerCapabilities subledger, ISalesInventoryCapabilities inventory, IQuantityConversion quantityConversion)
 {
     private static readonly string[] OfflineCapabilities = ["CashSale", "ReceiptPrint", "QueuedSync"];
 
@@ -180,10 +181,13 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
     public async Task<CheckoutResponse> CheckoutAsync(TenantId tenant, Guid actor, Guid membership, CheckoutRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.Tenders.Count == 0) throw new ArgumentException("pos.checkout_invalid");
-        if (request.Tenders.Any(tender => tender.Amount <= 0 || (tender.Method is not ("Cash" or "Card"))))
+        if (request.Tenders.Any(tender => tender.Amount <= 0 || (tender.Method is not ("Cash" or "Card" or "Credit"))))
             throw new ArgumentException("pos.tender_method_unsupported");
         var cardTenders = request.Tenders.Where(tender => string.Equals(tender.Method, "Card", StringComparison.OrdinalIgnoreCase)).ToArray();
         var cashTenders = request.Tenders.Where(tender => string.Equals(tender.Method, "Cash", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var creditTenders = request.Tenders.Where(tender => string.Equals(tender.Method, "Credit", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (creditTenders.Length > 1 || creditTenders.Any(tender => tender.PaymentAccountId is not null || tender.ProviderConfigId is not null))
+            throw new ArgumentException("pos.credit_tender_invalid");
         if (cardTenders.Length > 1 || cardTenders.Any(tender => tender.ProviderConfigId is not { } || tender.PaymentAccountId is not null))
             throw new ArgumentException("pos.card_tender_invalid");
         if (cashTenders.Length > 0 && cashTenders.Any(tender => tender.PaymentAccountId is not { }))
@@ -201,11 +205,17 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         if (context.State != "Active") throw new InvalidOperationException("pos.cart_not_checkoutable");
         var tenderTotal = request.Tenders.Sum(tender => tender.Amount);
         if (tenderTotal < context.Total) throw new ArgumentException("pos.tender_insufficient");
+        if (creditTenders.Length > 0)
+        {
+            if (cardTenders.Length > 0 || cashTenders.Length > 0 || creditTenders[0].Amount != context.Total || context.PartyId is not { } creditParty)
+                throw new ArgumentException("pos.credit_sale_requires_exact_customer_tender");
+            await ValidateCreditSaleAsync(tenant, context.LegalEntityId, creditParty, context.Total, ct);
+        }
         if (cardTenders.Length > 0 && cardTenders[0].Amount > context.Total) throw new ArgumentException("pos.card_over_tender_invalid");
         if (cardTenders.Length > 0 && cashTenders.Length > 0 && tenderTotal != context.Total) throw new ArgumentException("pos.mixed_tender_exact_total_required");
         var cardParty = context.PartyId ?? Guid.Empty;
         if (cardTenders.Length > 0 && cardParty == Guid.Empty) throw new ArgumentException("pos.card_customer_required");
-        if (cardTenders.Length == 0 && cashTenders.Length == 0) throw new ArgumentException("pos.checkout_tender_required");
+        if (cardTenders.Length == 0 && cashTenders.Length == 0 && creditTenders.Length == 0) throw new ArgumentException("pos.checkout_tender_required");
         PosPaymentResult? cashPayment = null;
         PosProviderPaymentResult? providerPayment = null;
         if (cardTenders.Length > 0)
@@ -222,7 +232,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
                 if (!string.Equals(cashPayment.State, "Completed", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("pos.payment_not_completed");
             }
         }
-        else
+        else if (cashTenders.Length > 0)
         {
             var paymentAccountId = cashTenders[0].PaymentAccountId!.Value;
             var cashAmount = cashTenders.Sum(tender => tender.Amount);
@@ -232,7 +242,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
                     $"pos-checkout:{request.IdempotencyKey}"), checkoutId, ct);
             if (!string.Equals(cashPayment.State, "Completed", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("pos.payment_not_completed");
         }
-        var paymentState = cashPayment is not null && providerPayment is null ? "Captured" : providerPayment?.State ?? "Captured";
+        var paymentState = creditTenders.Length > 0 ? "NotRequired" : cashPayment is not null && providerPayment is null ? "Captured" : providerPayment?.State ?? "Captured";
         var checkoutState = providerPayment is null ? "CompletionPending" : "PaymentPending";
         var response = await coordinator.ExecuteAsync(tenant, async (ctx, token) =>
         {
@@ -241,7 +251,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             var tenderTotal = request.Tenders.Sum(x => x.Amount); if (request.Tenders.Any(x => x.Amount <= 0) || tenderTotal < total) throw new ArgumentException("pos.tender_insufficient");
             await using var insert = new NpgsqlCommand("insert into business_pos.pos_checkout(tenant_id,id,cart_id,idempotency_key,payload_hash,state,commercial_state,payment_state,inventory_state,document_state,regulatory_state,accounting_state,total_amount,currency_code,provider_reference,created_by,created_at,updated_at) values($1,$2,$3,$4,$5,$6,'Pending',$7,'Pending','Pending','NotRequired','Pending',$8,$9,$10,$11,$12,$12)", ctx.Connection, ctx.Transaction); insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(checkoutId); insert.Parameters.AddWithValue(request.CartId); insert.Parameters.AddWithValue(request.IdempotencyKey); insert.Parameters.AddWithValue(hash); insert.Parameters.AddWithValue(checkoutState); insert.Parameters.AddWithValue(paymentState); insert.Parameters.AddWithValue(total); insert.Parameters.AddWithValue(currency); insert.Parameters.AddWithValue((object?)providerPayment?.PaymentRequestId.ToString("D") ?? DBNull.Value); insert.Parameters.AddWithValue(actor); insert.Parameters.AddWithValue(now); await insert.ExecuteNonQueryAsync(token);
             decimal tenderedSoFar = 0;
-            for (var index = 0; index < request.Tenders.Count; index++) { var tender = request.Tenders[index]; tenderedSoFar += tender.Amount; var captured = cashPayment is not null && string.Equals(tender.Method, "Cash", StringComparison.OrdinalIgnoreCase) ? tender.Amount : 0m; var change = providerPayment is null && cashPayment is not null ? Math.Max(0, tenderedSoFar - total) : 0m; var state = captured > 0m ? "Captured" : "Pending"; var external = string.Equals(tender.Method, "Card", StringComparison.OrdinalIgnoreCase) ? providerPayment!.PaymentRequestId.ToString("D") : cashPayment?.PaymentId.ToString("D"); await using var command = new NpgsqlCommand("insert into business_pos.pos_tender(tenant_id,id,checkout_id,sequence_no,method,requested_amount,captured_amount,change_amount,state,external_reference,provider_state,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)", ctx.Connection, ctx.Transaction); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(Guid.CreateVersion7()); command.Parameters.AddWithValue(checkoutId); command.Parameters.AddWithValue(index + 1); command.Parameters.AddWithValue(tender.Method); command.Parameters.AddWithValue(tender.Amount); command.Parameters.AddWithValue(captured); command.Parameters.AddWithValue(change); command.Parameters.AddWithValue(state); command.Parameters.AddWithValue((object?)external ?? DBNull.Value); command.Parameters.AddWithValue((object?)providerPayment?.State ?? DBNull.Value); command.Parameters.AddWithValue(now); await command.ExecuteNonQueryAsync(token); }
+            for (var index = 0; index < request.Tenders.Count; index++) { var tender = request.Tenders[index]; tenderedSoFar += tender.Amount; var captured = cashPayment is not null && string.Equals(tender.Method, "Cash", StringComparison.OrdinalIgnoreCase) ? tender.Amount : 0m; var change = providerPayment is null && cashPayment is not null ? Math.Max(0, tenderedSoFar - total) : 0m; var state = captured > 0m ? "Captured" : string.Equals(tender.Method, "Credit", StringComparison.OrdinalIgnoreCase) ? "Accepted" : "Pending"; var external = string.Equals(tender.Method, "Card", StringComparison.OrdinalIgnoreCase) ? providerPayment!.PaymentRequestId.ToString("D") : cashPayment?.PaymentId.ToString("D"); await using var command = new NpgsqlCommand("insert into business_pos.pos_tender(tenant_id,id,checkout_id,sequence_no,method,requested_amount,captured_amount,change_amount,state,external_reference,provider_state,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)", ctx.Connection, ctx.Transaction); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(Guid.CreateVersion7()); command.Parameters.AddWithValue(checkoutId); command.Parameters.AddWithValue(index + 1); command.Parameters.AddWithValue(tender.Method); command.Parameters.AddWithValue(tender.Amount); command.Parameters.AddWithValue(captured); command.Parameters.AddWithValue(change); command.Parameters.AddWithValue(state); command.Parameters.AddWithValue((object?)external ?? DBNull.Value); command.Parameters.AddWithValue((object?)providerPayment?.State ?? DBNull.Value); command.Parameters.AddWithValue(now); await command.ExecuteNonQueryAsync(token); }
             await using var sale = new NpgsqlCommand("insert into business_pos.pos_sale(tenant_id,id,checkout_id,register_id,session_id,business_date,receipt_number,currency_code,subtotal,tax_total,discount_total,grand_total,payment_state,inventory_state,document_state,accounting_state,created_by,created_at) select $1,$2,$3,s.register_id,s.id,s.business_date,concat('POS-',to_char($9,'YYYYMMDDHH24MISSMS')), $4,$5,$6,$7,$8,$12,'Pending','Pending','Pending',$10,$9 from business_pos.pos_session s join business_pos.pos_cart c on c.tenant_id=s.tenant_id and c.session_id=s.id where s.tenant_id=$1 and c.id=$11", ctx.Connection, ctx.Transaction); sale.Parameters.AddWithValue(tenant.Value); sale.Parameters.AddWithValue(saleId); sale.Parameters.AddWithValue(checkoutId); sale.Parameters.AddWithValue(currency); sale.Parameters.AddWithValue(subtotal); sale.Parameters.AddWithValue(tax); sale.Parameters.AddWithValue(discount); sale.Parameters.AddWithValue(total); sale.Parameters.AddWithValue(now); sale.Parameters.AddWithValue(actor); sale.Parameters.AddWithValue(request.CartId); sale.Parameters.AddWithValue(paymentState); await sale.ExecuteNonQueryAsync(token);
             await using (var sourceLines = new NpgsqlCommand("select line_no,variant_id,description,uom_code,unit_of_measure_id,quantity,unit_price,tax_amount,discount_amount,line_total,lot_id,serial_ids,price_snapshot,tax_snapshot from business_pos.pos_cart_line where tenant_id=$1 and cart_id=$2 order by line_no", ctx.Connection, ctx.Transaction))
             {
@@ -252,7 +262,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
                 await sourceReader.CloseAsync();
                 foreach (var copy in copies)
                 {
-                    await using var lineCopy = new NpgsqlCommand("insert into business_pos.pos_sale_line(tenant_id,id,sale_id,line_no,variant_id,description,uom_code,unit_of_measure_id,quantity,unit_price,tax_amount,discount_amount,line_total,lot_id,serial_id,price_snapshot,tax_snapshot) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15[1],$16::jsonb,$17::jsonb)", ctx.Connection, ctx.Transaction);
+                    await using var lineCopy = new NpgsqlCommand("insert into business_pos.pos_sale_line(tenant_id,id,sale_id,line_no,variant_id,description,uom_code,unit_of_measure_id,quantity,unit_price,tax_amount,discount_amount,line_total,lot_id,serial_id,price_snapshot,tax_snapshot) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,($15::uuid[])[1],$16::jsonb,$17::jsonb)", ctx.Connection, ctx.Transaction);
                     lineCopy.Parameters.AddWithValue(tenant.Value); lineCopy.Parameters.AddWithValue(Guid.CreateVersion7()); lineCopy.Parameters.AddWithValue(saleId); for (var i = 0; i < copy.Length; i++) lineCopy.Parameters.AddWithValue(copy[i] ?? DBNull.Value); await lineCopy.ExecuteNonQueryAsync(token);
                 }
             }
@@ -287,6 +297,17 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var tx = await BeginTenantAsync(connection, tenant, ct); await using var command = new NpgsqlCommand("select c.id,s.id,c.state,c.payment_state,c.inventory_state,c.document_state,c.accounting_state,c.total_amount,c.currency_code from business_pos.pos_checkout c left join business_pos.pos_sale s on s.tenant_id=c.tenant_id and s.checkout_id=c.id where c.tenant_id=$1 and c.id=$2", connection, tx); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(checkoutId); await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new ArgumentException("pos.checkout_not_found"); var result = new CheckoutResponse(reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7), reader.GetString(8)); await reader.CloseAsync(); await tx.CommitAsync(ct); return result;
     }
 
+    private async Task ValidateCreditSaleAsync(TenantId tenant, Guid legalEntityId, Guid partyId, decimal amount, CancellationToken ct)
+    {
+        var profile = await subledger.GetFinancialProfileAsync(tenant, new LegalEntityId(legalEntityId), partyId, ct);
+        var policy = string.IsNullOrWhiteSpace(profile?.ReceivablePolicyCode) ? "OFF" : profile.ReceivablePolicyCode.Trim().ToUpperInvariant();
+        if (policy == "OFF") return;
+        var balance = await subledger.GetPartyBalanceAsync(tenant, new PartyBalanceQuery(new LegalEntityId(legalEntityId), partyId, SubledgerDirectionContract.Receivable, DateOnly.FromDateTime(DateTime.UtcNow)), ct);
+        var available = decimal.TryParse(balance.AvailableCreditAmount, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : (decimal?)null;
+        if (available is { } credit && amount > credit && policy is "BLOCK" or "REQUIREAPPROVAL" or "REQUIRE_APPROVAL")
+            throw new InvalidOperationException("pos.credit_limit_exceeded");
+    }
+
     public async Task<CheckoutResponse?> RecoverProviderCheckoutAsync(TenantId tenant, Guid paymentRequestId, CancellationToken ct)
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var tx = await BeginTenantAsync(connection, tenant, ct);
@@ -300,7 +321,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         var pending = await ReadPendingCheckoutAsync(tenant, checkoutId, ct);
         if (pending is null || string.Equals(pending.State, "Completed", StringComparison.OrdinalIgnoreCase)) return await GetCheckoutAsync(tenant, checkoutId, ct);
         var checkoutContext = await ReadCheckoutContextAsync(tenant, pending.CartId, ct);
-        if (!string.Equals(pending.PaymentState, "Captured", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(pending.PaymentState, "Captured", StringComparison.OrdinalIgnoreCase) && !string.Equals(pending.PaymentState, "NotRequired", StringComparison.OrdinalIgnoreCase))
         {
             if (pending.ProviderReference is not { } providerRequestId)
                 throw new InvalidOperationException("pos.recovery_payment_not_captured");
