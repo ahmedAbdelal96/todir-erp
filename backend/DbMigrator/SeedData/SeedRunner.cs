@@ -53,7 +53,8 @@ public static class SeedRunner
             var crm = await RunStageAsync(connection, tenant, context => CrmSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var purchasing = await RunStageAsync(connection, tenant, context => PurchasingSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var accounting = await RunStageAsync(connection, tenant, context => AccountingSeed.SeedAsync(context, cancellationToken), cancellationToken);
-            summaries.Add(new(tenant, identity, directory, hr, payroll, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory, sales, crm, purchasing, accounting));
+            var pos = await RunStageAsync(connection, tenant, context => PosSeed.SeedAsync(context, cancellationToken), cancellationToken);
+            summaries.Add(new(tenant, identity, directory, hr, payroll, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory, sales, crm, purchasing, accounting, pos));
         }
         return new(SeedIds.Version, summaries);
     }
@@ -75,7 +76,7 @@ public static class SeedRunner
     }
 }
 
-public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, HrSeedSummary Hr, PayrollSeedSummary Payroll, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory, SeedSalesSummary Sales, CrmSeedSummary Crm, SeedPurchasingSummary Purchasing, SeedAccountingSummary Accounting);
+public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, HrSeedSummary Hr, PayrollSeedSummary Payroll, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory, SeedSalesSummary Sales, CrmSeedSummary Crm, SeedPurchasingSummary Purchasing, SeedAccountingSummary Accounting, PosSeedSummary Pos);
 public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSummary> Tenants)
 {
     public void Print(TextWriter output)
@@ -103,6 +104,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  CRM: {tenant.Crm.Pipelines} pipeline, {tenant.Crm.Leads} leads, {tenant.Crm.Opportunities} opportunities");
             output.WriteLine($"  Purchasing: {tenant.Purchasing.PurchaseOrders} purchase orders ({tenant.Purchasing.PendingApproval} pending approval, {tenant.Purchasing.Approved} approved)");
             output.WriteLine($"  Accounting: {tenant.Accounting.GoLiveStatus} setup, {tenant.Accounting.StatementDefinitions} active statement definitions");
+            output.WriteLine($"  POS: {tenant.Pos.Registers} registers, {tenant.Pos.Terminals} terminals, {tenant.Pos.OpenSessions} open sessions, {tenant.Pos.HeldCarts} held carts");
         }
     }
 }

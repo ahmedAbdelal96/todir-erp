@@ -11,5 +11,6 @@
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="../Core/Core.csproj" />
     <ProjectReference Include="../Modules/Hr/Hr.csproj" />
+    <ProjectReference Include="../Modules/POS/POS.csproj" />
   </ItemGroup>
 </Project>

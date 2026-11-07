@@ -23,6 +23,9 @@ public static class SeedIds
     public static Guid Product(Guid tenantId, int index) => Stable($"{tenantId:D}:product:{index:D4}");
     public static Guid Variant(Guid tenantId, int productIndex, string suffix) => Stable($"{tenantId:D}:variant:{productIndex:D4}:{suffix}");
     public static Guid Child(Guid tenantId, string type, int index) => Stable($"{tenantId:D}:{type}:{index:D5}");
+    public static Guid PosRegister(Guid tenantId) => Stable($"{tenantId:D}:pos:register:main");
+    public static Guid PosTerminal(Guid tenantId) => Stable($"{tenantId:D}:pos:terminal:main");
+    public static Guid PosSession(Guid tenantId) => Stable($"{tenantId:D}:pos:session:open");
 
     public static Guid Stable(string value)
     {

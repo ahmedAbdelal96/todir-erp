@@ -9,14 +9,27 @@ using Shared.Contracts.Directory;
 using Shared.Contracts.FinanceBase;
 using Shared.Contracts.Platform;
 using Shared.Contracts.Subledger;
+using Shared.Contracts.Payments;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Payments.Services;
 
 public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCapabilities directory,
     IFinanceBaseCapabilities financeBase, IPlatformOrganizationCapabilities organization, ISubledgerCapabilities subledger,
-    IDirectoryPartyRoleCapabilities partyRoles, IReferencePaymentProvider referenceProvider, IProviderSecretResolver providerSecrets)
+    IDirectoryPartyRoleCapabilities partyRoles, IReferencePaymentProvider referenceProvider, IProviderSecretResolver providerSecrets) : IPosPaymentCapabilities
 {
+    public async Task<PosPaymentResult> CaptureCashAsync(Guid tenantId, Guid actorId, Guid membershipId,
+        PosCashPaymentRequest request, Guid correlationId, CancellationToken cancellationToken = default)
+    {
+        var draft = await CreateDraftAsync(new TenantId(tenantId), actorId, membershipId, correlationId,
+            new CreatePaymentRequest(request.LegalEntityId, request.BranchId, PaymentType.CustomerReceipt, request.PartyId,
+                request.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), request.CurrencyCode,
+                PaymentMethod.Cash, request.PaymentAccountId, request.PaymentDate, request.PostingDate, null,
+                null, null, null, "pos", request.SourceReference), request.IdempotencyKey, cancellationToken);
+        var completed = await CompleteManualAsync(new TenantId(tenantId), actorId, membershipId, request.LegalEntityId,
+            draft.Id, $"{request.IdempotencyKey}:complete", correlationId, cancellationToken);
+        return new(completed.Id, completed.State.ToString(), completed.Amount, completed.CurrencyCode, completed.Method.ToString());
+    }
     public async Task<PaymentAccount> CreateAccountAsync(TenantId tenant, Guid actor, Guid membership, CreatePaymentAccountRequest request, Guid correlationId, CancellationToken ct)
     {
         if (request.BranchId is { } branch && !await organization.BranchBelongsToLegalEntityAsync(tenant, new(request.LegalEntityId), branch, ct))
