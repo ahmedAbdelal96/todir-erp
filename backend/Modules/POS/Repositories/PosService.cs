@@ -218,7 +218,9 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         if (cardTenders.Length > 0 && cardParty == Guid.Empty) throw new ArgumentException("pos.card_customer_required");
         if (cardTenders.Length == 0 && cashTenders.Length == 0 && creditTenders.Length == 0) throw new ArgumentException("pos.checkout_tender_required");
         var initialState = PosCheckoutDraftPolicy.InitialState(creditTenders.Length > 0);
-        var response = await InitializeCheckoutDraftAsync(tenant, actor, request, context, checkoutId, saleId, hash, now, initialState, ct);
+        var draft = await InitializeCheckoutDraftAsync(tenant, actor, request, context, checkoutId, saleId, hash, now, initialState, ct);
+        if (!draft.Created) return draft.Response;
+        var response = draft.Response;
         PosPaymentResult? cashPayment = null;
         PosProviderPaymentResult? providerPayment = null;
         if (cardTenders.Length > 0)
@@ -278,11 +280,25 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         }
     }
 
-    private async Task<CheckoutResponse> InitializeCheckoutDraftAsync(TenantId tenant, Guid actor, CheckoutRequest request, CheckoutContext context,
+    private async Task<(CheckoutResponse Response, bool Created)> InitializeCheckoutDraftAsync(TenantId tenant, Guid actor, CheckoutRequest request, CheckoutContext context,
         Guid checkoutId, Guid saleId, string payloadHash, DateTimeOffset now, (string CheckoutState, string PaymentState) initialState, CancellationToken ct)
     {
         return await coordinator.ExecuteAsync(tenant, async (ctx, token) =>
         {
+            await using var lockCommand = new NpgsqlCommand("select pg_advisory_xact_lock(hashtextextended($1,0))", ctx.Connection, ctx.Transaction);
+            lockCommand.Parameters.AddWithValue($"pos-checkout:{tenant.Value:D}:{request.IdempotencyKey}");
+            await lockCommand.ExecuteScalarAsync(token);
+            await using var existing = new NpgsqlCommand("select c.id,s.id,c.payload_hash,c.state,c.payment_state,c.inventory_state,c.document_state,c.accounting_state,c.total_amount,c.currency_code from business_pos.pos_checkout c left join business_pos.pos_sale s on s.tenant_id=c.tenant_id and s.checkout_id=c.id where c.tenant_id=$1 and c.idempotency_key=$2", ctx.Connection, ctx.Transaction);
+            existing.Parameters.AddWithValue(tenant.Value); existing.Parameters.AddWithValue(request.IdempotencyKey);
+            await using var existingReader = await existing.ExecuteReaderAsync(token);
+            if (await existingReader.ReadAsync(token))
+            {
+                if (!string.Equals(existingReader.GetString(2), payloadHash, StringComparison.Ordinal)) throw new InvalidOperationException("pos.idempotency_payload_conflict");
+                var priorResponse = new CheckoutResponse(existingReader.GetGuid(0), existingReader.IsDBNull(1) ? null : existingReader.GetGuid(1), existingReader.GetString(3), existingReader.GetString(4), existingReader.GetString(5), existingReader.GetString(6), existingReader.GetString(7), existingReader.GetDecimal(8), existingReader.GetString(9));
+                await existingReader.CloseAsync();
+                return (priorResponse, false);
+            }
+            await existingReader.CloseAsync();
             await using var cart = new NpgsqlCommand("select session_id,currency_code,subtotal,tax_total,discount_total,grand_total,state from business_pos.pos_cart where tenant_id=$1 and id=$2 for update", ctx.Connection, ctx.Transaction);
             cart.Parameters.AddWithValue(tenant.Value); cart.Parameters.AddWithValue(request.CartId);
             await using var cartReader = await cart.ExecuteReaderAsync(token);
@@ -330,7 +346,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
 
             await using var closeCart = new NpgsqlCommand("update business_pos.pos_cart set state='CheckedOut',version=version+1,updated_at=$3 where tenant_id=$1 and id=$2", ctx.Connection, ctx.Transaction);
             closeCart.Parameters.AddWithValue(tenant.Value); closeCart.Parameters.AddWithValue(request.CartId); closeCart.Parameters.AddWithValue(now); await closeCart.ExecuteNonQueryAsync(token);
-            return new CheckoutResponse(checkoutId, saleId, initialState.CheckoutState, initialState.PaymentState, "Pending", "Pending", "Pending", total, currency);
+            return (new CheckoutResponse(checkoutId, saleId, initialState.CheckoutState, initialState.PaymentState, "Pending", "Pending", "Pending", total, currency), true);
         }, ct);
     }
 
