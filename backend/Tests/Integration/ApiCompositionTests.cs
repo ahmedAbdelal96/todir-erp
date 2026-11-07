@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using System.Text.Json;
+using System.Net;
+using System.Net.Http.Json;
 using Xunit;
 
 namespace KernelIntegrationTests;
@@ -179,6 +181,19 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase
         Assert.False(paths.TryGetProperty("/api/v1/ledger/facts", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/facts", out _));
         Assert.False(paths.TryGetProperty("/api/v1/ledger/legal-entities/{entityId}/entries/{entryId}", out _));
+        var posContractPaths = new[]
+        {
+            "/api/v1/pos/registers", "/api/v1/pos/registers/{registerId}", "/api/v1/pos/registers/{registerId}/activate", "/api/v1/pos/registers/{registerId}/deactivate",
+            "/api/v1/pos/terminals/register", "/api/v1/pos/terminals/{terminalId}/rotate-credential", "/api/v1/pos/terminals/{terminalId}/revoke", "/api/v1/pos/terminals/{terminalId}/heartbeat",
+            "/api/v1/pos/sessions/open", "/api/v1/pos/sessions/current", "/api/v1/pos/sessions/{sessionId}/start-close", "/api/v1/pos/sessions/{sessionId}/cash-count", "/api/v1/pos/sessions/{sessionId}/close",
+            "/api/v1/pos/carts", "/api/v1/pos/carts/{cartId}", "/api/v1/pos/carts/{cartId}/scan", "/api/v1/pos/carts/{cartId}/lines", "/api/v1/pos/carts/{cartId}/lines/{lineId}", "/api/v1/pos/carts/{cartId}/customer", "/api/v1/pos/carts/{cartId}/discount", "/api/v1/pos/carts/{cartId}/hold", "/api/v1/pos/carts/{cartId}/resume", "/api/v1/pos/carts/{cartId}/cancel",
+            "/api/v1/pos/catalog/search", "/api/v1/pos/catalog/barcode/{barcode}", "/api/v1/pos/carts/{cartId}/checkout", "/api/v1/pos/checkouts/{checkoutId}", "/api/v1/pos/checkouts/{checkoutId}/tenders", "/api/v1/pos/checkouts/{checkoutId}/payment-status/refresh", "/api/v1/pos/checkouts/{checkoutId}/complete", "/api/v1/pos/checkouts/{checkoutId}/recover",
+            "/api/v1/pos/sales/{saleId}/returns", "/api/v1/pos/returns/{returnId}/lines", "/api/v1/pos/returns/{returnId}/complete", "/api/v1/pos/returns/{returnId}/refund",
+            "/api/v1/pos/sessions/{sessionId}/cash-in", "/api/v1/pos/sessions/{sessionId}/cash-out", "/api/v1/pos/sessions/{sessionId}/cash-drop", "/api/v1/pos/sessions/{sessionId}/drawer-open",
+            "/api/v1/pos/offline/package", "/api/v1/pos/offline/sync", "/api/v1/pos/offline/sync/{batchId}", "/api/v1/pos/offline/conflicts/{conflictId}/resolve",
+            "/api/v1/pos/reports/session-summary", "/api/v1/pos/reports/store-summary", "/api/v1/pos/reports/sales", "/api/v1/pos/reports/returns", "/api/v1/pos/reports/payment-mix", "/api/v1/pos/reports/discounts", "/api/v1/pos/reports/cash-differences"
+        };
+        foreach (var path in posContractPaths) Assert.True(paths.TryGetProperty(path, out _), $"Missing POS contract route {path}");
         var numericFinancialFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "amount", "sourceAmount", "targetAmount", "rate", "cashIncrement", "percentage", "fixedAmount", "totalAmount", "feeAmount", "baseFeeAmount"
@@ -199,5 +214,42 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase
             }
         }
         Assert.True(checkedProperties >= 8, $"Expected financial decimal contract fields in OpenAPI, found {checkedProperties}.");
+    }
+
+    [Fact]
+    public async Task PosRegisterContractRequiresAuthenticationAndSupportsCanonicalAndScopedReads()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for the POS API contract gate.");
+        const string legalEntityId = "aad8a34b-344c-9e5b-8d58-57f182fc6528";
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", connectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+
+        using var anonymous = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        var anonymousResponse = await anonymous.GetAsync($"/api/v1/pos/registers?legalEntityId={legalEntityId}");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        using var authenticated = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        using var csrfResponse = await authenticated.GetAsync("/api/v1/auth/csrf");
+        csrfResponse.EnsureSuccessStatusCode();
+        using var csrf = JsonDocument.Parse(await csrfResponse.Content.ReadAsStreamAsync());
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login")
+        {
+            Content = JsonContent.Create(new { email = "admin@atlas.com", password = "TodirDev2026!" })
+        };
+        login.Headers.Add("X-CSRF-TOKEN", csrf.RootElement.GetProperty("token").GetString());
+        var loginResponse = await authenticated.SendAsync(login);
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var canonical = await authenticated.GetAsync($"/api/v1/pos/registers?legalEntityId={legalEntityId}");
+        var scoped = await authenticated.GetAsync($"/api/v1/pos/legal-entities/{legalEntityId}/registers");
+        Assert.Equal(HttpStatusCode.OK, canonical.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, scoped.StatusCode);
+        Assert.NotEmpty(await canonical.Content.ReadAsStringAsync());
+        Assert.NotEmpty(await scoped.Content.ReadAsStringAsync());
     }
 }
