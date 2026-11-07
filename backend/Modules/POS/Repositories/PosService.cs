@@ -15,6 +15,19 @@ namespace Modules.POS;
 
 public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource, ICatalogCapabilities catalog, IPricingCapabilities pricing, ITaxCapabilities tax, IPosPaymentCapabilities payments, IPosInvoicingCapabilities invoicing, ISalesInventoryCapabilities inventory, IQuantityConversion quantityConversion)
 {
+    public async Task<Guid> CreateManagerOverrideAsync(TenantId tenant, Guid actor, ManagerOverrideRequest request, CancellationToken ct)
+    {
+        if (!string.Equals(request.Scope, "Discount", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(request.Reason) || request.ExpiresAt <= DateTimeOffset.UtcNow)
+            throw new ArgumentException("pos.override_invalid");
+        var id = Guid.CreateVersion7();
+        await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) =>
+        {
+            await using var command = new NpgsqlCommand("insert into business_pos.pos_manager_override(tenant_id,id,scope,target_id,reason,approved_by,expires_at,created_at) values($1,$2,$3,$4,$5,$6,$7,$8)", ctx.Connection, ctx.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(request.Scope.Trim()); command.Parameters.AddWithValue(request.TargetId); command.Parameters.AddWithValue(request.Reason.Trim()); command.Parameters.AddWithValue(actor); command.Parameters.AddWithValue(request.ExpiresAt); command.Parameters.AddWithValue(DateTimeOffset.UtcNow); await command.ExecuteNonQueryAsync(token); return null;
+        }, ct);
+        return id;
+    }
+
     public async Task<RegisterResponse> CreateRegisterAsync(TenantId tenant, Guid actor, Guid entityId, CreateRegisterRequest request, CancellationToken ct)
     {
         if (request.LegalEntityId != entityId || string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name)) throw new ArgumentException("pos.register_invalid");
@@ -144,6 +157,10 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             await using var cart = new NpgsqlCommand("select session_id,currency_code,version,state from business_pos.pos_cart where tenant_id=$1 and id=$2 for update", ctx.Connection, ctx.Transaction); cart.Parameters.AddWithValue(tenant.Value); cart.Parameters.AddWithValue(cartId);
             await using var reader = await cart.ExecuteReaderAsync(token); if (!await reader.ReadAsync(token)) throw new ArgumentException("pos.cart_not_found"); var sessionId = reader.GetGuid(0); var currency = reader.GetString(1); var version = reader.GetInt32(2); var state = reader.GetString(3); await reader.CloseAsync();
             if (state != "Active") throw new InvalidOperationException("pos.cart_not_editable"); if (version != expected) throw new InvalidOperationException("pos.cart_version_conflict");
+            if (request.DiscountAmount > 0)
+            {
+                await using var overrideCheck = new NpgsqlCommand("select 1 from business_pos.pos_manager_override where tenant_id=$1 and scope='Discount' and target_id=$2 and expires_at > now() limit 1", ctx.Connection, ctx.Transaction); overrideCheck.Parameters.AddWithValue(tenant.Value); overrideCheck.Parameters.AddWithValue(cartId); if (await overrideCheck.ExecuteScalarAsync(token) is null) throw new InvalidOperationException("pos.discount_override_required");
+            }
             var lineTotal = PosTotals.LineTotal(request.Quantity, authoritativePrice, request.DiscountAmount, authoritativeTax);
             await using var line = new NpgsqlCommand("insert into business_pos.pos_cart_line(tenant_id,id,cart_id,line_no,variant_id,description,uom_code,unit_of_measure_id,quantity,unit_price,tax_amount,discount_amount,line_total,price_snapshot,tax_snapshot,created_at) values($1,$2,$3,(select coalesce(max(line_no),0)+1 from business_pos.pos_cart_line where tenant_id=$1 and cart_id=$3),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15)", ctx.Connection, ctx.Transaction);
             line.Parameters.AddWithValue(tenant.Value); line.Parameters.AddWithValue(lineId); line.Parameters.AddWithValue(cartId); line.Parameters.AddWithValue(request.VariantId); line.Parameters.AddWithValue(request.Description.Trim()); line.Parameters.AddWithValue(request.UomCode.Trim()); line.Parameters.AddWithValue((object?)request.UnitOfMeasureId ?? DBNull.Value); line.Parameters.AddWithValue(request.Quantity); line.Parameters.AddWithValue(authoritativePrice); line.Parameters.AddWithValue(authoritativeTax); line.Parameters.AddWithValue(request.DiscountAmount); line.Parameters.AddWithValue(lineTotal); line.Parameters.AddWithValue(JsonSerializer.Serialize(new { UnitPrice = authoritativePrice })); line.Parameters.AddWithValue(taxSnapshot); line.Parameters.AddWithValue(now); await line.ExecuteNonQueryAsync(token);
@@ -343,21 +360,27 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
     public async Task<PosRefundResult> RefundReturnAsync(TenantId tenant, Guid actor, Guid membership, Guid returnId, RefundReturnRequest request, CancellationToken ct)
     {
         if (request.Amount <= 0 || string.IsNullOrWhiteSpace(request.ReasonCode)) throw new ArgumentException("pos.refund_invalid");
-        var captured = await coordinator.ExecuteAsync<(Guid LegalEntityId, Guid PaymentId, string Currency, decimal Total)>(tenant, async (ctx, token) =>
+        var captured = await coordinator.ExecuteAsync<(Guid LegalEntityId, Guid PaymentId, Guid PaymentRequestId, string Method, string Currency, decimal Total)>(tenant, async (ctx, token) =>
         {
-            await using var command = new NpgsqlCommand("select r.refund_state,r.total_amount,s.currency_code,t.method,t.external_reference,pr.legal_entity_id from business_pos.pos_return r join business_pos.pos_sale s on s.tenant_id=r.tenant_id and s.id=r.original_sale_id join business_pos.pos_session psn on psn.tenant_id=s.tenant_id and psn.id=s.session_id join business_pos.pos_register pr on pr.tenant_id=psn.tenant_id and pr.id=psn.register_id join business_pos.pos_tender t on t.tenant_id=s.tenant_id and t.checkout_id=s.checkout_id and t.method='Cash' where r.tenant_id=$1 and r.id=$2 and r.state='Completed' order by t.sequence_no limit 1 for update", ctx.Connection, ctx.Transaction);
+            await using var command = new NpgsqlCommand("select r.refund_state,r.total_amount,s.currency_code,t.method,t.external_reference,pr.legal_entity_id from business_pos.pos_return r join business_pos.pos_sale s on s.tenant_id=r.tenant_id and s.id=r.original_sale_id join business_pos.pos_session psn on psn.tenant_id=s.tenant_id and psn.id=s.session_id join business_pos.pos_register pr on pr.tenant_id=psn.tenant_id and pr.id=psn.register_id join business_pos.pos_tender t on t.tenant_id=s.tenant_id and t.checkout_id=s.checkout_id where r.tenant_id=$1 and r.id=$2 and r.state='Completed' order by t.sequence_no limit 1 for update", ctx.Connection, ctx.Transaction);
             command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(returnId); await using var reader = await command.ExecuteReaderAsync(token);
             if (!await reader.ReadAsync(token)) throw new ArgumentException("pos.refund_return_not_found");
             var refundState = reader.GetString(0); var total = reader.GetDecimal(1); var currency = reader.GetString(2); var method = reader.GetString(3); var external = reader.IsDBNull(4) ? null : reader.GetString(4); var legalEntityId = reader.GetGuid(5); await reader.CloseAsync();
             if (!string.Equals(refundState, "NotRequested", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("pos.refund_already_requested");
-            if (!string.Equals(method, "Cash", StringComparison.OrdinalIgnoreCase) || !Guid.TryParse(external, out var paymentId)) throw new InvalidOperationException("pos.provider_refund_required");
+            if (!string.Equals(method, "Cash", StringComparison.OrdinalIgnoreCase) && !string.Equals(method, "Card", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("pos.refund_method_unsupported");
+            if (!Guid.TryParse(external, out var paymentReference)) throw new InvalidOperationException("pos.refund_payment_reference_missing");
             if (request.Amount > total) throw new InvalidOperationException("pos.refund_amount_exceeded");
             await using var reserve = new NpgsqlCommand("update business_pos.pos_return set refund_state='Pending',refunded_amount=$3 where tenant_id=$1 and id=$2 and refund_state='NotRequested'", ctx.Connection, ctx.Transaction); reserve.Parameters.AddWithValue(tenant.Value); reserve.Parameters.AddWithValue(returnId); reserve.Parameters.AddWithValue(request.Amount); if (await reserve.ExecuteNonQueryAsync(token) != 1) throw new InvalidOperationException("pos.refund_already_requested");
-            return (legalEntityId, paymentId, currency, total);
+            return (legalEntityId, string.Equals(method, "Cash", StringComparison.OrdinalIgnoreCase) ? paymentReference : Guid.Empty, string.Equals(method, "Card", StringComparison.OrdinalIgnoreCase) ? paymentReference : Guid.Empty, method, currency, total);
         }, ct);
         try
         {
-            var result = await payments.RefundCashAsync(tenant.Value, actor, membership, new PosCashRefundRequest(captured.LegalEntityId, captured.PaymentId, request.PaymentAccountId, request.Amount, captured.Currency, DateOnly.FromDateTime(DateTime.UtcNow), request.ReasonCode.Trim(), $"pos-return-refund:{returnId:D}"), returnId, ct);
+            var refundKey = $"pos-return-refund:{returnId:D}";
+            var result = string.Equals(captured.Method, "Cash", StringComparison.OrdinalIgnoreCase)
+                ? await payments.RefundCashAsync(tenant.Value, actor, membership, new PosCashRefundRequest(captured.LegalEntityId, captured.PaymentId, request.PaymentAccountId, request.Amount, captured.Currency, DateOnly.FromDateTime(DateTime.UtcNow), request.ReasonCode.Trim(), refundKey), returnId, ct)
+                : await payments.RefundCardAsync(tenant.Value, actor, membership, captured.LegalEntityId,
+                    (await payments.FindCapturedPaymentAsync(tenant.Value, captured.LegalEntityId, captured.PaymentRequestId, ct) ?? throw new InvalidOperationException("pos.provider_payment_not_found")).PaymentId,
+                    request.PaymentAccountId, request.Amount, captured.Currency, DateOnly.FromDateTime(DateTime.UtcNow), request.ReasonCode.Trim(), refundKey, returnId, ct);
             await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) => { await using var update = new NpgsqlCommand("update business_pos.pos_return set refund_state='Completed',refund_payment_id=$3 where tenant_id=$1 and id=$2 and refund_state='Pending'", ctx.Connection, ctx.Transaction); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(returnId); update.Parameters.AddWithValue(result.RefundPaymentId); await update.ExecuteNonQueryAsync(token); return null; }, ct);
             return result;
         }

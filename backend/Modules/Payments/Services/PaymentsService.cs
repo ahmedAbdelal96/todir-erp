@@ -64,6 +64,18 @@ public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCap
             $"{request.IdempotencyKey}:complete", correlationId, cancellationToken);
         return new(completed.Id, completed.State.ToString(), completed.Amount, completed.CurrencyCode);
     }
+
+    public async Task<PosCapturedPaymentReference?> FindCapturedPaymentAsync(Guid tenantId, Guid legalEntityId, Guid paymentRequestId,
+        CancellationToken cancellationToken = default) => await repository.FindCapturedPaymentAsync(new TenantId(tenantId), legalEntityId, paymentRequestId, cancellationToken);
+
+    public async Task<PosRefundResult> RefundCardAsync(Guid tenantId, Guid actorId, Guid membershipId, Guid legalEntityId,
+        Guid originalPaymentId, Guid paymentAccountId, decimal amount, string currencyCode, DateOnly paymentDate, string reasonCode,
+        string idempotencyKey, Guid correlationId, CancellationToken cancellationToken = default)
+    {
+        var result = await CreateProviderRefundAsync(new TenantId(tenantId), actorId, membershipId, correlationId, legalEntityId, originalPaymentId,
+            new CreateRefundRequest(paymentAccountId, PaymentMethod.PaymentGateway, amount.ToString(System.Globalization.CultureInfo.InvariantCulture), paymentDate, paymentDate, null, reasonCode, null), idempotencyKey, cancellationToken);
+        return new(result.Refund.Id, result.ProviderState, result.Refund.Amount, result.Refund.CurrencyCode);
+    }
     public async Task<PaymentAccount> CreateAccountAsync(TenantId tenant, Guid actor, Guid membership, CreatePaymentAccountRequest request, Guid correlationId, CancellationToken ct)
     {
         if (request.BranchId is { } branch && !await organization.BranchBelongsToLegalEntityAsync(tenant, new(request.LegalEntityId), branch, ct))

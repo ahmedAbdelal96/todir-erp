@@ -10,6 +10,7 @@ public sealed record PosPaymentResult(Guid PaymentId, string State, decimal Amou
 public sealed record PosProviderPaymentResult(Guid PaymentRequestId, string State, decimal Amount, string CurrencyCode, string MerchantReference);
 public sealed record PosCashRefundRequest(Guid LegalEntityId, Guid OriginalPaymentId, Guid PaymentAccountId, decimal Amount, string CurrencyCode, DateOnly PaymentDate, string ReasonCode, string IdempotencyKey);
 public sealed record PosRefundResult(Guid RefundPaymentId, string State, decimal Amount, string CurrencyCode);
+public sealed record PosCapturedPaymentReference(Guid PaymentId, Guid PaymentAccountId, decimal Amount, string CurrencyCode, string Method, string State);
 
 public interface IPosPaymentCapabilities
 {
@@ -24,4 +25,11 @@ public interface IPosPaymentCapabilities
 
     Task<PosRefundResult> RefundCashAsync(Guid tenantId, Guid actorId, Guid membershipId, PosCashRefundRequest request, Guid correlationId,
         CancellationToken cancellationToken = default);
+
+    Task<PosCapturedPaymentReference?> FindCapturedPaymentAsync(Guid tenantId, Guid legalEntityId, Guid paymentRequestId,
+        CancellationToken cancellationToken = default);
+
+    Task<PosRefundResult> RefundCardAsync(Guid tenantId, Guid actorId, Guid membershipId, Guid legalEntityId,
+        Guid originalPaymentId, Guid paymentAccountId, decimal amount, string currencyCode, DateOnly paymentDate, string reasonCode,
+        string idempotencyKey, Guid correlationId, CancellationToken cancellationToken = default);
 }

@@ -1242,6 +1242,14 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
         return await reader.ReadAsync(ct) ? ReadPayment(reader) : null;
     }
 
+    public async Task<PosCapturedPaymentReference?> FindCapturedPaymentAsync(TenantId tenant, Guid legalEntityId, Guid paymentRequestId, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select id,payment_account_id,amount,currency_code,method,business_state from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='PaymentRequest' and source_reference=$3 and business_state='Completed' order by completed_at desc limit 1", connection);
+        Add(command, tenant.Value, legalEntityId, paymentRequestId.ToString("D")); await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct) ? new(reader.GetGuid(0), reader.GetGuid(1), reader.GetDecimal(2), reader.GetString(3).Trim(), reader.GetString(4), reader.GetString(5)) : null;
+    }
+
     public async Task<IReadOnlyList<PaymentFeeResult>> ListFeesAsync(TenantId tenant, Guid legalEntityId, Guid paymentId, CancellationToken ct)
     {
         await using var connection = await OpenAsync(tenant, ct);
