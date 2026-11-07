@@ -6,6 +6,34 @@ Never create a new file or folder whose basename contains `todir` in any casing;
 
 ---
 
+## 00. Mandatory Skill Activation: `erp-frontend-architect`
+
+**CRITICAL RULE FOR ALL AGENTS:** Every agent undertaking ANY frontend work (including designing, coding, modifying, reviewing, simplifying, or debugging screens, forms, tables, drawers, dialogs, workflows, components, or i18n files) MUST mandatorily load, activate, and follow the `erp-frontend-architect` skill (`.agents/skills/erp-frontend-architect/SKILL.md`).
+
+Before writing or modifying any frontend code, the agent must strictly execute:
+1. **The Discovery Gate & Pre-Code Card (Step 0 & Step 2)**:
+   - Identify who uses the screen, their device, and pressure level.
+   - Establish the single primary next action and its consequence.
+   - Cut unnecessary inputs by ~50% (system derives defaults; minimal fields).
+   - Account for all 6 states: loading skeleton, guided empty state, actionable error with retry, no permission, partial data, stale data.
+2. **Strict Separation of Concerns (Browse vs Enter vs Inspect)**:
+   - Tables and lists are exclusively for browsing and status assessment; never mix inline forms with tables.
+   - Quick entry (1-4 fields) -> centered Modal Dialog (`Dialog`).
+   - Medium entry / line items (5-12 fields) -> Side Drawer.
+   - Large documents / multi-stage (13+ fields) -> dedicated creation page with stepper.
+   - Clicking a table row MUST open the Detail Drawer (preserving URL filters, pagination, and scroll position).
+3. **Arabic-First & RTL-Native Discipline**:
+   - Strictly use logical CSS properties (`margin-inline-start`, `padding-inline-end`, `start`, `end`).
+   - Flip directional icons in RTL; do not flip non-directional icons (checks, search).
+   - Strict bidirectional text isolation (`<bdi>` or `unicode-bidi: isolate`) around Latin codes (`INV-2026-001`), phone numbers, dates, and amounts inside Arabic copy.
+4. **TODIR Design System Precedence**:
+   - All visual layouts must strictly use TODIR's codified design tokens: authentic Dark Oxford Navy header (`#102a43`), slate background canvas (`#f0f4f8`), crisp white surface cards (`#ffffff`) with solid perimeter borders (`#cbd5e1`) and dual-layer elevation shadows.
+   - Reusable primitives from `frontend/components/` must be used; uncompiled Tailwind utility classes are strictly prohibited.
+5. **Quality Verification Ladder (Step 4)**:
+   - Run typecheck, `pnpm run architecture:frontend`, `pnpm run localization:verify`, `pnpm run api:drift`, and real Playwright E2E workflows before declaring any task complete.
+
+---
+
 ## 0. Frontend Architecture Map & Directory Structure
 
 The repository structure is locked. The approved frontend navigation roots are:

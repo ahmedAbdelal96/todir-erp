@@ -6,6 +6,7 @@ Exactly three active `AGENTS.md` instruction files govern this repository: `/AGE
 
 - For backend, database, API, security, messaging, migration, worker, or backend-test work, read `backend/AGENTS.md` before implementation.
 - For frontend, React, TypeScript, UX, UI, copy, routing, frontend-test, Storybook, or Playwright work, read `frontend/AGENTS.md` before implementation.
+- **Mandatory Frontend Skill Activation**: For ANY frontend task, screen, component, form, table, workflow, or localization modification, the agent MUST mandatorily load, activate, and follow the `erp-frontend-architect` skill (`.agents/skills/erp-frontend-architect/SKILL.md`). Every frontend change must pass its Discovery Gate, Pre-Code Card, UX Laws, and Domain Safety checks.
 - For work spanning both areas, read both scoped files. These scoped files add area rules; this root file always remains mandatory.
 
 ## Mandatory Product & Engineering Principles
