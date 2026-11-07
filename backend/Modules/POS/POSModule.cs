@@ -39,6 +39,7 @@ public sealed record CloseSessionRequest(Guid SessionId, decimal CountedCash, st
 public sealed record CreateReturnRequest(Guid OriginalSaleId, Guid SessionId, IReadOnlyList<ReturnLineRequest> Lines, string Reason, string Disposition);
 public sealed record ReturnLineRequest(Guid OriginalSaleLineId, decimal Quantity, decimal Amount, Guid? LotId = null, Guid? SerialId = null);
 public sealed record RefundReturnRequest(Guid PaymentAccountId, decimal Amount, string ReasonCode = "CustomerReturn");
+internal sealed class PosConcurrencyException() : Exception("pos.concurrent_operation_conflict");
 public sealed record ManagerOverrideRequest(string Scope, Guid TargetId, string Reason, DateTimeOffset ExpiresAt);
 public sealed record OfflineEnvelopeRequest(Guid RegisterId, string DeviceIdentity, long SourceSequence, string IdempotencyKey, long PackageVersion, string Payload, string Signature);
 public sealed record OfflinePackageResponse(Guid PackageId, Guid RegisterId, long Version, DateTimeOffset ValidFrom, DateTimeOffset ExpiresAt, string Payload, string Signature);
@@ -157,6 +158,7 @@ public static class PosModuleExtensions
         try { var value = await action(); return Results.Json(value, statusCode: successCode); }
         catch (ArgumentException ex) { return Results.Problem(ex.Message, statusCode: 400, extensions: new Dictionary<string, object?> { ["code"] = ex.Message }); }
         catch (InvalidOperationException ex) { return Results.Problem(ex.Message, statusCode: 409, extensions: new Dictionary<string, object?> { ["code"] = ex.Message }); }
+        catch (PosConcurrencyException ex) { return Results.Problem("A concurrent POS operation must be retried.", statusCode: 409, extensions: new Dictionary<string, object?> { ["code"] = ex.Message }); }
     }
     private static async Task<Access?> AccessAsync(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid entity, CancellationToken ct)
     { if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tenant) || !Guid.TryParse(http.User.FindFirstValue("membership_id"), out var membership) || !Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actor)) return null; if (Guid.TryParse(http.User.FindFirstValue("legal_entity_id"), out var bound) && bound != entity) return new(new(tenant), actor, false, membership); var subject = await subjects.LoadAsync(new TenantId(tenant), membership, ct); return subject is null ? null : new(new TenantId(tenant), actor, authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(new TenantId(tenant), new LegalEntityId(entity))), membership); }

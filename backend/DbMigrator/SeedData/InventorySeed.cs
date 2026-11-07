@@ -31,7 +31,7 @@ public static class InventorySeed
 
         await EnsureProfileAsync(context, tenant, entity, actor, 1, simpleWarehouse, "StockTracked", "Quantity", "NonValuated", null, "Disallow", "Enforced", now, ct);
         await EnsureProfileAsync(context, tenant, entity, actor, 2, advancedWarehouse, "StockTracked", "Lot", "NonValuated", null, "Disallow", "Advisory", now, ct);
-        await EnsureProfileAsync(context, tenant, entity, actor, 3, advancedWarehouse, "StockTracked", "Serial", "NonValuated", null, "Disallow", "Disabled", now, ct);
+        await EnsureProfileAsync(context, tenant, entity, actor, 3, advancedWarehouse, "StockTracked", "Serial", "NonValuated", null, "Disallow", "Enforced", now, ct);
         await EnsureProfileAsync(context, tenant, entity, actor, 4, simpleWarehouse, "StockTracked", "Quantity", "Perpetual", "MovingAverage", "Disallow", "Advisory", now, ct);
         await EnsureProfileAsync(context, tenant, entity, actor, 5, advancedWarehouse, "StockTracked", "Quantity", "Perpetual", "FIFO", "Disallow", "Advisory", now, ct);
         await EnsureProfileAsync(context, tenant, entity, actor, 17, simpleWarehouse, "NonStocked", "Quantity", "NonValuated", null, "Disallow", "Disabled", now, ct);

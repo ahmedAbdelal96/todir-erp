@@ -222,7 +222,8 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             }
 
             var id = Guid.CreateVersion7(); var now = clock.GetUtcNow();
-            var number = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, request.BranchId, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
+            // Payment numbers are unique per legal entity, not per branch; keep the allocator scope aligned with the database key.
+            var number = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, null, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
             await using (var insert = new NpgsqlCommand("""
                 insert into finance_payments.payment(tenant_id,legal_entity_id,id,payment_number,branch_id,direction,payment_type,party_id,amount,currency_code,method,payment_account_id,payment_date,posting_date,value_date,bank_reference,normalized_reference,customer_reference,supplier_reference,source_type,source_reference,provider_code,provider_transaction_id,business_state,row_version,created_at,updated_at)
                 values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,'Draft',1,$24,$24)
@@ -347,8 +348,8 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             if (sourceBaseAmount <= 0m || destinationBaseAmount <= 0m || destinationAmount <= 0m)
                 throw new PaymentException("payments.fx_amount_invalid", "The approved exchange-rate snapshot produced an invalid transfer amount.");
             var transferId = Guid.CreateVersion7(); var sourcePaymentId = Guid.CreateVersion7(); var destinationPaymentId = Guid.CreateVersion7();
-            var sourceNumber = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, source.BranchId, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
-            var destinationNumber = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, destination.BranchId, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
+            var sourceNumber = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, null, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
+            var destinationNumber = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, null, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
             var reference = Clean(request.Reference);
             var sourceLeg = new PaymentRecord(sourcePaymentId, request.LegalEntityId, sourceNumber, source.BranchId, PaymentDirection.InternalTransfer, PaymentType.TransferLeg, null,
                 amount, sourceCurrency, TransferMethod(source.Type), source.Id, request.PaymentDate, request.PostingDate, request.ValueDate, reference, null, null, "InternalTransfer", transferId.ToString("D"), PaymentBusinessState.Completed, now, 1);
@@ -467,7 +468,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             { Add(method, tenant.Value, request.LegalEntityId, request.Method.ToString(), request.PaymentDate, request.PaymentAccountId, Db(branchId)); if ((bool?)await method.ExecuteScalarAsync(token) != true) throw new PaymentException("payments.method_not_enabled", "This refund method is not enabled for the selected account and date."); }
 
             var id = Guid.CreateVersion7(); var refundId = Guid.CreateVersion7(); var now = clock.GetUtcNow();
-            var number = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, branchId, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
+            var number = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, null, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
             await using (var insert = new NpgsqlCommand("insert into finance_payments.payment(tenant_id,legal_entity_id,id,payment_number,branch_id,direction,payment_type,party_id,amount,currency_code,method,payment_account_id,payment_date,posting_date,value_date,bank_reference,normalized_reference,business_state,row_version,created_at,updated_at) values($1,$2,$3,$4,$5,'Outgoing','CustomerRefund',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'Draft',1,$16,$16)", context.Connection, context.Transaction))
             { var bankReference = Clean(request.BankReference); Add(insert, tenant.Value, request.LegalEntityId, id, number, Db(branchId), partyId, amount, currencyCode, request.Method.ToString(), request.PaymentAccountId, request.PaymentDate, request.PostingDate, Db(request.ValueDate), Db(bankReference), Db(NormalizeReference(bankReference)), now); await insert.ExecuteNonQueryAsync(token); }
             await using (var refund = new NpgsqlCommand("insert into finance_payments.payment_refund(tenant_id,legal_entity_id,id,original_payment_id,refund_payment_id,amount,currency_code,reason_code,status,idempotency_key,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,'Pending',$9,$10,$11)", context.Connection, context.Transaction))
@@ -574,7 +575,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             var baseAmount = decimal.Round(original.Amount * rate, financialContext.RoundingPolicy.MoneyScale, midpoint);
             if (baseAmount <= 0m) throw new PaymentException("payments.fx_snapshot_invalid", "The approved exchange rate produced an invalid reversal amount.");
             var reversalId = Guid.CreateVersion7(); var reversalRecordId = Guid.CreateVersion7(); var now = clock.GetUtcNow();
-            var reversalNumber = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, original.BranchId, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
+            var reversalNumber = await sequences.AllocateAsync(context, new("payments.payment", tenant, request.LegalEntityId, null, null, request.PaymentDate.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture), "PAY-", 6, 1), token);
             var reversesIncoming = original.Direction == PaymentDirection.Incoming;
             var reversalType = reversesIncoming ? PaymentType.CustomerRefund : PaymentType.SupplierRefund;
             var reversalDirection = reversesIncoming ? PaymentDirection.Outgoing : PaymentDirection.Incoming;
