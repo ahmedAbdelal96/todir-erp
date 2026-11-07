@@ -7,8 +7,8 @@ Scope: Module 20 backend, PostgreSQL, API, Worker, cross-module contracts, secur
 
 - Status: IN PROGRESS
 - Branch: `dev`
-- Baseline: `efc2a9a2cadffa63ea638a6faaa1d79c5075c58c`
-- Last meaningful change: documented semantic POS recovery procedures for payment, inventory, fiscal, hardware, offline, cash, return/refund, exchange, projection, and disaster-recovery incidents.
+- Baseline: `1c80ecc068305fd6bd5f784baabea56bdafdcc16`
+- Last meaningful change: aligned the exchange entity and dedicated `pos.exchange.create` permission across the module manifest, development seed, runtime authorization, and a RLS-safe forward migration for existing administrator roles.
 - Next executable action: continue with concurrency/security integration proof and final backend release gates.
 - Evidence still valid: disposable PostgreSQL runtime proved authenticated POS register access, a card checkout moving from provider action required to Completed through signed provider success and recovery, cash checkout with a persisted Sale drawer movement and expected-cash update, bounded damaged and restock returns, over-return rejection, return credit notes, signed offline package/conflict resolution, mixed tender capture, customer credit sale, a completed exchange with a persisted exchange group, return, replacement checkout, and invoice, invalid-signature rejection and valid envelope idempotent replay, and an offline cash sale that completed inventory/document/accounting with one cash movement and one idempotent replay. Full M1 certification has not been granted.
 

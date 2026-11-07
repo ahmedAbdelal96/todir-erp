@@ -13,9 +13,9 @@
   },
   "owns": {
     "schema": "business_pos",
-    "entities": ["pos_register", "pos_terminal", "pos_session", "pos_cash_movement", "pos_cart", "pos_cart_line", "pos_checkout", "pos_tender", "pos_sale", "pos_sale_line", "pos_return", "pos_return_line", "pos_manager_override", "pos_offline_package", "pos_offline_envelope", "pos_sync_conflict"]
+    "entities": ["pos_register", "pos_terminal", "pos_session", "pos_cash_movement", "pos_cart", "pos_cart_line", "pos_checkout", "pos_tender", "pos_sale", "pos_sale_line", "pos_return", "pos_return_line", "pos_exchange_group", "pos_manager_override", "pos_offline_package", "pos_offline_envelope", "pos_sync_conflict"]
   },
-  "permissions": ["pos.register.read", "pos.register.manage", "pos.session.open", "pos.session.close", "pos.cart.manage", "pos.checkout.create", "pos.return.create", "pos.cash.manage", "pos.report.read", "pos.offline.sync", "pos.override.approve"],
+  "permissions": ["pos.register.read", "pos.register.manage", "pos.session.open", "pos.session.close", "pos.cart.manage", "pos.checkout.create", "pos.return.create", "pos.exchange.create", "pos.cash.manage", "pos.report.read", "pos.offline.sync", "pos.override.approve"],
   "capabilities": {
     "provides": ["pos.checkout", "pos.cash-session", "pos.offline-sync"],
     "consumes": ["catalog.lookup", "pricing.resolve", "tax.calculate", "inventory.issue", "payments.money-movement", "invoicing.documents", "ledger.semantic-facts", "directory.party"]
