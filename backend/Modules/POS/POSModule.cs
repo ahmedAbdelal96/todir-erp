@@ -33,6 +33,8 @@ public sealed record ReturnLineRequest(Guid OriginalSaleLineId, decimal Quantity
 public sealed record RefundReturnRequest(Guid PaymentAccountId, decimal Amount, string ReasonCode = "CustomerReturn");
 public sealed record ManagerOverrideRequest(string Scope, Guid TargetId, string Reason, DateTimeOffset ExpiresAt);
 public sealed record OfflineEnvelopeRequest(Guid RegisterId, string DeviceIdentity, long SourceSequence, string IdempotencyKey, long PackageVersion, string Payload, string Signature);
+public sealed record OfflinePackageResponse(Guid PackageId, Guid RegisterId, long Version, DateTimeOffset ValidFrom, DateTimeOffset ExpiresAt, string Payload, string Signature);
+public sealed record OfflineConflictResolutionRequest(string Decision, string Note);
 
 public static class PosModuleExtensions
 {
@@ -70,6 +72,8 @@ public static class PosModuleExtensions
         group.MapPost("/returns/{returnId:guid}/credit-note", async (Guid returnId, HttpContext http, PosService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await TenantAccessAsync(http, subjects, authorizer, "pos.return.create", ct), () => service.CreateReturnCreditNoteAsync(Tenant(http), Actor(http), Membership(http), returnId, ct), StatusCodes.Status202Accepted));
         group.MapPost("/overrides", async (ManagerOverrideRequest request, HttpContext http, PosService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await TenantAccessAsync(http, subjects, authorizer, "pos.override.approve", ct), () => service.CreateManagerOverrideAsync(Tenant(http), Actor(http), request, ct), StatusCodes.Status201Created));
         group.MapPost("/offline/envelopes", async (OfflineEnvelopeRequest request, HttpContext http, PosService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await TenantAccessAsync(http, subjects, authorizer, "pos.offline.sync", ct), () => service.ReceiveOfflineEnvelopeAsync(Tenant(http), request, ct), StatusCodes.Status202Accepted));
+        group.MapGet("/offline/package", async (Guid registerId, string deviceIdentity, HttpContext http, PosService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await TenantAccessAsync(http, subjects, authorizer, "pos.offline.sync", ct), () => service.DownloadOfflinePackageAsync(Tenant(http), registerId, deviceIdentity, ct)));
+        group.MapPost("/offline/conflicts/{conflictId:guid}/resolve", async (Guid conflictId, OfflineConflictResolutionRequest request, HttpContext http, PosService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await TenantAccessAsync(http, subjects, authorizer, "pos.override.approve", ct), () => service.ResolveOfflineConflictAsync(Tenant(http), Actor(http), conflictId, request, ct)));
         group.MapGet("/legal-entities/{entityId:guid}/reports/sales", async (Guid entityId, DateOnly? from, DateOnly? to, int? page, int? pageSize, HttpContext http, PosService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "pos.report.read", entityId, ct), () => service.ListSalesAsync(Tenant(http), entityId, from, to, page ?? 1, pageSize ?? 50, ct)));
         return app;
     }
