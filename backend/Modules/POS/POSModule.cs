@@ -8,6 +8,7 @@ using Shared.Primitives.Identifiers;
 using Shared.Contracts.Catalog;
 using Shared.Contracts.Pricing;
 using Shared.Contracts.Tax;
+using Shared.Contracts.Payments;
 using MassTransit;
 
 namespace Modules.POS;
@@ -21,7 +22,7 @@ public sealed record SessionResponse(Guid Id, Guid RegisterId, Guid? TerminalId,
 public sealed record CreateCartRequest(Guid SessionId, string CurrencyCode, Guid? CustomerPartyId = null);
 public sealed record AddCartLineRequest(Guid VariantId, string Description, string UomCode, decimal Quantity, decimal UnitPrice, decimal TaxAmount = 0, decimal DiscountAmount = 0, int? ExpectedVersion = null, Guid? LegalEntityId = null, Guid? ProductTemplateId = null, Guid? UnitOfMeasureId = null, Guid? PriceListId = null, DateOnly? PricingDate = null);
 public sealed record CartResponse(Guid Id, Guid SessionId, string State, int Version, decimal Subtotal, decimal TaxTotal, decimal DiscountTotal, decimal GrandTotal);
-public sealed record TenderRequest(string Method, decimal Amount, string? ExternalReference = null);
+public sealed record TenderRequest(string Method, decimal Amount, string? ExternalReference = null, Guid? PaymentAccountId = null);
 public sealed record CheckoutRequest(Guid CartId, string IdempotencyKey, IReadOnlyList<TenderRequest> Tenders);
 public sealed record CheckoutResponse(Guid CheckoutId, Guid? SaleId, string State, string PaymentState, string InventoryState, string DocumentState, string AccountingState, decimal Total, string CurrencyCode);
 public sealed record CashMovementRequest(Guid SessionId, string MovementType, decimal Amount, string CurrencyCode, string Reason);
@@ -56,7 +57,7 @@ public static class PosModuleExtensions
         group.MapPost("/carts/{cartId:guid}/hold", async (Guid cartId, HttpContext http, PosService service, CancellationToken ct) => await Execute(http, () => service.ChangeCartStateAsync(Tenant(http), cartId, "Held", ct)));
         group.MapPost("/carts/{cartId:guid}/resume", async (Guid cartId, HttpContext http, PosService service, CancellationToken ct) => await Execute(http, () => service.ChangeCartStateAsync(Tenant(http), cartId, "Active", ct)));
         group.MapPost("/carts/{cartId:guid}/cancel", async (Guid cartId, HttpContext http, PosService service, CancellationToken ct) => await Execute(http, () => service.ChangeCartStateAsync(Tenant(http), cartId, "Cancelled", ct)));
-        group.MapPost("/checkout", async (CheckoutRequest request, HttpContext http, PosService service, CancellationToken ct) => await Execute(http, () => service.CheckoutAsync(Tenant(http), Actor(http), request, ct), StatusCodes.Status202Accepted));
+        group.MapPost("/checkout", async (CheckoutRequest request, HttpContext http, PosService service, CancellationToken ct) => await Execute(http, () => service.CheckoutAsync(Tenant(http), Actor(http), Membership(http), request, ct), StatusCodes.Status202Accepted));
         group.MapGet("/checkouts/{checkoutId:guid}", async (Guid checkoutId, HttpContext http, PosService service, CancellationToken ct) => await Execute(http, () => service.GetCheckoutAsync(Tenant(http), checkoutId, ct)));
         group.MapPost("/returns", async (CreateReturnRequest request, HttpContext http, PosService service, CancellationToken ct) => await Execute(http, () => service.CreateReturnAsync(Tenant(http), Actor(http), request, ct), StatusCodes.Status201Created));
         group.MapPost("/offline/envelopes", async (OfflineEnvelopeRequest request, HttpContext http, PosService service, CancellationToken ct) => await Execute(http, () => service.ReceiveOfflineEnvelopeAsync(Tenant(http), request, ct), StatusCodes.Status202Accepted));
@@ -66,6 +67,7 @@ public static class PosModuleExtensions
 
     private static TenantId Tenant(HttpContext context) => Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenant) ? new TenantId(tenant) : throw new UnauthorizedAccessException();
     private static Guid Actor(HttpContext context) => Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actor) ? actor : throw new UnauthorizedAccessException();
+    private static Guid Membership(HttpContext context) => Guid.TryParse(context.User.FindFirstValue("membership_id"), out var membership) ? membership : throw new UnauthorizedAccessException();
     private static async Task<IResult> Execute<T>(HttpContext context, Func<Task<T>> action, int successCode = StatusCodes.Status200OK)
     {
         try { var value = await action(); return Results.Json(value, statusCode: successCode); }
