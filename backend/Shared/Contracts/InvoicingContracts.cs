@@ -21,6 +21,14 @@ public interface IInvoicingSourceCapabilities
         Guid correlationId, CancellationToken cancellationToken = default);
 }
 
+public sealed record PosInvoiceResult(Guid InvoiceId, string DocumentNumber, Guid JournalEntryId);
+
+public interface IPosInvoicingCapabilities
+{
+    Task<PosInvoiceResult> CreateAndFinalizeFromSourceAsync(TenantId tenantId, Guid actorId, Guid membershipId,
+        InvoiceSourceDocumentContract request, Guid correlationId, CancellationToken cancellationToken = default);
+}
+
 public sealed record InvoiceCreditNoteLineContract(Guid OriginalLineId, decimal Quantity);
 public sealed record InvoiceCreditNoteRequest(Guid OriginalInvoiceId, Guid LegalEntityId, DateOnly DocumentDate,
     DateOnly PostingDate, DateOnly TaxDate, DateOnly? SupplyDate, string Reason, string IdempotencyKey,

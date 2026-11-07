@@ -15,15 +15,15 @@ public static class InvoiceSourceRequestMapper
     public static MappedInvoiceSourceRequest Map(InvoiceSourceDocumentContract request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.SourceModule is not ("sales" or "purchasing") || request.SourceDocumentId == Guid.Empty ||
+        if (request.SourceModule is not ("sales" or "purchasing" or "pos") || request.SourceDocumentId == Guid.Empty ||
             string.IsNullOrWhiteSpace(request.Purpose) || request.Purpose.Length > 80 ||
             string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 200)
             throw new InvoiceException("invoicing.source_reference_invalid", "The source document reference or idempotency key is invalid.");
         var direction = request.Direction switch
         {
-            "Receivable" when request.SourceModule == "sales" => InvoiceDirection.Receivable,
+            "Receivable" when request.SourceModule is "sales" or "pos" => InvoiceDirection.Receivable,
             "Payable" when request.SourceModule == "purchasing" => InvoiceDirection.Payable,
-            _ => throw new InvoiceException("invoicing.source_direction_invalid", "Sales sources create customer invoices and purchasing sources create supplier invoices.")
+            _ => throw new InvoiceException("invoicing.source_direction_invalid", "Sales and POS sources create customer invoices; purchasing sources create supplier invoices.")
         };
         if (request.Lines is null || request.Lines.Count is < 1 or > 1000)
             throw new InvoiceException("invoicing.lines_invalid", "An invoice source must provide between one and 1000 lines.");

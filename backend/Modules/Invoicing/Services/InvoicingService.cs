@@ -31,7 +31,7 @@ public sealed class InvoicingService(
     ITransactionalInvoiceLedgerPostingCapability ledgerPosting,
     ITransactionalSubledgerOpenItemCapability subledgerPosting,
     IPlatformOrganizationCapabilities organization,
-    TimeProvider clock) : IInvoicingSourceCapabilities, IInvoicingCorrectionCapabilities, IInvoiceComplianceSnapshotCapability, IInvoiceFileReferenceCapability
+    TimeProvider clock) : IInvoicingSourceCapabilities, IPosInvoicingCapabilities, IInvoicingCorrectionCapabilities, IInvoiceComplianceSnapshotCapability, IInvoiceFileReferenceCapability
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -43,6 +43,16 @@ public sealed class InvoicingService(
     {
         var mapped = InvoiceSourceRequestMapper.Map(request);
         return await CreateDraftCoreAsync(tenantId, actorId, membershipId, mapped.Draft, mapped.Direction, mapped.Reference, correlationId, cancellationToken);
+    }
+
+    public async Task<PosInvoiceResult> CreateAndFinalizeFromSourceAsync(TenantId tenantId, Guid actorId, Guid membershipId,
+        InvoiceSourceDocumentContract request, Guid correlationId, CancellationToken cancellationToken = default)
+    {
+        var invoiceId = await CreateDraftFromSourceAsync(tenantId, actorId, membershipId, request, correlationId, cancellationToken);
+        var draft = await GetDraftAsync(tenantId, request.LegalEntityId, invoiceId, cancellationToken);
+        var finalized = await FinalizeAsync(tenantId, actorId, membershipId, invoiceId, request.LegalEntityId,
+            new InvoiceFinalizationRequest(draft.Version, request.IdempotencyKey + ":finalize"), correlationId, cancellationToken);
+        return new(finalized.InvoiceId, finalized.DocumentNumber, finalized.JournalEntryId);
     }
 
     public Task<Guid> CreateCreditNoteDraftAsync(TenantId tenantId, Guid actorId, Guid membershipId,
