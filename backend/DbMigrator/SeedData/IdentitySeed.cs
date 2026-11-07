@@ -76,6 +76,8 @@ public static class IdentitySeed
         var roleDefinitions = new (string Code, string Name, string[] Permissions)[]
         {
             ("administrator", "مدير النظام", Permissions),
+            ("pos_cashier", "أمين صندوق", ["platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read", "pricing.read", "pos.register.read", "pos.session.open", "pos.cart.manage", "pos.checkout.create", "pos.return.create", "pos.offline.sync"]),
+            ("pos_manager", "مدير نقطة البيع", ["platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read", "pricing.read", "pos.register.read", "pos.register.manage", "pos.session.open", "pos.session.close", "pos.cart.manage", "pos.checkout.create", "pos.return.create", "pos.exchange.create", "pos.cash.manage", "pos.report.read", "pos.offline.sync", "pos.override.approve"]),
             ("accountant", "محاسب", ["platform.identity.read", "platform.organization.read", "directory.party.read", "catalog.product.read", "finbase.currency.read", "finbase.rate.read", "finbase.rounding_policy.read", "finbase.payment_term.read", "pricing.read",
                 "accounting.home.read", "accounting.owner.read", "accounting.health.read", "accounting.reconciliation.read", "accounting.reconciliation.run", "accounting.opening.approve", "accounting.close.preview", "accounting.statement.read", "accounting.fx-revaluation.read", "accounting.fx-revaluation.preview", "accounting.fx-revaluation.post", "accounting.fx-revaluation.reverse",
                 "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize", "invoicing.customer_invoice.cancel_draft",
@@ -157,6 +159,8 @@ public static class IdentitySeed
         var canonical = new List<(string Prefix, string Name, string RoleCode, string Status, bool MustChangePassword, bool IsCanonical)>
         {
             new("admin", tenant.Id == SeedIds.AtlasTenant ? "مدير شركة أطلس" : "مدير شركة دلتا", "administrator", "Active", false, true),
+            new("pos-cashier", "أمين صندوق نقطة البيع", "pos_cashier", "Active", false, true),
+            new("pos-manager", "مدير نقطة البيع", "pos_manager", "Active", false, true),
             new("accountant", "محمود عبدالسلام", "accountant", "Active", false, true),
             new("sales", "سارة حمدي", "sales", "Active", false, true),
             new("warehouse", "خالد السيد", "warehouse", "Active", false, true),

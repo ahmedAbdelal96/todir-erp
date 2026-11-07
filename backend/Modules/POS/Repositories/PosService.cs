@@ -1392,7 +1392,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
     private async Task<Guid> ReadCashPaymentAccountAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct)
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await BeginTenantAsync(connection, tenant, ct);
-        await using var command = new NpgsqlCommand("select coalesce((select payment_account_id from finance_payments.payment_method_config where tenant_id=$1 and legal_entity_id=$2 and method='Cash' and status='Active' order by effective_from desc limit 1),(select payment_account_id from finance_payments.payment_account where tenant_id=$1 and legal_entity_id=$2 and account_type='Cashbox' and status='Active' order by code limit 1))", connection, transaction);
+        await using var command = new NpgsqlCommand("select coalesce((select payment_account_id from finance_payments.payment_method_config where tenant_id=$1 and legal_entity_id=$2 and method='Cash' and status='Active' order by effective_from desc limit 1),(select id from finance_payments.payment_account where tenant_id=$1 and legal_entity_id=$2 and account_type='Cashbox' and status='Active' order by code limit 1))", connection, transaction);
         command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); var result = await command.ExecuteScalarAsync(ct); await transaction.CommitAsync(ct); return result is Guid account ? account : throw new InvalidOperationException("pos.cash_account_missing");
     }
 }

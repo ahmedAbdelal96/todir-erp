@@ -249,11 +249,134 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         Assert.Equal(HttpStatusCode.NoContent, webhookResponse.StatusCode);
 
         using var recovery = await PostJsonAsync(client, $"/api/v1/pos/checkouts/{checkoutId:D}/recover", new { });
-        Assert.Equal(HttpStatusCode.OK, recovery.StatusCode);
+        Assert.True(recovery.IsSuccessStatusCode, await recovery.Content.ReadAsStringAsync());
         Assert.Equal("Completed", (await ReadJsonAsync(recovery)).GetProperty("state").GetString());
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_sale where tenant_id=$1 and id=$2", AtlasTenant, saleId));
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_tender where tenant_id=$1 and checkout_id=$2 and method='Card' and state='Captured'", AtlasTenant, checkoutId));
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and source_type='PaymentRequest' and source_reference=$2 and business_state='Completed'", AtlasTenant, providerRequestId.ToString("D")));
+    }
+
+    [Fact]
+    public async Task SplitTenderAndExchangePersistSeparateLinkedFacts()
+    {
+        var connectionString = Required("TODIR_DATABASE_CONNECTION");
+        var adminConnectionString = Required("TODIR_P04_ADMIN_CONNECTION");
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        var providerConfigId = await GuidScalarAsync(admin, "select id from finance_payments.provider_config where tenant_id=$1 and legal_entity_id=$2 and provider_code='reference' and environment='Sandbox' order by id limit 1", AtlasTenant, AtlasEntity);
+        await using (var configure = new NpgsqlCommand("update finance_payments.provider_config set secret_ref=$3,capabilities=jsonb_set(capabilities,'{webhooks}','true'::jsonb) where tenant_id=$1 and id=$2", admin))
+        {
+            configure.Parameters.AddWithValue(AtlasTenant);
+            configure.Parameters.AddWithValue(providerConfigId);
+            configure.Parameters.AddWithValue("pos-split-secret");
+            await configure.ExecuteNonQueryAsync();
+        }
+        Environment.SetEnvironmentVariable(EnvironmentProviderSecretVariable("pos-split-secret"), "pos-split-webhook-key");
+
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(client, "admin@atlas.com", Required("SEED_DEFAULT_PASSWORD"), AtlasTenant);
+
+        var register = (await GetJsonAsync(client, $"/api/v1/pos/registers?legalEntityId={AtlasEntity:D}")).EnumerateArray().First();
+        var registerId = register.GetProperty("id").GetGuid();
+        var sessionId = (await GetJsonAsync(client, $"/api/v1/pos/sessions/current?registerId={registerId:D}")).GetProperty("id").GetGuid();
+        var customerPartyId = (await GetJsonAsync(client, "/api/v1/directory/parties?partyType=Customer&role=Customer&page=1&pageSize=1")).GetProperty("items").EnumerateArray().First().GetProperty("id").GetGuid();
+        var priceListId = (await GetJsonAsync(client, $"/api/v1/pricing/price-lists?legalEntityId={AtlasEntity:D}")).EnumerateArray().Single(x => x.GetProperty("code").GetString() == "RETAIL").GetProperty("id").GetGuid();
+        var accounts = await GetJsonAsync(client, $"/api/v1/payments/legal-entities/{AtlasEntity:D}/accounts");
+        var cashAccountId = accounts.EnumerateArray().Single(x => x.GetProperty("type").GetString() == "Cashbox" && x.GetProperty("branchId").GetGuid() == register.GetProperty("branchId").GetGuid()).GetProperty("id").GetGuid();
+
+        using var cartResponse = await PostJsonAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP", customerPartyId });
+        var cartId = (await ReadJsonAsync(cartResponse)).GetProperty("id").GetGuid();
+        using var scanResponse = await PostJsonAsync(client, $"/api/v1/pos/carts/{cartId:D}/scan", new { skuOrBarcode = "EG-2-0001", quantity = 1m, legalEntityId = AtlasEntity, priceListId });
+        var scanned = await ReadJsonAsync(scanResponse);
+        var total = scanned.GetProperty("grandTotal").GetDecimal();
+        var cardAmount = Math.Round(total / 2m, 2, MidpointRounding.AwayFromZero);
+        var cashAmount = total - cardAmount;
+        var idempotencyKey = $"pos-acceptance-split-{Guid.CreateVersion7():N}";
+        using var checkoutResponse = await PostJsonAsync(client, $"/api/v1/pos/carts/{cartId:D}/checkout", new
+        {
+            idempotencyKey,
+            tenders = new[]
+            {
+                new Modules.POS.TenderRequest("Card", cardAmount, ProviderConfigId: providerConfigId),
+                new Modules.POS.TenderRequest("Cash", cashAmount, PaymentAccountId: cashAccountId)
+            }
+        });
+        Assert.Equal(HttpStatusCode.Accepted, checkoutResponse.StatusCode);
+        var checkout = await ReadJsonAsync(checkoutResponse);
+        var checkoutId = checkout.GetProperty("checkoutId").GetGuid();
+        var saleId = checkout.GetProperty("saleId").GetGuid();
+        Assert.Equal("RequiresAction", checkout.GetProperty("paymentState").GetString());
+
+        var providerRequestId = await GuidScalarAsync(admin, "select provider_reference::uuid from business_pos.pos_checkout where tenant_id=$1 and id=$2", AtlasTenant, checkoutId);
+        var merchantReference = await StringScalarAsync(admin, "select merchant_reference from finance_payments.payment_request where tenant_id=$1 and id=$2", AtlasTenant, providerRequestId);
+        var transactionId = await StringScalarAsync(admin, "select provider_transaction_id from finance_payments.payment_attempt where tenant_id=$1 and payment_request_id=$2 order by attempt_number desc limit 1", AtlasTenant, providerRequestId);
+        var webhook = JsonContent.Create(new { eventId = Guid.CreateVersion7(), merchantReference, transactionId, eventType = "payment.succeeded", occurredAt = DateTimeOffset.UtcNow });
+        var rawWebhook = await webhook.ReadAsByteArrayAsync();
+        using var webhookRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/payments/webhooks/reference/{AtlasTenant:D}/{providerConfigId:D}") { Content = new ByteArrayContent(rawWebhook) };
+        webhookRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        webhookRequest.Headers.Add("X-Provider-Signature", "sha256=" + Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes("pos-split-webhook-key"), rawWebhook)).ToLowerInvariant());
+        using var webhookResponse = await client.SendAsync(webhookRequest);
+        Assert.Equal(HttpStatusCode.NoContent, webhookResponse.StatusCode);
+
+        using var recovery = await PostJsonAsync(client, $"/api/v1/pos/checkouts/{checkoutId:D}/recover", new { });
+        Assert.True(recovery.IsSuccessStatusCode, await recovery.Content.ReadAsStringAsync());
+        Assert.Equal("Completed", (await ReadJsonAsync(recovery)).GetProperty("state").GetString());
+        Assert.Equal(2L, await ScalarAsync(admin, "select count(*) from business_pos.pos_tender where tenant_id=$1 and checkout_id=$2 and state='Captured'", AtlasTenant, checkoutId));
+        Assert.Equal(total, await DecimalScalarAsync(admin, "select coalesce(sum(captured_amount),0) from business_pos.pos_tender where tenant_id=$1 and checkout_id=$2", AtlasTenant, checkoutId));
+
+        var saleLineId = await GuidScalarAsync(admin, "select id from business_pos.pos_sale_line where tenant_id=$1 and sale_id=$2 order by line_no limit 1", AtlasTenant, saleId);
+        using var replacementCartResponse = await PostJsonAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP", customerPartyId });
+        var replacementCartId = (await ReadJsonAsync(replacementCartResponse)).GetProperty("id").GetGuid();
+        using var replacementScan = await PostJsonAsync(client, $"/api/v1/pos/carts/{replacementCartId:D}/scan", new { skuOrBarcode = "EG-2-0001", quantity = 1m, legalEntityId = AtlasEntity, priceListId });
+        var replacementTotal = (await ReadJsonAsync(replacementScan)).GetProperty("grandTotal").GetDecimal();
+        using var exchangeResponse = await PostJsonAsync(client, "/api/v1/pos/exchanges", new
+        {
+            Return = new { originalSaleId = saleId, sessionId, lines = new[] { new { originalSaleLineId = saleLineId, quantity = 1m, amount = total } }, reason = "POS acceptance exchange", disposition = "Restock" },
+            Checkout = new { cartId = replacementCartId, idempotencyKey = $"pos-acceptance-exchange-{Guid.CreateVersion7():N}", tenders = new[] { new Modules.POS.TenderRequest("Cash", replacementTotal, PaymentAccountId: cashAccountId) } }
+        });
+        Assert.Equal(HttpStatusCode.Accepted, exchangeResponse.StatusCode);
+        var exchange = await ReadJsonAsync(exchangeResponse);
+        Assert.Equal("Completed", exchange.GetProperty("state").GetString());
+        var exchangeId = exchange.GetProperty("exchangeId").GetGuid();
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_exchange_group where tenant_id=$1 and id=$2 and state='Completed'", AtlasTenant, exchangeId));
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_return where tenant_id=$1 and original_sale_id=$2 and state='Completed'", AtlasTenant, saleId));
+    }
+
+    [Fact]
+    public async Task CreditSaleCreatesReceivableCheckoutWithoutPaymentEffect()
+    {
+        var connectionString = Required("TODIR_DATABASE_CONNECTION");
+        var adminConnectionString = Required("TODIR_P04_ADMIN_CONNECTION");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(client, "admin@atlas.com", Required("SEED_DEFAULT_PASSWORD"), AtlasTenant);
+        var register = (await GetJsonAsync(client, $"/api/v1/pos/registers?legalEntityId={AtlasEntity:D}")).EnumerateArray().First();
+        var sessionId = (await GetJsonAsync(client, $"/api/v1/pos/sessions/current?registerId={register.GetProperty("id").GetGuid():D}")).GetProperty("id").GetGuid();
+        var customerPartyId = (await GetJsonAsync(client, "/api/v1/directory/parties?partyType=Customer&role=Customer&page=1&pageSize=1")).GetProperty("items").EnumerateArray().First().GetProperty("id").GetGuid();
+        var priceListId = (await GetJsonAsync(client, $"/api/v1/pricing/price-lists?legalEntityId={AtlasEntity:D}")).EnumerateArray().Single(x => x.GetProperty("code").GetString() == "RETAIL").GetProperty("id").GetGuid();
+        using var cartResponse = await PostJsonAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP", customerPartyId });
+        var cartId = (await ReadJsonAsync(cartResponse)).GetProperty("id").GetGuid();
+        using var scanResponse = await PostJsonAsync(client, $"/api/v1/pos/carts/{cartId:D}/scan", new { skuOrBarcode = "EG-2-0001", quantity = 1m, legalEntityId = AtlasEntity, priceListId });
+        var total = (await ReadJsonAsync(scanResponse)).GetProperty("grandTotal").GetDecimal();
+        var idempotencyKey = $"pos-acceptance-credit-{Guid.CreateVersion7():N}";
+        using var checkout = await PostJsonAsync(client, $"/api/v1/pos/carts/{cartId:D}/checkout", new { idempotencyKey, tenders = new[] { new Modules.POS.TenderRequest("Credit", total) } });
+        Assert.Equal(HttpStatusCode.Accepted, checkout.StatusCode);
+        var body = await ReadJsonAsync(checkout);
+        Assert.Equal("Completed", body.GetProperty("state").GetString());
+        Assert.Equal("NotRequired", body.GetProperty("paymentState").GetString());
+        var checkoutId = body.GetProperty("checkoutId").GetGuid();
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_tender where tenant_id=$1 and checkout_id=$2 and method='Credit' and state='Accepted' and captured_amount=0", AtlasTenant, checkoutId));
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_invoicing.invoice where tenant_id=$1 and source_module='pos' and source_idempotency_key=$2 and lifecycle_state='Finalized'", AtlasTenant, $"pos-invoice:{idempotencyKey}"));
+        Assert.Equal(0L, await ScalarAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and source_type='POS' and source_reference=$2", AtlasTenant, checkoutId.ToString("D")));
     }
 
     [Fact]
@@ -367,6 +490,31 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         Assert.NotEqual(HttpStatusCode.OK, atlasRegisters.StatusCode);
     }
 
+    [Fact]
+    public async Task SeededCashierAndManagerPermissionsAreEnforcedByRuntimeApi()
+    {
+        var connectionString = Required("TODIR_DATABASE_CONNECTION");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var cashier = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(cashier, "pos-cashier@atlas.com", Required("SEED_DEFAULT_PASSWORD"), AtlasTenant);
+        using var cashierRegisterRead = await cashier.GetAsync($"/api/v1/pos/registers?legalEntityId={AtlasEntity:D}");
+        Assert.Equal(HttpStatusCode.OK, cashierRegisterRead.StatusCode);
+        using var cashierReportRead = await cashier.GetAsync($"/api/v1/pos/reports/sales?legalEntityId={AtlasEntity:D}&page=1&pageSize=10");
+        Assert.NotEqual(HttpStatusCode.OK, cashierReportRead.StatusCode);
+        var registerId = (await ReadJsonAsync(cashierRegisterRead)).EnumerateArray().First().GetProperty("id").GetGuid();
+        var sessionId = (await GetJsonAsync(cashier, $"/api/v1/pos/sessions/current?registerId={registerId:D}")).GetProperty("id").GetGuid();
+        using var cashierClose = await PostJsonAsync(cashier, $"/api/v1/pos/sessions/{sessionId:D}/start-close", new { });
+        Assert.NotEqual(HttpStatusCode.OK, cashierClose.StatusCode);
+
+        using var manager = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(manager, "pos-manager@atlas.com", Required("SEED_DEFAULT_PASSWORD"), AtlasTenant);
+        using var managerReportRead = await manager.GetAsync($"/api/v1/pos/reports/sales?legalEntityId={AtlasEntity:D}&page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, managerReportRead.StatusCode);
+    }
+
     private static string Required(string name) => Environment.GetEnvironmentVariable(name) ?? throw new InvalidOperationException($"Set {name} for POS acceptance tests.");
 
     private static async Task LoginAsync(HttpClient client, string email, string password, Guid tenantId)
@@ -407,6 +555,14 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         command.Parameters.AddWithValue(tenantId);
         command.Parameters.AddWithValue(value);
         return Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<decimal> DecimalScalarAsync(NpgsqlConnection connection, string sql, Guid tenantId, object value)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(tenantId);
+        command.Parameters.AddWithValue(value);
+        return Convert.ToDecimal(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static async Task<Guid> GuidScalarAsync(NpgsqlConnection connection, string sql, Guid tenantId, object value)
