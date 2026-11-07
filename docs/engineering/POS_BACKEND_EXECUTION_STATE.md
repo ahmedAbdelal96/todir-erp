@@ -8,7 +8,7 @@ Scope: Module 20 backend, PostgreSQL, API, Worker, cross-module contracts, secur
 - Status: IN PROGRESS
 - Branch: `dev`
 - Baseline: `674720d5ef10b9fbf4d8e10eae8994658a896597`
-- Last meaningful change: added branch/legal-entity resource authorization, register/session/cart ownership validation, provider-success payment boundaries, exchange scope checks, report-order indexes, and deterministic migration ordering for exchange forward-fixes.
+- Last meaningful change: added branch/legal-entity resource authorization, register/session/cart ownership validation, provider-success payment boundaries, exchange scope checks, report-order indexes, deterministic migration ordering for exchange forward-fixes, and opening-float cash movement initialization with expected-cash alignment.
 - Next executable action: complete the final focused backend gates, refresh local runtime evidence, then commit and push only the verified POS backend changes.
 - Evidence currently valid: fresh disposable PostgreSQL bootstrap applied 151 ordered scripts and development seed data for Atlas and Delta; the local runtime proved authenticated register access, branch-scoped denial, signed provider-success recovery with exactly one sale/tender/inventory issue/invoice and balanced journal, mixed-tender pending behavior with no premature cash side effect, concurrent checkout/return/offline idempotency behavior, and report queries using report-order indexes. The focused PostgreSQL POS integration gate is 3/3. Full PS00–PS41 certification remains open until the final test and operational evidence gates pass.
 
