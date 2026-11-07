@@ -7,10 +7,10 @@ Scope: Module 20 backend, PostgreSQL, API, Worker, cross-module contracts, secur
 
 - Status: IN PROGRESS
 - Branch: `dev`
-- Baseline: `e6d728815ef89f5c46979c4604d0cdc6c0c1cf83`
-- Last meaningful change: added bounded POS reports, preserved lot/serial references through checkout and returns, added customer credit-sale validation and receivable invoice completion, and expanded POS calculation tests to 5.
-- Next executable action: complete concurrency/security integration tests, fiscal/hardware seams, and final backend release gates.
-- Evidence still valid: disposable PostgreSQL runtime proved authenticated POS register access, a card checkout moving from provider action required to Completed through signed provider success and recovery, a cash checkout with a persisted Sale drawer movement and expected-cash update, bounded damaged and restock return flows, over-return rejection, and migration application for the POS sale-line UOM forward fix. Full M1 certification has not been granted.
+- Baseline: `25554ba0571e5d8a90bae2e77e8dbe9d46479d68`
+- Last meaningful change: added exchange orchestration and its tenant-RLS table, then corrected the forward migration so the runtime role can persist exchange groups.
+- Next executable action: continue with concurrency/security integration proof, fiscal/hardware seams, offline signature verification, and final backend release gates.
+- Evidence still valid: disposable PostgreSQL runtime proved authenticated POS register access, a card checkout moving from provider action required to Completed through signed provider success and recovery, cash checkout with a persisted Sale drawer movement and expected-cash update, bounded damaged and restock returns, over-return rejection, return credit notes, signed offline package/conflict resolution, mixed tender capture, customer credit sale, and a completed exchange with a persisted exchange group, return, replacement checkout, and invoice. Full M1 certification has not been granted.
 
 ## PS00–PS41 matrix
 
@@ -20,7 +20,7 @@ Scope: Module 20 backend, PostgreSQL, API, Worker, cross-module contracts, secur
 | PS01–PS04 | POS schema, register/session/cart, calculation seams | PARTIAL | `pos-schema.sql`, forced tenant RLS, runtime role proof, fine-grained route permissions, cash expected-balance locking, and API smoke; full invariant coverage remains |
 | PS05–PS08 | Catalog/Pricing/Tax validation and checkout state | PARTIAL | Active Catalog variant, Pricing resolution, and Tax calculation are invoked when authoritative line context is supplied; Tax snapshot is persisted on the line; complete checkout ownership is not implemented |
 | PS09–PS15 | Cash/card checkout, inventory/document/ledger/payment orchestration, recovery and split tender | PARTIAL | Stocked cash/card checkout, durable provider-success recovery, stable payment idempotency, UOM validation, source references, return credit notes, and mixed-tender capture are implemented; failure-injection breadth remains |
-| PS16–PS23 | Cash controls, returns/refunds/exchanges, lot/serial, customer/credit, overrides | PARTIAL | Cash expected-balance movements, close blockers/variance approval, quantity-safe return/restock recovery, cash/provider refund lifecycle, lot/serial references, customer credit validation, and discount overrides are implemented; exchanges remain |
+| PS16–PS23 | Cash controls, returns/refunds/exchanges, lot/serial, customer/credit, overrides | PARTIAL | Cash expected-balance movements, close blockers/variance approval, quantity-safe return/restock recovery, cash/provider refund lifecycle, lot/serial references, customer credit validation, discount overrides, and completed exchange orchestration are implemented; failure-injection breadth remains |
 | PS24–PS28 | Fiscal/hardware seams and offline package/sync server contracts | PARTIAL | Offline packages are versioned/expiring/signed and envelope replay validates package/register/device/sequence; conflict resolution is manager-authorized; fiscal and hardware contracts remain |
 | PS29–PS34 | Concurrency, reports, security, performance, migration/go-live, runbooks | PARTIAL | Forced RLS, bounded sales/return/report queries, and migration forward-fixes exist; concurrency, performance evidence, full authorization matrix, and operational evidence remain |
 | PS35–PS41 | API readiness, manager/finance/compliance/E2E/release gates | NOT COMPLETE | Only basic API/runtime smoke and 2 pure unit tests pass; required contract, integration, security, recovery, and release gates remain |

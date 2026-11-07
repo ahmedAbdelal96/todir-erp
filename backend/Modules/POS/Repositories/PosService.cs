@@ -457,6 +457,30 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         }
     }
 
+    public async Task<ExchangeResponse> CreateExchangeAsync(TenantId tenant, Guid actor, Guid membership, ExchangeRequest request, CancellationToken ct)
+    {
+        var returnId = await CreateReturnAsync(tenant, actor, request.Return, ct);
+        CheckoutResponse? checkout = null;
+        var state = "NeedsCompletion";
+        try
+        {
+            checkout = await CheckoutAsync(tenant, actor, membership, request.Checkout, ct);
+            state = string.Equals(checkout.State, "Completed", StringComparison.OrdinalIgnoreCase) ? "Completed" : "NeedsCompletion";
+        }
+        catch
+        {
+            state = "NeedsCompletion";
+        }
+        var exchangeId = Guid.CreateVersion7();
+        var difference = (checkout?.Total ?? 0m) - request.Return.Lines.Sum(line => line.Amount);
+        await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) =>
+        {
+            await using var insert = new NpgsqlCommand("insert into business_pos.pos_exchange_group(tenant_id,id,return_id,new_checkout_id,state,difference_amount,currency_code,created_by,created_at) values($1,$2,$3,$4,$5,$6,coalesce((select currency_code from business_pos.pos_checkout where tenant_id=$1 and id=$4),(select s.currency_code from business_pos.pos_return r join business_pos.pos_sale s on s.tenant_id=r.tenant_id and s.id=r.original_sale_id where r.tenant_id=$1 and r.id=$3)),$7,$8)", ctx.Connection, ctx.Transaction);
+            insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(exchangeId); insert.Parameters.AddWithValue(returnId); insert.Parameters.AddWithValue((object?)checkout?.CheckoutId ?? DBNull.Value); insert.Parameters.AddWithValue(state); insert.Parameters.AddWithValue(difference); insert.Parameters.AddWithValue(actor); insert.Parameters.AddWithValue(DateTimeOffset.UtcNow); await insert.ExecuteNonQueryAsync(token); return null;
+        }, ct);
+        return new(exchangeId, returnId, checkout?.CheckoutId, checkout?.SaleId, state, difference);
+    }
+
     private sealed record CreditNoteReturnSource(string State, Guid SaleId, string Reason, string Currency, Guid LegalEntityId, Guid InvoiceId, IReadOnlyList<CreditNoteReturnLine> Lines);
     private sealed record CreditNoteReturnLine(int LineNo, decimal Quantity);
 
