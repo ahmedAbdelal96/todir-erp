@@ -7,9 +7,9 @@ Scope: Module 20 backend, PostgreSQL, API, Worker, cross-module contracts, secur
 
 - Status: COMPLETE — backend-owned acceptance gates passed; frontend, physical-device, and statutory country acceptance remain outside this mission
 - Branch: `dev`
-- Baseline: `2093b50` plus the final POS closure changes in this working tree
+- Delivered commit: `a176870f787d9b4ad7af06036d0028e406e2fb97`
 - Last meaningful change: corrected double-counting of opening float in expected cash; made manager discount approvals one-time and audited; added audited manager variance and offline-conflict decisions; added branch-scoped runtime authorization, weighted quantity, provider-burst, offline-burst, and card-redaction evidence; and kept disposable acceptance data isolated from later tests.
-- Next executable action: commit and push the verified backend closure to `origin/dev`. Frontend, physical-device, country-specialist, and statutory hardware acceptance remain outside this backend mission.
+- Next executable action: none for the backend mission; the verified closure is pushed to `origin/dev`. Frontend, physical-device, country-specialist, and statutory hardware acceptance remain outside this backend mission.
 - Fresh evidence currently valid: disposable `pos_accept_cert_20261107aa` completed the 151-script bootstrap and Development seed, then passed all 15 POS acceptance tests after the final source change. The same final source passed Payments PostgreSQL 4/4, POS PostgreSQL 3/3, API composition 3/3, RabbitMQ 2/2, POS unit 15/15, architecture 21/21, backend build, formatting, and `git diff --check`.
 
 ## PS00–PS41 matrix
