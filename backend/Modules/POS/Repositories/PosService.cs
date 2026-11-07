@@ -17,6 +17,7 @@ namespace Modules.POS;
 public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource, ICatalogCapabilities catalog, IPricingCapabilities pricing, ITaxCapabilities tax, IPosPaymentCapabilities payments, IPosInvoicingCapabilities invoicing, IInvoiceComplianceSnapshotCapability snapshots, ISubledgerCapabilities subledger, ISalesInventoryCapabilities inventory, IQuantityConversion quantityConversion)
 {
     private static readonly string[] OfflineCapabilities = ["CashSale", "ReceiptPrint", "QueuedSync"];
+    private static readonly JsonSerializerOptions OfflineJsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<Guid> CreateManagerOverrideAsync(TenantId tenant, Guid actor, ManagerOverrideRequest request, CancellationToken ct)
     {
@@ -600,7 +601,83 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         return accepted.EnvelopeId;
     }
 
+    public async Task<OfflineCashSaleResponse> ProcessOfflineCashSaleAsync(TenantId tenant, Guid actor, Guid membership, Guid envelopeId, CancellationToken ct)
+    {
+        var envelope = await coordinator.ExecuteAsync<OfflineCashSaleEnvelope>(tenant, async (ctx, token) =>
+        {
+            await using var command = new NpgsqlCommand("select register_id,state,payload::text from business_pos.pos_offline_envelope where tenant_id=$1 and id=$2 for update", ctx.Connection, ctx.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(envelopeId);
+            await using var reader = await command.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token)) throw new ArgumentException("pos.offline_envelope_not_found");
+            var registerId = reader.GetGuid(0); var state = reader.GetString(1); var payload = reader.GetString(2); await reader.CloseAsync();
+            if (string.Equals(state, "Accepted", StringComparison.OrdinalIgnoreCase))
+                return new OfflineCashSaleEnvelope(registerId, state, payload);
+            if (string.Equals(state, "Processing", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("pos.offline_envelope_processing");
+            if (!string.Equals(state, "Received", StringComparison.OrdinalIgnoreCase) && !string.Equals(state, "NeedsReview", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("pos.offline_envelope_not_processable");
+            await using var update = new NpgsqlCommand("update business_pos.pos_offline_envelope set state='Processing',conflict_code=null,processed_at=null where tenant_id=$1 and id=$2", ctx.Connection, ctx.Transaction);
+            update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(envelopeId); await update.ExecuteNonQueryAsync(token);
+            return new OfflineCashSaleEnvelope(registerId, "Processing", payload);
+        }, ct);
+
+        OfflineCashSalePayload payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<OfflineCashSalePayload>(envelope.Payload, OfflineJsonOptions)
+                ?? throw new ArgumentException("pos.offline_cash_sale_invalid");
+            PosOfflineCashSalePolicy.Validate(payload);
+        }
+        catch
+        {
+            await MarkOfflineEnvelopeNeedsReviewAsync(tenant, envelopeId, "InvalidCashSalePayload", ct);
+            throw;
+        }
+
+        if (string.Equals(envelope.State, "Accepted", StringComparison.OrdinalIgnoreCase))
+        {
+            var existing = await ReadExistingCheckoutAsync(tenant, payload.IdempotencyKey, ct)
+                ?? throw new InvalidOperationException("pos.offline_checkout_missing");
+            return new(envelopeId, existing.Response, "Accepted");
+        }
+
+        try
+        {
+            await ValidateOfflineSessionAsync(tenant, envelope.RegisterId, payload.SessionId, ct);
+            var existing = await ReadExistingCheckoutAsync(tenant, payload.IdempotencyKey, ct);
+            CheckoutResponse checkout;
+            if (existing is not null)
+            {
+                checkout = existing.Value.Response;
+            }
+            else
+            {
+                var cart = await CreateCartAsync(tenant, actor, new CreateCartRequest(payload.SessionId, payload.CurrencyCode, payload.CustomerPartyId), ct);
+                foreach (var line in payload.Lines)
+                {
+                    await AddCartLineAsync(tenant, cart.Id, new AddCartLineRequest(line.VariantId, line.Description, line.UomCode, line.Quantity,
+                        line.UnitPrice, line.TaxAmount, line.DiscountAmount, cart.Version, line.LegalEntityId, line.ProductTemplateId,
+                        line.UnitOfMeasureId, line.PriceListId, line.PricingDate, line.LotId, line.SerialId), ct);
+                    cart = await GetCartAsync(tenant, cart.Id, ct);
+                }
+
+                checkout = await CheckoutAsync(tenant, actor, membership, new CheckoutRequest(cart.Id, payload.IdempotencyKey,
+                    [new TenderRequest("Cash", cart.GrandTotal, PaymentAccountId: payload.PaymentAccountId)]), ct);
+            }
+
+            if (!string.Equals(checkout.State, "Completed", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("pos.offline_checkout_not_completed");
+            await MarkOfflineEnvelopeAcceptedAsync(tenant, envelopeId, ct);
+            return new(envelopeId, checkout, "Accepted");
+        }
+        catch
+        {
+            await MarkOfflineEnvelopeNeedsReviewAsync(tenant, envelopeId, "CashSaleProcessingFailed", ct);
+            throw;
+        }
+    }
+
     private sealed record OfflineEnvelopeAcceptance(Guid EnvelopeId, bool Conflict);
+    private sealed record OfflineCashSaleEnvelope(Guid RegisterId, string State, string Payload);
 
     public async Task<object> ListSalesAsync(TenantId tenant, Guid entityId, DateOnly? from, DateOnly? to, int page, int pageSize, CancellationToken ct)
     {
@@ -680,6 +757,40 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             return null;
         }, ct);
     }
+
+    private async Task ValidateOfflineSessionAsync(TenantId tenant, Guid registerId, Guid sessionId, CancellationToken ct)
+    {
+        await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) =>
+        {
+            await using var command = new NpgsqlCommand("select 1 from business_pos.pos_session where tenant_id=$1 and id=$2 and register_id=$3 and status='Open'", ctx.Connection, ctx.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(sessionId); command.Parameters.AddWithValue(registerId);
+            if (await command.ExecuteScalarAsync(token) is null) throw new InvalidOperationException("pos.offline_session_not_open");
+            return null;
+        }, ct);
+    }
+
+    private async Task MarkOfflineEnvelopeAcceptedAsync(TenantId tenant, Guid envelopeId, CancellationToken ct)
+    {
+        await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) =>
+        {
+            await using var command = new NpgsqlCommand("update business_pos.pos_offline_envelope set state='Accepted',processed_at=$3 where tenant_id=$1 and id=$2 and state='Processing'", ctx.Connection, ctx.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(envelopeId); command.Parameters.AddWithValue(DateTimeOffset.UtcNow);
+            if (await command.ExecuteNonQueryAsync(token) != 1) throw new InvalidOperationException("pos.offline_envelope_state_conflict");
+            return null;
+        }, ct);
+    }
+
+    private async Task MarkOfflineEnvelopeNeedsReviewAsync(TenantId tenant, Guid envelopeId, string code, CancellationToken ct)
+    {
+        await coordinator.ExecuteAsync<object?>(tenant, async (ctx, token) =>
+        {
+            await using var command = new NpgsqlCommand("update business_pos.pos_offline_envelope set state='NeedsReview',conflict_code=$3,processed_at=$4 where tenant_id=$1 and id=$2 and state='Processing'", ctx.Connection, ctx.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(envelopeId); command.Parameters.AddWithValue(code); command.Parameters.AddWithValue(DateTimeOffset.UtcNow);
+            await command.ExecuteNonQueryAsync(token);
+            return null;
+        }, ct);
+    }
+
     private static async Task<NpgsqlTransaction> BeginTenantAsync(NpgsqlConnection connection, TenantId tenant, CancellationToken ct)
     { var tx=await connection.BeginTransactionAsync(ct);await using var command=new NpgsqlCommand("select set_config('app.tenant_id',$1,true)",connection,tx);command.Parameters.AddWithValue(tenant.Value.ToString("D"));await command.ExecuteNonQueryAsync(ct);return tx; }
     private static Task<string> PayloadHashAsync(CheckoutRequest request) => Task.FromResult(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request)))));

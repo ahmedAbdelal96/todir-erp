@@ -35,4 +35,19 @@ public sealed class PosOfflineSecurityTests
             "{\"total\":10}",
             signature));
     }
+
+    [Fact]
+    public void OfflineCashSaleRequiresAPositiveLineAndPaymentAccount()
+    {
+        var request = new Modules.POS.OfflineCashSalePayload(
+            1,
+            "CashSale",
+            Guid.NewGuid(),
+            "EGP",
+            Guid.Empty,
+            "offline-sale-1",
+            []);
+
+        Assert.Throws<ArgumentException>(() => Modules.POS.PosOfflineCashSalePolicy.Validate(request));
+    }
 }
