@@ -113,7 +113,7 @@ export function PosCheckoutWorkspace({
   const cashierDisplayName =
     user?.displayName ||
     user?.email ||
-    (session ? t("workspace.cashierOnDuty", "أمين الصندوق المناوب") : "Cashier");
+    t("workspace.cashierOnDuty", "أمين الصندوق المناوب");
 
   // Mutations
   const createCartMutation = useCreateCartMutation();
@@ -141,6 +141,12 @@ export function PosCheckoutWorkspace({
 
   const activeTerminal = terminalsData?.find((t) => t.status === "Ready") || terminalsData?.[0];
   const dynamicDeviceIdentity = activeTerminal?.deviceIdentity;
+
+  React.useEffect(() => {
+    if (dynamicDeviceIdentity && typeof window !== "undefined") {
+      window.sessionStorage.setItem("erp.pos.deviceIdentity", dynamicDeviceIdentity);
+    }
+  }, [dynamicDeviceIdentity]);
 
   // Offline Hook with dynamic device identity
   const {
@@ -967,19 +973,19 @@ export function PosCheckoutWorkspace({
         </div>
       )}
 
-      {/* Main Responsive Layout: Auto-wrapping grid */}
+      {/* Main Responsive Layout: Cart Table + Totals Sidebar */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 22rem), 1fr))",
+          display: "flex",
+          flexWrap: "wrap",
           gap: "1.25rem",
           alignItems: "start",
           maxWidth: "100%",
           boxSizing: "border-box",
         }}
       >
-        {/* Cart Lines Table Panel */}
-        <div style={{ minWidth: 0, maxWidth: "100%", overflowX: "auto" }}>
+        {/* Cart Lines Table Panel: expansive primary workspace */}
+        <div style={{ flex: "1 1 36rem", minWidth: 0, maxWidth: "100%", overflowX: "auto" }}>
           <PosCartLinesTable
             lines={lines}
             currencyCode={register.currencyCode}
@@ -990,8 +996,8 @@ export function PosCheckoutWorkspace({
           />
         </div>
 
-        {/* Cart Totals & Checkout Panel */}
-        <div style={{ minWidth: 0, maxWidth: "100%" }}>
+        {/* Cart Totals & Checkout Panel: compact dedicated sidebar */}
+        <div style={{ flex: "0 0 21rem", minWidth: "18rem", maxWidth: "100%" }}>
           <PosCartTotalsPanel
             subtotal={subtotal}
             taxTotal={taxTotal}

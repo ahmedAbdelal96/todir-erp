@@ -144,11 +144,11 @@ export function ReceiptModal({
           style={{
             background: "#ffffff",
             color: "#1e293b",
-            padding: "1.5rem",
-            borderRadius: "var(--radius-sm)",
-            border: "1px dashed #cbd5e1",
-            fontFamily: "monospace, system-ui, sans-serif",
-            maxWidth: "24rem",
+            padding: "1.75rem 1.5rem",
+            borderRadius: "var(--radius-md)",
+            border: "1px dashed #94a3b8",
+            fontFamily: "system-ui, -apple-system, sans-serif",
+            maxWidth: "26rem",
             margin: "0 auto",
             boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)",
             boxSizing: "border-box",
@@ -156,57 +156,58 @@ export function ReceiptModal({
           }}
         >
           {/* Header */}
-          <div style={{ textAlign: "center", borderBottom: "1px dashed #94a3b8", paddingBottom: "0.75rem", marginBottom: "0.75rem" }}>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: 800, margin: "0 0 0.25rem" }}>
+          <div style={{ textAlign: "center", borderBottom: "1px dashed #cbd5e1", paddingBottom: "1rem", marginBottom: "1rem" }}>
+            <h2 style={{ fontSize: "1.25rem", fontWeight: 800, margin: "0 0 0.35rem", color: "#0f172a" }}>
               {t("receipt.storeName")}
             </h2>
-            <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+            <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#475569" }}>
               {t("receipt.taxInvoice")}
             </div>
-            <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.25rem" }}>
+            <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.35rem" }}>
               <BidiText>{authoritativeBusinessDate || new Date().toISOString().slice(0, 10)}</BidiText>
             </div>
           </div>
 
           {/* Metadata */}
-          <div style={{ fontSize: "0.75rem", marginBottom: "0.75rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.25rem" }}>
+          <div style={{ fontSize: "0.8125rem", marginBottom: "1rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", backgroundColor: "#f8fafc", padding: "0.625rem 0.75rem", borderRadius: "var(--radius-sm)", border: "1px solid #e2e8f0" }}>
             <div>
-              <span>{t("receipt.register")}: </span>
+              <span style={{ color: "#64748b" }}>{t("receipt.register")}: </span>
               <strong><BidiText>{registerCode}</BidiText></strong>
             </div>
             <div>
-              <span>{t("receipt.cashier")}: </span>
-              <strong><BidiText>{cashierName}</BidiText></strong>
+              <span style={{ color: "#64748b" }}>{t("receipt.cashier")}: </span>
+              <strong><BidiText>{cashierName || t("workspace.cashierOnDuty", "أمين الصندوق المناوب")}</BidiText></strong>
             </div>
-            <div style={{ gridColumn: "span 2" }}>
-              <span>{t("receipt.receiptNumber", "رقم الإيصال")}: </span>
-              <strong data-testid="pos-receipt-number"><BidiText>{receiptNumber}</BidiText></strong>
+            <div style={{ gridColumn: "span 2", borderTop: "1px solid #e2e8f0", paddingTop: "0.35rem" }}>
+              <span style={{ color: "#64748b" }}>{t("receipt.receiptNumber", "رقم الإيصال")}: </span>
+              <strong data-testid="pos-receipt-number" style={{ color: "#0f172a" }}><BidiText>{receiptNumber}</BidiText></strong>
             </div>
           </div>
 
           {/* Items */}
-          <table style={{ width: "100%", fontSize: "0.75rem", borderCollapse: "collapse", marginBottom: "0.75rem" }}>
+          <table style={{ width: "100%", fontSize: "0.8125rem", borderCollapse: "collapse", marginBottom: "1rem" }}>
             <thead>
-              <tr style={{ borderBottom: "1px solid #cbd5e1", textAlign: "start" }}>
-                <th style={{ padding: "0.25rem 0", textAlign: "start" }}>{t("receipt.item")}</th>
-                <th style={{ padding: "0.25rem 0", textAlign: "center" }}>{t("receipt.qty")}</th>
-                <th style={{ padding: "0.25rem 0", textAlign: "end" }}>{t("receipt.price")}</th>
-                <th style={{ padding: "0.25rem 0", textAlign: "end" }}>{t("receipt.total")}</th>
+              <tr style={{ borderBottom: "1px solid #cbd5e1", textAlign: "start", color: "#475569" }}>
+                <th style={{ padding: "0.4rem 0.25rem", textAlign: "start" }}>{t("receipt.item")}</th>
+                <th style={{ padding: "0.4rem 0.25rem", textAlign: "center", width: "3rem" }}>{t("receipt.qty")}</th>
+                <th style={{ padding: "0.4rem 0.25rem", textAlign: "end", width: "5rem" }}>{t("receipt.price")}</th>
+                <th style={{ padding: "0.4rem 0.25rem", textAlign: "end", width: "5.5rem" }}>{t("receipt.total")}</th>
               </tr>
             </thead>
             <tbody>
               {effectiveLines.map((line) => (
                 <tr key={line.id} style={{ borderBottom: "1px dashed #e2e8f0" }}>
-                  <td style={{ padding: "0.35rem 0", textAlign: "start" }}>
-                    <BidiText>{line.description}</BidiText>
+                  <td style={{ padding: "0.5rem 0.25rem", textAlign: "start", wordBreak: "break-word" }}>
+                    <div style={{ fontWeight: 600, color: "#1e293b" }}><BidiText>{line.description}</BidiText></div>
+                    {line.uomCode && <div style={{ fontSize: "0.75rem", color: "#64748b" }}>({line.uomCode})</div>}
                   </td>
-                  <td style={{ padding: "0.35rem 0", textAlign: "center" }}>
+                  <td style={{ padding: "0.5rem 0.25rem", textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
                     <BidiText>{line.quantity}</BidiText>
                   </td>
-                  <td style={{ padding: "0.35rem 0", textAlign: "end" }}>
+                  <td style={{ padding: "0.5rem 0.25rem", textAlign: "end", fontVariantNumeric: "tabular-nums" }}>
                     <BidiText>{fromScaledBigInt(toScaledBigInt(line.unitPrice), 2)}</BidiText>
                   </td>
-                  <td style={{ padding: "0.35rem 0", textAlign: "end", fontWeight: 600 }}>
+                  <td style={{ padding: "0.5rem 0.25rem", textAlign: "end", fontWeight: 600, color: "#0f172a", fontVariantNumeric: "tabular-nums" }}>
                     <BidiText>{fromScaledBigInt(toScaledBigInt(line.lineTotal), 2)}</BidiText>
                   </td>
                 </tr>
@@ -215,31 +216,45 @@ export function ReceiptModal({
           </table>
 
           {/* Totals */}
-          <div style={{ borderTop: "1px dashed #94a3b8", paddingTop: "0.5rem", fontSize: "0.8125rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <div style={{ borderTop: "1px dashed #94a3b8", paddingTop: "0.75rem", fontSize: "0.875rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
               <span>{t("receipt.subtotal")}:</span>
-              <span><BidiText>{fromScaledBigInt(toScaledBigInt(effectiveSubtotal), 2)} {currencyCode}</BidiText></span>
+              <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500 }}><BidiText>{fromScaledBigInt(toScaledBigInt(effectiveSubtotal), 2)} {currencyCode}</BidiText></span>
             </div>
             {effectiveDiscountTotal > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", color: "#16a34a" }}>
                 <span>{t("receipt.discount")}:</span>
-                <span>-<BidiText>{fromScaledBigInt(toScaledBigInt(effectiveDiscountTotal), 2)} {currencyCode}</BidiText></span>
+                <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>-<BidiText>{fromScaledBigInt(toScaledBigInt(effectiveDiscountTotal), 2)} {currencyCode}</BidiText></span>
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
               <span>{t("receipt.vat")}:</span>
-              <span><BidiText>{fromScaledBigInt(toScaledBigInt(effectiveTaxTotal), 2)} {currencyCode}</BidiText></span>
+              <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500 }}><BidiText>{fromScaledBigInt(toScaledBigInt(effectiveTaxTotal), 2)} {currencyCode}</BidiText></span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 800, marginTop: "0.25rem", borderTop: "1px solid #1e293b", paddingTop: "0.25rem" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: "1.0625rem",
+                fontWeight: 800,
+                marginTop: "0.5rem",
+                backgroundColor: "#f1f5f9",
+                padding: "0.625rem 0.75rem",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid #cbd5e1",
+                color: "#0f172a",
+              }}
+            >
               <span>{t("receipt.grandTotal")}:</span>
-              <span data-testid="pos-receipt-total"><BidiText>{fromScaledBigInt(toScaledBigInt(effectiveGrandTotal), 2)} {currencyCode}</BidiText></span>
+              <span data-testid="pos-receipt-total" style={{ fontVariantNumeric: "tabular-nums" }}><BidiText>{fromScaledBigInt(toScaledBigInt(effectiveGrandTotal), 2)} {currencyCode}</BidiText></span>
             </div>
           </div>
 
           {/* Footer Thank You */}
-          <div style={{ textAlign: "center", marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px dashed #94a3b8", fontSize: "0.75rem", color: "#64748b" }}>
-            <div>{t("receipt.thankYou")}</div>
-            <div style={{ marginTop: "0.25rem", fontWeight: 600 }}>{t("receipt.systemVersion")}</div>
+          <div style={{ textAlign: "center", marginTop: "1.25rem", paddingTop: "0.75rem", borderTop: "1px dashed #cbd5e1", fontSize: "0.75rem", color: "#64748b" }}>
+            <div style={{ fontWeight: 500 }}>{t("receipt.thankYou")}</div>
+            <div style={{ marginTop: "0.25rem", color: "#94a3b8" }}>{t("receipt.systemVersion")}</div>
           </div>
         </div>
 

@@ -68,4 +68,44 @@ public sealed class PosOfflineSecurityTests
 
         Modules.POS.PosOfflineCashSalePolicy.Validate(request);
     }
+
+    [Fact]
+    public void EnvelopeSignatureRejectsTamperedPayload()
+    {
+        var registerId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var signature = Modules.POS.PosOfflineSecurity.SignEnvelope(
+            "pkg-secret-123",
+            registerId,
+            "term-1",
+            10,
+            "idem-10",
+            2,
+            "{\"price\":100.00}");
+
+        // Untampered must pass
+        Assert.True(Modules.POS.PosOfflineSecurity.VerifyEnvelope(
+            "pkg-secret-123", registerId, "term-1", 10, "idem-10", 2, "{\"price\":100.00}", signature));
+
+        // Tampered price must fail verification
+        Assert.False(Modules.POS.PosOfflineSecurity.VerifyEnvelope(
+            "pkg-secret-123", registerId, "term-1", 10, "idem-10", 2, "{\"price\":10.00}", signature));
+    }
+
+    [Fact]
+    public void EnvelopeSignatureRejectsTamperedDevice()
+    {
+        var registerId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var signature = Modules.POS.PosOfflineSecurity.SignEnvelope(
+            "pkg-secret-123",
+            registerId,
+            "term-authorized",
+            10,
+            "idem-10",
+            2,
+            "{\"item\":\"valid\"}");
+
+        // Tampered device identity must fail verification
+        Assert.False(Modules.POS.PosOfflineSecurity.VerifyEnvelope(
+            "pkg-secret-123", registerId, "term-rogue", 10, "idem-10", 2, "{\"item\":\"valid\"}", signature));
+    }
 }

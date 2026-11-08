@@ -16,6 +16,12 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
   const activeTerminal = terminalsData?.find((t) => t.status === "Ready") || terminalsData?.[0];
   const dynamicDeviceIdentity = activeTerminal?.deviceIdentity;
 
+  React.useEffect(() => {
+    if (dynamicDeviceIdentity && typeof window !== "undefined") {
+      window.sessionStorage.setItem("erp.pos.deviceIdentity", dynamicDeviceIdentity);
+    }
+  }, [dynamicDeviceIdentity]);
+
   const {
     isOnline,
     pendingSyncCount,
@@ -79,7 +85,7 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
           <Button
             variant="secondary"
             onClick={handleDownload}
-            isDisabled={isDownloading || !isOnline}
+            isDisabled={isDownloading || !isOnline || !dynamicDeviceIdentity}
           >
             {isDownloading ? t("common.downloading") : t("offline.downloadPackage")}
           </Button>

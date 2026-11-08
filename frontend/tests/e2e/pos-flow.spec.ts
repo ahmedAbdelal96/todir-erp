@@ -476,6 +476,34 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
       await expect(returnModal).toBeVisible();
       await expect(returnModal).toContainText(/تسجيل مرتجع مبيعات|Create Sales Return/i);
 
+      // Select an actual completed sale from recent sales dropdown
+      const saleSelect = returnModal.locator('select').first();
+      if (await saleSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const saleOptions = await saleSelect.locator('option').all();
+        if (saleOptions.length > 1) {
+          const firstSaleVal = await saleOptions[1].getAttribute('value');
+          if (firstSaleVal) {
+            await saleSelect.selectOption(firstSaleVal);
+            await page.waitForTimeout(600);
+          }
+        }
+      }
+
+      // Assert that original sale lines appear and select line
+      const lineSelect = returnModal.locator('select').nth(1);
+      if (await lineSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const lineOptions = await lineSelect.locator('option').all();
+        if (lineOptions.length > 0) {
+          const firstLineVal = await lineOptions[0].getAttribute('value');
+          if (firstLineVal) await lineSelect.selectOption(firstLineVal);
+        }
+      }
+
+      // Assert that authoritative refundable amount is displayed
+      const refundDisplay = returnModal.locator('text=/المبلغ المسترد|المبلغ المالي/i');
+      await expect(refundDisplay).toBeVisible({ timeout: 3000 });
+
+      // Capture screenshot with active original sale line and authoritative refund details
       await captureScreenshot(page, '11-pos-create-return-modal');
 
       await returnModal.getByRole('button', { name: /إلغاء|Cancel/i }).click();
@@ -494,8 +522,11 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     await expect(page.getByRole('heading', { name: /حالة المزامنة|المزامنة والوضع غير المتصل/i })).toBeVisible();
     const downloadBtn = page.getByRole('button', { name: /تنزيل حزمة البيانات|Download Package/i });
     await expect(downloadBtn).toBeVisible();
+    await expect(downloadBtn).toBeEnabled({ timeout: 10000 });
     await downloadBtn.click();
-    await page.waitForTimeout(1200);
+
+    // Wait for download success indicator in UI
+    await expect(page.locator('text=/صالحة حتى|حزمة البيانات صالحة|Downloaded|تم تنزيل الحزمة/i')).toBeVisible({ timeout: 10000 });
 
     // Verify IndexedDB database todir_pos_offline_v2 is initialized
     const hasIndexedDb = await page.evaluate(async () => {
@@ -506,27 +537,32 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     expect(hasIndexedDb).toBe(true);
 
     // Verify package cached in IndexedDB with valid signature and catalog items
-    const packageInfo = await page.evaluate(async () => {
-      return new Promise<any>((resolve) => {
-        const req = window.indexedDB.open('todir_pos_offline_v2', 2);
-        req.onsuccess = () => {
-          const db = req.result;
-          if (!db.objectStoreNames.contains('offline_packages')) {
-            resolve(null);
-            return;
-          }
-          const tx = db.transaction('offline_packages', 'readonly');
-          const store = tx.objectStore('offline_packages');
-          const allReq = store.getAll();
-          allReq.onsuccess = () => {
-            const list = allReq.result || [];
-            resolve(list[0] || null);
+    let packageInfo: any = null;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      packageInfo = await page.evaluate(async () => {
+        return new Promise<any>((resolve) => {
+          const req = window.indexedDB.open('todir_pos_offline_v2', 2);
+          req.onsuccess = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains('offline_packages')) {
+              resolve(null);
+              return;
+            }
+            const tx = db.transaction('offline_packages', 'readonly');
+            const store = tx.objectStore('offline_packages');
+            const allReq = store.getAll();
+            allReq.onsuccess = () => {
+              const list = allReq.result || [];
+              resolve(list[0] || null);
+            };
+            allReq.onerror = () => resolve(null);
           };
-          allReq.onerror = () => resolve(null);
-        };
-        req.onerror = () => resolve(null);
+          req.onerror = () => resolve(null);
+        });
       });
-    });
+      if (packageInfo) break;
+      await page.waitForTimeout(400);
+    }
     expect(packageInfo).not.toBeNull();
     if (packageInfo) {
       expect(packageInfo.signature).toBeDefined();
@@ -615,30 +651,390 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     await page.setViewportSize({ width: 1280, height: 800 });
     await ensureAuthenticated(page);
 
-    // Verify backend security: Tampered signature rejection
-    const tamperedResult = await page.evaluate(async () => {
-      try {
-        const res = await fetch('/api/pos/offline/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            registerId: '00000000-0000-0000-0000-000000000001',
-            deviceIdentity: 'POS-TERM-01',
-            sourceSequence: 9999,
-            idempotencyKey: 'tampered-test-key',
-            packageVersion: 1,
-            payload: JSON.stringify({ schemaVersion: 1, type: 'CashSale' }),
-            signature: '0000000000000000000000000000000000000000000000000000000000000000',
-          }),
-        });
-        return { status: res.status };
-      } catch (e: any) {
-        return { error: e.message };
-      }
+    const csrfRes = await page.request.get('/api/v1/auth/csrf');
+    const { token: csrfToken } = await csrfRes.json();
+
+    // 1. Resolve registered register and terminal from live authenticated context
+    const legalEntityId = await page.evaluate(() => window.sessionStorage.getItem('erp.current.legalEntityId') || '');
+    const registersRes = await page.request.get(`/api/v1/pos/registers?legalEntityId=${legalEntityId}`);
+    expect(registersRes.status()).toBe(200);
+    const registers = await registersRes.json();
+    expect(registers.length).toBeGreaterThan(0);
+    const activeRegister = registers[0];
+
+    const terminalsRes = await page.request.get(`/api/v1/pos/registers/${activeRegister.id}/terminals`);
+    expect(terminalsRes.status()).toBe(200);
+    const terminals = await terminalsRes.json();
+    const activeTerminal = terminals.find((t: any) => t.status === 'Ready') || terminals[0] || { deviceIdentity: 'seed-terminal-atlas-trading' };
+
+    // 2. Download valid signed offline package
+    const pkgRes = await page.request.get(`/api/v1/pos/offline/package?registerId=${activeRegister.id}&deviceIdentity=${encodeURIComponent(activeTerminal.deviceIdentity)}`);
+    expect(pkgRes.status()).toBe(200);
+    const pkg = await pkgRes.json();
+    expect(pkg.signature).toBeTruthy();
+    expect(pkg.version).toBeGreaterThan(0);
+
+    const parsedPkg = JSON.parse(pkg.payload);
+    const testItem = parsedPkg.items && (parsedPkg.items.find((i: any) => i.sku === 'EG-2-0001') || parsedPkg.items[0]);
+    expect(testItem).toBeTruthy();
+    expect(testItem.unitPrice).toBeGreaterThan(0);
+
+    // 3. Resolve active session and payment account
+    const sessionRes = await page.request.get(`/api/v1/pos/sessions/current?registerId=${activeRegister.id}`);
+    expect(sessionRes.status()).toBe(200);
+    const sessionData = await sessionRes.json();
+
+    const paymentAccountsRes = await page.request.get(`/api/v1/payments/legal-entities/${legalEntityId}/accounts`);
+    expect(paymentAccountsRes.status()).toBe(200);
+    const paymentAccounts = await paymentAccountsRes.json();
+    const paymentAccountId = paymentAccounts.find((a: any) => a.accountType === 'Cashbox' || a.type === 'Cashbox')?.id || paymentAccounts[0]?.id;
+    expect(paymentAccountId).toBeTruthy();
+
+    const validPayload = {
+      schemaVersion: 1,
+      type: 'CashSale',
+      sessionId: sessionData.id,
+      currencyCode: activeRegister.currencyCode || 'EGP',
+      paymentAccountId,
+      idempotencyKey: `sec-valid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      customerPartyId: null,
+      lines: [{
+        variantId: testItem.variantId,
+        description: testItem.displayName,
+        uomCode: testItem.uomCode,
+        quantity: 1,
+        unitPrice: testItem.unitPrice,
+        taxAmount: testItem.taxAmount || 0,
+        discountAmount: 0,
+        legalEntityId: parsedPkg.legalEntityId,
+        productTemplateId: testItem.productTemplateId,
+        unitOfMeasureId: testItem.unitOfMeasureId,
+        priceListId: parsedPkg.priceListId,
+        pricingDate: new Date().toISOString().slice(0, 10),
+      }],
+    };
+    const validPayloadStr = JSON.stringify(validPayload);
+
+    // 4. Compute valid envelope signature using Web Crypto HMAC-SHA256
+    const validSig = await page.evaluate(async ({ pkgKey, regId, devId, seq, idemKey, ver, payload }) => {
+      const canonical = [regId, devId.trim(), String(seq), idemKey.trim(), String(ver), payload].join('|');
+      const key = await window.crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(pkgKey),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const sigBuffer = await window.crypto.subtle.sign('HMAC', key, new TextEncoder().encode(canonical));
+      return Array.from(new Uint8Array(sigBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }, {
+      pkgKey: pkg.signature,
+      regId: activeRegister.id,
+      devId: activeTerminal.deviceIdentity,
+      seq: 901,
+      idemKey: validPayload.idempotencyKey,
+      ver: pkg.version,
+      payload: validPayloadStr,
     });
 
-    // Tampered signature MUST fail closed with HTTP >= 400
-    expect(tamperedResult.status).toBeGreaterThanOrEqual(400);
+    // 5. Submit valid signed envelope to real authenticated endpoint
+    const validSyncRes = await page.request.post('/api/v1/pos/offline/sync', {
+      headers: { 'X-CSRF-TOKEN': csrfToken },
+      data: {
+        registerId: activeRegister.id,
+        deviceIdentity: activeTerminal.deviceIdentity,
+        sourceSequence: 901,
+        idempotencyKey: validPayload.idempotencyKey,
+        packageVersion: pkg.version,
+        payload: validPayloadStr,
+        signature: validSig,
+      },
+    });
+    expect(validSyncRes.status()).toBe(202);
+
+    // 6. Test Tampered Signature: MUST fail closed with 400 Bad Request, NOT 404 or 401
+    const tamperedSig = '0000000000000000000000000000000000000000000000000000000000000000';
+    const tamperedSyncRes = await page.request.post('/api/v1/pos/offline/sync', {
+      headers: { 'X-CSRF-TOKEN': csrfToken },
+      data: {
+        registerId: activeRegister.id,
+        deviceIdentity: activeTerminal.deviceIdentity,
+        sourceSequence: 902,
+        idempotencyKey: `sec-tampered-${Date.now()}`,
+        packageVersion: pkg.version,
+        payload: validPayloadStr,
+        signature: tamperedSig,
+      },
+    });
+    expect(tamperedSyncRes.status()).toBe(400);
+    expect(tamperedSyncRes.status()).not.toBe(404);
+    expect(tamperedSyncRes.status()).not.toBe(401);
+    const tamperedBody = await tamperedSyncRes.json();
+    expect(JSON.stringify(tamperedBody)).toContain('pos.offline_signature_invalid');
+
+    // 7. Test Rogue Device: MUST fail closed with 400 Bad Request
+    const rogueDevRes = await page.request.post('/api/v1/pos/offline/sync', {
+      headers: { 'X-CSRF-TOKEN': csrfToken },
+      data: {
+        registerId: activeRegister.id,
+        deviceIdentity: 'unauthorized-rogue-device',
+        sourceSequence: 903,
+        idempotencyKey: `sec-rogue-${Date.now()}`,
+        packageVersion: pkg.version,
+        payload: validPayloadStr,
+        signature: validSig,
+      },
+    });
+    expect(rogueDevRes.status()).toBe(400);
+    expect(rogueDevRes.status()).not.toBe(404);
+    expect(rogueDevRes.status()).not.toBe(401);
+  });
+
+  test('16. Offline Economic Completion, Idempotency & Tamper Recovery Journey', async () => {
+    const page = sharedPage;
+    await ensureAuthenticated(page);
+
+    const csrfRes = await page.request.get('/api/v1/auth/csrf');
+    const { token: csrfToken } = await csrfRes.json();
+
+    const legalEntityId = await page.evaluate(() => window.sessionStorage.getItem('erp.current.legalEntityId') || '');
+    const registersRes = await page.request.get(`/api/v1/pos/registers?legalEntityId=${legalEntityId}`);
+    const registers = await registersRes.json();
+    const activeRegister = registers[0];
+
+    const terminalsRes = await page.request.get(`/api/v1/pos/registers/${activeRegister.id}/terminals`);
+    const terminals = await terminalsRes.json();
+    const activeTerminal = terminals.find((t: any) => t.status === 'Ready') || terminals[0] || { deviceIdentity: 'seed-terminal-atlas-trading' };
+
+    // 1. Download authoritative offline package
+    const pkgRes = await page.request.get(`/api/v1/pos/offline/package?registerId=${activeRegister.id}&deviceIdentity=${encodeURIComponent(activeTerminal.deviceIdentity)}`);
+    expect(pkgRes.status()).toBe(200);
+    const pkg = await pkgRes.json();
+    const parsedPkg = JSON.parse(pkg.payload);
+    const testItem = parsedPkg.items && (parsedPkg.items.find((i: any) => i.sku === 'EG-2-0001') || parsedPkg.items[0]);
+    const baseSeq = Math.floor(Date.now() / 1000) % 1000000;
+
+    const sessionRes = await page.request.get(`/api/v1/pos/sessions/current?registerId=${activeRegister.id}`);
+    const sessionData = await sessionRes.json();
+
+    const paymentAccountsRes = await page.request.get(`/api/v1/payments/legal-entities/${legalEntityId}/accounts`);
+    const paymentAccounts = await paymentAccountsRes.json();
+    const paymentAccountId = paymentAccounts.find((a: any) => a.accountType === 'Cashbox' || a.type === 'Cashbox')?.id || paymentAccounts[0]?.id;
+
+    // 2. Create permitted offline cash sale payload
+    const offlineIdemKey = `e2e-offline-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const offlineSalePayload = {
+      schemaVersion: 1,
+      type: 'CashSale',
+      sessionId: sessionData.id,
+      currencyCode: activeRegister.currencyCode || 'EGP',
+      paymentAccountId,
+      idempotencyKey: offlineIdemKey,
+      customerPartyId: '09f8cc1f-a29c-135a-bdb2-794201268bd0',
+      lines: [{
+        variantId: testItem.variantId,
+        description: testItem.displayName,
+        uomCode: testItem.uomCode,
+        quantity: 1,
+        unitPrice: testItem.unitPrice,
+        taxAmount: testItem.taxAmount || 0,
+        discountAmount: 0,
+        legalEntityId: parsedPkg.legalEntityId,
+        productTemplateId: testItem.productTemplateId,
+        unitOfMeasureId: testItem.unitOfMeasureId,
+        priceListId: parsedPkg.priceListId,
+        pricingDate: new Date().toISOString().slice(0, 10),
+      }],
+    };
+    const offlinePayloadStr = JSON.stringify(offlineSalePayload);
+
+    // 3. Compute cryptographic envelope signature
+    const sig = await page.evaluate(async ({ pkgKey, regId, devId, seq, idemKey, ver, payload }) => {
+      const canonical = [regId, devId.trim(), String(seq), idemKey.trim(), String(ver), payload].join('|');
+      const key = await window.crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(pkgKey),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const sigBuffer = await window.crypto.subtle.sign('HMAC', key, new TextEncoder().encode(canonical));
+      return Array.from(new Uint8Array(sigBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }, {
+      pkgKey: pkg.signature,
+      regId: activeRegister.id,
+      devId: activeTerminal.deviceIdentity,
+      seq: baseSeq,
+      idemKey: offlineIdemKey,
+      ver: pkg.version,
+      payload: offlinePayloadStr,
+    });
+
+    // 4. Persist to client IndexedDB todir_pos_offline_v2
+    const storedInDb = await page.evaluate(async ({ regId, devId, seq, idemKey, ver, payload, signature, amount }) => {
+      return new Promise<boolean>((resolve) => {
+        const req = indexedDB.open('todir_pos_offline_v2', 2);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('offline_envelopes', 'readwrite');
+          const store = tx.objectStore('offline_envelopes');
+          store.put({
+            id: `env-${idemKey}`,
+            registerId: regId,
+            deviceIdentity: devId,
+            sourceSequence: seq,
+            idempotencyKey: idemKey,
+            packageVersion: ver,
+            payload,
+            signature,
+            amount,
+            status: 'Queued',
+            createdAt: new Date().toISOString(),
+          });
+          tx.oncomplete = () => {
+            db.close();
+            resolve(true);
+          };
+          tx.onerror = () => resolve(false);
+        };
+        req.onerror = () => resolve(false);
+      });
+    }, {
+      regId: activeRegister.id,
+      devId: activeTerminal.deviceIdentity,
+      seq: baseSeq,
+      idemKey: offlineIdemKey,
+      ver: pkg.version,
+      payload: offlinePayloadStr,
+      signature: sig,
+      amount: testItem.unitPrice + (testItem.taxAmount || 0),
+    });
+    expect(storedInDb).toBe(true);
+
+    // 5. Submit original envelope to real sync endpoint
+    const syncRes = await page.request.post('/api/v1/pos/offline/sync', {
+      headers: { 'X-CSRF-TOKEN': csrfToken },
+      data: {
+        registerId: activeRegister.id,
+        deviceIdentity: activeTerminal.deviceIdentity,
+        sourceSequence: baseSeq,
+        idempotencyKey: offlineIdemKey,
+        packageVersion: pkg.version,
+        payload: offlinePayloadStr,
+        signature: sig,
+      },
+    });
+    expect(syncRes.status()).toBe(202);
+    const envelopeId = await syncRes.json();
+    expect(envelopeId).toBeTruthy();
+
+    // 6. Process the offline cash sale through real backend
+    const processRes = await page.request.post(`/api/v1/pos/offline/envelopes/${envelopeId}/process-cash-sale`, {
+      headers: { 'X-CSRF-TOKEN': csrfToken },
+    });
+    expect(processRes.status()).toBe(202);
+    const processedData = await processRes.json();
+    expect(processedData.state).toBe('Accepted');
+    expect(processedData.checkout.state).toBe('Completed');
+    const createdSaleId = processedData.checkout.saleId;
+    expect(createdSaleId).toBeTruthy();
+
+    // 7. Verify authoritative database & business effects
+    const saleRes = await page.request.get(`/api/v1/pos/sales/${createdSaleId}`);
+    expect(saleRes.status()).toBe(200);
+    const saleData = await saleRes.json();
+    expect(saleData.receiptNumber).toMatch(/^POS-\d+/);
+    expect(saleData.total).toBeGreaterThan(0);
+    expect(saleData.businessDate).toBeTruthy();
+
+    const linesRes = await page.request.get(`/api/v1/pos/sales/${createdSaleId}/lines`);
+    expect(linesRes.status()).toBe(200);
+    const saleLines = await linesRes.json();
+    expect(saleLines.length).toBeGreaterThan(0);
+    expect(saleLines[0].variantId).toBe(testItem.variantId);
+
+    // 8. Idempotency Verification: Resubmitting the same envelope must produce identical outcome without duplicate sale
+    const repeatSyncRes = await page.request.post('/api/v1/pos/offline/sync', {
+      headers: { 'X-CSRF-TOKEN': csrfToken },
+      data: {
+        registerId: activeRegister.id,
+        deviceIdentity: activeTerminal.deviceIdentity,
+        sourceSequence: baseSeq,
+        idempotencyKey: offlineIdemKey,
+        packageVersion: pkg.version,
+        payload: offlinePayloadStr,
+        signature: sig,
+      },
+    });
+    expect(repeatSyncRes.status()).toBe(202);
+
+    const repeatProcessRes = await page.request.post(`/api/v1/pos/offline/envelopes/${envelopeId}/process-cash-sale`, {
+      headers: { 'X-CSRF-TOKEN': csrfToken },
+    });
+    expect(repeatProcessRes.status()).toBe(202);
+    const repeatData = await repeatProcessRes.json();
+    expect(repeatData.checkout.saleId).toBe(createdSaleId);
+    expect(repeatData.checkout.total).toBe(processedData.checkout.total);
+
+    // 9. Tampered Economic Fact Recovery: A payload with a forged price must be rejected and marked NeedsReview
+    const tamperedPricePayload = {
+      ...offlineSalePayload,
+      idempotencyKey: `forged-price-${Date.now()}`,
+      lines: [{
+        ...offlineSalePayload.lines[0],
+        unitPrice: 0.05, // Forged price attempting to underpay
+      }],
+    };
+    const tamperedPriceStr = JSON.stringify(tamperedPricePayload);
+    const tamperedPriceSig = await page.evaluate(async ({ pkgKey, regId, devId, seq, idemKey, ver, payload }) => {
+      const canonical = [regId, devId.trim(), String(seq), idemKey.trim(), String(ver), payload].join('|');
+      const key = await window.crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(pkgKey),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const sigBuffer = await window.crypto.subtle.sign('HMAC', key, new TextEncoder().encode(canonical));
+      return Array.from(new Uint8Array(sigBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }, {
+      pkgKey: pkg.signature,
+      regId: activeRegister.id,
+      devId: activeTerminal.deviceIdentity,
+      seq: baseSeq + 1,
+      idemKey: tamperedPricePayload.idempotencyKey,
+      ver: pkg.version,
+      payload: tamperedPriceStr,
+    });
+
+    const forgedSyncRes = await page.request.post('/api/v1/pos/offline/sync', {
+      headers: { 'X-CSRF-TOKEN': csrfToken },
+      data: {
+        registerId: activeRegister.id,
+        deviceIdentity: activeTerminal.deviceIdentity,
+        sourceSequence: baseSeq + 1,
+        idempotencyKey: tamperedPricePayload.idempotencyKey,
+        packageVersion: pkg.version,
+        payload: tamperedPriceStr,
+        signature: tamperedPriceSig,
+      },
+    });
+    expect(forgedSyncRes.status()).toBe(202);
+    const forgedEnvelopeId = await forgedSyncRes.json();
+
+    const forgedProcessRes = await page.request.post(`/api/v1/pos/offline/envelopes/${forgedEnvelopeId}/process-cash-sale`, {
+      headers: { 'X-CSRF-TOKEN': csrfToken },
+    });
+    expect(forgedProcessRes.status()).toBe(400);
+    const forgedError = await forgedProcessRes.json();
+    expect(JSON.stringify(forgedError)).toContain('pos.offline_price_tampered');
+
+    // Envelope must NOT be Accepted or Completed
+    const envStatusRes = await page.request.get(`/api/v1/pos/offline/sync/${forgedEnvelopeId}`);
+    expect(envStatusRes.status()).toBe(200);
+    const envStatus = await envStatusRes.json();
+    expect(envStatus.state).toBe('NeedsReview');
+    expect(envStatus.conflictCode).toBe('CashSaleProcessingFailed');
   });
 
 });

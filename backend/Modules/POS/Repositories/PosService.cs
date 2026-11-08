@@ -1038,14 +1038,15 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
                            v.sku,
                            coalesce(b.value, v.sku) as barcode,
                            p.display_name,
-                           coalesce(pe.unit_price, 50.00) as unit_price
+                           pe.unit_price as unit_price
                     from foundation_catalog.product_variant v
                     join foundation_catalog.product_template p on p.tenant_id = v.tenant_id and p.id = v.product_template_id
                     join foundation_catalog.product_uom pu on pu.tenant_id = v.tenant_id and pu.variant_id = v.id and pu.is_base and pu.status = 'Active'
                     join foundation_catalog.uom u on u.tenant_id = pu.tenant_id and u.id = pu.uom_id
                     left join foundation_catalog.product_barcode b on b.tenant_id = v.tenant_id and b.variant_id = v.id and b.is_primary and b.status = 'Active'
-                    left join foundation_pricing.price_list_version plv on plv.tenant_id = v.tenant_id and plv.price_list_id = $3 and plv.status = 'Active'
-                    left join foundation_pricing.price_entry pe on pe.tenant_id = v.tenant_id and pe.price_list_version_id = plv.id and pe.variant_id = v.id and pe.status = 'Active'
+                    join foundation_pricing.price_list pl on pl.tenant_id = v.tenant_id and pl.id = $3 and pl.legal_entity_id = $2 and pl.direction = 'Selling' and pl.status = 'Active'
+                    join foundation_pricing.price_list_version plv on plv.tenant_id = v.tenant_id and plv.price_list_id = pl.id and plv.status = 'Active'
+                    join foundation_pricing.price_entry pe on pe.tenant_id = v.tenant_id and pe.price_list_version_id = plv.id and pe.variant_id = v.id and pe.uom_id = pu.uom_id and pe.status = 'Active' and pe.unit_price > 0
                     where v.tenant_id = $1
                       and v.status = 'Active'
                       and p.status = 'Active'
@@ -1055,21 +1056,49 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
                 itemsCmd.Parameters.AddWithValue(entityId);
                 itemsCmd.Parameters.AddWithValue(priceListId.Value);
                 await using var itemReader = await itemsCmd.ExecuteReaderAsync(token);
+                var rawItems = new List<(Guid variantId, Guid templateId, Guid uomId, string uomCode, string sku, string barcode, string name, decimal unitPrice)>();
                 while (await itemReader.ReadAsync(token))
                 {
-                    items.Add(new
-                    {
-                        variantId = itemReader.GetGuid(0),
-                        productTemplateId = itemReader.GetGuid(1),
-                        unitOfMeasureId = itemReader.GetGuid(2),
-                        uomCode = itemReader.GetString(3),
-                        sku = itemReader.IsDBNull(4) ? "" : itemReader.GetString(4),
-                        barcode = itemReader.IsDBNull(5) ? "" : itemReader.GetString(5),
-                        displayName = itemReader.GetString(6),
-                        unitPrice = itemReader.GetDecimal(7)
-                    });
+                    rawItems.Add((
+                        itemReader.GetGuid(0),
+                        itemReader.GetGuid(1),
+                        itemReader.GetGuid(2),
+                        itemReader.GetString(3),
+                        itemReader.IsDBNull(4) ? "" : itemReader.GetString(4),
+                        itemReader.IsDBNull(5) ? "" : itemReader.GetString(5),
+                        itemReader.GetString(6),
+                        itemReader.GetDecimal(7)
+                    ));
                 }
                 await itemReader.CloseAsync();
+
+                var taxDate = DateOnly.FromDateTime(DateTime.UtcNow);
+                foreach (var raw in rawItems)
+                {
+                    decimal itemTax = 0m;
+                    try
+                    {
+                        var taxResult = await tax.CalculateAsync(new TaxContextContract(tenant, new LegalEntityId(entityId), "Sales", "POS", "Sale", taxDate, taxDate, taxDate, taxDate, null, null, null, null, raw.templateId, raw.variantId, 1m, raw.uomId, "TaxExclusive", raw.unitPrice.ToString(System.Globalization.CultureInfo.InvariantCulture), "0", "0", currency, currency, null), token);
+                        decimal.TryParse(taxResult.TaxTotal, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out itemTax);
+                    }
+                    catch
+                    {
+                        itemTax = 0m;
+                    }
+
+                    items.Add(new
+                    {
+                        variantId = raw.variantId,
+                        productTemplateId = raw.templateId,
+                        unitOfMeasureId = raw.uomId,
+                        uomCode = raw.uomCode,
+                        sku = raw.sku,
+                        barcode = raw.barcode,
+                        displayName = raw.name,
+                        unitPrice = raw.unitPrice,
+                        taxAmount = itemTax
+                    });
+                }
             }
 
             await using var versionCommand = new NpgsqlCommand("select coalesce(max(version),0)+1 from business_pos.pos_offline_package where tenant_id=$1 and register_id=$2", ctx.Connection, ctx.Transaction);
@@ -1138,14 +1167,22 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             await using var register = new NpgsqlCommand("select offline_enabled,status from business_pos.pos_register where tenant_id=$1 and id=$2", ctx.Connection, ctx.Transaction);
             register.Parameters.AddWithValue(tenant.Value); register.Parameters.AddWithValue(request.RegisterId); await using var registerReader = await register.ExecuteReaderAsync(token);
             if (!await registerReader.ReadAsync(token) || !registerReader.GetBoolean(0) || !string.Equals(registerReader.GetString(1), "Active", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("pos.offline_register_not_enabled"); await registerReader.CloseAsync();
-            await using var package = new NpgsqlCommand("select signature from business_pos.pos_offline_package where tenant_id=$1 and register_id=$2 and version=$3 and revoked_at is null and valid_from <= $4 and expires_at > $4", ctx.Connection, ctx.Transaction);
+            await using var package = new NpgsqlCommand("select payload, signature from business_pos.pos_offline_package where tenant_id=$1 and register_id=$2 and version=$3 and revoked_at is null and valid_from <= $4 and expires_at > $4", ctx.Connection, ctx.Transaction);
             package.Parameters.AddWithValue(tenant.Value); package.Parameters.AddWithValue(request.RegisterId); package.Parameters.AddWithValue(request.PackageVersion); package.Parameters.AddWithValue(now);
-            var packageSignature = (string?)await package.ExecuteScalarAsync(token);
-            if (string.IsNullOrWhiteSpace(packageSignature)) throw new InvalidOperationException("pos.offline_package_invalid");
+            await using var pkgReader = await package.ExecuteReaderAsync(token);
+            if (!await pkgReader.ReadAsync(token)) throw new ArgumentException("pos.offline_package_invalid");
+            var packagePayload = pkgReader.GetString(0);
+            var packageSignature = pkgReader.GetString(1);
+            await pkgReader.CloseAsync();
+
+            using var pkgDoc = JsonDocument.Parse(packagePayload);
+            if (pkgDoc.RootElement.TryGetProperty("deviceIdentity", out var pkgDevice) && !string.Equals(pkgDevice.GetString(), request.DeviceIdentity, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("pos.offline_device_mismatch");
+
             if (!PosOfflineSecurity.VerifyEnvelope(packageSignature, request.RegisterId, request.DeviceIdentity, request.SourceSequence, request.IdempotencyKey, request.PackageVersion, request.Payload, request.Signature))
-                throw new InvalidOperationException("pos.offline_signature_invalid");
+                throw new ArgumentException("pos.offline_signature_invalid");
             await using var terminal = new NpgsqlCommand("select 1 from business_pos.pos_terminal where tenant_id=$1 and register_id=$2 and device_identity=$3 and status='Ready' limit 1", ctx.Connection, ctx.Transaction);
-            terminal.Parameters.AddWithValue(tenant.Value); terminal.Parameters.AddWithValue(request.RegisterId); terminal.Parameters.AddWithValue(request.DeviceIdentity); if (await terminal.ExecuteScalarAsync(token) is null) throw new InvalidOperationException("pos.offline_device_not_registered");
+            terminal.Parameters.AddWithValue(tenant.Value); terminal.Parameters.AddWithValue(request.RegisterId); terminal.Parameters.AddWithValue(request.DeviceIdentity); if (await terminal.ExecuteScalarAsync(token) is null) throw new ArgumentException("pos.offline_device_not_registered");
             await using var existing = new NpgsqlCommand("select id from business_pos.pos_offline_envelope where tenant_id=$1 and idempotency_key=$2", ctx.Connection, ctx.Transaction);
             existing.Parameters.AddWithValue(tenant.Value); existing.Parameters.AddWithValue(request.IdempotencyKey); if (await existing.ExecuteScalarAsync(token) is Guid existingId) return new(existingId, false);
             await using var sequence = new NpgsqlCommand("select id from business_pos.pos_offline_envelope where tenant_id=$1 and register_id=$2 and device_identity=$3 and source_sequence=$4", ctx.Connection, ctx.Transaction);
@@ -1215,6 +1252,21 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             }
             else
             {
+                // Authoritative economic validation: ensure prices and catalog facts were not tampered with
+                foreach (var line in payload.Lines)
+                {
+                    var variant = await catalog.FindVariantAsync(tenant, line.VariantId, line.LegalEntityId, ct);
+                    if (variant is null || !string.Equals(variant.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                        throw new ArgumentException("pos.offline_variant_invalid");
+
+                    var price = await pricing.ResolveAsync(new PricingContext(tenant, new LegalEntityId(line.LegalEntityId), PricingDirection.Selling, line.PricingDate, payload.CurrencyCode, line.PriceListId, null, null, line.VariantId, line.ProductTemplateId, Array.Empty<Guid>(), null, line.UnitOfMeasureId, line.Quantity), ct);
+                    if (!string.Equals(price.Status, "Resolved", StringComparison.OrdinalIgnoreCase) || price.Snapshot is null || !decimal.TryParse(price.Snapshot.FinalUnitPrice, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var authoritativeUnitPrice))
+                        throw new ArgumentException("pos.offline_price_unresolved");
+
+                    if (Math.Abs(line.UnitPrice - authoritativeUnitPrice) > 0.0001m)
+                        throw new ArgumentException("pos.offline_price_tampered");
+                }
+
                 var cart = await CreateCartAsync(tenant, actor, new CreateCartRequest(payload.SessionId, payload.CurrencyCode, payload.CustomerPartyId), ct);
                 foreach (var line in payload.Lines)
                 {

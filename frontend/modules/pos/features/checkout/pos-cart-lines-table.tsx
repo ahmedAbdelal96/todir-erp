@@ -79,13 +79,13 @@ export function PosCartLinesTable({
               fontWeight: 600,
             }}
           >
-            <th style={{ padding: "0.75rem 1rem", width: "3.5rem", textAlign: "center" }}>#</th>
-            <th style={{ padding: "0.75rem 1rem", minWidth: "16rem" }}>{t("cart.colItem")}</th>
-            <th style={{ padding: "0.75rem 1rem", textAlign: "end", width: "8rem" }}>{t("cart.colPrice")}</th>
-            <th style={{ padding: "0.75rem 1rem", textAlign: "center", width: "9.5rem" }}>{t("cart.colQty")}</th>
-            <th style={{ padding: "0.75rem 1rem", textAlign: "end", width: "7.5rem" }}>{t("cart.colDiscount")}</th>
-            <th style={{ padding: "0.75rem 1rem", textAlign: "end", width: "8.5rem" }}>{t("cart.colTotal")}</th>
-            <th style={{ padding: "0.75rem 0.5rem", width: "3.5rem", textAlign: "center" }} aria-label={t("common.actions")}></th>
+            <th style={{ padding: "0.625rem 0.5rem", width: "2.5rem", textAlign: "center" }}>#</th>
+            <th style={{ padding: "0.625rem 0.75rem", minWidth: "10rem" }}>{t("cart.colItem")}</th>
+            <th style={{ padding: "0.625rem 0.5rem", textAlign: "end", width: "6rem" }}>{t("cart.colPrice")}</th>
+            <th style={{ padding: "0.625rem 0.5rem", textAlign: "center", width: "7.5rem" }}>{t("cart.colQty")}</th>
+            <th style={{ padding: "0.625rem 0.5rem", textAlign: "end", width: "5.5rem" }}>{t("cart.colDiscount")}</th>
+            <th style={{ padding: "0.625rem 0.5rem", textAlign: "end", width: "6.5rem" }}>{t("cart.colTotal")}</th>
+            <th style={{ padding: "0.625rem 0.25rem", width: "2.5rem", textAlign: "center" }} aria-label={t("common.actions")}></th>
           </tr>
         </thead>
         <tbody>
@@ -97,26 +97,26 @@ export function PosCartLinesTable({
                 transition: "background-color 0.15s ease",
               }}
             >
-              <td style={{ padding: "0.75rem 1rem", textAlign: "center", color: "var(--color-content-muted)", fontWeight: 500 }}>
+              <td style={{ padding: "0.625rem 0.5rem", textAlign: "center", color: "var(--color-content-muted)", fontWeight: 500 }}>
                 {idx + 1}
               </td>
-              <td style={{ padding: "0.75rem 1rem", minWidth: "16rem" }}>
-                <div style={{ fontWeight: 600, color: "var(--color-content-default)", lineHeight: 1.45, wordBreak: "break-word" }}>
+              <td style={{ padding: "0.625rem 0.75rem", minWidth: "10rem" }}>
+                <div style={{ fontWeight: 600, color: "var(--color-content-default)", lineHeight: 1.4, wordBreak: "break-word" }}>
                   <BidiText>{line.description}</BidiText>
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.2rem" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.15rem" }}>
                   <span style={{ fontWeight: 500 }}>{t("cart.uom")}: </span><BidiText>{line.uomCode || ""}</BidiText>
                   {line.taxAmount > 0 && (
-                    <span style={{ marginInlineStart: "0.75rem", color: "var(--color-brand-primary)" }}>
+                    <span style={{ marginInlineStart: "0.5rem", color: "var(--color-brand-primary)" }}>
                       {t("cart.tax")}: <BidiText>{line.taxAmount.toFixed(2)} {currencyCode}</BidiText>
                     </span>
                   )}
                 </div>
               </td>
-              <td style={{ padding: "0.75rem 1rem", textAlign: "end", whiteSpace: "nowrap" }}>
+              <td style={{ padding: "0.625rem 0.5rem", textAlign: "end", whiteSpace: "nowrap" }}>
                 <BidiText>{line.unitPrice.toFixed(2)} {currencyCode}</BidiText>
               </td>
-              <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
+              <td style={{ padding: "0.625rem 0.5rem", textAlign: "center" }}>
                 <div
                   style={{
                     display: "inline-flex",
@@ -134,7 +134,7 @@ export function PosCartLinesTable({
                     style={{
                       border: "none",
                       background: "transparent",
-                      padding: "0.35rem 0.6rem",
+                      padding: "0.25rem 0.5rem",
                       cursor: disabled || line.quantity <= 1 ? "not-allowed" : "pointer",
                       fontWeight: 700,
                       color: "var(--color-content-default)",
@@ -145,9 +145,9 @@ export function PosCartLinesTable({
                   </button>
                   <span
                     style={{
-                      padding: "0.35rem 0.75rem",
+                      padding: "0.25rem 0.5rem",
                       fontWeight: 700,
-                      minWidth: "2rem",
+                      minWidth: "1.75rem",
                       textAlign: "center",
                       backgroundColor: "var(--color-surface-page)",
                       borderInline: "1px solid #e2e8f0",
@@ -162,7 +162,7 @@ export function PosCartLinesTable({
                     style={{
                       border: "none",
                       background: "transparent",
-                      padding: "0.35rem 0.6rem",
+                      padding: "0.25rem 0.5rem",
                       cursor: disabled ? "not-allowed" : "pointer",
                       fontWeight: 700,
                       color: "var(--color-content-default)",
@@ -173,7 +173,7 @@ export function PosCartLinesTable({
                   </button>
                 </div>
               </td>
-              <td style={{ padding: "0.75rem 1rem", textAlign: "end", whiteSpace: "nowrap" }}>
+              <td style={{ padding: "0.625rem 0.5rem", textAlign: "end", whiteSpace: "nowrap" }}>
                 {line.discountAmount > 0 ? (
                   <Button
                     size="compact"
@@ -194,10 +194,10 @@ export function PosCartLinesTable({
                   </Button>
                 )}
               </td>
-              <td style={{ padding: "0.75rem 1rem", textAlign: "end", fontWeight: 700, color: "var(--color-content-default)", whiteSpace: "nowrap" }}>
+              <td style={{ padding: "0.625rem 0.5rem", textAlign: "end", fontWeight: 700, color: "var(--color-content-default)", whiteSpace: "nowrap" }}>
                 <BidiText>{line.lineTotal.toFixed(2)} {currencyCode}</BidiText>
               </td>
-              <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
+              <td style={{ padding: "0.625rem 0.25rem", textAlign: "center" }}>
                 <button
                   type="button"
                   disabled={disabled}
@@ -207,7 +207,7 @@ export function PosCartLinesTable({
                     border: "none",
                     color: "var(--color-status-danger)",
                     cursor: disabled ? "not-allowed" : "pointer",
-                    padding: "0.25rem 0.5rem",
+                    padding: "0.2rem 0.4rem",
                     borderRadius: "var(--radius-sm)",
                     fontSize: "1.125rem",
                     lineHeight: 1,

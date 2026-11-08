@@ -309,6 +309,7 @@ export interface OfflineCatalogItem {
   readonly barcode: string;
   readonly displayName: string;
   readonly unitPrice: number;
+  readonly taxAmount?: number;
 }
 
 export interface OfflinePackagePayloadContent {
