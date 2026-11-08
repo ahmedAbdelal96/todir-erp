@@ -137,7 +137,7 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(300m, advance.AppliedAmount);
         advance = await repositoryWithAdvancePayments.ReturnAdvanceAsync(new(Atlas), entity, advance.Id, new(200m, advance.Version), default);
         Assert.Equal("Settled", advance.State);
-        var advancePage = await repository.ListAdvancesAsync(new(Atlas), entity, "Settled", employee, 1, 10, default);
+        var advancePage = await repository.ListAdvancesAsync(new(Atlas), entity, "Settled", employee, false, 1, 10, default);
         Assert.True(advancePage.TotalCount >= 1);
         var summary = await repository.GetExceptionSummaryAsync(new(Atlas), entity, default);
         Assert.True(summary.PersonalRepaymentDue >= 1);
@@ -155,6 +155,23 @@ public sealed class ExpensesPostgresIntegrationTests
         var advance = await repository.CreateAdvanceAsync(new(Atlas), new(Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528"), Guid.NewGuid(), "Guarded settlement", 90m), default);
         advance = await repository.TransitionAdvanceAsync(new(Atlas), advance.LegalEntityId, advance.Id, advance.Version, "approve", default);
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAdvanceAsync(new(Atlas), advance.LegalEntityId, advance.Id, advance.Version, "settle", default));
+    }
+
+    [ExpensesPostgresFact]
+    public async Task IssuedAdvanceWithPastDueDateIsReturnedByOverdueFilter()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), advancePayments: new TestAdvancePaymentCapability(), approvals: new TestApprovalCapability());
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var advance = await repository.CreateAdvanceAsync(new(Atlas), new(entity, Guid.NewGuid(), "Overdue field visit", 180m, "EGP", DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-2))), default);
+        advance = await repository.TransitionAdvanceAsync(new(Atlas), entity, advance.Id, advance.Version, "approve", default);
+        advance = await repository.IssueAdvanceAsync(new(Atlas), entity, advance.Id, Guid.NewGuid(), Guid.NewGuid(), new(Guid.NewGuid(), "BankTransfer", 180m, DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date), advance.Version), default);
+        Assert.True(advance.IsOverdue);
+        var overdue = await repository.ListAdvancesAsync(new(Atlas), entity, null, advance.EmployeeId, true, 1, 20, default);
+        Assert.Contains(overdue.Items, item => item.Id == advance.Id && item.IsOverdue && item.SettlementDueDate == DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-2)));
     }
 
     [ExpensesPostgresFact]
