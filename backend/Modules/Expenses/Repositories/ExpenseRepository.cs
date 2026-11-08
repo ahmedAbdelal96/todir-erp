@@ -133,7 +133,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     private async Task<ExpenseDto> TransitionCoreAsync(TenantId tenant, Guid entity, Guid id, ExpenseActionRequest request, string action, CancellationToken ct)
     {
         await using var scope = await OpenAsync(tenant, ct);
-        if (action == "approve" && approvals is not null) throw new ExpenseRepositoryException("expenses.platform_approval_required");
+        if (action is "approve" or "reject" && approvals is not null) throw new ExpenseRepositoryException("expenses.platform_approval_required");
         if (action == "submit")
         {
             await using var policy = new NpgsqlCommand("select coalesce((select cv.requires_receipt from business_expenses.expense e join business_expenses.expense_category_version cv on cv.tenant_id=e.tenant_id and cv.id=e.category_version_id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3),true) and not exists(select 1 from business_expenses.expense_evidence ev where ev.tenant_id=$1 and ev.legal_entity_id=$2 and ev.expense_id=$3 and ev.status in ('Pending','Ready')) and not exists(select 1 from business_expenses.expense_missing_receipt_declaration md where md.tenant_id=$1 and md.legal_entity_id=$2 and md.expense_id=$3 and md.status='Declared')", scope.Connection, scope.Transaction);
