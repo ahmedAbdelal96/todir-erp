@@ -104,12 +104,18 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(750m, mileage.CalculatedAmount);
         Assert.Equal(750m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, mileageExpense.Id))!);
 
-        var card = await repository.ImportCardTransactionAsync(new(Atlas), entity, new("provider-acceptance-001", "Hotel", new(2026, 10, 13), 210m), default);
+        var providerReference = $"provider-acceptance-{Guid.CreateVersion7():N}";
+        var card = await repository.ImportCardTransactionAsync(new(Atlas), entity, new(providerReference, "Hotel", new(2026, 10, 13), 210m), default);
         var personal = await repository.MarkCardTransactionPersonalAsync(new(Atlas), entity, card.Id, new(employee), default);
         Assert.Equal("Personal", personal.State);
         await repository.MarkCardTransactionPersonalAsync(new(Atlas), entity, card.Id, new(employee), default);
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_employee_repayment where tenant_id=$1 and source_reference=$2", Atlas, $"corporate-card:{card.Id:D}"));
         Assert.Equal(210m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense_employee_repayment where tenant_id=$1 and source_reference=$2", Atlas, $"corporate-card:{card.Id:D}"))!);
+        var cardPage = await repository.ListCardTransactionsAsync(new(Atlas), entity, "Personal", providerReference, 1, 1, default);
+        Assert.Equal(1, cardPage.TotalCount);
+        Assert.Single(cardPage.Items);
+        var repaymentPage = await repository.ListEmployeeRepaymentsAsync(new(Atlas), entity, employee, "Requested", 1, 10, default);
+        Assert.True(repaymentPage.TotalCount >= 1);
 
         var advance = await repository.CreateAdvanceAsync(new(Atlas), new(entity, employee, "سلفة رحلة", 500m), default);
         advance = await repository.TransitionAdvanceAsync(new(Atlas), entity, advance.Id, advance.Version, "approve", default);
@@ -122,6 +128,8 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(300m, advance.AppliedAmount);
         advance = await repository.ReturnAdvanceAsync(new(Atlas), entity, advance.Id, new(200m, advance.Version), default);
         Assert.Equal("Settled", advance.State);
+        var advancePage = await repository.ListAdvancesAsync(new(Atlas), entity, "Settled", employee, 1, 10, default);
+        Assert.True(advancePage.TotalCount >= 1);
     }
 
     private static async Task<object?> ScalarAsync(NpgsqlConnection connection, string sql, params object[] values)
