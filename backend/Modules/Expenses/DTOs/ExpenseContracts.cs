@@ -13,6 +13,11 @@ public sealed record CreateExpenseCategoryVersionRequest(bool RequiresReceipt, d
 public sealed record PublishExpenseCategoryVersionRequest(DateOnly? EffectiveTo = null);
 public sealed record ExpenseEvidenceDto(Guid Id, Guid ExpenseId, string EvidenceType, string FileReference, string Status, DateTimeOffset CreatedAt);
 public sealed record AddExpenseEvidenceRequest(string EvidenceType, string FileReference);
+public sealed record CreateExpenseEvidenceUploadRequest(string FileName, string ContentType, long SizeBytes, string Classification = "expense-receipt");
+public sealed record ExpenseEvidenceUploadIntentDto(Guid FileRef, string Url, IReadOnlyDictionary<string, string> Fields, string ContentType, long SizeBytes, DateTimeOffset ExpiresAt);
+public sealed record CompleteExpenseEvidenceUploadRequest(Guid FileRef, string EvidenceType = "Receipt");
+public sealed record DeclareMissingReceiptRequest(string Reason);
+public sealed record MissingReceiptDeclarationDto(Guid Id, Guid ExpenseId, string Reason, string Status, Guid DeclaredBy, DateTimeOffset DeclaredAt, DateTimeOffset? ResolvedAt);
 public sealed record ReimbursementDto(Guid Id, Guid ExpenseId, Guid? EmployeeId, decimal Amount, decimal SettledAmount, string CurrencyCode, string Status, DateTimeOffset CreatedAt);
 public sealed record ExpenseItemizationDto(Guid Id, Guid ExpenseId, string Description, decimal Amount, decimal TaxAmount, string CurrencyCode);
 public sealed record CreateExpenseItemizationRequest(string Description, decimal Amount, decimal TaxAmount = 0, string CurrencyCode = "EGP");

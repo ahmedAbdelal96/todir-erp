@@ -11,7 +11,7 @@ using Modules.Expenses.DTOs;
 
 namespace Modules.Expenses.Repositories;
 
-public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null)
+public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null, IPlatformFileUploadCapability? fileUploads = null)
 {
     public async Task<ExpensePage<ExpenseDto>> ListAsync(TenantId tenant, Guid entity, Guid? employeeId, string? state, string? search, int page, int pageSize, CancellationToken ct)
     {
@@ -53,7 +53,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         await using var scope = await OpenAsync(tenant, ct);
         if (action == "submit")
         {
-            await using var policy = new NpgsqlCommand("select coalesce((select cv.requires_receipt from business_expenses.expense e join business_expenses.expense_category_version cv on cv.tenant_id=e.tenant_id and cv.id=e.category_version_id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3),true) and not exists(select 1 from business_expenses.expense_evidence ev where ev.tenant_id=$1 and ev.legal_entity_id=$2 and ev.expense_id=$3)", scope.Connection, scope.Transaction);
+            await using var policy = new NpgsqlCommand("select coalesce((select cv.requires_receipt from business_expenses.expense e join business_expenses.expense_category_version cv on cv.tenant_id=e.tenant_id and cv.id=e.category_version_id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3),true) and not exists(select 1 from business_expenses.expense_evidence ev where ev.tenant_id=$1 and ev.legal_entity_id=$2 and ev.expense_id=$3 and ev.status in ('Pending','Ready')) and not exists(select 1 from business_expenses.expense_missing_receipt_declaration md where md.tenant_id=$1 and md.legal_entity_id=$2 and md.expense_id=$3 and md.status='Declared')", scope.Connection, scope.Transaction);
             Add(policy, tenant.Value, entity, id);
             if (Convert.ToBoolean(await policy.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture)) throw new ExpenseRepositoryException("expenses.expense_receipt_required");
         }
@@ -135,8 +135,39 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             if (verified is null) throw new ExpenseRepositoryException("expenses.file_not_ready");
             fileReference = verified.FileRef.ToString("D");
         }
-        await using var scope = await OpenAsync(tenant, ct); var id = Guid.CreateVersion7(); await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_evidence(tenant_id,id,legal_entity_id,expense_id,evidence_type,file_reference,status,created_at) select $1,$2,$3,id,$4,$5,'Pending',now() from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$6 returning id,expense_id,evidence_type,file_reference,status,created_at", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, id, entity, request.EvidenceType.Trim(), fileReference, expenseId); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found"); var result = new ExpenseEvidenceDto(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetFieldValue<DateTimeOffset>(5)); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
+        await using var scope = await OpenAsync(tenant, ct); var id = Guid.CreateVersion7(); await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_evidence(tenant_id,id,legal_entity_id,expense_id,evidence_type,file_reference,status,created_at) select $1,$2,$3,id,$4,$5,'Ready',now() from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$6 returning id,expense_id,evidence_type,file_reference,status,created_at", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, id, entity, request.EvidenceType.Trim(), fileReference, expenseId); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found"); var result = new ExpenseEvidenceDto(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetFieldValue<DateTimeOffset>(5)); await r.CloseAsync(); await using var resolve = new NpgsqlCommand("update business_expenses.expense_missing_receipt_declaration set status='Resolved',resolved_at=now() where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and status='Declared'", scope.Connection, scope.Transaction); Add(resolve, tenant.Value, entity, expenseId); await resolve.ExecuteNonQueryAsync(ct); await scope.Transaction.CommitAsync(ct); return result;
     }
+
+    public async Task<ExpenseEvidenceUploadIntentDto> CreateEvidenceUploadIntentAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid entity, Guid expenseId, CreateExpenseEvidenceUploadRequest request, CancellationToken ct)
+    {
+        if (fileUploads is null) throw new ExpenseRepositoryException("expenses.files_capability_unavailable");
+        if (request.SizeBytes <= 0 || string.IsNullOrWhiteSpace(request.FileName) || string.IsNullOrWhiteSpace(request.ContentType)) throw new ExpenseRepositoryException("expenses.file_upload_invalid");
+        await EnsureExpenseExistsAsync(tenant, entity, expenseId, ct);
+        var intent = await fileUploads.CreateUploadIntentAsync(tenant, actorId, membershipId, "expenses", "expense", expenseId, request.FileName.Trim(), request.ContentType.Trim(), request.SizeBytes, request.Classification.Trim(), ct);
+        return intent is null ? throw new ExpenseRepositoryException("expenses.file_upload_unavailable") : new(intent.FileRef, intent.Url, intent.Fields, intent.ContentType, intent.SizeBytes, intent.ExpiresAt);
+    }
+
+    public async Task<ExpenseEvidenceDto> CompleteEvidenceUploadAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid entity, Guid expenseId, CompleteExpenseEvidenceUploadRequest request, CancellationToken ct)
+    {
+        if (fileUploads is null) throw new ExpenseRepositoryException("expenses.files_capability_unavailable");
+        var completion = await fileUploads.CompleteUploadAsync(tenant, actorId, membershipId, "expenses", "expense", expenseId, request.FileRef, ct);
+        if (completion is null || !completion.Ready) throw new ExpenseRepositoryException(completion?.ReasonCode ?? "expenses.file_not_ready");
+        return await AddEvidenceAsync(tenant, entity, expenseId, new AddExpenseEvidenceRequest(request.EvidenceType, request.FileRef.ToString("D")), ct);
+    }
+
+    public async Task<MissingReceiptDeclarationDto> DeclareMissingReceiptAsync(TenantId tenant, Guid actorId, Guid entity, Guid expenseId, DeclareMissingReceiptRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length < 5) throw new ExpenseRepositoryException("expenses.missing_receipt_reason_required");
+        await using var scope = await OpenAsync(tenant, ct); var id = Guid.CreateVersion7();
+        await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_missing_receipt_declaration(tenant_id,id,legal_entity_id,expense_id,reason,status,declared_by,declared_at) select $1,$2,$3,id,$4,'Declared',$5,now() from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$6 on conflict(tenant_id,expense_id) do update set reason=excluded.reason,status='Declared',declared_by=excluded.declared_by,declared_at=now(),resolved_at=null returning id,expense_id,reason,status,declared_by,declared_at,resolved_at", scope.Connection, scope.Transaction);
+        Add(cmd, tenant.Value, id, entity, request.Reason.Trim(), actorId, expenseId); await using var reader = await cmd.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found"); var result = ReadMissingReceipt(reader); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
+    }
+
+    public async Task<MissingReceiptDeclarationDto?> GetMissingReceiptDeclarationAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
+    { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select id,expense_id,reason,status,declared_by,declared_at,resolved_at from business_expenses.expense_missing_receipt_declaration where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, expenseId); await using var reader = await cmd.ExecuteReaderAsync(ct); var result = await reader.ReadAsync(ct) ? ReadMissingReceipt(reader) : null; await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
+
+    private async Task EnsureExpenseExistsAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
+    { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select 1 from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, expenseId); if (await cmd.ExecuteScalarAsync(ct) is null) throw new ExpenseRepositoryException("expenses.expense_not_found"); await scope.Transaction.CommitAsync(ct); }
 
     public async Task<SignedPlatformFileDownload> CreateEvidenceDownloadAsync(TenantId tenant, Guid entity, Guid expenseId, Guid evidenceId, CancellationToken ct)
     {
@@ -149,6 +180,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     private async Task<Scope> OpenAsync(TenantId tenant, CancellationToken ct) { var c = await dataSource.OpenConnectionAsync(ct); var t = await c.BeginTransactionAsync(ct); await using var set = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", c, t); Add(set, tenant.Value.ToString("D")); await set.ExecuteNonQueryAsync(ct); return new(c, t); }
     private static ExpenseDto ReadExpense(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), GuidValue(r, 2), r.GetString(3), r.GetFieldValue<DateOnly>(4), r.GetDecimal(5), r.GetString(6), r.GetString(7), r.GetGuid(8), r.GetString(9), r.GetString(10), r.GetString(11), r.GetString(12), r.GetString(13), r.GetString(14), Text(r, 15), Text(r, 16), r.GetInt64(17), r.GetFieldValue<DateTimeOffset>(18), r.IsDBNull(19) ? null : r.GetFieldValue<DateTimeOffset>(19));
     private static Guid? GuidValue(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetGuid(i); private static string? Text(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i); private static object Db(object? v) => v ?? DBNull.Value; private static void Add(NpgsqlCommand c, params object?[] values) { foreach (var value in values) c.Parameters.AddWithValue(value ?? DBNull.Value); }
+    private static MissingReceiptDeclarationDto ReadMissingReceipt(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetGuid(4), r.GetFieldValue<DateTimeOffset>(5), r.IsDBNull(6) ? null : r.GetFieldValue<DateTimeOffset>(6));
     private static Guid StableFactId(Guid expenseId) => new(SHA256.HashData(Encoding.UTF8.GetBytes($"expenses:{expenseId:D}")).AsSpan(0, 16));
     private sealed class Scope(NpgsqlConnection connection, NpgsqlTransaction transaction) : IAsyncDisposable { public NpgsqlConnection Connection { get; } = connection; public NpgsqlTransaction Transaction { get; } = transaction; public async ValueTask DisposeAsync() { await Transaction.DisposeAsync(); await Connection.DisposeAsync(); } }
     public async Task<IReadOnlyList<ExpenseItemizationDto>> ListItemizationsAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
