@@ -150,6 +150,32 @@ public sealed class ExpensesPostgresIntegrationTests
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAdvanceAsync(new(Atlas), advance.LegalEntityId, advance.Id, advance.Version, "settle", default));
     }
 
+    [ExpensesPostgresFact]
+    public async Task CorporateCardAllocationSupportsSplitExpensesAndIsIdempotent()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var first = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Split hotel", new(2026, 10, 15), 100m, "EGP", "CorporateCard", categoryVersion), default);
+        var second = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Split meal", new(2026, 10, 15), 110m, "EGP", "CorporateCard", categoryVersion), default);
+        var providerReference = $"allocation-{Guid.CreateVersion7():N}";
+        var card = await repository.ImportCardTransactionAsync(new(Atlas), entity, new(providerReference, "Hotel & Meal", new(2026, 10, 15), 210m), default);
+        var partial = await repository.AllocateCardTransactionAsync(new(Atlas), entity, card.Id, new(first.Id, 100m), default);
+        Assert.Equal("Unmatched", partial.State);
+        var allocated = await repository.AllocateCardTransactionAsync(new(Atlas), entity, card.Id, new(second.Id, 110m), default);
+        Assert.Equal("Allocated", allocated.State);
+        await repository.AllocateCardTransactionAsync(new(Atlas), entity, card.Id, new(second.Id, 110m), default);
+        Assert.Equal(2, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_card_allocation where tenant_id=$1 and card_transaction_id=$2", Atlas, card.Id));
+        Assert.Equal(210m, (decimal)(await ScalarAsync(connection, "select sum(amount) from business_expenses.expense_card_allocation where tenant_id=$1 and card_transaction_id=$2", Atlas, card.Id))!);
+    }
+
     private static async Task<object?> ScalarAsync(NpgsqlConnection connection, string sql, params object[] values)
     { await using var command = new NpgsqlCommand(sql, connection); foreach (var value in values) command.Parameters.AddWithValue(value); return await command.ExecuteScalarAsync(); }
     private static async Task<long> ScalarLongAsync(NpgsqlConnection connection, string sql, params object[] values)
