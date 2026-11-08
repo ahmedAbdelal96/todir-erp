@@ -74,6 +74,7 @@ public sealed class ExpensesPostgresIntegrationTests
         var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
         var created = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "اختبار مالي", new(2026, 10, 12), 125m, "EGP", "EmployeePaid", categoryVersion, "رحلة عميل", "اختبار الترحيل"), default);
         await repository.AddEvidenceAsync(new(Atlas), entity, created.Id, new("Receipt", "file://expenses/test-receipt"), default);
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='evidence.attached'", Atlas, created.Id));
         var submitted = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(created.Version), "submit", default);
         await repository.EvaluatePolicyAsync(new(Atlas), entity, created.Id, default);
         var approvedVersion = await ApproveAsync(repository, new(Atlas), entity, created.Id, submitted.Version);
@@ -183,6 +184,36 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task CorporateCardPendingClearAndRefundAdjustmentsAreIdempotent()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var expense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Card refund", new(2026, 10, 20), 80m, "EGP", "CorporateCard", categoryVersion), default);
+        var card = await repository.ImportCardTransactionAsync(new(Atlas), entity, new($"pending-{Guid.CreateVersion7():N}", "Card provider", new(2026, 10, 20), 80m, "EGP", "Pending"), default);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.MatchCardTransactionAsync(new(Atlas), entity, card.Id, new(expense.Id), default));
+        card = await repository.ClearCardTransactionAsync(new(Atlas), entity, card.Id, default);
+        Assert.Equal("Cleared", card.State);
+        card = await repository.MatchCardTransactionAsync(new(Atlas), entity, card.Id, new(expense.Id), default);
+        Assert.Equal("Matched", card.State);
+        var reference = $"refund-{Guid.CreateVersion7():N}";
+        var first = await repository.RecordCardAdjustmentAsync(new(Atlas), entity, card.Id, new("Refund", reference, 30m, "EGP", "Merchant partial refund"), default);
+        var retry = await repository.RecordCardAdjustmentAsync(new(Atlas), entity, card.Id, new("Refund", reference, 30m, "EGP", "Merchant partial refund"), default);
+        Assert.Equal(first.Id, retry.Id);
+        Assert.Equal("Matched", (await repository.ListCardTransactionsAsync(new(Atlas), entity, null, card.ProviderReference, 1, 10, default)).Items.Single().State);
+        var completed = await repository.RecordCardAdjustmentAsync(new(Atlas), entity, card.Id, new("Refund", $"refund-{Guid.CreateVersion7():N}", 50m, "EGP", "Merchant final refund"), default);
+        Assert.Equal(80m, (decimal)(await ScalarAsync(connection, "select coalesce(sum(amount),0) from business_expenses.expense_card_adjustment where tenant_id=$1 and card_transaction_id=$2 and state='Applied'", Atlas, card.Id))!);
+        Assert.Equal("Applied", completed.State);
+        Assert.Equal("Refunded", (await repository.ListCardTransactionsAsync(new(Atlas), entity, "Refunded", card.ProviderReference, 1, 10, default)).Items.Single().State);
+    }
+
+    [ExpensesPostgresFact]
     public async Task PublishedExpensePolicyVersionIsCapturedInEvaluationSnapshot()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
@@ -211,6 +242,34 @@ public sealed class ExpensesPostgresIntegrationTests
         var overLimit = await repository.CreateAsync(new(Delta), new(entity, Guid.NewGuid(), "Over limit", expenseDate, 1500m, "EGP", "EmployeePaid", categoryVersion), default);
         var blocked = await repository.EvaluatePolicyAsync(new(Delta), entity, overLimit.Id, default);
         Assert.Equal("Blocked", blocked.State);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task PolicyApplicabilityScopesByEmployeeCategoryAndPaymentSource()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("bbdcc188-1acc-805e-8721-f43308540a4d");
+        var employee = Guid.CreateVersion7();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Delta.ToString("D")); await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Delta, entity))!;
+        var policy = await repository.CreatePolicyAsync(new(Delta), new(entity, $"SCOPED-{Guid.CreateVersion7():N}", "Scoped policy"), default);
+        using var rules = JsonDocument.Parse($"{{\"paymentSources\":[\"EmployeePaid\"],\"employeeIds\":[\"{employee:D}\"],\"categoryVersionIds\":[\"{categoryVersion:D}\"],\"maxAmount\":5000}}");
+        var policyVersion = await repository.CreatePolicyVersionAsync(new(Delta), entity, policy.Id, new(rules.RootElement.Clone(), new(2095, 1, 1)), default);
+        await repository.PublishPolicyVersionAsync(new(Delta), entity, policyVersion.Id, new(), default);
+        var matching = await repository.CreateAsync(new(Delta), new(entity, employee, "Scoped match", new(2095, 2, 1), 125m, "EGP", "EmployeePaid", categoryVersion), default);
+        var matchingEvaluation = await repository.EvaluatePolicyAsync(new(Delta), entity, matching.Id, default);
+        Assert.Equal(policyVersion.Id.ToString("D"), matchingEvaluation.Snapshot.GetProperty("policyVersionId").GetString());
+        var otherEmployee = await repository.CreateAsync(new(Delta), new(entity, Guid.CreateVersion7(), "Different employee", new(2095, 2, 1), 125m, "EGP", "EmployeePaid", categoryVersion), default);
+        var otherEmployeeEvaluation = await repository.EvaluatePolicyAsync(new(Delta), entity, otherEmployee.Id, default);
+        Assert.NotEqual(policyVersion.Id.ToString("D"), otherEmployeeEvaluation.Snapshot.GetProperty("policyVersionId").GetString());
+        var otherPaymentSource = await repository.CreateAsync(new(Delta), new(entity, employee, "Different source", new(2095, 2, 1), 125m, "EGP", "CorporateCard", categoryVersion), default);
+        var otherPaymentEvaluation = await repository.EvaluatePolicyAsync(new(Delta), entity, otherPaymentSource.Id, default);
+        Assert.NotEqual(policyVersion.Id.ToString("D"), otherPaymentEvaluation.Snapshot.GetProperty("policyVersionId").GetString());
     }
 
     [ExpensesPostgresFact]

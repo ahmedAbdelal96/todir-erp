@@ -41,7 +41,9 @@ public sealed record ApplyBusinessAdvanceRequest(Guid ExpenseId, decimal Amount)
 public sealed record ReturnBusinessAdvanceRequest(decimal Amount, long Version);
 public sealed record IssueBusinessAdvanceRequest(Guid PaymentAccountId, string Method, decimal Amount, DateOnly PaymentDate, DateOnly PostingDate, long Version);
 public sealed record ExpenseCardTransactionDto(Guid Id, Guid LegalEntityId, string ProviderReference, string MerchantName, DateOnly TransactionDate, decimal Amount, string CurrencyCode, string State, Guid? EmployeeId, Guid? MatchedExpenseId);
-public sealed record ImportExpenseCardTransactionRequest(string ProviderReference, string MerchantName, DateOnly TransactionDate, decimal Amount, string CurrencyCode = "EGP");
+public sealed record ImportExpenseCardTransactionRequest(string ProviderReference, string MerchantName, DateOnly TransactionDate, decimal Amount, string CurrencyCode = "EGP", string InitialState = "Unmatched");
+public sealed record ExpenseCardAdjustmentDto(Guid Id, Guid CardTransactionId, string Kind, string ProviderReference, decimal Amount, string CurrencyCode, string State, string Reason, DateTimeOffset CreatedAt, DateTimeOffset? AppliedAt);
+public sealed record RecordExpenseCardAdjustmentRequest(string Kind, string ProviderReference, decimal Amount, string CurrencyCode, string Reason);
 public sealed record ExpenseReimbursementBatchDto(Guid Id, Guid LegalEntityId, string State, string CurrencyCode, decimal TotalAmount, long Version, DateTimeOffset CreatedAt);
 public sealed record PayExpenseReimbursementBatchRequest(Guid PaymentAccountId, string Method, DateOnly PaymentDate, DateOnly PostingDate, long Version);
 public sealed record MileageExpenseDetailDto(Guid Id, Guid ExpenseId, decimal Distance, string DistanceUnit, decimal Rate, decimal CalculatedAmount, string? VehicleType, string? Route);
