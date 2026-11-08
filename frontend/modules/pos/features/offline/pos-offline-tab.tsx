@@ -4,6 +4,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { BidiText } from "../../../../components/primitives/bidi-text.tsx";
 import { OfflineIcon, SyncIcon } from "../../components/pos-icons.tsx";
 import { usePosOffline, type StoredOfflineEnvelope } from "../../hooks/use-pos-offline.ts";
+import { useRegisterTerminalsQuery } from "../../hooks/use-pos-queries.ts";
 
 export interface PosOfflineTabProps {
   readonly registerId: string;
@@ -11,6 +12,10 @@ export interface PosOfflineTabProps {
 
 export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Element {
   const { t } = useTranslation("pos");
+  const { data: terminalsData } = useRegisterTerminalsQuery(registerId);
+  const activeTerminal = terminalsData?.find((t) => t.status === "Ready") || terminalsData?.[0];
+  const dynamicDeviceIdentity = activeTerminal?.deviceIdentity;
+
   const {
     isOnline,
     pendingSyncCount,
@@ -20,7 +25,7 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
     deviceIdentity,
     refreshOfflinePackage,
     syncOfflineQueue,
-  } = usePosOffline(registerId);
+  } = usePosOffline(registerId, dynamicDeviceIdentity);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);

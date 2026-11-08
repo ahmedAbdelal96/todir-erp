@@ -22,6 +22,7 @@ import type {
   CheckoutRequest,
   CheckoutForCartRequest,
   CheckoutResponse,
+  PosSaleResponse,
   TenderRequest,
   CreateReturnRequest,
   ReturnLineRequest,
@@ -32,6 +33,7 @@ import type {
   OfflineEnvelopeRequest,
   OfflinePackageResponse,
   OfflineConflictResolutionRequest,
+  PosSaleLineDetail,
   CatalogVariantSnapshot,
   CatalogSearchResult,
   PosPaymentMixReport,
@@ -59,6 +61,10 @@ export const posApi = {
 
   async getRegister(registerId: string): Promise<RegisterResponse> {
     return httpClient<RegisterResponse>(`${BASE}/registers/${registerId}`);
+  },
+
+  async getRegisterTerminals(registerId: string): Promise<readonly TerminalResponse[]> {
+    return httpClient<readonly TerminalResponse[]>(`${BASE}/registers/${registerId}/terminals`);
   },
 
   async updateRegister(registerId: string, request: UpdateRegisterRequest): Promise<RegisterResponse> {
@@ -297,6 +303,10 @@ export const posApi = {
     });
   },
 
+  async getSale(saleId: string): Promise<PosSaleResponse> {
+    return httpClient<PosSaleResponse>(`${BASE}/sales/${saleId}`);
+  },
+
   // Returns & Exchanges
   async createReturn(request: CreateReturnRequest): Promise<{ id: string }> {
     return httpClient<{ id: string }>(`${BASE}/returns`, {
@@ -343,6 +353,10 @@ export const posApi = {
     });
   },
 
+  async getSaleLines(saleId: string): Promise<readonly PosSaleLineDetail[]> {
+    return httpClient<readonly PosSaleLineDetail[]>(`${BASE}/sales/${saleId}/lines`);
+  },
+
   // Manager Overrides
   async createManagerOverride(request: ManagerOverrideRequest): Promise<string> {
     return httpClient<string>(`${BASE}/overrides`, {
@@ -369,6 +383,12 @@ export const posApi = {
     return httpClient<{ resolved: boolean }>(`${BASE}/offline/conflicts/${conflictId}/resolve`, {
       method: "POST",
       body: JSON.stringify(request),
+    });
+  },
+
+  async processOfflineCashSale(envelopeId: string): Promise<{ envelopeId: string; state: string; checkout: CheckoutResponse }> {
+    return httpClient<{ envelopeId: string; state: string; checkout: CheckoutResponse }>(`${BASE}/offline/envelopes/${envelopeId}/process-cash-sale`, {
+      method: "POST",
     });
   },
 

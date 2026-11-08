@@ -227,11 +227,11 @@ export function PosPage(): React.JSX.Element {
           </Button>
         </div>
 
-        {/* Store / Entity indicator */}
+        {/* Store / Register indicator */}
         <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", paddingInlineEnd: "0.5rem" }}>
-          <span>{t("page.legalEntity")}: </span>
+          <span>{t("nav.registers")}: </span>
           <strong style={{ color: "var(--color-content-default)" }}>
-            <BidiText>{legalEntityId.slice(0, 8)}</BidiText>
+            <BidiText>{currentRegister ? `${currentRegister.name} (${currentRegister.code})` : "—"}</BidiText>
           </strong>
         </div>
       </div>

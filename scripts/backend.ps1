@@ -108,6 +108,7 @@ try {
     $env:TODIR_FILES_REGION = if ($settings.TODIR_FILES_REGION) { $settings.TODIR_FILES_REGION } else { 'us-east-1' }
     $env:TODIR_FILES_SCANNER_HOST = if ($settings.TODIR_FILES_SCANNER_HOST) { $settings.TODIR_FILES_SCANNER_HOST } else { '127.0.0.1' }
     $env:TODIR_FILES_SCANNER_PORT = if ($settings.TODIR_FILES_SCANNER_PORT) { $settings.TODIR_FILES_SCANNER_PORT } else { '3310' }
+    $env:TODIR_POS_OFFLINE_SIGNING_SECRET = if ($env:TODIR_POS_OFFLINE_SIGNING_SECRET) { $env:TODIR_POS_OFFLINE_SIGNING_SECRET } else { 'pos-offline-development-signing-key-2026' }
 
     Stop-ExistingLocalHosts
 

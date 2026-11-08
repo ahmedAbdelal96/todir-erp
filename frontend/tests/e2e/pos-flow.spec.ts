@@ -315,7 +315,7 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     const receiptModal = page.locator('[role="dialog"]').filter({ hasText: /إيصال|Receipt/i }).first();
     await expect(receiptModal).toBeVisible({ timeout: 10000 });
     await expect(receiptModal).toContainText(/إيصال البيع الإلكتروني|إيصال استلام|Sales Receipt/i);
-    await expect(receiptModal).toContainText(/REC-2026-/i);
+    await expect(receiptModal).toContainText(/POS-/i);
     await expect(receiptModal).toContainText(/الإجمالي المستحق|Grand Total|الإجمالي/i);
 
     await captureScreenshot(page, '06-pos-thermal-receipt-modal');

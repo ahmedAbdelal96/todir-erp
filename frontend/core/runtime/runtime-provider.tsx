@@ -172,6 +172,11 @@ export function useOptionalLegalEntityContext(): LegalEntityContext | undefined 
   return useContext(RuntimeContextState)?.context.legalEntity;
 }
 
+/** Returns the active user context when a screen is rendered outside the shell provider. */
+export function useOptionalUserContext(): UserContext | undefined {
+  return useContext(RuntimeContextState)?.context.user;
+}
+
 export function useBranchContext(): BranchContext | undefined {
   return useRuntimeContext().branch;
 }

@@ -19,6 +19,8 @@ import { TenderModal } from "../../components/tender-modal.tsx";
 import { ReceiptModal } from "../../components/receipt-modal.tsx";
 import { CashMovementModal } from "../../components/cash-movement-modal.tsx";
 import { ManagerOverrideModal } from "../../components/manager-override-modal.tsx";
+import { useOptionalUserContext } from "../../../../core/runtime/index.ts";
+import { posApi } from "../../services/pos-api.ts";
 import { usePosScanner } from "../../hooks/use-pos-scanner.ts";
 import { usePosOffline } from "../../hooks/use-pos-offline.ts";
 import {
@@ -41,6 +43,7 @@ import {
   usePaymentRequestsQuery,
   useCreateManagerOverrideMutation,
   useRecoverCheckoutMutation,
+  useRegisterTerminalsQuery,
 } from "../../hooks/use-pos-queries.ts";
 import type {
   CartLineResponse,
@@ -93,6 +96,16 @@ export function PosCheckoutWorkspace({
 
   // Completed checkout details for receipt
   const [completedCheckout, setCompletedCheckout] = useState<CheckoutResponse | null>(null);
+  const [frozenReceiptLines, setFrozenReceiptLines] = useState<readonly CartLineResponse[]>([]);
+  const [authoritativeReceiptNumber, setAuthoritativeReceiptNumber] = useState<string | null>(null);
+  const [authoritativeBusinessDate, setAuthoritativeBusinessDate] = useState<string | null>(null);
+
+  // Authenticated user & human cashier name
+  const user = useOptionalUserContext();
+  const cashierDisplayName =
+    user?.displayName ||
+    user?.email ||
+    (session ? t("workspace.cashierOnDuty", "أمين الصندوق المناوب") : "Cashier");
 
   // Mutations
   const createCartMutation = useCreateCartMutation();
@@ -116,6 +129,7 @@ export function PosCheckoutWorkspace({
   const { data: paymentAccountsData } = usePaymentAccountsQuery(legalEntityId);
   const { data: priceListsData } = usePriceListsQuery(legalEntityId);
   const { data: paymentRequestsData } = usePaymentRequestsQuery(legalEntityId);
+  const { data: terminalsData } = useRegisterTerminalsQuery(register.id);
 
   // Dynamic configuration resolution
   const paymentAccounts = paymentAccountsData || [];
@@ -130,7 +144,10 @@ export function PosCheckoutWorkspace({
   const resolvedProviderConfigId =
     (paymentRequestsData?.items || paymentRequestsData || [])[0]?.providerConfigId || null;
 
-  // Offline Hook
+  const activeTerminal = terminalsData?.find((t) => t.status === "Ready") || terminalsData?.[0];
+  const dynamicDeviceIdentity = activeTerminal?.deviceIdentity;
+
+  // Offline Hook with dynamic device identity
   const {
     isOnline,
     pendingSyncCount,
@@ -138,7 +155,30 @@ export function PosCheckoutWorkspace({
     deviceIdentity,
     enqueueOfflineSale,
     syncOfflineQueue,
-  } = usePosOffline(register.id);
+  } = usePosOffline(register.id, dynamicDeviceIdentity);
+
+  // Resolve authoritative receipt details when checkout is completed
+  useEffect(() => {
+    const saleId = completedCheckout?.saleId;
+    if (saleId && completedCheckout.state === "Completed") {
+      posApi
+        .getSale(saleId)
+        .then((sale) => {
+          if (sale?.receiptNumber) {
+            setAuthoritativeReceiptNumber(sale.receiptNumber);
+            setAuthoritativeBusinessDate(sale.businessDate);
+          } else {
+            setAuthoritativeReceiptNumber(`POS-${saleId.slice(0, 8)}`);
+          }
+        })
+        .catch(() => {
+          setAuthoritativeReceiptNumber(`POS-${saleId.slice(0, 8)}`);
+        });
+    } else {
+      setAuthoritativeReceiptNumber(null);
+      setAuthoritativeBusinessDate(null);
+    }
+  }, [completedCheckout?.saleId, completedCheckout?.state]);
 
   // Initialize Cart if none exists
   useEffect(() => {
@@ -348,11 +388,22 @@ export function PosCheckoutWorkspace({
         },
       });
 
-      if (
-        res.state === "Completed" ||
-        ((res.paymentState === "Completed" || res.paymentState === "Captured") && res.saleId)
-      ) {
-        setCompletedCheckout(res);
+      setCompletedCheckout(res);
+
+      if (res.state === "Completed") {
+        // Freeze cart lines for immutable receipt printing
+        setFrozenReceiptLines(cartDetails?.lines ? [...cartDetails.lines] : []);
+        if (res.saleId) {
+          try {
+            const sale = await posApi.getSale(res.saleId);
+            if (sale) {
+              setAuthoritativeReceiptNumber(sale.receiptNumber);
+              setAuthoritativeBusinessDate(sale.businessDate);
+            }
+          } catch {
+            // Receipt modal has POS-{id} fallback
+          }
+        }
         setIsTenderModalOpen(false);
         setIsReceiptModalOpen(true);
       } else if (
@@ -361,7 +412,6 @@ export function PosCheckoutWorkspace({
         res.paymentState === "Unknown"
       ) {
         setIsTenderModalOpen(false);
-        setCompletedCheckout(res);
         setStatusMessage(
           t(
             "workspace.checkoutPendingRecovery",
@@ -373,9 +423,10 @@ export function PosCheckoutWorkspace({
           t("workspace.paymentFailed", "فشلت عملية التحصيل من مزود الدفع. يرجى اختيار وسيلة دفع أخرى أو إعادة المحاولة.")
         );
       } else {
-        setCompletedCheckout(res);
         setIsTenderModalOpen(false);
-        setIsReceiptModalOpen(true);
+        setStatusMessage(
+          `${t("workspace.currentStatus", "الحالة الحالية")}: ${res.paymentState} (${res.state})`
+        );
       }
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -393,7 +444,21 @@ export function PosCheckoutWorkspace({
     try {
       const res = await recoverCheckoutMutation.mutateAsync(checkoutId);
       setCompletedCheckout(res);
-      if (res.state === "Completed" || res.paymentState === "Completed") {
+      if (res.state === "Completed") {
+        if (cartDetails?.lines && cartDetails.lines.length > 0) {
+          setFrozenReceiptLines([...cartDetails.lines]);
+        }
+        if (res.saleId) {
+          try {
+            const sale = await posApi.getSale(res.saleId);
+            if (sale) {
+              setAuthoritativeReceiptNumber(sale.receiptNumber);
+              setAuthoritativeBusinessDate(sale.businessDate);
+            }
+          } catch {
+            // Fallback
+          }
+        }
         setIsReceiptModalOpen(true);
         setStatusMessage(t("workspace.checkoutRecoveredSuccess", "تم استرداد وتأكيد اكتمال العملية بنجاح"));
       } else {
@@ -494,6 +559,9 @@ export function PosCheckoutWorkspace({
   const handleNewSale = () => {
     setCartId(null);
     setCompletedCheckout(null);
+    setFrozenReceiptLines([]);
+    setAuthoritativeReceiptNumber(null);
+    setAuthoritativeBusinessDate(null);
     setCustomerPartyId(null);
     setCustomerName(null);
     setCheckoutIdempotencyKey(
@@ -807,7 +875,7 @@ export function PosCheckoutWorkspace({
         >
           <span>{statusMessage}</span>
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            {completedCheckout && completedCheckout.state === "RecoveryRequired" && (
+            {completedCheckout && completedCheckout.state !== "Completed" && (
               <Button
                 size="compact"
                 variant="primary"
@@ -912,14 +980,16 @@ export function PosCheckoutWorkspace({
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}
         checkout={completedCheckout}
-        lines={lines}
+        lines={frozenReceiptLines.length > 0 ? frozenReceiptLines : lines}
         subtotal={subtotal}
         taxTotal={taxTotal}
         discountTotal={discountTotal}
         grandTotal={grandTotal}
         currencyCode={register.currencyCode}
         registerCode={register.code}
-        cashierName={session ? `User-${session.id.slice(0, 4)}` : "Cashier"}
+        cashierName={cashierDisplayName}
+        authoritativeReceiptNumber={authoritativeReceiptNumber ?? undefined}
+        authoritativeBusinessDate={authoritativeBusinessDate ?? undefined}
         onNewSale={handleNewSale}
       />
 

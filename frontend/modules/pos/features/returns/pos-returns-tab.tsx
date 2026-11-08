@@ -178,7 +178,7 @@ export function PosReturnsTab({
                     <BidiText>{ret.id.slice(0, 8)}</BidiText>
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>
-                    <BidiText>{ret.saleId ? ret.saleId.slice(0, 8) : ret.originalSaleId ? ret.originalSaleId.slice(0, 8) : "—"}</BidiText>
+                    <BidiText>{ret.receiptNumber || ret.saleId?.slice(0, 8) || ret.originalSaleId?.slice(0, 8) || "—"}</BidiText>
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>{ret.reason}</td>
                   <td style={{ padding: "0.75rem 1rem" }}>{ret.disposition}</td>

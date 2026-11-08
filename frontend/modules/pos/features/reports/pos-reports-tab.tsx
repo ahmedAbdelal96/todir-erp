@@ -159,7 +159,7 @@ export function PosReportsTab({ legalEntityId }: PosReportsTabProps): React.JSX.
                 salesList.map((sale: any, idx: number) => (
                   <tr key={sale.id || idx} style={{ borderBottom: idx === salesList.length - 1 ? "none" : "1px solid #e2e8f0" }}>
                     <td style={{ padding: "0.75rem 1rem", fontWeight: 700 }}>
-                      <BidiText>{(sale.id || "").slice(0, 8)}</BidiText>
+                      <BidiText>{sale.receiptNumber || sale.id?.slice(0, 8) || "—"}</BidiText>
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       <BidiText>{sale.createdAt ? new Date(sale.createdAt).toLocaleDateString() : today}</BidiText>

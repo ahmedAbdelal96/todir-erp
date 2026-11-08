@@ -5,6 +5,13 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { CashIcon, CreditCardIcon, SplitIcon } from "./pos-icons.tsx";
 import { BidiText } from "../../../components/primitives/bidi-text.tsx";
+import {
+  toScaledBigInt,
+  fromScaledBigInt,
+  scaledToNumber,
+  calculateExactChange,
+  calculateExactSplitRemaining,
+} from "../utils/exact-money-math.ts";
 import type { PosPaymentAccount, PosTenderMethod, TenderRequest } from "../types.ts";
 
 export interface TenderModalProps {
@@ -54,18 +61,18 @@ export function TenderModal({
   }, [isOpen, totalAmount]);
 
   // Split state
-  const [splitTenders, setSplitTenders] = useState<Array<{ method: PosTenderMethod; amount: number }>>([]);
+  const [splitTenders, setSplitTenders] = useState<Array<{ method: PosTenderMethod; amount: number; amountStr: string }>>([]);
   const [splitCurrentMethod, setSplitCurrentMethod] = useState<PosTenderMethod>("Cash");
   const [splitAmountStr, setSplitAmountStr] = useState<string>("");
 
   const [error, setError] = useState<string | null>(null);
 
-  // Exact math rounding
-  const cashTendered = parseFloat(cashTenderedStr) || 0;
-  const cashChange = Math.max(0, Math.round((cashTendered - totalAmount) * 100) / 100);
-
-  const splitPaidTotal = splitTenders.reduce((sum, item) => sum + item.amount, 0);
-  const splitRemaining = Math.max(0, Math.round((totalAmount - splitPaidTotal) * 100) / 100);
+  // Exact math using scaled BigInt arithmetic (zero IEEE 754 float drift)
+  const { changeAmount, changeStr, isSufficient } = calculateExactChange(cashTenderedStr, totalAmount);
+  const { paidTotal, paidTotalStr, remainingAmount, remainingStr, isComplete } = calculateExactSplitRemaining(
+    totalAmount,
+    splitTenders
+  );
 
   const handleQuickCash = (amount: number) => {
     setCashTenderedStr(amount.toFixed(2));
@@ -73,9 +80,16 @@ export function TenderModal({
   };
 
   const handleAddSplitTender = () => {
-    const amt = parseFloat(splitAmountStr) || 0;
-    if (amt <= 0) return;
-    setSplitTenders([...splitTenders, { method: splitCurrentMethod, amount: amt }]);
+    const amtScaled = toScaledBigInt(splitAmountStr);
+    if (amtScaled <= 0n) return;
+    setSplitTenders([
+      ...splitTenders,
+      {
+        method: splitCurrentMethod,
+        amount: scaledToNumber(amtScaled),
+        amountStr: fromScaledBigInt(amtScaled, 2),
+      },
+    ]);
     setSplitAmountStr("");
   };
 
@@ -88,7 +102,7 @@ export function TenderModal({
       setError(t("tender.noCashAccountAvailable", "No active cash account is configured for this legal entity."));
       return;
     }
-    if (cashTendered < totalAmount) {
+    if (!isSufficient) {
       setError(t("tender.insufficientCash"));
       return;
     }
@@ -129,7 +143,7 @@ export function TenderModal({
   };
 
   const handleSplitSubmit = async () => {
-    if (splitPaidTotal < totalAmount) {
+    if (!isComplete) {
       setError(t("tender.splitIncomplete"));
       return;
     }
@@ -259,9 +273,9 @@ export function TenderModal({
               style={{
                 padding: "0.75rem 1rem",
                 borderRadius: "var(--radius-md)",
-                backgroundColor: cashChange > 0 ? "rgba(16, 185, 129, 0.1)" : "var(--color-surface-hover)",
+                backgroundColor: changeAmount > 0 ? "rgba(16, 185, 129, 0.1)" : "var(--color-surface-hover)",
                 border: "1px solid",
-                borderColor: cashChange > 0 ? "rgba(16, 185, 129, 0.3)" : "var(--color-border-default)",
+                borderColor: changeAmount > 0 ? "rgba(16, 185, 129, 0.3)" : "var(--color-border-default)",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -275,10 +289,10 @@ export function TenderModal({
                 style={{
                   fontSize: "1.25rem",
                   fontWeight: 800,
-                  color: cashChange > 0 ? "var(--color-status-success)" : "var(--color-content-default)",
+                  color: changeAmount > 0 ? "var(--color-status-success)" : "var(--color-content-default)",
                 }}
               >
-                <BidiText>{cashChange.toFixed(2)} {currencyCode}</BidiText>
+                <BidiText>{changeStr} {currencyCode}</BidiText>
               </span>
             </div>
 
@@ -367,7 +381,7 @@ export function TenderModal({
                   >
                     <span>
                       {item.method === "Cash" ? t("tender.cash") : t("tender.card")}:{" "}
-                      <strong><BidiText>{item.amount.toFixed(2)} {currencyCode}</BidiText></strong>
+                      <strong><BidiText>{item.amountStr} {currencyCode}</BidiText></strong>
                     </span>
                     <button
                       type="button"
@@ -397,9 +411,9 @@ export function TenderModal({
                 fontWeight: 600,
               }}
             >
-              <span>{t("tender.paid")}: <BidiText>{splitPaidTotal.toFixed(2)} {currencyCode}</BidiText></span>
-              <span style={{ color: splitRemaining > 0 ? "var(--color-status-danger)" : "var(--color-status-success)" }}>
-                {t("tender.remaining")}: <BidiText>{splitRemaining.toFixed(2)} {currencyCode}</BidiText>
+              <span>{t("tender.paid")}: <BidiText>{paidTotalStr} {currencyCode}</BidiText></span>
+              <span style={{ color: remainingAmount > 0 ? "var(--color-status-danger)" : "var(--color-status-success)" }}>
+                {t("tender.remaining")}: <BidiText>{remainingStr} {currencyCode}</BidiText>
               </span>
             </div>
           </div>
@@ -432,7 +446,7 @@ export function TenderModal({
             <Button
               variant="primary"
               onClick={handleCashSubmit}
-              isDisabled={isSubmitting || cashTendered < totalAmount || !defaultCashAccount}
+              isDisabled={isSubmitting || !isSufficient || !defaultCashAccount}
             >
               {isSubmitting ? t("common.submitting") : t("tender.confirmCashCheckout")}
             </Button>
@@ -452,7 +466,7 @@ export function TenderModal({
             <Button
               variant="primary"
               onClick={handleSplitSubmit}
-              isDisabled={isSubmitting || splitPaidTotal < totalAmount}
+              isDisabled={isSubmitting || !isComplete}
             >
               {isSubmitting ? t("common.submitting") : t("tender.confirmSplitCheckout")}
             </Button>

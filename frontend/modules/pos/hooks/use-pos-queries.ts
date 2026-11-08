@@ -27,6 +27,7 @@ import type {
   OfflineConflictResolutionRequest,
   RegisterResponse,
   TerminalResponse,
+  PosSaleLineDetail,
   SessionResponse,
   CartResponse,
   CartDetailsResponse,
@@ -44,6 +45,7 @@ export const posQueryKeys = {
   registers: (entityId: string) => [...posQueryKeys.all, "registers", entityId] as const,
   register: (registerId: string) => [...posQueryKeys.all, "register", registerId] as const,
   terminals: (registerId: string) => [...posQueryKeys.all, "terminals", registerId] as const,
+  saleLines: (saleId: string) => [...posQueryKeys.all, "sale", saleId, "lines"] as const,
   currentSession: (registerId: string) => [...posQueryKeys.all, "session", "current", registerId] as const,
   session: (sessionId: string) => [...posQueryKeys.all, "session", sessionId] as const,
   cart: (cartId: string) => [...posQueryKeys.all, "cart", cartId] as const,
@@ -94,6 +96,26 @@ export function useRegister(registerId: string) {
   });
 }
 export const useRegisterQuery = useRegister;
+
+export function useRegisterTerminals(registerId?: string) {
+  return useQuery<readonly TerminalResponse[]>({
+    queryKey: posQueryKeys.terminals(registerId || ""),
+    queryFn: () => (registerId ? posApi.getRegisterTerminals(registerId) : Promise.resolve([])),
+    enabled: Boolean(registerId),
+    staleTime: 30_000,
+  });
+}
+export const useRegisterTerminalsQuery = useRegisterTerminals;
+
+export function useSaleLines(saleId?: string) {
+  return useQuery<readonly PosSaleLineDetail[]>({
+    queryKey: posQueryKeys.saleLines(saleId || ""),
+    queryFn: () => (saleId ? posApi.getSaleLines(saleId) : Promise.resolve([])),
+    enabled: Boolean(saleId),
+    staleTime: 30_000,
+  });
+}
+export const useSaleLinesQuery = useSaleLines;
 
 export function useCurrentSession(registerId?: string) {
   return useQuery<SessionResponse | null>({
@@ -520,6 +542,16 @@ export function useRecoverCheckoutMutation() {
     mutationFn: (checkoutId: string) => posApi.recoverCheckout(checkoutId),
     onSuccess: (checkout) => {
       queryClient.invalidateQueries({ queryKey: posQueryKeys.checkout(checkout.checkoutId) });
+    },
+  });
+}
+
+export function useProcessOfflineCashSaleMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (envelopeId: string) => posApi.processOfflineCashSale(envelopeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: posQueryKeys.all });
     },
   });
 }

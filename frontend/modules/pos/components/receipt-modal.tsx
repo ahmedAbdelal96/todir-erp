@@ -18,6 +18,8 @@ export interface ReceiptModalProps {
   readonly currencyCode?: string | undefined;
   readonly registerCode?: string | undefined;
   readonly cashierName?: string | undefined;
+  readonly authoritativeReceiptNumber?: string | undefined;
+  readonly authoritativeBusinessDate?: string | undefined;
   readonly onNewSale: () => void;
 }
 
@@ -58,6 +60,8 @@ export function ReceiptModal({
   currencyCode = "EGP",
   registerCode = "MAIN",
   cashierName = "Cashier",
+  authoritativeReceiptNumber,
+  authoritativeBusinessDate,
   onNewSale,
 }: ReceiptModalProps): React.JSX.Element | null {
   const { t } = useTranslation("pos");
@@ -71,9 +75,9 @@ export function ReceiptModal({
     onNewSale();
   };
 
-  const receiptNumber = checkout?.saleId
-    ? `REC-${new Date().getFullYear()}-${Math.abs(checkout.saleId.split("-").reduce((acc, part) => acc ^ parseInt(part.slice(0, 4) || "0", 16), 0) % 90000 + 10000)}`
-    : "REC-2026-0001";
+  const receiptNumber =
+    authoritativeReceiptNumber ||
+    (checkout?.saleId ? `POS-${checkout.saleId.slice(0, 8)}` : "—");
 
   return (
     <Dialog
@@ -113,7 +117,7 @@ export function ReceiptModal({
               {t("receipt.taxInvoice")}
             </div>
             <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.25rem" }}>
-              {new Date().toLocaleString()}
+              <BidiText>{authoritativeBusinessDate || new Date().toISOString().slice(0, 10)}</BidiText>
             </div>
           </div>
 

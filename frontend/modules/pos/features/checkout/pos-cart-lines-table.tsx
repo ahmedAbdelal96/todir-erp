@@ -79,13 +79,13 @@ export function PosCartLinesTable({
               fontWeight: 600,
             }}
           >
-            <th style={{ padding: "0.75rem 1rem", width: "3rem", textAlign: "center" }}>#</th>
-            <th style={{ padding: "0.75rem 1rem" }}>{t("cart.colItem")}</th>
-            <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("cart.colPrice")}</th>
-            <th style={{ padding: "0.75rem 1rem", textAlign: "center", width: "9rem" }}>{t("cart.colQty")}</th>
-            <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("cart.colDiscount")}</th>
-            <th style={{ padding: "0.75rem 1rem", textAlign: "end" }}>{t("cart.colTotal")}</th>
-            <th style={{ padding: "0.75rem 0.5rem", width: "3rem", textAlign: "center" }} aria-label={t("common.actions")}></th>
+            <th style={{ padding: "0.75rem 1rem", width: "3.5rem", textAlign: "center" }}>#</th>
+            <th style={{ padding: "0.75rem 1rem", minWidth: "16rem" }}>{t("cart.colItem")}</th>
+            <th style={{ padding: "0.75rem 1rem", textAlign: "end", width: "8rem" }}>{t("cart.colPrice")}</th>
+            <th style={{ padding: "0.75rem 1rem", textAlign: "center", width: "9.5rem" }}>{t("cart.colQty")}</th>
+            <th style={{ padding: "0.75rem 1rem", textAlign: "end", width: "7.5rem" }}>{t("cart.colDiscount")}</th>
+            <th style={{ padding: "0.75rem 1rem", textAlign: "end", width: "8.5rem" }}>{t("cart.colTotal")}</th>
+            <th style={{ padding: "0.75rem 0.5rem", width: "3.5rem", textAlign: "center" }} aria-label={t("common.actions")}></th>
           </tr>
         </thead>
         <tbody>
@@ -100,15 +100,15 @@ export function PosCartLinesTable({
               <td style={{ padding: "0.75rem 1rem", textAlign: "center", color: "var(--color-content-muted)", fontWeight: 500 }}>
                 {idx + 1}
               </td>
-              <td style={{ padding: "0.75rem 1rem" }}>
-                <div style={{ fontWeight: 600, color: "var(--color-content-default)" }}>
+              <td style={{ padding: "0.75rem 1rem", minWidth: "16rem" }}>
+                <div style={{ fontWeight: 600, color: "var(--color-content-default)", lineHeight: 1.45, wordBreak: "break-word" }}>
                   <BidiText>{line.description}</BidiText>
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-                  {t("cart.uom")}: <BidiText>{line.uomCode || ""}</BidiText>
+                <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.2rem" }}>
+                  <span style={{ fontWeight: 500 }}>{t("cart.uom")}: </span><BidiText>{line.uomCode || ""}</BidiText>
                   {line.taxAmount > 0 && (
-                    <span style={{ marginInlineStart: "0.5rem", color: "var(--color-brand-primary)" }}>
-                      {t("cart.tax")}: <BidiText>{line.taxAmount.toFixed(2)}</BidiText>
+                    <span style={{ marginInlineStart: "0.75rem", color: "var(--color-brand-primary)" }}>
+                      {t("cart.tax")}: <BidiText>{line.taxAmount.toFixed(2)} {currencyCode}</BidiText>
                     </span>
                   )}
                 </div>

@@ -2,8 +2,57 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { ar as posAr } from "../i18n/ar.ts";
 import { en as posEn } from "../i18n/en.ts";
+import {
+  toScaledBigInt,
+  fromScaledBigInt,
+  calculateExactChange,
+  calculateExactSplitRemaining,
+} from "../utils/exact-money-math.ts";
 
 describe("POS Module 20 Slice Contracts & Domain Invariants", () => {
+  test("Exact Money Decimal Arithmetic eliminates IEEE 754 float drift", () => {
+    // 0.1 + 0.2 in standard JS float is 0.30000000000000004
+    const a = toScaledBigInt("0.1");
+    const b = toScaledBigInt("0.2");
+    const sum = a + b;
+    assert.equal(fromScaledBigInt(sum, 2), "0.30");
+
+    // Exact cash change
+    const change1 = calculateExactChange("100.00", "99.95");
+    assert.equal(change1.isSufficient, true);
+    assert.equal(change1.changeAmount, 0.05);
+    assert.equal(change1.changeStr, "0.05");
+
+    // Exact fractional cash change with Eastern Arabic digits
+    const change2 = calculateExactChange("٢٠٠.٥٠", "150.25");
+    assert.equal(change2.isSufficient, true);
+    assert.equal(change2.changeAmount, 50.25);
+    assert.equal(change2.changeStr, "50.25");
+
+    // Underpayment detection
+    const under = calculateExactChange("99.99", "100.00");
+    assert.equal(under.isSufficient, false);
+    assert.equal(under.changeAmount, 0);
+
+    // Exact split remaining with three fractional payments
+    const split = calculateExactSplitRemaining("100.00", [
+      { amount: "33.33" },
+      { amount: "33.33" },
+      { amount: "33.34" },
+    ]);
+    assert.equal(split.isComplete, true);
+    assert.equal(split.remainingAmount, 0);
+    assert.equal(split.paidTotalStr, "100.00");
+
+    // Incomplete split
+    const splitIncomplete = calculateExactSplitRemaining("100.00", [
+      { amount: "50.00" },
+      { amount: "49.99" },
+    ]);
+    assert.equal(splitIncomplete.isComplete, false);
+    assert.equal(splitIncomplete.remainingAmount, 0.01);
+    assert.equal(splitIncomplete.remainingStr, "0.01");
+  });
   test("1:1 Arabic and English translation parity for POS resources", () => {
     const getKeys = (obj: Record<string, any>, prefix = ""): string[] => {
       let keys: string[] = [];

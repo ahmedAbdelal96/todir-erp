@@ -93,6 +93,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         const string exchange = "select r.legal_entity_id,r.branch_id from business_pos.pos_exchange_group eg join business_pos.pos_return pr on pr.tenant_id=eg.tenant_id and pr.id=eg.return_id join business_pos.pos_session s on s.tenant_id=pr.tenant_id and s.id=pr.session_id join business_pos.pos_register r on r.tenant_id=s.tenant_id and r.id=s.register_id where eg.tenant_id=$1 and eg.id=$2";
         const string offlineEnvelope = "select r.legal_entity_id,r.branch_id from business_pos.pos_offline_envelope oe join business_pos.pos_register r on r.tenant_id=oe.tenant_id and r.id=oe.register_id where oe.tenant_id=$1 and oe.id=$2";
         const string offlineConflict = "select r.legal_entity_id,r.branch_id from business_pos.pos_sync_conflict sc join business_pos.pos_offline_envelope oe on oe.tenant_id=sc.tenant_id and oe.id=sc.envelope_id join business_pos.pos_register r on r.tenant_id=oe.tenant_id and r.id=oe.register_id where sc.tenant_id=$1 and sc.id=$2";
+        const string sale = "select r.legal_entity_id,r.branch_id from business_pos.pos_sale s join business_pos.pos_session ps on ps.tenant_id=s.tenant_id and ps.id=s.session_id join business_pos.pos_register r on r.tenant_id=ps.tenant_id and r.id=ps.register_id where s.tenant_id=$1 and s.id=$2";
         var sql = resourceType switch
         {
             "register" => register,
@@ -104,6 +105,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             "exchange" => exchange,
             "offline-envelope" => offlineEnvelope,
             "offline-conflict" => offlineConflict,
+            "sale" => sale,
             _ => throw new ArgumentException("pos.resource_type_invalid")
         };
 
@@ -162,6 +164,24 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             await using var command = new NpgsqlCommand(sql, ctx.Connection, ctx.Transaction); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(terminalId); command.Parameters.AddWithValue(DateTimeOffset.UtcNow); if (await command.ExecuteNonQueryAsync(token) != 1) throw new InvalidOperationException("pos.terminal_not_ready"); return null;
         }, ct);
         return await GetTerminalAsync(tenant, terminalId, ct);
+    }
+
+    public async Task<IReadOnlyList<TerminalResponse>> ListTerminalsAsync(TenantId tenant, Guid registerId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await BeginTenantAsync(connection, tenant, ct);
+        await using var command = new NpgsqlCommand("select id,register_id,device_identity,display_name,status,credential_version,last_seen_at from business_pos.pos_terminal where tenant_id=$1 and register_id=$2 order by id", connection, tx);
+        command.Parameters.AddWithValue(tenant.Value);
+        command.Parameters.AddWithValue(registerId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var result = new List<TerminalResponse>();
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(new TerminalResponse(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetInt32(5), reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6)));
+        }
+        await reader.CloseAsync();
+        await tx.CommitAsync(ct);
+        return result;
     }
 
     private async Task<TerminalResponse> GetTerminalAsync(TenantId tenant, Guid terminalId, CancellationToken ct)
@@ -1163,14 +1183,82 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
         return new { page, pageSize, hasMore, items };
     }
 
+    public async Task<object?> GetSaleAsync(TenantId tenant, Guid saleId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await BeginTenantAsync(connection, tenant, ct);
+        await using var command = new NpgsqlCommand("select s.id,s.receipt_number,s.business_date,s.currency_code,s.grand_total,s.payment_state,s.inventory_state,s.document_state,s.session_id from business_pos.pos_sale s where s.tenant_id=$1 and s.id=$2", connection, tx);
+        command.Parameters.AddWithValue(tenant.Value);
+        command.Parameters.AddWithValue(saleId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct))
+        {
+            var res = new
+            {
+                id = reader.GetGuid(0),
+                receiptNumber = reader.GetString(1),
+                businessDate = reader.GetFieldValue<DateOnly>(2),
+                currency = reader.GetString(3),
+                total = reader.GetDecimal(4),
+                paymentState = reader.GetString(5),
+                inventoryState = reader.GetString(6),
+                documentState = reader.GetString(7),
+                sessionId = reader.GetGuid(8)
+            };
+            await reader.CloseAsync();
+            await tx.CommitAsync(ct);
+            return res;
+        }
+        await reader.CloseAsync();
+        await tx.CommitAsync(ct);
+        return null;
+    }
+
+    public async Task<IReadOnlyList<PosSaleLineDetailResponse>> GetSaleLinesAsync(TenantId tenant, Guid saleId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var tx = await BeginTenantAsync(connection, tenant, ct);
+        await using var command = new NpgsqlCommand(@"select sl.id, sl.sale_id, sl.line_no, sl.variant_id, sl.description, sl.uom_code, sl.quantity, sl.unit_price, sl.tax_amount, sl.discount_amount, sl.line_total, coalesce(sum(rl.quantity), 0) as returned_quantity
+            from business_pos.pos_sale_line sl
+            left join business_pos.pos_return_line rl on rl.tenant_id = sl.tenant_id and rl.original_sale_line_id = sl.id
+            left join business_pos.pos_return r on r.tenant_id = rl.tenant_id and r.id = rl.return_id and r.state in ('Pending','Completed')
+            where sl.tenant_id = $1 and sl.sale_id = $2
+            group by sl.id, sl.sale_id, sl.line_no, sl.variant_id, sl.description, sl.uom_code, sl.quantity, sl.unit_price, sl.tax_amount, sl.discount_amount, sl.line_total
+            order by sl.line_no", connection, tx);
+        command.Parameters.AddWithValue(tenant.Value);
+        command.Parameters.AddWithValue(saleId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var list = new List<PosSaleLineDetailResponse>();
+        while (await reader.ReadAsync(ct))
+        {
+            list.Add(new PosSaleLineDetailResponse(
+                reader.GetGuid(0),
+                reader.GetGuid(1),
+                reader.GetInt32(2),
+                reader.GetGuid(3),
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetDecimal(6),
+                reader.GetDecimal(7),
+                reader.GetDecimal(8),
+                reader.GetDecimal(9),
+                reader.GetDecimal(10),
+                reader.GetDecimal(11)
+            ));
+        }
+        await reader.CloseAsync();
+        await tx.CommitAsync(ct);
+        return list;
+    }
+
     public async Task<object> ListReturnsAsync(TenantId tenant, Guid entityId, DateOnly? from, DateOnly? to, int page, int pageSize, CancellationToken ct)
     {
         page = Math.Clamp(page, 1, 100_000); pageSize = Math.Clamp(pageSize, 1, 200);
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var tx = await BeginTenantAsync(connection, tenant, ct);
-        await using var command = new NpgsqlCommand("select r.id,r.original_sale_id,r.state,r.refund_state,r.disposition,r.reason,r.total_amount,r.created_at from business_pos.pos_return r join business_pos.pos_session ps on ps.tenant_id=r.tenant_id and ps.id=r.session_id join business_pos.pos_register pr on pr.tenant_id=ps.tenant_id and pr.id=ps.register_id where r.tenant_id=$1 and pr.legal_entity_id=$2 and ($3::date is null or r.created_at::date >= $3) and ($4::date is null or r.created_at::date <= $4) order by r.created_at desc,r.id desc offset $5 limit $6", connection, tx);
+        await using var command = new NpgsqlCommand("select r.id,r.original_sale_id,r.state,r.refund_state,r.disposition,r.reason,r.total_amount,r.created_at,coalesce(s.receipt_number,'') from business_pos.pos_return r left join business_pos.pos_sale s on s.tenant_id=r.tenant_id and s.id=r.original_sale_id join business_pos.pos_session ps on ps.tenant_id=r.tenant_id and ps.id=r.session_id join business_pos.pos_register pr on pr.tenant_id=ps.tenant_id and pr.id=ps.register_id where r.tenant_id=$1 and pr.legal_entity_id=$2 and ($3::date is null or r.created_at::date >= $3) and ($4::date is null or r.created_at::date <= $4) order by r.created_at desc,r.id desc offset $5 limit $6", connection, tx);
         command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(entityId); command.Parameters.AddWithValue((object?)from ?? DBNull.Value); command.Parameters.AddWithValue((object?)to ?? DBNull.Value); command.Parameters.AddWithValue((page - 1) * pageSize); command.Parameters.AddWithValue(pageSize + 1);
         var items = new List<object>(pageSize + 1); await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) items.Add(new { id = reader.GetGuid(0), saleId = reader.GetGuid(1), state = reader.GetString(2), refundState = reader.GetString(3), disposition = reader.GetString(4), reason = reader.GetString(5), total = reader.GetDecimal(6), createdAt = reader.GetFieldValue<DateTimeOffset>(7) });
+        while (await reader.ReadAsync(ct)) items.Add(new { id = reader.GetGuid(0), saleId = reader.GetGuid(1), state = reader.GetString(2), refundState = reader.GetString(3), disposition = reader.GetString(4), reason = reader.GetString(5), total = reader.GetDecimal(6), createdAt = reader.GetFieldValue<DateTimeOffset>(7), receiptNumber = reader.GetString(8) });
         await reader.CloseAsync(); await tx.CommitAsync(ct); var hasMore = items.Count > pageSize; if (hasMore) items.RemoveAt(items.Count - 1); return new { page, pageSize, hasMore, items };
     }
 

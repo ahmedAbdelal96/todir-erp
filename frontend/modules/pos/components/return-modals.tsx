@@ -1,11 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
-import { Select } from "../../../components/primitives/select.tsx";
 import { BidiText } from "../../../components/primitives/bidi-text.tsx";
-import type { CreateReturnRequest, ReturnLineRequest } from "../types.ts";
+import { posApi } from "../services/pos-api.ts";
+import { toScaledBigInt, fromScaledBigInt, scaledToNumber } from "../utils/exact-money-math.ts";
+import type { CreateReturnRequest, ReturnLineRequest, PosSaleLineDetail } from "../types.ts";
 
 export interface ReturnModalProps {
   readonly isOpen: boolean;
@@ -27,25 +28,77 @@ export function ReturnModal({
   const { t } = useTranslation("pos");
   const [saleId, setSaleId] = useState<string>("");
   const [selectedSaleSummary, setSelectedSaleSummary] = useState<string | null>(null);
+  const [currencyCode, setCurrencyCode] = useState<string>("EGP");
+
+  // Sale lines state
+  const [saleLines, setSaleLines] = useState<readonly PosSaleLineDetail[]>([]);
+  const [selectedLineId, setSelectedLineId] = useState<string>("");
+  const [isLoadingLines, setIsLoadingLines] = useState<boolean>(false);
+
+  // Return options
   const [reason, setReason] = useState<string>("Defective");
   const [disposition, setDisposition] = useState<"ReturnToStock" | "Scrap">("ReturnToStock");
+  const [quantityStr, setQuantityStr] = useState<string>("1");
   const [error, setError] = useState<string | null>(null);
 
-  // Return line inputs
-  const [lineSaleId, setLineSaleId] = useState<string>("");
-  const [quantityStr, setQuantityStr] = useState<string>("1");
-  const [amountStr, setAmountStr] = useState<string>("0");
+  // Reset or load lines when saleId changes
+  useEffect(() => {
+    if (!saleId || !saleId.trim()) {
+      setSaleLines([]);
+      setSelectedLineId("");
+      return;
+    }
 
-  const quantity = parseFloat(quantityStr) || 0;
-  const amount = parseFloat(amountStr) || 0;
+    let isCancelled = false;
+    setIsLoadingLines(true);
+    setError(null);
+
+    posApi
+      .getSaleLines(saleId.trim())
+      .then((lines) => {
+        if (isCancelled) return;
+        setSaleLines(lines);
+        const availableLine = lines.find((l) => l.quantity - l.returnedQuantity > 0) || lines[0];
+        if (availableLine) {
+          setSelectedLineId(availableLine.id);
+          const maxAvailable = Math.max(1, availableLine.quantity - availableLine.returnedQuantity);
+          setQuantityStr(String(Math.min(1, maxAvailable)));
+        } else {
+          setSelectedLineId("");
+        }
+      })
+      .catch((err) => {
+        if (isCancelled) return;
+        setSaleLines([]);
+        setSelectedLineId("");
+        // Fallback: don't block if sale lines cannot be loaded
+        setError(err instanceof Error ? err.message : t("returns.loadLinesFailed", "تعذر تحميل بنود الفاتورة الأصلية"));
+      })
+      .finally(() => {
+        if (!isCancelled) setIsLoadingLines(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [saleId, t]);
+
+  const activeLine = saleLines.find((l) => l.id === selectedLineId);
+  const maxReturnQty = activeLine ? Math.max(0, activeLine.quantity - activeLine.returnedQuantity) : 1;
+
+  // Exact Authoritative Refund Amount calculation
+  const parsedQty = parseFloat(quantityStr) || 0;
+  const unitPriceScaled = activeLine ? toScaledBigInt(activeLine.unitPrice) : 0n;
+  const refundAmountScaled = (unitPriceScaled * toScaledBigInt(parsedQty)) / 10000n;
+  const refundAmount = scaledToNumber(refundAmountScaled);
+  const refundAmountStr = fromScaledBigInt(refundAmountScaled, 2);
 
   const handleSelectSaleFromList = (selectedId: string) => {
     setSaleId(selectedId);
     setError(null);
     const found = sales.find((s) => s.id === selectedId);
     if (found) {
-      setAmountStr(String(found.total || 0));
-      setLineSaleId(found.id);
+      setCurrencyCode(found.currency || "EGP");
       const saleRef = found.receiptNumber || (found.code ?? t("returns.saleNumberRef", { index: 1 }));
       setSelectedSaleSummary(
         `${saleRef} • ${found.businessDate || ""} • ${found.total || 0} ${found.currency || ""}`
@@ -55,22 +108,39 @@ export function ReturnModal({
     }
   };
 
+  const handleLineSelect = (lineId: string) => {
+    setSelectedLineId(lineId);
+    const found = saleLines.find((l) => l.id === lineId);
+    if (found) {
+      const maxAvailable = Math.max(1, found.quantity - found.returnedQuantity);
+      setQuantityStr(String(Math.min(1, maxAvailable)));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!saleId.trim()) {
-      setError(t("returns.saleIdRequired"));
+      setError(t("returns.saleIdRequired", "يرجى اختيار أو إدخال معرّف الفاتورة الأصلية"));
       return;
     }
-    if (quantity <= 0) {
-      setError(t("returns.invalidQuantity"));
+    if (parsedQty <= 0) {
+      setError(t("returns.invalidQuantity", "الكمية المرتجعة يجب أن تكون أكبر من الصفر"));
+      return;
+    }
+    if (activeLine && parsedQty > maxReturnQty) {
+      setError(
+        t("returns.quantityExceeded", "الكمية المطلوبة تتجاوز الكمية المتاحة للإرجاع (الحد الأقصى: {{max}})", {
+          max: maxReturnQty,
+        })
+      );
       return;
     }
     setError(null);
 
     const returnLine: ReturnLineRequest = {
-      originalSaleLineId: lineSaleId.trim() || saleId.trim(),
-      quantity,
-      amount,
+      originalSaleLineId: selectedLineId.trim() || saleId.trim(),
+      quantity: parsedQty,
+      amount: refundAmount,
     };
 
     const req: CreateReturnRequest = {
@@ -85,7 +155,7 @@ export function ReturnModal({
       await onCreateReturn(req);
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("returns.createFailed"));
+      setError(err instanceof Error ? err.message : t("returns.createFailed", "فشل تسجيل طلب المرتجع"));
     }
   };
 
@@ -93,8 +163,8 @@ export function ReturnModal({
     <Dialog
       isOpen={isOpen}
       onOpenChange={(open) => !open && onClose()}
-      title={t("returns.modalTitle")}
-      description={t("returns.modalSubtitle")}
+      title={t("returns.modalTitle", "تسجيل مرتجع مبيعات")}
+      description={t("returns.modalSubtitle", "استرجاع منتجات من فاتورة مبيعات سابقة مع التحقق من الكميات المصرح بها")}
       size="medium"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -127,8 +197,8 @@ export function ReturnModal({
         )}
 
         <TextField
-          label={t("returns.originalSaleIdLabel")}
-          placeholder={t("returns.originalSaleIdPlaceholder")}
+          label={t("returns.originalSaleIdLabel", "رقم أو معرّف الفاتورة الأصلية")}
+          placeholder={t("returns.originalSaleIdPlaceholder", "أدخل معرّف الفاتورة أو اختر من القائمة أعلاه")}
           value={saleId}
           onChange={(v) => {
             setSaleId(v);
@@ -142,79 +212,156 @@ export function ReturnModal({
             style={{
               padding: "0.5rem 0.75rem",
               borderRadius: "var(--radius-sm)",
-              backgroundColor: "rgba(16, 185, 129, 0.1)",
-              border: "1px solid rgba(16, 185, 129, 0.3)",
+              backgroundColor: "var(--color-surface-hover)",
               fontSize: "0.8125rem",
-              color: "var(--color-status-success)",
+              color: "var(--color-content-default)",
+              fontWeight: 500,
             }}
           >
-            ✓ <strong>{t("returns.selectedSale", "الفاتورة المحددة")}:</strong> {selectedSaleSummary}
+            {t("returns.selectedSale", "الفاتورة المختارة")}: <BidiText>{selectedSaleSummary}</BidiText>
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-          <Select
-            label={t("returns.reasonLabel")}
-            selectedKey={reason}
-            onSelectionChange={(val) => setReason(String(val))}
-            options={[
-              { id: "Defective", label: t("returns.reasonDefective") },
-              { id: "WrongItem", label: t("returns.reasonWrongItem") },
-              { id: "CustomerChangedMind", label: t("returns.reasonChangedMind") },
-              { id: "Other", label: t("returns.reasonOther") },
-            ]}
+        {/* Original Sale Lines Selection */}
+        {isLoadingLines ? (
+          <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)", padding: "0.5rem 0" }}>
+            {t("returns.loadingLines", "جاري استرجاع بنود الفاتورة الأصلية المعتمدة...")}
+          </div>
+        ) : saleLines.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+            <label style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-default)" }}>
+              {t("returns.selectSaleLine", "البند المراد إرجاعه من الفاتورة")}
+            </label>
+            <select
+              value={selectedLineId}
+              onChange={(e) => handleLineSelect(e.target.value)}
+              style={{
+                padding: "0.625rem",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-border-default)",
+                backgroundColor: "var(--color-surface-default)",
+                color: "var(--color-content-default)",
+                fontSize: "0.875rem",
+              }}
+            >
+              {saleLines.map((line) => {
+                const available = line.quantity - line.returnedQuantity;
+                return (
+                  <option key={line.id} value={line.id} disabled={available <= 0}>
+                    {line.description} • {line.quantity} {line.uomCode} • {line.unitPrice} {currencyCode}
+                    {available <= 0 ? ` (${t("returns.fullyReturned", "تم إرجاعه بالكامل")})` : ` (${t("returns.availableQty", "المتاح")}: ${available})`}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        ) : null}
+
+        {/* Return Quantity and Disposition Grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+          <TextField
+            label={t("returns.quantityLabel", "الكمية المرتجعة")}
+            type="number"
+            value={quantityStr}
+            onChange={(v) => {
+              setQuantityStr(v);
+              setError(null);
+            }}
+            description={
+              activeLine
+                ? `${t("returns.maxAllowed", "الحد الأقصى للإرجاع")}: ${maxReturnQty} ${activeLine.uomCode}`
+                : undefined
+            }
           />
 
-          <Select
-            label={t("returns.dispositionLabel")}
-            selectedKey={disposition}
-            onSelectionChange={(val) => setDisposition(String(val) as "ReturnToStock" | "Scrap")}
-            options={[
-              { id: "ReturnToStock", label: t("returns.dispositionRestock") },
-              { id: "Scrap", label: t("returns.dispositionScrap") },
-            ]}
-          />
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+            <label style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-default)" }}>
+              {t("returns.dispositionLabel", "حالة البضاعة المرتجعة")}
+            </label>
+            <select
+              value={disposition}
+              onChange={(e) => setDisposition(e.target.value as "ReturnToStock" | "Scrap")}
+              style={{
+                padding: "0.625rem",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-border-default)",
+                backgroundColor: "var(--color-surface-default)",
+                color: "var(--color-content-default)",
+                fontSize: "0.875rem",
+              }}
+            >
+              <option value="ReturnToStock">{t("returns.dispRestock", "إعادة للمخزن الصالح (Restock)")}</option>
+              <option value="Scrap">{t("returns.dispScrap", "هالك / إعدام (Scrap)")}</option>
+            </select>
+          </div>
         </div>
 
+        {/* Reason for Return */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+          <label style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-default)" }}>
+            {t("returns.reasonLabel", "سبب الإرجاع")}
+          </label>
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            style={{
+              padding: "0.625rem",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--color-border-default)",
+              backgroundColor: "var(--color-surface-default)",
+              color: "var(--color-content-default)",
+              fontSize: "0.875rem",
+            }}
+          >
+            <option value="Defective">{t("returns.reasonDefective", "عيب صناعة / تالف")}</option>
+            <option value="WrongItem">{t("returns.reasonWrongItem", "صنف غير مطابق للطلب")}</option>
+            <option value="CustomerChange">{t("returns.reasonCustomerChange", "رغبة العميل (بحالة ممتازة)")}</option>
+            <option value="DamagedInTransit">{t("returns.reasonDamaged", "تلف أثناء الاستلام أو النقل")}</option>
+          </select>
+        </div>
+
+        {/* Authoritative Refund Amount Display */}
         <div
           style={{
-            border: "1px solid var(--color-border-default)",
+            padding: "0.75rem 1rem",
             borderRadius: "var(--radius-md)",
-            padding: "1rem",
-            background: "var(--color-surface-hover)",
+            backgroundColor: "var(--color-surface-hover)",
+            border: "1px solid var(--color-border-default)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
           }}
         >
-          <div style={{ fontWeight: 600, fontSize: "0.875rem", marginBottom: "0.5rem" }}>
-            {t("returns.lineDetails")}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-            <TextField
-              label={t("returns.quantityLabel")}
-              type="number"
-              value={quantityStr}
-              onChange={(v) => setQuantityStr(v)}
-            />
-            <TextField
-              label={t("returns.refundAmountLabel")}
-              type="number"
-              value={amountStr}
-              onChange={(v) => setAmountStr(v)}
-            />
-          </div>
+          <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-default)" }}>
+            {t("returns.refundableTotal", "المبلغ المالي المستحق للإرجاع")}:
+          </span>
+          <span style={{ fontSize: "1.125rem", fontWeight: 800, color: "var(--color-brand-primary)" }}>
+            <BidiText>{refundAmountStr} {currencyCode}</BidiText>
+          </span>
         </div>
 
         {error && (
-          <div style={{ color: "var(--color-status-danger)", fontSize: "0.875rem" }} role="alert">
+          <div
+            style={{
+              padding: "0.5rem 0.75rem",
+              borderRadius: "var(--radius-sm)",
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              color: "var(--color-status-danger)",
+              fontSize: "0.875rem",
+            }}
+            role="alert"
+          >
             {error}
           </div>
         )}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
-          <Button variant="secondary" type="button" onClick={onClose} isDisabled={isSubmitting}>
-            {t("common.cancel")}
+          <Button variant="ghost" type="button" onClick={onClose} isDisabled={isSubmitting}>
+            {t("common.cancel", "إلغاء")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={isSubmitting || !saleId.trim() || quantity <= 0}>
-            {isSubmitting ? t("common.submitting") : t("returns.createReturnAction")}
+          <Button variant="primary" type="submit" isDisabled={isSubmitting || parsedQty <= 0}>
+            {isSubmitting ? t("common.saving", "جاري الحفظ...") : t("returns.submitReturn", "تأكيد تسجيل المرتجع")}
           </Button>
         </div>
       </form>

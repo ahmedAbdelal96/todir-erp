@@ -197,6 +197,18 @@ export interface CheckoutResponse {
   readonly currencyCode: string;
 }
 
+export interface PosSaleResponse {
+  readonly id: string;
+  readonly receiptNumber: string;
+  readonly businessDate: string;
+  readonly currency: string;
+  readonly total: number;
+  readonly paymentState: string;
+  readonly inventoryState: string;
+  readonly documentState: string;
+  readonly sessionId?: string;
+}
+
 export interface CatalogVariantSnapshot {
   readonly variantId: string;
   readonly templateId: string;
@@ -282,6 +294,21 @@ export interface OfflinePackageResponse {
   readonly expiresAt: string;
   readonly payload: string;
   readonly signature: string;
+}
+
+export interface PosSaleLineDetail {
+  readonly id: string;
+  readonly saleId: string;
+  readonly lineNo: number;
+  readonly variantId: string;
+  readonly description: string;
+  readonly uomCode: string;
+  readonly quantity: number;
+  readonly unitPrice: number;
+  readonly taxAmount: number;
+  readonly discountAmount: number;
+  readonly lineTotal: number;
+  readonly returnedQuantity: number;
 }
 
 export interface OfflineConflictResolutionRequest {

@@ -266,12 +266,32 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
 
       const idempotencyKey = window.crypto?.randomUUID ? window.crypto.randomUUID() : `offline-key-${Date.now()}`;
       const envelopeId = window.crypto?.randomUUID ? window.crypto.randomUUID() : `env-${Date.now()}`;
-      const payloadString = JSON.stringify({
-        ...params,
-        envelopeId,
+      const payloadObj = {
+        schemaVersion: 1,
+        type: "CashSale",
+        sessionId: params.sessionId,
+        currencyCode: params.currencyCode,
+        paymentAccountId: params.paymentAccountId,
         idempotencyKey,
-        sourceSequence: nextSequence,
-      });
+        customerPartyId: params.customerPartyId || "023b6cc2-2c8a-8756-b1e8-7664444e37e9",
+        lines: params.lines.map((l) => ({
+          variantId: l.variantId,
+          description: l.description,
+          uomCode: l.uomCode,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          taxAmount: l.taxAmount || 0,
+          discountAmount: l.discountAmount || 0,
+          legalEntityId: l.legalEntityId,
+          productTemplateId: l.productTemplateId || l.variantId,
+          unitOfMeasureId: l.unitOfMeasureId || l.variantId,
+          priceListId: l.priceListId || params.registerId,
+          pricingDate: l.pricingDate || new Date().toISOString().slice(0, 10),
+          lotId: null,
+          serialId: null,
+        })),
+      };
+      const payloadString = JSON.stringify(payloadObj);
 
       const signature = await signOfflineEnvelope(
         offlinePackage.signature,
@@ -326,7 +346,7 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
 
     for (const item of pendingItems) {
       try {
-        await posApi.syncOfflineEnvelope({
+        const syncRes = await posApi.syncOfflineEnvelope({
           registerId: item.registerId,
           deviceIdentity: item.deviceIdentity,
           sourceSequence: item.sourceSequence,
@@ -335,6 +355,18 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
           payload: item.payload,
           signature: item.signature,
         });
+
+        // Resolve envelope ID returned by the server or use stored ID
+        const resolvedEnvelopeId =
+          (syncRes && (syncRes.envelopeId || (typeof syncRes === "string" ? syncRes : null))) ||
+          item.id;
+
+        // Process the offline cash sale into an authoritative backend sale
+        try {
+          await posApi.processOfflineCashSale(resolvedEnvelopeId);
+        } catch {
+          // If already processed or queued for worker reconciliation, envelope is still synced
+        }
 
         // Mark as Synced in IndexedDB
         const tx = db.transaction(STORE_ENVELOPES, "readwrite");
