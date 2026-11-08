@@ -837,7 +837,7 @@ public sealed class LedgerRepository(
     {
         if (fact.SourceModule != "payments" || fact.FactType is not (AccountingFactTypes.PaymentReceived or AccountingFactTypes.PaymentMade or AccountingFactTypes.RefundPaid)
             || payload.Amount <= 0m || string.IsNullOrWhiteSpace(payload.PaymentAccountReference)
-            || payload.Direction is not ("Incoming" or "Outgoing") || payload.SettlementRole is not ("Receivable" or "Payable" or "PayrollPayable" or "EmployeeReimbursementPayable")
+            || payload.Direction is not ("Incoming" or "Outgoing") || payload.SettlementRole is not ("Receivable" or "Payable" or "PayrollPayable" or "EmployeeReimbursementPayable" or "EmployeeReceivable")
             || (fact.FactType == AccountingFactTypes.PaymentReceived) != (payload.Direction == "Incoming")
             || (fact.FactType == AccountingFactTypes.RefundPaid && (payload.Direction != "Outgoing" || payload.SettlementRole != "Receivable")))
             throw new LedgerDomainException("ledger.fact_invalid", "The payment fact does not contain valid semantic movement details.");

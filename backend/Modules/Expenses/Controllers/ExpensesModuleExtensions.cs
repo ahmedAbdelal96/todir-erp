@@ -68,6 +68,7 @@ public static class ExpensesModuleExtensions
         g.MapPost("/legal-entities/{entityId:guid}/corporate-card/transactions/{cardId:guid}/match", async (Guid entityId, Guid cardId, MatchExpenseCardTransactionRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.MatchCardTransactionAsync(Tenant(h), entityId, cardId, r, ct)));
         g.MapPost("/legal-entities/{entityId:guid}/corporate-card/transactions/{cardId:guid}/personal", async (Guid entityId, Guid cardId, MarkExpenseCardPersonalRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.MarkCardTransactionPersonalAsync(Tenant(h), entityId, cardId, r, ct)));
         g.MapGet("/legal-entities/{entityId:guid}/employee-repayments", async (Guid entityId, Guid? employeeId, string? state, int? page, int? pageSize, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListEmployeeRepaymentsAsync(Tenant(h), entityId, employeeId, state, page ?? 1, pageSize ?? 50, ct)));
+        g.MapPost("/legal-entities/{entityId:guid}/employee-repayments/{repaymentId:guid}/settle", async (Guid entityId, Guid repaymentId, SettleEmployeeRepaymentRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.SettleEmployeeRepaymentAsync(Tenant(h), entityId, repaymentId, Actor(h), Membership(h), r, ct)));
         g.MapPut("/legal-entities/{entityId:guid}/{id:guid}/mileage", async (Guid entityId, Guid id, SetMileageDetailRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.SetMileageDetailAsync(Tenant(h), entityId, id, r, ct)));
         g.MapPut("/legal-entities/{entityId:guid}/{id:guid}/per-diem", async (Guid entityId, Guid id, SetPerDiemDetailRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.SetPerDiemDetailAsync(Tenant(h), entityId, id, r, ct)));
         g.MapPost("/legal-entities/{entityId:guid}/reimbursements/prepare", async (Guid entityId, string? currency, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.PrepareReimbursementBatchAsync(Tenant(h), entityId, currency ?? "EGP", ct), 201));
@@ -82,13 +83,13 @@ public static class ExpensesModuleExtensions
         var path = http.Request.Path.Value ?? string.Empty;
         if (http.Request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
             return path.EndsWith("/history", StringComparison.OrdinalIgnoreCase) ? "expenses.audit.read" :
-                path.Contains("/reimbursements", StringComparison.OrdinalIgnoreCase) || path.Contains("corporate-card", StringComparison.OrdinalIgnoreCase) ? "expenses.reimbursement.read" : "expenses.read";
+                path.Contains("/reimbursements", StringComparison.OrdinalIgnoreCase) || path.Contains("corporate-card", StringComparison.OrdinalIgnoreCase) || path.Contains("employee-repayments", StringComparison.OrdinalIgnoreCase) ? "expenses.reimbursement.read" : "expenses.read";
         if (path.Contains("/categories", StringComparison.OrdinalIgnoreCase) || path.Contains("category-versions", StringComparison.OrdinalIgnoreCase)) return "expenses.category.manage";
         if (path.Contains("/submit", StringComparison.OrdinalIgnoreCase)) return "expenses.submit";
         if (path.Contains("/approve", StringComparison.OrdinalIgnoreCase)) return "expenses.approve";
         if (path.Contains("/finalize", StringComparison.OrdinalIgnoreCase)) return "expenses.finalize";
         if (path.Contains("/reverse", StringComparison.OrdinalIgnoreCase)) return "expenses.reverse";
-        if (path.Contains("/reimbursements", StringComparison.OrdinalIgnoreCase) || path.Contains("corporate-card", StringComparison.OrdinalIgnoreCase) || path.Contains("/advances", StringComparison.OrdinalIgnoreCase)) return "expenses.reimbursement.manage";
+        if (path.Contains("/reimbursements", StringComparison.OrdinalIgnoreCase) || path.Contains("corporate-card", StringComparison.OrdinalIgnoreCase) || path.Contains("/advances", StringComparison.OrdinalIgnoreCase) || path.Contains("employee-repayments", StringComparison.OrdinalIgnoreCase)) return "expenses.reimbursement.manage";
         return http.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) ? "expenses.create" : "expenses.edit";
     }
     private static async Task<IResult> Execute<T>(HttpContext h, Guid entity, Func<Task<T>> action, int status = 200)

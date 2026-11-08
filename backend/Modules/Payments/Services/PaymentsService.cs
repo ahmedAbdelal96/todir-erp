@@ -96,7 +96,7 @@ public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCap
     private async Task<PaymentRecord> CreateDraftCoreAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId,
         CreatePaymentRequest request, string idempotencyKey, string? providerCode, string? providerTransactionId, CancellationToken ct)
     {
-        var direction = request.Type is PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierRefund
+        var direction = request.Type is PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierRefund or PaymentType.EmployeeRepayment
             ? PaymentDirection.Incoming : PaymentDirection.Outgoing;
         var command = new CreatePaymentCommand(request.LegalEntityId, request.BranchId, direction, request.Type, request.PartyId,
             request.Amount, request.CurrencyCode, request.Method, request.PaymentAccountId, request.PaymentDate, request.PostingDate,

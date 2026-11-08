@@ -5,7 +5,7 @@ public enum PaymentBusinessState { Draft, Pending, Completed, Failed, Cancelled,
 public enum PaymentMethod { Cash, BankTransfer, Cheque, Card, PaymentGateway, Wallet, Other }
 public enum PaymentAccountType { Bank, Cashbox, ProviderClearing, Wallet, InternalClearing }
 public enum PaymentAccountStatus { Active, Suspended, Archived }
-public enum PaymentType { CustomerReceipt, SupplierPayment, CustomerAdvance, SupplierAdvance, CustomerRefund, SupplierRefund, ExpensePayment, Standalone, TransferLeg, ProviderFee }
+public enum PaymentType { CustomerReceipt, SupplierPayment, CustomerAdvance, SupplierAdvance, CustomerRefund, SupplierRefund, ExpensePayment, EmployeeRepayment, Standalone, TransferLeg, ProviderFee }
 public enum PaymentFeeType { BankFee, ProviderFee, CardProcessingFee, FXFee, TransferFee, OtherApprovedFee }
 public enum PaymentFeeDisposition { Retain, Reverse }
 public enum PaymentLinkAmountPolicy { Fixed, PartialAllowed, CustomerEnteredWithinLimits }
@@ -75,15 +75,21 @@ public static class PaymentRules
             throw new PaymentException("payments.transfer_invalid", "Use the internal transfer command for account transfers.");
         var anonymousPosCash = string.Equals(command.SourceType, "pos", StringComparison.OrdinalIgnoreCase)
             && command.Type == PaymentType.CustomerReceipt && command.PartyId is null;
+        var employeeRepayment = command.Type == PaymentType.EmployeeRepayment
+            && command.Direction == PaymentDirection.Incoming
+            && string.Equals(command.SourceType, "ExpensesEmployeeRepayment", StringComparison.OrdinalIgnoreCase)
+            && command.PartyId is null;
         var partyRequired = command.Type is PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierPayment
             or PaymentType.SupplierAdvance or PaymentType.CustomerRefund or PaymentType.SupplierRefund;
         if (partyRequired && !anonymousPosCash && (command.PartyId is null || command.PartyId == Guid.Empty))
             throw new PaymentException("payments.party_required", "Select a customer or supplier for this payment.");
-        var incomingType = command.Type is PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierRefund;
+        var incomingType = command.Type is PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierRefund or PaymentType.EmployeeRepayment;
         var outgoingType = command.Type is PaymentType.SupplierPayment or PaymentType.SupplierAdvance or PaymentType.CustomerRefund or PaymentType.ExpensePayment or PaymentType.Standalone;
         if ((!incomingType && !outgoingType) || (incomingType && command.Direction != PaymentDirection.Incoming)
             || (outgoingType && command.Direction != PaymentDirection.Outgoing))
             throw new PaymentException("payments.payment_type_direction_invalid", "The payment type does not match its money direction.");
+        if (command.Type == PaymentType.EmployeeRepayment && !employeeRepayment)
+            throw new PaymentException("payments.employee_repayment_source_invalid", "Employee repayment payments must originate from an Expenses repayment obligation.");
         _ = ParseAmount(command.Amount);
         _ = NormalizeCurrency(command.CurrencyCode);
         EnsureLength(command.BankReference, 240, "payments.reference_invalid");
