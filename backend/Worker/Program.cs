@@ -17,6 +17,7 @@ using Modules.Tax;
 using Modules.Hr;
 using Modules.Payroll;
 using Modules.CRM;
+using Modules.Expenses;
 using Modules.POS;
 using Quartz;
 
@@ -55,6 +56,7 @@ builder.Services.AddTaxModule();
 builder.Services.AddHrModule();
 builder.Services.AddPayrollModule();
 builder.Services.AddCrmModule();
+builder.Services.AddExpensesModule();
 builder.Services.AddPosModule();
 builder.Services.AddScheduling(builder.Configuration, options =>
 {

@@ -22,6 +22,7 @@
     <ProjectReference Include="../Modules/Hr/Hr.csproj" />
     <ProjectReference Include="../Modules/Payroll/Payroll.csproj" />
     <ProjectReference Include="../Modules/CRM/CRM.csproj" />
+    <ProjectReference Include="../Modules/Expenses/Expenses.csproj" />
     <ProjectReference Include="../Modules/POS/POS.csproj" />
   </ItemGroup>
 </Project>

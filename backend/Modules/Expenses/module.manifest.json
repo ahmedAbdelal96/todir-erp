@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "expenses",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L4",
+  "type": "module",
+  "purchasable": false,
+  "scope": "tenant",
+  "dependencies": { "hard": ["platform-kernel", "hr"], "optionalCapabilities": ["directory.party", "ledger.semantic-facts", "payments.money-movement", "platform.files", "platform.approvals"] },
+  "owns": { "schema": "business_expenses", "entities": ["expense_category", "expense_category_version", "expense", "expense_history", "expense_evidence", "expense_itemization", "expense_reimbursement_obligation"] },
+  "permissions": ["expenses.read", "expenses.create", "expenses.edit", "expenses.submit", "expenses.approve", "expenses.finalize", "expenses.reverse", "expenses.reimbursement.read", "expenses.reimbursement.manage", "expenses.category.manage", "expenses.audit.read"],
+  "capabilities": { "provides": ["expenses.claims", "expenses.reimbursements"], "consumes": ["hr.employee", "directory.party", "ledger.semantic-facts", "payments.money-movement", "platform.files", "platform.approvals"] },
+  "messaging": { "publishes": ["ExpenseFinalizedV1", "ExpenseReimbursementRequestedV1"], "consumes": ["PaymentCompletedV1", "PaymentFailedV1"] },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}
