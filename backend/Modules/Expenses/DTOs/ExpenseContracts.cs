@@ -25,6 +25,11 @@ public sealed record ExpenseHistoryDto(Guid Id, Guid ExpenseId, string Action, S
 public sealed record ExpenseParticipantDto(Guid Id, Guid ExpenseId, Guid? PartyId, string DisplayName, string Role);
 public sealed record AddExpenseParticipantRequest(Guid? PartyId, string DisplayName, string Role = "MealParticipant");
 public sealed record ExpensePolicyEvaluationDto(Guid Id, Guid ExpenseId, string State, System.Text.Json.JsonElement Snapshot, DateTimeOffset EvaluatedAt);
+public sealed record ExpensePolicyDto(Guid Id, Guid LegalEntityId, string Code, string Name, string Status);
+public sealed record ExpensePolicyVersionDto(Guid Id, Guid PolicyId, int Version, string Status, DateOnly EffectiveFrom, DateOnly? EffectiveTo, System.Text.Json.JsonElement Rules);
+public sealed record CreateExpensePolicyRequest(Guid LegalEntityId, string Code, string Name);
+public sealed record CreateExpensePolicyVersionRequest(System.Text.Json.JsonElement Rules, DateOnly EffectiveFrom, DateOnly? EffectiveTo = null);
+public sealed record PublishExpensePolicyVersionRequest(DateOnly? EffectiveTo = null);
 public sealed record ExpenseReportDto(Guid Id, Guid LegalEntityId, Guid? EmployeeId, string Title, string State, decimal TotalAmount, string CurrencyCode, long Version, DateTimeOffset CreatedAt);
 public sealed record CreateExpenseReportRequest(Guid LegalEntityId, Guid? EmployeeId, string Title, string CurrencyCode = "EGP");
 public sealed record BusinessAdvanceDto(Guid Id, Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, decimal IssuedAmount, decimal AppliedAmount, decimal ReturnedAmount, string CurrencyCode, string State, long Version, DateTimeOffset CreatedAt, Guid? IssuancePaymentId = null);

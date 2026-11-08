@@ -7,6 +7,7 @@ using Npgsql;
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.Payments;
 using Xunit;
+using System.Text.Json;
 
 namespace Modules.Expenses.Tests;
 
@@ -177,6 +178,31 @@ public sealed class ExpensesPostgresIntegrationTests
         await repository.AllocateCardTransactionAsync(new(Atlas), entity, card.Id, new(second.Id, 110m), default);
         Assert.Equal(2, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_card_allocation where tenant_id=$1 and card_transaction_id=$2", Atlas, card.Id));
         Assert.Equal(210m, (decimal)(await ScalarAsync(connection, "select sum(amount) from business_expenses.expense_card_allocation where tenant_id=$1 and card_transaction_id=$2", Atlas, card.Id))!);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task PublishedExpensePolicyVersionIsCapturedInEvaluationSnapshot()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var policy = await repository.CreatePolicyAsync(new(Atlas), new(entity, $"TRAVEL-{Guid.CreateVersion7():N}", "Travel policy"), default);
+        using var rules = JsonDocument.Parse("{\"maxAmount\":1000,\"receiptRequired\":true}");
+        var version = await repository.CreatePolicyVersionAsync(new(Atlas), entity, policy.Id, new(rules.RootElement.Clone(), new(2026, 1, 1)), default);
+        version = await repository.PublishPolicyVersionAsync(new(Atlas), entity, version.Id, new(), default);
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var expense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Policy test", new(2026, 10, 16), 125m, "EGP", "EmployeePaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Atlas), entity, expense.Id, new("Receipt", "file://expenses/policy-test"), default);
+        var evaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, expense.Id, default);
+        Assert.Equal("Passed", evaluation.State);
+        Assert.Equal(version.Id.ToString("D"), evaluation.Snapshot.GetProperty("policyVersionId").GetString());
+        Assert.Equal(1000, evaluation.Snapshot.GetProperty("rules").GetProperty("maxAmount").GetInt32());
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_policy_evaluation where tenant_id=$1 and expense_id=$2 and policy_version_id=$3", Atlas, expense.Id, version.Id));
     }
 
     private static async Task<object?> ScalarAsync(NpgsqlConnection connection, string sql, params object[] values)
