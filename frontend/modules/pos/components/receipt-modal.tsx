@@ -4,7 +4,8 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { ReceiptIcon } from "./pos-icons.tsx";
 import { BidiText } from "../../../components/primitives/bidi-text.tsx";
-import type { CartLineResponse, CheckoutResponse } from "../types.ts";
+import type { CartLineResponse, CheckoutResponse, PosSaleLineDetail } from "../types.ts";
+import { fromScaledBigInt, toScaledBigInt } from "../utils/exact-money-math.ts";
 
 export interface ReceiptModalProps {
   readonly isOpen: boolean;
@@ -18,8 +19,15 @@ export interface ReceiptModalProps {
   readonly currencyCode?: string | undefined;
   readonly registerCode?: string | undefined;
   readonly cashierName?: string | undefined;
-  readonly authoritativeReceiptNumber?: string | undefined;
-  readonly authoritativeBusinessDate?: string | undefined;
+  readonly authoritativeReceiptNumber?: string | null | undefined;
+  readonly authoritativeBusinessDate?: string | null | undefined;
+  readonly authoritativeSale?: {
+    readonly subtotal: number;
+    readonly taxTotal: number;
+    readonly discountTotal: number;
+    readonly grandTotal: number;
+  } | null | undefined;
+  readonly authoritativeLines?: readonly PosSaleLineDetail[] | null | undefined;
   readonly onNewSale: () => void;
 }
 
@@ -62,11 +70,36 @@ export function ReceiptModal({
   cashierName = "Cashier",
   authoritativeReceiptNumber,
   authoritativeBusinessDate,
+  authoritativeSale,
+  authoritativeLines,
   onNewSale,
 }: ReceiptModalProps): React.JSX.Element | null {
   const { t } = useTranslation("pos");
 
+  const isDocumentReady = Boolean(authoritativeReceiptNumber && authoritativeReceiptNumber.trim().length > 0);
+  const receiptNumber = isDocumentReady ? authoritativeReceiptNumber! : "—";
+
+  const effectiveLines = authoritativeLines && authoritativeLines.length > 0
+    ? authoritativeLines.map((l) => ({
+        id: l.id,
+        variantId: l.variantId,
+        description: l.description,
+        uomCode: l.uomCode,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        taxAmount: l.taxAmount,
+        discountAmount: l.discountAmount,
+        lineTotal: l.lineTotal,
+      }))
+    : lines;
+
+  const effectiveSubtotal = authoritativeSale?.subtotal ?? subtotal;
+  const effectiveTaxTotal = authoritativeSale?.taxTotal ?? taxTotal;
+  const effectiveDiscountTotal = authoritativeSale?.discountTotal ?? discountTotal;
+  const effectiveGrandTotal = authoritativeSale?.grandTotal ?? grandTotal;
+
   const handlePrint = () => {
+    if (!isDocumentReady) return;
     window.print();
   };
 
@@ -74,10 +107,6 @@ export function ReceiptModal({
     onClose();
     onNewSale();
   };
-
-  const receiptNumber =
-    authoritativeReceiptNumber ||
-    (checkout?.saleId ? `POS-${checkout.saleId.slice(0, 8)}` : "—");
 
   return (
     <Dialog
@@ -91,6 +120,24 @@ export function ReceiptModal({
       <style dangerouslySetInnerHTML={{ __html: THERMAL_PRINT_CSS }} />
 
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        {!isDocumentReady && (
+          <div
+            style={{
+              padding: "0.625rem 0.875rem",
+              backgroundColor: "#fffbeb",
+              border: "1px solid #fde68a",
+              borderRadius: "var(--radius-sm)",
+              color: "#92400e",
+              fontSize: "0.8125rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
+            role="status"
+          >
+            <span>{t("receipt.authoritativePending", "جاري اعتماد وترحيل الفاتورة في النظام المالي المركزي...")}</span>
+          </div>
+        )}
         {/* Thermal Receipt Paper Container */}
         <div
           id="pos-thermal-receipt"
@@ -148,7 +195,7 @@ export function ReceiptModal({
               </tr>
             </thead>
             <tbody>
-              {lines.map((line) => (
+              {effectiveLines.map((line) => (
                 <tr key={line.id} style={{ borderBottom: "1px dashed #e2e8f0" }}>
                   <td style={{ padding: "0.35rem 0", textAlign: "start" }}>
                     <BidiText>{line.description}</BidiText>
@@ -157,10 +204,10 @@ export function ReceiptModal({
                     <BidiText>{line.quantity}</BidiText>
                   </td>
                   <td style={{ padding: "0.35rem 0", textAlign: "end" }}>
-                    <BidiText>{line.unitPrice.toFixed(2)}</BidiText>
+                    <BidiText>{fromScaledBigInt(toScaledBigInt(line.unitPrice), 2)}</BidiText>
                   </td>
                   <td style={{ padding: "0.35rem 0", textAlign: "end", fontWeight: 600 }}>
-                    <BidiText>{line.lineTotal.toFixed(2)}</BidiText>
+                    <BidiText>{fromScaledBigInt(toScaledBigInt(line.lineTotal), 2)}</BidiText>
                   </td>
                 </tr>
               ))}
@@ -171,21 +218,21 @@ export function ReceiptModal({
           <div style={{ borderTop: "1px dashed #94a3b8", paddingTop: "0.5rem", fontSize: "0.8125rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>{t("receipt.subtotal")}:</span>
-              <span><BidiText>{subtotal.toFixed(2)} {currencyCode}</BidiText></span>
+              <span><BidiText>{fromScaledBigInt(toScaledBigInt(effectiveSubtotal), 2)} {currencyCode}</BidiText></span>
             </div>
-            {discountTotal > 0 && (
+            {effectiveDiscountTotal > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", color: "#16a34a" }}>
                 <span>{t("receipt.discount")}:</span>
-                <span>-<BidiText>{discountTotal.toFixed(2)} {currencyCode}</BidiText></span>
+                <span>-<BidiText>{fromScaledBigInt(toScaledBigInt(effectiveDiscountTotal), 2)} {currencyCode}</BidiText></span>
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>{t("receipt.vat")}:</span>
-              <span><BidiText>{taxTotal.toFixed(2)} {currencyCode}</BidiText></span>
+              <span><BidiText>{fromScaledBigInt(toScaledBigInt(effectiveTaxTotal), 2)} {currencyCode}</BidiText></span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 800, marginTop: "0.25rem", borderTop: "1px solid #1e293b", paddingTop: "0.25rem" }}>
               <span>{t("receipt.grandTotal")}:</span>
-              <span data-testid="pos-receipt-total"><BidiText>{grandTotal.toFixed(2)} {currencyCode}</BidiText></span>
+              <span data-testid="pos-receipt-total"><BidiText>{fromScaledBigInt(toScaledBigInt(effectiveGrandTotal), 2)} {currencyCode}</BidiText></span>
             </div>
           </div>
 
@@ -198,7 +245,12 @@ export function ReceiptModal({
 
         {/* Modal Actions */}
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem" }}>
-          <Button variant="secondary" onClick={handlePrint} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <Button
+            variant="secondary"
+            onClick={handlePrint}
+            isDisabled={!isDocumentReady}
+            style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}
+          >
             <ReceiptIcon size={18} />
             <span>{t("receipt.printReceipt")}</span>
           </Button>

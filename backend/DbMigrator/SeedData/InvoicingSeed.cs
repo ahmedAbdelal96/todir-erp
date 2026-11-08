@@ -42,7 +42,7 @@ public static class InvoicingSeed
         return new(DraftCount, customers, suppliers);
     }
 
-    private static string UnitCode(int productIndex) => productIndex % 17 == 0 ? "HOUR" : productIndex % 2 == 0 ? "EA" : "KG";
+    private static string UnitCode(int productIndex) => productIndex == 1 ? "PACK" : productIndex % 17 == 0 ? "HOUR" : productIndex % 2 == 0 ? "EA" : "KG";
 }
 
 public sealed record SeedInvoiceSummary(int Drafts, int CustomerDrafts, int SupplierDrafts);

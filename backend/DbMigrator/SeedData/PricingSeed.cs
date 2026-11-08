@@ -142,7 +142,7 @@ public static class PricingSeed
         await context.ExecuteAsync("update foundation_pricing.price_list_version set status='Active',activated_at=$3,version=version+1 where tenant_id=$1 and id=$2 and status='Draft'", cancellationToken, context.Tenant.Id, versionId, context.AsOf);
     }
 
-    private static string UnitCode(int productIndex) => productIndex % 17 == 0 ? "HOUR" : productIndex % 2 == 0 ? "EA" : "KG";
+    private static string UnitCode(int productIndex) => productIndex == 1 ? "PACK" : productIndex % 17 == 0 ? "HOUR" : productIndex % 2 == 0 ? "EA" : "KG";
 
     private static async Task InsertEntry(SeedContext context, Guid versionId, Guid entryId, Guid variantId, Guid uomId, Guid? partyId, Guid? groupId, decimal price, CancellationToken cancellationToken, decimal minQuantity = 0m, DateOnly? validFrom = null)
     {

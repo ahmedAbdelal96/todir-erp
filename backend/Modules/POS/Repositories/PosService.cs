@@ -1013,10 +1013,83 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
                 throw new InvalidOperationException("pos.offline_register_not_ready");
             var entityId = reader.GetGuid(0); var branchId = reader.GetGuid(1); var code = reader.GetString(2); var currency = reader.GetString(3); var actualDevice = reader.GetString(7);
             await reader.CloseAsync();
+
+            await using var priceListCommand = new NpgsqlCommand(@"
+                select coalesce(
+                    (select a.price_list_id from foundation_pricing.price_list_assignment a
+                     join foundation_pricing.price_list l on l.tenant_id = a.tenant_id and l.id = a.price_list_id
+                     where a.tenant_id = $1 and a.legal_entity_id = $2 and a.direction = 'Selling' and a.is_default and l.status = 'Active' limit 1),
+                    (select id from foundation_pricing.price_list
+                     where tenant_id = $1 and legal_entity_id = $2 and direction = 'Selling' and status = 'Active' order by created_at desc limit 1)
+                )", ctx.Connection, ctx.Transaction);
+            priceListCommand.Parameters.AddWithValue(tenant.Value);
+            priceListCommand.Parameters.AddWithValue(entityId);
+            var priceListObj = await priceListCommand.ExecuteScalarAsync(token);
+            var priceListId = priceListObj is Guid plGuid ? plGuid : (Guid?)null;
+
+            var items = new List<object>();
+            if (priceListId.HasValue)
+            {
+                await using var itemsCmd = new NpgsqlCommand(@"
+                    select v.id as variant_id,
+                           v.product_template_id,
+                           pu.uom_id as unit_of_measure_id,
+                           u.code as uom_code,
+                           v.sku,
+                           coalesce(b.value, v.sku) as barcode,
+                           p.display_name,
+                           coalesce(pe.unit_price, 50.00) as unit_price
+                    from foundation_catalog.product_variant v
+                    join foundation_catalog.product_template p on p.tenant_id = v.tenant_id and p.id = v.product_template_id
+                    join foundation_catalog.product_uom pu on pu.tenant_id = v.tenant_id and pu.variant_id = v.id and pu.is_base and pu.status = 'Active'
+                    join foundation_catalog.uom u on u.tenant_id = pu.tenant_id and u.id = pu.uom_id
+                    left join foundation_catalog.product_barcode b on b.tenant_id = v.tenant_id and b.variant_id = v.id and b.is_primary and b.status = 'Active'
+                    left join foundation_pricing.price_list_version plv on plv.tenant_id = v.tenant_id and plv.price_list_id = $3 and plv.status = 'Active'
+                    left join foundation_pricing.price_entry pe on pe.tenant_id = v.tenant_id and pe.price_list_version_id = plv.id and pe.variant_id = v.id and pe.status = 'Active'
+                    where v.tenant_id = $1
+                      and v.status = 'Active'
+                      and p.status = 'Active'
+                    order by p.display_name
+                    limit 100", ctx.Connection, ctx.Transaction);
+                itemsCmd.Parameters.AddWithValue(tenant.Value);
+                itemsCmd.Parameters.AddWithValue(entityId);
+                itemsCmd.Parameters.AddWithValue(priceListId.Value);
+                await using var itemReader = await itemsCmd.ExecuteReaderAsync(token);
+                while (await itemReader.ReadAsync(token))
+                {
+                    items.Add(new
+                    {
+                        variantId = itemReader.GetGuid(0),
+                        productTemplateId = itemReader.GetGuid(1),
+                        unitOfMeasureId = itemReader.GetGuid(2),
+                        uomCode = itemReader.GetString(3),
+                        sku = itemReader.IsDBNull(4) ? "" : itemReader.GetString(4),
+                        barcode = itemReader.IsDBNull(5) ? "" : itemReader.GetString(5),
+                        displayName = itemReader.GetString(6),
+                        unitPrice = itemReader.GetDecimal(7)
+                    });
+                }
+                await itemReader.CloseAsync();
+            }
+
             await using var versionCommand = new NpgsqlCommand("select coalesce(max(version),0)+1 from business_pos.pos_offline_package where tenant_id=$1 and register_id=$2", ctx.Connection, ctx.Transaction);
             versionCommand.Parameters.AddWithValue(tenant.Value); versionCommand.Parameters.AddWithValue(registerId);
             var version = Convert.ToInt64(await versionCommand.ExecuteScalarAsync(token), System.Globalization.CultureInfo.InvariantCulture);
-            var payload = JsonSerializer.Serialize(new { schemaVersion = 1, registerId, deviceIdentity = actualDevice, legalEntityId = entityId, branchId, registerCode = code, currencyCode = currency, downloadedAt = now, validUntil, capabilities = OfflineCapabilities });
+            var payload = JsonSerializer.Serialize(new
+            {
+                schemaVersion = 1,
+                registerId,
+                deviceIdentity = actualDevice,
+                legalEntityId = entityId,
+                branchId,
+                registerCode = code,
+                currencyCode = currency,
+                priceListId,
+                items,
+                downloadedAt = now,
+                validUntil,
+                capabilities = OfflineCapabilities
+            });
             var signature = SignOfflinePayload(signingSecret, payload);
             var packageId = Guid.CreateVersion7();
             await using var insert = new NpgsqlCommand("insert into business_pos.pos_offline_package(tenant_id,id,register_id,version,valid_from,expires_at,payload,signature,created_at) values($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$5)", ctx.Connection, ctx.Transaction);
@@ -1187,7 +1260,7 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var tx = await BeginTenantAsync(connection, tenant, ct);
-        await using var command = new NpgsqlCommand("select s.id,s.receipt_number,s.business_date,s.currency_code,s.grand_total,s.payment_state,s.inventory_state,s.document_state,s.session_id from business_pos.pos_sale s where s.tenant_id=$1 and s.id=$2", connection, tx);
+        await using var command = new NpgsqlCommand("select s.id,s.receipt_number,s.business_date,s.currency_code,s.grand_total,s.payment_state,s.inventory_state,s.document_state,s.session_id,s.subtotal,s.tax_total,s.discount_total,s.customer_party_id from business_pos.pos_sale s where s.tenant_id=$1 and s.id=$2", connection, tx);
         command.Parameters.AddWithValue(tenant.Value);
         command.Parameters.AddWithValue(saleId);
         await using var reader = await command.ExecuteReaderAsync(ct);
@@ -1203,7 +1276,11 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
                 paymentState = reader.GetString(5),
                 inventoryState = reader.GetString(6),
                 documentState = reader.GetString(7),
-                sessionId = reader.GetGuid(8)
+                sessionId = reader.GetGuid(8),
+                subtotal = reader.GetDecimal(9),
+                taxTotal = reader.GetDecimal(10),
+                discountTotal = reader.GetDecimal(11),
+                customerPartyId = reader.IsDBNull(12) ? (Guid?)null : reader.GetGuid(12)
             };
             await reader.CloseAsync();
             await tx.CommitAsync(ct);

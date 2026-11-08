@@ -48,6 +48,7 @@ import {
 import type {
   CartLineResponse,
   CheckoutResponse,
+  PosSaleLineDetail,
   TenderRequest,
   CashMovementType,
   SessionResponse,
@@ -99,6 +100,13 @@ export function PosCheckoutWorkspace({
   const [frozenReceiptLines, setFrozenReceiptLines] = useState<readonly CartLineResponse[]>([]);
   const [authoritativeReceiptNumber, setAuthoritativeReceiptNumber] = useState<string | null>(null);
   const [authoritativeBusinessDate, setAuthoritativeBusinessDate] = useState<string | null>(null);
+  const [authoritativeSale, setAuthoritativeSale] = useState<{
+    readonly subtotal: number;
+    readonly taxTotal: number;
+    readonly discountTotal: number;
+    readonly grandTotal: number;
+  } | null>(null);
+  const [authoritativeLines, setAuthoritativeLines] = useState<readonly PosSaleLineDetail[] | null>(null);
 
   // Authenticated user & human cashier name
   const user = useOptionalUserContext();
@@ -131,6 +139,20 @@ export function PosCheckoutWorkspace({
   const { data: paymentRequestsData } = usePaymentRequestsQuery(legalEntityId);
   const { data: terminalsData } = useRegisterTerminalsQuery(register.id);
 
+  const activeTerminal = terminalsData?.find((t) => t.status === "Ready") || terminalsData?.[0];
+  const dynamicDeviceIdentity = activeTerminal?.deviceIdentity;
+
+  // Offline Hook with dynamic device identity
+  const {
+    isOnline,
+    pendingSyncCount,
+    offlinePackage,
+    isOfflinePackageValid,
+    deviceIdentity,
+    enqueueOfflineSale,
+    syncOfflineQueue,
+  } = usePosOffline(register.id, dynamicDeviceIdentity);
+
   // Dynamic configuration resolution
   const paymentAccounts = paymentAccountsData || [];
   const activePriceList =
@@ -139,23 +161,11 @@ export function PosCheckoutWorkspace({
         (p.direction === "Selling" || p.direction?.toLowerCase() === "selling") &&
         (p.status === "Active" || !p.status)
     ) || (priceListsData || [])[0];
-  const dynamicPriceListId = activePriceList?.id || register.id;
+  const dynamicPriceListId =
+    activePriceList?.id || offlinePackage?.parsedPayload?.priceListId || null;
 
   const resolvedProviderConfigId =
     (paymentRequestsData?.items || paymentRequestsData || [])[0]?.providerConfigId || null;
-
-  const activeTerminal = terminalsData?.find((t) => t.status === "Ready") || terminalsData?.[0];
-  const dynamicDeviceIdentity = activeTerminal?.deviceIdentity;
-
-  // Offline Hook with dynamic device identity
-  const {
-    isOnline,
-    pendingSyncCount,
-    isOfflinePackageValid,
-    deviceIdentity,
-    enqueueOfflineSale,
-    syncOfflineQueue,
-  } = usePosOffline(register.id, dynamicDeviceIdentity);
 
   // Resolve authoritative receipt details when checkout is completed
   useEffect(() => {
@@ -167,16 +177,37 @@ export function PosCheckoutWorkspace({
           if (sale?.receiptNumber) {
             setAuthoritativeReceiptNumber(sale.receiptNumber);
             setAuthoritativeBusinessDate(sale.businessDate);
+            setAuthoritativeSale({
+              subtotal: sale.subtotal ?? 0,
+              taxTotal: sale.taxTotal ?? 0,
+              discountTotal: sale.discountTotal ?? 0,
+              grandTotal: sale.total,
+            });
           } else {
-            setAuthoritativeReceiptNumber(`POS-${saleId.slice(0, 8)}`);
+            setAuthoritativeReceiptNumber(null);
+            setAuthoritativeSale(null);
           }
         })
         .catch(() => {
-          setAuthoritativeReceiptNumber(`POS-${saleId.slice(0, 8)}`);
+          setAuthoritativeReceiptNumber(null);
+          setAuthoritativeSale(null);
+        });
+
+      posApi
+        .getSaleLines(saleId)
+        .then((lines) => {
+          if (lines && lines.length > 0) {
+            setAuthoritativeLines(lines);
+          }
+        })
+        .catch(() => {
+          setAuthoritativeLines(null);
         });
     } else {
       setAuthoritativeReceiptNumber(null);
       setAuthoritativeBusinessDate(null);
+      setAuthoritativeSale(null);
+      setAuthoritativeLines(null);
     }
   }, [completedCheckout?.saleId, completedCheckout?.state]);
 
@@ -202,6 +233,11 @@ export function PosCheckoutWorkspace({
   const handleBarcodeScanned = useCallback(
     async (code: string) => {
       if (!cartId || !code.trim()) return;
+      const effectivePriceList = dynamicPriceListId || activePriceList?.id || offlinePackage?.parsedPayload?.priceListId;
+      if (!effectivePriceList) {
+        setStatusMessage(t("workspace.noPriceListForOffline", "لا توجد قائمة أسعار صالحة للعمل"));
+        return;
+      }
       setStatusMessage(null);
       try {
         await scanMutation.mutateAsync({
@@ -210,7 +246,7 @@ export function PosCheckoutWorkspace({
             skuOrBarcode: code.trim(),
             quantity: 1,
             legalEntityId,
-            priceListId: dynamicPriceListId,
+            priceListId: effectivePriceList,
           },
         });
         setBarcodeInput("");
@@ -396,12 +432,24 @@ export function PosCheckoutWorkspace({
         if (res.saleId) {
           try {
             const sale = await posApi.getSale(res.saleId);
-            if (sale) {
+            if (sale?.receiptNumber) {
               setAuthoritativeReceiptNumber(sale.receiptNumber);
               setAuthoritativeBusinessDate(sale.businessDate);
+              setAuthoritativeSale({
+                subtotal: sale.subtotal ?? 0,
+                taxTotal: sale.taxTotal ?? 0,
+                discountTotal: sale.discountTotal ?? 0,
+                grandTotal: sale.total,
+              });
+            }
+            const saleLines = await posApi.getSaleLines(res.saleId);
+            if (saleLines && saleLines.length > 0) {
+              setAuthoritativeLines(saleLines);
             }
           } catch {
-            // Receipt modal has POS-{id} fallback
+            setAuthoritativeReceiptNumber(null);
+            setAuthoritativeSale(null);
+            setAuthoritativeLines(null);
           }
         }
         setIsTenderModalOpen(false);
@@ -501,21 +549,37 @@ export function PosCheckoutWorkspace({
       return;
     }
 
+    const packageItems = offlinePackage?.parsedPayload?.items || [];
+    const packagePriceListId = offlinePackage?.parsedPayload?.priceListId;
+    const effectivePriceListId = dynamicPriceListId || packagePriceListId;
+
+    if (!effectivePriceListId) {
+      setStatusMessage(
+        t("workspace.noPriceListForOffline", "لا توجد قائمة أسعار صالحة للعمل بدون اتصال")
+      );
+      return;
+    }
+
     try {
-      const lines = cartLines.map((l) => ({
-        variantId: l.variantId,
-        description: l.description,
-        uomCode: l.uomCode,
-        quantity: l.quantity,
-        unitPrice: l.unitPrice,
-        taxAmount: l.taxAmount,
-        discountAmount: l.discountAmount,
-        legalEntityId,
-        productTemplateId: null,
-        unitOfMeasureId: null,
-        priceListId: dynamicPriceListId,
-        pricingDate: new Date().toISOString().slice(0, 10),
-      }));
+      const lines = cartLines.map((l) => {
+        const matched = packageItems.find(
+          (pi) => pi.variantId === l.variantId || (pi.barcode && pi.barcode === l.description)
+        );
+        return {
+          variantId: l.variantId,
+          description: l.description,
+          uomCode: l.uomCode,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          taxAmount: l.taxAmount,
+          discountAmount: l.discountAmount,
+          legalEntityId,
+          productTemplateId: matched?.productTemplateId || null,
+          unitOfMeasureId: matched?.unitOfMeasureId || null,
+          priceListId: effectivePriceListId,
+          pricingDate: new Date().toISOString().slice(0, 10),
+        };
+      });
 
       await enqueueOfflineSale({
         registerId: register.id,
@@ -777,7 +841,7 @@ export function PosCheckoutWorkspace({
           onClick={() => handleBarcodeScanned("EG-2-0001")}
           style={{ fontSize: "0.8125rem" }}
         >
-          {t("workspace.quickItemBreaker")}
+          {t("workspace.quickItemPaper")}
         </Button>
         <Button
           size="compact"
@@ -790,10 +854,18 @@ export function PosCheckoutWorkspace({
         <Button
           size="compact"
           variant="secondary"
+          onClick={() => handleBarcodeScanned("EG-2-0003")}
+          style={{ fontSize: "0.8125rem" }}
+        >
+          {t("workspace.quickItemTape")}
+        </Button>
+        <Button
+          size="compact"
+          variant="secondary"
           onClick={() => handleBarcodeScanned("EG-1-0004")}
           style={{ fontSize: "0.8125rem" }}
         >
-          {t("workspace.quickItemTransformer")}
+          {t("workspace.quickItemMultimeter")}
         </Button>
       </div>
 
@@ -990,6 +1062,8 @@ export function PosCheckoutWorkspace({
         cashierName={cashierDisplayName}
         authoritativeReceiptNumber={authoritativeReceiptNumber ?? undefined}
         authoritativeBusinessDate={authoritativeBusinessDate ?? undefined}
+        authoritativeSale={authoritativeSale}
+        authoritativeLines={authoritativeLines}
         onNewSale={handleNewSale}
       />
 

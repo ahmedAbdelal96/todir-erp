@@ -84,12 +84,16 @@ export function ReturnModal({
   }, [saleId, t]);
 
   const activeLine = saleLines.find((l) => l.id === selectedLineId);
-  const maxReturnQty = activeLine ? Math.max(0, activeLine.quantity - activeLine.returnedQuantity) : 1;
+  const maxReturnQty = activeLine ? Math.max(0, activeLine.quantity - activeLine.returnedQuantity) : 0;
 
-  // Exact Authoritative Refund Amount calculation
+  // Exact Authoritative Proportional Refund Amount calculation (inclusive of discounts and tax)
   const parsedQty = parseFloat(quantityStr) || 0;
-  const unitPriceScaled = activeLine ? toScaledBigInt(activeLine.unitPrice) : 0n;
-  const refundAmountScaled = (unitPriceScaled * toScaledBigInt(parsedQty)) / 10000n;
+  const lineTotalScaled = activeLine ? toScaledBigInt(activeLine.lineTotal) : 0n;
+  const lineQtyScaled = activeLine ? toScaledBigInt(activeLine.quantity) : 10000n;
+  const refundAmountScaled =
+    activeLine && lineQtyScaled > 0n
+      ? (lineTotalScaled * toScaledBigInt(parsedQty)) / lineQtyScaled
+      : 0n;
   const refundAmount = scaledToNumber(refundAmountScaled);
   const refundAmountStr = fromScaledBigInt(refundAmountScaled, 2);
 
@@ -123,11 +127,19 @@ export function ReturnModal({
       setError(t("returns.saleIdRequired", "يرجى اختيار أو إدخال معرّف الفاتورة الأصلية"));
       return;
     }
+    if (!selectedLineId.trim() || !activeLine) {
+      setError(t("returns.saleLineRequired", "يرجى تحديد بند الفاتورة المراد إرجاعه"));
+      return;
+    }
+    if (maxReturnQty <= 0) {
+      setError(t("returns.noReturnableQuantity", "لا توجد كمية متاحة للإرجاع لهذا البند"));
+      return;
+    }
     if (parsedQty <= 0) {
       setError(t("returns.invalidQuantity", "الكمية المرتجعة يجب أن تكون أكبر من الصفر"));
       return;
     }
-    if (activeLine && parsedQty > maxReturnQty) {
+    if (parsedQty > maxReturnQty) {
       setError(
         t("returns.quantityExceeded", "الكمية المطلوبة تتجاوز الكمية المتاحة للإرجاع (الحد الأقصى: {{max}})", {
           max: maxReturnQty,
@@ -138,7 +150,7 @@ export function ReturnModal({
     setError(null);
 
     const returnLine: ReturnLineRequest = {
-      originalSaleLineId: selectedLineId.trim() || saleId.trim(),
+      originalSaleLineId: selectedLineId.trim(),
       quantity: parsedQty,
       amount: refundAmount,
     };
@@ -340,6 +352,21 @@ export function ReturnModal({
           </span>
         </div>
 
+        {saleLines.length === 0 && !isLoadingLines && saleId.trim() && (
+          <div
+            style={{
+              padding: "0.5rem 0.75rem",
+              borderRadius: "var(--radius-sm)",
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              color: "var(--color-status-danger)",
+              fontSize: "0.875rem",
+            }}
+          >
+            {t("returns.noReturnableLines", "لا توجد بنود متاحة للإرجاع لهذه الفاتورة")}
+          </div>
+        )}
+
         {error && (
           <div
             style={{
@@ -360,7 +387,19 @@ export function ReturnModal({
           <Button variant="ghost" type="button" onClick={onClose} isDisabled={isSubmitting}>
             {t("common.cancel", "إلغاء")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={isSubmitting || parsedQty <= 0}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={
+              isSubmitting ||
+              isLoadingLines ||
+              !saleId.trim() ||
+              !selectedLineId.trim() ||
+              maxReturnQty <= 0 ||
+              parsedQty <= 0 ||
+              parsedQty > maxReturnQty
+            }
+          >
             {isSubmitting ? t("common.saving", "جاري الحفظ...") : t("returns.submitReturn", "تأكيد تسجيل المرتجع")}
           </Button>
         </div>

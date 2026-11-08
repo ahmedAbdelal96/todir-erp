@@ -157,7 +157,7 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     await expect(barcodeInput).toBeVisible();
 
     // Add first item via quick catalog button or typing barcode
-    const quickItemBtn = page.getByRole('button', { name: /قاطع تيار|EG-2-0001|كابل نحاس/i }).first();
+    const quickItemBtn = page.getByRole('button', { name: /ورق تصوير|A4|قاطع تيار|EG-2-0001|كابل نحاس/i }).first();
     if (await quickItemBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await quickItemBtn.click();
     } else {
@@ -279,7 +279,7 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     }
 
     // Ensure cart has an item to enable checkout
-    const quickItemBtn = page.getByRole('button', { name: /قاطع تيار|EG-2-0001|كابل نحاس/i }).first();
+    const quickItemBtn = page.getByRole('button', { name: /ورق تصوير|A4|قاطع تيار|EG-2-0001|كابل نحاس/i }).first();
     if (await quickItemBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await quickItemBtn.click();
       await page.waitForTimeout(600);
@@ -337,7 +337,7 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     }
 
     // Add item to cart
-    const quickItemBtn = page.getByRole('button', { name: /قاطع تيار|EG-2-0001|كابل نحاس/i }).first();
+    const quickItemBtn = page.getByRole('button', { name: /ورق تصوير|A4|قاطع تيار|EG-2-0001|كابل نحاس/i }).first();
     if (await quickItemBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
       await quickItemBtn.click();
       await page.waitForTimeout(500);
@@ -497,13 +497,45 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     await downloadBtn.click();
     await page.waitForTimeout(1200);
 
-    // Verify IndexedDB database todir_pos_offline_v1 is initialized
+    // Verify IndexedDB database todir_pos_offline_v2 is initialized
     const hasIndexedDb = await page.evaluate(async () => {
       if (!window.indexedDB || !window.indexedDB.databases) return true;
       const dbs = await window.indexedDB.databases();
-      return dbs.some((db) => db.name === 'todir_pos_offline_v1');
+      return dbs.some((db) => db.name && db.name.startsWith('todir_pos_offline'));
     });
     expect(hasIndexedDb).toBe(true);
+
+    // Verify package cached in IndexedDB with valid signature and catalog items
+    const packageInfo = await page.evaluate(async () => {
+      return new Promise<any>((resolve) => {
+        const req = window.indexedDB.open('todir_pos_offline_v2', 2);
+        req.onsuccess = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('offline_packages')) {
+            resolve(null);
+            return;
+          }
+          const tx = db.transaction('offline_packages', 'readonly');
+          const store = tx.objectStore('offline_packages');
+          const allReq = store.getAll();
+          allReq.onsuccess = () => {
+            const list = allReq.result || [];
+            resolve(list[0] || null);
+          };
+          allReq.onerror = () => resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      });
+    });
+    expect(packageInfo).not.toBeNull();
+    if (packageInfo) {
+      expect(packageInfo.signature).toBeDefined();
+      const parsed = JSON.parse(packageInfo.payload);
+      expect(parsed.schemaVersion).toBe(1);
+      expect(parsed.items).toBeDefined();
+      expect(Array.isArray(parsed.items)).toBe(true);
+      expect(parsed.items.length).toBeGreaterThan(0);
+    }
 
     await captureScreenshot(page, '12-pos-offline-queue-dashboard');
   });
@@ -576,6 +608,37 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     expect(hasNoHorizontalOverflow).toBe(true);
 
     await captureScreenshot(page, '15-pos-touch-mobile-viewport');
+  });
+
+  test('15. Offline Replay Security & Rejection of Tampered Envelopes', async () => {
+    const page = sharedPage;
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await ensureAuthenticated(page);
+
+    // Verify backend security: Tampered signature rejection
+    const tamperedResult = await page.evaluate(async () => {
+      try {
+        const res = await fetch('/api/pos/offline/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            registerId: '00000000-0000-0000-0000-000000000001',
+            deviceIdentity: 'POS-TERM-01',
+            sourceSequence: 9999,
+            idempotencyKey: 'tampered-test-key',
+            packageVersion: 1,
+            payload: JSON.stringify({ schemaVersion: 1, type: 'CashSale' }),
+            signature: '0000000000000000000000000000000000000000000000000000000000000000',
+          }),
+        });
+        return { status: res.status };
+      } catch (e: any) {
+        return { error: e.message };
+      }
+    });
+
+    // Tampered signature MUST fail closed with HTTP >= 400
+    expect(tamperedResult.status).toBeGreaterThanOrEqual(400);
   });
 
 });

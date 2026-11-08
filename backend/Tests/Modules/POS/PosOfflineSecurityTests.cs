@@ -50,4 +50,22 @@ public sealed class PosOfflineSecurityTests
 
         Assert.Throws<ArgumentException>(() => Modules.POS.PosOfflineCashSalePolicy.Validate(request));
     }
+
+    [Fact]
+    public void OfflineCashSaleAllowsAnonymousWalkInCustomer()
+    {
+        var request = new Modules.POS.OfflineCashSalePayload(
+            1,
+            "CashSale",
+            Guid.NewGuid(),
+            "EGP",
+            Guid.NewGuid(),
+            "offline-sale-anon-1",
+            [new Modules.POS.OfflineCashSaleLine(
+                Guid.NewGuid(), "Item 1", "EA", 1m, 10m, 0m, 0m,
+                Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow))],
+            null);
+
+        Modules.POS.PosOfflineCashSalePolicy.Validate(request);
+    }
 }

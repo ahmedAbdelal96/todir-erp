@@ -6,7 +6,7 @@ public static class PosOfflineCashSalePolicy
     {
         if (request.SchemaVersion != 1 || !string.Equals(request.Type, "CashSale", StringComparison.Ordinal) || request.SessionId == Guid.Empty ||
             string.IsNullOrWhiteSpace(request.CurrencyCode) || request.PaymentAccountId == Guid.Empty || string.IsNullOrWhiteSpace(request.IdempotencyKey) ||
-            request.CustomerPartyId is null || request.Lines is null || request.Lines.Count == 0)
+            request.Lines is null || request.Lines.Count == 0)
             throw new ArgumentException("pos.offline_cash_sale_invalid");
 
         if (request.Lines.Any(line => line.VariantId == Guid.Empty || string.IsNullOrWhiteSpace(line.Description) || string.IsNullOrWhiteSpace(line.UomCode) ||

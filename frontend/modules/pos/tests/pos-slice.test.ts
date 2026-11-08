@@ -23,6 +23,16 @@ describe("POS Module 20 Slice Contracts & Domain Invariants", () => {
     assert.equal(change1.changeAmount, 0.05);
     assert.equal(change1.changeStr, "0.05");
 
+    // Exact half-up rounding and carry into integer unit
+    assert.equal(fromScaledBigInt(9999n, 2), "1.00");
+    assert.equal(fromScaledBigInt(19999n, 2), "2.00");
+    assert.equal(fromScaledBigInt(12550n, 2), "1.26");
+    assert.equal(fromScaledBigInt(12549n, 2), "1.25");
+    assert.equal(fromScaledBigInt(-9999n, 2), "-1.00");
+    assert.equal(fromScaledBigInt(0n, 2), "0.00");
+    assert.equal(toScaledBigInt("1.00006"), 10001n);
+    assert.equal(toScaledBigInt("1.00004"), 10000n);
+
     // Exact fractional cash change with Eastern Arabic digits
     const change2 = calculateExactChange("٢٠٠.٥٠", "150.25");
     assert.equal(change2.isSufficient, true);

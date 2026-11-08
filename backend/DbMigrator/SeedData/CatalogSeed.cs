@@ -22,7 +22,7 @@ public static class CatalogSeed
                 await context.ExecuteAsync("insert into foundation_catalog.product_visibility (tenant_id,template_id,scope_type,visibility_id) select $1,$2,'TenantWide',$3 where not exists (select 1 from foundation_catalog.product_visibility where tenant_id=$1 and template_id=$2)", cancellationToken, context.Tenant.Id, product.Id, SeedIds.Child(context.Tenant.Id, "product-visibility", product.Index));
             }
             await UpsertVariantAsync(context, product.Id, product.Index, "default", product.Sku, true, product.Status, cancellationToken);
-            await UpsertProductUomAsync(context, product.Index, product.Index, "default", product.Nature == "Service" ? "HOUR" : product.CategoryIndex % 2 == 0 ? "EA" : "KG", 1m, true, cancellationToken);
+            await UpsertProductUomAsync(context, product.Index, product.Index, "default", product.Index == 1 ? "PACK" : product.Nature == "Service" ? "HOUR" : product.CategoryIndex % 2 == 0 ? "EA" : "KG", 1m, true, cancellationToken);
             if (product.Index % 10 == 0)
             {
                 await UpsertVariantAsync(context, product.Id, product.Index, "case", $"{product.Sku ?? $"MIX-{product.Index:000}"}-CASE", false, product.Status, cancellationToken);
@@ -30,7 +30,7 @@ public static class CatalogSeed
             }
             var defaultVariantId = SeedIds.Variant(context.Tenant.Id, product.Index, "default");
             if (product.Index % 2 == 0)
-                await context.ExecuteAsync("insert into foundation_catalog.product_barcode (tenant_id,id,variant_id,uom_id,barcode_type,value,normalized_value,is_primary,status,created_at) values ($1,$2,$3,$4,'Ean13',$5,$5,true,'Active',$6) on conflict (tenant_id,id) do update set value=excluded.value,normalized_value=excluded.normalized_value,status='Active'", cancellationToken, context.Tenant.Id, SeedIds.Child(context.Tenant.Id, "barcode", product.Index), defaultVariantId, SeedIds.Uom(context.Tenant.Id, product.CategoryIndex % 2 == 0 ? "EA" : "KG"), $"622{context.Tenant.Id.ToString()[..4]}{product.Index:00000}", context.AsOf);
+                await context.ExecuteAsync("insert into foundation_catalog.product_barcode (tenant_id,id,variant_id,uom_id,barcode_type,value,normalized_value,is_primary,status,created_at) values ($1,$2,$3,$4,'Ean13',$5,$5,true,'Active',$6) on conflict (tenant_id,id) do update set value=excluded.value,normalized_value=excluded.normalized_value,status='Active'", cancellationToken, context.Tenant.Id, SeedIds.Child(context.Tenant.Id, "barcode", product.Index), defaultVariantId, SeedIds.Uom(context.Tenant.Id, product.Index == 1 ? "PACK" : product.CategoryIndex % 2 == 0 ? "EA" : "KG"), $"622{context.Tenant.Id.ToString()[..4]}{product.Index:00000}", context.AsOf);
             if (product.Index == 2)
             {
                 await UpsertAlternateUomAsync(context, product.Index, "PACK", 6m, "pack6", cancellationToken);

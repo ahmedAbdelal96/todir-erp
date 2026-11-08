@@ -2,24 +2,54 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { posApi } from "../services/pos-api.ts";
-import type { OfflineEnvelopeRequest, OfflinePackageResponse } from "../types.ts";
+import type {
+  OfflineEnvelopeRequest,
+  OfflinePackageResponse,
+  OfflinePackagePayloadContent,
+} from "../types.ts";
 
-const DB_NAME = "todir_pos_offline_v1";
+const DB_NAME = "todir_pos_offline_v2";
 const STORE_PACKAGES = "offline_packages";
 const STORE_ENVELOPES = "offline_envelopes";
+const STORE_COUNTERS = "sequence_counters";
+
+export type OfflineEnvelopeStatus =
+  | "Queued"
+  | "Transmitting"
+  | "Received"
+  | "Processing"
+  | "Completed"
+  | "NeedsReview"
+  | "Conflicted"
+  | "RecoveryRequired"
+  | "Failed"
+  | "Pending"
+  | "Synced";
 
 export interface StoredOfflineEnvelope extends OfflineEnvelopeRequest {
   readonly id: string;
   readonly createdAt: string;
   readonly amount: number;
-  readonly status: "Pending" | "Synced" | "Conflicted" | "Failed";
+  readonly status: OfflineEnvelopeStatus;
   readonly retryCount: number;
   readonly conflictCode?: string | null;
   readonly lastError?: string | null;
+  readonly serverEnvelopeId?: string | null;
+  readonly saleId?: string | null;
+  readonly completedAt?: string | null;
 }
 
 export interface StoredOfflinePackage extends OfflinePackageResponse {
   readonly cachedAt: string;
+  readonly parsedPayload?: OfflinePackagePayloadContent | null;
+}
+
+function parsePackagePayload(rawPayload: string): OfflinePackagePayloadContent | null {
+  try {
+    return JSON.parse(rawPayload) as OfflinePackagePayloadContent;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -32,7 +62,7 @@ function openOfflineDatabase(): Promise<IDBDatabase> {
       return;
     }
 
-    const request = window.indexedDB.open(DB_NAME, 1);
+    const request = window.indexedDB.open(DB_NAME, 2);
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
@@ -45,10 +75,37 @@ function openOfflineDatabase(): Promise<IDBDatabase> {
         envelopeStore.createIndex("by_sequence", ["registerId", "deviceIdentity", "sourceSequence"], { unique: true });
         envelopeStore.createIndex("by_status", "status", { unique: false });
       }
+      if (!db.objectStoreNames.contains(STORE_COUNTERS)) {
+        db.createObjectStore(STORE_COUNTERS, { keyPath: "key" });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Get next durable monotonic source sequence for this register and terminal
+ */
+async function getNextDurableSequence(
+  db: IDBDatabase,
+  registerId: string,
+  deviceIdentity: string
+): Promise<number> {
+  const counterKey = `${registerId}:${deviceIdentity.trim()}`;
+  return new Promise<number>((resolve, reject) => {
+    const tx = db.transaction(STORE_COUNTERS, "readwrite");
+    const store = tx.objectStore(STORE_COUNTERS);
+    const getReq = store.get(counterKey);
+    getReq.onsuccess = () => {
+      const current = (getReq.result?.lastSequence as number) || 0;
+      const next = current + 1;
+      store.put({ key: counterKey, lastSequence: next, updatedAt: new Date().toISOString() });
+      tx.oncomplete = () => resolve(next);
+      tx.onerror = () => reject(tx.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
   });
 }
 
@@ -134,7 +191,11 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
       const req = store.get(registerId);
       req.onsuccess = () => {
         if (req.result) {
-          setOfflinePackage(req.result as StoredOfflinePackage);
+          const rawPkg = req.result as StoredOfflinePackage;
+          setOfflinePackage({
+            ...rawPkg,
+            parsedPayload: parsePackagePayload(rawPkg.payload),
+          });
         } else {
           setOfflinePackage(null);
         }
@@ -200,9 +261,11 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
     if (!registerId) return null;
     try {
       const pkg = await posApi.downloadOfflinePackage(registerId, activeDeviceIdentity);
+      const parsed = parsePackagePayload(pkg.payload);
       const storedPkg: StoredOfflinePackage = {
         ...pkg,
         cachedAt: new Date().toISOString(),
+        parsedPayload: parsed,
       };
 
       const db = await openOfflineDatabase();
@@ -216,7 +279,7 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
 
       setOfflinePackage(storedPkg);
       return storedPkg;
-    } catch (err) {
+    } catch {
       return null;
     }
   }, [registerId, activeDeviceIdentity]);
@@ -259,22 +322,23 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
         throw new Error("pos.offline_package_expired");
       }
 
-      const totalAmount = params.lines.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
-      const nextSequence = offlineQueue.length > 0
-        ? Math.max(...offlineQueue.map((e) => e.sourceSequence)) + 1
-        : 1;
+      const db = await openOfflineDatabase();
+      const packageItems = offlinePackage.parsedPayload?.items || [];
+      const packagePriceListId = offlinePackage.parsedPayload?.priceListId;
 
-      const idempotencyKey = window.crypto?.randomUUID ? window.crypto.randomUUID() : `offline-key-${Date.now()}`;
-      const envelopeId = window.crypto?.randomUUID ? window.crypto.randomUUID() : `env-${Date.now()}`;
-      const payloadObj = {
-        schemaVersion: 1,
-        type: "CashSale",
-        sessionId: params.sessionId,
-        currencyCode: params.currencyCode,
-        paymentAccountId: params.paymentAccountId,
-        idempotencyKey,
-        customerPartyId: params.customerPartyId || "023b6cc2-2c8a-8756-b1e8-7664444e37e9",
-        lines: params.lines.map((l) => ({
+      const validatedLines = params.lines.map((l) => {
+        const matched = packageItems.find(
+          (pi) => pi.variantId === l.variantId || (pi.barcode && pi.barcode === l.description)
+        );
+        const resolvedTemplateId = l.productTemplateId || matched?.productTemplateId;
+        const resolvedUomId = l.unitOfMeasureId || matched?.unitOfMeasureId;
+        const resolvedPriceListId = l.priceListId || packagePriceListId;
+
+        if (!resolvedTemplateId || !resolvedUomId || !resolvedPriceListId) {
+          throw new Error(`pos.offline_catalog_item_unresolved:${l.description}`);
+        }
+
+        return {
           variantId: l.variantId,
           description: l.description,
           uomCode: l.uomCode,
@@ -283,13 +347,36 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
           taxAmount: l.taxAmount || 0,
           discountAmount: l.discountAmount || 0,
           legalEntityId: l.legalEntityId,
-          productTemplateId: l.productTemplateId || l.variantId,
-          unitOfMeasureId: l.unitOfMeasureId || l.variantId,
-          priceListId: l.priceListId || params.registerId,
+          productTemplateId: resolvedTemplateId,
+          unitOfMeasureId: resolvedUomId,
+          priceListId: resolvedPriceListId,
           pricingDate: l.pricingDate || new Date().toISOString().slice(0, 10),
           lotId: null,
           serialId: null,
-        })),
+        };
+      });
+
+      const totalAmount = validatedLines.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
+      const nextSequence = await getNextDurableSequence(db, params.registerId, params.deviceIdentity);
+
+      const idempotencyKey =
+        typeof window !== "undefined" && window.crypto?.randomUUID
+          ? window.crypto.randomUUID()
+          : `offline-key-${Date.now()}`;
+      const envelopeId =
+        typeof window !== "undefined" && window.crypto?.randomUUID
+          ? window.crypto.randomUUID()
+          : `env-${Date.now()}`;
+
+      const payloadObj = {
+        schemaVersion: 1,
+        type: "CashSale",
+        sessionId: params.sessionId,
+        currencyCode: params.currencyCode,
+        paymentAccountId: params.paymentAccountId,
+        idempotencyKey,
+        customerPartyId: params.customerPartyId ? params.customerPartyId : null,
+        lines: validatedLines,
       };
       const payloadString = JSON.stringify(payloadObj);
 
@@ -314,11 +401,10 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
         signature,
         amount: totalAmount,
         createdAt: new Date().toISOString(),
-        status: "Pending",
+        status: "Queued",
         retryCount: 0,
       };
 
-      const db = await openOfflineDatabase();
       const tx = db.transaction(STORE_ENVELOPES, "readwrite");
       tx.objectStore(STORE_ENVELOPES).put(storedItem);
 
@@ -330,13 +416,21 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
       await loadQueue();
       return storedItem;
     },
-    [offlinePackage, offlineQueue, loadQueue]
+    [offlinePackage, loadQueue]
   );
 
   // Sync all queued envelopes to the backend in sequence order
   const syncOfflineQueue = useCallback(async (): Promise<number> => {
-    const pendingItems = offlineQueue.filter((item) => item.status === "Pending");
-    if (pendingItems.length === 0 || isSyncing) return 0;
+    const processableStatuses: ReadonlySet<OfflineEnvelopeStatus> = new Set([
+      "Queued",
+      "Pending",
+      "Transmitting",
+      "Received",
+      "Processing",
+      "NeedsReview",
+    ]);
+    const itemsToSync = offlineQueue.filter((item) => processableStatuses.has(item.status));
+    if (itemsToSync.length === 0 || isSyncing) return 0;
 
     setIsSyncing(true);
     setLastSyncResult(null);
@@ -344,57 +438,116 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
     let syncedCount = 0;
     const db = await openOfflineDatabase();
 
-    for (const item of pendingItems) {
+    for (const item of itemsToSync) {
+      let currentServerId = item.serverEnvelopeId || null;
+
       try {
-        const syncRes = await posApi.syncOfflineEnvelope({
-          registerId: item.registerId,
-          deviceIdentity: item.deviceIdentity,
-          sourceSequence: item.sourceSequence,
-          idempotencyKey: item.idempotencyKey,
-          packageVersion: item.packageVersion,
-          payload: item.payload,
-          signature: item.signature,
-        });
+        // Step 1: Transmit envelope if not already received by server
+        if (!currentServerId || item.status === "Queued" || item.status === "Pending") {
+          const transmittingEnvelope: StoredOfflineEnvelope = {
+            ...item,
+            status: "Transmitting",
+          };
+          const txTransmitting = db.transaction(STORE_ENVELOPES, "readwrite");
+          txTransmitting.objectStore(STORE_ENVELOPES).put(transmittingEnvelope);
+          await new Promise<void>((res) => {
+            txTransmitting.oncomplete = () => res();
+          });
 
-        // Resolve envelope ID returned by the server or use stored ID
-        const resolvedEnvelopeId =
-          (syncRes && (syncRes.envelopeId || (typeof syncRes === "string" ? syncRes : null))) ||
-          item.id;
+          const syncRes = await posApi.syncOfflineEnvelope({
+            registerId: item.registerId,
+            deviceIdentity: item.deviceIdentity,
+            sourceSequence: item.sourceSequence,
+            idempotencyKey: item.idempotencyKey,
+            packageVersion: item.packageVersion,
+            payload: item.payload,
+            signature: item.signature,
+          });
 
-        // Process the offline cash sale into an authoritative backend sale
-        try {
-          await posApi.processOfflineCashSale(resolvedEnvelopeId);
-        } catch {
-          // If already processed or queued for worker reconciliation, envelope is still synced
+          currentServerId =
+            (syncRes && (syncRes.envelopeId || (typeof syncRes === "string" ? syncRes : null))) ||
+            item.id;
+
+          const receivedEnvelope: StoredOfflineEnvelope = {
+            ...item,
+            serverEnvelopeId: currentServerId,
+            status: "Received",
+          };
+          const txReceived = db.transaction(STORE_ENVELOPES, "readwrite");
+          txReceived.objectStore(STORE_ENVELOPES).put(receivedEnvelope);
+          await new Promise<void>((res) => {
+            txReceived.oncomplete = () => res();
+          });
         }
 
-        // Mark as Synced in IndexedDB
-        const tx = db.transaction(STORE_ENVELOPES, "readwrite");
-        const updated: StoredOfflineEnvelope = {
-          ...item,
-          status: "Synced",
-        };
-        tx.objectStore(STORE_ENVELOPES).put(updated);
-        await new Promise<void>((res) => {
-          tx.oncomplete = () => res();
-        });
+        // Step 2: Authoritative economic processing on server
+        if (currentServerId) {
+          const processRes = await posApi.processOfflineCashSale(currentServerId);
 
-        syncedCount++;
+          const isAccepted =
+            processRes &&
+            (processRes.state === "Accepted" ||
+              (processRes.checkout && processRes.checkout.state === "Completed"));
+
+          if (isAccepted) {
+            const completedEnvelope: StoredOfflineEnvelope = {
+              ...item,
+              serverEnvelopeId: currentServerId,
+              saleId: processRes.checkout?.saleId || null,
+              status: "Completed",
+              completedAt: new Date().toISOString(),
+              lastError: null,
+            };
+            const txCompleted = db.transaction(STORE_ENVELOPES, "readwrite");
+            txCompleted.objectStore(STORE_ENVELOPES).put(completedEnvelope);
+            await new Promise<void>((res) => {
+              txCompleted.oncomplete = () => res();
+            });
+
+            syncedCount++;
+          } else {
+            const reviewEnvelope: StoredOfflineEnvelope = {
+              ...item,
+              serverEnvelopeId: currentServerId,
+              status: "NeedsReview",
+              lastError: `Server state: ${processRes?.state || "Unknown"}`,
+              retryCount: item.retryCount + 1,
+            };
+            const txReview = db.transaction(STORE_ENVELOPES, "readwrite");
+            txReview.objectStore(STORE_ENVELOPES).put(reviewEnvelope);
+            await new Promise<void>((res) => {
+              txReview.oncomplete = () => res();
+            });
+          }
+        }
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : "Sync error";
-        const isConflict = errorMsg.includes("conflict") || errorMsg.includes("pos.offline_sequence_conflict");
+        const isConflict =
+          errorMsg.includes("conflict") ||
+          errorMsg.includes("pos.offline_sequence_conflict") ||
+          errorMsg.includes("pos.offline_conflict");
+        const isProcessing = errorMsg.includes("pos.offline_envelope_processing");
 
-        const tx = db.transaction(STORE_ENVELOPES, "readwrite");
+        const targetStatus: OfflineEnvelopeStatus = isConflict
+          ? "Conflicted"
+          : isProcessing
+          ? "Processing"
+          : currentServerId
+          ? "NeedsReview"
+          : "Failed";
+
+        const txError = db.transaction(STORE_ENVELOPES, "readwrite");
         const updated: StoredOfflineEnvelope = {
           ...item,
-          status: isConflict ? "Conflicted" : "Pending",
+          serverEnvelopeId: currentServerId,
+          status: targetStatus,
           retryCount: item.retryCount + 1,
           conflictCode: isConflict ? "SourceSequenceConflict" : null,
           lastError: errorMsg,
         };
-        tx.objectStore(STORE_ENVELOPES).put(updated);
+        txError.objectStore(STORE_ENVELOPES).put(updated);
         await new Promise<void>((res) => {
-          tx.oncomplete = () => res();
+          txError.oncomplete = () => res();
         });
       }
     }
@@ -405,7 +558,9 @@ export function usePosOffline(registerId?: string, deviceIdentity?: string) {
     return syncedCount;
   }, [offlineQueue, isSyncing, loadQueue]);
 
-  const pendingSyncCount = offlineQueue.filter((i) => i.status === "Pending").length;
+  const pendingSyncCount = offlineQueue.filter(
+    (i) => i.status !== "Completed" && i.status !== "Synced"
+  ).length;
 
   return {
     isOnline,

@@ -17,22 +17,40 @@ export function toScaledBigInt(val: string | number | undefined | null): bigint 
   const isNegative = str.startsWith("-");
   const abs = isNegative ? str.slice(1) : str;
   const [intPart = "0", fracPart = ""] = abs.split(".");
-  const paddedFrac = (fracPart + "0000").slice(0, 4);
-  const total = BigInt(intPart) * POS_MONEY_SCALE + BigInt(paddedFrac);
+  const baseFrac = fracPart.slice(0, 4).padEnd(4, "0");
+  let fracBigInt = BigInt(baseFrac);
+  if (fracPart.length > 4) {
+    const fifthDigit = Number(fracPart[4]);
+    if (!isNaN(fifthDigit) && fifthDigit >= 5) {
+      fracBigInt += 1n;
+    }
+  }
+  const total = BigInt(intPart || "0") * POS_MONEY_SCALE + fracBigInt;
   return isNegative ? -total : total;
 }
 
 /**
  * Formats a scaled BigInt back to a standard decimal string ("12.50").
+ * Employs exact integer half-up rounding without floating-point representation drift or lost carry.
  */
 export function fromScaledBigInt(scaled: bigint, decimals: number = 2): string {
   const isNegative = scaled < 0n;
   const abs = isNegative ? -scaled : scaled;
-  const intPart = abs / POS_MONEY_SCALE;
-  const fracPart = abs % POS_MONEY_SCALE;
-  const fracStr = fracPart.toString().padStart(4, "0");
-  const rounded = Number(`0.${fracStr}`).toFixed(decimals).slice(2);
-  return `${isNegative ? "-" : ""}${intPart}.${rounded}`;
+  const safeDecimals = Math.max(0, Math.min(4, decimals));
+  const divisorExp = 4 - safeDecimals;
+  const factor = 10n ** BigInt(divisorExp);
+  const half = factor > 1n ? factor / 2n : 0n;
+  const rounded = (abs + half) / factor;
+
+  if (safeDecimals === 0) {
+    return `${isNegative && rounded !== 0n ? "-" : ""}${rounded.toString()}`;
+  }
+
+  const outputFactor = 10n ** BigInt(safeDecimals);
+  const whole = rounded / outputFactor;
+  const fraction = rounded % outputFactor;
+  const fracStr = fraction.toString().padStart(safeDecimals, "0");
+  return `${isNegative && rounded !== 0n ? "-" : ""}${whole.toString()}.${fracStr}`;
 }
 
 /**

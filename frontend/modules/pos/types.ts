@@ -207,6 +207,10 @@ export interface PosSaleResponse {
   readonly inventoryState: string;
   readonly documentState: string;
   readonly sessionId?: string;
+  readonly subtotal?: number;
+  readonly taxTotal?: number;
+  readonly discountTotal?: number;
+  readonly customerPartyId?: string | null;
 }
 
 export interface CatalogVariantSnapshot {
@@ -294,6 +298,32 @@ export interface OfflinePackageResponse {
   readonly expiresAt: string;
   readonly payload: string;
   readonly signature: string;
+}
+
+export interface OfflineCatalogItem {
+  readonly variantId: string;
+  readonly productTemplateId: string;
+  readonly unitOfMeasureId: string;
+  readonly uomCode: string;
+  readonly sku: string;
+  readonly barcode: string;
+  readonly displayName: string;
+  readonly unitPrice: number;
+}
+
+export interface OfflinePackagePayloadContent {
+  readonly schemaVersion: number;
+  readonly registerId: string;
+  readonly deviceIdentity: string;
+  readonly legalEntityId: string;
+  readonly branchId: string;
+  readonly registerCode: string;
+  readonly currencyCode: string;
+  readonly priceListId?: string | null;
+  readonly items?: readonly OfflineCatalogItem[];
+  readonly downloadedAt: string;
+  readonly validUntil: string;
+  readonly capabilities: readonly string[];
 }
 
 export interface PosSaleLineDetail {
