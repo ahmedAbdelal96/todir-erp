@@ -194,17 +194,20 @@ public sealed class ExpensesPostgresIntegrationTests
         await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Delta.ToString("D")); await context.ExecuteNonQueryAsync();
         var policy = await repository.CreatePolicyAsync(new(Delta), new(entity, $"TRAVEL-{Guid.CreateVersion7():N}", "Travel policy"), default);
         using var rules = JsonDocument.Parse("{\"maxAmount\":1000,\"receiptRequired\":true}");
-        var version = await repository.CreatePolicyVersionAsync(new(Delta), entity, policy.Id, new(rules.RootElement.Clone(), new(2090, 1, 1)), default);
+        var maximumEffective = await ScalarAsync(connection, "select max(effective_from) from business_expenses.expense_policy_version where tenant_id=$1 and legal_entity_id=$2", Delta, entity);
+        var policyDate = maximumEffective switch { DateOnly date => date.AddYears(1), DateTime dateTime => DateOnly.FromDateTime(dateTime).AddYears(1), _ => new DateOnly(2090, 1, 1) };
+        var version = await repository.CreatePolicyVersionAsync(new(Delta), entity, policy.Id, new(rules.RootElement.Clone(), policyDate), default);
         version = await repository.PublishPolicyVersionAsync(new(Delta), entity, version.Id, new(), default);
         var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Delta, entity))!;
-        var expense = await repository.CreateAsync(new(Delta), new(entity, Guid.NewGuid(), "Policy test", new(2090, 10, 16), 125m, "EGP", "EmployeePaid", categoryVersion), default);
+        var expenseDate = policyDate.AddMonths(1);
+        var expense = await repository.CreateAsync(new(Delta), new(entity, Guid.NewGuid(), "Policy test", expenseDate, 125m, "EGP", "EmployeePaid", categoryVersion), default);
         await repository.AddEvidenceAsync(new(Delta), entity, expense.Id, new("Receipt", "file://expenses/policy-test"), default);
         var evaluation = await repository.EvaluatePolicyAsync(new(Delta), entity, expense.Id, default);
         Assert.Equal("Passed", evaluation.State);
         Assert.Equal(version.Id.ToString("D"), evaluation.Snapshot.GetProperty("policyVersionId").GetString());
         Assert.Equal(1000, evaluation.Snapshot.GetProperty("rules").GetProperty("maxAmount").GetInt32());
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_policy_evaluation where tenant_id=$1 and expense_id=$2 and policy_version_id=$3", Delta, expense.Id, version.Id));
-        var overLimit = await repository.CreateAsync(new(Delta), new(entity, Guid.NewGuid(), "Over limit", new(2090, 10, 16), 1500m, "EGP", "EmployeePaid", categoryVersion), default);
+        var overLimit = await repository.CreateAsync(new(Delta), new(entity, Guid.NewGuid(), "Over limit", expenseDate, 1500m, "EGP", "EmployeePaid", categoryVersion), default);
         var blocked = await repository.EvaluatePolicyAsync(new(Delta), entity, overLimit.Id, default);
         Assert.Equal("Blocked", blocked.State);
     }
@@ -248,7 +251,7 @@ public sealed class ExpensesPostgresIntegrationTests
         await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Delta.ToString("D")); await context.ExecuteNonQueryAsync();
         var requester = await ReadUserAsync(connection, "admin");
         var decider = await ReadUserAsync(connection, "office");
-        await using (var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select $1,a.role_id,'expenses.approve' from platform.membership_role_assignment a where a.tenant_id=$1 and a.membership_id=any($2::uuid[]) on conflict do nothing", connection))
+        await using (var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select $1,a.role_id,p.permission_code from platform.membership_role_assignment a cross join unnest(array['expenses.approve','expenses.submit']::text[]) p(permission_code) where a.tenant_id=$1 and a.membership_id=any($2::uuid[]) on conflict do nothing", connection))
         { grant.Parameters.AddWithValue(Delta); grant.Parameters.AddWithValue(NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Uuid, new[] { requester.MembershipId, decider.MembershipId }); await grant.ExecuteNonQueryAsync(); }
         var policy = await repository.CreatePolicyAsync(new(Delta), new(entity, $"PLATFORM-{Guid.CreateVersion7():N}", "Platform approval policy"), default);
         using var rules = JsonDocument.Parse("{\"maxAmount\":1000,\"receiptRequired\":true}");
@@ -262,11 +265,55 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Passed", evaluation.State);
         var pending = await repository.RequestApprovalAsync(new(Delta), requester.IdentityId, requester.MembershipId, entity, expense.Id, "Manager review", default);
         Assert.Equal("Pending", pending.State);
+        var pendingRetry = await repository.RequestApprovalAsync(new(Delta), requester.IdentityId, requester.MembershipId, entity, expense.Id, "Manager review retry", default);
+        Assert.Equal(pending.RequestId, pendingRetry.RequestId);
+        Assert.Equal("Pending", pendingRetry.State);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.DecideApprovalAsync(new(Delta), decider.IdentityId, decider.MembershipId, entity, Guid.CreateVersion7(), new(pending.RequestId, "Approved", "Wrong expense"), default));
+        Assert.Equal("Pending", (await approvals.GetAsync(new(Delta), pending.RequestId, default))!.State);
         var approved = await repository.DecideApprovalAsync(new(Delta), decider.IdentityId, decider.MembershipId, entity, expense.Id, new(pending.RequestId, "Approved", "Reviewed by Finance"), default);
         Assert.Equal("Approved", approved.State);
         var finalized = await repository.TransitionAsync(new(Delta), entity, expense.Id, new(submitted.Version + 1), "finalize", default);
         Assert.Equal("Posted", finalized.AccountingState);
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from platform.approval_request where tenant_id=$1 and id=$2 and state='Approved' and decided_by=$3", Delta, pending.RequestId, decider.IdentityId));
+    }
+
+    [ExpensesPostgresFact]
+    public async Task LegacyApproveTransitionCannotBypassPlatformApprovalWorkflow()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var approvals = new NpgsqlPlatformApprovalCapability(dataSource, TimeProvider.System);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), approvals: approvals);
+        var entity = Guid.Parse("bbdcc188-1acc-805e-8721-f43308540a4d");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Delta.ToString("D")); await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Delta, entity))!;
+        var expense = await repository.CreateAsync(new(Delta), new(entity, null, "Legacy approval guard", new(2026, 11, 1), 25m, "EGP", "CompanyPaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Delta), entity, expense.Id, new("Receipt", "file://expenses/legacy-approval-guard"), default);
+        var submitted = await repository.TransitionAsync(new(Delta), entity, expense.Id, new(expense.Version), "submit", default);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAsync(new(Delta), entity, expense.Id, new(submitted.Version), "approve", default));
+        Assert.Equal("Pending", (await repository.GetAsync(new(Delta), entity, expense.Id, default))!.ApprovalState);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task ApprovalRequesterNeedsSubmitPermissionButCannotDecide()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Delta.ToString("D")); await context.ExecuteNonQueryAsync();
+        var office = await ReadUserAsync(connection, "office");
+        var entity = Guid.Parse("bbdcc188-1acc-805e-8721-f43308540a4d");
+        await using var permission = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select $1,a.role_id,'expenses.submit' from platform.membership_role_assignment a where a.tenant_id=$1 and a.membership_id=$2 on conflict do nothing", connection);
+        permission.Parameters.AddWithValue(Delta); permission.Parameters.AddWithValue(office.MembershipId); await permission.ExecuteNonQueryAsync();
+        var approvals = new NpgsqlPlatformApprovalCapability(dataSource, TimeProvider.System);
+        var request = await approvals.RequestAsync(new(Delta), office.IdentityId, office.MembershipId, entity, "expenses", "expense", Guid.CreateVersion7(), 1, null, "Employee submission", "expenses.submit", default);
+        Assert.Equal("Pending", request.State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => approvals.DecideAsync(new(Delta), office.IdentityId, office.MembershipId, request.Id, "Approved", "Self approval", default));
+        Assert.Equal("Pending", (await approvals.GetAsync(new(Delta), request.Id, default))!.State);
     }
 
     private static async Task<(Guid IdentityId, Guid MembershipId)> ReadUserAsync(NpgsqlConnection connection, string prefix)

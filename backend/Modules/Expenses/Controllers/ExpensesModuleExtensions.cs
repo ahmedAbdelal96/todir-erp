@@ -102,7 +102,8 @@ public static class ExpensesModuleExtensions
                 path.Contains("/reimbursements", StringComparison.OrdinalIgnoreCase) || path.Contains("corporate-card", StringComparison.OrdinalIgnoreCase) || path.Contains("employee-repayments", StringComparison.OrdinalIgnoreCase) ? "expenses.reimbursement.read" : "expenses.read";
         if (path.Contains("/categories", StringComparison.OrdinalIgnoreCase) || path.Contains("category-versions", StringComparison.OrdinalIgnoreCase)) return "expenses.category.manage";
         if (path.Contains("/submit", StringComparison.OrdinalIgnoreCase)) return "expenses.submit";
-        if (path.Contains("/approval/", StringComparison.OrdinalIgnoreCase)) return "expenses.approve";
+        if (path.Contains("/approval/request", StringComparison.OrdinalIgnoreCase)) return "expenses.submit";
+        if (path.Contains("/approval/decision", StringComparison.OrdinalIgnoreCase)) return "expenses.approve";
         if (path.Contains("/approve", StringComparison.OrdinalIgnoreCase)) return "expenses.approve";
         if (path.Contains("/finalize", StringComparison.OrdinalIgnoreCase)) return "expenses.finalize";
         if (path.Contains("/reverse", StringComparison.OrdinalIgnoreCase)) return "expenses.reverse";
