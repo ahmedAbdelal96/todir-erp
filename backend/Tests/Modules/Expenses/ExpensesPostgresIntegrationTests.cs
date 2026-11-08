@@ -203,6 +203,9 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(version.Id.ToString("D"), evaluation.Snapshot.GetProperty("policyVersionId").GetString());
         Assert.Equal(1000, evaluation.Snapshot.GetProperty("rules").GetProperty("maxAmount").GetInt32());
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_policy_evaluation where tenant_id=$1 and expense_id=$2 and policy_version_id=$3", Atlas, expense.Id, version.Id));
+        var overLimit = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Over limit", new(2026, 10, 16), 1500m, "EGP", "EmployeePaid", categoryVersion), default);
+        var blocked = await repository.EvaluatePolicyAsync(new(Atlas), entity, overLimit.Id, default);
+        Assert.Equal("Blocked", blocked.State);
     }
 
     private static async Task<object?> ScalarAsync(NpgsqlConnection connection, string sql, params object[] values)
