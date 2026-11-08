@@ -104,6 +104,9 @@ public sealed class ExpensesPostgresIntegrationTests
         var mileage = await repository.SetMileageDetailAsync(new(Atlas), entity, mileageExpense.Id, new(100m, 7.5m), default);
         Assert.Equal(750m, mileage.CalculatedAmount);
         Assert.Equal(750m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, mileageExpense.Id))!);
+        var dimension = await repository.SetDimensionAsync(new(Atlas), entity, mileageExpense.Id, new("COST_CENTER", "CC-001"), default);
+        Assert.Equal("CC-001", dimension.ValueCode);
+        Assert.Single(await repository.ListDimensionsAsync(new(Atlas), entity, mileageExpense.Id, default));
 
         var providerReference = $"provider-acceptance-{Guid.CreateVersion7():N}";
         var card = await repository.ImportCardTransactionAsync(new(Atlas), entity, new(providerReference, "Hotel", new(2026, 10, 13), 210m), default);

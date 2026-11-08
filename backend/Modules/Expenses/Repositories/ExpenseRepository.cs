@@ -393,6 +393,19 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         Add(cmd, tenant.Value, entity, expenseId, Guid.CreateVersion7(), request.Days, request.DailyRate, request.ProvidedMeals, Db(request.Destination)); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.per_diem_not_editable"); var result = new PerDiemExpenseDetailDto(r.GetGuid(0), r.GetGuid(1), r.GetDecimal(2), r.GetDecimal(3), r.GetInt32(4), r.GetDecimal(5), r.IsDBNull(6) ? null : r.GetString(6)); await r.CloseAsync(); await UpdateTypedExpenseAmountAsync(scope, tenant, entity, expenseId, amount, ct); await scope.Transaction.CommitAsync(ct); return result;
     }
 
+    public async Task<ExpenseDimensionDto> SetDimensionAsync(TenantId tenant, Guid entity, Guid expenseId, SetExpenseDimensionRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.DimensionCode) || string.IsNullOrWhiteSpace(request.ValueCode)) throw new ExpenseRepositoryException("expenses.dimension_invalid");
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_dimension(tenant_id,id,legal_entity_id,expense_id,dimension_code,value_code) select $1,$2,$3,id,$4,$5 from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$6 and expense_state='Draft' on conflict(tenant_id,expense_id,dimension_code) do update set value_code=excluded.value_code returning id,expense_id,dimension_code,value_code", scope.Connection, scope.Transaction);
+        Add(cmd, tenant.Value, Guid.CreateVersion7(), entity, request.DimensionCode.Trim().ToUpperInvariant(), request.ValueCode.Trim(), expenseId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.dimension_not_editable");
+        var result = new ExpenseDimensionDto(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3)); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
+    }
+
+    public async Task<IReadOnlyList<ExpenseDimensionDto>> ListDimensionsAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
+    { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select id,expense_id,dimension_code,value_code from business_expenses.expense_dimension where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 order by dimension_code", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, expenseId); var list = new List<ExpenseDimensionDto>(); await using var reader = await cmd.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3))); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return list; }
+
     private static async Task UpdateTypedExpenseAmountAsync(Scope scope, TenantId tenant, Guid entity, Guid expenseId, decimal amount, CancellationToken ct)
     { await using var update = new NpgsqlCommand("update business_expenses.expense set amount=$4,updated_at=now(),version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and expense_state='Draft'", scope.Connection, scope.Transaction); Add(update, tenant.Value, entity, expenseId, amount); if (await update.ExecuteNonQueryAsync(ct) != 1) throw new ExpenseRepositoryException("expenses.typed_detail_not_editable"); }
 

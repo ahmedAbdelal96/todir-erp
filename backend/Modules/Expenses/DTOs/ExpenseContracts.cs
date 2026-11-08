@@ -40,6 +40,8 @@ public sealed record MileageExpenseDetailDto(Guid Id, Guid ExpenseId, decimal Di
 public sealed record SetMileageDetailRequest(decimal Distance, decimal Rate, string DistanceUnit = "KM", string? VehicleType = null, string? Route = null);
 public sealed record PerDiemExpenseDetailDto(Guid Id, Guid ExpenseId, decimal Days, decimal DailyRate, int ProvidedMeals, decimal CalculatedAmount, string? Destination);
 public sealed record SetPerDiemDetailRequest(decimal Days, decimal DailyRate, int ProvidedMeals = 0, string? Destination = null);
+public sealed record ExpenseDimensionDto(Guid Id, Guid ExpenseId, string DimensionCode, string ValueCode);
+public sealed record SetExpenseDimensionRequest(string DimensionCode, string ValueCode);
 public sealed record MatchExpenseCardTransactionRequest(Guid ExpenseId, long? ExpenseVersion = null);
 public sealed record AllocateExpenseCardTransactionRequest(Guid ExpenseId, decimal Amount, long? ExpenseVersion = null);
 public sealed record MarkExpenseCardPersonalRequest(Guid EmployeeId);
