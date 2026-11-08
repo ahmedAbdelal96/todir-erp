@@ -262,7 +262,8 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             await reader.CloseAsync();
             if (state == "Paid") return await GetReimbursementBatchAsync(tenant, entity, batchId, ct)
                 ?? throw new ExpenseRepositoryException("expenses.reimbursement_batch_not_found");
-            if (state is not ("Prepared" or "Failed" or "Submitted") || currentVersion != version || amount <= 0m)
+            var versionMatches = currentVersion == version || (state == "Submitted" && currentVersion == version + 1);
+            if (state is not ("Prepared" or "Failed" or "Submitted") || !versionMatches || amount <= 0m)
                 throw new ExpenseRepositoryException("expenses.reimbursement_batch_not_payable");
             if (state is "Prepared" or "Failed")
             {
