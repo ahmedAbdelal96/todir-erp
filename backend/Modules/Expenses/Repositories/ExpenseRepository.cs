@@ -98,7 +98,21 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             await reader.CloseAsync(); await preflight.Transaction.CommitAsync(ct);
             if (state != "Submitted" || approvalState != "Pending" || linkedRequest != request.RequestId) throw new ExpenseRepositoryException("expenses.approval_scope_or_state_invalid");
         }
-        var approval = await approvals.DecideAsync(tenant, actorId, membershipId, request.RequestId, request.Decision, request.Reason, ct);
+        PlatformApprovalRequestResult approval;
+        try
+        {
+            approval = await approvals.DecideAsync(tenant, actorId, membershipId, request.RequestId, request.Decision, request.Reason, ct);
+        }
+        catch (InvalidOperationException ex) when (ex.Message == "platform.approval_stale_or_unauthorized")
+        {
+            // A decision can be committed by Platform Approvals before a transient local write failure.
+            // Re-read the authoritative request so a safe retry repairs the local projection instead of
+            // attempting a second decision or leaving the expense permanently pending.
+            approval = await approvals.GetAsync(tenant, request.RequestId, ct)
+                ?? throw new ExpenseRepositoryException("expenses.approval_not_found");
+            if (approval.State is not ("Approved" or "Rejected") || !string.Equals(approval.State, request.Decision, StringComparison.Ordinal))
+                throw new ExpenseRepositoryException("expenses.approval_stale_or_concurrent");
+        }
         if (approval.OwnerModule != "expenses" || approval.OwnerEntityType != "expense" || approval.OwnerEntityId != expenseId || approval.LegalEntityId != entity)
             throw new ExpenseRepositoryException("expenses.approval_scope_invalid");
         await using var scope = await OpenAsync(tenant, ct);
