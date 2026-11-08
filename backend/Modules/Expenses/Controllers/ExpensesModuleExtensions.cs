@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using Core.Authorization;
 using Core.Modules;
 using Microsoft.AspNetCore.Builder;
@@ -59,7 +60,8 @@ public static class ExpensesModuleExtensions
         g.MapGet("/legal-entities/{entityId:guid}/{id:guid}/participants", async (Guid entityId, Guid id, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListParticipantsAsync(Tenant(h), entityId, id, ct)));
         g.MapPost("/legal-entities/{entityId:guid}/{id:guid}/participants", async (Guid entityId, Guid id, AddExpenseParticipantRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.AddParticipantAsync(Tenant(h), entityId, id, r, ct), 201));
         g.MapPost("/legal-entities/{entityId:guid}/{id:guid}/evaluate-policy", async (Guid entityId, Guid id, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.EvaluatePolicyAsync(Tenant(h), entityId, id, ct)));
-        g.MapGet("/legal-entities/{entityId:guid}/reports", async (Guid entityId, int? page, int? pageSize, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListReportsAsync(Tenant(h), entityId, page ?? 1, pageSize ?? 50, ct)));
+        g.MapGet("/legal-entities/{entityId:guid}/reports", async (Guid entityId, string? state, string? search, int? page, int? pageSize, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListReportsAsync(Tenant(h), entityId, state, search, page ?? 1, pageSize ?? 50, ct)));
+        g.MapGet("/legal-entities/{entityId:guid}/reports/export", async (Guid entityId, string? state, string? search, HttpContext h, ExpenseService s, CancellationToken ct) => { if (!Guid.TryParse(h.User.FindFirstValue("tenant_id"), out _)) return Results.Forbid(); try { var csv = await s.ExportReportsCsvAsync(Tenant(h), entityId, state, search, ct); return Results.File(Encoding.UTF8.GetBytes(csv), "text/csv; charset=utf-8", "expense-reports.csv"); } catch (ExpenseRepositoryException ex) { return Results.Problem(statusCode: 400, title: ex.Code, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); } });
         g.MapGet("/legal-entities/{entityId:guid}/reports/exceptions", async (Guid entityId, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.GetExceptionSummaryAsync(Tenant(h), entityId, ct)));
         g.MapPost("/legal-entities/{entityId:guid}/reports", async (Guid entityId, CreateExpenseReportRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => r.LegalEntityId != entityId ? Results.BadRequest(new { code = "expenses.entity_scope_invalid" }) : await Execute(h, entityId, () => s.CreateReportAsync(Tenant(h), r, ct), 201));
         g.MapGet("/legal-entities/{entityId:guid}/advances", async (Guid entityId, string? state, Guid? employeeId, int? page, int? pageSize, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListAdvancesAsync(Tenant(h), entityId, state, employeeId, page ?? 1, pageSize ?? 50, ct)));

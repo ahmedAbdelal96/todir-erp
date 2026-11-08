@@ -29,7 +29,8 @@ public sealed class ExpenseService(ExpenseRepository repository)
     public Task<ExpenseParticipantDto> AddParticipantAsync(TenantId tenant, Guid entity, Guid id, AddExpenseParticipantRequest request, CancellationToken ct) => repository.AddParticipantAsync(tenant, entity, id, request, ct);
     public Task<IReadOnlyList<ExpenseParticipantDto>> ListParticipantsAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ListParticipantsAsync(tenant, entity, id, ct);
     public Task<ExpensePolicyEvaluationDto> EvaluatePolicyAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.EvaluatePolicyAsync(tenant, entity, id, ct);
-    public Task<ExpensePage<ExpenseReportDto>> ListReportsAsync(TenantId tenant, Guid entity, int page, int pageSize, CancellationToken ct) => repository.ListReportsAsync(tenant, entity, page, pageSize, ct);
+    public Task<ExpensePage<ExpenseReportDto>> ListReportsAsync(TenantId tenant, Guid entity, string? state, string? search, int page, int pageSize, CancellationToken ct) => repository.ListReportsAsync(tenant, entity, state, search, page, pageSize, ct);
+    public Task<string> ExportReportsCsvAsync(TenantId tenant, Guid entity, string? state, string? search, CancellationToken ct) => repository.ExportReportsCsvAsync(tenant, entity, state, search, ct);
     public Task<ExpenseExceptionSummaryDto> GetExceptionSummaryAsync(TenantId tenant, Guid entity, CancellationToken ct) => repository.GetExceptionSummaryAsync(tenant, entity, ct);
     public Task<ExpenseReportDto> CreateReportAsync(TenantId tenant, CreateExpenseReportRequest request, CancellationToken ct) => repository.CreateReportAsync(tenant, request, ct);
     public Task<BusinessAdvanceDto> CreateAdvanceAsync(TenantId tenant, CreateBusinessAdvanceRequest request, CancellationToken ct) => repository.CreateAdvanceAsync(tenant, request, ct);
