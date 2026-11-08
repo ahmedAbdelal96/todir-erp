@@ -26,6 +26,7 @@ public sealed class ExpenseService(ExpenseRepository repository)
     public Task<IReadOnlyList<ExpenseParticipantDto>> ListParticipantsAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ListParticipantsAsync(tenant, entity, id, ct);
     public Task<ExpensePolicyEvaluationDto> EvaluatePolicyAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.EvaluatePolicyAsync(tenant, entity, id, ct);
     public Task<ExpensePage<ExpenseReportDto>> ListReportsAsync(TenantId tenant, Guid entity, int page, int pageSize, CancellationToken ct) => repository.ListReportsAsync(tenant, entity, page, pageSize, ct);
+    public Task<ExpenseExceptionSummaryDto> GetExceptionSummaryAsync(TenantId tenant, Guid entity, CancellationToken ct) => repository.GetExceptionSummaryAsync(tenant, entity, ct);
     public Task<ExpenseReportDto> CreateReportAsync(TenantId tenant, CreateExpenseReportRequest request, CancellationToken ct) => repository.CreateReportAsync(tenant, request, ct);
     public Task<BusinessAdvanceDto> CreateAdvanceAsync(TenantId tenant, CreateBusinessAdvanceRequest request, CancellationToken ct) => repository.CreateAdvanceAsync(tenant, request, ct);
     public Task<ExpensePage<BusinessAdvanceDto>> ListAdvancesAsync(TenantId tenant, Guid entity, string? state, Guid? employeeId, int page, int pageSize, CancellationToken ct) => repository.ListAdvancesAsync(tenant, entity, state, employeeId, page, pageSize, ct);

@@ -130,6 +130,9 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Settled", advance.State);
         var advancePage = await repository.ListAdvancesAsync(new(Atlas), entity, "Settled", employee, 1, 10, default);
         Assert.True(advancePage.TotalCount >= 1);
+        var summary = await repository.GetExceptionSummaryAsync(new(Atlas), entity, default);
+        Assert.True(summary.PersonalRepaymentDue >= 1);
+        Assert.True(summary.OutstandingAdvances >= 0);
     }
 
     private static async Task<object?> ScalarAsync(NpgsqlConnection connection, string sql, params object[] values)

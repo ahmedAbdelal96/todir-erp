@@ -1,6 +1,7 @@
 namespace Modules.Expenses.DTOs;
 
 public sealed record ExpensePage<T>(IReadOnlyList<T> Items, int TotalCount, int Page, int PageSize);
+public sealed record ExpenseExceptionSummaryDto(int PendingApproval, int MissingEvidence, int ReimbursementPending, decimal ReimbursementAmount, int PersonalRepaymentDue, decimal PersonalRepaymentAmount, int OutstandingAdvances, decimal OutstandingAdvanceAmount);
 public sealed record ExpenseDto(Guid Id, Guid LegalEntityId, Guid? EmployeeId, string MerchantName, DateOnly ExpenseDate, decimal Amount, string CurrencyCode, string PaymentSource, Guid CategoryVersionId, string ExpenseState, string ApprovalState, string AccountingState, string SettlementState, string EvidenceState, string PolicyState, string? BusinessPurpose, string? Description, long Version, DateTimeOffset CreatedAt, DateTimeOffset? FinalizedAt);
 public sealed record CreateExpenseRequest(Guid LegalEntityId, Guid? EmployeeId, string MerchantName, DateOnly ExpenseDate, decimal Amount, string CurrencyCode, string PaymentSource, Guid CategoryVersionId, string? BusinessPurpose = null, string? Description = null);
 public sealed record UpdateExpenseRequest(string MerchantName, DateOnly ExpenseDate, decimal Amount, string CurrencyCode, Guid CategoryVersionId, string? BusinessPurpose, string? Description, long Version);
