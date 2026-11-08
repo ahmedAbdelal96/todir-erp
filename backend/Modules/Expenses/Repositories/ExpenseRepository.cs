@@ -309,6 +309,29 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         return (await GetCardTransactionAsync(tenant, entity, cardId, ct))!;
     }
 
+    public async Task<ExpenseCardTransactionDto> AllocateCardTransactionAsync(TenantId tenant, Guid entity, Guid cardId, AllocateExpenseCardTransactionRequest request, CancellationToken ct)
+    {
+        if (request.ExpenseId == Guid.Empty || request.Amount <= 0m) throw new ExpenseRepositoryException("expenses.card_allocation_invalid");
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var card = new NpgsqlCommand("select amount,currency_code,state from business_expenses.expense_card_transaction where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction);
+        Add(card, tenant.Value, entity, cardId); await using var cr = await card.ExecuteReaderAsync(ct);
+        if (!await cr.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.card_transaction_not_found");
+        var cardAmount = cr.GetDecimal(0); var cardCurrency = cr.GetString(1); var cardState = cr.GetString(2); await cr.CloseAsync();
+        if (cardState is not ("Unmatched" or "Allocated")) throw new ExpenseRepositoryException("expenses.card_transaction_not_allocatable");
+        await using var expense = new NpgsqlCommand("select amount,currency_code,expense_state,version from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction);
+        Add(expense, tenant.Value, entity, request.ExpenseId); await using var er = await expense.ExecuteReaderAsync(ct);
+        if (!await er.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found");
+        var expenseAmount = er.GetDecimal(0); var expenseCurrency = er.GetString(1); var expenseState = er.GetString(2); var expenseVersion = er.GetInt64(3); await er.CloseAsync();
+        if (expenseState is not ("Draft" or "Submitted") || request.Amount > expenseAmount || !string.Equals(cardCurrency, expenseCurrency, StringComparison.OrdinalIgnoreCase)) throw new ExpenseRepositoryException("expenses.card_allocation_mismatch");
+        if (request.ExpenseVersion.HasValue && request.ExpenseVersion.Value != expenseVersion) throw new ExpenseRepositoryException("expenses.concurrent_change_or_not_editable");
+        await using var allocation = new NpgsqlCommand("insert into business_expenses.expense_card_allocation(tenant_id,id,legal_entity_id,card_transaction_id,expense_id,amount) values($1,$2,$3,$4,$5,$6) on conflict(tenant_id,card_transaction_id,expense_id) do update set amount=excluded.amount", scope.Connection, scope.Transaction);
+        Add(allocation, tenant.Value, Guid.CreateVersion7(), entity, cardId, request.ExpenseId, request.Amount); await allocation.ExecuteNonQueryAsync(ct);
+        await using var total = new NpgsqlCommand("select coalesce(sum(amount),0) from business_expenses.expense_card_allocation where tenant_id=$1 and card_transaction_id=$2", scope.Connection, scope.Transaction); Add(total, tenant.Value, cardId); var allocated = Convert.ToDecimal(await total.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        if (allocated > cardAmount) throw new ExpenseRepositoryException("expenses.card_allocation_exceeds_transaction");
+        await using var update = new NpgsqlCommand("update business_expenses.expense_card_transaction set state=case when $4=$5 then 'Allocated' else 'Unmatched' end,matched_expense_id=case when $4=$5 then $6 else null end where tenant_id=$1 and legal_entity_id=$2 and id=$3 returning id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state,employee_id,matched_expense_id", scope.Connection, scope.Transaction);
+        Add(update, tenant.Value, entity, cardId, allocated, cardAmount, request.ExpenseId); await using var resultReader = await update.ExecuteReaderAsync(ct); if (!await resultReader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.card_transaction_not_found"); var result = ReadCard(resultReader); await resultReader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
+    }
+
     public async Task<ExpenseCardTransactionDto> MarkCardTransactionPersonalAsync(TenantId tenant, Guid entity, Guid cardId, MarkExpenseCardPersonalRequest request, CancellationToken ct)
     {
         if (request.EmployeeId == Guid.Empty) throw new ExpenseRepositoryException("expenses.card_employee_required");

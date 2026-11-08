@@ -41,6 +41,7 @@ public sealed record SetMileageDetailRequest(decimal Distance, decimal Rate, str
 public sealed record PerDiemExpenseDetailDto(Guid Id, Guid ExpenseId, decimal Days, decimal DailyRate, int ProvidedMeals, decimal CalculatedAmount, string? Destination);
 public sealed record SetPerDiemDetailRequest(decimal Days, decimal DailyRate, int ProvidedMeals = 0, string? Destination = null);
 public sealed record MatchExpenseCardTransactionRequest(Guid ExpenseId, long? ExpenseVersion = null);
+public sealed record AllocateExpenseCardTransactionRequest(Guid ExpenseId, decimal Amount, long? ExpenseVersion = null);
 public sealed record MarkExpenseCardPersonalRequest(Guid EmployeeId);
 public sealed record ExpenseEmployeeRepaymentDto(Guid Id, Guid LegalEntityId, Guid EmployeeId, string SourceReference, decimal Amount, decimal SettledAmount, string CurrencyCode, string State, DateTimeOffset CreatedAt, DateTimeOffset? RecordedAt, Guid? PaymentId, long Version);
 public sealed record SettleEmployeeRepaymentRequest(Guid PaymentAccountId, string Method, decimal Amount, DateOnly PaymentDate, DateOnly PostingDate, long Version);
