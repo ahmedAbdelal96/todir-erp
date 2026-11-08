@@ -6,6 +6,9 @@ public sealed record ExpenseDto(Guid Id, Guid LegalEntityId, Guid? EmployeeId, s
 public sealed record CreateExpenseRequest(Guid LegalEntityId, Guid? EmployeeId, string MerchantName, DateOnly ExpenseDate, decimal Amount, string CurrencyCode, string PaymentSource, Guid CategoryVersionId, string? BusinessPurpose = null, string? Description = null);
 public sealed record UpdateExpenseRequest(string MerchantName, DateOnly ExpenseDate, decimal Amount, string CurrencyCode, Guid CategoryVersionId, string? BusinessPurpose, string? Description, long Version);
 public sealed record ExpenseActionRequest(long Version, string? Reason = null);
+public sealed record ExpenseApprovalRequest(string? Reason = null);
+public sealed record ExpenseApprovalDecisionRequest(Guid RequestId, string Decision, string? Reason = null);
+public sealed record ExpenseApprovalDto(Guid RequestId, Guid ExpenseId, string State, Guid LegalEntityId, long ResourceVersion, Guid? PolicyVersionId, Guid? DecidedBy, string? DecisionReason, DateTimeOffset CreatedAt, DateTimeOffset? DecidedAt);
 public sealed record ExpenseCategoryDto(Guid Id, Guid LegalEntityId, string Code, string Name, string Status, Guid? PublishedVersionId);
 public sealed record CreateExpenseCategoryRequest(Guid LegalEntityId, string Code, string Name, bool RequiresReceipt = true);
 public sealed record ExpenseCategoryVersionDto(Guid Id, Guid CategoryId, int Version, string Status, bool RequiresReceipt, decimal? ReceiptThreshold, DateOnly EffectiveFrom, DateOnly? EffectiveTo);

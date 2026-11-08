@@ -69,6 +69,9 @@ public static class PlatformHostingExtensions
         services.AddSingleton<IPlatformFileUploadCapability>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
             ? new NpgsqlPlatformFileUploadCapability(dataSource, provider.GetRequiredService<S3PlatformFileStorage>(), provider.GetRequiredService<IPlatformFileMalwareScanner>(), provider.GetRequiredService<TimeProvider>())
             : new NullPlatformFileUploadCapability());
+        services.AddSingleton<IPlatformApprovalCapability>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlPlatformApprovalCapability(dataSource, provider.GetRequiredService<TimeProvider>())
+            : throw new InvalidOperationException("platform.approvals_requires_database"));
         var cookieSecurePolicy = Enum.TryParse<CookieSecurePolicy>(configuration["TODIR_COOKIE_SECURE_POLICY"], ignoreCase: true, out var configuredCookieSecurePolicy)
             ? configuredCookieSecurePolicy
             : CookieSecurePolicy.Always;
@@ -140,7 +143,7 @@ public static class PlatformHostingExtensions
         services.AddSingleton<INotificationStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlNotificationStore(dataSource) : new InMemoryNotificationStore());
         services.AddSingleton<NotificationDispatcher>();
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<ITransactionCoordinator, NpgsqlTransactionCoordinator>();
-        services.AddSingleton<IModuleManifestProvider>(new StaticModuleManifestProvider(new ModuleManifest("platform-kernel", "1.0.0", 1, "L0", "kernel", false, "tenant", new([], []), new("platform", ["tenant-context", "authorization", "transaction-coordination"]), ["platform.role.manage", "platform.module.view", "platform.module.activate", "platform.module.deactivate", "platform.settings.manage", "platform.settings.read", "platform.audit.view", "platform.support_access.request", "platform.support_access.approve", "platform.message.replay", "platform.organization.read", "platform.identity.read", "platform.identity.manage", "platform.tenancy.read", "platform.tenancy.manage"], new(["tenant-context", "authorization", "transaction-coordination"], []), new([], []), new(false, "never_disable"))));
+        services.AddSingleton<IModuleManifestProvider>(new StaticModuleManifestProvider(new ModuleManifest("platform-kernel", "1.0.0", 1, "L0", "kernel", false, "tenant", new([], []), new("platform", ["tenant-context", "authorization", "transaction-coordination", "approval-workflow"]), ["platform.role.manage", "platform.module.view", "platform.module.activate", "platform.module.deactivate", "platform.settings.manage", "platform.settings.read", "platform.audit.view", "platform.support_access.request", "platform.support_access.approve", "platform.message.replay", "platform.organization.read", "platform.identity.read", "platform.identity.manage", "platform.tenancy.read", "platform.tenancy.manage"], new(["tenant-context", "authorization", "transaction-coordination", "approval-workflow"], []), new([], []), new(false, "never_disable"))));
         services.AddSingleton<IModuleRegistry>(provider => new ModuleRegistry(provider.GetRequiredService<IEnumerable<IModuleManifestProvider>>().Select(source => source.Manifest)));
         services.AddSingleton<ModuleLifecycleService>();
         return services;

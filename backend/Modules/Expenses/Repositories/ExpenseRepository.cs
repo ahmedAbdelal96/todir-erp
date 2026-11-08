@@ -11,7 +11,7 @@ using Modules.Expenses.DTOs;
 
 namespace Modules.Expenses.Repositories;
 
-public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null, IPlatformFileUploadCapability? fileUploads = null)
+public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null, IPlatformFileUploadCapability? fileUploads = null, IPlatformApprovalCapability? approvals = null)
 {
     public async Task<ExpensePage<ExpenseDto>> ListAsync(TenantId tenant, Guid entity, Guid? employeeId, string? state, string? search, int page, int pageSize, CancellationToken ct)
     {
@@ -48,6 +48,47 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             _ => TransitionCoreAsync(tenant, entity, id, request, action, ct)
         };
 
+    public async Task<ExpenseApprovalDto> RequestApprovalAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid entity, Guid expenseId, string? reason, CancellationToken ct)
+    {
+        if (approvals is null) throw new ExpenseRepositoryException("expenses.approvals_capability_unavailable");
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select version,approval_state,expense_state,policy_version_id from business_expenses.expense e left join business_expenses.expense_policy_evaluation pe on pe.tenant_id=e.tenant_id and pe.legal_entity_id=e.legal_entity_id and pe.expense_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3", scope.Connection, scope.Transaction);
+        Add(command, tenant.Value, entity, expenseId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found");
+        var version = reader.GetInt64(0); var approvalState = reader.GetString(1); var expenseState = reader.GetString(2); var policyVersionId = reader.IsDBNull(3) ? (Guid?)null : reader.GetGuid(3);
+        await reader.CloseAsync();
+        if (expenseState != "Submitted" || approvalState != "Pending") throw new ExpenseRepositoryException("expenses.approval_request_invalid_state");
+        await scope.Transaction.CommitAsync(ct);
+        try
+        {
+            var request = await approvals.RequestAsync(tenant, actorId, membershipId, entity, "expenses", "expense", expenseId, version, policyVersionId, reason, ct);
+            return ToExpenseApproval(request, expenseId);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            throw new ExpenseRepositoryException("expenses.approval_request_duplicate");
+        }
+    }
+
+    public async Task<ExpenseApprovalDto> DecideApprovalAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid entity, Guid expenseId, ExpenseApprovalDecisionRequest request, CancellationToken ct)
+    {
+        if (approvals is null) throw new ExpenseRepositoryException("expenses.approvals_capability_unavailable");
+        if (request.RequestId == Guid.Empty || request.Decision is not ("Approved" or "Rejected")) throw new ExpenseRepositoryException("expenses.approval_decision_invalid");
+        var approval = await approvals.DecideAsync(tenant, actorId, membershipId, request.RequestId, request.Decision, request.Reason, ct);
+        if (approval.OwnerModule != "expenses" || approval.OwnerEntityType != "expense" || approval.OwnerEntityId != expenseId || approval.LegalEntityId != entity)
+            throw new ExpenseRepositoryException("expenses.approval_scope_invalid");
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("update business_expenses.expense e set approval_state=$4,approval_request_id=$5,version=e.version+1,updated_at=now() where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3 and e.version=$6 and e.expense_state='Submitted' and e.approval_state='Pending' and coalesce((select policy_version_id from business_expenses.expense_policy_evaluation pe where pe.tenant_id=e.tenant_id and pe.legal_entity_id=e.legal_entity_id and pe.expense_id=e.id),null) is not distinct from $7 returning e.version", scope.Connection, scope.Transaction);
+        Add(command, tenant.Value, entity, expenseId, approval.State, approval.Id, approval.ResourceVersion, (object?)approval.PolicyVersionId ?? DBNull.Value);
+        if (await command.ExecuteScalarAsync(ct) is null) throw new ExpenseRepositoryException("expenses.approval_stale_or_concurrent");
+        await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,$5,jsonb_build_object('expenseState','Submitted','approvalState',$5,'approvalRequestId',$6::text))", scope.Connection, scope.Transaction);
+        Add(history, tenant.Value, Guid.CreateVersion7(), entity, expenseId, approval.State, approval.Id);
+        await history.ExecuteNonQueryAsync(ct);
+        await scope.Transaction.CommitAsync(ct);
+        return ToExpenseApproval(approval, expenseId);
+    }
+
     private async Task<ExpenseDto> TransitionCoreAsync(TenantId tenant, Guid entity, Guid id, ExpenseActionRequest request, string action, CancellationToken ct)
     {
         await using var scope = await OpenAsync(tenant, ct);
@@ -60,7 +101,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         var sql = action switch
         {
             "submit" => "update business_expenses.expense set expense_state='Submitted',approval_state='Pending',version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$4 and expense_state='Draft'",
-            "approve" => "update business_expenses.expense set approval_state='Approved',version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$4 and expense_state='Submitted'",
+            "approve" => approvals is null ? "update business_expenses.expense set approval_state='Approved',version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$4 and expense_state='Submitted'" : "update business_expenses.expense set approval_state='Approved',version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$4 and expense_state='Submitted' and not exists (select 1 from business_expenses.expense_policy_version pv where pv.tenant_id=$1 and pv.legal_entity_id=$2 and pv.status='Published' and pv.effective_from <= (select expense_date from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3) and (pv.effective_to is null or pv.effective_to >= (select expense_date from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3)))",
             "reject" => "update business_expenses.expense set approval_state='Rejected',version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$4 and expense_state='Submitted'",
             _ => throw new ExpenseRepositoryException("expenses.action_invalid")
         };
@@ -88,6 +129,9 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             Guid? applicablePolicyVersion = null;
             await using (var applicable = new NpgsqlCommand("select id from business_expenses.expense_policy_version where tenant_id=$1 and legal_entity_id=$2 and status='Published' and effective_from <= $3 and (effective_to is null or effective_to >= $3) order by effective_from desc,version desc limit 1", context.Connection, context.Transaction))
             { Add(applicable, tenant.Value, entity, date); var applicableValue = await applicable.ExecuteScalarAsync(token); applicablePolicyVersion = applicableValue is Guid g ? g : null; }
+            Guid? approvalRequestId = null;
+            await using (var approvalLink = new NpgsqlCommand("select approval_request_id from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", context.Connection, context.Transaction))
+            { Add(approvalLink, tenant.Value, entity, id); var value = await approvalLink.ExecuteScalarAsync(token); approvalRequestId = value is Guid g ? g : null; }
             if (applicablePolicyVersion.HasValue)
             {
                 await using var policy = new NpgsqlCommand("select state,policy_version_id,snapshot::text from business_expenses.expense_policy_evaluation where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3", context.Connection, context.Transaction);
@@ -96,6 +140,13 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
                 policyState = policyReader.GetString(0); var evaluatedVersion = policyReader.IsDBNull(1) ? (Guid?)null : policyReader.GetGuid(1); var snapshot = System.Text.Json.JsonDocument.Parse(policyReader.GetString(2)).RootElement.Clone(); await policyReader.CloseAsync();
                 if (policyState == "Blocked") throw new ExpenseRepositoryException("expenses.policy_blocked");
                 if (evaluatedVersion != applicablePolicyVersion || !SnapshotMatches(snapshot, version, amount, currency, source, employee, categoryVersionId, evidenceState)) throw new ExpenseRepositoryException("expenses.policy_evaluation_stale");
+            }
+            if (approvals is not null && applicablePolicyVersion.HasValue)
+            {
+                if (!approvalRequestId.HasValue) throw new ExpenseRepositoryException("expenses.platform_approval_required");
+                var platformApproval = await approvals.GetAsync(tenant, approvalRequestId.Value, token);
+                if (platformApproval is null || platformApproval.State != "Approved" || platformApproval.OwnerModule != "expenses" || platformApproval.OwnerEntityType != "expense" || platformApproval.OwnerEntityId != id || platformApproval.LegalEntityId != entity || platformApproval.PolicyVersionId != applicablePolicyVersion || platformApproval.ResourceVersion < version - 1 || platformApproval.ResourceVersion > version)
+                    throw new ExpenseRepositoryException("expenses.platform_approval_stale_or_invalid");
             }
             var factId = StableFactId(id);
             var payload = new ExpenseRecognizedPayload(amount, currency, category, source == "EmployeePaid" ? "EmployeeReimbursementPayable" : "Cash");
@@ -195,7 +246,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     private static Guid? GuidValue(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetGuid(i); private static string? Text(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i); private static object Db(object? v) => v ?? DBNull.Value; private static void Add(NpgsqlCommand c, params object?[] values) { foreach (var value in values) c.Parameters.AddWithValue(value ?? DBNull.Value); }
     private static MissingReceiptDeclarationDto ReadMissingReceipt(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetGuid(4), r.GetFieldValue<DateTimeOffset>(5), r.IsDBNull(6) ? null : r.GetFieldValue<DateTimeOffset>(6));
     private static bool SnapshotMatches(System.Text.Json.JsonElement snapshot, long version, decimal amount, string currency, string source, Guid? employee, Guid categoryVersionId, string evidenceState)
-    { return snapshot.TryGetProperty("expenseVersion", out var v) && v.GetInt64() == version && snapshot.TryGetProperty("amount", out var a) && a.GetDecimal() == amount && snapshot.TryGetProperty("currencyCode", out var c) && string.Equals(c.GetString(), currency, StringComparison.OrdinalIgnoreCase) && snapshot.TryGetProperty("paymentSource", out var p) && string.Equals(p.GetString(), source, StringComparison.Ordinal) && snapshot.TryGetProperty("evidenceState", out var es) && string.Equals(es.GetString(), evidenceState, StringComparison.Ordinal) && snapshot.TryGetProperty("categoryVersionId", out var cv) && Guid.TryParse(cv.GetString(), out var category) && category == categoryVersionId && ((employee is null && (!snapshot.TryGetProperty("employeeId", out var e) || e.ValueKind == System.Text.Json.JsonValueKind.Null)) || (employee is not null && snapshot.TryGetProperty("employeeId", out var actual) && Guid.TryParse(actual.GetString(), out var actualEmployee) && actualEmployee == employee)); }
+    { return snapshot.TryGetProperty("expenseVersion", out var v) && (v.GetInt64() == version || v.GetInt64() == version - 1) && snapshot.TryGetProperty("amount", out var a) && a.GetDecimal() == amount && snapshot.TryGetProperty("currencyCode", out var c) && string.Equals(c.GetString(), currency, StringComparison.OrdinalIgnoreCase) && snapshot.TryGetProperty("paymentSource", out var p) && string.Equals(p.GetString(), source, StringComparison.Ordinal) && snapshot.TryGetProperty("evidenceState", out var es) && string.Equals(es.GetString(), evidenceState, StringComparison.Ordinal) && snapshot.TryGetProperty("categoryVersionId", out var cv) && Guid.TryParse(cv.GetString(), out var category) && category == categoryVersionId && ((employee is null && (!snapshot.TryGetProperty("employeeId", out var e) || e.ValueKind == System.Text.Json.JsonValueKind.Null)) || (employee is not null && snapshot.TryGetProperty("employeeId", out var actual) && Guid.TryParse(actual.GetString(), out var actualEmployee) && actualEmployee == employee)); }
     private static void ValidatePolicyRules(System.Text.Json.JsonElement rules)
     {
         if (rules.ValueKind != System.Text.Json.JsonValueKind.Object) throw new ExpenseRepositoryException("expenses.policy_rules_invalid");
@@ -464,6 +515,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         Add(command, tenant.Value, entity, id); await using var reader = await command.ExecuteReaderAsync(ct); var result = await reader.ReadAsync(ct) ? ReadAdvance(reader) : null; await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
     }
     private static ExpenseCardTransactionDto ReadCard(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetFieldValue<DateOnly>(4), r.GetDecimal(5), r.GetString(6), r.GetString(7), r.IsDBNull(8) ? null : r.GetGuid(8), r.IsDBNull(9) ? null : r.GetGuid(9));
+    private static ExpenseApprovalDto ToExpenseApproval(PlatformApprovalRequestResult result, Guid expenseId) => new(result.Id, expenseId, result.State, result.LegalEntityId, result.ResourceVersion, result.PolicyVersionId, result.DecidedBy, result.DecisionReason, result.CreatedAt, result.DecidedAt);
     public async Task<ExpenseReimbursementBatchDto> PayReimbursementBatchAsync(TenantId tenant, Guid entity, Guid batchId,
         Guid actorId, Guid membershipId, Guid paymentAccountId, string method, DateOnly paymentDate, DateOnly postingDate, long version, CancellationToken ct)
     {
