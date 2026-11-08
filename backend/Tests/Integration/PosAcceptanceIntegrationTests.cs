@@ -116,6 +116,7 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         await admin.OpenAsync();
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_checkout where tenant_id=$1 and idempotency_key=$2", AtlasTenant, idempotencyKey));
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_sale where tenant_id=$1 and checkout_id=$2", AtlasTenant, checkoutId));
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_sale where tenant_id=$1 and checkout_id=$2 and customer_party_id=$3", AtlasTenant, checkoutId, customerPartyId));
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_tender where tenant_id=$1 and checkout_id=$2 and state='Captured'", AtlasTenant, checkoutId));
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_invoicing.invoice where tenant_id=$1 and source_module='pos' and source_idempotency_key=$2 and lifecycle_state='Finalized'", AtlasTenant, $"pos-invoice:{idempotencyKey}"));
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_inventory.inventory_operation where tenant_id=$1 and source_module='sales' and source_document_id=$2 and operation_type='Issue' and status='Confirmed'", AtlasTenant, saleId));
@@ -166,6 +167,58 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         var saleLinesAfterCancelled = await GetJsonAsync(client, $"/api/v1/pos/sales/{saleId:D}/lines");
         var lineItemAfterCancelled = saleLinesAfterCancelled.EnumerateArray().Single(x => x.GetProperty("id").GetGuid() == saleLineId);
         Assert.Equal(1m, lineItemAfterCancelled.GetProperty("returnedQuantity").GetDecimal());
+    }
+
+    [Fact]
+    public async Task AnonymousCashSaleKeepsWalkInSemanticsAndPostsCashSaleWithoutCustomerIdentity()
+    {
+        var connectionString = Required("TODIR_DATABASE_CONNECTION");
+        var adminConnectionString = Required("TODIR_P04_ADMIN_CONNECTION");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(client, "admin@atlas.com", Required("SEED_DEFAULT_PASSWORD"), AtlasTenant);
+
+        var register = (await GetJsonAsync(client, $"/api/v1/pos/registers?legalEntityId={AtlasEntity:D}")).EnumerateArray().Single();
+        var registerId = register.GetProperty("id").GetGuid();
+        var branchId = register.GetProperty("branchId").GetGuid();
+        var sessionId = (await GetJsonAsync(client, $"/api/v1/pos/sessions/current?registerId={registerId:D}")).GetProperty("id").GetGuid();
+        var priceListId = (await GetJsonAsync(client, $"/api/v1/pricing/price-lists?legalEntityId={AtlasEntity:D}")).EnumerateArray().Single(x => x.GetProperty("code").GetString() == "RETAIL").GetProperty("id").GetGuid();
+        var accounts = await GetJsonAsync(client, $"/api/v1/payments/legal-entities/{AtlasEntity:D}/accounts");
+        var paymentAccountId = accounts.EnumerateArray().Single(x => x.GetProperty("type").GetString() == "Cashbox" && x.GetProperty("branchId").GetGuid() == branchId).GetProperty("id").GetGuid();
+
+        using var cartResponse = await PostJsonAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP", customerPartyId = (Guid?)null });
+        Assert.Equal(HttpStatusCode.Created, cartResponse.StatusCode);
+        var cartId = (await ReadJsonAsync(cartResponse)).GetProperty("id").GetGuid();
+        using var scanResponse = await PostJsonAsync(client, $"/api/v1/pos/carts/{cartId:D}/scan", new { skuOrBarcode = "EG-2-0001", quantity = 1m, legalEntityId = AtlasEntity, priceListId });
+        Assert.Equal(HttpStatusCode.Created, scanResponse.StatusCode);
+        var scanned = await ReadJsonAsync(scanResponse);
+        var total = scanned.GetProperty("grandTotal").GetDecimal();
+        var idempotencyKey = $"pos-anonymous-cash-{Guid.CreateVersion7():N}";
+        var request = new { idempotencyKey, tenders = new[] { new { method = "Cash", amount = total, paymentAccountId } } };
+
+        using var checkoutResponse = await PostJsonAsync(client, $"/api/v1/pos/carts/{cartId:D}/checkout", request);
+        Assert.True(checkoutResponse.StatusCode == HttpStatusCode.Accepted, await checkoutResponse.Content.ReadAsStringAsync());
+        var checkout = await ReadJsonAsync(checkoutResponse);
+        Assert.Equal("Completed", checkout.GetProperty("state").GetString());
+        var checkoutId = checkout.GetProperty("checkoutId").GetGuid();
+        var saleId = checkout.GetProperty("saleId").GetGuid();
+
+        using var retryResponse = await PostJsonAsync(client, $"/api/v1/pos/carts/{cartId:D}/checkout", request);
+        Assert.Equal(HttpStatusCode.Accepted, retryResponse.StatusCode);
+        using var recoveryResponse = await PostJsonAsync(client, $"/api/v1/pos/checkouts/{checkoutId:D}/recover", new { });
+        Assert.Equal(HttpStatusCode.OK, recoveryResponse.StatusCode);
+
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_sale where tenant_id=$1 and id=$2 and customer_party_id is null and accounting_state='Completed'", AtlasTenant, saleId));
+        Assert.Equal(0L, await ScalarAsync(admin, "select count(*) from business_invoicing.invoice where tenant_id=$1 and source_module='pos' and source_idempotency_key=$2", AtlasTenant, $"pos-invoice:{idempotencyKey}"));
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and source_module='pos' and source_reference=$3 and fact_type='PosCashSalePosted' and status='Posted'", AtlasTenant, AtlasEntity, $"pos-sale:{saleId:D}"));
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from finance_ledger.journal_entry e join finance_ledger.accounting_fact f on f.tenant_id=e.tenant_id and f.id=e.fact_id where f.tenant_id=$1 and f.source_module='pos' and f.source_reference=$2", AtlasTenant, $"pos-sale:{saleId:D}"));
+        Assert.Equal(0L, await ScalarAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and source_module='pos' and source_reference=$3", AtlasTenant, DeltaEntity, $"pos-sale:{saleId:D}"));
+        Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from finance_payments.payment p join business_pos.pos_tender t on t.tenant_id=p.tenant_id and p.id::text=t.external_reference where p.tenant_id=$1 and p.legal_entity_id=$2 and p.source_type='pos' and p.source_reference=$3 and p.party_id is null and p.business_state='Completed'", AtlasTenant, AtlasEntity, $"pos-checkout:{idempotencyKey}"));
     }
 
     [Fact]
@@ -452,6 +505,10 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
 
         var package = await GetJsonAsync(client, $"/api/v1/pos/offline/package?registerId={registerId:D}&deviceIdentity={deviceIdentity}");
         Assert.True(package.GetProperty("version").GetInt64() > 0);
+        using var packagePayload = JsonDocument.Parse(package.GetProperty("payload").GetString()!);
+        var offlinePrice = packagePayload.RootElement.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("variantId").GetGuid() == variant.GetProperty("productVariantId").GetGuid())
+            .GetProperty("unitPrice").GetDecimal();
         var packageVersion = package.GetProperty("version").GetInt64();
         var packageSignature = package.GetProperty("signature").GetString()!;
         var idempotencyKey = $"pos-acceptance-offline-{Guid.CreateVersion7():N}";
@@ -472,7 +529,7 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
                     description = variant.GetProperty("displayName").GetString(),
                     uomCode = variant.GetProperty("baseUomCode").GetString(),
                     quantity = 1m,
-                    unitPrice = 10m,
+                    unitPrice = offlinePrice,
                     taxAmount = 0m,
                     discountAmount = 0m,
                     legalEntityId = AtlasEntity,

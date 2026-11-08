@@ -146,6 +146,7 @@ public sealed class LedgerSetupRepository(
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.RefundPaid, "PAYMENT_REFUND_PAID_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PaymentFeeRecognized, "PAYMENT_FEE_RECOGNIZED_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PaymentFeeReversed, "PAYMENT_FEE_REVERSED_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PosCashSalePosted, "POS_CASH_SALE_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorDebitNotePosted, "VENDOR_DEBIT_NOTE_V1", token);
 
             var configWasCreated = existing is null;
@@ -307,6 +308,7 @@ public sealed class LedgerSetupRepository(
         ("invoicing", AccountingFactTypes.CustomerDebitNotePosted), ("invoicing", AccountingFactTypes.VendorDebitNotePosted),
         ("sales", AccountingFactTypes.CustomerInvoicePosted), ("sales", AccountingFactTypes.CustomerCreditNotePosted),
         ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade), ("payments", AccountingFactTypes.RefundPaid), ("payments", AccountingFactTypes.PaymentFeeRecognized), ("payments", AccountingFactTypes.PaymentFeeReversed),
+        ("pos", AccountingFactTypes.PosCashSalePosted),
         ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment), ("inventory", AccountingFactTypes.InventoryValuationReversal),
         ("payroll", AccountingFactTypes.PayrollPosted), ("tax", AccountingFactTypes.TaxAdjustment),
         ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff),

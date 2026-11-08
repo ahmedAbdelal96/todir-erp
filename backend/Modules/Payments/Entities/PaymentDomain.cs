@@ -73,9 +73,11 @@ public static class PaymentRules
             throw new PaymentException("payments.request_invalid", "Payment details are incomplete.");
         if (command.Direction == PaymentDirection.InternalTransfer)
             throw new PaymentException("payments.transfer_invalid", "Use the internal transfer command for account transfers.");
+        var anonymousPosCash = string.Equals(command.SourceType, "pos", StringComparison.OrdinalIgnoreCase)
+            && command.Type == PaymentType.CustomerReceipt && command.PartyId is null;
         var partyRequired = command.Type is PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierPayment
             or PaymentType.SupplierAdvance or PaymentType.CustomerRefund or PaymentType.SupplierRefund;
-        if (partyRequired && (command.PartyId is null || command.PartyId == Guid.Empty))
+        if (partyRequired && !anonymousPosCash && (command.PartyId is null || command.PartyId == Guid.Empty))
             throw new PaymentException("payments.party_required", "Select a customer or supplier for this payment.");
         var incomingType = command.Type is PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierRefund;
         var outgoingType = command.Type is PaymentType.SupplierPayment or PaymentType.SupplierAdvance or PaymentType.CustomerRefund or PaymentType.ExpensePayment or PaymentType.Standalone;

@@ -845,6 +845,67 @@ public sealed class LedgerRepository(
         return await PostExplicitInTransactionAsync(context, fact, explicitPayload, configuration, ct);
     }
 
+    public async Task<LedgerPostingResult> PostPosCashSaleInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, PosCashSalePostingPayload payload, CancellationToken ct)
+    {
+        if (fact.SourceModule != "pos" || fact.FactType != AccountingFactTypes.PosCashSalePosted || fact.FactVersion != 1
+            || payload.NetAmount <= 0m || payload.TaxAmount < 0m || payload.GrossAmount != payload.NetAmount + payload.TaxAmount
+            || payload.Lines.Count == 0 || payload.Lines.Any(line => string.IsNullOrWhiteSpace(line.CategoryCode) || line.NetAmount < 0m)
+            || payload.Lines.Sum(line => line.NetAmount) != payload.NetAmount
+            || payload.Taxes.Any(tax => string.IsNullOrWhiteSpace(tax.Code) || tax.Amount < 0m)
+            || payload.Taxes.Sum(tax => tax.Amount) != payload.TaxAmount)
+            throw new LedgerDomainException("ledger.fact_invalid", "The anonymous POS cash-sale amounts are inconsistent.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct))
+            throw new LedgerDomainException("ledger.fact_producer_unregistered", "POS is not registered for anonymous cash-sale facts.");
+
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var currency = payload.CurrencyCode.Trim().ToUpperInvariant();
+        var rate = string.Equals(currency, baseCurrency, StringComparison.OrdinalIgnoreCase)
+            ? 1m
+            : payload.ExchangeRate ?? throw new LedgerDomainException("ledger.currency_mismatch", "A foreign-currency anonymous cash sale requires an approved exchange-rate snapshot.");
+        if (rate <= 0m || !string.Equals(currency, baseCurrency, StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(payload.ExchangeRateReference))
+            throw new LedgerDomainException("ledger.currency_mismatch", "The anonymous cash sale is missing an immutable exchange-rate snapshot.");
+
+        var postingFact = new AccountingFactEnvelope<CustomerInvoicePostedPayload>(fact.FactId, fact.TenantId, fact.LegalEntityId,
+            fact.FactType, fact.FactVersion, fact.SourceModule, fact.SourceReference, fact.IdempotencyKey, fact.BusinessDate, fact.PostingDate,
+            new(payload.NetAmount, payload.TaxAmount, payload.GrossAmount, currency, "AnonymousWalkIn", payload.Lines[0].CategoryCode, payload.Taxes,
+                payload.ExchangeRate, payload.ExchangeRateReference), fact.CorrelationId, fact.ActorId);
+        var configuration = await ResolveConfigurationAsync(context, postingFact, ct);
+        var cash = await ResolveSemanticAccountIdAsync(context, fact, configuration, "Cash", ct);
+        var revenueGroups = payload.Lines.GroupBy(line => line.CategoryCode, StringComparer.Ordinal)
+            .Select(group => (CategoryCode: group.Key, NetAmount: group.Sum(line => line.NetAmount))).ToArray();
+        var revenueAccounts = await ResolveInvoiceAccountsAsync(context, postingFact, configuration, "SalesRevenue",
+            revenueGroups.Select(line => new InvoiceAccountLookup(line.CategoryCode, null)).ToArray(), ct);
+        var taxGroups = payload.Taxes.GroupBy(tax => (Role: string.IsNullOrWhiteSpace(tax.AccountRole) ? "OutputTax" : tax.AccountRole, Code: tax.Code))
+            .Select(group => (group.Key.Role, group.Key.Code, Amount: group.Sum(tax => tax.Amount))).ToArray();
+        var taxAccounts = new Dictionary<(string Role, string Code), (Guid Id, AccountDeterminationExplanation Explanation)>();
+        foreach (var taxGroup in taxGroups)
+        {
+            var resolved = await ResolveInvoiceAccountsAsync(context, postingFact, configuration, taxGroup.Role,
+                [new InvoiceAccountLookup(null, taxGroup.Code)], ct);
+            taxAccounts[(taxGroup.Role, taxGroup.Code)] = resolved[new InvoiceAccountLookup(null, taxGroup.Code)];
+        }
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='SALES' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The Sales journal is not configured.");
+        var lines = new List<LedgerPostingLinePayload>
+        {
+            new(cash, payload.GrossAmount * rate, 0m, currency, payload.GrossAmount, 0m, payload.GrossAmount * rate, 0m, rate, [], "Anonymous POS walk-in cash receipt", null)
+        };
+        foreach (var group in revenueGroups)
+        {
+            var account = revenueAccounts[new InvoiceAccountLookup(group.CategoryCode, null)].Id;
+            lines.Add(new(account, 0m, group.NetAmount * rate, currency, 0m, group.NetAmount, 0m, group.NetAmount * rate, rate, [], "Anonymous POS sale revenue", null));
+        }
+        foreach (var taxGroup in taxGroups)
+        {
+            var account = taxAccounts[(taxGroup.Role, taxGroup.Code)].Id;
+            lines.Add(new(account, 0m, taxGroup.Amount * rate, currency, 0m, taxGroup.Amount, 0m, taxGroup.Amount * rate, rate, [], "Anonymous POS output tax", null));
+        }
+        return await PostSemanticExplicitInTransactionAsync(context, fact,
+            new ExplicitLedgerPostingPayload(journal, "Anonymous POS walk-in cash sale", baseCurrency, lines), payload, configuration, ct);
+    }
+
     public async Task<LedgerPostingResult> PostPaymentFeeInTransactionAsync(ITransactionContext context,
         AccountingFactEnvelope<IAccountingFactPayload> fact, PaymentFeeFactPayload payload, CancellationToken ct)
     {
