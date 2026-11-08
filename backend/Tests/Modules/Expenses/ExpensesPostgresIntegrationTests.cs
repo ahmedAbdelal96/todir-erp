@@ -6,6 +6,7 @@ using Core.Services;
 using Npgsql;
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.Payments;
+using Shared.Contracts.Platform;
 using Xunit;
 using System.Text.Json;
 
@@ -65,7 +66,7 @@ public sealed class ExpensesPostgresIntegrationTests
         await using var dataSource = NpgsqlDataSource.Create(connectionString!);
         var coordinator = new NpgsqlTransactionCoordinator(dataSource);
         var ledgerRepository = new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System);
-        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(ledgerRepository));
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(ledgerRepository), approvals: new TestApprovalCapability());
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
         context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
@@ -74,9 +75,9 @@ public sealed class ExpensesPostgresIntegrationTests
         var created = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "اختبار مالي", new(2026, 10, 12), 125m, "EGP", "EmployeePaid", categoryVersion, "رحلة عميل", "اختبار الترحيل"), default);
         await repository.AddEvidenceAsync(new(Atlas), entity, created.Id, new("Receipt", "file://expenses/test-receipt"), default);
         var submitted = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(created.Version), "submit", default);
-        var approved = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(submitted.Version), "approve", default);
         await repository.EvaluatePolicyAsync(new(Atlas), entity, created.Id, default);
-        var finalized = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(approved.Version), "finalize", default);
+        var approvedVersion = await ApproveAsync(repository, new(Atlas), entity, created.Id, submitted.Version);
+        var finalized = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(approvedVersion), "finalize", default);
         Assert.Equal("Posted", finalized.AccountingState);
         Assert.Equal("ReimbursementPending", finalized.SettlementState);
         var posted = await ReadPostingAsync(connection, finalized.Id);
@@ -96,7 +97,7 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.False(string.IsNullOrWhiteSpace(connectionString));
         await using var dataSource = NpgsqlDataSource.Create(connectionString!);
         var coordinator = new NpgsqlTransactionCoordinator(dataSource);
-        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), approvals: new TestApprovalCapability());
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
         var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
@@ -123,14 +124,14 @@ public sealed class ExpensesPostgresIntegrationTests
         var repaymentPage = await repository.ListEmployeeRepaymentsAsync(new(Atlas), entity, employee, "Requested", 1, 10, default);
         Assert.True(repaymentPage.TotalCount >= 1);
 
-        var repositoryWithAdvancePayments = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), advancePayments: new TestAdvancePaymentCapability());
+        var repositoryWithAdvancePayments = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), advancePayments: new TestAdvancePaymentCapability(), approvals: new TestApprovalCapability());
         var advance = await repositoryWithAdvancePayments.CreateAdvanceAsync(new(Atlas), new(entity, employee, "سلفة رحلة", 500m), default);
         advance = await repositoryWithAdvancePayments.TransitionAdvanceAsync(new(Atlas), entity, advance.Id, advance.Version, "approve", default);
         advance = await repositoryWithAdvancePayments.IssueAdvanceAsync(new(Atlas), entity, advance.Id, Guid.NewGuid(), Guid.NewGuid(), new(Guid.NewGuid(), "BankTransfer", 500m, new(2026, 10, 14), new(2026, 10, 14), advance.Version), default);
         var advanceExpense = await repositoryWithAdvancePayments.CreateAsync(new(Atlas), new(entity, employee, "Advance expense", new(2026, 10, 14), 300m, "EGP", "EmployeePaid", categoryVersion), default);
         await repositoryWithAdvancePayments.AddEvidenceAsync(new(Atlas), entity, advanceExpense.Id, new("Receipt", "file://expenses/advance"), default);
         var submitted = await repositoryWithAdvancePayments.TransitionAsync(new(Atlas), entity, advanceExpense.Id, new(advanceExpense.Version), "submit", default);
-        var approved = await repositoryWithAdvancePayments.TransitionAsync(new(Atlas), entity, advanceExpense.Id, new(submitted.Version), "approve", default);
+        await ApproveAsync(repositoryWithAdvancePayments, new(Atlas), entity, advanceExpense.Id, submitted.Version);
         advance = await repositoryWithAdvancePayments.ApplyAdvanceAsync(new(Atlas), entity, advance.Id, new(advanceExpense.Id, 300m), default);
         Assert.Equal(300m, advance.AppliedAmount);
         advance = await repositoryWithAdvancePayments.ReturnAdvanceAsync(new(Atlas), entity, advance.Id, new(200m, advance.Version), default);
@@ -149,7 +150,7 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.False(string.IsNullOrWhiteSpace(connectionString));
         await using var dataSource = NpgsqlDataSource.Create(connectionString!);
         var coordinator = new NpgsqlTransactionCoordinator(dataSource);
-        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), approvals: new TestApprovalCapability());
         var advance = await repository.CreateAdvanceAsync(new(Atlas), new(Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528"), Guid.NewGuid(), "Guarded settlement", 90m), default);
         advance = await repository.TransitionAdvanceAsync(new(Atlas), advance.LegalEntityId, advance.Id, advance.Version, "approve", default);
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAdvanceAsync(new(Atlas), advance.LegalEntityId, advance.Id, advance.Version, "settle", default));
@@ -219,7 +220,7 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.False(string.IsNullOrWhiteSpace(connectionString));
         await using var dataSource = NpgsqlDataSource.Create(connectionString!);
         var coordinator = new NpgsqlTransactionCoordinator(dataSource);
-        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), approvals: new TestApprovalCapability());
         var entity = Guid.Parse("bbdcc188-1acc-805e-8721-f43308540a4d");
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Delta.ToString("D")); await context.ExecuteNonQueryAsync();
@@ -232,8 +233,8 @@ public sealed class ExpensesPostgresIntegrationTests
         await repository.AddEvidenceAsync(new(Delta), entity, expense.Id, new("Receipt", "file://expenses/stale"), default);
         await repository.EvaluatePolicyAsync(new(Delta), entity, expense.Id, default);
         var submitted = await repository.TransitionAsync(new(Delta), entity, expense.Id, new(expense.Version), "submit", default);
-        var approved = await repository.TransitionAsync(new(Delta), entity, expense.Id, new(submitted.Version), "approve", default);
-        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAsync(new(Delta), entity, expense.Id, new(approved.Version), "finalize", default));
+        var approvedVersion = await ApproveAsync(repository, new(Delta), entity, expense.Id, submitted.Version);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAsync(new(Delta), entity, expense.Id, new(approvedVersion), "finalize", default));
     }
 
     [ExpensesPostgresFact]
@@ -298,6 +299,26 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task ApprovalFailsClosedWhenPlatformCapabilityIsUnavailable()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("bbdcc188-1acc-805e-8721-f43308540a4d");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Delta.ToString("D")); await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Delta, entity))!;
+        var expense = await repository.CreateAsync(new(Delta), new(entity, null, "No approval capability", new(2026, 11, 2), 20m, "EGP", "CompanyPaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Delta), entity, expense.Id, new("Receipt", "file://expenses/no-approval-capability"), default);
+        var submitted = await repository.TransitionAsync(new(Delta), entity, expense.Id, new(expense.Version), "submit", default);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAsync(new(Delta), entity, expense.Id, new(submitted.Version), "approve", default));
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAsync(new(Delta), entity, expense.Id, new(submitted.Version), "reject", default));
+        Assert.Equal("Pending", (await repository.GetAsync(new(Delta), entity, expense.Id, default))!.ApprovalState);
+    }
+
+    [ExpensesPostgresFact]
     public async Task ApprovalRequesterNeedsSubmitPermissionButCannotDecide()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
@@ -330,6 +351,40 @@ public sealed class ExpensesPostgresIntegrationTests
     private static async Task<(long EntryCount, decimal Debit, decimal Credit)> ReadPostingAsync(NpgsqlConnection connection, Guid expenseId)
     {
         await using var command = new NpgsqlCommand("select count(distinct e.id),coalesce(sum(l.debit),0),coalesce(sum(l.credit),0) from business_expenses.expense x join finance_ledger.journal_entry e on e.tenant_id=x.tenant_id and e.id=x.ledger_entry_id join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.journal_entry_id=e.id where x.tenant_id=$1 and x.id=$2", connection); command.Parameters.AddWithValue(Atlas); command.Parameters.AddWithValue(expenseId); await using var reader = await command.ExecuteReaderAsync(); Assert.True(await reader.ReadAsync()); return (reader.GetInt64(0), reader.GetDecimal(1), reader.GetDecimal(2));
+    }
+
+    private static async Task<long> ApproveAsync(ExpenseRepository repository, TenantId tenant, Guid entity, Guid expenseId, long submittedVersion)
+    {
+        var requester = Guid.CreateVersion7();
+        var requesterMembership = Guid.CreateVersion7();
+        var decider = Guid.CreateVersion7();
+        var deciderMembership = Guid.CreateVersion7();
+        var pending = await repository.RequestApprovalAsync(tenant, requester, requesterMembership, entity, expenseId, "Test request", default);
+        var decision = await repository.DecideApprovalAsync(tenant, decider, deciderMembership, entity, expenseId, new(pending.RequestId, "Approved", "Test decision"), default);
+        Assert.Equal(submittedVersion, decision.ResourceVersion);
+        return decision.ResourceVersion + 1;
+    }
+
+    private sealed class TestApprovalCapability : IPlatformApprovalCapability
+    {
+        private readonly Dictionary<Guid, PlatformApprovalRequestResult> requests = [];
+
+        public Task<PlatformApprovalRequestResult> RequestAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid legalEntityId, string ownerModule, string ownerEntityType, Guid ownerEntityId, long resourceVersion, Guid? policyVersionId, string? reason, string requesterPermission = "platform.approval.request", CancellationToken cancellationToken = default)
+        {
+            var result = new PlatformApprovalRequestResult(Guid.CreateVersion7(), legalEntityId, ownerModule, ownerEntityType, ownerEntityId, resourceVersion, policyVersionId, "Pending", null, reason, DateTimeOffset.UtcNow, null);
+            requests[result.Id] = result;
+            return Task.FromResult(result);
+        }
+
+        public Task<PlatformApprovalRequestResult> DecideAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid requestId, string decision, string? reason, CancellationToken cancellationToken = default)
+        {
+            var current = requests[requestId];
+            var result = current with { State = decision, DecidedBy = actorId, DecisionReason = reason, DecidedAt = DateTimeOffset.UtcNow };
+            requests[requestId] = result;
+            return Task.FromResult(result);
+        }
+
+        public Task<PlatformApprovalRequestResult?> GetAsync(TenantId tenantId, Guid requestId, CancellationToken cancellationToken = default) => Task.FromResult(requests.GetValueOrDefault(requestId));
     }
 
     private sealed class TestAdvancePaymentCapability : IBusinessAdvancePaymentCapability
