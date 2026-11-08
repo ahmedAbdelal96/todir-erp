@@ -21,6 +21,7 @@ public sealed class ExpenseService(ExpenseRepository repository)
     public Task<IReadOnlyList<ExpenseEvidenceDto>> ListEvidenceAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ListEvidenceAsync(tenant, entity, id, ct);
     public Task<IReadOnlyList<ExpenseHistoryDto>> ListHistoryAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ListHistoryAsync(tenant, entity, id, ct);
     public Task<ExpenseEvidenceDto> AddEvidenceAsync(TenantId tenant, Guid entity, Guid id, AddExpenseEvidenceRequest request, CancellationToken ct) => repository.AddEvidenceAsync(tenant, entity, id, request, ct);
+    public Task<Shared.Contracts.Platform.SignedPlatformFileDownload> CreateEvidenceDownloadAsync(TenantId tenant, Guid entity, Guid expenseId, Guid evidenceId, CancellationToken ct) => repository.CreateEvidenceDownloadAsync(tenant, entity, expenseId, evidenceId, ct);
     public Task<ExpenseParticipantDto> AddParticipantAsync(TenantId tenant, Guid entity, Guid id, AddExpenseParticipantRequest request, CancellationToken ct) => repository.AddParticipantAsync(tenant, entity, id, request, ct);
     public Task<IReadOnlyList<ExpenseParticipantDto>> ListParticipantsAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ListParticipantsAsync(tenant, entity, id, ct);
     public Task<ExpensePolicyEvaluationDto> EvaluatePolicyAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.EvaluatePolicyAsync(tenant, entity, id, ct);

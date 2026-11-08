@@ -6,11 +6,12 @@ using Core.Transactions;
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.Ledger;
 using Shared.Contracts.Payments;
+using Shared.Contracts.Platform;
 using Modules.Expenses.DTOs;
 
 namespace Modules.Expenses.Repositories;
 
-public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null)
+public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null)
 {
     public async Task<ExpensePage<ExpenseDto>> ListAsync(TenantId tenant, Guid entity, Guid? employeeId, string? state, string? search, int page, int pageSize, CancellationToken ct)
     {
@@ -125,6 +126,14 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select id,expense_id,action,to_state::text,occurred_at from business_expenses.expense_history where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 order by occurred_at,id", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, expenseId); var list = new List<ExpenseHistoryDto>(); await using var r = await cmd.ExecuteReaderAsync(ct); while (await r.ReadAsync(ct)) list.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), System.Text.Json.JsonDocument.Parse(r.GetString(3)).RootElement.Clone(), r.GetFieldValue<DateTimeOffset>(4))); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return list; }
     public async Task<ExpenseEvidenceDto> AddEvidenceAsync(TenantId tenant, Guid entity, Guid expenseId, AddExpenseEvidenceRequest request, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); var id = Guid.CreateVersion7(); await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_evidence(tenant_id,id,legal_entity_id,expense_id,evidence_type,file_reference,status,created_at) select $1,$2,$3,id,$4,$5,'Pending',now() from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$6 returning id,expense_id,evidence_type,file_reference,status,created_at", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, id, entity, request.EvidenceType.Trim(), request.FileReference.Trim(), expenseId); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found"); var result = new ExpenseEvidenceDto(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetFieldValue<DateTimeOffset>(5)); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
+
+    public async Task<SignedPlatformFileDownload> CreateEvidenceDownloadAsync(TenantId tenant, Guid entity, Guid expenseId, Guid evidenceId, CancellationToken ct)
+    {
+        if (files is null) throw new ExpenseRepositoryException("expenses.files_capability_unavailable");
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select file_reference from business_expenses.expense_evidence where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4", scope.Connection, scope.Transaction); Add(command, tenant.Value, entity, expenseId, evidenceId); var value = await command.ExecuteScalarAsync(ct); await scope.Transaction.CommitAsync(ct); if (value is not string reference || !Guid.TryParse(reference, out var fileRef)) throw new ExpenseRepositoryException("expenses.file_reference_invalid");
+        var download = await files.CreateReadyDownloadAsync(tenant, fileRef, "expenses", "expense", expenseId, TimeSpan.FromMinutes(5), ct); return download ?? throw new ExpenseRepositoryException("expenses.file_not_ready");
+    }
 
     private async Task<Scope> OpenAsync(TenantId tenant, CancellationToken ct) { var c = await dataSource.OpenConnectionAsync(ct); var t = await c.BeginTransactionAsync(ct); await using var set = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", c, t); Add(set, tenant.Value.ToString("D")); await set.ExecuteNonQueryAsync(ct); return new(c, t); }
     private static ExpenseDto ReadExpense(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), GuidValue(r, 2), r.GetString(3), r.GetFieldValue<DateOnly>(4), r.GetDecimal(5), r.GetString(6), r.GetString(7), r.GetGuid(8), r.GetString(9), r.GetString(10), r.GetString(11), r.GetString(12), r.GetString(13), r.GetString(14), Text(r, 15), Text(r, 16), r.GetInt64(17), r.GetFieldValue<DateTimeOffset>(18), r.IsDBNull(19) ? null : r.GetFieldValue<DateTimeOffset>(19));
