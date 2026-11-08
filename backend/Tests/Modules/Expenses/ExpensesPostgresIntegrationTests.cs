@@ -137,6 +137,19 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.True(summary.OutstandingAdvances >= 0);
     }
 
+    [ExpensesPostgresFact]
+    public async Task AdvanceCannotBeSettledBeforeIssuedFundsAreAppliedOrReturned()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var advance = await repository.CreateAdvanceAsync(new(Atlas), new(Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528"), Guid.NewGuid(), "Guarded settlement", 90m), default);
+        advance = await repository.TransitionAdvanceAsync(new(Atlas), advance.LegalEntityId, advance.Id, advance.Version, "approve", default);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAdvanceAsync(new(Atlas), advance.LegalEntityId, advance.Id, advance.Version, "settle", default));
+    }
+
     private static async Task<object?> ScalarAsync(NpgsqlConnection connection, string sql, params object[] values)
     { await using var command = new NpgsqlCommand(sql, connection); foreach (var value in values) command.Parameters.AddWithValue(value); return await command.ExecuteScalarAsync(); }
     private static async Task<long> ScalarLongAsync(NpgsqlConnection connection, string sql, params object[] values)
