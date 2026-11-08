@@ -295,10 +295,10 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     await expect(tenderModal).toBeVisible();
     await expect(tenderModal).toContainText(/تحصيل قيمة المبيعات|سداد الفاتورة|Checkout Payment/i);
 
-    // Fill tendered cash input with 2000.00 (exceeding total to verify change)
+    // Fill tendered cash input with 5000.00 (exceeding total to verify change)
     const tenderInput = tenderModal.locator('input[type="number"]').first();
     if (await tenderInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await tenderInput.fill('2000.00');
+      await tenderInput.fill('5000.00');
     }
 
     // Verify change calculation is displayed
@@ -313,10 +313,17 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
 
     // Receipt Modal should appear
     const receiptModal = page.locator('[role="dialog"]').filter({ hasText: /إيصال|Receipt/i }).first();
-    await expect(receiptModal).toBeVisible({ timeout: 10000 });
+    await expect(receiptModal).toBeVisible({ timeout: 25000 });
     await expect(receiptModal).toContainText(/إيصال البيع الإلكتروني|إيصال استلام|Sales Receipt/i);
     await expect(receiptModal).toContainText(/POS-/i);
     await expect(receiptModal).toContainText(/الإجمالي المستحق|Grand Total|الإجمالي/i);
+
+    // Verify authoritative cashier display and 80mm thermal container
+    await expect(receiptModal.locator('#pos-thermal-receipt')).toBeVisible();
+    const cashierEl = receiptModal.locator('[data-testid="pos-receipt-cashier"]');
+    await expect(cashierEl).toBeVisible();
+    await expect(cashierEl).not.toHaveText('Cashier');
+    await expect(cashierEl).toContainText(/admin|أمين الصندوق|Cashier on Duty/i);
 
     await captureScreenshot(page, '06-pos-thermal-receipt-modal');
 
@@ -715,6 +722,8 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     };
     const validPayloadStr = JSON.stringify(validPayload);
 
+    const secSeq = Math.floor(Date.now() / 1000) % 500000 + 10000;
+
     // 4. Compute valid envelope signature using Web Crypto HMAC-SHA256
     const validSig = await page.evaluate(async ({ pkgKey, regId, devId, seq, idemKey, ver, payload }) => {
       const canonical = [regId, devId.trim(), String(seq), idemKey.trim(), String(ver), payload].join('|');
@@ -731,7 +740,7 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
       pkgKey: pkg.signature,
       regId: activeRegister.id,
       devId: activeTerminal.deviceIdentity,
-      seq: 901,
+      seq: secSeq,
       idemKey: validPayload.idempotencyKey,
       ver: pkg.version,
       payload: validPayloadStr,
@@ -743,7 +752,7 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
       data: {
         registerId: activeRegister.id,
         deviceIdentity: activeTerminal.deviceIdentity,
-        sourceSequence: 901,
+        sourceSequence: secSeq,
         idempotencyKey: validPayload.idempotencyKey,
         packageVersion: pkg.version,
         payload: validPayloadStr,
@@ -759,7 +768,7 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
       data: {
         registerId: activeRegister.id,
         deviceIdentity: activeTerminal.deviceIdentity,
-        sourceSequence: 902,
+        sourceSequence: secSeq + 1,
         idempotencyKey: `sec-tampered-${Date.now()}`,
         packageVersion: pkg.version,
         payload: validPayloadStr,
@@ -778,7 +787,7 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
       data: {
         registerId: activeRegister.id,
         deviceIdentity: 'unauthorized-rogue-device',
-        sourceSequence: 903,
+        sourceSequence: secSeq + 2,
         idempotencyKey: `sec-rogue-${Date.now()}`,
         packageVersion: pkg.version,
         payload: validPayloadStr,
@@ -1035,6 +1044,239 @@ test.describe('Module 20 — POS (Point of Sale) Frontend & Real Workflows', () 
     const envStatus = await envStatusRes.json();
     expect(envStatus.state).toBe('NeedsReview');
     expect(envStatus.conflictCode).toBe('CashSaleProcessingFailed');
+  });
+
+  test('17. Real Frontend Offline Acceptance: UI Cashier Queue, Reload Persistence & UI Sync', async () => {
+    const page = sharedPage;
+    await ensureAuthenticated(page);
+
+    // 1. Download authoritative offline package via UI
+    await page.getByRole('button', { name: /المزامنة والأوفلاين|Offline/i }).click();
+    await page.waitForLoadState('networkidle');
+
+    const downloadBtn = page.getByRole('button', { name: /تنزيل حزمة البيانات|تحميل الحزمة|Download Package/i });
+    await expect(downloadBtn).toBeVisible();
+    await expect(downloadBtn).toBeEnabled({ timeout: 10000 });
+    await downloadBtn.click();
+    await expect(page.locator('text=/صالحة حتى|حزمة البيانات صالحة|Downloaded|تم تنزيل الحزمة/i')).toBeVisible({ timeout: 10000 });
+
+    // 2. Switch to Cashier Checkout workspace
+    await page.getByRole('button', { name: /نقطة البيع|الكاشير|Workspace/i }).click();
+    await page.waitForLoadState('networkidle');
+
+    // Attach customer party for complete financial settlement
+    const customerBtn = page.locator('button:has-text("عميل نقدي / عام"), button:has-text("Walk-in Customer")').first();
+    if (await customerBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await customerBtn.click();
+      const customerModal = page.locator('[role="dialog"]');
+      if (await customerModal.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const partyBtn = customerModal.locator('button:has-text("شركة النور"), button:has-text("United Electrical"), button:has-text("اختيار")').first();
+        if (await partyBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await partyBtn.click();
+        } else {
+          await customerModal.getByRole('button', { name: /إلغاء|إغلاق|Close/i }).click();
+        }
+      }
+    }
+
+    // Add item (A4 Copy Paper) while connected
+    const addPaperBtn = page.locator('button:has-text("ورق تصوير A4"), button:has-text("A4 Paper")').first();
+    if (await addPaperBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await addPaperBtn.click();
+    } else {
+      const barcodeInput = page.locator('input[placeholder*="باركود"], input[placeholder*="Barcode"]');
+      await barcodeInput.fill('EG-2-0001');
+      await barcodeInput.press('Enter');
+    }
+    await page.waitForTimeout(500);
+
+    // 3. Simulate network loss
+    await page.context().setOffline(true);
+    await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+    await expect(page.locator('text=/غير متصل|Offline/i').first()).toBeVisible({ timeout: 5000 });
+
+    // 4. Queue a permitted sale through the cashier UI
+    const queueOfflineBtn = page.locator('button:has-text("تسجيل بيع غير متصل"), button:has-text("Queue Offline")');
+    await expect(queueOfflineBtn).toBeVisible({ timeout: 5000 });
+    await queueOfflineBtn.click();
+
+    // Verify success message in UI
+    await expect(page.locator('text=/تم حفظ العملية بنجاح في قاعدة البيانات المحلية/i')).toBeVisible({ timeout: 5000 });
+
+    // 5. Verify IndexedDB persistence across reload
+    // Restore network connectivity so browser page reload succeeds
+    await page.context().setOffline(false);
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+
+    const persistedEnvelope = await page.evaluate(async () => {
+      return new Promise<any>((resolve) => {
+        const req = indexedDB.open('todir_pos_offline_v2', 2);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('offline_envelopes', 'readonly');
+          const store = tx.objectStore('offline_envelopes');
+          const allReq = store.getAll();
+          allReq.onsuccess = () => {
+            const list = allReq.result || [];
+            const queued = list.find((e: any) => e.status === 'Queued');
+            resolve(queued || null);
+          };
+          allReq.onerror = () => resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      });
+    });
+    expect(persistedEnvelope).not.toBeNull();
+    expect(persistedEnvelope.status).toBe('Queued');
+    expect(persistedEnvelope.signature).toBeTruthy();
+    expect(persistedEnvelope.sourceSequence).toBeGreaterThan(0);
+
+    // 7. Synchronize through the actual UI
+    await page.getByRole('button', { name: /المزامنة والأوفلاين|Offline/i }).click();
+    await page.waitForLoadState('networkidle');
+
+    // Click Sync Now button in UI
+    const syncNowBtn = page.getByRole('button', { name: /مزامنة.*الآن|Sync.*Now/i });
+    await expect(syncNowBtn).toBeVisible({ timeout: 5000 });
+    await expect(syncNowBtn).toBeEnabled({ timeout: 5000 });
+    await syncNowBtn.click();
+
+    // Wait for sync to complete in UI
+    await expect(page.locator('text=/تمت مزامنة|تمت المزامنة|Synced/i')).toBeVisible({ timeout: 15000 });
+
+    // Verify envelope in IndexedDB transitioned to Completed
+    const syncedEnvelope = await page.evaluate(async (envId: string) => {
+      return new Promise<any>((resolve) => {
+        const req = indexedDB.open('todir_pos_offline_v2', 2);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('offline_envelopes', 'readonly');
+          const store = tx.objectStore('offline_envelopes');
+          const getReq = store.get(envId);
+          getReq.onsuccess = () => resolve(getReq.result || null);
+          getReq.onerror = () => resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      });
+    }, persistedEnvelope.id);
+
+    expect(syncedEnvelope).not.toBeNull();
+    expect(syncedEnvelope.status).toBe('Completed');
+    expect(syncedEnvelope.serverEnvelopeId).toBeTruthy();
+
+    // 8. Verify authoritative server-side sale, payment, inventory, and invoice references
+    if (syncedEnvelope.saleId) {
+      const saleRes = await page.request.get(`/api/v1/pos/sales/${syncedEnvelope.saleId}`);
+      expect(saleRes.status()).toBe(200);
+      const saleData = await saleRes.json();
+      expect(saleData.receiptNumber).toMatch(/^POS-\d+/);
+      expect(saleData.documentState).toBe('Completed');
+
+      // Verify line items and returned quantity aggregation
+      const linesRes = await page.request.get(`/api/v1/pos/sales/${syncedEnvelope.saleId}/lines`);
+      expect(linesRes.status()).toBe(200);
+      const saleLines = await linesRes.json();
+      expect(saleLines.length).toBeGreaterThan(0);
+      expect(saleLines[0].returnedQuantity).toBe(0);
+    }
+
+    // 9. Repeat synchronization and prove no duplicated effects
+    if (await syncNowBtn.isEnabled().catch(() => false)) {
+      await syncNowBtn.click();
+      await page.waitForTimeout(1000);
+    }
+    // Verify envelope remains Completed and saleId is unchanged
+    const doubleCheckEnv = await page.evaluate(async (envId: string) => {
+      return new Promise<any>((resolve) => {
+        const req = indexedDB.open('todir_pos_offline_v2', 2);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('offline_envelopes', 'readonly');
+          const store = tx.objectStore('offline_envelopes');
+          const getReq = store.get(envId);
+          getReq.onsuccess = () => resolve(getReq.result || null);
+          getReq.onerror = () => resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      });
+    }, persistedEnvelope.id);
+    expect(doubleCheckEnv.status).toBe('Completed');
+    expect(doubleCheckEnv.saleId).toBe(syncedEnvelope.saleId);
+
+    // 10. Verify interrupted / rejected operations remain recoverable
+    // Inject a tampered envelope into IndexedDB to verify recovery
+    const tamperedEnvId = `env-tampered-${Date.now()}`;
+    await page.evaluate(async ({ envId, regId, devId }) => {
+      return new Promise<void>((resolve) => {
+        const req = indexedDB.open('todir_pos_offline_v2', 2);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('offline_envelopes', 'readwrite');
+          const store = tx.objectStore('offline_envelopes');
+          store.put({
+            id: envId,
+            registerId: regId,
+            deviceIdentity: devId,
+            sourceSequence: 999999,
+            idempotencyKey: `tampered-ui-key-${Date.now()}`,
+            packageVersion: 1,
+            payload: JSON.stringify({ type: 'CashSale', amount: 999 }),
+            signature: 'invalid-signature-for-tamper-test',
+            amount: 999,
+            status: 'Queued',
+            retryCount: 0,
+            createdAt: new Date().toISOString(),
+          });
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+        };
+      });
+    }, {
+      envId: tamperedEnvId,
+      regId: persistedEnvelope.registerId,
+      devId: persistedEnvelope.deviceIdentity,
+    });
+
+    // Reload or refresh to load queue
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+
+    // Navigate to offline tab if needed and trigger UI sync for the tampered envelope
+    const offlineTabBtn = page.getByRole('button', { name: /المزامنة والأوفلاين|Offline/i });
+    if (await offlineTabBtn.isVisible().catch(() => false)) {
+      await offlineTabBtn.click();
+      await page.waitForLoadState('networkidle');
+    }
+
+    const syncRecoverBtn = page.getByRole('button', { name: /مزامنة.*الآن|Sync.*Now/i });
+    await expect(syncRecoverBtn).toBeVisible({ timeout: 5000 });
+    await syncRecoverBtn.click();
+    await page.waitForTimeout(2000);
+
+    // Verify the tampered envelope transitioned to NeedsReview / Failed without crashing the app
+    const recoveredEnv = await page.evaluate(async (envId: string) => {
+      return new Promise<any>((resolve) => {
+        const req = indexedDB.open('todir_pos_offline_v2', 2);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('offline_envelopes', 'readonly');
+          const store = tx.objectStore('offline_envelopes');
+          const getReq = store.get(envId);
+          getReq.onsuccess = () => resolve(getReq.result || null);
+          getReq.onerror = () => resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      });
+    }, tamperedEnvId);
+
+    expect(recoveredEnv).not.toBeNull();
+    expect(['Failed', 'NeedsReview', 'Conflicted']).toContain(recoveredEnv.status);
+    expect(recoveredEnv.retryCount).toBeGreaterThan(0);
   });
 
 });

@@ -282,13 +282,13 @@ export function PosOfflineTab({ registerId }: PosOfflineTabProps): React.JSX.Ele
                         fontSize: "0.75rem",
                         fontWeight: 600,
                         backgroundColor:
-                          env.status === "Synced"
+                          env.status === "Synced" || env.status === "Completed"
                             ? "rgba(16, 185, 129, 0.1)"
                             : env.status === "Failed" || env.status === "Conflicted"
                             ? "rgba(239, 68, 68, 0.1)"
                             : "rgba(245, 158, 11, 0.1)",
                         color:
-                          env.status === "Synced"
+                          env.status === "Synced" || env.status === "Completed"
                             ? "var(--color-status-success)"
                             : env.status === "Failed" || env.status === "Conflicted"
                             ? "var(--color-status-danger)"

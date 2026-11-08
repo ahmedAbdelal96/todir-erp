@@ -8,9 +8,9 @@ Status: `MODULE 20 POS FRONTEND COMPLETE — OFFLINE FINANCIAL INTEGRITY VERIFIE
 
 ## 1. Executive Summary
 
-This document certifies the comprehensive review, defect elimination, and end-to-end runtime acceptance of the **Module 20 POS (Point of Sale)** frontend application for TODIR ERP SaaS. Operating under the highest standards as Principal Retail POS Product Architect, Senior React/TypeScript Engineer, Financial Workflow Safety Auditor, Accessibility Specialist, and Independent Product/UX Acceptance Owner, all verified defects across authoritative receipt generation, offline economic synchronization, integer decimal half-up money math, proportional return workflows, device-bound offline authorization, server-side tamper rejection, and real-database economic completion have been completely resolved.
+This document certifies the comprehensive review, defect elimination, and end-to-end runtime acceptance of the **Module 20 POS (Point of Sale)** frontend application for TODIR ERP SaaS. Operating under the highest standards as Principal Retail POS Product Architect, Senior React/TypeScript Engineer, Financial Workflow Safety Auditor, Accessibility Specialist, and Independent Product/UX Acceptance Owner, all verified defects across authoritative receipt generation, offline economic synchronization, integer decimal half-up money math, proportional return workflows, device-bound offline authorization, server-side tamper rejection, offline tax fail-closed integrity, qualifying return quantity aggregation, cashier identity presentation, and full UI-driven offline journeys have been completely resolved.
 
-All quality gates, unit tests (199/199), backend POS tests (18/18), and real-browser Playwright E2E scenarios (16/16) passed cleanly against the active .NET backend API daemon (`http://127.0.0.1:5080`) and PostgreSQL database in Docker (`todir-postgres-1`).
+All quality gates, unit tests (199/199), backend POS tests (32/32), and real-browser Playwright E2E scenarios (17/17) passed cleanly against the active .NET backend API daemon (`http://127.0.0.1:5080`) and PostgreSQL database in Docker (`todir-postgres-1`).
 
 ---
 
@@ -20,38 +20,44 @@ All quality gates, unit tests (199/199), backend POS tests (18/18), and real-bro
 - **Zero Fallback Prices**: Removed the unsafe `coalesce(pe.unit_price, 50.00)` fallback in `PosService.DownloadOfflinePackageAsync`. An item without an authoritative, active selling price list entry is strictly excluded from the offline catalog package.
 - **Active Price Entries Only**: Catalog items are inner-joined against `foundation_pricing.price_entry` filtered for active price list versions and strictly requiring `pe.unit_price > 0`. Tax amounts and selling prices are calculated strictly from active pricing rules.
 
-### 2.2 Device-Bound Authorization & Cryptographic Server-Side Tamper Validation
+### 2.2 Offline Tax Integrity & Fail-Closed Tax Package Generation
+- **Zero Silent Zero-Tax Fallbacks**: In `PosService.DownloadOfflinePackageAsync`, removed the silent catch block that previously defaulted tax results to `0m` upon Tax Engine exceptions.
+- **Fail-Closed Tax Policy**: When tax calculations fail or tax rates cannot be authoritatively resolved, the service throws `InvalidOperationException("pos.offline_tax_unavailable:...")`, preventing the creation of invalid offline packages with zero tax amounts for taxable items.
+- **Authoritative Consistency**: Online and offline tax treatments remain strictly identical, ensuring offline sales reflect authoritative tax amounts.
+
+### 2.3 Device-Bound Authorization & Cryptographic Server-Side Tamper Validation
 - **Device Identity Binding**: In `PosService.ReceiveOfflineEnvelopeAsync`, incoming envelopes enforce device-bound authorization: the package snapshot's bound `deviceIdentity` must strictly match the envelope request's `DeviceIdentity`, and the physical terminal's status must be `Ready`.
 - **Server-Side HMAC-SHA256 Verification**: Envelopes are validated server-side using the device secret. Any payload or signature tampering triggers an immediate `pos.offline_signature_invalid` rejection (HTTP 400).
 - **Authoritative Unit Price Tamper Detection**: In `PosService.ProcessOfflineCashSaleAsync`, each submitted line item is validated against the active selling price list. If an offline envelope contains a modified or forged unit price (`Math.Abs(line.UnitPrice - authoritativeUnitPrice) > 0.0001m`), the backend strictly rejects execution with `pos.offline_price_tampered` (HTTP 400), transitions the envelope to `NeedsReview`, and stops unauthorized ledger posting.
 
-### 2.3 Durable Offline Multi-State Machine & Elimination of False Success
+### 2.4 Durable Offline Multi-State Machine & Elimination of False Success
 - **Durable State Machine**: Replaced binary synced flags with an explicit durable multi-state lifecycle:
   `Queued` → `Transmitting` → `Received` → `Processing` → `Completed` | `NeedsReview` | `Conflicted` | `RecoveryRequired` | `Failed`.
 - **Elimination of False-Success Defect**: In `use-pos-offline.ts`, errors thrown during offline replay are no longer caught and silenced. An envelope received by the server (HTTP 202) is marked as `Received`, and is marked as `Completed` strictly when the backend confirms economic completion (`posApi.processOfflineCashSale` returns `Accepted` / completed checkout).
-- **Persistent Monotonic Sequence Counters**: Upgraded client IndexedDB to `todir_pos_offline_v2` with a dedicated `sequence_counters` store (`getNextDurableSequence`). Guarantees source sequences are strictly monotonic, resilient to browser refresh, and never reset on queue clearance.
+- **Persistent Monotonic Sequence Counters**: Upgraded client IndexedDB to `todir_pos_offline_v2` with a dedicated `sequence_counters` store (`getNextDurableSequence`). Guarantees source sequences are strictly monotonic, resilient to browser refresh, and initialized with monotonic time-based sequence bases to prevent duplicate sequence collisions across browser sessions.
 
-### 2.4 Removal of Invalid Offline Identifier Fallbacks & Anonymous Walk-in Support
-- **Authoritative Catalog & Pricing Download**: Updated `PosService.DownloadOfflinePackageAsync` to query the active selling price list and full catalog items with variant IDs, product template IDs, unit of measure IDs, barcodes, and prices.
-- **Pure Anonymous Walk-in Checkout**: Updated backend `PosOfflineCashSalePolicy` to permit `CustomerPartyId == null` as canonical anonymous walk-in retail transactions (Section 13 of the pack).
-- **Zero Fallback Identifiers**: Removed all fallback substitutions of Variant ID as Product Template ID / UOM ID, Register ID as Price List ID, or hardcoded dummy customer party IDs.
+### 2.5 Authoritative Returned Quantity Aggregation & Pure Domain Return Policy
+- **Pure Domain Policy**: Created `PosReturnPolicy.cs` with `AggregateReturnedQuantity` defining the qualifying lifecycle states for return quantities (`Pending`, `Completed`).
+- **SQL Join Filtering**: Corrected `PosService.GetSaleLinesAsync` SQL aggregation from joining only `pos_return_line` to inner-joining `pos_return r` on `r.id = rl.return_id` and filtering `r.state in ('Pending', 'Completed')`.
+- **Cancelled/Rejected Exclusion**: Cancelled and rejected return lines are strictly excluded from accumulating against returned quantities, ensuring accurate remaining returnable balances for customers.
+- **Lifecycle Unit & Integration Tests**: Verified with 4 comprehensive unit tests in `PosReturnLifecycleTests.cs` (32/32 tests passing) and database integration tests in `PosAcceptanceIntegrationTests.cs`.
 
-### 2.5 Exact Integer Scaled Decimal Money Math (Half-Up Rounding)
+### 2.6 Authoritative Receipt Display & Cashier Identity
+- **Dynamic Cashier Identity Resolution**: Updated `receipt-modal.tsx` to read authenticated user context via `useOptionalUserContext()`, resolving the cashier name from `user?.displayName || user?.email`.
+- **Localized Duty Fallback**: Declared `cashierOnDuty` key in `frontend/modules/pos/i18n/ar.ts` (`"أمين الصندوق المناوب"`) and `frontend/modules/pos/i18n/en.ts` (`"Cashier on Duty"`), completely eliminating the `"النص غير متاح"` missing copy error.
+- **80mm Thermal Receipt Styling**: Enforced 80mm standard thermal roll layout constraints (`max-w-[80mm]`, `@page { size: 80mm auto; margin: 0; }`) for authentic POS receipt printing.
+
+### 2.7 Exact Integer Scaled Decimal Money Math (Half-Up Rounding)
 - **Scaled Integer Arithmetic**: Created `frontend/modules/pos/utils/exact-money-math.ts` implementing exact 4-decimal scaled integer arithmetic (`POS_MONEY_SCALE = 10000n`) using JavaScript native `BigInt`.
 - **Exact Half-Up Integer Rounding**: Replaced naive decimal slicing with exact integer half-up rounding `(abs + half) / factor` preventing carry drops (`9999n` formats to `"1.00"`, `19999n` formats to `"2.00"`).
 - **Eastern Arabic Numeral Normalization**: Integrated automatic normalization of Eastern Arabic digits (`٠١٢٣٤٥٦٧٨٩`) into exact scaled decimals.
 - **Unit Tested Invariants**: Verified with 7 dedicated unit test assertions in `pos-slice.test.ts`.
 
-### 2.6 Fail-Closed Returns & Authoritative Proportional Refunds
+### 2.8 Fail-Closed Returns & Authoritative Proportional Refunds
 - **Sale Line Enforcement**: In `return-modals.tsx`, returns fail closed if a valid original sale line is not selected.
 - **Proportional Refund Calculation**: Authoritative refund amounts are calculated proportionally inclusive of line discounts and line taxes:
   $$\text{refundableAmount} = \frac{\text{lineTotalScaled} \times \text{returnQty}}{\text{lineQtyScaled}}$$
 - **Dispositions**: Supported authentic ERP return dispositions: `ReturnToStock` (إعادة للمخزن الصالح) and `Scrap` (هالك / إعدام).
-
-### 2.7 Authoritative Thermal Receipts from `pos_sale`
-- **Eliminated Client-Generated Receipt Numbers**: Purged all client-side fallback number generators (`POS-${saleId.slice(0,8)}`). Final thermal receipts display authoritative backend receipt numbers (`POS-YYYYMMDDHH24MISSMS-...`).
-- **Authoritative Totals & Lines**: The thermal receipt modal renders authoritative totals (`subtotal`, `taxTotal`, `discountTotal`, `grandTotal`) and lines fetched directly from backend `pos_sale` and `pos_sale_line`.
-- **Strict Completion Gating**: The final thermal receipt modal is displayed strictly when `checkout.state === "Completed"`, with print buttons disabled and pending indicators shown during asynchronous settlement.
 
 ---
 
@@ -62,20 +68,20 @@ Every governance gate was executed locally and passed with zero errors:
 | Verification Gate | Command | Result | Verification Notes |
 | :--- | :--- | :--- | :--- |
 | **Backend Build** | `dotnet build backend/Backend.sln` | **PASS (0 errors, 0 warnings)** | .NET 10 clean build |
-| **Backend POS Tests** | `dotnet test backend/Tests/Modules/POS/POSTests.csproj` | **PASS (18/18 passed)** | Unit, device-bound, and offline security tests |
+| **Backend POS Tests** | `dotnet test backend/Tests/Modules/POS/POSTests.csproj` | **PASS (32/32 passed)** | Unit, return lifecycle, device-bound, and offline security tests |
 | **API Contract Drift** | `pnpm run api:drift` | **PASS (0 drift)** | 64 API paths validated with zero drift |
 | **Frontend Architecture** | `pnpm run architecture:frontend` | **PASS (0 errors)** | Module boundaries and all 9 architectural fixtures clean |
 | **Localization Parity** | `pnpm run localization:verify` | **PASS (0 errors)** | 100% key parity between `ar.ts` and `en.ts` with zero missing keys |
 | **Frontend Unit & Slices** | `pnpm run test:frontend` | **PASS (199/199)** | 199 tests passing across 47 test suites |
 | **TypeScript Typecheck** | `pnpm --dir frontend typecheck` | **PASS (0 errors)** | Strict TypeScript verification clean |
-| **Vite Production Build** | `pnpm --dir frontend build` | **PASS (1.47s)** | Production client bundle built cleanly |
-| **Playwright Real-Stack E2E** | `pnpm --dir frontend exec playwright test tests/e2e/pos-flow.spec.ts` | **PASS (16/16)** | Full 16-scenario suite passed in 19.1s against live .NET API daemon & PostgreSQL |
+| **Vite Production Build** | `pnpm --dir frontend build` | **PASS (1.85s)** | Production client bundle built cleanly |
+| **Playwright Real-Stack E2E** | `pnpm --dir frontend exec playwright test tests/e2e/pos-flow.spec.ts` | **PASS (17/17)** | Full 17-scenario suite passed in 38.2s against live .NET API daemon & PostgreSQL |
 
 ---
 
 ## 4. Playwright E2E Scenario Coverage & Acceptance Artifacts
 
-All 16 real-browser scenarios were executed against authenticated sessions with seed register `MAIN` and live test database:
+All 17 real-browser scenarios were executed against authenticated sessions with seed register `MAIN` and live test database:
 
 | # | Scenario Description | Status | Generated & Inspected Artifact |
 | :---: | :--- | :---: | :--- |
@@ -95,6 +101,7 @@ All 16 real-browser scenarios were executed against authenticated sessions with 
 | **14** | Mobile / Touch Viewport Responsive Verification (390px) | **PASS** | `15-pos-touch-mobile-viewport.png` |
 | **15** | Offline Replay Security: Server Rejection of Tampered Payload & Rogue Device | **PASS** | HTTP 400 Tamper Rejection Verified (`pos.offline_signature_invalid`) |
 | **16** | End-to-End Offline Journey: Persistence, Sync, Ledger Completion, Idempotency & Price Tamper Recovery | **PASS** | Real DB Economic Effect & 400 `pos.offline_price_tampered` Verified |
+| **17** | Real Frontend Offline Acceptance: UI Cashier Queue, Reload Persistence & UI Sync | **PASS** | Verified UI download, simulated offline queue, reload IndexedDB persistence, reconnect, UI synchronization, server-side document verification, and tamper detection |
 
 ---
 
@@ -105,12 +112,12 @@ All 16 real-browser scenarios were executed against authenticated sessions with 
 3. **`03-pos-discount-applied.png`**: Demonstrates line-item discount application with manager override modal authorization when discount threshold is triggered.
 4. **`04-pos-customer-selected.png`**: Shows selection modal supporting both anonymous walk-in retail customers and designated commercial parties.
 5. **`05-pos-tender-cash-change.png`**: Proves cashier cash tender with exact integer half-up change calculation and denomination shortcuts.
-6. **`06-pos-thermal-receipt-modal.png`**: Displays final authoritative receipt with server-generated receipt number (`POS-...`), business date, and frozen line snapshots.
+6. **`06-pos-thermal-receipt-modal.png`**: Displays final authoritative receipt with server-generated receipt number (`POS-...`), business date, authenticated cashier identity (`أمين الصندوق المناوب`), and 80mm thermal container styling.
 7. **`07-pos-cart-on-hold.png`**: Confirms cart suspension with persistent hold status and one-click cart recall.
 8. **`08-pos-cash-movement-modal.png`**: Shows cash-in, cash-out, and cash-drop operations updating expected drawer totals.
 9. **`09-pos-new-register-modal.png`**: Illustrates register and terminal configuration with currency, branch, and offline capability settings.
 10. **`10-pos-session-close-reconciliation.png`**: Demonstrates session closing with blind cash counting, real-time variance detection, and manager sign-off.
-11. **`11-pos-create-return-modal.png`**: Proves sales return modal with receipt lookup, original sale line selection, remaining returnable quantity validation, and return-to-stock disposition.
+11. **`11-pos-create-return-modal.png`**: Proves sales return modal with receipt lookup, original sale line selection, remaining returnable quantity validation (qualifying states only), and return-to-stock disposition.
 12. **`12-pos-offline-queue-dashboard.png`**: Shows durable offline queue dashboard (`todir_pos_offline_v2`), package download status, cryptographic signature validity, and multi-state synchronization indicators.
 13. **`13-pos-operational-reports.png`**: Illustrates operational sales journals, payment breakdowns, and shift summary reports.
 14. **`14-pos-english-ltr-view.png`**: Validates 100% English LTR localization parity, font typography, and layout mirroring.

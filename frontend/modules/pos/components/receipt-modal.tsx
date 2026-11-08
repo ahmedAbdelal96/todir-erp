@@ -4,6 +4,7 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { ReceiptIcon } from "./pos-icons.tsx";
 import { BidiText } from "../../../components/primitives/bidi-text.tsx";
+import { useOptionalUserContext } from "../../../core/runtime/index.ts";
 import type { CartLineResponse, CheckoutResponse, PosSaleLineDetail } from "../types.ts";
 import { fromScaledBigInt, toScaledBigInt } from "../utils/exact-money-math.ts";
 
@@ -33,6 +34,10 @@ export interface ReceiptModalProps {
 
 const THERMAL_PRINT_CSS = `
   @media print {
+    @page {
+      size: 80mm auto;
+      margin: 0;
+    }
     body * {
       visibility: hidden !important;
     }
@@ -52,6 +57,8 @@ const THERMAL_PRINT_CSS = `
       box-shadow: none !important;
       font-size: 11px !important;
       line-height: 1.3 !important;
+      background: #ffffff !important;
+      color: #000000 !important;
     }
   }
 `;
@@ -67,7 +74,7 @@ export function ReceiptModal({
   grandTotal,
   currencyCode = "EGP",
   registerCode = "MAIN",
-  cashierName = "Cashier",
+  cashierName,
   authoritativeReceiptNumber,
   authoritativeBusinessDate,
   authoritativeSale,
@@ -75,9 +82,15 @@ export function ReceiptModal({
   onNewSale,
 }: ReceiptModalProps): React.JSX.Element | null {
   const { t } = useTranslation("pos");
+  const user = useOptionalUserContext();
 
   const isDocumentReady = Boolean(authoritativeReceiptNumber && authoritativeReceiptNumber.trim().length > 0);
   const receiptNumber = isDocumentReady ? authoritativeReceiptNumber! : "—";
+
+  const effectiveCashier =
+    cashierName && cashierName.trim() !== "" && cashierName !== "Cashier"
+      ? cashierName
+      : user?.displayName || user?.email || t("workspace.cashierOnDuty", "أمين الصندوق المناوب");
 
   const effectiveLines = authoritativeLines && authoritativeLines.length > 0
     ? authoritativeLines.map((l) => ({
@@ -176,7 +189,7 @@ export function ReceiptModal({
             </div>
             <div>
               <span style={{ color: "#64748b" }}>{t("receipt.cashier")}: </span>
-              <strong><BidiText>{cashierName || t("workspace.cashierOnDuty", "أمين الصندوق المناوب")}</BidiText></strong>
+              <strong data-testid="pos-receipt-cashier"><BidiText>{effectiveCashier}</BidiText></strong>
             </div>
             <div style={{ gridColumn: "span 2", borderTop: "1px solid #e2e8f0", paddingTop: "0.35rem" }}>
               <span style={{ color: "#64748b" }}>{t("receipt.receiptNumber", "رقم الإيصال")}: </span>

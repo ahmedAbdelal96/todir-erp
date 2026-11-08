@@ -137,6 +137,35 @@ public sealed class PosAcceptanceIntegrationTests : DatabaseIntegrationTestBase
         using var creditNoteResponse = await PostJsonAsync(client, $"/api/v1/pos/returns/{returnId:D}/credit-note", new { });
         Assert.Equal(HttpStatusCode.Accepted, creditNoteResponse.StatusCode);
         Assert.Equal(1L, await ScalarAsync(admin, "select count(*) from business_pos.pos_return where tenant_id=$1 and id=$2 and state='Completed' and refund_state='Completed' and credit_note_state='Completed'", AtlasTenant, returnId));
+
+        // Verify GetSaleLines returns authoritative returned_quantity for completed returns
+        var saleLines = await GetJsonAsync(client, $"/api/v1/pos/sales/{saleId:D}/lines");
+        var lineItem = saleLines.EnumerateArray().Single(x => x.GetProperty("id").GetGuid() == saleLineId);
+        Assert.Equal(1m, lineItem.GetProperty("returnedQuantity").GetDecimal());
+
+        // Verify cancelled or rejected return lines are NOT aggregated into returnedQuantity
+        var cancelledReturnId = Guid.CreateVersion7();
+        await using (var insertCancelled = new NpgsqlCommand("insert into business_pos.pos_return(tenant_id,id,original_sale_id,session_id,state,refund_state,disposition,reason,total_amount,created_by,created_at) values($1,$2,$3,$4,'Cancelled','NotRequested','Restock','Cancelled return test',100,$5,now())", admin))
+        {
+            insertCancelled.Parameters.AddWithValue(AtlasTenant);
+            insertCancelled.Parameters.AddWithValue(cancelledReturnId);
+            insertCancelled.Parameters.AddWithValue(saleId);
+            insertCancelled.Parameters.AddWithValue(sessionId);
+            insertCancelled.Parameters.AddWithValue(Guid.CreateVersion7());
+            await insertCancelled.ExecuteNonQueryAsync();
+        }
+        await using (var insertCancelledLine = new NpgsqlCommand("insert into business_pos.pos_return_line(tenant_id,id,return_id,original_sale_line_id,quantity,amount,disposition) values($1,$2,$3,$4,5,100,'Restock')", admin))
+        {
+            insertCancelledLine.Parameters.AddWithValue(AtlasTenant);
+            insertCancelledLine.Parameters.AddWithValue(Guid.CreateVersion7());
+            insertCancelledLine.Parameters.AddWithValue(cancelledReturnId);
+            insertCancelledLine.Parameters.AddWithValue(saleLineId);
+            await insertCancelledLine.ExecuteNonQueryAsync();
+        }
+
+        var saleLinesAfterCancelled = await GetJsonAsync(client, $"/api/v1/pos/sales/{saleId:D}/lines");
+        var lineItemAfterCancelled = saleLinesAfterCancelled.EnumerateArray().Single(x => x.GetProperty("id").GetGuid() == saleLineId);
+        Assert.Equal(1m, lineItemAfterCancelled.GetProperty("returnedQuantity").GetDecimal());
     }
 
     [Fact]

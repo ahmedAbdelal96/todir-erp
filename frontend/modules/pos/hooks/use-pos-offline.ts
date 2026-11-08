@@ -99,7 +99,11 @@ async function getNextDurableSequence(
     const store = tx.objectStore(STORE_COUNTERS);
     const getReq = store.get(counterKey);
     getReq.onsuccess = () => {
-      const current = (getReq.result?.lastSequence as number) || 0;
+      let current = getReq.result?.lastSequence as number | undefined;
+      if (typeof current !== "number" || current <= 0) {
+        // Initialize with a monotonic time-based sequence base to avoid collision with prior server records on fresh sessions
+        current = Math.floor(Date.now() / 1000) % 10000000;
+      }
       const next = current + 1;
       store.put({ key: counterKey, lastSequence: next, updatedAt: new Date().toISOString() });
       tx.oncomplete = () => resolve(next);

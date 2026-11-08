@@ -542,7 +542,7 @@ export function PosCheckoutWorkspace({
         (a) =>
           (a.type?.toLowerCase() === "cashbox" || a.type === "Cashbox") &&
           (a.status === "Active" || !a.status)
-      ) || paymentAccounts[0];
+      );
 
     if (!defaultCashAccount) {
       setStatusMessage(t("tender.noCashAccountAvailable", "لا يوجد حساب خزينة متاح لإتمام البيع النقدي"));
