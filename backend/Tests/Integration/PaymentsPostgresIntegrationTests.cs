@@ -644,6 +644,39 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         var retry = await expenses.SettleEmployeeRepaymentAsync(tenant, fixture.LegalEntityId, repayment.Id, fixture.ActorId, fixture.MembershipId, new(fixture.PaymentAccountId, "BankTransfer", 75m, new(2026, 10, 15), new(2026, 10, 15), settled.Version), CancellationToken.None); Assert.Equal("Recorded", retry.State); Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='ExpensesEmployeeRepayment' and source_reference=$3", fixture.TenantId, fixture.LegalEntityId, sourceReference));
     }
 
+    [Fact]
+    public async Task BusinessAdvanceIssuanceCreatesOutgoingPaymentAndEmployeeReceivableExactlyOnce()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for payment integration tests.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for payment integration tests.");
+        var fixture = await ReadFixtureAsync(adminConnectionString);
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => { builder.UseEnvironment("Development"); builder.UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString); builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty); });
+        var expenses = factory.Services.GetRequiredService<ExpenseRepository>();
+        var tenant = new TenantId(fixture.TenantId);
+        var advance = await expenses.CreateAdvanceAsync(tenant, new(fixture.LegalEntityId, Guid.NewGuid(), "Project travel advance", 250m), CancellationToken.None);
+        advance = await expenses.TransitionAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, advance.Version, "approve", CancellationToken.None);
+        var issued = await expenses.IssueAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, fixture.ActorId, fixture.MembershipId,
+            new(fixture.PaymentAccountId, "BankTransfer", 250m, new(2026, 10, 15), new(2026, 10, 15), advance.Version), CancellationToken.None);
+        Assert.Equal("Issued", issued.State);
+        Assert.Equal(250m, issued.IssuedAmount);
+        Assert.NotNull(issued.IssuancePaymentId);
+
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        var sourceReference = $"expenses-advance:{advance.Id:D}";
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from business_expenses.business_advance_issuance where tenant_id=$1 and legal_entity_id=$2 and advance_id=$3 and state='Completed' and payment_id=$4", fixture.TenantId, fixture.LegalEntityId, advance.Id, issued.IssuancePaymentId.Value));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and payment_type='ExpensePayment' and direction='Outgoing' and source_type='ExpensesAdvance' and source_reference=$3 and business_state='Completed'", fixture.TenantId, fixture.LegalEntityId, sourceReference));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 and fact_type='PaymentMade' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, issued.IssuancePaymentId!.Value));
+        var journal = await ReadPaymentJournalAsync(admin, fixture.TenantId, fixture.LegalEntityId, issued.IssuancePaymentId.Value);
+        Assert.Equal(250m, journal.Debit);
+        Assert.Equal(250m, journal.Credit);
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.journal_entry_line l join finance_ledger.journal_entry e on e.tenant_id=l.tenant_id and e.legal_entity_id=l.legal_entity_id and e.id=l.journal_entry_id join finance_ledger.account_mapping_version mv on mv.tenant_id=l.tenant_id and mv.legal_entity_id=l.legal_entity_id and mv.target_account_id=l.account_id join finance_ledger.account_mapping m on m.tenant_id=mv.tenant_id and m.legal_entity_id=mv.legal_entity_id and m.id=mv.mapping_id join finance_ledger.account_role r on r.tenant_id=m.tenant_id and r.legal_entity_id=m.legal_entity_id and r.id=m.role_id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.fact_id=$3 and r.code='EmployeeReceivable'", fixture.TenantId, fixture.LegalEntityId, issued.IssuancePaymentId.Value));
+        var retry = await expenses.IssueAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, fixture.ActorId, fixture.MembershipId,
+            new(fixture.PaymentAccountId, "BankTransfer", 250m, new(2026, 10, 15), new(2026, 10, 15), issued.Version), CancellationToken.None);
+        Assert.Equal(issued.IssuancePaymentId, retry.IssuancePaymentId);
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='ExpensesAdvance' and source_reference=$3", fixture.TenantId, fixture.LegalEntityId, sourceReference));
+    }
+
     private static async Task<Fixture> ReadFixtureAsync(string adminConnectionString)
     {
         await using var connection = new NpgsqlConnection(adminConnectionString);

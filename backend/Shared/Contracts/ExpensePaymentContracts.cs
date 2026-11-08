@@ -21,3 +21,13 @@ public interface IEmployeeRepaymentPaymentCapability
         string currencyCode, DateOnly paymentDate, DateOnly postingDate, string idempotencyKey,
         CancellationToken cancellationToken);
 }
+
+public sealed record BusinessAdvancePaymentResult(Guid PaymentId, decimal Amount, string CurrencyCode, string State);
+
+public interface IBusinessAdvancePaymentCapability
+{
+    Task<BusinessAdvancePaymentResult> IssueBusinessAdvanceAsync(TenantId tenant, Guid actorId, Guid membershipId,
+        Guid correlationId, Guid legalEntityId, Guid advanceId, Guid paymentAccountId, string method, decimal amount,
+        string currencyCode, DateOnly paymentDate, DateOnly postingDate, string idempotencyKey,
+        CancellationToken cancellationToken);
+}

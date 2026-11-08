@@ -5,6 +5,7 @@ using Core.Transactions;
 using Core.Services;
 using Npgsql;
 using Shared.Primitives.Identifiers;
+using Shared.Contracts.Payments;
 using Xunit;
 
 namespace Modules.Expenses.Tests;
@@ -117,16 +118,17 @@ public sealed class ExpensesPostgresIntegrationTests
         var repaymentPage = await repository.ListEmployeeRepaymentsAsync(new(Atlas), entity, employee, "Requested", 1, 10, default);
         Assert.True(repaymentPage.TotalCount >= 1);
 
-        var advance = await repository.CreateAdvanceAsync(new(Atlas), new(entity, employee, "سلفة رحلة", 500m), default);
-        advance = await repository.TransitionAdvanceAsync(new(Atlas), entity, advance.Id, advance.Version, "approve", default);
-        advance = await repository.TransitionAdvanceAsync(new(Atlas), entity, advance.Id, advance.Version, "issue", default);
-        var advanceExpense = await repository.CreateAsync(new(Atlas), new(entity, employee, "Advance expense", new(2026, 10, 14), 300m, "EGP", "EmployeePaid", categoryVersion), default);
-        await repository.AddEvidenceAsync(new(Atlas), entity, advanceExpense.Id, new("Receipt", "file://expenses/advance"), default);
-        var submitted = await repository.TransitionAsync(new(Atlas), entity, advanceExpense.Id, new(advanceExpense.Version), "submit", default);
-        var approved = await repository.TransitionAsync(new(Atlas), entity, advanceExpense.Id, new(submitted.Version), "approve", default);
-        advance = await repository.ApplyAdvanceAsync(new(Atlas), entity, advance.Id, new(advanceExpense.Id, 300m), default);
+        var repositoryWithAdvancePayments = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), advancePayments: new TestAdvancePaymentCapability());
+        var advance = await repositoryWithAdvancePayments.CreateAdvanceAsync(new(Atlas), new(entity, employee, "سلفة رحلة", 500m), default);
+        advance = await repositoryWithAdvancePayments.TransitionAdvanceAsync(new(Atlas), entity, advance.Id, advance.Version, "approve", default);
+        advance = await repositoryWithAdvancePayments.IssueAdvanceAsync(new(Atlas), entity, advance.Id, Guid.NewGuid(), Guid.NewGuid(), new(Guid.NewGuid(), "BankTransfer", 500m, new(2026, 10, 14), new(2026, 10, 14), advance.Version), default);
+        var advanceExpense = await repositoryWithAdvancePayments.CreateAsync(new(Atlas), new(entity, employee, "Advance expense", new(2026, 10, 14), 300m, "EGP", "EmployeePaid", categoryVersion), default);
+        await repositoryWithAdvancePayments.AddEvidenceAsync(new(Atlas), entity, advanceExpense.Id, new("Receipt", "file://expenses/advance"), default);
+        var submitted = await repositoryWithAdvancePayments.TransitionAsync(new(Atlas), entity, advanceExpense.Id, new(advanceExpense.Version), "submit", default);
+        var approved = await repositoryWithAdvancePayments.TransitionAsync(new(Atlas), entity, advanceExpense.Id, new(submitted.Version), "approve", default);
+        advance = await repositoryWithAdvancePayments.ApplyAdvanceAsync(new(Atlas), entity, advance.Id, new(advanceExpense.Id, 300m), default);
         Assert.Equal(300m, advance.AppliedAmount);
-        advance = await repository.ReturnAdvanceAsync(new(Atlas), entity, advance.Id, new(200m, advance.Version), default);
+        advance = await repositoryWithAdvancePayments.ReturnAdvanceAsync(new(Atlas), entity, advance.Id, new(200m, advance.Version), default);
         Assert.Equal("Settled", advance.State);
         var advancePage = await repository.ListAdvancesAsync(new(Atlas), entity, "Settled", employee, 1, 10, default);
         Assert.True(advancePage.TotalCount >= 1);
@@ -142,6 +144,11 @@ public sealed class ExpensesPostgresIntegrationTests
     private static async Task<(long EntryCount, decimal Debit, decimal Credit)> ReadPostingAsync(NpgsqlConnection connection, Guid expenseId)
     {
         await using var command = new NpgsqlCommand("select count(distinct e.id),coalesce(sum(l.debit),0),coalesce(sum(l.credit),0) from business_expenses.expense x join finance_ledger.journal_entry e on e.tenant_id=x.tenant_id and e.id=x.ledger_entry_id join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.journal_entry_id=e.id where x.tenant_id=$1 and x.id=$2", connection); command.Parameters.AddWithValue(Atlas); command.Parameters.AddWithValue(expenseId); await using var reader = await command.ExecuteReaderAsync(); Assert.True(await reader.ReadAsync()); return (reader.GetInt64(0), reader.GetDecimal(1), reader.GetDecimal(2));
+    }
+
+    private sealed class TestAdvancePaymentCapability : IBusinessAdvancePaymentCapability
+    {
+        public Task<BusinessAdvancePaymentResult> IssueBusinessAdvanceAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid correlationId, Guid legalEntityId, Guid advanceId, Guid paymentAccountId, string method, decimal amount, string currencyCode, DateOnly paymentDate, DateOnly postingDate, string idempotencyKey, CancellationToken cancellationToken) => Task.FromResult(new BusinessAdvancePaymentResult(Guid.CreateVersion7(), amount, currencyCode, "Completed"));
     }
 
     private sealed class ExpensesPostgresFactAttribute : FactAttribute

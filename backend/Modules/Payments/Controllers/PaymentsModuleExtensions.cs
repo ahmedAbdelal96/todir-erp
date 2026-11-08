@@ -25,6 +25,7 @@ public static class PaymentsModuleExtensions
         services.AddSingleton<IPayrollPaymentCapability, PayrollPaymentCapability>();
         services.AddSingleton<IExpensePaymentCapability, ExpensePaymentCapability>();
         services.AddSingleton<IEmployeeRepaymentPaymentCapability, EmployeeRepaymentPaymentCapability>();
+        services.AddSingleton<IBusinessAdvancePaymentCapability, BusinessAdvancePaymentCapability>();
         services.AddSingleton<IReferencePaymentProvider, ReferencePaymentProvider>();
         services.AddSingleton<IProviderSecretResolver, EnvironmentProviderSecretResolver>();
         return services;

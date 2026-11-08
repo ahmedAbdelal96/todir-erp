@@ -22,10 +22,11 @@ public sealed record AddExpenseParticipantRequest(Guid? PartyId, string DisplayN
 public sealed record ExpensePolicyEvaluationDto(Guid Id, Guid ExpenseId, string State, System.Text.Json.JsonElement Snapshot, DateTimeOffset EvaluatedAt);
 public sealed record ExpenseReportDto(Guid Id, Guid LegalEntityId, Guid? EmployeeId, string Title, string State, decimal TotalAmount, string CurrencyCode, long Version, DateTimeOffset CreatedAt);
 public sealed record CreateExpenseReportRequest(Guid LegalEntityId, Guid? EmployeeId, string Title, string CurrencyCode = "EGP");
-public sealed record BusinessAdvanceDto(Guid Id, Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, decimal AppliedAmount, decimal ReturnedAmount, string CurrencyCode, string State, long Version, DateTimeOffset CreatedAt);
+public sealed record BusinessAdvanceDto(Guid Id, Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, decimal IssuedAmount, decimal AppliedAmount, decimal ReturnedAmount, string CurrencyCode, string State, long Version, DateTimeOffset CreatedAt, Guid? IssuancePaymentId = null);
 public sealed record CreateBusinessAdvanceRequest(Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, string CurrencyCode = "EGP");
 public sealed record ApplyBusinessAdvanceRequest(Guid ExpenseId, decimal Amount);
 public sealed record ReturnBusinessAdvanceRequest(decimal Amount, long Version);
+public sealed record IssueBusinessAdvanceRequest(Guid PaymentAccountId, string Method, decimal Amount, DateOnly PaymentDate, DateOnly PostingDate, long Version);
 public sealed record ExpenseCardTransactionDto(Guid Id, Guid LegalEntityId, string ProviderReference, string MerchantName, DateOnly TransactionDate, decimal Amount, string CurrencyCode, string State, Guid? EmployeeId, Guid? MatchedExpenseId);
 public sealed record ImportExpenseCardTransactionRequest(string ProviderReference, string MerchantName, DateOnly TransactionDate, decimal Amount, string CurrencyCode = "EGP");
 public sealed record ExpenseReimbursementBatchDto(Guid Id, Guid LegalEntityId, string State, string CurrencyCode, decimal TotalAmount, long Version, DateTimeOffset CreatedAt);
