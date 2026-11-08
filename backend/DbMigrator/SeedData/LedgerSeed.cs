@@ -44,6 +44,7 @@ public static class LedgerSeed
             var payrollTaxPayable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 22);
             var payrollInsurancePayable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 23);
             var employeeReceivable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 24);
+            var employeeReimbursementPayable = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 26);
             var fxGain = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 8);
             var fxLoss = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 9);
             var retainedEarnings = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 10);
@@ -70,6 +71,7 @@ public static class LedgerSeed
                 (payrollTaxPayable, "210500", "التزام ضريبة الرواتب", "Payroll tax payable", "Liability", "PayrollTax", liabilityCategory, (Guid?)null, true),
                 (payrollInsurancePayable, "210600", "التزام تأمينات الرواتب", "Payroll insurance payable", "Liability", "PayrollInsurance", liabilityCategory, (Guid?)null, true),
                 (employeeReceivable, "120200", "سلف وقروض الموظفين", "Employee receivables", "Asset", "EmployeeReceivable", assetCategory, (Guid?)assets, true),
+                (employeeReimbursementPayable, "210700", "التزام رد مصروفات الموظفين", "Employee reimbursement payable", "Liability", "EmployeeReimbursement", liabilityCategory, (Guid?)null, true),
                 (fxGain, "999000", "أرباح فروق العملة", "FX gain", "Revenue", "FXGain", revenueCategory, (Guid?)null, true),
                 (fxLoss, "999100", "خسائر فروق العملة", "FX loss", "Expense", "FXLoss", expenseCategory, (Guid?)null, true),
                 (retainedEarnings, "310000", "الأرباح المحتجزة", "Retained earnings", "Equity", "RetainedEarnings", equityCategory, (Guid?)null, true),
@@ -97,7 +99,7 @@ public static class LedgerSeed
             var entityConfigurationId = SeedIds.Child(context.Tenant.Id, $"ledger-entity-configuration:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.ledger_entity_configuration (tenant_id,legal_entity_id,id,mode,setup_template_code,active_configuration_version_id,initialized_at,version) values ($1,$2,$3,'Managed','development-core',$4,$5,1) on conflict (tenant_id,legal_entity_id) do nothing", cancellationToken, context.Tenant.Id, entityId, entityConfigurationId, configId, context.AsOf);
             var activeConfigId = await context.ScalarAsync<Guid>("select active_configuration_version_id from finance_ledger.ledger_entity_configuration where tenant_id=$1 and legal_entity_id=$2", cancellationToken, context.Tenant.Id, entityId);
-            foreach (var producer in new[] { ("sales", "CustomerInvoicePosted"), ("sales", "CustomerCreditNotePosted"), ("invoicing", "CustomerInvoicePosted"), ("invoicing", "CustomerCreditNotePosted"), ("invoicing", "VendorBillPosted"), ("invoicing", "VendorCreditNotePosted"), ("invoicing", "CustomerDebitNotePosted"), ("invoicing", "VendorDebitNotePosted"), ("payments", "PaymentReceived"), ("payments", "PaymentMade"), ("payments", "RefundPaid"), ("payments", "PaymentFeeRecognized"), ("payments", "PaymentFeeReversed"), ("payments", "InternalTransferCompleted"), ("pos", "PosCashSalePosted"), ("inventory", "InventoryReceiptValued"), ("inventory", "InventoryIssueValued"), ("inventory", "InventoryCostAdjustment"), ("inventory", "InventoryValuationReversal"), ("payroll", "PayrollPosted"), ("tax", "TaxAdjustment"), ("subledger", "SettlementFxDifference"), ("subledger", "SettlementWriteOff"), ("accounting", "UnrealizedFxRevaluation") })
+            foreach (var producer in new[] { ("sales", "CustomerInvoicePosted"), ("sales", "CustomerCreditNotePosted"), ("invoicing", "CustomerInvoicePosted"), ("invoicing", "CustomerCreditNotePosted"), ("invoicing", "VendorBillPosted"), ("invoicing", "VendorCreditNotePosted"), ("invoicing", "CustomerDebitNotePosted"), ("invoicing", "VendorDebitNotePosted"), ("payments", "PaymentReceived"), ("payments", "PaymentMade"), ("payments", "RefundPaid"), ("payments", "PaymentFeeRecognized"), ("payments", "PaymentFeeReversed"), ("payments", "InternalTransferCompleted"), ("pos", "PosCashSalePosted"), ("inventory", "InventoryReceiptValued"), ("inventory", "InventoryIssueValued"), ("inventory", "InventoryCostAdjustment"), ("inventory", "InventoryValuationReversal"), ("payroll", "PayrollPosted"), ("expenses", "ExpenseRecognized"), ("tax", "TaxAdjustment"), ("subledger", "SettlementFxDifference"), ("subledger", "SettlementWriteOff"), ("accounting", "UnrealizedFxRevaluation") })
             {
                 var producerId = SeedIds.Child(context.Tenant.Id, $"ledger-producer:{suffix}:{producer.Item1}:{producer.Item2}", 1);
                 await context.ExecuteAsync("insert into finance_ledger.fact_producer_registration (tenant_id,legal_entity_id,id,producer_module,fact_type,fact_version,status,registered_at) values ($1,$2,$3,$4,$5,1,'Active',$6) on conflict (tenant_id,legal_entity_id,producer_module,fact_type,fact_version) do nothing", cancellationToken, context.Tenant.Id, entityId, producerId, producer.Item1, producer.Item2, context.AsOf);
@@ -125,6 +127,7 @@ public static class LedgerSeed
             var rolePayrollTaxPayable = await AddRoleAsync(context, entityId, suffix, 23, "PayrollTaxPayable", "التزام ضريبة الرواتب", "Payroll tax payable", cancellationToken);
             var rolePayrollInsurancePayable = await AddRoleAsync(context, entityId, suffix, 24, "PayrollInsurancePayable", "التزام تأمينات الرواتب", "Payroll insurance payable", cancellationToken);
             var roleEmployeeReceivable = await AddRoleAsync(context, entityId, suffix, 25, "EmployeeReceivable", "سلف وقروض الموظفين", "Employee receivable", cancellationToken);
+            var roleEmployeeReimbursementPayable = await AddRoleAsync(context, entityId, suffix, 26, "EmployeeReimbursementPayable", "التزام رد مصروفات الموظفين", "Employee reimbursement payable", cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 1, roleReceivable, receivable, "Receivable", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 2, roleRevenue, salesRevenue, "SalesRevenue", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 3, roleTax, outputTax, "OutputTax", null, null, "VAT14", cancellationToken);
@@ -150,6 +153,7 @@ public static class LedgerSeed
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 23, rolePayrollTaxPayable, payrollTaxPayable, "PayrollTaxPayable", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 24, rolePayrollInsurancePayable, payrollInsurancePayable, "PayrollInsurancePayable", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 25, roleEmployeeReceivable, employeeReceivable, "EmployeeReceivable", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 26, roleEmployeeReimbursementPayable, employeeReimbursementPayable, "EmployeeReimbursementPayable", null, null, null, cancellationToken);
 
             var ruleId = SeedIds.Child(context.Tenant.Id, $"ledger-rule:{suffix}", 1); var ruleVersionId = SeedIds.Child(context.Tenant.Id, $"ledger-rule-version:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.posting_rule (tenant_id,legal_entity_id,id,fact_type,fact_version,code,status,version,created_at) values ($1,$2,$3,'CustomerInvoicePosted',1,'CUSTOMER_INVOICE_V1','Active',1,$4) on conflict (tenant_id,id) do nothing", cancellationToken, context.Tenant.Id, entityId, ruleId, context.AsOf);
@@ -178,6 +182,7 @@ public static class LedgerSeed
             await AddSimpleRuleAsync(context, entityId, suffix, 23, "InventoryCostAdjustment", "INVENTORY_COST_ADJUSTMENT_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 24, "UnrealizedFxRevaluation", "UNREALIZED_FX_REVALUATION_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 25, "PayrollPosted", "PAYROLL_POSTED_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 26, "ExpenseRecognized", "EXPENSE_RECOGNIZED_V1", cancellationToken);
         }
         return new SeedLedgerSummary(entities.Length, accountCount, periodCount, true);
     }
@@ -196,6 +201,7 @@ public static class LedgerSeed
             "RefundPaid" => new[] { (1, "Receivable", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
             "PaymentFeeRecognized" => new[] { (1, "PaymentFeeExpense", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
             "PaymentFeeReversed" => new[] { (1, "Cash", "BaseAmount", "Debit"), (2, "PaymentFeeExpense", "BaseAmount", "Credit") },
+            "ExpenseRecognized" => new[] { (1, "PurchaseExpense", "BaseAmount", "Debit"), (2, "EmployeeReimbursementPayable", "BaseAmount", "Credit") },
             "InternalTransferCompleted" => new[] { (1, "Cash", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
             "PosCashSalePosted" => new[] { (1, "Cash", "GrossAmount", "Debit"), (2, "SalesRevenue", "NetAmount", "Credit") },
             "PayrollPosted" => new[] { (1, "PayrollExpense", "BaseAmount", "Debit"), (2, "PayrollPayable", "BaseAmount", "Credit") },

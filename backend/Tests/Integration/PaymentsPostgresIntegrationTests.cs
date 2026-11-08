@@ -7,6 +7,8 @@ using System.Text.Json;
 using Modules.Payments.DTOs;
 using Modules.Payments.Entities;
 using Modules.Payments.Services;
+using Modules.Expenses.Repositories;
+using Modules.Expenses.Services;
 using Npgsql;
 using Shared.Primitives.Identifiers;
 using Xunit;
@@ -583,6 +585,51 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         Assert.Equal(0L, await CountAsync(runtime, "select count(*) from finance_payments.payment_account where tenant_id=$1", fixture.TenantId));
     }
 
+    [Fact]
+    public async Task EmployeeReimbursementBatchCompletesThroughPaymentsAndLedgerExactlyOnce()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for payment integration tests.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for payment integration tests.");
+        var fixture = await ReadFixtureAsync(adminConnectionString);
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+        var expenses = factory.Services.GetRequiredService<ExpenseRepository>();
+        var tenant = new TenantId(fixture.TenantId);
+        var batch = await expenses.PrepareReimbursementBatchAsync(tenant, fixture.LegalEntityId, "EGP", CancellationToken.None);
+        Assert.Equal("Prepared", batch.State);
+        Assert.Equal(320m, batch.TotalAmount);
+
+        var paid = await expenses.PayReimbursementBatchAsync(tenant, fixture.LegalEntityId, batch.Id,
+            fixture.ActorId, fixture.MembershipId, fixture.PaymentAccountId, "BankTransfer",
+            new(2026, 10, 1), new(2026, 10, 1), batch.Version, CancellationToken.None);
+        Assert.Equal("Paid", paid.State);
+        Assert.Equal(batch.TotalAmount, paid.TotalAmount);
+
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        var sourceReference = $"expenses-reimbursement:{batch.Id:D}";
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='expenses' and source_reference=$3 and business_state='Completed'", fixture.TenantId, fixture.LegalEntityId, sourceReference));
+        var paymentId = (Guid)(await ScalarAsync(admin, "select id from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='expenses' and source_reference=$3 and business_state='Completed'", fixture.TenantId, fixture.LegalEntityId, sourceReference))!;
+        Assert.Equal(320m, (decimal)(await ScalarAsync(admin, "select amount from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and id=$3", fixture.TenantId, fixture.LegalEntityId, paymentId))!);
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 and fact_type='PaymentMade' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, paymentId));
+        var journal = await ReadPaymentJournalAsync(admin, fixture.TenantId, fixture.LegalEntityId, paymentId);
+        Assert.Equal(320m, journal.Debit);
+        Assert.Equal(320m, journal.Credit);
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.journal_entry_line l join finance_ledger.journal_entry e on e.tenant_id=l.tenant_id and e.legal_entity_id=l.legal_entity_id and e.id=l.journal_entry_id join finance_ledger.account_mapping_version mv on mv.tenant_id=l.tenant_id and mv.legal_entity_id=l.legal_entity_id and mv.target_account_id=l.account_id join finance_ledger.account_mapping m on m.tenant_id=mv.tenant_id and m.legal_entity_id=mv.legal_entity_id and m.id=mv.mapping_id join finance_ledger.account_role r on r.tenant_id=m.tenant_id and r.legal_entity_id=m.legal_entity_id and r.id=m.role_id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.fact_id=$3 and r.code='EmployeeReimbursementPayable'", fixture.TenantId, fixture.LegalEntityId, paymentId));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from business_expenses.expense_reimbursement_obligation where tenant_id=$1 and legal_entity_id=$2 and status='Settled' and settled_amount=amount", fixture.TenantId, fixture.LegalEntityId));
+        var retry = await expenses.PayReimbursementBatchAsync(tenant, fixture.LegalEntityId, batch.Id,
+            fixture.ActorId, fixture.MembershipId, fixture.PaymentAccountId, "BankTransfer",
+            new(2026, 10, 1), new(2026, 10, 1), paid.Version, CancellationToken.None);
+        Assert.Equal("Paid", retry.State);
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='expenses' and source_reference=$3", fixture.TenantId, fixture.LegalEntityId, sourceReference));
+    }
+
     private static async Task<Fixture> ReadFixtureAsync(string adminConnectionString)
     {
         await using var connection = new NpgsqlConnection(adminConnectionString);
@@ -628,6 +675,14 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         await using var command = new NpgsqlCommand(sql, connection);
         foreach (var value in values) command.Parameters.AddWithValue(value);
         return await command.ExecuteScalarAsync();
+    }
+
+    private static async Task<(decimal Debit, decimal Credit)> ReadPaymentJournalAsync(NpgsqlConnection connection, Guid tenantId, Guid entityId, Guid paymentId)
+    {
+        await using var command = new NpgsqlCommand("select coalesce(sum(l.debit),0),coalesce(sum(l.credit),0) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.fact_id=$3", connection);
+        command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(entityId); command.Parameters.AddWithValue(paymentId);
+        await using var reader = await command.ExecuteReaderAsync(); Assert.True(await reader.ReadAsync());
+        return (reader.GetDecimal(0), reader.GetDecimal(1));
     }
 
     private static async Task InstallFailureTriggerAsync(string adminConnectionString, string table, string eventName)

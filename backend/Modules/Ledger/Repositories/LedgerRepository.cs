@@ -655,6 +655,34 @@ public sealed class LedgerRepository(
         return await PostSemanticExplicitInTransactionAsync(context, fact, posting, payload, configuration, ct);
     }
 
+    public async Task<LedgerPostingResult> PostExpenseInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, ExpenseRecognizedPayload payload, CancellationToken ct)
+    {
+        if (fact.SourceModule != "expenses" || fact.FactType != AccountingFactTypes.ExpenseRecognized
+            || payload.Amount <= 0m || payload.CurrencyCode.Trim().Length != 3 || string.IsNullOrWhiteSpace(payload.ExpenseCategory))
+            throw new LedgerDomainException("ledger.expense_fact_invalid", "The Expenses accounting fact is incomplete or financially inconsistent.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct))
+            throw new LedgerDomainException("ledger.fact_producer_unregistered", "Expenses is not registered for this accounting fact type.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var currency = payload.CurrencyCode.Trim().ToUpperInvariant();
+        if (!string.Equals(currency, baseCurrency, StringComparison.OrdinalIgnoreCase))
+            throw new LedgerDomainException("ledger.currency_mismatch", "Expense posting currently requires the legal-entity base currency.");
+        var configuration = await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, ct);
+        var expenseAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration, "PurchaseExpense", ct);
+        var reimbursementAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration,
+            payload.SettlementAccountRole is "Cash" or "EmployeeReimbursementPayable" ? payload.SettlementAccountRole : "EmployeeReimbursementPayable", ct);
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var lines = new[]
+        {
+            new LedgerPostingLinePayload(expenseAccount, payload.Amount, 0m, currency, payload.Amount, 0m, payload.Amount, 0m, 1m, [], $"Expense: {payload.ExpenseCategory}", fact.SourceReference),
+            new LedgerPostingLinePayload(reimbursementAccount, 0m, payload.Amount, currency, 0m, payload.Amount, 0m, payload.Amount, 1m, [], payload.SettlementAccountRole == "Cash" ? "Company-paid cash settlement" : "Employee reimbursement payable", fact.SourceReference)
+        };
+        return await PostSemanticExplicitInTransactionAsync(context, fact,
+            new ExplicitLedgerPostingPayload(journal, $"Expense recognized: {payload.ExpenseCategory}", baseCurrency, lines), payload, configuration, ct);
+    }
+
     public async Task<LedgerPostingResult> PostInventoryValuationInTransactionAsync(ITransactionContext context,
         AccountingFactEnvelope<IAccountingFactPayload> fact, InventoryValuationFactPayload payload, CancellationToken ct)
     {
@@ -809,7 +837,7 @@ public sealed class LedgerRepository(
     {
         if (fact.SourceModule != "payments" || fact.FactType is not (AccountingFactTypes.PaymentReceived or AccountingFactTypes.PaymentMade or AccountingFactTypes.RefundPaid)
             || payload.Amount <= 0m || string.IsNullOrWhiteSpace(payload.PaymentAccountReference)
-            || payload.Direction is not ("Incoming" or "Outgoing") || payload.SettlementRole is not ("Receivable" or "Payable" or "PayrollPayable")
+            || payload.Direction is not ("Incoming" or "Outgoing") || payload.SettlementRole is not ("Receivable" or "Payable" or "PayrollPayable" or "EmployeeReimbursementPayable")
             || (fact.FactType == AccountingFactTypes.PaymentReceived) != (payload.Direction == "Incoming")
             || (fact.FactType == AccountingFactTypes.RefundPaid && (payload.Direction != "Outgoing" || payload.SettlementRole != "Receivable")))
             throw new LedgerDomainException("ledger.fact_invalid", "The payment fact does not contain valid semantic movement details.");

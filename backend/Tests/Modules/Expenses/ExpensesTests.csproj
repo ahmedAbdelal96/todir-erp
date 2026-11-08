@@ -6,5 +6,6 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="../../../Modules/Expenses/Expenses.csproj" />
+    <ProjectReference Include="../../../Modules/Ledger/Ledger.csproj" />
   </ItemGroup>
 </Project>

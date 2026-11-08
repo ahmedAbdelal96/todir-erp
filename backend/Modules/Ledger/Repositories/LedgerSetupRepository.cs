@@ -32,6 +32,7 @@ public sealed class LedgerSetupRepository(
         ("220000", "ضريبة المخرجات", "Output Tax Payable", "Liability", "Tax", true, "200000"),
         ("221000", "ضريبة المدخلات القابلة للاسترداد", "Recoverable Input Tax", "Asset", "Tax", true, "100000"),
         ("230000", "التزامات الرواتب", "Payroll Payable", "Liability", "Payroll", true, "200000"),
+        ("231000", "التزام رد مصروفات الموظفين", "Employee Reimbursement Payable", "Liability", "EmployeeReimbursement", true, "200000"),
         ("300000", "حقوق الملكية", "Equity", "Equity", "Other", false, null),
         ("310000", "الأرباح المحتجزة", "Retained Earnings", "Equity", "RetainedEarnings", true, "300000"),
         ("400000", "الإيرادات", "Revenue", "Revenue", "Revenue", false, null),
@@ -69,6 +70,7 @@ public sealed class LedgerSetupRepository(
         ("InventoryAdjustmentLoss", "خسائر وتسويات المخزون", "Inventory Adjustment Losses", "550000"),
         ("PayrollExpense", "مصروف الرواتب", "Payroll Expense", "520000"),
         ("PayrollPayable", "التزام الرواتب", "Payroll Payable", "230000"),
+        ("EmployeeReimbursementPayable", "التزام رد مصروفات الموظفين", "Employee Reimbursement Payable", "231000"),
         ("BadDebtExpense", "مصروف الديون المعدومة", "Bad Debt Expense", "530000"),
         ("WriteOffIncome", "إيراد شطب الالتزام", "Write-Off Income", "420000"),
         ("RetainedEarnings", "الأرباح المحتجزة", "Retained Earnings", "310000"),
@@ -148,6 +150,7 @@ public sealed class LedgerSetupRepository(
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PaymentFeeReversed, "PAYMENT_FEE_REVERSED_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PosCashSalePosted, "POS_CASH_SALE_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorDebitNotePosted, "VENDOR_DEBIT_NOTE_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.ExpenseRecognized, "EXPENSE_RECOGNIZED_V1", token);
 
             var configWasCreated = existing is null;
             await ExecuteAsync(context, "insert into finance_ledger.ledger_entity_configuration (tenant_id,legal_entity_id,id,mode,setup_template_code,active_configuration_version_id,initialized_at,version) values ($1,$2,$3,$4,$5,$6,$7,1) on conflict (tenant_id,legal_entity_id) do update set mode=excluded.mode,setup_template_code=excluded.setup_template_code,active_configuration_version_id=excluded.active_configuration_version_id,version=finance_ledger.ledger_entity_configuration.version+1", token, tenant.Value, entity.Value, existing?.Id ?? Guid.CreateVersion7(), mode.ToString(), request.TemplateCode.Trim(), configurationId, clock.GetUtcNow());
@@ -289,6 +292,7 @@ public sealed class LedgerSetupRepository(
             AccountingFactTypes.RefundPaid => new[] { ("Receivable", "BaseAmount", "Debit"), ("Cash", "BaseAmount", "Credit") },
             AccountingFactTypes.PaymentFeeRecognized => new[] { ("PaymentFeeExpense", "BaseAmount", "Debit"), ("Cash", "BaseAmount", "Credit") },
             AccountingFactTypes.PaymentFeeReversed => new[] { ("Cash", "BaseAmount", "Debit"), ("PaymentFeeExpense", "BaseAmount", "Credit") },
+            AccountingFactTypes.ExpenseRecognized => new[] { ("PurchaseExpense", "BaseAmount", "Debit"), ("EmployeeReimbursementPayable", "BaseAmount", "Credit") },
             AccountingFactTypes.SettlementWriteOff => new[] { ("Receivable", "BaseAmount", "Credit"), ("BadDebtExpense", "BaseAmount", "Debit"), ("Payable", "BaseAmount", "Debit"), ("WriteOffIncome", "BaseAmount", "Credit") },
             AccountingFactTypes.SettlementFxDifference => new[] { ("Receivable", "BaseAmount", "Debit"), ("FXGain", "BaseAmount", "Credit"), ("FXLoss", "BaseAmount", "Debit") },
             AccountingFactTypes.UnrealizedFxRevaluation => new[] { ("Receivable", "BaseAmount", "Debit"), ("Payable", "BaseAmount", "Credit"), ("FXGain", "BaseAmount", "Credit"), ("FXLoss", "BaseAmount", "Debit") },
@@ -310,7 +314,7 @@ public sealed class LedgerSetupRepository(
         ("payments", AccountingFactTypes.PaymentReceived), ("payments", AccountingFactTypes.PaymentMade), ("payments", AccountingFactTypes.RefundPaid), ("payments", AccountingFactTypes.PaymentFeeRecognized), ("payments", AccountingFactTypes.PaymentFeeReversed),
         ("pos", AccountingFactTypes.PosCashSalePosted),
         ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment), ("inventory", AccountingFactTypes.InventoryValuationReversal),
-        ("payroll", AccountingFactTypes.PayrollPosted), ("tax", AccountingFactTypes.TaxAdjustment),
+        ("payroll", AccountingFactTypes.PayrollPosted), ("expenses", AccountingFactTypes.ExpenseRecognized), ("tax", AccountingFactTypes.TaxAdjustment),
         ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff),
         ("accounting", AccountingFactTypes.UnrealizedFxRevaluation)
     ];

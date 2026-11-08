@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Core.Authorization;
 using Core.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -15,7 +16,26 @@ public static class ExpensesModuleExtensions
     public static IServiceCollection AddExpensesModule(this IServiceCollection services) { services.AddSingleton<IModuleManifestProvider, ExpensesModuleManifestProvider>(); services.AddSingleton<ExpenseRepository>(); services.AddSingleton<ExpenseService>(); return services; }
     public static WebApplication MapExpensesModule(this WebApplication app)
     {
-        var g = app.MapGroup("/api/v1/expenses").WithTags("Expenses").RequireAuthorization().RequireRateLimiting("api");
+        var g = app.MapGroup("/api/v1/expenses").WithTags("Expenses").RequireAuthorization().RequireRateLimiting("api")
+            .AddEndpointFilter(async (context, next) =>
+            {
+                var http = context.HttpContext;
+                if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tenantId) ||
+                    !Guid.TryParse(http.User.FindFirstValue("membership_id"), out var membershipId))
+                    return Results.Unauthorized();
+                if (!Guid.TryParse(http.Request.RouteValues["entityId"]?.ToString(), out var entityId))
+                    return Results.BadRequest(new { code = "expenses.entity_scope_invalid" });
+                if (Guid.TryParse(http.User.FindFirstValue("legal_entity_id"), out var claimEntity) && claimEntity != entityId)
+                    return Results.Forbid();
+                var tenant = new TenantId(tenantId);
+                var subjects = http.RequestServices.GetRequiredService<IAuthorizationSubjectStore>();
+                var authorizer = http.RequestServices.GetRequiredService<IPermissionAuthorizer>();
+                var subject = await subjects.LoadAsync(tenant, membershipId, http.RequestAborted);
+                if (subject is null) return Results.Unauthorized();
+                if (!authorizer.Authorize(subject, PermissionFor(http), PermissionScope.ForLegalEntity(tenant, new(entityId))))
+                    return Results.Forbid();
+                return await next(context);
+            });
         g.MapGet("/legal-entities/{entityId:guid}/categories", async (Guid entityId, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListCategoriesAsync(Tenant(h), entityId, ct)));
         g.MapPost("/legal-entities/{entityId:guid}/categories", async (Guid entityId, CreateExpenseCategoryRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => r.LegalEntityId != entityId ? Results.BadRequest(new { code = "expenses.entity_scope_invalid" }) : await Execute(h, entityId, () => s.CreateCategoryAsync(Tenant(h), r, ct), 201));
         g.MapPost("/legal-entities/{entityId:guid}/categories/{categoryId:guid}/versions", async (Guid entityId, Guid categoryId, CreateExpenseCategoryVersionRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.CreateCategoryVersionAsync(Tenant(h), entityId, categoryId, r, ct), 201));
@@ -31,11 +51,46 @@ public static class ExpensesModuleExtensions
         g.MapGet("/legal-entities/{entityId:guid}/{id:guid}/itemizations", async (Guid entityId, Guid id, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListItemizationsAsync(Tenant(h), entityId, id, ct)));
         g.MapPost("/legal-entities/{entityId:guid}/{id:guid}/itemizations", async (Guid entityId, Guid id, CreateExpenseItemizationRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.AddItemizationAsync(Tenant(h), entityId, id, r, ct), 201));
         g.MapDelete("/legal-entities/{entityId:guid}/{id:guid}/itemizations/{itemizationId:guid}", async (Guid entityId, Guid id, Guid itemizationId, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, async () => { await s.DeleteItemizationAsync(Tenant(h), entityId, id, itemizationId, ct); return new { deleted = true }; }));
+        g.MapGet("/legal-entities/{entityId:guid}/{id:guid}/participants", async (Guid entityId, Guid id, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListParticipantsAsync(Tenant(h), entityId, id, ct)));
+        g.MapPost("/legal-entities/{entityId:guid}/{id:guid}/participants", async (Guid entityId, Guid id, AddExpenseParticipantRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.AddParticipantAsync(Tenant(h), entityId, id, r, ct), 201));
+        g.MapPost("/legal-entities/{entityId:guid}/{id:guid}/evaluate-policy", async (Guid entityId, Guid id, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.EvaluatePolicyAsync(Tenant(h), entityId, id, ct)));
+        g.MapGet("/legal-entities/{entityId:guid}/reports", async (Guid entityId, int? page, int? pageSize, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListReportsAsync(Tenant(h), entityId, page ?? 1, pageSize ?? 50, ct)));
+        g.MapPost("/legal-entities/{entityId:guid}/reports", async (Guid entityId, CreateExpenseReportRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => r.LegalEntityId != entityId ? Results.BadRequest(new { code = "expenses.entity_scope_invalid" }) : await Execute(h, entityId, () => s.CreateReportAsync(Tenant(h), r, ct), 201));
+        g.MapGet("/legal-entities/{entityId:guid}/advances", async (Guid entityId, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListAdvancesAsync(Tenant(h), entityId, ct)));
+        g.MapPost("/legal-entities/{entityId:guid}/advances", async (Guid entityId, CreateBusinessAdvanceRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => r.LegalEntityId != entityId ? Results.BadRequest(new { code = "expenses.entity_scope_invalid" }) : await Execute(h, entityId, () => s.CreateAdvanceAsync(Tenant(h), r, ct), 201));
+        foreach (var action in new[] { "approve", "issue", "return", "settle" }) { var route = $"/legal-entities/{{entityId:guid}}/advances/{{id:guid}}/{action}"; g.MapPost(route, async (Guid entityId, Guid id, ExpenseActionRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.TransitionAdvanceAsync(Tenant(h), entityId, id, r.Version, action, ct))); }
+        g.MapPost("/legal-entities/{entityId:guid}/advances/{id:guid}/apply", async (Guid entityId, Guid id, ApplyBusinessAdvanceRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ApplyAdvanceAsync(Tenant(h), entityId, id, r, ct)));
+        g.MapPost("/legal-entities/{entityId:guid}/advances/{id:guid}/return-payment", async (Guid entityId, Guid id, ReturnBusinessAdvanceRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ReturnAdvanceAsync(Tenant(h), entityId, id, r, ct)));
+        g.MapGet("/legal-entities/{entityId:guid}/corporate-card/inbox", async (Guid entityId, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListCardTransactionsAsync(Tenant(h), entityId, ct)));
+        g.MapPost("/legal-entities/{entityId:guid}/corporate-card/transactions/import", async (Guid entityId, ImportExpenseCardTransactionRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ImportCardTransactionAsync(Tenant(h), entityId, r, ct), 201));
+        g.MapPost("/legal-entities/{entityId:guid}/corporate-card/transactions/{cardId:guid}/match", async (Guid entityId, Guid cardId, MatchExpenseCardTransactionRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.MatchCardTransactionAsync(Tenant(h), entityId, cardId, r, ct)));
+        g.MapPost("/legal-entities/{entityId:guid}/corporate-card/transactions/{cardId:guid}/personal", async (Guid entityId, Guid cardId, MarkExpenseCardPersonalRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.MarkCardTransactionPersonalAsync(Tenant(h), entityId, cardId, r, ct)));
+        g.MapGet("/legal-entities/{entityId:guid}/employee-repayments", async (Guid entityId, Guid? employeeId, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListEmployeeRepaymentsAsync(Tenant(h), entityId, employeeId, ct)));
+        g.MapPut("/legal-entities/{entityId:guid}/{id:guid}/mileage", async (Guid entityId, Guid id, SetMileageDetailRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.SetMileageDetailAsync(Tenant(h), entityId, id, r, ct)));
+        g.MapPut("/legal-entities/{entityId:guid}/{id:guid}/per-diem", async (Guid entityId, Guid id, SetPerDiemDetailRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.SetPerDiemDetailAsync(Tenant(h), entityId, id, r, ct)));
+        g.MapPost("/legal-entities/{entityId:guid}/reimbursements/prepare", async (Guid entityId, string? currency, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.PrepareReimbursementBatchAsync(Tenant(h), entityId, currency ?? "EGP", ct), 201));
+        g.MapPost("/legal-entities/{entityId:guid}/reimbursements/{batchId:guid}/pay", async (Guid entityId, Guid batchId, PayExpenseReimbursementBatchRequest request, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.PayReimbursementBatchAsync(Tenant(h), entityId, batchId, Actor(h), Membership(h), request, ct), 201));
         return app;
     }
     private static TenantId Tenant(HttpContext h) => new(Guid.Parse(h.User.FindFirstValue("tenant_id")!));
+    private static Guid Actor(HttpContext h) => Guid.Parse(h.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? h.User.FindFirstValue("sub")!);
+    private static Guid Membership(HttpContext h) => Guid.Parse(h.User.FindFirstValue("membership_id")!);
+    private static string PermissionFor(HttpContext http)
+    {
+        var path = http.Request.Path.Value ?? string.Empty;
+        if (http.Request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+            return path.EndsWith("/history", StringComparison.OrdinalIgnoreCase) ? "expenses.audit.read" :
+                path.Contains("/reimbursements", StringComparison.OrdinalIgnoreCase) || path.Contains("corporate-card", StringComparison.OrdinalIgnoreCase) ? "expenses.reimbursement.read" : "expenses.read";
+        if (path.Contains("/categories", StringComparison.OrdinalIgnoreCase) || path.Contains("category-versions", StringComparison.OrdinalIgnoreCase)) return "expenses.category.manage";
+        if (path.Contains("/submit", StringComparison.OrdinalIgnoreCase)) return "expenses.submit";
+        if (path.Contains("/approve", StringComparison.OrdinalIgnoreCase)) return "expenses.approve";
+        if (path.Contains("/finalize", StringComparison.OrdinalIgnoreCase)) return "expenses.finalize";
+        if (path.Contains("/reverse", StringComparison.OrdinalIgnoreCase)) return "expenses.reverse";
+        if (path.Contains("/reimbursements", StringComparison.OrdinalIgnoreCase) || path.Contains("corporate-card", StringComparison.OrdinalIgnoreCase) || path.Contains("/advances", StringComparison.OrdinalIgnoreCase)) return "expenses.reimbursement.manage";
+        return http.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) ? "expenses.create" : "expenses.edit";
+    }
     private static async Task<IResult> Execute<T>(HttpContext h, Guid entity, Func<Task<T>> action, int status = 200)
     { if (!Guid.TryParse(h.User.FindFirstValue("tenant_id"), out _) || (Guid.TryParse(h.User.FindFirstValue("legal_entity_id"), out var claim) && claim != entity)) return Results.Forbid(); try { var value = await action(); return status == 201 ? Results.Created(h.Request.Path, value) : Results.Ok(value); } catch (ExpenseRepositoryException ex) { return Results.Problem(statusCode: ex.Code.Contains("not_found", StringComparison.Ordinal) ? 404 : ex.Code.Contains("concurrent", StringComparison.Ordinal) ? 409 : 400, title: ex.Code, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); } }
 }
 public sealed class ExpensesModuleManifestProvider : IModuleManifestProvider
-{ public ModuleManifest Manifest { get; } = new("expenses", "1.0.0", 1, "L4", "business-module", false, "tenant", new(["platform-kernel", "hr"], ["directory.party", "ledger.semantic-facts", "payments.money-movement", "platform.files", "platform.approvals"]), new("business_expenses", ["expense_category", "expense_category_version", "expense", "expense_history", "expense_evidence", "expense_itemization", "expense_reimbursement_obligation"]), ["expenses.read", "expenses.create", "expenses.edit", "expenses.submit", "expenses.approve", "expenses.finalize", "expenses.reverse", "expenses.reimbursement.read", "expenses.reimbursement.manage", "expenses.category.manage", "expenses.audit.read"], new(["expenses.claims", "expenses.reimbursements"], ["hr.employee", "directory.party", "ledger.semantic-facts", "payments.money-movement", "platform.files", "platform.approvals"]), new(["ExpenseFinalizedV1", "ExpenseReimbursementRequestedV1"], ["PaymentCompletedV1", "PaymentFailedV1"]), new(true, "blocked_if_dependents")); }
+{ public ModuleManifest Manifest { get; } = new("expenses", "1.0.0", 1, "L4", "business-module", false, "tenant", new(["platform-kernel", "hr"], ["directory.party", "ledger.semantic-facts", "payments.money-movement", "platform.files", "platform.approvals"]), new("business_expenses", ["expense_category", "expense_category_version", "expense", "expense_history", "expense_evidence", "expense_itemization", "expense_reimbursement_obligation", "expense_participant", "expense_policy_evaluation", "expense_report", "expense_report_item", "business_advance", "business_advance_application", "expense_card_transaction", "expense_employee_repayment", "mileage_expense_detail", "per_diem_expense_detail", "expense_dimension", "expense_reimbursement_batch", "expense_reimbursement_allocation"]), ["expenses.read", "expenses.create", "expenses.edit", "expenses.submit", "expenses.approve", "expenses.finalize", "expenses.reverse", "expenses.reimbursement.read", "expenses.reimbursement.manage", "expenses.category.manage", "expenses.audit.read"], new(["expenses.claims", "expenses.reimbursements"], ["hr.employee", "directory.party", "ledger.semantic-facts", "payments.money-movement", "platform.files", "platform.approvals"]), new(["ExpenseFinalizedV1", "ExpenseReimbursementRequestedV1"], ["PaymentCompletedV1", "PaymentFailedV1"]), new(true, "blocked_if_dependents")); }
