@@ -570,6 +570,10 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("payroll-forward-fix-statutory-settings.sql", StringComparison.Ordinal) => 4,
     _ when fileName.Equals("payroll-forward-fix-opening-balance-loan-schedule.sql", StringComparison.Ordinal) => 6,
     _ when fileName.Equals("payroll-forward-fix-supplemental-input-target.sql", StringComparison.Ordinal) => 7,
+    // The advance table is created by the Expenses workflow foundation; due-date
+    // columns must be added only after that table exists on a fresh bootstrap.
+    _ when fileName.Equals("expenses-forward-fix-build-now-workflows.sql", StringComparison.Ordinal) => 4,
+    _ when fileName.Equals("expenses-forward-fix-advance-due-dates.sql", StringComparison.Ordinal) => 6,
     // The exchange table is introduced by this forward-fix and must exist before
     // its grants and seeded permission rows are applied on a fresh database.
     _ when fileName.Equals("pos-forward-fix-exchanges.sql", StringComparison.Ordinal) => 4,
