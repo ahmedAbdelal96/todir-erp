@@ -106,6 +106,8 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         Guid employeeId;
         Guid expenseId;
         Guid categoryVersionId;
+        Guid cardTransactionId;
+        string cardProviderReference;
         string employeeEmail;
         await using (var connection = new NpgsqlConnection(adminConnection))
         {
@@ -126,6 +128,15 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
             category.Parameters.AddWithValue(tenantId);
             category.Parameters.AddWithValue(legalEntityId);
             categoryVersionId = (Guid)(await category.ExecuteScalarAsync() ?? throw new InvalidOperationException("Atlas expense category version is missing."));
+            cardTransactionId = Guid.CreateVersion7();
+            cardProviderReference = "api-self-card-" + Guid.CreateVersion7().ToString("N");
+            await using var card = new NpgsqlCommand("insert into business_expenses.expense_card_transaction(tenant_id,id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state,employee_id) values($1,$2,$3,$4,'API self card',date '2026-11-02',88,'EGP','Cleared',$5)", connection);
+            card.Parameters.AddWithValue(tenantId);
+            card.Parameters.AddWithValue(cardTransactionId);
+            card.Parameters.AddWithValue(legalEntityId);
+            card.Parameters.AddWithValue(cardProviderReference);
+            card.Parameters.AddWithValue(employeeId);
+            await card.ExecuteNonQueryAsync();
             await using var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select m.tenant_id,a.role_id,p.permission_code from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id cross join (values ('expenses.read'),('expenses.create'),('expenses.submit')) p(permission_code) where m.tenant_id=$1 and i.email=$2 on conflict do nothing", connection);
             grant.Parameters.AddWithValue(tenantId);
             grant.Parameters.AddWithValue(employeeEmail);
@@ -150,6 +161,20 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         Assert.True(body.TryGetProperty("items", out var items));
         foreach (var item in items.EnumerateArray())
             Assert.Equal(employeeId, item.GetProperty("employeeId").GetGuid());
+
+        var cards = await client.GetAsync($"/api/v1/expenses/my/corporate-card/transactions?legalEntityId={legalEntityId:D}&search={cardProviderReference}&page=1&pageSize=10");
+        var cardsPayload = await cards.Content.ReadAsStringAsync();
+        Assert.True(cards.StatusCode == HttpStatusCode.OK, $"Self-service card read failed with {(int)cards.StatusCode}: {cardsPayload}");
+        var cardsBody = JsonSerializer.Deserialize<JsonElement>(cardsPayload);
+        Assert.Equal(1, cardsBody.GetProperty("totalCount").GetInt32());
+        Assert.Equal(cardTransactionId, cardsBody.GetProperty("items")[0].GetProperty("id").GetGuid());
+
+        var cardExpense = await PostWithCsrfAsync(client, $"/api/v1/expenses/my/corporate-card/transactions/{cardTransactionId:D}/create-expense?legalEntityId={legalEntityId:D}", JsonContent.Create(new { categoryVersionId, businessPurpose = "Authenticated corporate-card acceptance" }));
+        var cardExpensePayload = await cardExpense.Content.ReadAsStringAsync();
+        Assert.True(cardExpense.StatusCode == HttpStatusCode.Created, $"Self-service card expense failed with {(int)cardExpense.StatusCode}: {cardExpensePayload}");
+        var cardExpenseBody = JsonSerializer.Deserialize<JsonElement>(cardExpensePayload);
+        Assert.Equal(88m, cardExpenseBody.GetProperty("amount").GetDecimal());
+        Assert.Equal("CorporateCard", cardExpenseBody.GetProperty("paymentSource").GetString());
 
         using var create = JsonContent.Create(new
         {

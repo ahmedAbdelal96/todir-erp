@@ -48,6 +48,27 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public async Task<ExpensePage<ExpenseDto>> ListSelfAsync(TenantId tenant, Guid membershipId, Guid entity, string? state, string? search, int page, int pageSize, CancellationToken ct)
         => await ListAsync(tenant, entity, await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct), state, search, page, pageSize, ct);
 
+    public async Task<ExpensePage<ExpenseCardTransactionDto>> ListSelfCardTransactionsAsync(TenantId tenant, Guid membershipId, Guid entity, string? state, string? search, int page, int pageSize, CancellationToken ct)
+    {
+        var employeeId = await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct);
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        await using var scope = await OpenAsync(tenant, ct);
+        const string where = "tenant_id=$1 and legal_entity_id=$2 and employee_id=$3 and ($4::text is null or state=$4) and ($5::text is null or provider_reference ilike '%'||$5||'%' or merchant_name ilike '%'||$5||'%')";
+        await using var count = new NpgsqlCommand($"select count(*) from business_expenses.expense_card_transaction where {where}", scope.Connection, scope.Transaction);
+        Add(count, tenant.Value, entity, employeeId, Db(string.IsNullOrWhiteSpace(state) ? null : state.Trim()), Db(string.IsNullOrWhiteSpace(search) ? null : search.Trim()));
+        var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand($"select id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state,employee_id,matched_expense_id from business_expenses.expense_card_transaction where {where} order by transaction_date desc,id desc offset $6 limit $7", scope.Connection, scope.Transaction);
+        Add(command, tenant.Value, entity, employeeId, Db(string.IsNullOrWhiteSpace(state) ? null : state.Trim()), Db(string.IsNullOrWhiteSpace(search) ? null : search.Trim()), (page - 1) * pageSize, pageSize);
+        var items = new List<ExpenseCardTransactionDto>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(ReadCard(reader)); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct);
+        return new(items, total, page, pageSize);
+    }
+
+    public async Task<ExpenseDto> CreateExpenseFromCardTransactionSelfAsync(TenantId tenant, Guid membershipId, Guid entity, Guid cardId, CreateExpenseFromCardTransactionRequest request, CancellationToken ct)
+    {
+        var employeeId = await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct);
+        return await CreateExpenseFromCardTransactionAsync(tenant, entity, cardId, request, ct, employeeId);
+    }
+
     public async Task<ExpensePage<ExpenseReportDto>> ListSelfReportsAsync(TenantId tenant, Guid membershipId, Guid entity, string? state, string? search, int page, int pageSize, CancellationToken ct)
     {
         var employeeId = await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct);
@@ -1243,7 +1264,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         return result;
     }
 
-    public async Task<ExpenseDto> CreateExpenseFromCardTransactionAsync(TenantId tenant, Guid entity, Guid cardId, CreateExpenseFromCardTransactionRequest request, CancellationToken ct)
+    public async Task<ExpenseDto> CreateExpenseFromCardTransactionAsync(TenantId tenant, Guid entity, Guid cardId, CreateExpenseFromCardTransactionRequest request, CancellationToken ct, Guid? expectedEmployeeId = null)
     {
         if (request.CategoryVersionId == Guid.Empty) throw new ExpenseRepositoryException("expenses.card_category_required");
         await using var scope = await OpenAsync(tenant, ct);
@@ -1253,6 +1274,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.card_transaction_not_found");
         var merchant = reader.GetString(0); var date = reader.GetFieldValue<DateOnly>(1); var amount = reader.GetDecimal(2); var currency = reader.GetString(3); var state = reader.GetString(4); var employee = reader.IsDBNull(5) ? (Guid?)null : reader.GetGuid(5); var matched = reader.IsDBNull(6) ? (Guid?)null : reader.GetGuid(6);
         await reader.CloseAsync();
+        if (expectedEmployeeId.HasValue && employee != expectedEmployeeId) throw new ExpenseRepositoryException("expenses.card_transaction_not_found");
         if (matched.HasValue) throw new ExpenseRepositoryException("expenses.card_transaction_already_matched");
         if (state is not ("Unmatched" or "Cleared")) throw new ExpenseRepositoryException(state == "Pending" ? "expenses.card_transaction_pending" : "expenses.card_transaction_not_createable");
         await using var category = new NpgsqlCommand("select 1 from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and c.status='Active' and v.id=$3 and v.status='Published'", scope.Connection, scope.Transaction);
