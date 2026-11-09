@@ -776,6 +776,11 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
                 if (property.Value.ValueKind != System.Text.Json.JsonValueKind.Number || property.Value.GetDecimal() < 0) throw new ExpenseRepositoryException("expenses.policy_receipt_threshold_invalid");
                 continue;
             }
+            if (property.NameEquals("allowMissingReceiptException") || property.NameEquals("requiresParticipants"))
+            {
+                if (property.Value.ValueKind != System.Text.Json.JsonValueKind.True && property.Value.ValueKind != System.Text.Json.JsonValueKind.False) throw new ExpenseRepositoryException("expenses.policy_boolean_rule_invalid");
+                continue;
+            }
             if (property.NameEquals("requiresBusinessPurpose"))
             {
                 if (property.Value.ValueKind != System.Text.Json.JsonValueKind.True && property.Value.ValueKind != System.Text.Json.JsonValueKind.False) throw new ExpenseRepositoryException("expenses.policy_purpose_rule_invalid");
@@ -786,12 +791,27 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
                 ValidateStringArray(property.Value, new HashSet<string>(StringComparer.Ordinal) { "EmployeePaid", "CompanyPaid", "CorporateCard", "PettyCash" }, "expenses.policy_payment_source_rule_invalid");
                 continue;
             }
+            if (property.NameEquals("blockedPaymentSources"))
+            {
+                ValidateStringArray(property.Value, new HashSet<string>(StringComparer.Ordinal) { "EmployeePaid", "CompanyPaid", "CorporateCard", "PettyCash" }, "expenses.policy_payment_source_rule_invalid");
+                continue;
+            }
             if (property.NameEquals("employeeIds") || property.NameEquals("categoryVersionIds"))
             {
                 if (property.Value.ValueKind != System.Text.Json.JsonValueKind.Array || property.Value.GetArrayLength() == 0 || property.Value.EnumerateArray().Any(item => item.ValueKind != System.Text.Json.JsonValueKind.String || !Guid.TryParse(item.GetString(), out _))) throw new ExpenseRepositoryException("expenses.policy_scope_rule_invalid");
                 continue;
             }
+            if (property.NameEquals("blockedEmployeeIds") || property.NameEquals("blockedCategoryVersionIds"))
+            {
+                if (property.Value.ValueKind != System.Text.Json.JsonValueKind.Array || property.Value.GetArrayLength() == 0 || property.Value.EnumerateArray().Any(item => item.ValueKind != System.Text.Json.JsonValueKind.String || !Guid.TryParse(item.GetString(), out _))) throw new ExpenseRepositoryException("expenses.policy_scope_rule_invalid");
+                continue;
+            }
             if (property.NameEquals("currencyCodes"))
+            {
+                if (property.Value.ValueKind != System.Text.Json.JsonValueKind.Array || property.Value.GetArrayLength() == 0 || property.Value.EnumerateArray().Any(item => item.ValueKind != System.Text.Json.JsonValueKind.String || !System.Text.RegularExpressions.Regex.IsMatch(item.GetString() ?? string.Empty, "^[A-Za-z]{3}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))) throw new ExpenseRepositoryException("expenses.policy_currency_rule_invalid");
+                continue;
+            }
+            if (property.NameEquals("blockedCurrencyCodes"))
             {
                 if (property.Value.ValueKind != System.Text.Json.JsonValueKind.Array || property.Value.GetArrayLength() == 0 || property.Value.EnumerateArray().Any(item => item.ValueKind != System.Text.Json.JsonValueKind.String || !System.Text.RegularExpressions.Regex.IsMatch(item.GetString() ?? string.Empty, "^[A-Za-z]{3}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))) throw new ExpenseRepositoryException("expenses.policy_currency_rule_invalid");
                 continue;
@@ -890,10 +910,23 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         if (rules.TryGetProperty("receiptThreshold", out var threshold) && threshold.ValueKind == JsonValueKind.Number && amount > threshold.GetDecimal()) receiptRequired = true;
         if (receiptRequired && evidenceState == "Missing")
         {
+            var allowsMissingReceiptException = !rules.TryGetProperty("allowMissingReceiptException", out var exceptionAllowed)
+                || exceptionAllowed.ValueKind != JsonValueKind.False;
             if (string.IsNullOrWhiteSpace(missingReceiptReason)) { blocked = true; findings.Add("ReceiptRequired"); }
+            else if (!allowsMissingReceiptException) { blocked = true; findings.Add("ReceiptExceptionNotAllowed"); }
             else { warning = true; findings.Add("ReceiptException"); }
         }
         if (rules.TryGetProperty("blockedMerchantNames", out var blockedMerchants) && blockedMerchants.ValueKind == JsonValueKind.Array && blockedMerchants.EnumerateArray().Any(x => string.Equals(x.GetString(), merchant, StringComparison.OrdinalIgnoreCase))) { blocked = true; findings.Add("MerchantBlocked"); }
+        if (rules.TryGetProperty("blockedPaymentSources", out var blockedSources) && blockedSources.ValueKind == JsonValueKind.Array && blockedSources.EnumerateArray().Any(x => string.Equals(x.GetString(), paymentSource, StringComparison.Ordinal))) { blocked = true; findings.Add("PaymentSourceBlocked"); }
+        if (rules.TryGetProperty("blockedCurrencyCodes", out var blockedCurrencies) && blockedCurrencies.ValueKind == JsonValueKind.Array && blockedCurrencies.EnumerateArray().Any(x => string.Equals(x.GetString(), currency, StringComparison.OrdinalIgnoreCase))) { blocked = true; findings.Add("CurrencyBlocked"); }
+        if (rules.TryGetProperty("blockedEmployeeIds", out var blockedEmployees) && blockedEmployees.ValueKind == JsonValueKind.Array && employee.HasValue && blockedEmployees.EnumerateArray().Any(x => Guid.TryParse(x.GetString(), out var id) && id == employee.Value)) { blocked = true; findings.Add("EmployeeBlocked"); }
+        if (rules.TryGetProperty("blockedCategoryVersionIds", out var blockedCategories) && blockedCategories.ValueKind == JsonValueKind.Array && blockedCategories.EnumerateArray().Any(x => Guid.TryParse(x.GetString(), out var id) && id == categoryVersionId)) { blocked = true; findings.Add("CategoryBlocked"); }
+        if (rules.TryGetProperty("requiresParticipants", out var participantsRequired) && participantsRequired.ValueKind == JsonValueKind.True)
+        {
+            await using var participantCountCommand = new NpgsqlCommand("select count(*) from business_expenses.expense_participant where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3", scope.Connection, scope.Transaction);
+            Add(participantCountCommand, tenant.Value, entity, expenseId);
+            if (Convert.ToInt64(await participantCountCommand.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) == 0) { blocked = true; findings.Add("ParticipantsRequired"); }
+        }
         if (findings.Count == 0) findings.Add("Passed");
         var state = blocked ? "Blocked" : warning ? "Warning" : "Passed";
         var snapshot = JsonSerializer.SerializeToDocument(new { evidenceState, amount, currencyCode = currency, paymentSource, employeeId = employee, categoryVersionId, expenseVersion, policyVersionId, rules, missingReceiptExceptionReason = missingReceiptReason, findings, evaluatedAt = DateTimeOffset.UtcNow }).RootElement.Clone();

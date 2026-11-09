@@ -258,7 +258,10 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         Guid tenantId;
         Guid legalEntityId;
         Guid employeeId;
+        Guid foreignEmployeeId;
         Guid expenseId;
+        Guid foreignExpenseId;
+        long foreignExpenseVersion;
         Guid categoryVersionId;
         Guid cardTransactionId;
         string cardProviderReference;
@@ -278,6 +281,11 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
             expense.Parameters.AddWithValue(tenantId);
             expense.Parameters.AddWithValue(legalEntityId);
             expenseId = (Guid)(await expense.ExecuteScalarAsync() ?? throw new InvalidOperationException("Atlas seed expense is missing."));
+            await using var foreignEmployee = new NpgsqlCommand("select e.id from business_hr.employee e join business_hr.employment employment on employment.tenant_id=e.tenant_id and employment.employee_id=e.id where e.tenant_id=$1 and employment.legal_entity_id=$2 and e.id<>$3 and e.status='Active' and employment.status in ('Active','Suspended','NoticePeriod') order by e.id limit 1", connection);
+            foreignEmployee.Parameters.AddWithValue(tenantId);
+            foreignEmployee.Parameters.AddWithValue(legalEntityId);
+            foreignEmployee.Parameters.AddWithValue(employeeId);
+            foreignEmployeeId = (Guid)(await foreignEmployee.ExecuteScalarAsync() ?? throw new InvalidOperationException("Atlas seed requires a second active employee for self-service IDOR acceptance."));
             await using var category = new NpgsqlCommand("select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", connection);
             category.Parameters.AddWithValue(tenantId);
             category.Parameters.AddWithValue(legalEntityId);
@@ -306,6 +314,15 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
             .UseEnvironment("Development")
             .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
             .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var admin = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(admin, password, tenantId);
+        using var foreignCreate = JsonContent.Create(new { legalEntityId, employeeId = foreignEmployeeId, merchantName = "Foreign employee API acceptance", expenseDate = "2026-11-09", amount = 73m, currencyCode = "EGP", paymentSource = "EmployeePaid", categoryVersionId, businessPurpose = "Cross-employee scope proof" });
+        var foreignCreated = await PostWithCsrfAsync(admin, $"/api/v1/expenses/legal-entities/{legalEntityId:D}", foreignCreate);
+        var foreignCreatedPayload = await foreignCreated.Content.ReadAsStringAsync();
+        Assert.True(foreignCreated.StatusCode == HttpStatusCode.Created, $"Foreign employee expense creation failed with {(int)foreignCreated.StatusCode}: {foreignCreatedPayload}");
+        var foreignCreatedBody = JsonSerializer.Deserialize<JsonElement>(foreignCreatedPayload);
+        foreignExpenseId = foreignCreatedBody.GetProperty("id").GetGuid();
+        foreignExpenseVersion = foreignCreatedBody.GetProperty("version").GetInt64();
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
         await LoginAsync(client, password, tenantId, employeeEmail);
         var response = await client.GetAsync($"/api/v1/expenses/my/expenses?legalEntityId={legalEntityId:D}&page=1&pageSize=10");
@@ -372,6 +389,10 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         // employee's expense, even when the role has the generic expenses.read grant.
         var direct = await client.GetAsync($"/api/v1/expenses/legal-entities/{legalEntityId:D}/{expenseId:D}");
         Assert.Equal(HttpStatusCode.Forbidden, direct.StatusCode);
+        var foreignMissing = await PostWithCsrfAsync(client, $"/api/v1/expenses/my/expenses/{foreignExpenseId:D}/missing-receipt?legalEntityId={legalEntityId:D}", JsonContent.Create(new { reason = "Cross-employee mutation attempt" }));
+        Assert.True(foreignMissing.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound, $"Unexpected cross-employee missing-receipt status {(int)foreignMissing.StatusCode}");
+        var foreignSubmit = await PostWithCsrfAsync(client, $"/api/v1/expenses/my/expenses/{foreignExpenseId:D}/submit?legalEntityId={legalEntityId:D}", JsonContent.Create(new { version = foreignExpenseVersion }));
+        Assert.True(foreignSubmit.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound, $"Unexpected cross-employee submit status {(int)foreignSubmit.StatusCode}");
     }
 
     private static Task LoginAsync(HttpClient client, string password, Guid tenantId) => LoginAsync(client, password, tenantId, "admin@atlas.com");

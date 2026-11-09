@@ -180,6 +180,25 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task ExpenseListQueryHasScopedIndexAndBoundedPlan()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D"));
+        await context.ExecuteNonQueryAsync();
+        await using var index = new NpgsqlCommand("select exists(select 1 from pg_indexes where schemaname='business_expenses' and tablename='expense' and indexname='ix_expenses_expense_list')", connection);
+        Assert.True((bool)(await index.ExecuteScalarAsync())!);
+        await using var setting = new NpgsqlCommand("set enable_seqscan=off", connection);
+        await setting.ExecuteNonQueryAsync();
+        await using var planner = new NpgsqlCommand("explain (format json) select id from business_expenses.expense where tenant_id='c9fea3c8-249d-f150-a53a-84f5a891c82b'::uuid and legal_entity_id='aad8a34b-344c-9e5b-8d58-57f182fc6528'::uuid order by created_at desc,id desc offset 0 limit 50", connection);
+        var plan = (string)(await planner.ExecuteScalarAsync() ?? string.Empty);
+        Assert.True(plan.Contains("ix_expenses_expense_list", StringComparison.Ordinal) || plan.Contains("ix_expenses_expense_state", StringComparison.Ordinal));
+    }
+
+    [ExpensesPostgresFact]
     public async Task RuntimeTenantContextCannotReadOtherTenantExpenses()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
@@ -1169,6 +1188,66 @@ public sealed class ExpensesPostgresIntegrationTests
         var belowThreshold = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Allowed Merchant", new(2099, 2, 2), 80m, "EGP", "EmployeePaid", categoryVersion), default);
         var belowEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, belowThreshold.Id, default);
         Assert.Equal("Passed", belowEvaluation.State);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task TypedPolicyBlockingRulesEnforceParticipantsSourcesCurrenciesAndMissingReceiptExceptions()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), approvals: new TestApprovalCapability());
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var employee = Guid.CreateVersion7();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var category = await repository.CreateCategoryAsync(new(Atlas), new(entity, $"TYPED-{Guid.CreateVersion7():N}", "Typed policy category"), default);
+        var categoryVersion = (await repository.CreateCategoryVersionAsync(new(Atlas), entity, category.Id, new(true, null, new(2090, 1, 1), null), default)).Id;
+        await repository.PublishCategoryVersionAsync(new(Atlas), entity, categoryVersion, new(), default);
+        var policy = await repository.CreatePolicyAsync(new(Atlas), new(entity, $"BLOCK-{Guid.CreateVersion7():N}", "Typed blocking policy"), default);
+        using var rules = JsonDocument.Parse($"{{\"requiresParticipants\":true,\"blockedPaymentSources\":[\"CorporateCard\"],\"blockedCurrencyCodes\":[\"USD\"],\"blockedEmployeeIds\":[\"{employee:D}\"],\"blockedCategoryVersionIds\":[\"{categoryVersion:D}\"],\"receiptRequired\":true,\"allowMissingReceiptException\":false}}");
+        var version = await repository.CreatePolicyVersionAsync(new(Atlas), entity, policy.Id, new(rules.RootElement.Clone(), new(2099, 1, 1)), default);
+        await repository.PublishPolicyVersionAsync(new(Atlas), entity, version.Id, new(), default);
+
+        var employeeBlocked = await repository.CreateAsync(new(Atlas), new(entity, employee, "Typed rules", new(2099, 2, 1), 75m, "EGP", "EmployeePaid", categoryVersion), default);
+        var evaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, employeeBlocked.Id, default);
+        Assert.Equal("Blocked", evaluation.State);
+        var findings = evaluation.Snapshot.GetProperty("findings").EnumerateArray().Select(item => item.GetString()).ToArray();
+        Assert.Contains("EmployeeBlocked", findings);
+        Assert.Contains("CategoryBlocked", findings);
+        Assert.Contains("ParticipantsRequired", findings);
+        Assert.Contains("ReceiptRequired", findings);
+
+        await repository.AddEvidenceAsync(new(Atlas), entity, employeeBlocked.Id, new("Receipt", "file://expenses/typed-rules"), default);
+        await repository.AddParticipantAsync(new(Atlas), entity, employeeBlocked.Id, new(null, "Customer contact"), default);
+        var stillBlocked = await repository.EvaluatePolicyAsync(new(Atlas), entity, employeeBlocked.Id, default);
+        Assert.Equal("Blocked", stillBlocked.State);
+        Assert.DoesNotContain("ParticipantsRequired", stillBlocked.Snapshot.GetProperty("findings").EnumerateArray().Select(item => item.GetString()));
+
+        var cardBlocked = await repository.CreateAsync(new(Atlas), new(entity, Guid.CreateVersion7(), "Card source", new(2099, 2, 2), 75m, "EGP", "CorporateCard", categoryVersion), default);
+        var cardEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, cardBlocked.Id, default);
+        Assert.Contains("PaymentSourceBlocked", cardEvaluation.Snapshot.GetProperty("findings").EnumerateArray().Select(item => item.GetString()));
+        var currencyBlocked = await repository.CreateAsync(new(Atlas), new(entity, Guid.CreateVersion7(), "Currency source", new(2099, 2, 3), 75m, "USD", "CompanyPaid", categoryVersion), default);
+        var currencyEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, currencyBlocked.Id, default);
+        Assert.Contains("CurrencyBlocked", currencyEvaluation.Snapshot.GetProperty("findings").EnumerateArray().Select(item => item.GetString()));
+
+        var exceptionPolicy = await repository.CreatePolicyAsync(new(Atlas), new(entity, $"EXC-{Guid.CreateVersion7():N}", "Receipt exception policy"), default);
+        using var exceptionRules = JsonDocument.Parse("{\"receiptRequired\":true,\"allowMissingReceiptException\":false}");
+        var exceptionVersion = await repository.CreatePolicyVersionAsync(new(Atlas), entity, exceptionPolicy.Id, new(exceptionRules.RootElement.Clone(), new(2098, 1, 1)), default);
+        await repository.PublishPolicyVersionAsync(new(Atlas), entity, exceptionVersion.Id, new(), default);
+        var exceptionExpense = await repository.CreateAsync(new(Atlas), new(entity, Guid.CreateVersion7(), "No receipt exception", new(2098, 2, 1), 40m, "EGP", "CompanyPaid", categoryVersion), default);
+        await repository.DeclareMissingReceiptAsync(new(Atlas), Guid.CreateVersion7(), entity, exceptionExpense.Id, new("Receipt is unavailable"), default);
+        var exceptionEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, exceptionExpense.Id, default);
+        Assert.Equal("Blocked", exceptionEvaluation.State);
+        Assert.Contains("ReceiptExceptionNotAllowed", exceptionEvaluation.Snapshot.GetProperty("findings").EnumerateArray().Select(item => item.GetString()));
+
+        var finalizationBlocked = await repository.CreateAsync(new(Atlas), new(entity, Guid.CreateVersion7(), "Policy blocked finalization", new(2099, 2, 5), 40m, "EGP", "CompanyPaid", categoryVersion), default);
+        await repository.DeclareMissingReceiptAsync(new(Atlas), Guid.CreateVersion7(), entity, finalizationBlocked.Id, new("Receipt is unavailable"), default);
+        var submitted = await repository.TransitionAsync(new(Atlas), entity, finalizationBlocked.Id, new(finalizationBlocked.Version), "submit", default);
+        var finalizationEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, finalizationBlocked.Id, default);
+        Assert.Equal("Blocked", finalizationEvaluation.State);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAsync(new(Atlas), entity, finalizationBlocked.Id, new(submitted.Version), "finalize", default));
     }
 
     [ExpensesPostgresFact]
