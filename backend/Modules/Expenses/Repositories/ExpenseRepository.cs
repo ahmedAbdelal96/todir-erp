@@ -155,13 +155,14 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     {
         if (approvals is null) throw new ExpenseRepositoryException("expenses.approvals_capability_unavailable");
         if (request.RequestId == Guid.Empty || request.Decision is not ("Approved" or "Rejected")) throw new ExpenseRepositoryException("expenses.approval_decision_invalid");
+        Guid? employeeId = null;
         await using (var preflight = await OpenAsync(tenant, ct))
         {
-            await using var preflightCommand = new NpgsqlCommand("select e.version,e.expense_state,e.approval_state,e.approval_request_id from business_expenses.expense e where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3", preflight.Connection, preflight.Transaction);
+            await using var preflightCommand = new NpgsqlCommand("select e.version,e.expense_state,e.approval_state,e.approval_request_id,e.employee_id from business_expenses.expense e where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3", preflight.Connection, preflight.Transaction);
             Add(preflightCommand, tenant.Value, entity, expenseId);
             await using var reader = await preflightCommand.ExecuteReaderAsync(ct);
             if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found");
-            var state = reader.GetString(1); var approvalState = reader.GetString(2); var linkedRequest = reader.IsDBNull(3) ? (Guid?)null : reader.GetGuid(3);
+            var state = reader.GetString(1); var approvalState = reader.GetString(2); var linkedRequest = reader.IsDBNull(3) ? (Guid?)null : reader.GetGuid(3); employeeId = reader.IsDBNull(4) ? null : reader.GetGuid(4);
             await reader.CloseAsync(); await preflight.Transaction.CommitAsync(ct);
             if (state != "Submitted" || linkedRequest != request.RequestId) throw new ExpenseRepositoryException("expenses.approval_scope_or_state_invalid");
             if (approvalState == request.Decision)
@@ -201,6 +202,9 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,$5,jsonb_build_object('expenseState','Submitted','approvalState',$5,'approvalRequestId',$6::text))", scope.Connection, scope.Transaction);
         Add(history, tenant.Value, Guid.CreateVersion7(), entity, expenseId, approval.State, approval.Id);
         await history.ExecuteNonQueryAsync(ct);
+        await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status,attempts) select $1,'ExpenseApprovalDecidedV1',$2::jsonb,$3,$4,$5,$6,'expenses','Pending',0 where not exists (select 1 from platform.outbox_message where tenant_id=$3 and message_type='ExpenseApprovalDecidedV1' and causation_id=$6)", scope.Connection, scope.Transaction);
+        Add(outbox, Guid.CreateVersion7(), JsonSerializer.Serialize(new { ExpenseId = expenseId, LegalEntityId = entity, EmployeeId = employeeId, Decision = approval.State, Reason = request.Reason }), tenant.Value, DateTimeOffset.UtcNow, expenseId, expenseId);
+        await outbox.ExecuteNonQueryAsync(ct);
         await scope.Transaction.CommitAsync(ct);
         return ToExpenseApproval(approval, expenseId);
     }

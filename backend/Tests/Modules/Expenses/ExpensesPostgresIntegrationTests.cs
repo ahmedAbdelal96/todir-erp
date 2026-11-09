@@ -764,6 +764,7 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Posted", finalized.AccountingState);
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from platform.approval_request where tenant_id=$1 and id=$2 and state='Approved' and decided_by=$3", Delta, pending.RequestId, decider.IdentityId));
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='Approved'", Delta, expense.Id));
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from platform.outbox_message where tenant_id=$1 and message_type='ExpenseApprovalDecidedV1' and causation_id=$2", Delta, expense.Id));
     }
 
     [ExpensesPostgresFact]

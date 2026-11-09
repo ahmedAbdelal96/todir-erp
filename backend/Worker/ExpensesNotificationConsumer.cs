@@ -12,7 +12,7 @@ public sealed class ExpensesNotificationConsumer(INotificationStore notification
     public async Task Consume(ConsumeContext<OutboxPublishedMessage> context)
     {
         var message = context.Message;
-        if (message.MessageType is not ("ExpenseFinalizedV1" or "ExpenseReimbursementRequestedV1" or "ExpenseMissingReceiptDeclaredV1")) return;
+        if (message.MessageType is not ("ExpenseFinalizedV1" or "ExpenseReimbursementRequestedV1" or "ExpenseMissingReceiptDeclaredV1" or "ExpenseApprovalDecidedV1")) return;
         if (!await inboxStore.TryBeginAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken)) return;
         try
         {
@@ -24,6 +24,8 @@ public sealed class ExpensesNotificationConsumer(INotificationStore notification
                 {
                     "ExpenseFinalizedV1" => "expenses.expense_finalized",
                     "ExpenseReimbursementRequestedV1" => "expenses.reimbursement_requested",
+                    "ExpenseApprovalDecidedV1" when root.TryGetProperty("Decision", out var decision) && decision.GetString() == "Approved" => "expenses.expense_approved",
+                    "ExpenseApprovalDecidedV1" => "expenses.expense_rejected",
                     _ => "expenses.missing_receipt_declared"
                 };
                 await notifications.EnqueueAsync(new Notification(Guid.CreateVersion7(), message.TenantId, $"employee:{employeeId:D}", template, NotificationChannel.InApp, root.Clone(), NotificationStatus.Pending, 0, DateTimeOffset.UtcNow, null), context.CancellationToken);
