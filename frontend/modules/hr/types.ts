@@ -19,6 +19,31 @@ export interface EmployeePage {
   readonly totalCount: number;
 }
 
+/**
+ * Authoritative manager-team projection returned by the paginated HR contract.
+ * This intentionally contains organizational context rather than an inferred
+ * employee status, which is not part of the direct-report projection.
+ */
+export interface HrTeamMemberView {
+  readonly employeeId: string;
+  readonly arabicName: string;
+  readonly englishName?: string | null;
+  readonly employmentId: string;
+  readonly employmentNumber: string;
+  readonly employmentStartDate: string;
+  readonly departmentId?: string | null;
+  readonly departmentName?: string | null;
+  readonly positionId?: string | null;
+  readonly positionTitle?: string | null;
+}
+
+export interface HrTeamPage {
+  readonly items: readonly HrTeamMemberView[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly totalCount: number;
+}
+
 export interface EmploymentView {
   readonly id: string;
   readonly employeeId: string;

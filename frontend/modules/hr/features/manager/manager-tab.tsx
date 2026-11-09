@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../components/primitives/table.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
-import { HrStatusBadge } from "../../components/hr-status-badge.tsx";
 import { LocalDateDisplay } from "../../../../components/fields/local-date-display.tsx";
 import { useMyTeam, useMyTeamLeaveApprovals, useApproveLeaveRequestMutation, useRejectLeaveRequestMutation } from "../../hooks/use-hr-queries.ts";
 import type { LeaveRequestView } from "../../types.ts";
@@ -13,14 +12,14 @@ export interface ManagerTabProps {
 }
 
 export function ManagerTab({ legalEntityId }: ManagerTabProps): React.JSX.Element {
-  const { t } = useTranslation("hr");
+  const { t, i18n } = useTranslation("hr");
   const teamQuery = useMyTeam(legalEntityId);
   const leaveApprovalsQuery = useMyTeamLeaveApprovals(legalEntityId);
 
   const approveMutation = useApproveLeaveRequestMutation(legalEntityId);
   const rejectMutation = useRejectLeaveRequestMutation(legalEntityId);
 
-  const team = teamQuery.data ?? [];
+  const team = teamQuery.data?.items ?? [];
   const pendingApprovals: readonly LeaveRequestView[] = leaveApprovalsQuery.data ?? [];
 
   const handleApprove = async (req: LeaveRequestView) => {
@@ -97,24 +96,26 @@ export function ManagerTab({ legalEntityId }: ManagerTabProps): React.JSX.Elemen
             <TableRow>
               <TableHead>{t("manager.employeeNumber")}</TableHead>
               <TableHead>{t("manager.name")}</TableHead>
-              <TableHead>{t("manager.status")}</TableHead>
+              <TableHead>{t("manager.department")}</TableHead>
+              <TableHead>{t("manager.position")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {team.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={3} style={{ textAlign: "center", color: "var(--color-content-muted)" }}>
+                <TableCell colSpan={4} style={{ textAlign: "center", color: "var(--color-content-muted)" }}>
                   {t("manager.noTeamMembers")}
                 </TableCell>
               </TableRow>
             ) : (
               team.map((m) => (
-                <TableRow key={m.id}>
-                  <TableCell style={{ fontFamily: "monospace" }}>{m.employmentNumber || "—"}</TableCell>
-                  <TableCell style={{ fontWeight: 600 }}>{m.displayName}</TableCell>
-                  <TableCell>
-                    <HrStatusBadge status={m.status} label={t(`employeeStatus.${m.status}`, { defaultValue: m.status })} />
+                <TableRow key={m.employeeId}>
+                  <TableCell style={{ fontFamily: "monospace" }}><bdi>{m.employmentNumber || "—"}</bdi></TableCell>
+                  <TableCell style={{ fontWeight: 600 }}>
+                    <bdi>{i18n.language.startsWith("en") ? (m.englishName || m.arabicName) : m.arabicName}</bdi>
                   </TableCell>
+                  <TableCell><bdi>{m.departmentName || "—"}</bdi></TableCell>
+                  <TableCell><bdi>{m.positionTitle || "—"}</bdi></TableCell>
                 </TableRow>
               ))
             )}

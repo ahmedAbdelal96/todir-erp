@@ -622,14 +622,25 @@ test.describe('TODIR HR — Comprehensive Enterprise HR & UX Acceptance Suite', 
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([
-          {
-            id: 'emp-002',
-            displayName: 'مريم عادل مصطفى',
-            employmentNumber: 'EMP-1002',
-            status: 'Active'
-          }
-        ])
+        body: JSON.stringify({
+          items: [
+            {
+              employeeId: 'emp-002',
+              arabicName: 'مريم عادل مصطفى',
+              englishName: 'Mariam Adel Mostafa',
+              employmentId: 'empl-002',
+              employmentNumber: 'EMP-1002',
+              employmentStartDate: '2025-03-01',
+              departmentId: 'dept-001',
+              departmentName: 'الإدارة المالية والمحاسبة',
+              positionId: 'pos-001',
+              positionTitle: 'محاسب أول'
+            }
+          ],
+          page: 1,
+          pageSize: 25,
+          totalCount: 1
+        })
       });
     });
 
@@ -939,5 +950,16 @@ test.describe('TODIR HR — Comprehensive Enterprise HR & UX Acceptance Suite', 
     // Zero unhandled console or page errors
     expect(consoleErrors).toEqual([]);
     expect(pageErrors).toEqual([]);
+  });
+
+  test('HR09 — Manager Team consumes the paginated direct-report contract', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/hr?tab=manager');
+
+    await expect(page.getByText('أعضاء فريقي المباشر')).toBeVisible();
+    await expect(page.getByText('مريم عادل مصطفى')).toBeVisible();
+    await expect(page.getByText('الإدارة المالية والمحاسبة')).toBeVisible();
+    await expect(page.getByText('محاسب أول')).toBeVisible();
+    await expect(pageErrors).toEqual([]);
   });
 });

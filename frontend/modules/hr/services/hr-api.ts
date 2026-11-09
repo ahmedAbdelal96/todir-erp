@@ -2,6 +2,7 @@ import { httpClient } from "../../../core/api/http-client.ts";
 import type {
   EmployeePage,
   EmployeeListItem,
+  HrTeamPage,
   EmployeeProfile,
   EmploymentView,
   AssignmentView,
@@ -448,8 +449,8 @@ export const hrApi = {
   getMyProfile: (legalEntityId: string): Promise<EmployeeProfile> =>
     httpClient<EmployeeProfile>(`${BASE}/me/profile?legalEntityId=${encodeURIComponent(legalEntityId)}`),
 
-  getMyTeam: (legalEntityId: string): Promise<readonly EmployeeListItem[]> =>
-    httpClient<readonly EmployeeListItem[]>(`${BASE}/me/team?legalEntityId=${encodeURIComponent(legalEntityId)}`),
+  getMyTeam: (legalEntityId: string): Promise<HrTeamPage> =>
+    httpClient<HrTeamPage>(`${BASE}/me/team?legalEntityId=${encodeURIComponent(legalEntityId)}`),
 
   getMyTeamLeaveApprovals: (legalEntityId: string): Promise<readonly LeaveRequestView[]> =>
     httpClient<readonly LeaveRequestView[]>(`${BASE}/me/team/leave-approvals?legalEntityId=${encodeURIComponent(legalEntityId)}`),

@@ -420,6 +420,8 @@ export const en = {
     actions: "Actions",
     employeeNumber: "Employee #",
     name: "Employee Name",
+    department: "Department",
+    position: "Position",
     status: "Status",
     approveAction: "Approve",
     rejectAction: "Reject",

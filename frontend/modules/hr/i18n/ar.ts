@@ -420,6 +420,8 @@ export const ar = {
     actions: "الإجراءات",
     employeeNumber: "الرقم الوظيفي",
     name: "اسم الموظف",
+    department: "القسم",
+    position: "المسمى الوظيفي",
     status: "الحالة",
     approveAction: "موافقة",
     rejectAction: "رفض",
