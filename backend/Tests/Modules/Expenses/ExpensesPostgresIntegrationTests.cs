@@ -573,6 +573,10 @@ public sealed class ExpensesPostgresIntegrationTests
         var policies = await repository.ListPoliciesAsync(new(Atlas), entity, "Active", $"LIST-{suffix}", 1, 1, default);
         Assert.Contains(policies.Items, item => item.Id == policy.Id);
         Assert.Equal(1, policies.PageSize);
+        using var rules = JsonDocument.Parse("{\"maxAmount\":5000,\"receiptRequired\":true}");
+        var policyVersion = await repository.CreatePolicyVersionAsync(new(Atlas), entity, policy.Id, new(rules.RootElement.Clone(), new(2099, 1, 1)), default);
+        var versions = await repository.ListPolicyVersionsAsync(new(Atlas), entity, policy.Id, 1, 10, default);
+        Assert.Contains(versions.Items, item => item.Id == policyVersion.Id);
         var rate = await repository.CreateRatePolicyAsync(new(Atlas), new(entity, "Mileage", new(2099, 12, 1), null, "EGP", 4.25m, "Car"), default);
         var rates = await repository.ListRatePoliciesAsync(new(Atlas), entity, "Mileage", "Draft", 1, 200, default);
         Assert.Contains(rates.Items, item => item.Id == rate.Id);
