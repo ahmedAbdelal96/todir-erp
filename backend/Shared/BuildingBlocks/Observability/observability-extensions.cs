@@ -124,6 +124,14 @@ internal sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<
         }
         catch (Exception exception)
         {
+            // A browser navigation can cancel an in-flight request after the
+            // database operation has completed. The client is already gone,
+            // so this is not an unhandled server failure and a 500 response
+            // cannot be delivered. Keep logging for non-request cancellations.
+            if (exception is OperationCanceledException && context.RequestAborted.IsCancellationRequested)
+            {
+                return;
+            }
             LogUnhandled(logger, exception);
             if (!context.Response.HasStarted)
             {

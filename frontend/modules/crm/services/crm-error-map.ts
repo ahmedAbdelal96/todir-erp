@@ -42,6 +42,12 @@ export function mapCrmError(error: unknown): MappedCrmError {
         return { messageKey: "errors.opportunityNotFound", defaultMessage: "فرصة المبيعات غير موجودة.", code };
       case "crm.opportunity_closed":
         return { messageKey: "errors.opportunityClosed", defaultMessage: "الفرصة مغلقة مسبقاً ولا يمكن تعديلها.", code };
+      case "crm.opportunity_stage_invalid":
+        return { messageKey: "errors.opportunityStageInvalid", defaultMessage: "المرحلة المحددة غير متاحة في هذا المسار البيعي.", code };
+      case "crm.custom_field_required":
+        return { messageKey: "errors.customFieldRequired", defaultMessage: "أكمل البيانات الإلزامية لهذه المرحلة قبل النقل.", code };
+      case "crm.opportunity_stale":
+        return { messageKey: "errors.concurrencyConflict", defaultMessage: "تم تعديل الفرصة بواسطة مستخدم آخر. تم تحديثها، ثم أعد المحاولة.", code };
       case "crm.activity_not_found":
         return { messageKey: "errors.activityNotFound", defaultMessage: "النشاط أو المتابعة غير موجودة.", code };
       case "crm.activity_completed":
@@ -72,6 +78,9 @@ export function mapCrmError(error: unknown): MappedCrmError {
 
   if (status === 403) {
     return { messageKey: "errors.forbidden", defaultMessage: "ليس لديك الصلاحية الكافية لتنفيذ هذا الإجراء في CRM.", code };
+  }
+  if (status === 409) {
+    return { messageKey: "errors.concurrencyConflict", defaultMessage: "تم تحديث الفرصة بواسطة مستخدم آخر. حدّث البيانات ثم أعد المحاولة.", code };
   }
   if (status === 404) {
     return { messageKey: "errors.notFound", defaultMessage: "العنصر المطلوب غير موجود.", code };

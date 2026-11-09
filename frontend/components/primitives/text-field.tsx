@@ -74,6 +74,10 @@ export function TextField({
 
   return (
     <AriaTextField
+      // Search and compact domain fields may intentionally omit a visible
+      // label; keep them accessible without making every caller duplicate the
+      // placeholder as an aria-label. Explicit aria-label from props wins.
+      aria-label={label || placeholder}
       {...props}
       {...(value !== undefined ? { value } : {})}
       {...(defaultValue !== undefined ? { defaultValue } : {})}

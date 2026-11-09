@@ -7,7 +7,7 @@ import { LocalDateField } from "../../../../components/fields/local-date-field.t
 import { DealHealthBadge } from "../../components/deal-health-badge.tsx";
 import { ForecastCategoryBadge } from "../../components/forecast-category-badge.tsx";
 import { StageProgressBar } from "../../components/stage-progress-bar.tsx";
-import { usePipelines, useMoveOpportunityStageMutation } from "../../hooks/use-crm-queries.ts";
+import { useOpportunity, usePipelines, useMoveOpportunityStageMutation } from "../../hooks/use-crm-queries.ts";
 import { mapCrmError } from "../../services/crm-error-map.ts";
 import type { Opportunity } from "../../types.ts";
 import { EditOpportunityModal } from "./edit-opportunity-modal.tsx";
@@ -36,6 +36,7 @@ export function OpportunityWorkspaceModal({
   const { t } = useTranslation("crm");
   const { data: pipelines = [] } = usePipelines(legalEntityId);
   const moveStageMutation = useMoveOpportunityStageMutation(legalEntityId, opportunity?.id || "");
+  const opportunityQuery = useOpportunity(legalEntityId, opportunity?.id || "");
 
   // Sub modals
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -51,19 +52,30 @@ export function OpportunityWorkspaceModal({
     return <></>;
   }
 
-  const activePipeline = pipelines.find((p) => p.id === opportunity.pipelineId) || pipelines[0];
+  // List and home cards carry a snapshot. The workspace reads the authoritative
+  // record so every mutation uses the latest optimistic-concurrency version.
+  const currentOpportunity = opportunityQuery.data ?? opportunity;
+  const activePipeline = pipelines.find((p) => p.id === currentOpportunity.pipelineId) || pipelines[0];
   const stages = activePipeline?.stages || [];
 
   const handleStageSelect = async (stageId: string) => {
     try {
+      // Re-read immediately before the write. This closes the small window in
+      // which a list snapshot or background refetch could leave the version
+      // sent to the optimistic-concurrency endpoint stale.
+      const latest = (await opportunityQuery.refetch()).data ?? currentOpportunity;
       await moveStageMutation.mutateAsync({
         stageId,
-        version: opportunity.version
+        version: latest.version
       });
       onUpdated?.();
       setErrorMessage(null);
     } catch (err: unknown) {
       const mapped = mapCrmError(err);
+      if (mapped.code === "crm.opportunity_stale" || mapped.code === "crm.concurrency_conflict") {
+        await opportunityQuery.refetch();
+        onUpdated?.();
+      }
       setErrorMessage(t(mapped.messageKey, mapped.defaultMessage));
     }
   };
@@ -75,7 +87,7 @@ export function OpportunityWorkspaceModal({
         onOpenChange={(open: boolean) => {
           if (!open) onClose();
         }}
-        title={opportunity.name}
+        title={currentOpportunity.name}
         size="large"
         footer={
           <Button variant="secondary" onPress={onClose}>
@@ -119,15 +131,15 @@ export function OpportunityWorkspaceModal({
               </span>
               <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-brand-primary, #102a43)" }}>
                 <MoneyDisplay
-                  value={{ amount: String(opportunity.estimatedAmount), currency: opportunity.currencyCode || "EGP" }}
+                  value={{ amount: String(currentOpportunity.estimatedAmount), currency: currentOpportunity.currencyCode || "EGP" }}
                   size="large"
                 />
               </div>
             </div>
 
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              <DealHealthBadge status={opportunity.healthStatus} score={opportunity.healthScore} />
-              <ForecastCategoryBadge category={opportunity.forecastCategory} />
+              <DealHealthBadge status={currentOpportunity.healthStatus} score={currentOpportunity.healthScore} />
+              <ForecastCategoryBadge category={currentOpportunity.forecastCategory} />
               <span
                 style={{
                   padding: "0.1875rem 0.5rem",
@@ -135,16 +147,16 @@ export function OpportunityWorkspaceModal({
                   fontSize: "0.75rem",
                   fontWeight: 700,
                   backgroundColor:
-                    opportunity.status === "Won" ? "var(--color-status-success-subtle)" :
-                    opportunity.status === "Lost" ? "var(--color-status-danger-subtle)" :
+                    currentOpportunity.status === "Won" ? "var(--color-status-success-subtle)" :
+                    currentOpportunity.status === "Lost" ? "var(--color-status-danger-subtle)" :
                     "var(--color-surface-card)",
                   color:
-                    opportunity.status === "Won" ? "var(--color-status-success)" :
-                    opportunity.status === "Lost" ? "var(--color-status-danger)" :
+                    currentOpportunity.status === "Won" ? "var(--color-status-success)" :
+                    currentOpportunity.status === "Lost" ? "var(--color-status-danger)" :
                     "var(--color-content-primary)"
                 }}
               >
-                {t(`opportunityStatuses.${opportunity.status}`)}
+                {t(`opportunityStatuses.${currentOpportunity.status}`)}
               </span>
             </div>
           </div>
@@ -153,7 +165,7 @@ export function OpportunityWorkspaceModal({
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
               <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>
-                {t("opportunities.stageTrack")}: {activePipeline?.name || opportunity.pipelineName}
+                {t("opportunities.stageTrack")}: {activePipeline?.name || currentOpportunity.pipelineName}
               </span>
               <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
                 {t("opportunities.clickStageToMove")}
@@ -161,9 +173,9 @@ export function OpportunityWorkspaceModal({
             </div>
             <StageProgressBar
               stages={stages}
-              currentStageId={opportunity.stageId}
-              onSelectStage={opportunity.status === "Open" ? handleStageSelect : undefined}
-              isReadOnly={opportunity.status !== "Open"}
+              currentStageId={currentOpportunity.stageId}
+              onSelectStage={currentOpportunity.status === "Open" ? handleStageSelect : undefined}
+              isReadOnly={currentOpportunity.status !== "Open" || opportunityQuery.isFetching || moveStageMutation.isPending}
             />
           </div>
 
@@ -177,7 +189,7 @@ export function OpportunityWorkspaceModal({
               📄 {t("opportunities.actions.createQuotation")}
             </Button>
 
-            {opportunity.status === "Open" && (
+            {currentOpportunity.status === "Open" && (
               <>
                 <Button
                   variant="secondary"
@@ -238,7 +250,7 @@ export function OpportunityWorkspaceModal({
                 {t("opportunities.fields.expectedCloseDate")}
               </span>
               <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>
-                {opportunity.expectedCloseDate ? <LocalDateField value={opportunity.expectedCloseDate} /> : "—"}
+                {currentOpportunity.expectedCloseDate ? <LocalDateField value={currentOpportunity.expectedCloseDate} /> : "—"}
               </span>
             </div>
 
@@ -247,7 +259,7 @@ export function OpportunityWorkspaceModal({
                 {t("opportunities.fields.createdAt")}
               </span>
               <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>
-                <LocalDateField value={opportunity.createdAt} />
+                <LocalDateField value={currentOpportunity.createdAt} />
               </span>
             </div>
 
@@ -256,7 +268,7 @@ export function OpportunityWorkspaceModal({
                 {t("opportunities.fields.currentStage")}
               </span>
               <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>
-                {opportunity.stageName}
+                {currentOpportunity.stageName}
               </span>
             </div>
           </div>
@@ -268,7 +280,7 @@ export function OpportunityWorkspaceModal({
         isOpen={isEditOpen}
         onClose={() => setIsEditOpen(false)}
         legalEntityId={legalEntityId}
-        opportunity={opportunity}
+        opportunity={currentOpportunity}
         onUpdated={onUpdated}
       />
 
@@ -276,7 +288,7 @@ export function OpportunityWorkspaceModal({
         isOpen={isAssignOpen}
         onClose={() => setIsAssignOpen(false)}
         legalEntityId={legalEntityId}
-        opportunity={opportunity}
+        opportunity={currentOpportunity}
         onAssigned={onUpdated}
       />
 
@@ -284,7 +296,7 @@ export function OpportunityWorkspaceModal({
         isOpen={isWinOpen}
         onClose={() => setIsWinOpen(false)}
         legalEntityId={legalEntityId}
-        opportunity={opportunity}
+        opportunity={currentOpportunity}
         onWon={() => {
           onUpdated?.();
           onClose();
@@ -295,7 +307,7 @@ export function OpportunityWorkspaceModal({
         isOpen={isLoseOpen}
         onClose={() => setIsLoseOpen(false)}
         legalEntityId={legalEntityId}
-        opportunity={opportunity}
+        opportunity={currentOpportunity}
         onLost={() => {
           onUpdated?.();
           onClose();
@@ -306,21 +318,21 @@ export function OpportunityWorkspaceModal({
         isOpen={isQuoteOpen}
         onClose={() => setIsQuoteOpen(false)}
         legalEntityId={legalEntityId}
-        opportunity={opportunity}
+        opportunity={currentOpportunity}
       />
 
       <OpportunityInterestsModal
         isOpen={isInterestsOpen}
         onClose={() => setIsInterestsOpen(false)}
         legalEntityId={legalEntityId}
-        opportunity={opportunity}
+        opportunity={currentOpportunity}
       />
 
       <BuyingCommitteeModal
         isOpen={isCommitteeOpen}
         onClose={() => setIsCommitteeOpen(false)}
         legalEntityId={legalEntityId}
-        opportunity={opportunity}
+        opportunity={currentOpportunity}
       />
     </>
   );

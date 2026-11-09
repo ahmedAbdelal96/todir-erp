@@ -162,6 +162,7 @@ export function ImportLeadsModal({
           </div>
 
           <textarea
+            aria-label={t("leads.importModal.csvDataLabel")}
             value={csvContent}
             onChange={(e) => setCsvContent(e.target.value)}
             rows={8}

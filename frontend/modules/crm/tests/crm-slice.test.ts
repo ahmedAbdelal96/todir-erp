@@ -35,6 +35,15 @@ describe("CRM Slice Contracts & Domain Invariants", () => {
     const error9 = mapCrmError({ code: "crm.stale_record" });
     assert.equal(error9.messageKey, "errors.concurrencyConflict");
 
+    const error10 = mapCrmError({ code: "crm.opportunity_stale", status: 409 });
+    assert.equal(error10.messageKey, "errors.concurrencyConflict");
+
+    const error11 = mapCrmError({ code: "crm.custom_field_required", status: 409 });
+    assert.equal(error11.messageKey, "errors.customFieldRequired");
+
+    const error12 = mapCrmError({ status: 409 });
+    assert.equal(error12.messageKey, "errors.concurrencyConflict");
+
     const unknown = mapCrmError({ code: "crm.unknown_internal_code" });
     assert.equal(unknown.messageKey, "errors.unknown");
   });
