@@ -559,6 +559,26 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(10, candidates.PageSize);
     }
 
+    [ExpensesPostgresFact]
+    public async Task PolicyAndRateConfigurationListsArePagedAndEntityScoped()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var suffix = Guid.CreateVersion7().ToString("N");
+        var policy = await repository.CreatePolicyAsync(new(Atlas), new(entity, $"LIST-{suffix}", "Paged travel policy"), default);
+        var policies = await repository.ListPoliciesAsync(new(Atlas), entity, "Active", $"LIST-{suffix}", 1, 1, default);
+        Assert.Contains(policies.Items, item => item.Id == policy.Id);
+        Assert.Equal(1, policies.PageSize);
+        var rate = await repository.CreateRatePolicyAsync(new(Atlas), new(entity, "Mileage", new(2099, 12, 1), null, "EGP", 4.25m, "Car"), default);
+        var rates = await repository.ListRatePoliciesAsync(new(Atlas), entity, "Mileage", "Draft", 1, 200, default);
+        Assert.Contains(rates.Items, item => item.Id == rate.Id);
+        Assert.Equal(200, rates.PageSize);
+    }
+
     private static async Task<(Guid IdentityId, Guid MembershipId)> ReadUserAsync(NpgsqlConnection connection, string prefix)
     {
         await using var command = new NpgsqlCommand("select i.id,m.id from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id where i.tenant_id=$1 and i.login_prefix=$2 and m.status='Active'", connection);
