@@ -527,15 +527,26 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     {
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length < 5) throw new ExpenseRepositoryException("expenses.missing_receipt_reason_required");
         await using var scope = await OpenAsync(tenant, ct); var id = Guid.CreateVersion7();
-        await using (var stateCommand = new NpgsqlCommand("select expense_state from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction))
+        Guid? employeeId;
+        decimal amount;
+        string currencyCode;
+        await using (var stateCommand = new NpgsqlCommand("select expense_state,employee_id,amount,currency_code from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction))
         {
             Add(stateCommand, tenant.Value, entity, expenseId);
-            var state = await stateCommand.ExecuteScalarAsync(ct) as string;
-            if (state is null) throw new ExpenseRepositoryException("expenses.expense_not_found");
+            await using var stateReader = await stateCommand.ExecuteReaderAsync(ct);
+            if (!await stateReader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found");
+            var state = stateReader.GetString(0);
+            employeeId = stateReader.IsDBNull(1) ? null : stateReader.GetGuid(1);
+            amount = stateReader.GetDecimal(2);
+            currencyCode = stateReader.GetString(3);
             if (state is not ("Draft" or "Submitted")) throw new ExpenseRepositoryException("expenses.missing_receipt_not_editable");
         }
         await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_missing_receipt_declaration(tenant_id,id,legal_entity_id,expense_id,reason,status,declared_by,declared_at) select $1,$2,$3,id,$4,'Declared',$5,now() from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$6 on conflict(tenant_id,expense_id) do update set reason=excluded.reason,status='Declared',declared_by=excluded.declared_by,declared_at=now(),resolved_at=null returning id,expense_id,reason,status,declared_by,declared_at,resolved_at", scope.Connection, scope.Transaction);
-        Add(cmd, tenant.Value, id, entity, request.Reason.Trim(), actorId, expenseId); await using var reader = await cmd.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found"); var result = ReadMissingReceipt(reader); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
+        Add(cmd, tenant.Value, id, entity, request.Reason.Trim(), actorId, expenseId); await using var reader = await cmd.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found"); var result = ReadMissingReceipt(reader); await reader.CloseAsync();
+        await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status,attempts) select $1,'ExpenseMissingReceiptDeclaredV1',$2::jsonb,$3,$4,$5,$6,'expenses','Pending',0 where not exists (select 1 from platform.outbox_message where tenant_id=$3 and message_type='ExpenseMissingReceiptDeclaredV1' and causation_id=$6)", scope.Connection, scope.Transaction);
+        Add(outbox, Guid.CreateVersion7(), JsonSerializer.Serialize(new { ExpenseId = expenseId, LegalEntityId = entity, EmployeeId = employeeId, Amount = amount, CurrencyCode = currencyCode, Reason = request.Reason.Trim() }), tenant.Value, DateTimeOffset.UtcNow, expenseId, expenseId);
+        await outbox.ExecuteNonQueryAsync(ct);
+        await scope.Transaction.CommitAsync(ct); return result;
     }
 
     public async Task<MissingReceiptDeclarationDto?> GetMissingReceiptDeclarationAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)

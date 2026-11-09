@@ -15,6 +15,7 @@ using Shared.Contracts.Tax;
 using Xunit;
 using System.Text.Json;
 using System.Globalization;
+using System.Net;
 
 namespace Modules.Expenses.Tests;
 
@@ -1006,10 +1007,12 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Blocked", blocked.State);
         Assert.Equal("ReceiptRequired", blocked.Snapshot.GetProperty("findings")[0].GetString());
         await repository.DeclareMissingReceiptAsync(new(Atlas), Guid.NewGuid(), entity, expense.Id, new("Supplier receipt unavailable"), default);
+        await repository.DeclareMissingReceiptAsync(new(Atlas), Guid.NewGuid(), entity, expense.Id, new("Supplier receipt unavailable"), default);
         var warning = await repository.EvaluatePolicyAsync(new(Atlas), entity, expense.Id, default);
         Assert.Equal("Warning", warning.State);
         Assert.Equal("ReceiptException", warning.Snapshot.GetProperty("findings")[0].GetString());
         Assert.Equal("Supplier receipt unavailable", warning.Snapshot.GetProperty("missingReceiptExceptionReason").GetString());
+        Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from platform.outbox_message where tenant_id=$1 and message_type='ExpenseMissingReceiptDeclaredV1' and causation_id=$2", Atlas, expense.Id));
     }
 
     [ExpensesPostgresFact]
@@ -1133,6 +1136,39 @@ public sealed class ExpensesPostgresIntegrationTests
         {
             using var suggestions = JsonDocument.Parse("{\"merchantName\":\"OCR success\",\"amount\":65}");
             return Task.FromResult(new ExpenseOcrResult(suggestions.RootElement.Clone()));
+        }
+    }
+
+    [Fact]
+    public async Task ConfiguredOcrProviderUsesTenantScopedRequestAndReturnsSuggestions()
+    {
+        var tenant = new TenantId(Guid.CreateVersion7());
+        var fileReference = Guid.CreateVersion7();
+        var handler = new OcrHttpHandler();
+        using var client = new HttpClient(handler);
+        var provider = new ConfiguredExpenseOcrProvider(client, "https://ocr.test/extract");
+
+        var result = await provider.ExtractAsync(tenant, fileReference);
+
+        Assert.Equal("Acme", result.Suggestions.GetProperty("merchant").GetString());
+        Assert.Equal(tenant.Value, handler.TenantId);
+        Assert.Equal(fileReference, handler.FileReference);
+    }
+
+    private sealed class OcrHttpHandler : HttpMessageHandler
+    {
+        public Guid TenantId { get; private set; }
+        public Guid FileReference { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            TenantId = document.RootElement.GetProperty("tenantId").GetGuid();
+            FileReference = document.RootElement.GetProperty("fileReference").GetGuid();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"suggestions\":{\"merchant\":\"Acme\"}}", System.Text.Encoding.UTF8, "application/json")
+            };
         }
     }
 

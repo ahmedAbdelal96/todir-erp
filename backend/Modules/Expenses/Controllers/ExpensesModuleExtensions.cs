@@ -4,6 +4,7 @@ using Core.Authorization;
 using Core.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Modules.Expenses.DTOs;
 using Modules.Expenses.Repositories;
@@ -14,7 +15,17 @@ namespace Modules.Expenses;
 
 public static class ExpensesModuleExtensions
 {
-    public static IServiceCollection AddExpensesModule(this IServiceCollection services) { services.AddSingleton<IModuleManifestProvider, ExpensesModuleManifestProvider>(); services.AddSingleton<IExpenseOcrProvider, UnavailableExpenseOcrProvider>(); services.AddSingleton<ExpenseRepository>(); services.AddSingleton<ExpenseService>(); return services; }
+    public static IServiceCollection AddExpensesModule(this IServiceCollection services)
+    {
+        services.AddSingleton<IModuleManifestProvider, ExpensesModuleManifestProvider>();
+        services.AddHttpClient("expenses-ocr", client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddSingleton<IExpenseOcrProvider>(sp => new ConfiguredExpenseOcrProvider(
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient("expenses-ocr"),
+            sp.GetRequiredService<IConfiguration>()["Expenses:Ocr:Endpoint"] ?? Environment.GetEnvironmentVariable("TODIR_EXPENSES_OCR_PROVIDER_URL")));
+        services.AddSingleton<ExpenseRepository>();
+        services.AddSingleton<ExpenseService>();
+        return services;
+    }
     public static WebApplication MapExpensesModule(this WebApplication app)
     {
         var g = app.MapGroup("/api/v1/expenses").WithTags("Expenses").RequireAuthorization().RequireRateLimiting("api")
