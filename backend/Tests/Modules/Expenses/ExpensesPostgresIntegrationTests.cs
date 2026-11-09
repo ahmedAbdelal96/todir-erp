@@ -457,6 +457,11 @@ public sealed class ExpensesPostgresIntegrationTests
         var submitted = await repository.TransitionAsync(new(Delta), entity, expense.Id, new(expense.Version), "submit", default);
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAsync(new(Delta), entity, expense.Id, new(submitted.Version), "approve", default));
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAsync(new(Delta), entity, expense.Id, new(submitted.Version), "reject", default));
+        await using (var tamper = new NpgsqlCommand("update business_expenses.expense set approval_state='Approved' where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection))
+        { tamper.Parameters.AddWithValue(Delta); tamper.Parameters.AddWithValue(entity); tamper.Parameters.AddWithValue(expense.Id); await tamper.ExecuteNonQueryAsync(); }
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAsync(new(Delta), entity, expense.Id, new(submitted.Version), "finalize", default));
+        await using (var restore = new NpgsqlCommand("update business_expenses.expense set approval_state='Pending' where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection))
+        { restore.Parameters.AddWithValue(Delta); restore.Parameters.AddWithValue(entity); restore.Parameters.AddWithValue(expense.Id); await restore.ExecuteNonQueryAsync(); }
         Assert.Equal("Pending", (await repository.GetAsync(new(Delta), entity, expense.Id, default))!.ApprovalState);
     }
 
@@ -543,8 +548,9 @@ public sealed class ExpensesPostgresIntegrationTests
         var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
         var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
         var employee = Guid.CreateVersion7();
-        var original = await repository.CreateAsync(new(Atlas), new(entity, employee, "Cairo Hotel", new(2026, 10, 25), 975m, "EGP", "EmployeePaid", categoryVersion), default);
-        var duplicate = await repository.CreateAsync(new(Atlas), new(entity, employee, "Cairo Hotel", new(2026, 10, 25), 975m, "EGP", "EmployeePaid", categoryVersion), default);
+        var amount = 975m + (DateTime.UtcNow.Ticks % 1000000) / 10000m;
+        var original = await repository.CreateAsync(new(Atlas), new(entity, employee, "Cairo Hotel", new(2026, 10, 25), amount, "EGP", "EmployeePaid", categoryVersion), default);
+        var duplicate = await repository.CreateAsync(new(Atlas), new(entity, employee, "Cairo Hotel", new(2026, 10, 25), amount, "EGP", "EmployeePaid", categoryVersion), default);
         var candidates = await repository.ListDuplicateCandidatesAsync(new(Atlas), entity, original.Id, 1, 10, default);
         var match = Assert.Single(candidates.Items, item => item.ExpenseId == duplicate.Id);
         Assert.Equal("EmployeeDateAmount", match.MatchReason);

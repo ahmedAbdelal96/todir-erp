@@ -176,7 +176,8 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             if (!await reader.ReadAsync(token)) throw new ExpenseRepositoryException("expenses.expense_not_found");
             var amount = reader.GetDecimal(0); var currency = reader.GetString(1); var date = reader.GetFieldValue<DateOnly>(2); var source = reader.GetString(3); var employee = reader.IsDBNull(4) ? (Guid?)null : reader.GetGuid(4); var state = reader.GetString(5); var approval = reader.GetString(6); var version = reader.GetInt64(7); var categoryVersionId = reader.GetGuid(8); var evidenceState = reader.GetString(9); var category = reader.GetString(10);
             await reader.CloseAsync();
-            if (version != request.Version || state != "Submitted" || (approvals is null && approval != "Approved")) throw new ExpenseRepositoryException("expenses.invalid_transition_or_concurrency");
+            if (approvals is null) throw new ExpenseRepositoryException("expenses.approvals_capability_unavailable");
+            if (version != request.Version || state != "Submitted") throw new ExpenseRepositoryException("expenses.invalid_transition_or_concurrency");
             var policyState = "Passed";
             Guid? applicablePolicyVersion = null;
             await using (var applicable = new NpgsqlCommand("select pv.id from business_expenses.expense_policy_version pv where pv.tenant_id=$1 and pv.legal_entity_id=$2 and pv.status='Published' and pv.effective_from <= $3 and (pv.effective_to is null or pv.effective_to >= $3) and (not (pv.rules ? 'paymentSources') or pv.rules->'paymentSources' ? $4::text) and (not (pv.rules ? 'employeeIds') or ($5::uuid is not null and pv.rules->'employeeIds' ? $5::text)) and (not (pv.rules ? 'categoryVersionIds') or pv.rules->'categoryVersionIds' ? $6::text) order by pv.effective_from desc,pv.version desc,pv.id desc limit 1", context.Connection, context.Transaction))
