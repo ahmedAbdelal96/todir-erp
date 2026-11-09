@@ -176,6 +176,21 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         Assert.Equal(88m, cardExpenseBody.GetProperty("amount").GetDecimal());
         Assert.Equal("CorporateCard", cardExpenseBody.GetProperty("paymentSource").GetString());
 
+        var advanceResponse = await PostWithCsrfAsync(client, "/api/v1/expenses/my/advances", JsonContent.Create(new
+        {
+            legalEntityId,
+            employeeId = Guid.NewGuid(),
+            purpose = "Authenticated employee advance",
+            amount = 300m,
+            currencyCode = "EGP",
+            settlementDueDate = "2026-12-01"
+        }));
+        var advancePayload = await advanceResponse.Content.ReadAsStringAsync();
+        Assert.True(advanceResponse.StatusCode == HttpStatusCode.Created, $"Self-service advance failed with {(int)advanceResponse.StatusCode}: {advancePayload}");
+        var advanceBody = JsonSerializer.Deserialize<JsonElement>(advancePayload);
+        Assert.Equal(employeeId, advanceBody.GetProperty("employeeId").GetGuid());
+        Assert.Equal("Requested", advanceBody.GetProperty("state").GetString());
+
         using var create = JsonContent.Create(new
         {
             legalEntityId,

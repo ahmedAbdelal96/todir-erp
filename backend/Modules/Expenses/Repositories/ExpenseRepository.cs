@@ -94,6 +94,12 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public async Task<ExpensePage<BusinessAdvanceDto>> ListSelfAdvancesAsync(TenantId tenant, Guid membershipId, Guid entity, string? state, bool overdue, int page, int pageSize, CancellationToken ct)
         => await ListAdvancesAsync(tenant, entity, state, await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct), overdue, page, pageSize, ct);
 
+    public async Task<BusinessAdvanceDto> CreateSelfAdvanceAsync(TenantId tenant, Guid membershipId, CreateBusinessAdvanceRequest request, CancellationToken ct)
+    {
+        var employeeId = await ResolveSelfEmployeeAsync(tenant, membershipId, request.LegalEntityId, ct);
+        return await CreateAdvanceAsync(tenant, request with { EmployeeId = employeeId }, ct);
+    }
+
     public async Task<ExpensePage<ExpenseEmployeeRepaymentDto>> ListSelfRepaymentsAsync(TenantId tenant, Guid membershipId, Guid entity, string? state, int page, int pageSize, CancellationToken ct)
         => await ListEmployeeRepaymentsAsync(tenant, entity, await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct), state, page, pageSize, ct);
     public async Task<ExpensePage<ExpenseDto>> ListAsync(TenantId tenant, Guid entity, Guid? employeeId, string? state, string? search, int page, int pageSize, CancellationToken ct)
