@@ -408,6 +408,34 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Refunded", (await repository.ListCardTransactionsAsync(new(Atlas), entity, "Refunded", card.ProviderReference, 1, 10, default)).Items.Single().State);
     }
 
+    [ExpensesFinancialPostgresFact]
+    public async Task CorporateCardProviderCreditAndReversalStatesArePersistedAndReplaySafe()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_FINANCIAL_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var reversalReference = $"provider-reversal-{Guid.CreateVersion7():N}";
+        var reversed = await repository.ImportCardTransactionAsync(new(Atlas), entity, new(reversalReference, "Provider reversal", DateOnly.FromDateTime(DateTime.UtcNow.Date), 45m, "EGP", "Reversed"), default);
+        Assert.Equal("Reversed", reversed.State);
+        var replay = await repository.ImportCardTransactionAsync(new(Atlas), entity, new(reversalReference, "Provider reversal corrected", DateOnly.FromDateTime(DateTime.UtcNow.Date), 45m, "EGP", "Reversed"), default);
+        Assert.Equal(reversed.Id, replay.Id);
+        Assert.Equal("Reversed", replay.State);
+
+        var credited = await repository.ImportCardTransactionAsync(new(Atlas), entity, new($"provider-credit-{Guid.CreateVersion7():N}", "Provider credit", DateOnly.FromDateTime(DateTime.UtcNow.Date), 20m, "EGP", "Cleared"), default);
+        var adjustment = await repository.RecordCardAdjustmentAsync(new(Atlas), entity, credited.Id, new("Credit", $"credit-{Guid.CreateVersion7():N}", 20m, "EGP", "Full provider credit"), default);
+        Assert.Equal("Credit", adjustment.Kind);
+        var creditedRead = (await repository.ListCardTransactionsAsync(new(Atlas), entity, "Credited", credited.ProviderReference, 1, 10, default)).Items.Single();
+        Assert.Equal(credited.Id, creditedRead.Id);
+        Assert.Equal("Credited", creditedRead.State);
+        var reconciliation = await repository.GetCardReconciliationAsync(new(Atlas), entity, DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date), default);
+        Assert.True(reconciliation.TotalTransactions >= 2);
+        Assert.True(reconciliation.ReversedAmount >= 45m);
+        Assert.True(reconciliation.CreditedAmount >= 20m);
+    }
+
     [ExpensesPostgresFact]
     public async Task EffectiveRatePoliciesDriveReproducibleMileageAndPerDiemAmounts()
     {

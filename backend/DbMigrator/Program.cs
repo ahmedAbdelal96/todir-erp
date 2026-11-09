@@ -577,6 +577,7 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("expenses-forward-fix-financial-snapshots.sql", StringComparison.Ordinal) => 7,
     _ when fileName.Equals("expenses-forward-fix-tax-snapshots.sql", StringComparison.Ordinal) => 8,
     _ when fileName.Equals("expenses-forward-fix-advance-fx.sql", StringComparison.Ordinal) => 9,
+    _ when fileName.Equals("expenses-forward-fix-card-provider-states.sql", StringComparison.Ordinal) => 10,
     // The exchange table is introduced by this forward-fix and must exist before
     // its grants and seeded permission rows are applied on a fresh database.
     _ when fileName.Equals("pos-forward-fix-exchanges.sql", StringComparison.Ordinal) => 4,
