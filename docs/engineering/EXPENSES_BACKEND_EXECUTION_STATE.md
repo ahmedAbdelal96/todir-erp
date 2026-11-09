@@ -44,7 +44,7 @@ Canonical pack: `docs/modules/21_ERP_SAAS_EXPENSES_REQUIREMENTS_AND_TECHNICAL_DE
 - Last meaningful change: added the entity-scoped report-detail read contract and persisted cross-entity isolation test, then reran the full Expenses acceptance at 35/35 with zero skips; the real OCR Worker failure-path evidence remains recorded.
 - Next executable action: continue the remaining EX05–EX35 workflows (end-to-end OCR retry/provider/manual recovery, richer Platform Approvals and typed policy execution, external card-feed reconciliation, report detail/read-model and worker recovery), then run authenticated security/concurrency and EX36–EX43 acceptance gates without weakening financial or RLS invariants.
 - Acceptance matrix: `docs/engineering/EXPENSES_FINAL_ACCEPTANCE_GATES.md` records the executable EX00–EX43 expectations, current PASS/PARTIAL/NOT COMPLETE status, and evidence requirements; EX05 is now PASS after the real Platform Files run.
-- Acceptance matrix update: EX01 is now backed by fresh migration/seed evidence, EX05 has real MinIO/ClamAV evidence, EX06 has a real Worker failure-path evidence, and EX33 has a fresh authenticated legal-entity route proof; the remaining security and final-gate rows stay explicitly incomplete.
+- Acceptance matrix update: EX01 is now backed by fresh migration/seed evidence, EX05 has real MinIO/ClamAV evidence, EX06 has a real Worker failure-path evidence, and EX33 has a fresh authenticated legal-entity route/report-detail scope proof; the remaining security and final-gate rows stay explicitly incomplete.
 
 ## Phase matrix
 

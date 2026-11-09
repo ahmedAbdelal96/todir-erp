@@ -75,6 +75,19 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         var crossPayloadText = await crossRoute.Content.ReadAsStringAsync();
         Assert.True(crossRoute.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden, $"Unexpected cross-entity status {(int)crossRoute.StatusCode}: {crossPayloadText}");
         if (crossRoute.StatusCode == HttpStatusCode.BadRequest) Assert.Contains("expenses.entity_scope_invalid", crossPayloadText, StringComparison.Ordinal);
+
+        using var reportContent = JsonContent.Create(new { legalEntityId, employeeId = (Guid?)null, title = "API report detail acceptance", currencyCode = "EGP" });
+        var report = await PostWithCsrfAsync(client, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/reports", reportContent);
+        var reportPayload = await report.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.Created, report.StatusCode);
+        var reportBody = JsonSerializer.Deserialize<JsonElement>(reportPayload);
+        var reportId = reportBody.GetProperty("id").GetGuid();
+        var detail = await client.GetAsync($"/api/v1/expenses/legal-entities/{legalEntityId:D}/reports/{reportId:D}");
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        var detailBody = await detail.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(reportId, detailBody.GetProperty("id").GetGuid());
+        var crossDetail = await client.GetAsync($"/api/v1/expenses/legal-entities/{otherLegalEntityId:D}/reports/{reportId:D}");
+        Assert.True(crossDetail.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden, $"Unexpected cross-entity detail status {(int)crossDetail.StatusCode}");
     }
 
     private static async Task LoginAsync(HttpClient client, string password, Guid tenantId)
