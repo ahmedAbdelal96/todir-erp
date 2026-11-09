@@ -16,6 +16,8 @@ using Xunit;
 using System.Text.Json;
 using System.Globalization;
 using System.Net;
+using System.Diagnostics;
+using System.Text;
 
 namespace Modules.Expenses.Tests;
 
@@ -965,6 +967,54 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task RealWorkerRetriesConfiguredOcrProviderAndPersistsSuccess()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection)) { context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync(); }
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var expense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Worker OCR", new(2026, 11, 5), 77m, "EGP", "EmployeePaid", categoryVersion), default);
+        var evidenceId = Guid.CreateVersion7(); var fileReference = Guid.CreateVersion7();
+        await using (var insert = new NpgsqlCommand("insert into business_expenses.expense_evidence(tenant_id,id,legal_entity_id,expense_id,evidence_type,file_reference,status) values($1,$2,$3,$4,'Receipt',$5,'Ready')", connection))
+        { insert.Parameters.AddWithValue(Atlas); insert.Parameters.AddWithValue(evidenceId); insert.Parameters.AddWithValue(entity); insert.Parameters.AddWithValue(expense.Id); insert.Parameters.AddWithValue(fileReference.ToString("D")); await insert.ExecuteNonQueryAsync(); }
+
+        var port = GetFreeTcpPort();
+        using var listener = new HttpListener();
+        listener.Prefixes.Add($"http://127.0.0.1:{port}/"); listener.Start();
+        var providerEndpoint = $"http://127.0.0.1:{port}/extract";
+        var providerTask = ServeTransientOcrAsync(listener);
+        using var worker = StartExpensesWorker(connectionString!, providerEndpoint);
+        try
+        {
+            var job = await repository.RequestOcrAsync(new(Atlas), entity, expense.Id, evidenceId, default);
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(35);
+            ExpenseOcrJobDto? completed = null;
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                completed = await repository.GetOcrAsync(new(Atlas), entity, expense.Id, job.Id, default);
+                if (completed?.State == "Succeeded") break;
+                await Task.Delay(500);
+            }
+            Assert.NotNull(completed);
+            Assert.Equal("Succeeded", completed!.State);
+            Assert.True(completed.AttemptCount >= 2, $"Expected a transient failure before success, attempts={completed.AttemptCount}.");
+            Assert.Equal("Worker OCR", completed.Suggestions!.Value.GetProperty("merchantName").GetString());
+            Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='ocr.completed'", Atlas, expense.Id));
+        }
+        finally
+        {
+            listener.Stop();
+            try { await providerTask; } catch (HttpListenerException) { }
+            if (!worker.HasExited) { try { worker.Kill(true); } catch (InvalidOperationException) { } await worker.WaitForExitAsync(); }
+        }
+    }
+
+    [ExpensesPostgresFact]
     public async Task ExpenseImportPersistsRowOutcomesAndReplaysIdempotently()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
@@ -1204,6 +1254,66 @@ public sealed class ExpensesPostgresIntegrationTests
         await using var command = new NpgsqlCommand("select i.id,m.id from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id where i.tenant_id=$1 and i.login_prefix=$2 and m.status='Active'", connection);
         command.Parameters.AddWithValue(Delta); command.Parameters.AddWithValue(prefix);
         await using var reader = await command.ExecuteReaderAsync(); Assert.True(await reader.ReadAsync()); return (reader.GetGuid(0), reader.GetGuid(1));
+    }
+
+    private static async Task ServeTransientOcrAsync(HttpListener listener)
+    {
+        var call = 0;
+        try
+        {
+            while (listener.IsListening)
+            {
+                var context = await listener.GetContextAsync();
+                if (Interlocked.Increment(ref call) == 1)
+                {
+                    context.Response.StatusCode = 503;
+                    context.Response.Close();
+                    continue;
+                }
+                var body = Encoding.UTF8.GetBytes("{\"suggestions\":{\"merchantName\":\"Worker OCR\",\"amount\":77}}");
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = body.Length;
+                await context.Response.OutputStream.WriteAsync(body);
+                context.Response.Close();
+            }
+        }
+        catch (HttpListenerException) when (!listener.IsListening) { }
+        catch (ObjectDisposedException) when (!listener.IsListening) { }
+    }
+
+    private static Process StartExpensesWorker(string connectionString, string providerEndpoint)
+    {
+        var repository = new DirectoryInfo(Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT") ?? AppContext.BaseDirectory);
+        while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "backend", "DbMigrator", "DbMigrator.csproj"))) repository = repository.Parent;
+        if (repository is null) throw new InvalidOperationException("The repository root could not be located for the Expenses Worker acceptance process.");
+        var worker = new Process
+        {
+            StartInfo = new ProcessStartInfo("dotnet", "run --project backend/Worker/Worker.csproj --no-build --no-restore")
+            {
+                WorkingDirectory = repository.FullName,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+        worker.StartInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
+        worker.StartInfo.Environment["TODIR_DATABASE_CONNECTION"] = connectionString;
+        worker.StartInfo.Environment["TODIR_EXPENSES_OCR_PROVIDER_URL"] = providerEndpoint;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_HOST"] = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_HOST") ?? "127.0.0.1";
+        worker.StartInfo.Environment["TODIR_RABBITMQ_PORT"] = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_PORT") ?? "5672";
+        worker.StartInfo.Environment["TODIR_RABBITMQ_USER"] = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_USER") ?? "todir";
+        worker.StartInfo.Environment["TODIR_RABBITMQ_PASSWORD"] = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_PASSWORD") ?? "todir-dev-only";
+        worker.StartInfo.Environment["TODIR_RABBITMQ_VHOST"] = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_VHOST") ?? "/erp-dev";
+        worker.Start();
+        return worker;
+    }
+
+    private static int GetFreeTcpPort()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        return ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
     }
 
     private static async Task<object?> ScalarAsync(NpgsqlConnection connection, string sql, params object[] values)
