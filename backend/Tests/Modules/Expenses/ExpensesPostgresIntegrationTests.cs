@@ -467,6 +467,12 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(2, adjustments.TotalCount);
         Assert.Equal(2, adjustments.Items.Count);
         Assert.Equal(1, adjustments.Page);
+        var sourceCard = await repository.ImportCardTransactionAsync(new(Atlas), entity, new($"create-expense-{Guid.CreateVersion7():N}", "Card-created expense", new(2026, 10, 21), 42m, "EGP", "Cleared"), default);
+        var createdFromCard = await repository.CreateExpenseFromCardTransactionAsync(new(Atlas), entity, sourceCard.Id, new(categoryVersion, "Business meal"), default);
+        Assert.Equal("CorporateCard", createdFromCard.PaymentSource);
+        Assert.Equal(42m, createdFromCard.Amount);
+        Assert.Equal("Matched", (await repository.ListCardTransactionsAsync(new(Atlas), entity, "Matched", sourceCard.ProviderReference, 1, 10, default)).Items.Single().State);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.CreateExpenseFromCardTransactionAsync(new(Atlas), entity, sourceCard.Id, new(categoryVersion), default));
     }
 
     [ExpensesFinancialPostgresFact]

@@ -57,6 +57,7 @@ public sealed record BusinessAdvanceWriteOffDto(Guid Id, Guid AdvanceId, Guid Le
 public sealed record IssueBusinessAdvanceRequest(Guid PaymentAccountId, string Method, decimal Amount, DateOnly PaymentDate, DateOnly PostingDate, long Version);
 public sealed record ExpenseCardTransactionDto(Guid Id, Guid LegalEntityId, string ProviderReference, string MerchantName, DateOnly TransactionDate, decimal Amount, string CurrencyCode, string State, Guid? EmployeeId, Guid? MatchedExpenseId);
 public sealed record ImportExpenseCardTransactionRequest(string ProviderReference, string MerchantName, DateOnly TransactionDate, decimal Amount, string CurrencyCode = "EGP", string InitialState = "Unmatched");
+public sealed record CreateExpenseFromCardTransactionRequest(Guid CategoryVersionId, string? BusinessPurpose = null, string? Description = null);
 public sealed record ExpenseCardAdjustmentDto(Guid Id, Guid CardTransactionId, string Kind, string ProviderReference, decimal Amount, string CurrencyCode, string State, string Reason, DateTimeOffset CreatedAt, DateTimeOffset? AppliedAt);
 public sealed record ExpenseCardAdjustmentFilter(Guid? CardTransactionId = null, string? Kind = null, string? State = null, string? Search = null);
 public sealed record ExpenseCardReconciliationDto(int TotalTransactions, decimal StatementAmount, decimal MatchedAmount, decimal AllocatedAmount, decimal PersonalAmount, decimal CreditedAmount, decimal RefundedAmount, decimal DisputedAmount, decimal ReversedAmount, decimal UnclassifiedAmount);
