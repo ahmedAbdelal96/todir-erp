@@ -90,12 +90,66 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         Assert.True(crossDetail.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden, $"Unexpected cross-entity detail status {(int)crossDetail.StatusCode}");
     }
 
-    private static async Task LoginAsync(HttpClient client, string password, Guid tenantId)
+    [Fact]
+    public async Task EmployeeSelfServiceReadUsesAuthenticatedMembershipScope()
+    {
+        var adminConnection = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for Expenses API integration tests.");
+        var runtimeConnection = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Expenses API integration tests.");
+        var password = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_PASSWORD")
+            ?? Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set TODIR_EXPENSES_TEST_PASSWORD or SEED_DEFAULT_PASSWORD for Expenses API integration tests.");
+
+        Guid tenantId;
+        Guid legalEntityId;
+        Guid employeeId;
+        string employeeEmail;
+        await using (var connection = new NpgsqlConnection(adminConnection))
+        {
+            await connection.OpenAsync();
+            await using var ids = new NpgsqlCommand("select t.id,(select id from platform.legal_entity where tenant_id=t.id and status='Active' order by id limit 1),(select e.id from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join business_hr.employee e on e.tenant_id=m.tenant_id and e.membership_id=m.id where i.tenant_id=t.id order by i.email limit 1),(select i.email from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join business_hr.employee e on e.tenant_id=m.tenant_id and e.membership_id=m.id where i.tenant_id=t.id order by i.email limit 1) from platform.tenant t where t.slug='atlas-trading'", connection);
+            await using var reader = await ids.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync(), "Atlas seed tenant or office employee is missing.");
+            tenantId = reader.GetGuid(0);
+            legalEntityId = reader.GetGuid(1);
+            employeeId = reader.GetGuid(2);
+            employeeEmail = reader.GetString(3);
+            await reader.CloseAsync();
+            await using var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select m.tenant_id,a.role_id,'expenses.read' from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id where m.tenant_id=$1 and i.email=$2 on conflict do nothing", connection);
+            grant.Parameters.AddWithValue(tenantId);
+            grant.Parameters.AddWithValue(employeeEmail);
+            await grant.ExecuteNonQueryAsync();
+            await using var reset = new NpgsqlCommand("update platform.identity set password_hash=$1,must_change_password=false,status='Active',security_stamp=gen_random_uuid(),version=version+1 where tenant_id=$2 and email=$3", connection);
+            reset.Parameters.AddWithValue(IdentityConventions.HashPassword(password));
+            reset.Parameters.AddWithValue(tenantId);
+            reset.Parameters.AddWithValue(employeeEmail);
+            await reset.ExecuteNonQueryAsync();
+        }
+
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(client, password, tenantId, employeeEmail);
+        var response = await client.GetAsync($"/api/v1/expenses/my/expenses?legalEntityId={legalEntityId:D}&page=1&pageSize=10");
+        var payload = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, $"Self-service read failed with {(int)response.StatusCode}: {payload}");
+        var body = JsonSerializer.Deserialize<JsonElement>(payload);
+        Assert.True(body.TryGetProperty("items", out var items));
+        foreach (var item in items.EnumerateArray())
+            Assert.Equal(employeeId, item.GetProperty("employeeId").GetGuid());
+    }
+
+    private static Task LoginAsync(HttpClient client, string password, Guid tenantId) => LoginAsync(client, password, tenantId, "admin@atlas.com");
+
+    private static async Task LoginAsync(HttpClient client, string password, Guid tenantId, string email)
     {
         var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
         Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
         var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfResponse>();
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email = "admin@atlas.com", password }) };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email, password }) };
         request.Headers.Add("X-CSRF-TOKEN", csrf!.Token);
         var response = await client.SendAsync(request);
         var responsePayload = await response.Content.ReadAsStringAsync();
