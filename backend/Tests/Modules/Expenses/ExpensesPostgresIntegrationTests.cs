@@ -497,10 +497,14 @@ public sealed class ExpensesPostgresIntegrationTests
         await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
         var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
         var expense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Card refund", new(2026, 10, 20), 80m, "EGP", "CorporateCard", categoryVersion), default);
-        var card = await repository.ImportCardTransactionAsync(new(Atlas), entity, new($"pending-{Guid.CreateVersion7():N}", "Card provider", new(2026, 10, 20), 80m, "EGP", "Pending"), default);
+        var card = await repository.ImportCardTransactionAsync(new(Atlas), entity, new($"pending-{Guid.CreateVersion7():N}", "  Card   provider  ", new(2026, 10, 20), 80m, "EGP", "Pending"), default);
+        Assert.Equal("Card provider", card.MerchantName);
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.MatchCardTransactionAsync(new(Atlas), entity, card.Id, new(expense.Id), default));
         card = await repository.ClearCardTransactionAsync(new(Atlas), entity, card.Id, default);
         Assert.Equal("Cleared", card.State);
+        var duplicateFeed = await repository.ImportCardTransactionAsync(new(Atlas), entity, new(card.ProviderReference, "Card provider retry", new(2026, 10, 20), 80m, "EGP", "Pending"), default);
+        Assert.Equal(card.Id, duplicateFeed.Id);
+        Assert.Equal("Cleared", duplicateFeed.State);
         card = await repository.MatchCardTransactionAsync(new(Atlas), entity, card.Id, new(expense.Id), default);
         Assert.Equal("Matched", card.State);
         var reference = $"refund-{Guid.CreateVersion7():N}";
