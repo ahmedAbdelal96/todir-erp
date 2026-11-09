@@ -810,6 +810,12 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             rowNumber++;
             var raw = JsonSerializer.Serialize(row); string? error = null;
             if (string.IsNullOrWhiteSpace(row.ExternalReference) || string.IsNullOrWhiteSpace(row.MerchantName) || row.Amount <= 0m || row.CurrencyCode.Trim().Length != 3 || row.CategoryVersionId == Guid.Empty) error = "expenses.import_row_invalid";
+            if (error is null)
+            {
+                await using var duplicate = new NpgsqlCommand("select 1 from business_expenses.expense_import_row r join business_expenses.expense_import_batch b on b.tenant_id=r.tenant_id and b.id=r.batch_id where r.tenant_id=$1 and b.legal_entity_id=$2 and lower(r.external_reference)=lower($3) limit 1", scope.Connection, scope.Transaction);
+                Add(duplicate, tenant.Value, request.LegalEntityId, row.ExternalReference.Trim());
+                if (await duplicate.ExecuteScalarAsync(ct) is not null) error = "expenses.import_duplicate_external_reference";
+            }
             if (error is null) { await using var category = new NpgsqlCommand("select 1 from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and v.id=$2 and c.legal_entity_id=$3 and c.status='Active' and v.status='Published'", scope.Connection, scope.Transaction); Add(category, tenant.Value, row.CategoryVersionId, request.LegalEntityId); if (await category.ExecuteScalarAsync(ct) is null) error = "expenses.import_category_invalid"; }
             Guid? expenseId = null;
             if (error is null) { expenseId = Guid.CreateVersion7(); await using var insert = new NpgsqlCommand("insert into business_expenses.expense(tenant_id,id,legal_entity_id,employee_id,merchant_name,expense_date,amount,currency_code,payment_source,category_version_id,expense_state,approval_state,accounting_state,settlement_state,evidence_state,policy_state,business_purpose,description,version,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Draft','Pending','NotFinalized','NotSettled','Missing','NotEvaluated',$11,$12,1,now(),now())", scope.Connection, scope.Transaction); Add(insert, tenant.Value, expenseId.Value, request.LegalEntityId, Db(row.EmployeeId), row.MerchantName.Trim(), row.ExpenseDate, row.Amount, row.CurrencyCode.Trim().ToUpperInvariant(), row.PaymentSource.Trim(), row.CategoryVersionId, Db(row.BusinessPurpose), Db(row.Description)); await insert.ExecuteNonQueryAsync(ct); created++; } else errors++;
@@ -1129,7 +1135,57 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public async Task<BusinessAdvanceDto> ReturnAdvanceAsync(TenantId tenant, Guid entity, Guid advanceId, ReturnBusinessAdvanceRequest request, CancellationToken ct)
     { if (request.Amount <= 0) throw new ExpenseRepositoryException("expenses.advance_return_invalid"); await using var scope = await OpenAsync(tenant, ct); await using var update = new NpgsqlCommand("update business_expenses.business_advance set returned_amount=returned_amount+$4,state=case when applied_amount+returned_amount+$4+written_off_amount >= issued_amount then 'Settled' else 'PartiallySettled' end,version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$5 and state in ('Issued','PartiallyIssued','PartiallySettled') and applied_amount+returned_amount+$4+written_off_amount <= issued_amount returning id,legal_entity_id,employee_id,purpose,amount,issued_amount,applied_amount,returned_amount,currency_code,state,version,created_at,issuance_payment_id,settlement_due_date,written_off_amount", scope.Connection, scope.Transaction); Add(update, tenant.Value, entity, advanceId, request.Amount, request.Version); await using var r = await update.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.advance_return_invalid"); var result = ReadAdvance(r); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
     public async Task<ExpenseCardTransactionDto> ImportCardTransactionAsync(TenantId tenant, Guid entity, ImportExpenseCardTransactionRequest request, CancellationToken ct)
-    { var state = string.IsNullOrWhiteSpace(request.InitialState) ? "Unmatched" : request.InitialState.Trim(); var merchant = NormalizeMerchantName(request.MerchantName); if (request.Amount <= 0 || string.IsNullOrWhiteSpace(request.ProviderReference) || string.IsNullOrWhiteSpace(merchant) || state is not ("Unmatched" or "Pending" or "Cleared" or "Credited" or "Reversed")) throw new ExpenseRepositoryException("expenses.card_transaction_invalid"); await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_card_transaction(tenant_id,id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state) values($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict(tenant_id,provider_reference) do update set merchant_name=excluded.merchant_name,transaction_date=excluded.transaction_date,amount=excluded.amount,currency_code=excluded.currency_code,state=case when business_expenses.expense_card_transaction.state in ('Cleared','Matched','Personal','Allocated','Refunded','Credited','Reversed','Disputed','Ignored') then business_expenses.expense_card_transaction.state else excluded.state end where business_expenses.expense_card_transaction.legal_entity_id=excluded.legal_entity_id returning id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state,employee_id,matched_expense_id", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, Guid.CreateVersion7(), entity, request.ProviderReference.Trim(), merchant, request.TransactionDate, request.Amount, request.CurrencyCode.Trim().ToUpperInvariant(), state); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.card_transaction_scope_conflict"); var result = ReadCard(r); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
+    {
+        var state = string.IsNullOrWhiteSpace(request.InitialState) ? "Unmatched" : request.InitialState.Trim();
+        var merchant = NormalizeMerchantName(request.MerchantName);
+        var currency = request.CurrencyCode.Trim().ToUpperInvariant();
+        var providerReference = request.ProviderReference.Trim();
+        if (request.Amount <= 0 || string.IsNullOrWhiteSpace(providerReference) || string.IsNullOrWhiteSpace(merchant) || state is not ("Unmatched" or "Pending" or "Cleared" or "Credited" or "Reversed")) throw new ExpenseRepositoryException("expenses.card_transaction_invalid");
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var existing = new NpgsqlCommand("select id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state,employee_id,matched_expense_id from business_expenses.expense_card_transaction where tenant_id=$1 and provider_reference=$2 for update", scope.Connection, scope.Transaction);
+        Add(existing, tenant.Value, providerReference);
+        await using var reader = await existing.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct))
+        {
+            var current = ReadCard(reader);
+            await reader.CloseAsync();
+            if (current.LegalEntityId != entity) throw new ExpenseRepositoryException("expenses.card_transaction_scope_conflict");
+            var terminal = current.State is ("Cleared" or "Matched" or "Allocated" or "Personal" or "Refunded" or "Credited" or "Reversed" or "Disputed" or "Ignored");
+            // A provider retry may correct descriptive metadata after clearing, but it may not
+            // mutate the financial identity of a posted transaction. Amount/currency changes
+            // require an explicit credit/refund/dispute adjustment with its own provider key.
+            if (terminal && (current.Amount != request.Amount || !string.Equals(current.CurrencyCode, currency, StringComparison.OrdinalIgnoreCase)))
+                throw new ExpenseRepositoryException("expenses.card_provider_conflict");
+            if (!terminal)
+            {
+                await using var update = new NpgsqlCommand("update business_expenses.expense_card_transaction set merchant_name=$3,transaction_date=$4,amount=$5,currency_code=$6,state=$7 where tenant_id=$1 and id=$2", scope.Connection, scope.Transaction);
+                Add(update, tenant.Value, current.Id, merchant, request.TransactionDate, request.Amount, currency, state);
+                await update.ExecuteNonQueryAsync(ct);
+                current = (await GetCardTransactionWithinScopeAsync(scope, tenant, entity, current.Id, ct))!;
+            }
+            await scope.Transaction.CommitAsync(ct);
+            return current;
+        }
+        await reader.CloseAsync();
+        await using var insert = new NpgsqlCommand("insert into business_expenses.expense_card_transaction(tenant_id,id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state) values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state,employee_id,matched_expense_id", scope.Connection, scope.Transaction);
+        Add(insert, tenant.Value, Guid.CreateVersion7(), entity, providerReference, merchant, request.TransactionDate, request.Amount, currency, state);
+        await using var resultReader = await insert.ExecuteReaderAsync(ct);
+        if (!await resultReader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.card_transaction_invalid");
+        var result = ReadCard(resultReader);
+        await resultReader.CloseAsync();
+        await scope.Transaction.CommitAsync(ct);
+        return result;
+    }
+
+    private static async Task<ExpenseCardTransactionDto?> GetCardTransactionWithinScopeAsync(Scope scope, TenantId tenant, Guid entity, Guid id, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state,employee_id,matched_expense_id from business_expenses.expense_card_transaction where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction);
+        Add(command, tenant.Value, entity, id);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var result = await reader.ReadAsync(ct) ? ReadCard(reader) : null;
+        await reader.CloseAsync();
+        return result;
+    }
 
     public async Task<ExpenseDto> CreateExpenseFromCardTransactionAsync(TenantId tenant, Guid entity, Guid cardId, CreateExpenseFromCardTransactionRequest request, CancellationToken ct)
     {

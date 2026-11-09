@@ -530,6 +530,7 @@ public sealed class ExpensesPostgresIntegrationTests
         var duplicateFeed = await repository.ImportCardTransactionAsync(new(Atlas), entity, new(card.ProviderReference, "Card provider retry", new(2026, 10, 20), 80m, "EGP", "Pending"), default);
         Assert.Equal(card.Id, duplicateFeed.Id);
         Assert.Equal("Cleared", duplicateFeed.State);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.ImportCardTransactionAsync(new(Atlas), entity, new(card.ProviderReference, "Card provider tampered", new(2026, 10, 20), 81m, "EGP", "Cleared"), default));
         var duplicateEvent = await repository.ImportCardTransactionAsync(new(Atlas), entity, new($"duplicate-{Guid.CreateVersion7():N}", "Duplicate feed", new(2026, 10, 20), 12m, "EGP", "Unmatched"), default);
         Assert.Equal("Ignored", (await repository.IgnoreCardTransactionAsync(new(Atlas), entity, duplicateEvent.Id, default)).State);
         Assert.Equal("Ignored", (await repository.ImportCardTransactionAsync(new(Atlas), entity, new(duplicateEvent.ProviderReference, "Duplicate retry", new(2026, 10, 20), 12m, "EGP", "Pending"), default)).State);
@@ -912,6 +913,10 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("expenses.import_row_invalid", rows.Items.Single(row => row.ExternalReference == "legacy-2").ErrorCode);
         var replay = await repository.ImportExpensesAsync(new(Atlas), request, default); Assert.Equal(batch.Id, replay.Id); Assert.Equal(batch.CreatedCount, replay.CreatedCount);
         Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_import_row where tenant_id=$1 and batch_id=$2 and status='Created'", Atlas, batch.Id));
+        var duplicateBatch = await repository.ImportExpensesAsync(new(Atlas), new ImportExpensesRequest(entity, $"expenses-duplicate-{Guid.CreateVersion7():N}", [new("legacy-1", null, "Duplicate external reference", new DateOnly(2026, 10, 20), 42m, "EGP", "EmployeePaid", categoryVersion)]), default);
+        Assert.Equal("CompletedWithErrors", duplicateBatch.State);
+        Assert.Equal(0, duplicateBatch.CreatedCount);
+        Assert.Equal("expenses.import_duplicate_external_reference", (await repository.ListExpenseImportRowsAsync(new(Atlas), entity, duplicateBatch.Id, "Error", 1, 10, default)).Items.Single().ErrorCode);
     }
 
     [ExpensesPostgresFact]
