@@ -17,6 +17,7 @@ This runbook is for Finance and platform operators. It preserves Expenses as the
 | Receipt inaccessible | Reissue a short-lived Platform Files download through the evidence endpoint; if the file is unavailable, attach a replacement through the upload-intent/completion flow and preserve history. | Never expose a permanent URL or replace the old evidence row.
 | Duplicate suspected | Review duplicate candidates and keep one authoritative expense; reverse an already-finalized duplicate through the compensating reversal workflow. | Never delete a finalized fact.
 | Policy misconfiguration | Retire the affected published policy version, publish a corrected effective-dated version, and re-evaluate only eligible drafts. | Never mutate a published rule snapshot.
+| Policy exception | Request the exception against the persisted finding, route it through Platform Approvals, and record the authorized reason before finalization. | Never change the published rule or set a policy evaluation to Passed by SQL.
 | Approval stuck | Inspect the Platform Approval request and resource version, then retry the request/decision with the authorized actor. | Never set `approval_state` directly.
 | Accounting failed | Inspect the expense and Ledger fact/outbox status, then retry the owning semantic posting/recovery path. | Do not create a manual journal or mark Posted by SQL.
 | Reimbursement failed/pending | Re-read the batch and Payments request; retry the idempotent payment command after Payments recovery. | Never mark an obligation Settled without a completed Payments result.

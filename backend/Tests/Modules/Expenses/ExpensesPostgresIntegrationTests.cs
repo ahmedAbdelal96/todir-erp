@@ -839,6 +839,46 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task PolicyExceptionUsesPlatformApprovalAndAllowsOnlyApprovedFinding()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var approvals = new NpgsqlPlatformApprovalCapability(dataSource, TimeProvider.System);
+        var ledger = new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(ledger), approvals: approvals);
+        var entity = Guid.Parse("bbdcc188-1acc-805e-8721-f43308540a4d");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection)) { context.Parameters.AddWithValue(Delta.ToString("D")); await context.ExecuteNonQueryAsync(); }
+        var requester = await ReadUserAsync(connection, "admin");
+        var decider = await ReadUserAsync(connection, "office");
+        await using (var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select $1,a.role_id,p.permission_code from platform.membership_role_assignment a cross join unnest(array['expenses.submit','expenses.approve']::text[]) p(permission_code) where a.tenant_id=$1 and a.membership_id=any($2::uuid[]) on conflict do nothing", connection))
+        { grant.Parameters.AddWithValue(Delta); grant.Parameters.AddWithValue(NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Uuid, new[] { requester.MembershipId, decider.MembershipId }); await grant.ExecuteNonQueryAsync(); }
+        var policy = await repository.CreatePolicyAsync(new(Delta), new(entity, $"EXCEPTION-{Guid.CreateVersion7():N}", "Exception policy"), default);
+        using var rules = JsonDocument.Parse("{\"maxAmount\":100,\"receiptRequired\":true}");
+        var policyVersion = await repository.CreatePolicyVersionAsync(new(Delta), entity, policy.Id, new(rules.RootElement.Clone(), new(2026, 1, 1)), default);
+        await repository.PublishPolicyVersionAsync(new(Delta), entity, policyVersion.Id, new(), default);
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Delta, entity))!;
+        var expense = await repository.CreateAsync(new(Delta), new(entity, null, "Policy exception", new(2026, 11, 4), 125m, "EGP", "CompanyPaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Delta), entity, expense.Id, new("Receipt", "file://expenses/exception"), default);
+        var submitted = await repository.TransitionAsync(new(Delta), entity, expense.Id, new(expense.Version), "submit", default);
+        var blocked = await repository.EvaluatePolicyAsync(new(Delta), entity, expense.Id, default);
+        Assert.Equal("Blocked", blocked.State);
+        var exception = await repository.RequestPolicyExceptionAsync(new(Delta), requester.IdentityId, requester.MembershipId, entity, expense.Id, new("MaxAmountExceeded", "Approved business exception for urgent travel", submitted.Version), default);
+        Assert.Equal("Pending", exception.State);
+        var approvedException = await repository.DecidePolicyExceptionAsync(new(Delta), decider.IdentityId, decider.MembershipId, entity, expense.Id, exception.Id, new(exception.ApprovalRequestId!.Value, "Approved", "Finance exception approved"), default);
+        Assert.Equal("Approved", approvedException.State);
+        var approval = await repository.RequestApprovalAsync(new(Delta), requester.IdentityId, requester.MembershipId, entity, expense.Id, "Business review", default);
+        var approved = await repository.DecideApprovalAsync(new(Delta), decider.IdentityId, decider.MembershipId, entity, expense.Id, new(approval.RequestId, "Approved", "Reviewed"), default);
+        var finalized = await repository.TransitionAsync(new(Delta), entity, expense.Id, new(approved.ResourceVersion + 1), "finalize", default);
+        Assert.Equal("Finalized", finalized.ExpenseState);
+        Assert.Equal("Warning", finalized.PolicyState);
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_policy_exception where tenant_id=$1 and expense_id=$2 and state='Approved'", Delta, expense.Id));
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='policy.exception.decided'", Delta, expense.Id));
+    }
+
+    [ExpensesPostgresFact]
     public async Task OcrProviderFailureIsDurableRetryableAndSupportsManualFallback()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");

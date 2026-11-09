@@ -252,6 +252,94 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         return ToExpenseApproval(approval, expenseId);
     }
 
+    public async Task<ExpensePolicyExceptionDto> RequestPolicyExceptionAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid entity, Guid expenseId, RequestExpensePolicyExceptionRequest request, CancellationToken ct)
+    {
+        if (approvals is null) throw new ExpenseRepositoryException("expenses.approvals_capability_unavailable");
+        if (string.IsNullOrWhiteSpace(request.FindingCode) || request.FindingCode.Trim().Length > 120 || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length < 5)
+            throw new ExpenseRepositoryException("expenses.policy_exception_invalid");
+        ExpensePolicyExceptionDto? existing = null;
+        long expenseVersion;
+        Guid? employeeId;
+        await using (var scope = await OpenAsync(tenant, ct))
+        {
+            await using var command = new NpgsqlCommand("select e.version,e.expense_state,e.employee_id,pe.state,pe.snapshot::text from business_expenses.expense e join business_expenses.expense_policy_evaluation pe on pe.tenant_id=e.tenant_id and pe.legal_entity_id=e.legal_entity_id and pe.expense_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3", scope.Connection, scope.Transaction);
+            Add(command, tenant.Value, entity, expenseId);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found");
+            expenseVersion = reader.GetInt64(0); var expenseState = reader.GetString(1); employeeId = reader.IsDBNull(2) ? null : reader.GetGuid(2); var policyState = reader.GetString(3); var snapshot = JsonDocument.Parse(reader.GetString(4)).RootElement.Clone(); await reader.CloseAsync();
+            if (expenseState != "Submitted" || expenseVersion != request.Version || policyState is not ("Blocked" or "Warning")) throw new ExpenseRepositoryException("expenses.policy_exception_not_allowed");
+            var findings = snapshot.TryGetProperty("findings", out var findingValues) && findingValues.ValueKind == JsonValueKind.Array
+                ? findingValues.EnumerateArray().Select(value => value.GetString()).Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value!).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!findings.Contains(request.FindingCode.Trim())) throw new ExpenseRepositoryException("expenses.policy_exception_finding_not_found");
+            if (employeeId.HasValue && hr is not null && await hr.GetSelfEmployeeAsync(tenant, membershipId, entity, ct) != employeeId) throw new ExpenseRepositoryException("expenses.policy_exception_actor_scope_invalid");
+            await using var existingCommand = new NpgsqlCommand("select id,expense_id,legal_entity_id,finding_code,reason,state,approval_request_id,requested_by,approved_by,version,created_at,decided_at from business_expenses.expense_policy_exception where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and finding_code=$4", scope.Connection, scope.Transaction);
+            Add(existingCommand, tenant.Value, entity, expenseId, request.FindingCode.Trim());
+            await using var existingReader = await existingCommand.ExecuteReaderAsync(ct);
+            if (await existingReader.ReadAsync(ct)) existing = ReadPolicyException(existingReader);
+            await existingReader.CloseAsync();
+            await scope.Transaction.CommitAsync(ct);
+        }
+        if (existing is not null)
+        {
+            if (existing.State is "Pending" or "Approved") return existing;
+            throw new ExpenseRepositoryException("expenses.policy_exception_not_retryable");
+        }
+        var approval = await approvals.RequestAsync(tenant, actorId, membershipId, entity, "expenses", "expense_policy_exception", Guid.CreateVersion7(), expenseVersion, null, request.Reason.Trim(), "expenses.submit", ct);
+        var exceptionId = approval.OwnerEntityId;
+        await using var linkScope = await OpenAsync(tenant, ct);
+        await using var insert = new NpgsqlCommand("insert into business_expenses.expense_policy_exception(tenant_id,id,legal_entity_id,expense_id,finding_code,reason,approval_request_id,requested_by) values($1,$2,$3,$4,$5,$6,$7,$8) on conflict(tenant_id,expense_id,finding_code) do nothing returning id,expense_id,legal_entity_id,finding_code,reason,state,approval_request_id,requested_by,approved_by,version,created_at,decided_at", linkScope.Connection, linkScope.Transaction);
+        Add(insert, tenant.Value, exceptionId, entity, expenseId, request.FindingCode.Trim(), request.Reason.Trim(), approval.Id, actorId);
+        await using var resultReader = await insert.ExecuteReaderAsync(ct);
+        if (!await resultReader.ReadAsync(ct))
+        {
+            await resultReader.CloseAsync(); await linkScope.Transaction.RollbackAsync(ct);
+            throw new ExpenseRepositoryException("expenses.policy_exception_duplicate");
+        }
+        var result = ReadPolicyException(resultReader); await resultReader.CloseAsync(); await linkScope.Transaction.CommitAsync(ct); return result;
+    }
+
+    public async Task<ExpensePolicyExceptionDto> DecidePolicyExceptionAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid entity, Guid expenseId, Guid exceptionId, DecideExpensePolicyExceptionRequest request, CancellationToken ct)
+    {
+        if (approvals is null) throw new ExpenseRepositoryException("expenses.approvals_capability_unavailable");
+        if (request.ApprovalRequestId == Guid.Empty || request.Decision is not ("Approved" or "Rejected")) throw new ExpenseRepositoryException("expenses.policy_exception_decision_invalid");
+        ExpensePolicyExceptionDto pending;
+        await using (var scope = await OpenAsync(tenant, ct))
+        {
+            await using var command = new NpgsqlCommand("select id,expense_id,legal_entity_id,finding_code,reason,state,approval_request_id,requested_by,approved_by,version,created_at,decided_at from business_expenses.expense_policy_exception where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4 and approval_request_id=$5", scope.Connection, scope.Transaction);
+            Add(command, tenant.Value, entity, expenseId, exceptionId, request.ApprovalRequestId);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.policy_exception_not_found");
+            pending = ReadPolicyException(reader); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct);
+        }
+        if (pending.State == request.Decision) return pending;
+        if (pending.State != "Pending" || pending.ApprovalRequestId != request.ApprovalRequestId) throw new ExpenseRepositoryException("expenses.policy_exception_stale");
+        PlatformApprovalRequestResult approval;
+        try { approval = await approvals.DecideAsync(tenant, actorId, membershipId, request.ApprovalRequestId, request.Decision, request.Reason, ct); }
+        catch (InvalidOperationException ex) when (ex.Message == "platform.approval_stale_or_unauthorized")
+        { approval = await approvals.GetAsync(tenant, request.ApprovalRequestId, ct) ?? throw new ExpenseRepositoryException("expenses.policy_exception_approval_not_found"); }
+        if (approval.State != request.Decision || approval.OwnerModule != "expenses" || approval.OwnerEntityType != "expense_policy_exception" || approval.LegalEntityId != entity) throw new ExpenseRepositoryException("expenses.policy_exception_scope_invalid");
+        await using var updateScope = await OpenAsync(tenant, ct);
+        await using var update = new NpgsqlCommand("update business_expenses.expense_policy_exception set state=$5,approved_by=$6,decided_at=now(),version=version+1 where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4 and state='Pending' and version=$7 returning id,expense_id,legal_entity_id,finding_code,reason,state,approval_request_id,requested_by,approved_by,version,created_at,decided_at", updateScope.Connection, updateScope.Transaction);
+        Add(update, tenant.Value, entity, expenseId, pending.Id, approval.State, actorId, pending.Version);
+        await using var updatedReader = await update.ExecuteReaderAsync(ct);
+        ExpensePolicyExceptionDto result;
+        if (await updatedReader.ReadAsync(ct)) result = ReadPolicyException(updatedReader);
+        else { await updatedReader.CloseAsync(); await updateScope.Transaction.RollbackAsync(ct); result = (await ListPolicyExceptionsAsync(tenant, entity, expenseId, request.Decision, 1, 1, ct)).Items.SingleOrDefault() ?? throw new ExpenseRepositoryException("expenses.policy_exception_stale"); return result; }
+        await updatedReader.CloseAsync();
+        await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) select $1,$2,$3,$4,'policy.exception.decided',jsonb_build_object('findingCode',$5::text,'state',$6::text,'approvalRequestId',$7::text) where not exists (select 1 from business_expenses.expense_history where tenant_id=$1 and legal_entity_id=$3 and expense_id=$4 and action='policy.exception.decided' and to_state->>'approvalRequestId'=$7::text)", updateScope.Connection, updateScope.Transaction);
+        Add(history, tenant.Value, Guid.CreateVersion7(), entity, expenseId, pending.FindingCode, approval.State, request.ApprovalRequestId); await history.ExecuteNonQueryAsync(ct); await updateScope.Transaction.CommitAsync(ct); return result;
+    }
+
+    public async Task<ExpensePage<ExpensePolicyExceptionDto>> ListPolicyExceptionsAsync(TenantId tenant, Guid entity, Guid? expenseId, string? state, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        await using var scope = await OpenAsync(tenant, ct);
+        const string where = "tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or expense_id=$3) and ($4::text is null or state=$4)";
+        await using var count = new NpgsqlCommand($"select count(*) from business_expenses.expense_policy_exception where {where}", scope.Connection, scope.Transaction); Add(count, tenant.Value, entity, Db(expenseId), Db(string.IsNullOrWhiteSpace(state) ? null : state.Trim())); var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand($"select id,expense_id,legal_entity_id,finding_code,reason,state,approval_request_id,requested_by,approved_by,version,created_at,decided_at from business_expenses.expense_policy_exception where {where} order by created_at desc,id desc offset $5 limit $6", scope.Connection, scope.Transaction); Add(command, tenant.Value, entity, Db(expenseId), Db(string.IsNullOrWhiteSpace(state) ? null : state.Trim()), (page - 1) * pageSize, pageSize); var list = new List<ExpensePolicyExceptionDto>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) list.Add(ReadPolicyException(reader)); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return new(list, total, page, pageSize);
+    }
+
     private async Task<ExpenseDto> TransitionCoreAsync(TenantId tenant, Guid entity, Guid id, ExpenseActionRequest request, string action, CancellationToken ct)
     {
         await using var scope = await OpenAsync(tenant, ct);
@@ -314,7 +402,13 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
                 Add(policy, tenant.Value, entity, id); await using var policyReader = await policy.ExecuteReaderAsync(token);
                 if (!await policyReader.ReadAsync(token)) throw new ExpenseRepositoryException("expenses.policy_evaluation_required");
                 policyState = policyReader.GetString(0); var evaluatedVersion = policyReader.IsDBNull(1) ? (Guid?)null : policyReader.GetGuid(1); var snapshot = System.Text.Json.JsonDocument.Parse(policyReader.GetString(2)).RootElement.Clone(); await policyReader.CloseAsync();
-                if (policyState == "Blocked") throw new ExpenseRepositoryException("expenses.policy_blocked");
+                if (policyState == "Blocked")
+                {
+                    await using var exception = new NpgsqlCommand("select exists(select 1 from business_expenses.expense_policy_exception where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and state='Approved')", context.Connection, context.Transaction);
+                    Add(exception, tenant.Value, entity, id);
+                    if (!Convert.ToBoolean(await exception.ExecuteScalarAsync(token), CultureInfo.InvariantCulture)) throw new ExpenseRepositoryException("expenses.policy_blocked");
+                    policyState = "Warning";
+                }
                 if (evaluatedVersion != applicablePolicyVersion || !SnapshotMatches(snapshot, version, amount, currency, source, employee, categoryVersionId, evidenceState)) throw new ExpenseRepositoryException("expenses.policy_evaluation_stale");
             }
             if (approvals is not null)
@@ -641,6 +735,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     private static Guid? GuidValue(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetGuid(i); private static string? Text(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i); private static object Db(object? v) => v ?? DBNull.Value; private static void Add(NpgsqlCommand c, params object?[] values) { foreach (var value in values) c.Parameters.AddWithValue(value ?? DBNull.Value); }
     private static string NormalizeMerchantName(string value) => string.Join(' ', value.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     private static MissingReceiptDeclarationDto ReadMissingReceipt(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetGuid(4), r.GetFieldValue<DateTimeOffset>(5), r.IsDBNull(6) ? null : r.GetFieldValue<DateTimeOffset>(6));
+    private static ExpensePolicyExceptionDto ReadPolicyException(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetString(3), r.GetString(4), r.GetString(5), r.IsDBNull(6) ? null : r.GetGuid(6), r.GetGuid(7), r.IsDBNull(8) ? null : r.GetGuid(8), r.GetInt64(9), r.GetFieldValue<DateTimeOffset>(10), r.IsDBNull(11) ? null : r.GetFieldValue<DateTimeOffset>(11));
     private static bool SnapshotMatches(System.Text.Json.JsonElement snapshot, long version, decimal amount, string currency, string source, Guid? employee, Guid categoryVersionId, string evidenceState)
     { return snapshot.TryGetProperty("expenseVersion", out var v) && (v.GetInt64() == version || v.GetInt64() == version - 1) && snapshot.TryGetProperty("amount", out var a) && a.GetDecimal() == amount && snapshot.TryGetProperty("currencyCode", out var c) && string.Equals(c.GetString(), currency, StringComparison.OrdinalIgnoreCase) && snapshot.TryGetProperty("paymentSource", out var p) && string.Equals(p.GetString(), source, StringComparison.Ordinal) && snapshot.TryGetProperty("evidenceState", out var es) && string.Equals(es.GetString(), evidenceState, StringComparison.Ordinal) && snapshot.TryGetProperty("categoryVersionId", out var cv) && Guid.TryParse(cv.GetString(), out var category) && category == categoryVersionId && ((employee is null && (!snapshot.TryGetProperty("employeeId", out var e) || e.ValueKind == System.Text.Json.JsonValueKind.Null)) || (employee is not null && snapshot.TryGetProperty("employeeId", out var actual) && Guid.TryParse(actual.GetString(), out var actualEmployee) && actualEmployee == employee)); }
     private static void ValidatePolicyRules(System.Text.Json.JsonElement rules)

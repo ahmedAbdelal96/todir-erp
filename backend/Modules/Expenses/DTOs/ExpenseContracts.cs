@@ -33,6 +33,9 @@ public sealed record ExpenseHistoryDto(Guid Id, Guid ExpenseId, string Action, S
 public sealed record ExpenseParticipantDto(Guid Id, Guid ExpenseId, Guid? PartyId, string DisplayName, string Role);
 public sealed record AddExpenseParticipantRequest(Guid? PartyId, string DisplayName, string Role = "MealParticipant");
 public sealed record ExpensePolicyEvaluationDto(Guid Id, Guid ExpenseId, string State, System.Text.Json.JsonElement Snapshot, DateTimeOffset EvaluatedAt);
+public sealed record ExpensePolicyExceptionDto(Guid Id, Guid ExpenseId, Guid LegalEntityId, string FindingCode, string Reason, string State, Guid? ApprovalRequestId, Guid RequestedBy, Guid? ApprovedBy, long Version, DateTimeOffset CreatedAt, DateTimeOffset? DecidedAt);
+public sealed record RequestExpensePolicyExceptionRequest(string FindingCode, string Reason, long Version);
+public sealed record DecideExpensePolicyExceptionRequest(Guid ApprovalRequestId, string Decision, string? Reason = null);
 public sealed record ExpensePolicyDto(Guid Id, Guid LegalEntityId, string Code, string Name, string Status);
 public sealed record ExpensePolicyVersionDto(Guid Id, Guid PolicyId, int Version, string Status, DateOnly EffectiveFrom, DateOnly? EffectiveTo, System.Text.Json.JsonElement Rules);
 public sealed record CreateExpensePolicyRequest(Guid LegalEntityId, string Code, string Name);
