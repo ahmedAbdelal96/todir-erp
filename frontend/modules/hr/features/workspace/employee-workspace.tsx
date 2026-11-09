@@ -394,7 +394,7 @@ export function EmployeeWorkspace({
                 <TableHead>{t("workspace.documents.titleLabel")}</TableHead>
                 <TableHead>{t("workspace.documents.expiryDate")}</TableHead>
                 <TableHead>{t("workspace.documents.verified")}</TableHead>
-                <TableHead style={{ textAlign: "end" }}>{t("actions.action", "الإجراء")}</TableHead>
+                <TableHead style={{ textAlign: "end" }}>{t("actions.action")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -421,7 +421,7 @@ export function EmployeeWorkspace({
                             onPress={() => handleVerifyDoc(doc)}
                             isDisabled={verifyDocMutation.isPending}
                           >
-                            {t("workspace.documents.verify", "تحقق")}
+                            {t("workspace.documents.verify")}
                           </Button>
                         )}
                       </TableCell>
