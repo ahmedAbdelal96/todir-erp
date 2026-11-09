@@ -433,6 +433,10 @@ public sealed class ExpensesPostgresIntegrationTests
         await repository.AllocateCardTransactionAsync(new(Atlas), entity, card.Id, new(second.Id, 110m), default);
         Assert.Equal(2, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_card_allocation where tenant_id=$1 and card_transaction_id=$2", Atlas, card.Id));
         Assert.Equal(210m, (decimal)(await ScalarAsync(connection, "select sum(amount) from business_expenses.expense_card_allocation where tenant_id=$1 and card_transaction_id=$2", Atlas, card.Id))!);
+        var unmatched = await repository.UnmatchDraftCardTransactionAsync(new(Atlas), entity, card.Id, default);
+        Assert.Equal("Cleared", unmatched.State);
+        Assert.Null(unmatched.MatchedExpenseId);
+        Assert.Equal(0, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_card_allocation where tenant_id=$1 and card_transaction_id=$2", Atlas, card.Id));
     }
 
     [ExpensesPostgresFact]

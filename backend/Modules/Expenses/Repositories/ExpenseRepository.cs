@@ -1081,6 +1081,25 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         return (await GetCardTransactionAsync(tenant, entity, cardId, ct))!;
     }
 
+    public async Task<ExpenseCardTransactionDto> UnmatchDraftCardTransactionAsync(TenantId tenant, Guid entity, Guid cardId, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var card = new NpgsqlCommand("select state,matched_expense_id from business_expenses.expense_card_transaction where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction);
+        Add(card, tenant.Value, entity, cardId);
+        await using var reader = await card.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.card_transaction_not_found");
+        var state = reader.GetString(0); var matchedExpense = reader.IsDBNull(1) ? (Guid?)null : reader.GetGuid(1);
+        await reader.CloseAsync();
+        if (state is not ("Matched" or "Allocated") && !matchedExpense.HasValue) throw new ExpenseRepositoryException("expenses.card_transaction_not_matched");
+        await using var finalized = new NpgsqlCommand("select exists(select 1 from business_expenses.expense_card_allocation a join business_expenses.expense e on e.tenant_id=a.tenant_id and e.legal_entity_id=a.legal_entity_id and e.id=a.expense_id where a.tenant_id=$1 and a.legal_entity_id=$2 and a.card_transaction_id=$3 and e.expense_state <> 'Draft') or exists(select 1 from business_expenses.expense e where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$4 and e.expense_state <> 'Draft')", scope.Connection, scope.Transaction);
+        Add(finalized, tenant.Value, entity, cardId, Db(matchedExpense));
+        if (Convert.ToBoolean(await finalized.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture)) throw new ExpenseRepositoryException("expenses.card_transaction_not_unmatchable");
+        await using var deleteAllocations = new NpgsqlCommand("delete from business_expenses.expense_card_allocation where tenant_id=$1 and legal_entity_id=$2 and card_transaction_id=$3", scope.Connection, scope.Transaction);
+        Add(deleteAllocations, tenant.Value, entity, cardId); await deleteAllocations.ExecuteNonQueryAsync(ct);
+        await using var update = new NpgsqlCommand("update business_expenses.expense_card_transaction set state='Cleared',matched_expense_id=null where tenant_id=$1 and legal_entity_id=$2 and id=$3 and state in ('Matched','Allocated') returning id,legal_entity_id,provider_reference,merchant_name,transaction_date,amount,currency_code,state,employee_id,matched_expense_id", scope.Connection, scope.Transaction);
+        Add(update, tenant.Value, entity, cardId); await using var resultReader = await update.ExecuteReaderAsync(ct); if (!await resultReader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.card_transaction_concurrent"); var result = ReadCard(resultReader); await resultReader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
+    }
+
     public async Task<ExpenseCardTransactionDto> AllocateCardTransactionAsync(TenantId tenant, Guid entity, Guid cardId, AllocateExpenseCardTransactionRequest request, CancellationToken ct)
     {
         if (request.ExpenseId == Guid.Empty || request.Amount <= 0m) throw new ExpenseRepositoryException("expenses.card_allocation_invalid");
