@@ -826,6 +826,9 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Manual", manual.State);
         Assert.Equal("Manual merchant", manual.Suggestions!.Value.GetProperty("merchantName").GetString());
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='ocr.manual'", Atlas, expense.Id));
+        await using (var finalized = new NpgsqlCommand("update business_expenses.expense set expense_state='Finalized' where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection))
+        { finalized.Parameters.AddWithValue(Atlas); finalized.Parameters.AddWithValue(entity); finalized.Parameters.AddWithValue(expense.Id); await finalized.ExecuteNonQueryAsync(); }
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.RequestOcrAsync(new(Atlas), entity, expense.Id, evidenceId, default));
     }
 
     [ExpensesPostgresFact]

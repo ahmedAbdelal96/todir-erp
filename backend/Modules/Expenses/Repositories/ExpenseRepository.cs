@@ -417,6 +417,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public Task<ExpenseOcrJobDto> RequestOcrAsync(TenantId tenant, Guid entity, Guid expenseId, Guid evidenceId, CancellationToken ct) =>
         transactions.ExecuteAsync(tenant, async (context, token) =>
         {
+            await EnsureOcrEditableAsync(context, tenant, entity, expenseId, token);
             var evidence = await ReadOcrEvidenceAsync(context, tenant, entity, expenseId, evidenceId, token);
             if (evidence is null || evidence.Value.Status != "Ready" || !Guid.TryParse(evidence.Value.FileReference, out var fileRef))
                 throw new ExpenseRepositoryException("expenses.ocr_evidence_not_ready");
@@ -457,6 +458,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public Task<ExpenseOcrJobDto> RetryOcrAsync(TenantId tenant, Guid entity, Guid expenseId, Guid jobId, CancellationToken ct) =>
         transactions.ExecuteAsync(tenant, async (context, token) =>
         {
+            await EnsureOcrEditableAsync(context, tenant, entity, expenseId, token);
             await using var update = new NpgsqlCommand("update business_expenses.expense_ocr_job set state='Requested',failure_code=null,failure_reason=null,requested_at=now(),started_at=null,completed_at=null where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4 and state='Failed' returning id,state,attempt_count,suggestions,failure_code,failure_reason,requested_at,started_at,completed_at,evidence_id", context.Connection, context.Transaction);
             Add(update, tenant.Value, entity, expenseId, jobId);
             await using var reader = await update.ExecuteReaderAsync(token);
@@ -469,6 +471,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public Task<ExpenseOcrJobDto> CompleteOcrManuallyAsync(TenantId tenant, Guid entity, Guid expenseId, Guid jobId, CompleteExpenseOcrManuallyRequest request, CancellationToken ct) =>
         transactions.ExecuteAsync(tenant, async (context, token) =>
         {
+            await EnsureOcrEditableAsync(context, tenant, entity, expenseId, token);
             if (request.Suggestions.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null || string.IsNullOrWhiteSpace(request.Reason)) throw new ExpenseRepositoryException("expenses.ocr_manual_invalid");
             await using var update = new NpgsqlCommand("update business_expenses.expense_ocr_job set state='Manual',suggestions=$5::jsonb,failure_code=null,failure_reason=$6,completed_at=now() where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4 and state in ('Failed','Requested') returning id,state,attempt_count,suggestions,failure_code,failure_reason,requested_at,started_at,completed_at,evidence_id", context.Connection, context.Transaction);
             Add(update, tenant.Value, entity, expenseId, jobId, request.Suggestions.GetRawText(), request.Reason.Trim());
@@ -541,6 +544,15 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         await using var command = new NpgsqlCommand("select 1 from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and c.status='Active' and v.id=$3 and v.status='Published'", connection, transaction);
         Add(command, tenant.Value, entity, categoryVersionId);
         if (await command.ExecuteScalarAsync(ct) is null) throw new ExpenseRepositoryException("expenses.category_not_usable");
+    }
+
+    private static async Task EnsureOcrEditableAsync(ITransactionContext context, TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select expense_state from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction);
+        Add(command, tenant.Value, entity, expenseId);
+        var state = await command.ExecuteScalarAsync(ct) as string;
+        if (state is null) throw new ExpenseRepositoryException("expenses.expense_not_found");
+        if (state is not ("Draft" or "Submitted")) throw new ExpenseRepositoryException("expenses.ocr_not_editable");
     }
 
     private async Task EnsureExpenseEditableAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
