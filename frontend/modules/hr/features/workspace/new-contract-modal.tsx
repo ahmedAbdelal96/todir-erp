@@ -31,7 +31,9 @@ export function NewContractModal({
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState("");
   const [probationEnd, setProbationEnd] = useState("");
-  const [workingHoursBasis, setWorkingHoursBasis] = useState("FullTimeStandard");
+  // Keep the technical default in the API contract, but do not expose its
+  // internal code to HR users. An empty field means the standard hours basis.
+  const [workingHoursBasis, setWorkingHoursBasis] = useState("");
   const [autoActivate, setAutoActivate] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -40,7 +42,7 @@ export function NewContractModal({
     setStartDate(new Date().toISOString().slice(0, 10));
     setEndDate("");
     setProbationEnd("");
-    setWorkingHoursBasis("FullTimeStandard");
+    setWorkingHoursBasis("");
     setAutoActivate(true);
     setErrorMessage(null);
   };
@@ -54,7 +56,7 @@ export function NewContractModal({
         startDate: startDate || null,
         endDate: endDate || null,
         probationEnd: probationEnd || null,
-        workingHoursBasis
+        workingHoursBasis: workingHoursBasis.trim() || "FullTimeStandard"
       });
 
       if (autoActivate && created.id) {
@@ -138,6 +140,8 @@ export function NewContractModal({
 
         <TextField
           label={t("workspace.contracts.workingHoursBasis")}
+          description={t("workspace.contracts.workingHoursBasisDescription")}
+          placeholder={t("workspace.contracts.workingHoursBasisPlaceholder")}
           value={workingHoursBasis}
           onChange={setWorkingHoursBasis}
         />
