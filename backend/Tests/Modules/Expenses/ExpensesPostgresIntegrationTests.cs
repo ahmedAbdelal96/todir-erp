@@ -172,6 +172,24 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(0, reader.GetInt64(0));
     }
 
+    [ExpensesPostgresFact]
+    public async Task CategoryCanBeArchivedWithoutDestroyingHistoricalVersions()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var category = await repository.CreateCategoryAsync(new(Atlas), new(entity, $"ARCH-{Guid.CreateVersion7():N}", "Archive acceptance"), default);
+        var archived = await repository.ArchiveCategoryAsync(new(Atlas), entity, category.Id, default);
+        Assert.Equal("Archived", archived.Status);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_category where tenant_id=$1 and id=$2 and status='Archived'", Atlas, category.Id));
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.ArchiveCategoryAsync(new(Atlas), entity, category.Id, default));
+    }
+
     [ExpensesFinancialPostgresFact]
     public async Task FinalizationPostsExpenseAndReversalToLedgerExactlyOnce()
     {
