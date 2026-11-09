@@ -1025,6 +1025,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public async Task<ExpenseCardTransactionDto> MarkCardTransactionPersonalAsync(TenantId tenant, Guid entity, Guid cardId, MarkExpenseCardPersonalRequest request, CancellationToken ct)
     {
         if (request.EmployeeId == Guid.Empty) throw new ExpenseRepositoryException("expenses.card_employee_required");
+        if (hr is not null && !await hr.EmployeeBelongsToLegalEntityAsync(tenant, request.EmployeeId, entity, ct)) throw new ExpenseRepositoryException("expenses.card_employee_scope_invalid");
         await using var scope = await OpenAsync(tenant, ct);
         await using var card = new NpgsqlCommand("select provider_reference,amount,currency_code,state from business_expenses.expense_card_transaction where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction);
         Add(card, tenant.Value, entity, cardId); await using var r = await card.ExecuteReaderAsync(ct);

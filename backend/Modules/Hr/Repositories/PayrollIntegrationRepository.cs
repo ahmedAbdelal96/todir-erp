@@ -269,6 +269,14 @@ public sealed class PayrollIntegrationRepository(ITransactionCoordinator transac
             return value is Guid id ? id : null;
         }, cancellationToken);
 
+    public Task<bool> EmployeeBelongsToLegalEntityAsync(TenantId tenantId, Guid employeeId, Guid legalEntityId, CancellationToken cancellationToken = default) =>
+        transactions.ExecuteAsync(tenantId, async (context, token) =>
+        {
+            await using var command = new NpgsqlCommand("select exists(select 1 from business_hr.employee e join business_hr.employment em on em.tenant_id=e.tenant_id and em.employee_id=e.id where e.tenant_id=$1 and e.id=$2 and e.status<>'Archived' and em.legal_entity_id=$3 and em.status in ('Active','Suspended','NoticePeriod'))", context.Connection, context.Transaction);
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(employeeId); command.Parameters.AddWithValue(legalEntityId);
+            return (bool)(await command.ExecuteScalarAsync(token) ?? false);
+        }, cancellationToken);
+
     public Task<IReadOnlyDictionary<Guid, (string DisplayName, string EmploymentNumber)>> ResolveEmploymentIdentitiesAsync(TenantId tenantId, Guid legalEntityId, IReadOnlyList<Guid> employmentIds, CancellationToken cancellationToken = default) =>
         transactions.ExecuteAsync<IReadOnlyDictionary<Guid, (string DisplayName, string EmploymentNumber)>>(tenantId, async (context, token) =>
         {
