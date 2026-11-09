@@ -80,7 +80,7 @@ public sealed record RevokeEmployeeIdentifierRequest(long ExpectedVersion, strin
 public sealed record CreateEmployeeDocumentRequest(Guid LegalEntityId, string Category, Guid FileRef, string Sensitivity, DateOnly? ExpiryDate = null, Guid? SupersedesDocumentId = null, Guid? EmploymentId = null);
 public sealed record VerifyEmployeeDocumentRequest(long ExpectedVersion, bool Verified, string Reason);
 public sealed record EmployeeDocumentView(Guid Id, Guid EmployeeId, string Category, string Sensitivity, Guid FileRef, string Sha256, string ContentType, long SizeBytes, DateOnly? ExpiryDate, string VerificationStatus, string Status, Guid? SupersedesDocumentId, long Version, Guid? EmploymentId = null);
-public sealed record EmployeeDocumentDownloadView(string Url, DateTimeOffset ExpiresAt);
+public sealed record EmployeeDocumentDownloadView(string Url, DateTimeOffset ExpiresAt, string? FileName = null);
 public sealed record CreateEmployeeDocumentUploadRequest(Guid LegalEntityId, string FileName, string ContentType, long SizeBytes, string Sensitivity, Guid? EmploymentId = null);
 public sealed record EmployeeDocumentUploadIntentView(Guid FileRef, string Url, IReadOnlyDictionary<string, string> Fields, string ContentType, long SizeBytes, DateTimeOffset ExpiresAt);
 public sealed record CompleteEmployeeDocumentUploadRequest(Guid LegalEntityId, Guid? EmploymentId = null);

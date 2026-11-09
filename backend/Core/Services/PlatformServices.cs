@@ -190,7 +190,10 @@ public sealed class S3FileDownloadUrlProvider : IDisposable
             : new AmazonS3Client(new BasicAWSCredentials(accessKey, secretKey), clientConfiguration);
     }
 
-    public async Task<Shared.Contracts.Platform.SignedPlatformFileDownload?> CreateAsync(string objectKey, TimeSpan lifetime, TimeProvider clock, CancellationToken cancellationToken)
+    public Task<Shared.Contracts.Platform.SignedPlatformFileDownload?> CreateAsync(string objectKey, TimeSpan lifetime, TimeProvider clock, CancellationToken cancellationToken = default) =>
+        CreateAsync(objectKey, lifetime, clock, null, null, cancellationToken);
+
+    public async Task<Shared.Contracts.Platform.SignedPlatformFileDownload?> CreateAsync(string objectKey, TimeSpan lifetime, TimeProvider clock, string? originalName, string? contentType, CancellationToken cancellationToken)
     {
         if (client is null || bucket is null) throw new PlatformFileStorageUnavailableException();
         if (string.IsNullOrWhiteSpace(objectKey)) throw new InvalidOperationException("files.object_key_invalid");
@@ -199,15 +202,46 @@ public sealed class S3FileDownloadUrlProvider : IDisposable
         var protocol = useHttp
             ? Amazon.S3.Protocol.HTTP
             : Amazon.S3.Protocol.HTTPS;
+        var responseHeaders = BuildResponseHeaders(originalName, contentType);
         var url = await client.GetPreSignedURLAsync(new GetPreSignedUrlRequest
         {
             BucketName = bucket,
             Key = objectKey,
             Verb = HttpVerb.GET,
             Expires = expiresAt.UtcDateTime,
-            Protocol = protocol
+            Protocol = protocol,
+            ResponseHeaderOverrides = responseHeaders
         }).WaitAsync(cancellationToken);
-        return new(url, expiresAt);
+        return new(url, expiresAt, SanitizeFileName(originalName));
+    }
+
+    private static ResponseHeaderOverrides? BuildResponseHeaders(string? originalName, string? contentType)
+    {
+        var fileName = SanitizeFileName(originalName);
+        if (fileName is null && string.IsNullOrWhiteSpace(contentType)) return null;
+        return new ResponseHeaderOverrides
+        {
+            ContentType = string.IsNullOrWhiteSpace(contentType) ? null : contentType.Trim(),
+            ContentDisposition = fileName is null ? null : BuildContentDisposition(fileName)
+        };
+    }
+
+    private static string? SanitizeFileName(string? originalName)
+    {
+        if (string.IsNullOrWhiteSpace(originalName)) return null;
+        // Normalize both separators because the API can run on Linux while
+        // clients may submit Windows-style paths.
+        var fileName = Path.GetFileName(originalName.Trim().Replace('\\', '/'));
+        var safe = new string(fileName.Where(character => !char.IsControl(character)).ToArray()).Trim();
+        return string.IsNullOrWhiteSpace(safe) ? null : safe;
+    }
+
+    private static string BuildContentDisposition(string fileName)
+    {
+        var asciiFallback = new string(fileName.Select(character => character is >= '\u0020' and <= '\u007e' ? character : '_').ToArray());
+        if (string.IsNullOrWhiteSpace(asciiFallback)) asciiFallback = "download";
+        asciiFallback = asciiFallback.Replace("\\", "_").Replace("\"", "_");
+        return $"attachment; filename=\"{asciiFallback}\"; filename*=UTF-8''{Uri.EscapeDataString(fileName)}";
     }
 
     public void Dispose() => client?.Dispose();
@@ -239,16 +273,28 @@ public sealed class NpgsqlPlatformFileReferenceCapability(NpgsqlDataSource dataS
         {
             scope.Parameters.AddWithValue(tenantId.Value.ToString("D")); await scope.ExecuteNonQueryAsync(cancellationToken);
         }
-        string? objectKey;
-        await using (var command = new NpgsqlCommand("select object_key from platform.file_record where tenant_id=$1 and id=$2 and owner_module=$3 and owner_entity_type=$4 and owner_entity_id=$5 and status='Ready'", connection, transaction))
+        string? objectKey; string? originalName; string? contentType;
+        await using (var command = new NpgsqlCommand("select object_key,original_name,content_type from platform.file_record where tenant_id=$1 and id=$2 and owner_module=$3 and owner_entity_type=$4 and owner_entity_id=$5 and status='Ready'", connection, transaction))
         {
             command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(fileRef); command.Parameters.AddWithValue(ownerModule); command.Parameters.AddWithValue(ownerEntityType); command.Parameters.AddWithValue(ownerEntityId);
-            objectKey = (string?)await command.ExecuteScalarAsync(cancellationToken);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                objectKey = reader.GetString(0);
+                originalName = reader.GetString(1);
+                contentType = reader.GetString(2);
+            }
+            else
+            {
+                objectKey = null;
+                originalName = null;
+                contentType = null;
+            }
         }
         await transaction.CommitAsync(cancellationToken);
         if (objectKey is null) return null;
         if (!objectKey.StartsWith($"tenant/{tenantId.Value:D}/{ownerModule}/{ownerEntityType}/{ownerEntityId:D}/", StringComparison.Ordinal)) return null;
-        return await downloadUrls.CreateAsync(objectKey, lifetime, clock, cancellationToken);
+        return await downloadUrls.CreateAsync(objectKey, lifetime, clock, originalName, contentType, cancellationToken);
     }
 }
 public sealed class NullPlatformFileReferenceCapability : Shared.Contracts.Platform.IPlatformFileReferenceCapability

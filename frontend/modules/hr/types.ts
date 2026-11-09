@@ -186,6 +186,7 @@ export interface EmployeeDocumentUploadIntentView {
 export interface EmployeeDocumentDownloadView {
   readonly url: string;
   readonly expiresAt: string;
+  readonly fileName?: string | null;
 }
 
 export interface CreateEmployeeDocumentUploadRequest {

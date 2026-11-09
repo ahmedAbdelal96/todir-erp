@@ -353,7 +353,7 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
                     System.Diagnostics.Activity.Current?.TraceId.ToString(), clock.GetUtcNow(), null), ct);
             await transaction.CommitAsync(ct);
         }
-        return new(signed.Url, signed.ExpiresAt);
+        return new(signed.Url, signed.ExpiresAt, signed.FileName);
     }
 
     public async Task<EmployeeDocumentView> VerifyDocumentAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, Guid documentId, Guid legalEntityId, VerifyEmployeeDocumentRequest request, Guid correlationId, CancellationToken ct)

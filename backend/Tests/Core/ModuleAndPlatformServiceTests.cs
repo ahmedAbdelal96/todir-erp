@@ -35,6 +35,32 @@ public sealed class ModuleAndPlatformServiceTests
         Assert.Contains("X-Amz-Expires=300", download.Url, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task S3FileAccessPreservesTheOriginalNameInDownloadHeaders()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["TODIR_FILES_BUCKET"] = "private-files",
+            ["TODIR_FILES_PUBLIC_ENDPOINT"] = "http://localhost:9000",
+            ["TODIR_FILES_ACCESS_KEY"] = "development-access",
+            ["TODIR_FILES_SECRET_KEY"] = "development-secret"
+        }).Build();
+        using var provider = new S3FileDownloadUrlProvider(configuration);
+
+        var download = await provider.CreateAsync(
+            "tenant/00000000-0000-0000-0000-000000000001/hr/employee/00000000-0000-0000-0000-000000000002/00000000-0000-0000-0000-000000000003",
+            TimeSpan.FromMinutes(5),
+            TimeProvider.System,
+            "بطاقة الهوية الوطنية.pdf",
+            "application/pdf",
+            CancellationToken.None);
+
+        Assert.NotNull(download);
+        Assert.Equal("بطاقة الهوية الوطنية.pdf", download.FileName);
+        Assert.Contains("response-content-disposition=", download.Url, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("response-content-type=", download.Url, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(NotificationChannel.InApp)]
     [InlineData(NotificationChannel.Email)]

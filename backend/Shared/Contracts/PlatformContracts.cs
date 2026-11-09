@@ -14,7 +14,7 @@ public interface IPlatformMembershipLifecycleCapability
 
 /// <summary>A tenant-scoped immutable reference returned by the Platform Files boundary; file bytes remain outside business modules.</summary>
 public sealed record VerifiedPlatformFileReference(TenantId TenantId, Guid FileRef, string Sha256, string ContentType, long SizeBytes, string Classification = "internal");
-public sealed record SignedPlatformFileDownload(string Url, DateTimeOffset ExpiresAt);
+public sealed record SignedPlatformFileDownload(string Url, DateTimeOffset ExpiresAt, string? FileName = null);
 public sealed record SignedPlatformFileUpload(Guid FileRef, string Url, IReadOnlyDictionary<string, string> Fields, string ContentType, long SizeBytes, DateTimeOffset ExpiresAt);
 public sealed record PlatformFileUploadCompletion(bool Ready, bool Rejected, string? ReasonCode = null);
 public sealed class PlatformFileStorageUnavailableException() : Exception("platform.files_storage_unavailable");

@@ -239,6 +239,7 @@ public sealed class HrDocumentDownloadIntegrationTests : DatabaseIntegrationTest
             using var browser = new HttpClient();
             using var file = await browser.GetAsync(url);
             Assert.Equal(HttpStatusCode.OK, file.StatusCode);
+            Assert.Equal("medical-note.txt", file.Content.Headers.ContentDisposition?.FileNameStar ?? file.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
             Assert.Equal(content, await file.Content.ReadAsByteArrayAsync());
 
             await using var auditConnection = new NpgsqlConnection(adminConnectionString);
