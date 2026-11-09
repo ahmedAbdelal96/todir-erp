@@ -505,6 +505,9 @@ public sealed class ExpensesPostgresIntegrationTests
         var duplicateFeed = await repository.ImportCardTransactionAsync(new(Atlas), entity, new(card.ProviderReference, "Card provider retry", new(2026, 10, 20), 80m, "EGP", "Pending"), default);
         Assert.Equal(card.Id, duplicateFeed.Id);
         Assert.Equal("Cleared", duplicateFeed.State);
+        var duplicateEvent = await repository.ImportCardTransactionAsync(new(Atlas), entity, new($"duplicate-{Guid.CreateVersion7():N}", "Duplicate feed", new(2026, 10, 20), 12m, "EGP", "Unmatched"), default);
+        Assert.Equal("Ignored", (await repository.IgnoreCardTransactionAsync(new(Atlas), entity, duplicateEvent.Id, default)).State);
+        Assert.Equal("Ignored", (await repository.ImportCardTransactionAsync(new(Atlas), entity, new(duplicateEvent.ProviderReference, "Duplicate retry", new(2026, 10, 20), 12m, "EGP", "Pending"), default)).State);
         card = await repository.MatchCardTransactionAsync(new(Atlas), entity, card.Id, new(expense.Id), default);
         Assert.Equal("Matched", card.State);
         var reference = $"refund-{Guid.CreateVersion7():N}";
