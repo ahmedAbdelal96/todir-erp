@@ -897,6 +897,34 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task OcrProviderRetryRecoversAfterTransientFailure()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), ocrProvider: new FlakyOcrProvider());
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection)) { context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync(); }
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var expense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "OCR retry", new(2026, 10, 24), 70m, "EGP", "EmployeePaid", categoryVersion), default);
+        var evidenceId = Guid.CreateVersion7(); var fileRef = Guid.CreateVersion7();
+        await using (var insert = new NpgsqlCommand("insert into business_expenses.expense_evidence(tenant_id,id,legal_entity_id,expense_id,evidence_type,file_reference,status) values($1,$2,$3,$4,'Receipt',$5,'Ready')", connection))
+        { insert.Parameters.AddWithValue(Atlas); insert.Parameters.AddWithValue(evidenceId); insert.Parameters.AddWithValue(entity); insert.Parameters.AddWithValue(expense.Id); insert.Parameters.AddWithValue(fileRef.ToString("D")); await insert.ExecuteNonQueryAsync(); }
+        var job = await repository.RequestOcrAsync(new(Atlas), entity, expense.Id, evidenceId, default);
+        await repository.ProcessOcrJobAsync(new(Atlas), entity, expense.Id, job.Id, evidenceId, default);
+        Assert.Equal("Failed", (await repository.GetOcrAsync(new(Atlas), entity, expense.Id, job.Id, default))!.State);
+        await repository.RetryOcrAsync(new(Atlas), entity, expense.Id, job.Id, default);
+        await repository.ProcessOcrJobAsync(new(Atlas), entity, expense.Id, job.Id, evidenceId, default);
+        var recovered = (await repository.GetOcrAsync(new(Atlas), entity, expense.Id, job.Id, default))!;
+        Assert.Equal("Succeeded", recovered.State);
+        Assert.Equal(2, recovered.AttemptCount);
+        Assert.Equal("Recovered merchant", recovered.Suggestions!.Value.GetProperty("merchantName").GetString());
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='ocr.completed'", Atlas, expense.Id));
+    }
+
+    [ExpensesPostgresFact]
     public async Task ExpenseImportPersistsRowOutcomesAndReplaysIdempotently()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
@@ -1192,6 +1220,19 @@ public sealed class ExpensesPostgresIntegrationTests
         public Task<ExpenseOcrResult> ExtractAsync(TenantId tenant, Guid fileReference, CancellationToken cancellationToken = default)
         {
             using var suggestions = JsonDocument.Parse("{\"merchantName\":\"OCR success\",\"amount\":65}");
+            return Task.FromResult(new ExpenseOcrResult(suggestions.RootElement.Clone()));
+        }
+    }
+
+    private sealed class FlakyOcrProvider : IExpenseOcrProvider
+    {
+        private int attempts;
+
+        public Task<ExpenseOcrResult> ExtractAsync(TenantId tenant, Guid fileReference, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref attempts) == 1)
+                throw new ExpenseOcrProviderException("expenses.ocr_provider_unavailable", "transient test failure");
+            using var suggestions = JsonDocument.Parse("{\"merchantName\":\"Recovered merchant\",\"amount\":70}");
             return Task.FromResult(new ExpenseOcrResult(suggestions.RootElement.Clone()));
         }
     }
