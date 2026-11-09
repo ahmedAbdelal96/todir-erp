@@ -174,18 +174,19 @@ export function ExpensesCorporateCardsTab({ legalEntityId }: ExpensesCorporateCa
           </div>
         ) : (
           <>
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("common.merchant")}</th>
-                  <th>{t("corporateCards.bankReference")}</th>
-                  <th>{t("common.date")}</th>
-                  <th>{t("common.amount")}</th>
-                  <th>{t("common.status")}</th>
-                  <th>{t("common.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <Table style={{ minWidth: "700px" }}>
+                <thead>
+                  <tr>
+                    <th>{t("common.merchant")}</th>
+                    <th>{t("corporateCards.bankReference")}</th>
+                    <th>{t("common.date")}</th>
+                    <th>{t("common.amount")}</th>
+                    <th>{t("common.status")}</th>
+                    <th>{t("common.actions")}</th>
+                  </tr>
+                </thead>
+                <tbody>
                 {cardsQuery.data.items.map((card) => (
                   <tr key={card.id}>
                     <td style={{ fontWeight: 600 }}>{card.merchantName}</td>
@@ -249,6 +250,7 @@ export function ExpensesCorporateCardsTab({ legalEntityId }: ExpensesCorporateCa
                 ))}
               </tbody>
             </Table>
+          </div>
 
             {cardsQuery.data.totalCount > 15 && (
               <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem" }}>

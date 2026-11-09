@@ -102,66 +102,68 @@ export function ExpensesReimbursementsTab({ legalEntityId }: ExpensesReimburseme
                 {t("reimbursements.emptyRepayments")}
               </div>
             ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <th>{t("reimbursements.reference")}</th>
-                    <th>{t("reimbursements.entryDate")}</th>
-                    <th>{t("reimbursements.totalAmount")}</th>
-                    <th>{t("reimbursements.collectedAmount")}</th>
-                    <th>{t("reimbursements.remainingAmount")}</th>
-                    <th>{t("common.status")}</th>
-                    <th>{t("common.actions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {repaymentsQuery.data.items.map((rep) => {
-                    const remaining = rep.amount - rep.settledAmount;
-                    return (
-                      <tr key={rep.id}>
-                        <td style={{ fontWeight: 600 }}>{rep.sourceReference}</td>
-                        <td>{rep.createdAt.slice(0, 10)}</td>
-                        <td style={{ fontWeight: 600 }}>
-                          <bdi>
-                            {rep.amount.toFixed(2)} {rep.currencyCode}
-                          </bdi>
-                        </td>
-                        <td>
-                          <bdi>
-                            {rep.settledAmount.toFixed(2)} {rep.currencyCode}
-                          </bdi>
-                        </td>
-                        <td style={{ fontWeight: 700, color: remaining > 0 ? "var(--color-status-danger)" : "inherit" }}>
-                          <bdi>
-                            {remaining.toFixed(2)} {rep.currencyCode}
-                          </bdi>
-                        </td>
-                        <td>
-                          <span
-                            style={{
-                              padding: "0.25rem 0.625rem",
-                              borderRadius: "var(--radius-full, 9999px)",
-                              fontSize: "0.75rem",
-                              fontWeight: 600,
-                              backgroundColor: rep.state === "Settled" ? "#ecfdf5" : "#fffbeb",
-                              color: rep.state === "Settled" ? "#059669" : "#d97706"
-                            }}
-                          >
-                            {rep.state === "Settled" ? t("reimbursements.collectedStatus") : t("reimbursements.dueStatus")}
-                          </span>
-                        </td>
-                        <td>
-                          {rep.state !== "Settled" && (
-                            <Button variant="primary" size="compact" onClick={() => setSettleRepayment(rep)}>
-                              {t("reimbursements.settleRepaymentAction")}
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </Table>
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <Table style={{ minWidth: "650px" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("reimbursements.reference")}</th>
+                      <th>{t("reimbursements.entryDate")}</th>
+                      <th>{t("reimbursements.totalAmount")}</th>
+                      <th>{t("reimbursements.collectedAmount")}</th>
+                      <th>{t("reimbursements.remainingAmount")}</th>
+                      <th>{t("common.status")}</th>
+                      <th>{t("common.actions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {repaymentsQuery.data.items.map((rep) => {
+                      const remaining = rep.amount - rep.settledAmount;
+                      return (
+                        <tr key={rep.id}>
+                          <td style={{ fontWeight: 600 }}>{rep.sourceReference}</td>
+                          <td>{rep.createdAt.slice(0, 10)}</td>
+                          <td style={{ fontWeight: 600 }}>
+                            <bdi>
+                              {rep.amount.toFixed(2)} {rep.currencyCode}
+                            </bdi>
+                          </td>
+                          <td>
+                            <bdi>
+                              {rep.settledAmount.toFixed(2)} {rep.currencyCode}
+                            </bdi>
+                          </td>
+                          <td style={{ fontWeight: 700, color: remaining > 0 ? "var(--color-status-danger)" : "inherit" }}>
+                            <bdi>
+                              {remaining.toFixed(2)} {rep.currencyCode}
+                            </bdi>
+                          </td>
+                          <td>
+                            <span
+                              style={{
+                                padding: "0.25rem 0.625rem",
+                                borderRadius: "var(--radius-full, 9999px)",
+                                fontSize: "0.75rem",
+                                fontWeight: 600,
+                                backgroundColor: rep.state === "Settled" ? "#ecfdf5" : "#fffbeb",
+                                color: rep.state === "Settled" ? "#059669" : "#d97706"
+                              }}
+                            >
+                              {rep.state === "Settled" ? t("reimbursements.collectedStatus") : t("reimbursements.dueStatus")}
+                            </span>
+                          </td>
+                          <td>
+                            {rep.state !== "Settled" && (
+                              <Button variant="primary" size="compact" onClick={() => setSettleRepayment(rep)}>
+                                {t("reimbursements.settleRepaymentAction")}
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              </div>
             )}
           </div>
         )}

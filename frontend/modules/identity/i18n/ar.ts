@@ -22,7 +22,7 @@ export const ar = {
     heroTitle: "نظام تخطيط الموارد المالي والإداري للشركات الرائدة",
     heroDescription: "إدارة مالية دقيقة، وعزل أمني صارم، وسرعة فائقة لدعم نمو أعمالك بثقة واحترافية.",
     featureIsolation: "عزل بيانات المؤسسات وتشفير متكامل", featureCompliance: "توافق كامل مع متطلبات السوق العربي والفوترة",
-    featureMfa: "مصادقة متقدمة وحماية متعددة العوامل MFA", atlasAdmin: "Atlas — مسؤول النظام", deltaAdmin: "Delta — مسؤول النظام"
+    featureMfa: "مصادقة متقدمة وحماية متعددة العوامل MFA", atlasAdmin: "Atlas — مسؤول النظام", atlasAccountant: "Atlas — محاسب مالي", deltaAdmin: "Delta — مسؤول النظام"
   },
   userList: {
     title: "المستخدمون", subtitle: "إدارة حسابات مستخدمي الشركة وصلاحيات الوصول", add: "إضافة مستخدم",

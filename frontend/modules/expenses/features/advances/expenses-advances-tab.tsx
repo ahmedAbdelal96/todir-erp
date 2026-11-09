@@ -106,20 +106,21 @@ export function ExpensesAdvancesTab({ legalEntityId }: ExpensesAdvancesTabProps)
           </div>
         ) : (
           <>
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("common.purpose")}</th>
-                  <th>{t("common.amount")}</th>
-                  <th>{t("advances.disbursed")}</th>
-                  <th>{t("advances.applied")}</th>
-                  <th>{t("advances.returned")}</th>
-                  <th>{t("advances.outstanding")}</th>
-                  <th>{t("common.status")}</th>
-                  <th>{t("common.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <Table style={{ minWidth: "750px" }}>
+                <thead>
+                  <tr>
+                    <th>{t("common.purpose")}</th>
+                    <th>{t("common.amount")}</th>
+                    <th>{t("advances.disbursed")}</th>
+                    <th>{t("advances.applied")}</th>
+                    <th>{t("advances.returned")}</th>
+                    <th>{t("advances.outstanding")}</th>
+                    <th>{t("common.status")}</th>
+                    <th>{t("common.actions")}</th>
+                  </tr>
+                </thead>
+                <tbody>
                 {advancesQuery.data.items.map((adv) => {
                   const outstanding = adv.issuedAmount - adv.appliedAmount - adv.returnedAmount - adv.writtenOffAmount;
                   return (
@@ -218,6 +219,7 @@ export function ExpensesAdvancesTab({ legalEntityId }: ExpensesAdvancesTabProps)
                 })}
               </tbody>
             </Table>
+          </div>
 
             {advancesQuery.data.totalCount > 15 && (
               <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem" }}>

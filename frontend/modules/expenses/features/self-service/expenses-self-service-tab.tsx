@@ -153,61 +153,63 @@ export function ExpensesSelfServiceTab({
             </div>
           ) : (
             <>
-              <Table>
-                <thead>
-                  <tr>
-                    <th>{t("common.merchant")}</th>
-                    <th>{t("common.date")}</th>
-                    <th>{t("common.amount")}</th>
-                    <th>{t("common.source")}</th>
-                    <th>{t("common.status")}</th>
-                    <th>{t("review.approvalCol")}</th>
-                    <th>{t("review.settlementCol")}</th>
-                    <th>{t("common.actions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {myExpensesQuery.data.items.map((exp) => (
-                    <tr
-                      key={exp.id}
-                      style={{ cursor: "pointer" }}
-                      onClick={() => setSelectedExpenseId(exp.id)}
-                    >
-                      <td style={{ fontWeight: 600 }}>{exp.merchantName}</td>
-                      <td>{exp.expenseDate}</td>
-                      <td style={{ fontWeight: 600 }}>
-                        <bdi>
-                          {exp.amount.toFixed(2)} {exp.currencyCode}
-                        </bdi>
-                      </td>
-                      <td>
-                        <PaymentSourceBadge source={exp.paymentSource} />
-                      </td>
-                      <td>
-                        <ExpenseStateBadge state={exp.expenseState} />
-                      </td>
-                      <td>
-                        <ApprovalStateBadge state={exp.approvalState} />
-                      </td>
-                      <td>
-                        <SettlementStateBadge state={exp.settlementState} />
-                      </td>
-                      <td>
-                        <Button
-                          variant="secondary"
-                          size="compact"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedExpenseId(exp.id);
-                          }}
-                        >
-                          {t("review.inspectAction")}
-                        </Button>
-                      </td>
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <Table style={{ minWidth: "750px" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("common.merchant")}</th>
+                      <th>{t("common.date")}</th>
+                      <th>{t("common.amount")}</th>
+                      <th>{t("common.source")}</th>
+                      <th>{t("common.status")}</th>
+                      <th>{t("review.approvalCol")}</th>
+                      <th>{t("review.settlementCol")}</th>
+                      <th>{t("common.actions")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
+                  </thead>
+                  <tbody>
+                    {myExpensesQuery.data.items.map((exp) => (
+                      <tr
+                        key={exp.id}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => setSelectedExpenseId(exp.id)}
+                      >
+                        <td style={{ fontWeight: 600 }}>{exp.merchantName}</td>
+                        <td>{exp.expenseDate}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          <bdi>
+                            {exp.amount.toFixed(2)} {exp.currencyCode}
+                          </bdi>
+                        </td>
+                        <td>
+                          <PaymentSourceBadge source={exp.paymentSource} />
+                        </td>
+                        <td>
+                          <ExpenseStateBadge state={exp.expenseState} />
+                        </td>
+                        <td>
+                          <ApprovalStateBadge state={exp.approvalState} />
+                        </td>
+                        <td>
+                          <SettlementStateBadge state={exp.settlementState} />
+                        </td>
+                        <td>
+                          <Button
+                            variant="secondary"
+                            size="compact"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedExpenseId(exp.id);
+                            }}
+                          >
+                            {t("review.inspectAction")}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
 
               {myExpensesQuery.data.totalCount > 15 && (
                 <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem" }}>
@@ -233,68 +235,70 @@ export function ExpensesSelfServiceTab({
               {t("selfService.emptyAdvances")}
             </div>
           ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("common.purpose")}</th>
-                  <th>{t("common.amount")}</th>
-                  <th>{t("advances.disbursed")}</th>
-                  <th>{t("advances.applied")}</th>
-                  <th>{t("advances.returned")}</th>
-                  <th>{t("advances.outstanding")}</th>
-                  <th>{t("common.status")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myAdvancesQuery.data.items.map((adv) => {
-                  const outstanding = adv.issuedAmount - adv.appliedAmount - adv.returnedAmount - adv.writtenOffAmount;
-                  return (
-                    <tr key={adv.id}>
-                      <td style={{ fontWeight: 600 }}>{adv.purpose}</td>
-                      <td>
-                        <bdi>
-                          {adv.amount.toFixed(2)} {adv.currencyCode}
-                        </bdi>
-                      </td>
-                      <td>
-                        <bdi>
-                          {adv.issuedAmount.toFixed(2)} {adv.currencyCode}
-                        </bdi>
-                      </td>
-                      <td>
-                        <bdi>
-                          {adv.appliedAmount.toFixed(2)} {adv.currencyCode}
-                        </bdi>
-                      </td>
-                      <td>
-                        <bdi>
-                          {adv.returnedAmount.toFixed(2)} {adv.currencyCode}
-                        </bdi>
-                      </td>
-                      <td style={{ fontWeight: 700, color: outstanding > 0 ? "var(--color-status-warning)" : "inherit" }}>
-                        <bdi>
-                          {outstanding.toFixed(2)} {adv.currencyCode}
-                        </bdi>
-                      </td>
-                      <td>
-                        <span
-                          style={{
-                            padding: "0.25rem 0.625rem",
-                            borderRadius: "var(--radius-full, 9999px)",
-                            fontSize: "0.75rem",
-                            fontWeight: 600,
-                            backgroundColor: adv.state === "Settled" ? "#ecfdf5" : "#fffbeb",
-                            color: adv.state === "Settled" ? "#059669" : "#d97706"
-                          }}
-                        >
-                          {t(`states.advance.${adv.state}` as any, { defaultValue: adv.state })}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <Table style={{ minWidth: "650px" }}>
+                <thead>
+                  <tr>
+                    <th>{t("common.purpose")}</th>
+                    <th>{t("common.amount")}</th>
+                    <th>{t("advances.disbursed")}</th>
+                    <th>{t("advances.applied")}</th>
+                    <th>{t("advances.returned")}</th>
+                    <th>{t("advances.outstanding")}</th>
+                    <th>{t("common.status")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myAdvancesQuery.data.items.map((adv) => {
+                    const outstanding = adv.issuedAmount - adv.appliedAmount - adv.returnedAmount - adv.writtenOffAmount;
+                    return (
+                      <tr key={adv.id}>
+                        <td style={{ fontWeight: 600 }}>{adv.purpose}</td>
+                        <td>
+                          <bdi>
+                            {adv.amount.toFixed(2)} {adv.currencyCode}
+                          </bdi>
+                        </td>
+                        <td>
+                          <bdi>
+                            {adv.issuedAmount.toFixed(2)} {adv.currencyCode}
+                          </bdi>
+                        </td>
+                        <td>
+                          <bdi>
+                            {adv.appliedAmount.toFixed(2)} {adv.currencyCode}
+                          </bdi>
+                        </td>
+                        <td>
+                          <bdi>
+                            {adv.returnedAmount.toFixed(2)} {adv.currencyCode}
+                          </bdi>
+                        </td>
+                        <td style={{ fontWeight: 700, color: outstanding > 0 ? "var(--color-status-warning)" : "inherit" }}>
+                          <bdi>
+                            {outstanding.toFixed(2)} {adv.currencyCode}
+                          </bdi>
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              padding: "0.25rem 0.625rem",
+                              borderRadius: "var(--radius-full, 9999px)",
+                              fontSize: "0.75rem",
+                              fontWeight: 600,
+                              backgroundColor: adv.state === "Settled" ? "#ecfdf5" : "#fffbeb",
+                              color: adv.state === "Settled" ? "#059669" : "#d97706"
+                            }}
+                          >
+                            {t(`states.advance.${adv.state}` as any, { defaultValue: adv.state })}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            </div>
           )}
         </Surface>
       )}
@@ -309,51 +313,53 @@ export function ExpensesSelfServiceTab({
               {t("selfService.emptyCards")}
             </div>
           ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("common.merchant")}</th>
-                  <th>{t("common.date")}</th>
-                  <th>{t("common.amount")}</th>
-                  <th>{t("common.status")}</th>
-                  <th>{t("common.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myCardsQuery.data.items.map((card) => (
-                  <tr key={card.id}>
-                    <td style={{ fontWeight: 600 }}>{card.merchantName}</td>
-                    <td>{card.transactionDate}</td>
-                    <td style={{ fontWeight: 600 }}>
-                      <bdi>
-                        {card.amount.toFixed(2)} {card.currencyCode}
-                      </bdi>
-                    </td>
-                    <td>
-                      <span
-                        style={{
-                          padding: "0.25rem 0.625rem",
-                          borderRadius: "var(--radius-full, 9999px)",
-                          fontSize: "0.75rem",
-                          fontWeight: 600,
-                          backgroundColor: card.state === "Matched" ? "#ecfdf5" : "#f1f5f9",
-                          color: card.state === "Matched" ? "#059669" : "#475569"
-                        }}
-                      >
-                        {t(`states.card.${card.state}` as any, { defaultValue: card.state })}
-                      </span>
-                    </td>
-                    <td>
-                      {card.state === "Unmatched" && (
-                        <Button variant="secondary" size="compact" onClick={() => setSelectedCard(card)}>
-                          {t("corporateCards.createExpenseAction")}
-                        </Button>
-                      )}
-                    </td>
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <Table style={{ minWidth: "600px" }}>
+                <thead>
+                  <tr>
+                    <th>{t("common.merchant")}</th>
+                    <th>{t("common.date")}</th>
+                    <th>{t("common.amount")}</th>
+                    <th>{t("common.status")}</th>
+                    <th>{t("common.actions")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {myCardsQuery.data.items.map((card) => (
+                    <tr key={card.id}>
+                      <td style={{ fontWeight: 600 }}>{card.merchantName}</td>
+                      <td>{card.transactionDate}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        <bdi>
+                          {card.amount.toFixed(2)} {card.currencyCode}
+                        </bdi>
+                      </td>
+                      <td>
+                        <span
+                          style={{
+                            padding: "0.25rem 0.625rem",
+                            borderRadius: "var(--radius-full, 9999px)",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            backgroundColor: card.state === "Matched" ? "#ecfdf5" : "#f1f5f9",
+                            color: card.state === "Matched" ? "#059669" : "#475569"
+                          }}
+                        >
+                          {t(`states.card.${card.state}` as any, { defaultValue: card.state })}
+                        </span>
+                      </td>
+                      <td>
+                        {card.state === "Unmatched" && (
+                          <Button variant="secondary" size="compact" onClick={() => setSelectedCard(card)}>
+                            {t("corporateCards.createExpenseAction")}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
           )}
         </Surface>
       )}
@@ -368,38 +374,40 @@ export function ExpensesSelfServiceTab({
               {t("selfService.emptyReimbursements")}
             </div>
           ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("reimbursements.claimDate")}</th>
-                  <th>{t("reimbursements.dueAmount")}</th>
-                  <th>{t("reimbursements.paidAmount")}</th>
-                  <th>{t("common.status")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myReimbursementsQuery.data.items.map((reimb) => (
-                  <tr key={reimb.id}>
-                    <td>{reimb.createdAt.slice(0, 10)}</td>
-                    <td style={{ fontWeight: 600 }}>
-                      <bdi>
-                        {reimb.amount.toFixed(2)} {reimb.currencyCode}
-                      </bdi>
-                    </td>
-                    <td>
-                      <bdi>
-                        {reimb.settledAmount.toFixed(2)} {reimb.currencyCode}
-                      </bdi>
-                    </td>
-                    <td>
-                      <SettlementStateBadge
-                        state={reimb.status === "Paid" ? "ReimbursementPaid" : "ReimbursementPending"}
-                      />
-                    </td>
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <Table style={{ minWidth: "550px" }}>
+                <thead>
+                  <tr>
+                    <th>{t("reimbursements.claimDate")}</th>
+                    <th>{t("reimbursements.dueAmount")}</th>
+                    <th>{t("reimbursements.paidAmount")}</th>
+                    <th>{t("common.status")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {myReimbursementsQuery.data.items.map((reimb) => (
+                    <tr key={reimb.id}>
+                      <td>{reimb.createdAt.slice(0, 10)}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        <bdi>
+                          {reimb.amount.toFixed(2)} {reimb.currencyCode}
+                        </bdi>
+                      </td>
+                      <td>
+                        <bdi>
+                          {reimb.settledAmount.toFixed(2)} {reimb.currencyCode}
+                        </bdi>
+                      </td>
+                      <td>
+                        <SettlementStateBadge
+                          state={reimb.status === "Paid" ? "ReimbursementPaid" : "ReimbursementPending"}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
           )}
         </Surface>
       )}
@@ -414,40 +422,42 @@ export function ExpensesSelfServiceTab({
               {t("selfService.emptyRepayments")}
             </div>
           ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("reimbursements.reference")}</th>
-                  <th>{t("reimbursements.entryDate")}</th>
-                  <th>{t("reimbursements.totalAmount")}</th>
-                  <th>{t("reimbursements.collectedAmount")}</th>
-                  <th>{t("common.status")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myRepaymentsQuery.data.items.map((rep) => (
-                  <tr key={rep.id}>
-                    <td>{rep.sourceReference}</td>
-                    <td>{rep.createdAt.slice(0, 10)}</td>
-                    <td style={{ fontWeight: 600 }}>
-                      <bdi>
-                        {rep.amount.toFixed(2)} {rep.currencyCode}
-                      </bdi>
-                    </td>
-                    <td>
-                      <bdi>
-                        {rep.settledAmount.toFixed(2)} {rep.currencyCode}
-                      </bdi>
-                    </td>
-                    <td>
-                      <SettlementStateBadge
-                        state={rep.state === "Settled" ? "RepaymentSettled" : "RepaymentPending"}
-                      />
-                    </td>
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <Table style={{ minWidth: "600px" }}>
+                <thead>
+                  <tr>
+                    <th>{t("reimbursements.reference")}</th>
+                    <th>{t("reimbursements.entryDate")}</th>
+                    <th>{t("reimbursements.totalAmount")}</th>
+                    <th>{t("reimbursements.collectedAmount")}</th>
+                    <th>{t("common.status")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {myRepaymentsQuery.data.items.map((rep) => (
+                    <tr key={rep.id}>
+                      <td>{rep.sourceReference}</td>
+                      <td>{rep.createdAt.slice(0, 10)}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        <bdi>
+                          {rep.amount.toFixed(2)} {rep.currencyCode}
+                        </bdi>
+                      </td>
+                      <td>
+                        <bdi>
+                          {rep.settledAmount.toFixed(2)} {rep.currencyCode}
+                        </bdi>
+                      </td>
+                      <td>
+                        <SettlementStateBadge
+                          state={rep.state === "Settled" ? "RepaymentSettled" : "RepaymentPending"}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
           )}
         </Surface>
       )}
@@ -462,32 +472,34 @@ export function ExpensesSelfServiceTab({
               {t("selfService.emptyReports")}
             </div>
           ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("reports.reportTitle")}</th>
-                  <th>{t("reports.createdAt")}</th>
-                  <th>{t("common.amount")}</th>
-                  <th>{t("common.status")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myReportsQuery.data.items.map((rpt) => (
-                  <tr key={rpt.id}>
-                    <td style={{ fontWeight: 600 }}>{rpt.title}</td>
-                    <td>{rpt.createdAt.slice(0, 10)}</td>
-                    <td style={{ fontWeight: 600 }}>
-                      <bdi>
-                        {rpt.totalAmount.toFixed(2)} {rpt.currencyCode}
-                      </bdi>
-                    </td>
-                    <td>
-                      <ExpenseStateBadge state={rpt.state} />
-                    </td>
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <Table style={{ minWidth: "500px" }}>
+                <thead>
+                  <tr>
+                    <th>{t("reports.reportTitle")}</th>
+                    <th>{t("reports.createdAt")}</th>
+                    <th>{t("common.amount")}</th>
+                    <th>{t("common.status")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {myReportsQuery.data.items.map((rpt) => (
+                    <tr key={rpt.id}>
+                      <td style={{ fontWeight: 600 }}>{rpt.title}</td>
+                      <td>{rpt.createdAt.slice(0, 10)}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        <bdi>
+                          {rpt.totalAmount.toFixed(2)} {rpt.currencyCode}
+                        </bdi>
+                      </td>
+                      <td>
+                        <ExpenseStateBadge state={rpt.state} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
           )}
         </Surface>
       )}

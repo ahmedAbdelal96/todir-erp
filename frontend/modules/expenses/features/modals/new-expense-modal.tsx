@@ -4,6 +4,7 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Select, type SelectOption } from "../../../../components/primitives/select.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { useOptionalLegalEntityContext } from "../../../../core/runtime/runtime-provider.tsx";
 import {
   useExpenseCategoriesQuery,
   useCreateExpenseMutation,
@@ -25,31 +26,70 @@ export function NewExpenseModal({
   isSelfService = false
 }: NewExpenseModalProps): React.JSX.Element {
   const { t } = useTranslation("expenses");
+  const legalEntityContext = useOptionalLegalEntityContext();
+  const defaultCurrency = legalEntityContext?.baseCurrencyCode || "EGP";
 
   const categoriesQuery = useExpenseCategoriesQuery(legalEntityId);
   const createMutation = useCreateExpenseMutation(legalEntityId);
   const createMyMutation = useCreateMyExpenseMutation(legalEntityId);
 
+  const [expenseMode, setExpenseMode] = useState<"general" | "mileage" | "perDiem">("general");
   const [merchantName, setMerchantName] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [amount, setAmount] = useState<string>("");
-  const [currencyCode, setCurrencyCode] = useState("EGP");
+  const [currencyCode, setCurrencyCode] = useState(defaultCurrency);
   const [paymentSource, setPaymentSource] = useState<PaymentSource>("EmployeePaid");
   const [categoryId, setCategoryId] = useState("");
   const [businessPurpose, setBusinessPurpose] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // Mileage-specific fields
+  const [distanceKm, setDistanceKm] = useState<string>("");
+  const [ratePerKm, setRatePerKm] = useState<string>("5.00");
+  const [travelRoute, setTravelRoute] = useState<string>("");
+
+  // Per-diem-specific fields
+  const [daysCount, setDaysCount] = useState<string>("");
+  const [dailyRate, setDailyRate] = useState<string>("500.00");
+  const [destinationCity, setDestinationCity] = useState<string>("");
+
   const categories = categoriesQuery.data ?? [];
   const selectedCategory = categories.find((c) => c.id === categoryId) ?? categories[0];
   const activeVersionId = selectedCategory?.publishedVersionId ?? "";
+
+  const handleDistanceChange = (kmVal: string, rateVal: string) => {
+    setDistanceKm(kmVal);
+    const km = parseFloat(kmVal);
+    const rate = parseFloat(rateVal);
+    if (!isNaN(km) && !isNaN(rate) && km > 0 && rate > 0) {
+      setAmount((km * rate).toFixed(2));
+    }
+  };
+
+  const handleDaysChange = (daysVal: string, dailyRateVal: string) => {
+    setDaysCount(daysVal);
+    const days = parseFloat(daysVal);
+    const rate = parseFloat(dailyRateVal);
+    if (!isNaN(days) && !isNaN(rate) && days > 0 && rate > 0) {
+      setAmount((days * rate).toFixed(2));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     const parsedAmount = parseFloat(amount);
-    if (!merchantName.trim()) {
+    const finalMerchant =
+      merchantName.trim() ||
+      (expenseMode === "mileage"
+        ? `${t("mileagePerDiem.modeMileage")}: ${travelRoute || distanceKm + " km"}`
+        : expenseMode === "perDiem"
+        ? `${t("mileagePerDiem.modePerDiem")}: ${destinationCity || daysCount + " days"}`
+        : "");
+
+    if (!finalMerchant) {
       setError(t("modals.newExpense.merchantLabel"));
       return;
     }
@@ -62,29 +102,36 @@ export function NewExpenseModal({
       return;
     }
 
+    const finalPurpose =
+      expenseMode === "mileage"
+        ? `${businessPurpose.trim()} [${t("mileagePerDiem.distanceKm")}: ${distanceKm} km, ${travelRoute}]`.trim()
+        : expenseMode === "perDiem"
+        ? `${businessPurpose.trim()} [${t("mileagePerDiem.daysCount")}: ${daysCount}, ${destinationCity}]`.trim()
+        : businessPurpose.trim() || null;
+
     try {
       if (isSelfService) {
         await createMyMutation.mutateAsync({
           legalEntityId,
-          merchantName: merchantName.trim(),
+          merchantName: finalMerchant,
           expenseDate,
           amount: parsedAmount,
           currencyCode,
           paymentSource,
           categoryVersionId: activeVersionId,
-          businessPurpose: businessPurpose.trim() || null,
+          businessPurpose: finalPurpose,
           description: description.trim() || null
         });
       } else {
         await createMutation.mutateAsync({
           legalEntityId,
-          merchantName: merchantName.trim(),
+          merchantName: finalMerchant,
           expenseDate,
           amount: parsedAmount,
           currencyCode,
           paymentSource,
           categoryVersionId: activeVersionId,
-          businessPurpose: businessPurpose.trim() || null,
+          businessPurpose: finalPurpose,
           description: description.trim() || null
         });
       }
@@ -94,6 +141,10 @@ export function NewExpenseModal({
       setAmount("");
       setBusinessPurpose("");
       setDescription("");
+      setDistanceKm("");
+      setTravelRoute("");
+      setDaysCount("");
+      setDestinationCity("");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t("common.errorTitle");
       setError(message);
@@ -149,12 +200,126 @@ export function NewExpenseModal({
           </div>
         )}
 
-        <TextField
-          label={t("modals.newExpense.merchantLabel")}
-          value={merchantName}
-          onChange={setMerchantName}
-          isRequired
-        />
+        {/* Expense Mode Selector */}
+        <div style={{ display: "flex", gap: "0.5rem", borderBottom: "1px solid #cbd5e1", paddingBottom: "0.5rem" }}>
+          <button
+            type="button"
+            onClick={() => setExpenseMode("general")}
+            style={{
+              padding: "0.375rem 0.75rem",
+              borderRadius: "0.375rem",
+              border: "none",
+              backgroundColor: expenseMode === "general" ? "#102a43" : "#f1f5f9",
+              color: expenseMode === "general" ? "#ffffff" : "#334155",
+              fontSize: "0.8125rem",
+              fontWeight: 600,
+              cursor: "pointer"
+            }}
+          >
+            {t("mileagePerDiem.modeGeneral")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpenseMode("mileage")}
+            style={{
+              padding: "0.375rem 0.75rem",
+              borderRadius: "0.375rem",
+              border: "none",
+              backgroundColor: expenseMode === "mileage" ? "#102a43" : "#f1f5f9",
+              color: expenseMode === "mileage" ? "#ffffff" : "#334155",
+              fontSize: "0.8125rem",
+              fontWeight: 600,
+              cursor: "pointer"
+            }}
+          >
+            {t("mileagePerDiem.modeMileage")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpenseMode("perDiem")}
+            style={{
+              padding: "0.375rem 0.75rem",
+              borderRadius: "0.375rem",
+              border: "none",
+              backgroundColor: expenseMode === "perDiem" ? "#102a43" : "#f1f5f9",
+              color: expenseMode === "perDiem" ? "#ffffff" : "#334155",
+              fontSize: "0.8125rem",
+              fontWeight: 600,
+              cursor: "pointer"
+            }}
+          >
+            {t("mileagePerDiem.modePerDiem")}
+          </button>
+        </div>
+
+        {expenseMode === "general" && (
+          <TextField
+            label={t("modals.newExpense.merchantLabel")}
+            value={merchantName}
+            onChange={setMerchantName}
+            isRequired
+          />
+        )}
+
+        {expenseMode === "mileage" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", backgroundColor: "#f8fafc", padding: "0.75rem", borderRadius: "0.375rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+              <TextField
+                label={t("mileagePerDiem.distanceKm")}
+                type="number"
+                value={distanceKm}
+                onChange={(val) => handleDistanceChange(val, ratePerKm)}
+                isRequired
+              />
+              <TextField
+                label={t("mileagePerDiem.ratePerKm")}
+                type="number"
+                value={ratePerKm}
+                onChange={(val) => {
+                  setRatePerKm(val);
+                  handleDistanceChange(distanceKm, val);
+                }}
+                isRequired
+              />
+            </div>
+            <TextField
+              label={t("common.description")}
+              placeholder={t("mileagePerDiem.routePlaceholder")}
+              value={travelRoute}
+              onChange={setTravelRoute}
+            />
+          </div>
+        )}
+
+        {expenseMode === "perDiem" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", backgroundColor: "#f8fafc", padding: "0.75rem", borderRadius: "0.375rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+              <TextField
+                label={t("mileagePerDiem.daysCount")}
+                type="number"
+                value={daysCount}
+                onChange={(val) => handleDaysChange(val, dailyRate)}
+                isRequired
+              />
+              <TextField
+                label={t("mileagePerDiem.dailyRate")}
+                type="number"
+                value={dailyRate}
+                onChange={(val) => {
+                  setDailyRate(val);
+                  handleDaysChange(daysCount, val);
+                }}
+                isRequired
+              />
+            </div>
+            <TextField
+              label={t("modals.newRatePolicy.locationCodeLabel")}
+              placeholder={t("mileagePerDiem.locationPlaceholder")}
+              value={destinationCity}
+              onChange={setDestinationCity}
+            />
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <TextField

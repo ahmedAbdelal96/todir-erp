@@ -111,34 +111,36 @@ export function ExpensesReportsTab({ legalEntityId }: ExpensesReportsTabProps): 
           </div>
         ) : (
           <>
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("reports.groupHeader")}</th>
-                  <th>{t("reports.totalSpend")}</th>
-                  <th>{t("reports.totalBase")}</th>
-                  <th>{t("reports.totalTax")}</th>
-                  <th>{t("reports.expenseCount")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reportQuery.data.items.map((row) => (
-                  <tr key={`${row.groupBy}-${row.groupKey}`}>
-                    <td style={{ fontWeight: 600 }}>{row.groupKey || t("reports.unclassified")}</td>
-                    <td style={{ fontWeight: 600 }}>
-                      <bdi>{row.originalAmount.toFixed(2)}</bdi>
-                    </td>
-                    <td>
-                      <bdi>{row.baseAmount.toFixed(2)}</bdi>
-                    </td>
-                    <td>
-                      <bdi>{row.taxAmount.toFixed(2)}</bdi>
-                    </td>
-                    <td>{row.expenseCount}</td>
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <Table style={{ minWidth: "600px" }}>
+                <thead>
+                  <tr>
+                    <th>{t("reports.groupHeader")}</th>
+                    <th>{t("reports.totalSpend")}</th>
+                    <th>{t("reports.totalBase")}</th>
+                    <th>{t("reports.totalTax")}</th>
+                    <th>{t("reports.expenseCount")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {reportQuery.data.items.map((row) => (
+                    <tr key={`${row.groupBy}-${row.groupKey}`}>
+                      <td style={{ fontWeight: 600 }}>{row.groupKey || t("reports.unclassified")}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        <bdi>{row.originalAmount.toFixed(2)}</bdi>
+                      </td>
+                      <td>
+                        <bdi>{row.baseAmount.toFixed(2)}</bdi>
+                      </td>
+                      <td>
+                        <bdi>{row.taxAmount.toFixed(2)}</bdi>
+                      </td>
+                      <td>{row.expenseCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
 
             {reportQuery.data.totalCount > 15 && (
               <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem" }}>

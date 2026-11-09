@@ -39,12 +39,9 @@ export function ExpensesPage(): React.JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = (searchParams.get("tab") as ExpensesTabId | null) ?? "self-service";
 
-  const legalEntityId =
-    outletCtx?.legalEntityId ||
-    runtimeContext?.legalEntityId ||
-    "00000000-0000-0000-0000-000000000001";
+  const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || null;
 
-  // Check elevated / finance permissions
+  // Check elevated / finance permissions (if permissions context is provided, enforce strictly; otherwise allow shell access)
   const canManage = permissions
     ? permissions.hasPermission("expenses.approve") ||
       permissions.hasPermission("expenses.finalize") ||
@@ -106,6 +103,55 @@ export function ExpensesPage(): React.JSX.Element {
   ];
 
   const visibleTabs = tabs.filter((tab) => !tab.requiresManager || canManage);
+
+  if (!legalEntityId) {
+    return (
+      <div
+        data-testid="expenses-page"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          minHeight: "100%",
+          backgroundColor: "var(--color-surface-page, #f0f4f8)"
+        }}
+      >
+        <header
+          style={{
+            backgroundColor: "#102a43",
+            color: "#ffffff",
+            padding: "1.25rem 2rem",
+            borderBottom: "1px solid rgba(255, 255, 255, 0.1)"
+          }}
+        >
+          <h1 style={{ margin: 0, fontSize: "1.5rem", fontWeight: 700, color: "#ffffff" }}>
+            {t("title")}
+          </h1>
+          <p style={{ margin: "0.375rem 0 0", fontSize: "0.875rem", color: "#94a3b8" }}>
+            {t("subtitle")}
+          </p>
+        </header>
+        <main style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+          <div
+            style={{
+              maxWidth: "480px",
+              margin: "2rem auto",
+              padding: "2rem",
+              borderRadius: "var(--radius-lg, 0.75rem)",
+              backgroundColor: "#ffffff",
+              border: "1px solid var(--color-border-default, #cbd5e1)"
+            }}
+          >
+            <h3 style={{ margin: "0 0 0.5rem", color: "var(--color-content-primary, #0f172a)" }}>
+              {t("common.noLegalEntitySelected")}
+            </h3>
+            <p style={{ margin: 0, fontSize: "0.875rem" }}>
+              {t("common.selectLegalEntityNotice")}
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div

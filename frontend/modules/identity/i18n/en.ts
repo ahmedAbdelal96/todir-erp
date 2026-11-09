@@ -22,7 +22,7 @@ export const en = {
     heroTitle: "Enterprise resource planning for modern businesses",
     heroDescription: "Accurate financial management, strong data isolation, and high performance to support confident business growth.",
     featureIsolation: "Strong tenant isolation and encryption", featureCompliance: "Built for Arabic markets and local invoicing",
-    featureMfa: "Advanced authentication and multi-factor protection", atlasAdmin: "Atlas — System administrator", deltaAdmin: "Delta — System administrator"
+    featureMfa: "Advanced authentication and multi-factor protection", atlasAdmin: "Atlas — System administrator", atlasAccountant: "Atlas — Financial Accountant", deltaAdmin: "Delta — System administrator"
   },
   userList: {
     title: "Users", subtitle: "Manage company user accounts and access permissions", add: "Add user",

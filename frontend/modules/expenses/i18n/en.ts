@@ -2,7 +2,7 @@ export const expensesEn = {
   title: "Expenses & Reimbursements",
   subtitle: "Manage business spend, advances, corporate cards, and claim settlements",
   activeEntity: "Active Legal Entity",
-  badge: "ERP Module 21",
+  badge: "Corporate Spend & Claims",
   defaultEntity: "Atlas Commercial Group",
 
   tabs: {
@@ -287,7 +287,9 @@ export const expensesEn = {
     itemizations: "Itemizations",
     mileage: "Mileage Allowance",
     perDiem: "Per Diem Allowance",
-    dimensions: "Dimensions & Cost Centers"
+    dimensions: "Dimensions & Cost Centers",
+    noLegalEntitySelected: "No Legal Entity Selected",
+    selectLegalEntityNotice: "Please select an authorized legal entity from the top navigation bar to manage expenses and claims."
   },
 
   modals: {
@@ -496,5 +498,65 @@ export const expensesEn = {
     participantNamePlaceholder: "Participant name",
     dimensionCode: "Dimension Code",
     dimensionValue: "Value"
+  },
+
+  evidenceUpload: {
+    uploadTitle: "Upload Official Supporting Evidence",
+    fileLabel: "Select receipt or invoice file",
+    fileHint: "Supported types: PDF, PNG, JPG up to 15MB",
+    typeLabel: "Evidence Type",
+    submitButton: "Upload & Verify Evidence",
+    uploading: "Uploading and security scanning...",
+    uploadSuccess: "Evidence uploaded and verified successfully",
+    uploadError: "Failed to upload supporting evidence",
+    downloadAction: "Download Evidence",
+    startOcrAction: "Scan with OCR",
+    ocrJobPending: "Extracting text automatically...",
+    ocrSuccessTitle: "Automatically Extracted Invoice Data",
+    applyOcrValues: "Apply Values to Expense"
+  },
+
+  historyActions: {
+    Created: "Expense draft created",
+    Submitted: "Submitted for approval",
+    Approved: "Approved by manager",
+    Rejected: "Expense rejected",
+    Finalized: "Finalized to General Ledger",
+    Reversed: "Expense reversed",
+    EvidenceAdded: "New supporting evidence attached",
+    MissingReceiptDeclared: "Missing receipt declaration filed",
+    PolicyEvaluated: "Policy compliance evaluated",
+    ItemizationAdded: "Line itemization added",
+    ParticipantAdded: "Participant registered",
+    DimensionSet: "Accounting dimension assigned",
+    Updated: "Expense record updated"
+  },
+
+  participantRoles: {
+    MealParticipant: "Business Meal Guest",
+    ProjectMember: "Project Team Member",
+    TravelCompanion: "Travel Companion",
+    ExternalGuest: "External Guest / Client"
+  },
+
+  evidenceTypes: {
+    TaxInvoice: "Official Tax Invoice",
+    Receipt: "Cash / Card Payment Receipt",
+    Ticket: "Travel / Transit Ticket",
+    Contract: "Contract or Task Order",
+    Other: "Other Supporting Evidence"
+  },
+
+  mileagePerDiem: {
+    modeGeneral: "General Expense",
+    modeMileage: "Mileage Allowance (km)",
+    modePerDiem: "Daily Travel Allowance (Per Diem)",
+    distanceKm: "Distance Traveled (km)",
+    ratePerKm: "Approved Rate per km",
+    daysCount: "Eligible Days",
+    dailyRate: "Approved Daily Rate",
+    calculatedNotice: "Calculated automatically per policy rates:",
+    routePlaceholder: "e.g. From headquarters to Alexandria branch",
+    locationPlaceholder: "e.g. Dubai / Riyadh / Aswan"
   }
 } as const;

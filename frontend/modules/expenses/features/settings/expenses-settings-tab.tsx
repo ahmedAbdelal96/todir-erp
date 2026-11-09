@@ -119,32 +119,34 @@ export function ExpensesSettingsTab({ legalEntityId }: ExpensesSettingsTabProps)
                 {t("settingsTab.emptyCategories")}
               </div>
             ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <th>{t("settingsTab.categoryCode")}</th>
-                    <th>{t("settingsTab.categoryName")}</th>
-                    <th>{t("common.status")}</th>
-                    <th>{t("settingsTab.publishedVersion")}</th>
-                    <th>{t("common.actions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {categoriesQuery.data.map((cat) => (
-                    <tr key={cat.id}>
-                      <td style={{ fontWeight: 600 }}>{cat.code}</td>
-                      <td>{cat.name}</td>
-                      <td>{cat.status}</td>
-                      <td>{cat.publishedVersionId ? t("settingsTab.publishedActive") : t("settingsTab.draftStatus")}</td>
-                      <td>
-                        <Button variant="secondary" size="compact" onClick={() => setNewVersionCatId(cat.id)}>
-                          {t("settingsTab.newVersionAction")}
-                        </Button>
-                      </td>
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <Table style={{ minWidth: "600px" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("settingsTab.categoryCode")}</th>
+                      <th>{t("settingsTab.categoryName")}</th>
+                      <th>{t("common.status")}</th>
+                      <th>{t("settingsTab.publishedVersion")}</th>
+                      <th>{t("common.actions")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
+                  </thead>
+                  <tbody>
+                    {categoriesQuery.data.map((cat) => (
+                      <tr key={cat.id}>
+                        <td style={{ fontWeight: 600 }}>{cat.code}</td>
+                        <td>{cat.name}</td>
+                        <td>{cat.status}</td>
+                        <td>{cat.publishedVersionId ? t("settingsTab.publishedActive") : t("settingsTab.draftStatus")}</td>
+                        <td>
+                          <Button variant="secondary" size="compact" onClick={() => setNewVersionCatId(cat.id)}>
+                            {t("settingsTab.newVersionAction")}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
             )}
           </div>
         )}
@@ -159,30 +161,32 @@ export function ExpensesSettingsTab({ legalEntityId }: ExpensesSettingsTabProps)
                 {t("settingsTab.emptyPolicies")}
               </div>
             ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <th>{t("settingsTab.policyCode")}</th>
-                    <th>{t("settingsTab.policyName")}</th>
-                    <th>{t("common.status")}</th>
-                    <th>{t("common.actions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {policiesQuery.data.items.map((pol) => (
-                    <tr key={pol.id}>
-                      <td style={{ fontWeight: 600 }}>{pol.code}</td>
-                      <td>{pol.name}</td>
-                      <td>{pol.status}</td>
-                      <td>
-                        <Button variant="secondary" size="compact" onClick={() => setNewVersionPolicyId(pol.id)}>
-                          {t("settingsTab.newRulesAction")}
-                        </Button>
-                      </td>
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <Table style={{ minWidth: "500px" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("settingsTab.policyCode")}</th>
+                      <th>{t("settingsTab.policyName")}</th>
+                      <th>{t("common.status")}</th>
+                      <th>{t("common.actions")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
+                  </thead>
+                  <tbody>
+                    {policiesQuery.data.items.map((pol) => (
+                      <tr key={pol.id}>
+                        <td style={{ fontWeight: 600 }}>{pol.code}</td>
+                        <td>{pol.name}</td>
+                        <td>{pol.status}</td>
+                        <td>
+                          <Button variant="secondary" size="compact" onClick={() => setNewVersionPolicyId(pol.id)}>
+                            {t("settingsTab.newRulesAction")}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
             )}
           </div>
         )}
@@ -197,42 +201,44 @@ export function ExpensesSettingsTab({ legalEntityId }: ExpensesSettingsTabProps)
                 {t("settingsTab.emptyRatePolicies")}
               </div>
             ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <th>{t("settingsTab.rateKind")}</th>
-                    <th>{t("settingsTab.rateValue")}</th>
-                    <th>{t("common.currency")}</th>
-                    <th>{t("common.status")}</th>
-                    <th>{t("settingsTab.effectiveFrom")}</th>
-                    <th>{t("common.actions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ratePoliciesQuery.data.items.map((rate) => (
-                    <tr key={rate.id}>
-                      <td style={{ fontWeight: 600 }}>{rate.kind}</td>
-                      <td style={{ fontWeight: 600 }}>
-                        <bdi>{rate.rate.toFixed(2)}</bdi>
-                      </td>
-                      <td>{rate.currencyCode}</td>
-                      <td>{rate.status}</td>
-                      <td>{rate.effectiveFrom}</td>
-                      <td>
-                        {rate.status !== "Published" && (
-                          <Button
-                            variant="primary"
-                            size="compact"
-                            onClick={() => publishRateMutation.mutate({ id: rate.id, request: {} })}
-                          >
-                            {t("settingsTab.publishAction")}
-                          </Button>
-                        )}
-                      </td>
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <Table style={{ minWidth: "600px" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("settingsTab.rateKind")}</th>
+                      <th>{t("settingsTab.rateValue")}</th>
+                      <th>{t("common.currency")}</th>
+                      <th>{t("common.status")}</th>
+                      <th>{t("settingsTab.effectiveFrom")}</th>
+                      <th>{t("common.actions")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
+                  </thead>
+                  <tbody>
+                    {ratePoliciesQuery.data.items.map((rate) => (
+                      <tr key={rate.id}>
+                        <td style={{ fontWeight: 600 }}>{rate.kind}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          <bdi>{rate.rate.toFixed(2)}</bdi>
+                        </td>
+                        <td>{rate.currencyCode}</td>
+                        <td>{rate.status}</td>
+                        <td>{rate.effectiveFrom}</td>
+                        <td>
+                          {rate.status !== "Published" && (
+                            <Button
+                              variant="primary"
+                              size="compact"
+                              onClick={() => publishRateMutation.mutate({ id: rate.id, request: {} })}
+                            >
+                              {t("settingsTab.publishAction")}
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
             )}
           </div>
         )}

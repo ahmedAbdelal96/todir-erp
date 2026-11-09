@@ -25,7 +25,7 @@ type AuthErrorKey =
   | "defaultError";
 
 interface DevelopmentLoginProfile {
-  readonly label: "atlasAdmin" | "deltaAdmin";
+  readonly label: "atlasAdmin" | "atlasAccountant" | "deltaAdmin";
   readonly email: string;
 }
 
@@ -33,6 +33,7 @@ const developmentLoginPassword = import.meta.env.DEV ? import.meta.env.VITE_DEV_
 const developmentLoginProfiles: readonly DevelopmentLoginProfile[] = developmentLoginPassword
   ? [
       { label: "atlasAdmin", email: "admin@atlas.com" },
+      { label: "atlasAccountant", email: "accountant@atlas.com" },
       { label: "deltaAdmin", email: "admin@delta.com" }
     ]
   : [];

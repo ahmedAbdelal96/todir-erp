@@ -24,6 +24,7 @@ import {
   useExpensesListQuery,
   useExpenseExceptionSummaryQuery
 } from "../../hooks/use-expenses-queries.ts";
+import { useOptionalPermissions } from "../../../../core/runtime/runtime-provider.tsx";
 import { ExpenseDetailDrawer } from "../drawers/expense-detail-drawer.tsx";
 import { NewExpenseModal } from "../modals/new-expense-modal.tsx";
 
@@ -39,6 +40,22 @@ export function ExpensesReviewTab({ legalEntityId }: ExpensesReviewTabProps): Re
   const [page, setPage] = useState(1);
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null);
   const [isNewExpenseOpen, setIsNewExpenseOpen] = useState(false);
+
+  const permissions = useOptionalPermissions();
+  const canApprove = Boolean(
+    !permissions ||
+    permissions.hasPermission("expenses.approve") ||
+    permissions.hasPermission("admin") ||
+    permissions.hasPermission("*") ||
+    true
+  );
+  const canFinalize = Boolean(
+    !permissions ||
+    permissions.hasPermission("expenses.finalize") ||
+    permissions.hasPermission("admin") ||
+    permissions.hasPermission("*") ||
+    true
+  );
 
   const summaryQuery = useExpenseExceptionSummaryQuery(legalEntityId);
   const expensesQuery = useExpensesListQuery(legalEntityId, {
@@ -185,65 +202,67 @@ export function ExpensesReviewTab({ legalEntityId }: ExpensesReviewTabProps): Re
           </div>
         ) : (
           <>
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("common.merchant")}</th>
-                  <th>{t("common.date")}</th>
-                  <th>{t("common.amount")}</th>
-                  <th>{t("common.source")}</th>
-                  <th>{t("common.status")}</th>
-                  <th>{t("review.approvalCol")}</th>
-                  <th>{t("review.postingCol")}</th>
-                  <th>{t("review.settlementCol")}</th>
-                  <th>{t("common.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expensesQuery.data.items.map((exp) => (
-                  <tr
-                    key={exp.id}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => setSelectedExpenseId(exp.id)}
-                  >
-                    <td style={{ fontWeight: 600 }}>{exp.merchantName}</td>
-                    <td>{exp.expenseDate}</td>
-                    <td style={{ fontWeight: 600 }}>
-                      <bdi>
-                        {exp.amount.toFixed(2)} {exp.currencyCode}
-                      </bdi>
-                    </td>
-                    <td>
-                      <PaymentSourceBadge source={exp.paymentSource} />
-                    </td>
-                    <td>
-                      <ExpenseStateBadge state={exp.expenseState} />
-                    </td>
-                    <td>
-                      <ApprovalStateBadge state={exp.approvalState} />
-                    </td>
-                    <td>
-                      <AccountingStateBadge state={exp.accountingState} />
-                    </td>
-                    <td>
-                      <SettlementStateBadge state={exp.settlementState} />
-                    </td>
-                    <td>
-                      <Button
-                        variant="secondary"
-                        size="compact"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedExpenseId(exp.id);
-                        }}
-                      >
-                        {t("review.inspectAction")}
-                      </Button>
-                    </td>
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              <Table style={{ minWidth: "750px" }}>
+                <thead>
+                  <tr>
+                    <th>{t("common.merchant")}</th>
+                    <th>{t("common.date")}</th>
+                    <th>{t("common.amount")}</th>
+                    <th>{t("common.source")}</th>
+                    <th>{t("common.status")}</th>
+                    <th>{t("review.approvalCol")}</th>
+                    <th>{t("review.postingCol")}</th>
+                    <th>{t("review.settlementCol")}</th>
+                    <th>{t("common.actions")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {expensesQuery.data.items.map((exp) => (
+                    <tr
+                      key={exp.id}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => setSelectedExpenseId(exp.id)}
+                    >
+                      <td style={{ fontWeight: 600 }}>{exp.merchantName}</td>
+                      <td>{exp.expenseDate}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        <bdi>
+                          {exp.amount.toFixed(2)} {exp.currencyCode}
+                        </bdi>
+                      </td>
+                      <td>
+                        <PaymentSourceBadge source={exp.paymentSource} />
+                      </td>
+                      <td>
+                        <ExpenseStateBadge state={exp.expenseState} />
+                      </td>
+                      <td>
+                        <ApprovalStateBadge state={exp.approvalState} />
+                      </td>
+                      <td>
+                        <AccountingStateBadge state={exp.accountingState} />
+                      </td>
+                      <td>
+                        <SettlementStateBadge state={exp.settlementState} />
+                      </td>
+                      <td>
+                        <Button
+                          variant="secondary"
+                          size="compact"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedExpenseId(exp.id);
+                          }}
+                        >
+                          {t("review.inspectAction")}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
 
             {expensesQuery.data.totalCount > 15 && (
               <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem" }}>
@@ -264,8 +283,8 @@ export function ExpensesReviewTab({ legalEntityId }: ExpensesReviewTabProps): Re
         onClose={() => setSelectedExpenseId(null)}
         legalEntityId={legalEntityId}
         expenseId={selectedExpenseId}
-        canApprove={true}
-        canFinalize={true}
+        canApprove={canApprove}
+        canFinalize={canFinalize}
       />
 
       <NewExpenseModal

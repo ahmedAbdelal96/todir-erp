@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Dialog } from "../../../../components/primitives/dialog.tsx";
+import { QuickPeekDrawer } from "../../../../components/primitives/quick-peek-drawer.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Table } from "../../../../components/primitives/table.tsx";
@@ -28,6 +28,7 @@ import {
   useAddParticipantMutation,
   useRequestPolicyExceptionMutation
 } from "../../hooks/use-expenses-queries.ts";
+import { expensesApi } from "../../services/expenses-api.ts";
 import { DeclareMissingReceiptModal } from "../modals/declare-missing-receipt-modal.tsx";
 
 export interface ExpenseDetailDrawerProps {
@@ -44,8 +45,8 @@ export function ExpenseDetailDrawer({
   onClose,
   legalEntityId,
   expenseId,
-  canApprove = true,
-  canFinalize = true
+  canApprove = false,
+  canFinalize = false
 }: ExpenseDetailDrawerProps): React.JSX.Element {
   const { t } = useTranslation("expenses");
 
@@ -61,6 +62,13 @@ export function ExpenseDetailDrawer({
   const [exceptionReason, setExceptionReason] = useState("");
   const [reversalReason, setReversalReason] = useState("");
   const [showReversalInput, setShowReversalInput] = useState(false);
+
+  // Evidence upload state
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadType, setUploadType] = useState<string>("TaxInvoice");
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [ocrStatus, setOcrStatus] = useState<Record<string, string>>({});
 
   const detailQuery = useExpenseDetailQuery(legalEntityId, expenseId ?? "");
   const evidenceQuery = useExpenseEvidenceQuery(legalEntityId, expenseId ?? "");
@@ -85,25 +93,84 @@ export function ExpenseDetailDrawer({
 
   const handleSubmit = async () => {
     if (!expense) return;
-    await submitMutation.mutateAsync({ version: expense.version });
+    try {
+      await submitMutation.mutateAsync({ version: expense.version });
+      try {
+        const approval = await expensesApi.requestApproval(legalEntityId, expense.id, {
+          reason: "طلب اعتماد المصروف"
+        });
+        if (approval?.requestId) {
+          window.sessionStorage.setItem(`expense_approval_${expense.id}`, approval.requestId);
+        }
+      } catch (appErr) {
+        console.warn("Approval request notification:", appErr);
+      }
+      await detailQuery.refetch();
+    } catch (err) {
+      console.error("Failed to submit expense", err);
+    }
   };
 
   const handleApprove = async () => {
     if (!expense) return;
-    await decideApprovalMutation.mutateAsync({
-      requestId: "00000000-0000-0000-0000-000000000001",
-      decision: "Approve",
-      reason: "Approved from review workbench"
-    });
+    try {
+      let reqId =
+        (expense as unknown as { approvalRequestId?: string }).approvalRequestId ||
+        window.sessionStorage.getItem(`expense_approval_${expense.id}`) ||
+        window.sessionStorage.getItem("__TODIR_APPROVAL_REQUEST_ID__") ||
+        (window as unknown as Record<string, string>).__TODIR_APPROVAL_REQUEST_ID__;
+      if (!reqId) {
+        try {
+          const approval = await expensesApi.requestApproval(legalEntityId, expense.id, {
+            reason: "طلب اعتماد من منصة مراجعة المصروفات"
+          });
+          reqId = approval.requestId;
+        } catch {
+          // If requestApproval cannot be called by approver, continue
+        }
+      }
+      if (reqId) {
+        await decideApprovalMutation.mutateAsync({
+          requestId: reqId,
+          decision: "Approved",
+          reason: "Approved from review workbench"
+        });
+        await detailQuery.refetch();
+      }
+    } catch (err) {
+      console.error("Failed to approve expense", err);
+    }
   };
 
   const handleReject = async () => {
     if (!expense) return;
-    await decideApprovalMutation.mutateAsync({
-      requestId: "00000000-0000-0000-0000-000000000001",
-      decision: "Reject",
-      reason: "Rejected from review workbench"
-    });
+    try {
+      let reqId =
+        (expense as unknown as { approvalRequestId?: string }).approvalRequestId ||
+        window.sessionStorage.getItem(`expense_approval_${expense.id}`) ||
+        window.sessionStorage.getItem("__TODIR_APPROVAL_REQUEST_ID__") ||
+        (window as unknown as Record<string, string>).__TODIR_APPROVAL_REQUEST_ID__;
+      if (!reqId) {
+        try {
+          const approval = await expensesApi.requestApproval(legalEntityId, expense.id, {
+            reason: "طلب اعتماد من منصة مراجعة المصروفات"
+          });
+          reqId = approval.requestId;
+        } catch {
+          // ignore
+        }
+      }
+      if (reqId) {
+        await decideApprovalMutation.mutateAsync({
+          requestId: reqId,
+          decision: "Rejected",
+          reason: "Rejected from review workbench"
+        });
+        await detailQuery.refetch();
+      }
+    } catch (err) {
+      console.error("Failed to reject expense", err);
+    }
   };
 
   const handleFinalize = async () => {
@@ -145,20 +212,102 @@ export function ExpenseDetailDrawer({
     setExceptionReason("");
   };
 
+  const handleUploadEvidence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFile || !expenseId) return;
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const intent = await expensesApi.createEvidenceUploadIntent(legalEntityId, expenseId, {
+        fileName: uploadFile.name,
+        contentType: uploadFile.type || "application/octet-stream",
+        sizeBytes: uploadFile.size,
+        classification: "Confidential"
+      });
+
+      const formData = new FormData();
+      if (intent.fields) {
+        for (const [key, val] of Object.entries(intent.fields)) {
+          formData.append(key, val);
+        }
+      }
+      formData.append("file", uploadFile);
+
+      const uploadRes = await fetch(intent.url, {
+        method: "POST",
+        body: formData
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Upload storage failed: ${uploadRes.status}`);
+      }
+
+      // Retry loop for backend scan readiness
+      let completed = false;
+      let attempts = 0;
+      while (!completed && attempts < 5) {
+        attempts++;
+        try {
+          await expensesApi.completeEvidenceUpload(legalEntityId, expenseId, {
+            fileRef: intent.fileRef,
+            evidenceType: uploadType
+          });
+          completed = true;
+        } catch (err: any) {
+          if (attempts < 5 && (err?.message?.includes("scan") || err?.message?.includes("not_ready"))) {
+            await new Promise((r) => setTimeout(r, 1000));
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      setUploadFile(null);
+      await evidenceQuery.refetch();
+      await detailQuery.refetch();
+    } catch (err: any) {
+      setUploadError(err?.message || t("evidenceUpload.uploadError"));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDownloadEvidence = async (evId: string) => {
+    try {
+      const res = await expensesApi.getEvidenceDownloadUrl(legalEntityId, expenseId, evId);
+      if (res?.url) {
+        window.open(res.url, "_blank");
+      }
+    } catch (err) {
+      console.error("Failed to get download URL", err);
+    }
+  };
+
+  const handleRequestOcr = async (evId: string) => {
+    try {
+      setOcrStatus((prev) => ({ ...prev, [evId]: "Pending" }));
+      const job = await expensesApi.requestOcr(legalEntityId, expenseId, evId);
+      setOcrStatus((prev) => ({ ...prev, [evId]: job.state }));
+    } catch (err) {
+      setOcrStatus((prev) => ({ ...prev, [evId]: "Failed" }));
+    }
+  };
+
   return (
     <>
-      <Dialog
+      <QuickPeekDrawer
         isOpen={isOpen}
         onClose={onClose}
         title={t("drawer.title")}
-        description={t("drawer.subtitle")}
+        subtitle={t("drawer.subtitle")}
+        width="640px"
       >
         {detailQuery.isLoading ? (
           <div style={{ padding: "2rem", textAlign: "center" }}>{t("common.loading")}</div>
         ) : !expense ? (
           <div style={{ padding: "2rem", textAlign: "center" }}>{t("common.errorTitle")}</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", padding: "1rem" }}>
             {/* Header info card */}
             <div
               style={{
@@ -293,35 +442,111 @@ export function ExpenseDetailDrawer({
                   </Button>
                 </div>
 
+                {/* Evidence Upload Form */}
+                <form
+                  onSubmit={handleUploadEvidence}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.75rem",
+                    padding: "1rem",
+                    backgroundColor: "#f8fafc",
+                    border: "1px dashed var(--color-border-default, #cbd5e1)",
+                    borderRadius: "var(--radius-md, 0.5rem)"
+                  }}
+                >
+                  <strong style={{ fontSize: "0.875rem", color: "#102a43" }}>{t("evidenceUpload.uploadTitle")}</strong>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                      style={{ fontSize: "0.8125rem" }}
+                    />
+                    <select
+                      value={uploadType}
+                      onChange={(e) => setUploadType(e.target.value)}
+                      style={{
+                        padding: "0.375rem 0.5rem",
+                        borderRadius: "var(--radius-sm, 0.375rem)",
+                        border: "1px solid #cbd5e1",
+                        fontSize: "0.8125rem"
+                      }}
+                    >
+                      <option value="TaxInvoice">{t("evidenceTypes.TaxInvoice")}</option>
+                      <option value="Receipt">{t("evidenceTypes.Receipt")}</option>
+                      <option value="Ticket">{t("evidenceTypes.Ticket")}</option>
+                      <option value="Contract">{t("evidenceTypes.Contract")}</option>
+                      <option value="Other">{t("evidenceTypes.Other")}</option>
+                    </select>
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="compact"
+                      isDisabled={!uploadFile || isUploading}
+                    >
+                      {isUploading ? t("evidenceUpload.uploading") : t("evidenceUpload.submitButton")}
+                    </Button>
+                  </div>
+                  {uploadError && (
+                    <span style={{ fontSize: "0.75rem", color: "#ef4444" }}>{uploadError}</span>
+                  )}
+                </form>
+
                 {evidenceQuery.data && evidenceQuery.data.length > 0 ? (
-                  <Table>
-                    <thead>
-                      <tr>
-                        <th>{t("common.file")}</th>
-                        <th>{t("common.status")}</th>
-                        <th>{t("common.date")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {evidenceQuery.data.map((ev) => (
-                        <tr key={ev.id}>
-                          <td>{ev.fileReference}</td>
-                          <td>
-                            <EvidenceStateBadge state={ev.status} />
-                          </td>
-                          <td>{ev.createdAt.slice(0, 10)}</td>
+                  <div style={{ overflowX: "auto" }}>
+                    <Table style={{ minWidth: "550px" }}>
+                      <thead>
+                        <tr>
+                          <th>{t("evidenceUpload.typeLabel")}</th>
+                          <th>{t("common.file")}</th>
+                          <th>{t("common.status")}</th>
+                          <th>{t("common.date")}</th>
+                          <th>{t("common.actions")}</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </Table>
+                      </thead>
+                      <tbody>
+                        {evidenceQuery.data.map((ev) => (
+                          <tr key={ev.id}>
+                            <td>{t(`evidenceTypes.${ev.evidenceType}` as any, ev.evidenceType)}</td>
+                            <td style={{ maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {ev.fileReference}
+                            </td>
+                            <td>
+                              <EvidenceStateBadge state={ev.status} />
+                            </td>
+                            <td>{ev.createdAt.slice(0, 10)}</td>
+                            <td>
+                              <div style={{ display: "flex", gap: "0.375rem" }}>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="compact"
+                                  onClick={() => handleDownloadEvidence(ev.id)}
+                                >
+                                  {t("evidenceUpload.downloadAction")}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="compact"
+                                  onClick={() => handleRequestOcr(ev.id)}
+                                  isDisabled={ocrStatus[ev.id] === "Pending"}
+                                >
+                                  {ocrStatus[ev.id] === "Pending"
+                                    ? t("evidenceUpload.ocrJobPending")
+                                    : t("evidenceUpload.startOcrAction")}
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  </div>
                 ) : (
                   <div style={{ textAlign: "center", padding: "1.5rem", color: "var(--color-content-muted, #64748b)" }}>
                     {t("drawer.noEvidence")}
-                    <div style={{ marginTop: "0.75rem" }}>
-                      <Button type="button" variant="secondary" size="compact" onClick={() => setIsMissingReceiptOpen(true)}>
-                        {t("common.declareMissingReceipt")}
-                      </Button>
-                    </div>
                   </div>
                 )}
               </div>
@@ -417,7 +642,7 @@ export function ExpenseDetailDrawer({
                       {participantsQuery.data.map((p) => (
                         <tr key={p.id}>
                           <td>{p.displayName}</td>
-                          <td>{p.role}</td>
+                          <td>{t(`participantRoles.${p.role}` as any, p.role)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -485,7 +710,7 @@ export function ExpenseDetailDrawer({
                     <tbody>
                       {historyQuery.data.map((h) => (
                         <tr key={h.id}>
-                          <td>{h.action}</td>
+                          <td>{t(`historyActions.${h.action}` as any, h.action)}</td>
                           <td>{h.occurredAt}</td>
                         </tr>
                       ))}
@@ -517,7 +742,7 @@ export function ExpenseDetailDrawer({
                 </Button>
               )}
 
-              {expense.expenseState === "Submitted" && canApprove && (
+              {expense.expenseState === "Submitted" && expense.approvalState !== "Approved" && canApprove && (
                 <>
                   <Button type="button" variant="secondary" onClick={handleReject} isDisabled={decideApprovalMutation.isPending}>
                     {t("review.rejectAction")}
@@ -528,7 +753,7 @@ export function ExpenseDetailDrawer({
                 </>
               )}
 
-              {expense.expenseState === "Approved" && canFinalize && (
+              {(expense.expenseState === "Approved" || (expense.expenseState === "Submitted" && expense.approvalState === "Approved")) && canFinalize && (
                 <Button type="button" variant="primary" onClick={handleFinalize} isDisabled={finalizeMutation.isPending}>
                   {t("review.finalizeAction")}
                 </Button>
@@ -564,7 +789,7 @@ export function ExpenseDetailDrawer({
             </div>
           </div>
         )}
-      </Dialog>
+      </QuickPeekDrawer>
 
       <DeclareMissingReceiptModal
         isOpen={isMissingReceiptOpen}

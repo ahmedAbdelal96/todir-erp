@@ -2,7 +2,7 @@ export const expensesAr = {
   title: "المصروفات ومستحقات الموظفين",
   subtitle: "إدارة نفقات العمل، سلف الموظفين، بطاقات الشركات، وتسوية المطالبات المالية",
   activeEntity: "الكيان القانوني النشط",
-  badge: "ERP Module 21",
+  badge: "نفقات ومستحقات الأعمال",
   defaultEntity: "شركة الأفق للتجارة العامة ذ.م.م",
 
   tabs: {
@@ -287,7 +287,9 @@ export const expensesAr = {
     itemizations: "بنود التفكيك",
     mileage: "بدل المسافة",
     perDiem: "بدل الإقامة والسفر",
-    dimensions: "الأبعاد ومراكز التكلفة"
+    dimensions: "الأبعاد ومراكز التكلفة",
+    noLegalEntitySelected: "لم يتم اختيار كيان قانوني",
+    selectLegalEntityNotice: "يرجى تحديد الكيان القانوني المصرح به من شريط التنقل العلوي لبدء إدارة المصروفات والمستحقات."
   },
 
   modals: {
@@ -496,5 +498,65 @@ export const expensesAr = {
     participantNamePlaceholder: "اسم المشارك",
     dimensionCode: "كود البعد",
     dimensionValue: "القيمة"
+  },
+
+  evidenceUpload: {
+    uploadTitle: "إرفاق مستند مؤيد رسمي",
+    fileLabel: "اختيار ملف الإيصال أو الفاتورة",
+    fileHint: "الملفات المدعومة: PDF, PNG, JPG حتى 15 ميجابايت",
+    typeLabel: "نوع المستند المؤيد",
+    submitButton: "رفع وفحص المستند",
+    uploading: "جاري الرفع والفحص الأمني...",
+    uploadSuccess: "تم رفع المستند وفحصه أمنياً بنجاح",
+    uploadError: "فشل رفع المستند المؤيد",
+    downloadAction: "تحميل المستند",
+    startOcrAction: "قراءة آلية (OCR)",
+    ocrJobPending: "جاري المعالجة الآلية...",
+    ocrSuccessTitle: "بيانات الفاتورة المستخرجة آلياً",
+    applyOcrValues: "تطبيق القيم على المصروف"
+  },
+
+  historyActions: {
+    Created: "تم إنشاء السجل كمسودة",
+    Submitted: "تم إرسال المصروف للاعتماد",
+    Approved: "تم اعتماد المصروف من الإدارة",
+    Rejected: "تم رفض المصروف",
+    Finalized: "تم ترحيل القيد إلى الأستاذ العام",
+    Reversed: "تم إجراء قيد عكسي للمصروف",
+    EvidenceAdded: "تم إرفاق مستند مؤيد جديد",
+    MissingReceiptDeclared: "تم تقديم إقرار فقدان إيصال",
+    PolicyEvaluated: "تم فحص الامتثال للسياسات المالية",
+    ItemizationAdded: "تم تفكيك بند من المصروف",
+    ParticipantAdded: "تم تسجيل مشارك في النفقة",
+    DimensionSet: "تم تحديد بعد محاسبي",
+    Updated: "تم تحديث بيانات المصروف"
+  },
+
+  participantRoles: {
+    MealParticipant: "مشارك في وجبة / ضيافة عمل",
+    ProjectMember: "عضو في فريق المشروع",
+    TravelCompanion: "مرافق في مهمة عمل",
+    ExternalGuest: "عميل أو ضيف خارجي"
+  },
+
+  evidenceTypes: {
+    TaxInvoice: "فاتورة ضريبية رسمية",
+    Receipt: "إيصال دفع نقدي أو إلكتروني",
+    Ticket: "تذكرة سفر أو انتقال",
+    Contract: "عقد أو إذن تكليف",
+    Other: "مستند مؤيد آخر"
+  },
+
+  mileagePerDiem: {
+    modeGeneral: "مصروف عام",
+    modeMileage: "بدل انتقال (كيلومتر)",
+    modePerDiem: "بدل سفر يومي (إعاشة)",
+    distanceKm: "المسافة المقطوعة (كم)",
+    ratePerKm: "سعر الكيلومتر",
+    daysCount: "عدد الأيام المستحقة",
+    dailyRate: "البدل اليومي المعتمد",
+    calculatedNotice: "المبلغ محسوب آلياً وفق سياسة البدلات المعتمدة:",
+    routePlaceholder: "مثال: من المقر الرئيسي إلى فرع الإسكندرية",
+    locationPlaceholder: "مثال: دبي / الرياض / أسوان"
   }
 } as const;

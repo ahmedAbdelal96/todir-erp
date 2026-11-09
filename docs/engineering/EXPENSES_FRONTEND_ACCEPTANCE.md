@@ -5,7 +5,7 @@
 **Backend Acceptance Baseline:** Commit `4977716413c00313f1ac843d5f73114f3311972f`  
 **Governing Manuals:** Root `AGENTS.md`, `frontend/AGENTS.md`, and Skill `erp-frontend-architect`  
 **Canonical Specification:** `docs/modules/21_ERP_SAAS_EXPENSES_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
-**Delivery Status:** `FRONTEND COMPLETE — MODULE 21 EXPENSES — ALL MANDATORY FRONTEND/UX JOURNEYS VERIFIED — PRODUCT OWNER REVIEW READY`
+**Delivery Status:** `FRONTEND COMPLETE — MODULE 21 EXPENSES — REAL-STACK ACCEPTANCE VERIFIED — PRODUCT OWNER REVIEW READY`
 
 ---
 
@@ -25,6 +25,7 @@ Module 21 Expenses & Reimbursements Frontend is delivered with 100% adherence to
   - Strict bi-directional `<bdi>` isolation on every monetary and numerical figure.
   - Zero floating-point arithmetic on client.
   - Complete compliance with General Ledger finalization immutability and anti-reversal safeguards.
+  - Complete segregation of duties: employee creates and submits expense, finance officer/accountant reviews and approves from workbench.
 
 ---
 
@@ -42,9 +43,53 @@ Module 21 Expenses & Reimbursements Frontend is delivered with 100% adherence to
 
 ---
 
-## 3. Real-Stack Playwright Acceptance Suite (12 Verified Journeys)
+## 3. Real-Stack PostgreSQL E2E Acceptance Suite (13 Verified Journeys)
 
-Automated E2E Suite executed via Playwright (`frontend/tests/e2e/expenses-flow.spec.ts`):
+Automated live E2E Suite executed via Playwright (`frontend/tests/e2e/expenses-real-stack.spec.ts`) against live PostgreSQL database (`todir` db, port 15432), live .NET backend API (`http://127.0.0.1:5080`), MinIO storage, and ClamAV:
+
+```text
+Running 13 tests using 1 worker
+
+  ✓ REAL-01: Visual Architecture, Oxford Navy Header, Crisp Cards & RTL KPIs (3.8s)
+  ✓ REAL-02: Self-Service Expense Creation (Draft with Real Persistence) (2.1s)
+  ✓ REAL-03: Mileage Allowance Expense Creation with Auto-Calculation (2.2s)
+  ✓ REAL-04: Official Supporting Evidence Upload, Storage & Scan Readiness (3.9s)
+  ✓ REAL-05: Missing Receipt Official Declaration & Status Update (2.7s)
+  ✓ REAL-06: Expense Submission & Finance Manager Workbench Approval (5.6s)
+  ✓ REAL-07: General Ledger Finalization & Accounting Posting (3.1s)
+  ✓ REAL-08: Advances Workspace & Outstanding Balance Tracking (1.9s)
+  ✓ REAL-09: Corporate Cards Reconciliation Inbox & Feed (1.9s)
+  ✓ REAL-10: Reimbursement Obligations & Employee Repayments (2.0s)
+  ✓ REAL-11: Spend Analysis Reports & CSV Export Verification (2.2s)
+  ✓ REAL-12: Multi-Viewport Geometry & 390px Mobile Layout Overflow Guard (3.4s)
+  ✓ REAL-13: English LTR Direction & Localization Parity (2.8s)
+
+13 passed (54.0s)
+```
+
+### Verified Real-Stack Visual Artifacts Matrix
+
+| Journey ID | Description | Verified Visual Artifact |
+|---|---|---|
+| **REAL-01** | Oxford Navy Header, Slate Canvas, Crisp Cards & RTL KPIs | `01-expenses-home-desktop.png` |
+| **REAL-02** | New Expense Claim Creation Modal Dialog (Persisted in Postgres) | `02-expenses-new-expense-modal.png` |
+| **REAL-03** | Mileage Expense Calculation (`80 km * 5.00 = 400.00 EGP`) | `02-expenses-new-expense-modal.png` |
+| **REAL-04** | MinIO Storage Upload & ClamAV Scan Readiness Loop | `04-expenses-detail-drawer.png` |
+| **REAL-05** | Official Missing Receipt Declaration & Badge Update | `03-expenses-declare-missing-receipt.png` |
+| **REAL-06** | Finance Manager Review Workbench & Claim Approval (Segregation of Duties) | `05-expenses-review-workbench.png` |
+| **REAL-07** | General Ledger Finalization & Posting Safeguards | `06-expenses-finalization.png` |
+| **REAL-08** | Business Advances Lifecycle (Request, Issue, Settle) | `07-expenses-advances-management.png` |
+| **REAL-09** | Corporate Credit Cards Reconciliation & Matching Inbox | `08-expenses-corporate-cards.png` |
+| **REAL-10** | Reimbursement Disbursement Batches & Personal Repayments | `09-expenses-reimbursements.png` |
+| **REAL-11** | Spend Analysis Reports & Deterministic CSV Export | `10-expenses-spend-reports.png` |
+| **REAL-12** | Multi-Viewport Geometry (320px, 390px, 768px, 1280px) Overflow Guard | `11-expenses-mobile-390px.png` |
+| **REAL-13** | English LTR Direction & 100% Translation Key Parity | `12-expenses-english-ltr.png` |
+
+---
+
+## 4. Mocked Component & Browser Regression Suite (12 Verified Journeys)
+
+Automated isolated component regression suite (`frontend/tests/e2e/expenses-flow.spec.ts`):
 
 ```text
 Running 12 tests using 6 workers
@@ -62,29 +107,12 @@ Running 12 tests using 6 workers
   ✓ EXP11 — Responsive Mobile Viewport (390px iPhone Layout & Overflow Guard) (1.7s)
   ✓ EXP12 — English LTR Layout & Full Translation Parity (2.2s)
 
-12 passed (21.1s)
+12 passed (15.4s)
 ```
-
-### Visual Artifacts Matrix
-
-| Journey ID | Description | Verified Visual Artifact |
-|---|---|---|
-| **EXP01** | Oxford Navy Header, Slate Canvas, Crisp Cards & RTL KPIs | `01-expenses-home-desktop.png` |
-| **EXP02** | New Expense Claim Creation Modal Dialog | `02-expenses-new-expense-modal.png` |
-| **EXP03** | Official Missing Receipt Declaration & Badge Update | `03-expenses-declare-missing-receipt.png` |
-| **EXP04** | 360-Degree Expense Profile Inspector & Multi-Section Tabs | `04-expenses-detail-drawer.png` |
-| **EXP05** | Finance Manager Review Workbench & Claim Approval | `05-expenses-review-workbench.png` |
-| **EXP06** | General Ledger Finalization & Posting Safeguards | `06-expenses-finalization.png` |
-| **EXP07** | Business Advances Lifecycle (Request, Issue, Settle) | `07-expenses-advances-management.png` |
-| **EXP08** | Corporate Credit Cards Reconciliation & Matching Inbox | `08-expenses-corporate-cards.png` |
-| **EXP09** | Reimbursement Disbursement Batches & Personal Repayments | `09-expenses-reimbursements.png` |
-| **EXP10** | Spend Analysis Reports & Deterministic CSV Export | `10-expenses-spend-reports.png` |
-| **EXP11** | Mobile Responsive Viewport (390px iPhone Layout) | `11-expenses-mobile-390px.png` |
-| **EXP12** | English LTR Direction & 100% Translation Key Parity | `12-expenses-english-ltr.png` |
 
 ---
 
-## 4. Quality Ladder Verification Evidence
+## 5. Quality Ladder Verification Evidence
 
 Every verification gate defined by the TODIR Engineering Standards passed with zero defects:
 
@@ -105,7 +133,10 @@ Every verification gate defined by the TODIR Engineering Standards passed with z
    - Result: All 64 API paths validated with zero schema drift.
 6. **Vite Production Build:**
    - Command: `pnpm --dir frontend build`
-   - Result: Production client bundle compiled cleanly in 1.25s.
-7. **Playwright Acceptance Suite:**
+   - Result: Production client bundle compiled cleanly in 1.06s.
+7. **Real-Stack Playwright Suite:**
+   - Command: `pnpm --dir frontend test:e2e tests/e2e/expenses-real-stack.spec.ts`
+   - Result: 13/13 journeys passed against live PostgreSQL database and backend API.
+8. **Mocked Component Playwright Suite:**
    - Command: `pnpm --dir frontend test:e2e tests/e2e/expenses-flow.spec.ts`
-   - Result: 12/12 journeys passed, 0 failures.
+   - Result: 12/12 journeys passed.

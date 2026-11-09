@@ -15,7 +15,18 @@ let consoleErrors: string[] = [];
 let pageErrors: string[] = [];
 let mockUserLanguage: 'ar' | 'en' = 'ar';
 
-test.describe('TODIR Expenses & Reimbursements (Module 21) — Full Lifecycle E2E Suite', () => {
+/**
+ * TODIR Expenses & Reimbursements (Module 21)
+ * MOCKED COMPONENT & BROWSER REGRESSION SUITE
+ * 
+ * NOTE: This suite uses controlled client-side browser mocks (via page.route) to verify
+ * all component interaction branches, UI edge cases, badge matrix states, modal dialogs,
+ * and responsive behavior deterministically.
+ * 
+ * Real PostgreSQL, backend API, MinIO storage, and ClamAV execution is authoritatively
+ * tested without mocks in: `frontend/tests/e2e/expenses-real-stack.spec.ts`.
+ */
+test.describe('TODIR Expenses & Reimbursements (Module 21) — Mocked Component & Browser Regression Suite', () => {
   test.beforeEach(async ({ page }) => {
     consoleErrors = [];
     pageErrors = [];
@@ -839,8 +850,8 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — Full Lifecycle E2
     await expect(page.locator('h1')).toHaveText('المصروفات ومستحقات الموظفين');
     await expect(page.getByText('إدارة نفقات العمل، سلف الموظفين، بطاقات الشركات، وتسوية المطالبات المالية')).toBeVisible();
 
-    // Verify Badge
-    await expect(page.getByText('ERP Module 21')).toBeVisible();
+    // Verify Authentic Badge (no technical ERP Module 21)
+    await expect(page.getByText('نفقات ومستحقات الأعمال')).toBeVisible();
 
     // Verify 7 Tabs are present
     await expect(page.getByRole('tab', { name: 'خدماتي ومصروفاتي' })).toBeVisible();
@@ -952,7 +963,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — Full Lifecycle E2
     await expect(page.getByText('COST_CENTER')).toBeVisible();
 
     await page.getByRole('button', { name: 'سجل التغييرات' }).click();
-    await expect(page.getByText('Created')).toBeVisible();
+    await expect(page.getByText(/Created|تم إنشاء السجل كمسودة/)).toBeVisible();
 
     // Capture Detail Drawer Proof
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, '04-expenses-detail-drawer.png'), fullPage: true });
