@@ -37,6 +37,9 @@ public sealed record CreateExpensePolicyVersionRequest(System.Text.Json.JsonElem
 public sealed record PublishExpensePolicyVersionRequest(DateOnly? EffectiveTo = null);
 public sealed record ExpenseReportDto(Guid Id, Guid LegalEntityId, Guid? EmployeeId, string Title, string State, decimal TotalAmount, string CurrencyCode, long Version, DateTimeOffset CreatedAt);
 public sealed record CreateExpenseReportRequest(Guid LegalEntityId, Guid? EmployeeId, string Title, string CurrencyCode = "EGP");
+public sealed record ExpenseReportItemDto(Guid Id, Guid ReportId, Guid ExpenseId, decimal Amount, DateTimeOffset CreatedAt);
+public sealed record AddExpenseReportItemRequest(Guid ExpenseId, decimal Amount);
+public sealed record ExpenseReportHistoryDto(Guid Id, Guid ReportId, string Action, System.Text.Json.JsonElement ToState, DateTimeOffset OccurredAt);
 public sealed record BusinessAdvanceDto(Guid Id, Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, decimal IssuedAmount, decimal AppliedAmount, decimal ReturnedAmount, string CurrencyCode, string State, long Version, DateTimeOffset CreatedAt, Guid? IssuancePaymentId = null, DateOnly? SettlementDueDate = null, bool IsOverdue = false);
 public sealed record CreateBusinessAdvanceRequest(Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, string CurrencyCode = "EGP", DateOnly? SettlementDueDate = null);
 public sealed record ApplyBusinessAdvanceRequest(Guid ExpenseId, decimal Amount);

@@ -82,6 +82,18 @@ public sealed class ExpensesPostgresIntegrationTests
         var finalized = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(approvedVersion), "finalize", default);
         Assert.Equal("Posted", finalized.AccountingState);
         Assert.Equal("ReimbursementPending", finalized.SettlementState);
+        var report = await repository.CreateReportAsync(new(Atlas), new(entity, null, "October finance report", "EGP"), default);
+        var reportItem = await repository.AddReportItemAsync(new(Atlas), entity, report.Id, new(finalized.Id, 125m), default);
+        Assert.Equal(finalized.Id, reportItem.ExpenseId);
+        var reportItems = await repository.ListReportItemsAsync(new(Atlas), entity, report.Id, 1, 10, default);
+        Assert.Single(reportItems.Items);
+        Assert.Contains((await repository.ListReportsAsync(new(Atlas), entity, "Draft", "October finance", 1, 10, default)).Items, item => item.TotalAmount == 125m);
+        var currentReport = (await repository.ListReportsAsync(new(Atlas), entity, "Draft", "October finance", 1, 10, default)).Items.Single(item => item.Id == report.Id);
+        var submittedReport = await repository.TransitionReportAsync(new(Atlas), entity, report.Id, new(currentReport.Version), "submit", default);
+        var approvedReport = await repository.TransitionReportAsync(new(Atlas), entity, report.Id, new(submittedReport.Version), "approve", default);
+        var finalizedReport = await repository.TransitionReportAsync(new(Atlas), entity, report.Id, new(approvedReport.Version), "finalize", default);
+        Assert.Equal("Finalized", finalizedReport.State);
+        Assert.Equal(3, (await repository.ListReportHistoryAsync(new(Atlas), entity, report.Id, default)).Count);
         var posted = await ReadPostingAsync(connection, finalized.Id);
         Assert.Equal(1, posted.EntryCount);
         Assert.Equal(125m, posted.Debit);

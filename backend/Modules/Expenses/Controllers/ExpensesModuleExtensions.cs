@@ -73,6 +73,14 @@ public static class ExpensesModuleExtensions
         g.MapGet("/legal-entities/{entityId:guid}/reports/export", async (Guid entityId, string? state, string? search, HttpContext h, ExpenseService s, CancellationToken ct) => { if (!Guid.TryParse(h.User.FindFirstValue("tenant_id"), out _)) return Results.Forbid(); try { var csv = await s.ExportReportsCsvAsync(Tenant(h), entityId, state, search, ct); return Results.File(Encoding.UTF8.GetBytes(csv), "text/csv; charset=utf-8", "expense-reports.csv"); } catch (ExpenseRepositoryException ex) { return Results.Problem(statusCode: 400, title: ex.Code, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); } });
         g.MapGet("/legal-entities/{entityId:guid}/reports/exceptions", async (Guid entityId, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.GetExceptionSummaryAsync(Tenant(h), entityId, ct)));
         g.MapPost("/legal-entities/{entityId:guid}/reports", async (Guid entityId, CreateExpenseReportRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => r.LegalEntityId != entityId ? Results.BadRequest(new { code = "expenses.entity_scope_invalid" }) : await Execute(h, entityId, () => s.CreateReportAsync(Tenant(h), r, ct), 201));
+        g.MapGet("/legal-entities/{entityId:guid}/reports/{reportId:guid}/items", async (Guid entityId, Guid reportId, int? page, int? pageSize, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListReportItemsAsync(Tenant(h), entityId, reportId, page ?? 1, pageSize ?? 50, ct)));
+        g.MapPost("/legal-entities/{entityId:guid}/reports/{reportId:guid}/items", async (Guid entityId, Guid reportId, AddExpenseReportItemRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.AddReportItemAsync(Tenant(h), entityId, reportId, r, ct), 201));
+        g.MapGet("/legal-entities/{entityId:guid}/reports/{reportId:guid}/history", async (Guid entityId, Guid reportId, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListReportHistoryAsync(Tenant(h), entityId, reportId, ct)));
+        foreach (var action in new[] { "submit", "approve", "reject", "finalize" })
+        {
+            var route = $"/legal-entities/{{entityId:guid}}/reports/{{reportId:guid}}/{action}";
+            g.MapPost(route, async (Guid entityId, Guid reportId, ExpenseActionRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.TransitionReportAsync(Tenant(h), entityId, reportId, r, action, ct)));
+        }
         g.MapGet("/legal-entities/{entityId:guid}/advances", async (Guid entityId, string? state, Guid? employeeId, bool? overdue, int? page, int? pageSize, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.ListAdvancesAsync(Tenant(h), entityId, state, employeeId, overdue == true, page ?? 1, pageSize ?? 50, ct)));
         g.MapPost("/legal-entities/{entityId:guid}/advances", async (Guid entityId, CreateBusinessAdvanceRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => r.LegalEntityId != entityId ? Results.BadRequest(new { code = "expenses.entity_scope_invalid" }) : await Execute(h, entityId, () => s.CreateAdvanceAsync(Tenant(h), r, ct), 201));
         g.MapPost("/legal-entities/{entityId:guid}/advances/{id:guid}/approve", async (Guid entityId, Guid id, ExpenseActionRequest r, HttpContext h, ExpenseService s, CancellationToken ct) => await Execute(h, entityId, () => s.TransitionAdvanceAsync(Tenant(h), entityId, id, r.Version, "approve", ct)));
@@ -113,6 +121,10 @@ public static class ExpensesModuleExtensions
         if (path.Contains("/submit", StringComparison.OrdinalIgnoreCase)) return "expenses.submit";
         if (path.Contains("/approval/request", StringComparison.OrdinalIgnoreCase)) return "expenses.submit";
         if (path.Contains("/approval/decision", StringComparison.OrdinalIgnoreCase)) return "expenses.approve";
+        if (path.Contains("/reports/", StringComparison.OrdinalIgnoreCase) && path.EndsWith("/approve", StringComparison.OrdinalIgnoreCase)) return "expenses.approve";
+        if (path.Contains("/reports/", StringComparison.OrdinalIgnoreCase) && path.EndsWith("/finalize", StringComparison.OrdinalIgnoreCase)) return "expenses.finalize";
+        if (path.Contains("/reports/", StringComparison.OrdinalIgnoreCase) && path.EndsWith("/submit", StringComparison.OrdinalIgnoreCase)) return "expenses.submit";
+        if (path.Contains("/reports/", StringComparison.OrdinalIgnoreCase) && path.EndsWith("/reject", StringComparison.OrdinalIgnoreCase)) return "expenses.approve";
         if (path.Contains("/approve", StringComparison.OrdinalIgnoreCase)) return "expenses.approve";
         if (path.Contains("/finalize", StringComparison.OrdinalIgnoreCase)) return "expenses.finalize";
         if (path.Contains("/reverse", StringComparison.OrdinalIgnoreCase)) return "expenses.reverse";
