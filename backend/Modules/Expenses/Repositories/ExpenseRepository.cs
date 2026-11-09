@@ -1386,6 +1386,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         catch
         {
             await SetBatchStateAsync(tenant, entity, batchId, "Failed", ct);
+            await EmitReimbursementOutcomeAsync(tenant, entity, batchId, "ExpenseReimbursementFailedV1", amount, currency, ct);
             throw;
         }
         await using (var scope = await OpenAsync(tenant, ct))
@@ -1409,6 +1410,17 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
 
     private async Task SetBatchStateAsync(TenantId tenant, Guid entity, Guid batchId, string state, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); await using var command = new NpgsqlCommand("update business_expenses.expense_reimbursement_batch set state=$4,version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and state='Submitted'", scope.Connection, scope.Transaction); Add(command, tenant.Value, entity, batchId, state); await command.ExecuteNonQueryAsync(ct); await scope.Transaction.CommitAsync(ct); }
+    private async Task EmitReimbursementOutcomeAsync(TenantId tenant, Guid entity, Guid batchId, string messageType, decimal amount, string currency, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var recipients = new NpgsqlCommand("select coalesce(jsonb_agg(distinct o.employee_id) filter(where o.employee_id is not null),'[]'::jsonb) from business_expenses.expense_reimbursement_obligation o join business_expenses.expense_reimbursement_allocation a on a.tenant_id=o.tenant_id and a.obligation_id=o.id where a.tenant_id=$1 and a.batch_id=$2", scope.Connection, scope.Transaction);
+        Add(recipients, tenant.Value, batchId);
+        var employeeIds = (string?)await recipients.ExecuteScalarAsync(ct) ?? "[]";
+        await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status,attempts) select $1,$2,jsonb_build_object('BatchId',$3::text,'LegalEntityId',$4::text,'EmployeeIds',$5::jsonb,'Amount',$6::numeric,'CurrencyCode',$7::text),$8,$9,$3,$3,'expenses','Pending',0 where not exists (select 1 from platform.outbox_message where tenant_id=$8 and message_type=$2 and causation_id=$3)", scope.Connection, scope.Transaction);
+        Add(outbox, Guid.CreateVersion7(), messageType, batchId, entity, employeeIds, amount, currency, tenant.Value, DateTimeOffset.UtcNow);
+        await outbox.ExecuteNonQueryAsync(ct);
+        await scope.Transaction.CommitAsync(ct);
+    }
     private async Task<ExpenseReimbursementBatchDto?> GetReimbursementBatchAsync(TenantId tenant, Guid entity, Guid batchId, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); await using var command = new NpgsqlCommand("select id,legal_entity_id,state,currency_code,total_amount,version,created_at from business_expenses.expense_reimbursement_batch where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction); Add(command, tenant.Value, entity, batchId); await using var reader = await command.ExecuteReaderAsync(ct); var result = await reader.ReadAsync(ct) ? new ExpenseReimbursementBatchDto(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetDecimal(4), reader.GetInt64(5), reader.GetFieldValue<DateTimeOffset>(6)) : null; await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
 
