@@ -610,6 +610,11 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
                 if (property.Value.ValueKind != System.Text.Json.JsonValueKind.True && property.Value.ValueKind != System.Text.Json.JsonValueKind.False) throw new ExpenseRepositoryException("expenses.policy_receipt_rule_invalid");
                 continue;
             }
+            if (property.NameEquals("receiptThreshold"))
+            {
+                if (property.Value.ValueKind != System.Text.Json.JsonValueKind.Number || property.Value.GetDecimal() < 0) throw new ExpenseRepositoryException("expenses.policy_receipt_threshold_invalid");
+                continue;
+            }
             if (property.NameEquals("requiresBusinessPurpose"))
             {
                 if (property.Value.ValueKind != System.Text.Json.JsonValueKind.True && property.Value.ValueKind != System.Text.Json.JsonValueKind.False) throw new ExpenseRepositoryException("expenses.policy_purpose_rule_invalid");
@@ -633,6 +638,11 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             if (property.NameEquals("merchantNames"))
             {
                 if (property.Value.ValueKind != System.Text.Json.JsonValueKind.Array || property.Value.GetArrayLength() == 0 || property.Value.EnumerateArray().Any(item => item.ValueKind != System.Text.Json.JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString()))) throw new ExpenseRepositoryException("expenses.policy_merchant_rule_invalid");
+                continue;
+            }
+            if (property.NameEquals("blockedMerchantNames"))
+            {
+                if (property.Value.ValueKind != System.Text.Json.JsonValueKind.Array || property.Value.GetArrayLength() == 0 || property.Value.EnumerateArray().Any(item => item.ValueKind != System.Text.Json.JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString()))) throw new ExpenseRepositoryException("expenses.policy_blocked_merchant_rule_invalid");
                 continue;
             }
             throw new ExpenseRepositoryException("expenses.policy_rule_unsupported");
@@ -668,8 +678,74 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("update business_expenses.expense_policy_version v set status='Published',effective_to=coalesce($4,effective_to) where v.tenant_id=$1 and v.id=$2 and v.legal_entity_id=$3 and v.status='Draft' returning v.id,v.policy_id,v.version,v.status,v.effective_from,v.effective_to,v.rules::text", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, versionId, entity, Db(request.EffectiveTo)); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.policy_version_not_publishable"); var result = new ExpensePolicyVersionDto(r.GetGuid(0), r.GetGuid(1), r.GetInt32(2), r.GetString(3), r.GetFieldValue<DateOnly>(4), r.IsDBNull(5) ? null : r.GetFieldValue<DateOnly>(5), System.Text.Json.JsonDocument.Parse(r.GetString(6)).RootElement.Clone()); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
     public async Task<ExpensePolicyVersionDto> RetirePolicyVersionAsync(TenantId tenant, Guid entity, Guid versionId, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("update business_expenses.expense_policy_version set status='Retired' where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Published' returning id,policy_id,version,status,effective_from,effective_to,rules::text", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, versionId); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.policy_version_not_retireable"); var result = new ExpensePolicyVersionDto(r.GetGuid(0), r.GetGuid(1), r.GetInt32(2), r.GetString(3), r.GetFieldValue<DateOnly>(4), r.IsDBNull(5) ? null : r.GetFieldValue<DateOnly>(5), System.Text.Json.JsonDocument.Parse(r.GetString(6)).RootElement.Clone()); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
-    public async Task<ExpensePolicyEvaluationDto> EvaluatePolicyAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
+    private async Task<ExpensePolicyEvaluationDto> EvaluatePolicyLegacyAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); var id = Guid.CreateVersion7(); await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_policy_evaluation(tenant_id,id,legal_entity_id,expense_id,policy_version_id,state,snapshot) select $1,$2,$3,e.id,v.id,case when jsonb_typeof(v.rules->'maxAmount')='number' and e.amount > (v.rules->>'maxAmount')::numeric then 'Blocked' when jsonb_typeof(v.rules->'minAmount')='number' and e.amount < (v.rules->>'minAmount')::numeric then 'Blocked' when jsonb_typeof(v.rules->'requiresBusinessPurpose')='boolean' and (v.rules->>'requiresBusinessPurpose')::boolean and nullif(trim(e.business_purpose),'') is null then 'Blocked' when coalesce((v.rules->>'receiptRequired')::boolean,false) and e.evidence_state='Missing' and not exists(select 1 from business_expenses.expense_missing_receipt_declaration md where md.tenant_id=e.tenant_id and md.legal_entity_id=e.legal_entity_id and md.expense_id=e.id and md.status='Declared') then 'Blocked' when coalesce((v.rules->>'receiptRequired')::boolean,false) and e.evidence_state='Missing' then 'Warning' else 'Passed' end,jsonb_build_object('evidenceState',e.evidence_state,'amount',e.amount,'currencyCode',e.currency_code,'paymentSource',e.payment_source,'employeeId',e.employee_id,'categoryVersionId',e.category_version_id,'expenseVersion',e.version,'policyVersionId',v.id,'rules',coalesce(v.rules,'{}'::jsonb),'missingReceiptExceptionReason',(select md.reason from business_expenses.expense_missing_receipt_declaration md where md.tenant_id=e.tenant_id and md.legal_entity_id=e.legal_entity_id and md.expense_id=e.id and md.status='Declared' order by md.declared_at desc limit 1),'findings',jsonb_build_array(case when jsonb_typeof(v.rules->'maxAmount')='number' and e.amount > (v.rules->>'maxAmount')::numeric then 'MaxAmountExceeded' when jsonb_typeof(v.rules->'minAmount')='number' and e.amount < (v.rules->>'minAmount')::numeric then 'MinAmountNotMet' when jsonb_typeof(v.rules->'requiresBusinessPurpose')='boolean' and (v.rules->>'requiresBusinessPurpose')::boolean and nullif(trim(e.business_purpose),'') is null then 'BusinessPurposeRequired' when coalesce((v.rules->>'receiptRequired')::boolean,false) and e.evidence_state='Missing' and not exists(select 1 from business_expenses.expense_missing_receipt_declaration md where md.tenant_id=e.tenant_id and md.legal_entity_id=e.legal_entity_id and md.expense_id=e.id and md.status='Declared') then 'ReceiptRequired' when coalesce((v.rules->>'receiptRequired')::boolean,false) and e.evidence_state='Missing' then 'ReceiptException' else 'Passed' end),'evaluatedAt',now()) from business_expenses.expense e left join lateral (select pv.id,pv.rules from business_expenses.expense_policy_version pv join business_expenses.expense_policy p on p.tenant_id=pv.tenant_id and p.id=pv.policy_id where pv.tenant_id=e.tenant_id and pv.legal_entity_id=e.legal_entity_id and pv.status='Published' and pv.effective_from <= e.expense_date and (pv.effective_to is null or pv.effective_to >= e.expense_date) and (not (pv.rules ? 'paymentSources') or pv.rules->'paymentSources' ? e.payment_source) and (not (pv.rules ? 'employeeIds') or (e.employee_id is not null and pv.rules->'employeeIds' ? e.employee_id::text)) and (not (pv.rules ? 'categoryVersionIds') or pv.rules->'categoryVersionIds' ? e.category_version_id::text) and (not (pv.rules ? 'currencyCodes') or pv.rules->'currencyCodes' ? e.currency_code) and (not (pv.rules ? 'merchantNames') or exists (select 1 from jsonb_array_elements_text(pv.rules->'merchantNames') n where lower(e.merchant_name)=lower(n))) order by pv.effective_from desc,pv.version desc,pv.id desc limit 1) v on true where e.tenant_id=$1 and e.legal_entity_id=$3 and e.id=$4 on conflict(tenant_id,expense_id) do update set policy_version_id=excluded.policy_version_id,state=excluded.state,snapshot=excluded.snapshot,evaluated_at=now() returning id,expense_id,state,snapshot,evaluated_at", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, id, entity, expenseId); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found"); var result = new ExpensePolicyEvaluationDto(r.GetGuid(0), r.GetGuid(1), r.GetString(2), System.Text.Json.JsonDocument.Parse(r.GetString(3)).RootElement.Clone(), r.GetFieldValue<DateTimeOffset>(4)); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
+    public async Task<ExpensePolicyEvaluationDto> EvaluatePolicyAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var expenseCommand = new NpgsqlCommand("select id,amount,currency_code,payment_source,employee_id,category_version_id,expense_date,expense_state,evidence_state,business_purpose,merchant_name,version from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction);
+        Add(expenseCommand, tenant.Value, entity, expenseId);
+        await using var expenseReader = await expenseCommand.ExecuteReaderAsync(ct);
+        if (!await expenseReader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found");
+        var amount = expenseReader.GetDecimal(1);
+        var currency = expenseReader.GetString(2).Trim();
+        var paymentSource = expenseReader.GetString(3);
+        var employee = expenseReader.IsDBNull(4) ? (Guid?)null : expenseReader.GetGuid(4);
+        var categoryVersionId = expenseReader.GetGuid(5);
+        var expenseDate = expenseReader.GetFieldValue<DateOnly>(6);
+        var evidenceState = expenseReader.GetString(8);
+        var businessPurpose = expenseReader.IsDBNull(9) ? null : expenseReader.GetString(9);
+        var merchant = expenseReader.GetString(10);
+        var expenseVersion = expenseReader.GetInt64(11);
+        await expenseReader.CloseAsync();
+
+        Guid? policyVersionId = null;
+        JsonElement rules = JsonDocument.Parse("{}").RootElement.Clone();
+        await using (var policyCommand = new NpgsqlCommand("select pv.id,pv.rules::text from business_expenses.expense_policy_version pv where pv.tenant_id=$1 and pv.legal_entity_id=$2 and pv.status='Published' and pv.effective_from <= $3 and (pv.effective_to is null or pv.effective_to >= $3) and (not (pv.rules ? 'paymentSources') or pv.rules->'paymentSources' ? $4::text) and (not (pv.rules ? 'employeeIds') or ($5::uuid is not null and pv.rules->'employeeIds' ? $5::text)) and (not (pv.rules ? 'categoryVersionIds') or pv.rules->'categoryVersionIds' ? $6::text) and (not (pv.rules ? 'currencyCodes') or pv.rules->'currencyCodes' ? $7::text) and (not (pv.rules ? 'merchantNames') or exists (select 1 from jsonb_array_elements_text(pv.rules->'merchantNames') n where lower($8::text)=lower(n))) order by pv.effective_from desc,pv.version desc,pv.id desc limit 1", scope.Connection, scope.Transaction))
+        {
+            Add(policyCommand, tenant.Value, entity, expenseDate, paymentSource, Db(employee), categoryVersionId, currency, merchant);
+            await using var policyReader = await policyCommand.ExecuteReaderAsync(ct);
+            if (await policyReader.ReadAsync(ct))
+            {
+                policyVersionId = policyReader.GetGuid(0);
+                rules = JsonDocument.Parse(policyReader.GetString(1)).RootElement.Clone();
+            }
+        }
+
+        string? missingReceiptReason = null;
+        await using (var exceptionCommand = new NpgsqlCommand("select reason from business_expenses.expense_missing_receipt_declaration where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and status='Declared' order by declared_at desc limit 1", scope.Connection, scope.Transaction))
+        {
+            Add(exceptionCommand, tenant.Value, entity, expenseId);
+            missingReceiptReason = (string?)await exceptionCommand.ExecuteScalarAsync(ct);
+        }
+
+        var findings = new List<string>();
+        var blocked = false;
+        var warning = false;
+        if (rules.TryGetProperty("maxAmount", out var max) && max.ValueKind == JsonValueKind.Number && amount > max.GetDecimal()) { blocked = true; findings.Add("MaxAmountExceeded"); }
+        if (rules.TryGetProperty("minAmount", out var min) && min.ValueKind == JsonValueKind.Number && amount < min.GetDecimal()) { blocked = true; findings.Add("MinAmountNotMet"); }
+        if (rules.TryGetProperty("requiresBusinessPurpose", out var purpose) && purpose.ValueKind == JsonValueKind.True && string.IsNullOrWhiteSpace(businessPurpose)) { blocked = true; findings.Add("BusinessPurposeRequired"); }
+        var receiptRequired = rules.TryGetProperty("receiptRequired", out var required) && required.ValueKind == JsonValueKind.True;
+        if (rules.TryGetProperty("receiptThreshold", out var threshold) && threshold.ValueKind == JsonValueKind.Number && amount > threshold.GetDecimal()) receiptRequired = true;
+        if (receiptRequired && evidenceState == "Missing")
+        {
+            if (string.IsNullOrWhiteSpace(missingReceiptReason)) { blocked = true; findings.Add("ReceiptRequired"); }
+            else { warning = true; findings.Add("ReceiptException"); }
+        }
+        if (rules.TryGetProperty("blockedMerchantNames", out var blockedMerchants) && blockedMerchants.ValueKind == JsonValueKind.Array && blockedMerchants.EnumerateArray().Any(x => string.Equals(x.GetString(), merchant, StringComparison.OrdinalIgnoreCase))) { blocked = true; findings.Add("MerchantBlocked"); }
+        if (findings.Count == 0) findings.Add("Passed");
+        var state = blocked ? "Blocked" : warning ? "Warning" : "Passed";
+        var snapshot = JsonSerializer.SerializeToDocument(new { evidenceState, amount, currencyCode = currency, paymentSource, employeeId = employee, categoryVersionId, expenseVersion, policyVersionId, rules, missingReceiptExceptionReason = missingReceiptReason, findings, evaluatedAt = DateTimeOffset.UtcNow }).RootElement.Clone();
+        await using var save = new NpgsqlCommand("insert into business_expenses.expense_policy_evaluation(tenant_id,id,legal_entity_id,expense_id,policy_version_id,state,snapshot) values($1,$2,$3,$4,$5,$6,$7::jsonb) on conflict(tenant_id,expense_id) do update set policy_version_id=excluded.policy_version_id,state=excluded.state,snapshot=excluded.snapshot,evaluated_at=now() returning id,expense_id,state,snapshot::text,evaluated_at", scope.Connection, scope.Transaction);
+        Add(save, tenant.Value, Guid.CreateVersion7(), entity, expenseId, Db(policyVersionId), state, snapshot.GetRawText());
+        await using var resultReader = await save.ExecuteReaderAsync(ct);
+        if (!await resultReader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.policy_evaluation_failed");
+        var result = new ExpensePolicyEvaluationDto(resultReader.GetGuid(0), resultReader.GetGuid(1), resultReader.GetString(2), JsonDocument.Parse(resultReader.GetString(3)).RootElement.Clone(), resultReader.GetFieldValue<DateTimeOffset>(4));
+        await resultReader.CloseAsync();
+        await scope.Transaction.CommitAsync(ct);
+        return result;
+    }
+
     public async Task<ExpensePage<ExpenseReportDto>> ListReportsAsync(TenantId tenant, Guid entity, string? state, string? search, int page, int pageSize, CancellationToken ct)
     { page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200); await using var scope = await OpenAsync(tenant, ct); const string where = "tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or state=$3) and ($4::text is null or title ilike '%'||$4||'%')"; await using var count = new NpgsqlCommand($"select count(*) from business_expenses.expense_report where {where}", scope.Connection, scope.Transaction); Add(count, tenant.Value, entity, Db(string.IsNullOrWhiteSpace(state) ? null : state.Trim()), Db(string.IsNullOrWhiteSpace(search) ? null : search.Trim())); var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture); await using var cmd = new NpgsqlCommand($"select id,legal_entity_id,employee_id,title,state,total_amount,currency_code,version,created_at from business_expenses.expense_report where {where} order by created_at desc offset $5 limit $6", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, Db(string.IsNullOrWhiteSpace(state) ? null : state.Trim()), Db(string.IsNullOrWhiteSpace(search) ? null : search.Trim()), (page - 1) * pageSize, pageSize); var list = new List<ExpenseReportDto>(); await using var r = await cmd.ExecuteReaderAsync(ct); while (await r.ReadAsync(ct)) list.Add(new(r.GetGuid(0), r.GetGuid(1), r.IsDBNull(2) ? null : r.GetGuid(2), r.GetString(3), r.GetString(4), r.GetDecimal(5), r.GetString(6), r.GetInt64(7), r.GetFieldValue<DateTimeOffset>(8))); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return new(list, total, page, pageSize); }
     public async Task<ExpenseReportDto?> GetReportAsync(TenantId tenant, Guid entity, Guid reportId, CancellationToken ct)

@@ -1017,6 +1017,32 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task TypedPolicyThresholdAndBlockedMerchantProduceExplainableFindings()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var policy = await repository.CreatePolicyAsync(new(Atlas), new(entity, $"TYPED-{Guid.CreateVersion7():N}", "Threshold and merchant policy"), default);
+        using var rules = JsonDocument.Parse("{\"receiptThreshold\":100,\"blockedMerchantNames\":[\"Forbidden Merchant\"]}");
+        var version = await repository.CreatePolicyVersionAsync(new(Atlas), entity, policy.Id, new(rules.RootElement.Clone(), new(2099, 1, 1)), default);
+        await repository.PublishPolicyVersionAsync(new(Atlas), entity, version.Id, new(), default);
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var blocked = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Forbidden Merchant", new(2099, 2, 1), 125m, "EGP", "EmployeePaid", categoryVersion), default);
+        var blockedEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, blocked.Id, default);
+        Assert.Equal("Blocked", blockedEvaluation.State);
+        Assert.Contains("ReceiptRequired", blockedEvaluation.Snapshot.GetProperty("findings").EnumerateArray().Select(x => x.GetString()));
+        Assert.Contains("MerchantBlocked", blockedEvaluation.Snapshot.GetProperty("findings").EnumerateArray().Select(x => x.GetString()));
+        var belowThreshold = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Allowed Merchant", new(2099, 2, 2), 80m, "EGP", "EmployeePaid", categoryVersion), default);
+        var belowEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, belowThreshold.Id, default);
+        Assert.Equal("Passed", belowEvaluation.State);
+    }
+
+    [ExpensesPostgresFact]
     public async Task PublishedPolicyVersionsAreImmutableForHistoricalReproducibility()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
