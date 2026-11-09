@@ -868,6 +868,11 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         BusinessAdvancePaymentResult payment;
         try { payment = await (advancePayments ?? throw new ExpenseRepositoryException("expenses.payments_capability_unavailable")).IssueBusinessAdvanceAsync(tenant, actorId, membershipId, Guid.CreateVersion7(), entity, advanceId, request.PaymentAccountId, request.Method, request.Amount, currency, request.PaymentDate, request.PostingDate, idempotencyKey, ct); }
         catch { await ResetAdvanceIssuanceAsync(tenant, entity, advanceId, ct); throw; }
+        if (!string.Equals(payment.State, "Completed", StringComparison.OrdinalIgnoreCase) || payment.Amount <= 0m || payment.Amount > request.Amount || !string.Equals(payment.CurrencyCode, currency, StringComparison.OrdinalIgnoreCase))
+        {
+            await ResetAdvanceIssuanceAsync(tenant, entity, advanceId, ct);
+            throw new ExpenseRepositoryException("expenses.payment_result_mismatch");
+        }
         await using (var scope = await OpenAsync(tenant, ct))
         {
             await using var lockIssuance = new NpgsqlCommand("select state from business_expenses.business_advance_issuance where tenant_id=$1 and advance_id=$2 and idempotency_key=$3 for update", scope.Connection, scope.Transaction);
@@ -1382,6 +1387,8 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         try
         {
             payment = await (expensePayments ?? throw new ExpenseRepositoryException("expenses.payments_capability_unavailable")).PayExpenseReimbursementAsync(tenant, actorId, membershipId, batchId, entity, paymentAccountId, method, amount, currency, paymentDate, postingDate, $"expenses-reimbursement:{batchId:D}", ct);
+            if (!string.Equals(payment.State, "Completed", StringComparison.OrdinalIgnoreCase) || payment.Amount != amount || !string.Equals(payment.CurrencyCode, currency, StringComparison.OrdinalIgnoreCase))
+                throw new ExpenseRepositoryException("expenses.payment_result_mismatch");
         }
         catch
         {
