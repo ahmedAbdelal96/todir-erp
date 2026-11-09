@@ -153,6 +153,30 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task ReportDetailReadIsEntityScopedAndReturnsAuthoritativePersistedData()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var report = await repository.CreateReportAsync(new(Atlas), new(entity, null, $"Detail acceptance {Guid.CreateVersion7():N}"), default);
+        var detail = await repository.GetReportAsync(new(Atlas), entity, report.Id, default);
+        Assert.NotNull(detail);
+        Assert.Equal(report.Id, detail!.Id);
+        Assert.Equal(report.Title, detail.Title);
+        Assert.Equal(report.TotalAmount, detail.TotalAmount);
+
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D"));
+        await context.ExecuteNonQueryAsync();
+        var otherEntity = (Guid)(await ScalarAsync(connection, "select id from platform.legal_entity where tenant_id=$1 and id<>$2 and status='Active' order by id limit 1", Atlas, entity) ?? throw new InvalidOperationException("Atlas requires a second legal entity for scope acceptance."));
+        Assert.Null(await repository.GetReportAsync(new(Atlas), otherEntity, report.Id, default));
+    }
+
+    [ExpensesPostgresFact]
     public async Task RuntimeTenantContextCannotReadOtherTenantExpenses()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");

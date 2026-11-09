@@ -38,7 +38,7 @@ This is an executable acceptance matrix. A gate is `PASS` only when the listed p
 | EX28 | Corrections/reversals preserve original facts and post compensating accounting. | Reverse/finalization guards and immutable history. | PASS | Ledger reversal evidence. |
 | EX29 | Payroll settlement seam is explicit and does not fabricate payroll facts. | Contract seam only where configured. | PARTIAL | No complete cross-module Payroll acceptance run. |
 | EX30 | Notifications/reminders are durable, idempotent, and recoverable. | Outbox notification consumer for finalization/reimbursement. | PARTIAL | Event consumer proof exists; scheduled reminders/recovery incomplete. |
-| EX31 | Finance exception workbench, reports, filters, exports, and read models are bounded and accurate. | Exception summary, spend report, CSV export, paginated lists. | PARTIAL | Core reports pass; complete detail/read-model coverage incomplete. |
+| EX31 | Finance exception workbench, reports, filters, exports, and read models are bounded and accurate. | Exception summary, spend report, CSV export, paginated lists. | PARTIAL | Core reports pass; entity-scoped report detail is covered by `ReportDetailReadIsEntityScopedAndReturnsAuthoritativePersistedData`; complete read-model/import coverage remains incomplete. |
 | EX32 | Imports/migrations validate rows, preserve idempotency, report outcomes, and never partially corrupt financial data. | Import batch, row outcomes, duplicate external-reference guards. | PARTIAL | Repository/import evidence exists; full migration/import acceptance incomplete. |
 | EX33 | Authenticated Employee/Manager/Finance APIs enforce tenant/entity/employee scope, IDOR, RLS, and sensitive evidence controls. | Endpoint permission filters, self-service HR scope, PostgreSQL RLS. | PARTIAL | Fresh disposable authenticated `ExpensesApiIntegrationTests.PolicyCreationUsesLegalEntityRouteAndRejectsPayloadScopeMismatch` passed 1/1; full employee/manager/Finance red-team matrix remains. |
 | EX34 | Scalable lists are bounded, indexed, deterministic, and have acceptable query behavior. | Page-size clamps, tenant/entity indexes, filtered reports/cards/advances. | PARTIAL | Bounded list implementation; formal scale/query-plan evidence missing. |
@@ -55,7 +55,7 @@ This is an executable acceptance matrix. A gate is `PASS` only when the listed p
 ## Current execution baseline
 
 - Last verified source commit before this matrix: `e5306b5b8980c8abc2c4a04a091a783a90ecff23`.
-- Isolated PostgreSQL Expenses suite: `34/34 passed, 0 skipped`.
+- Isolated PostgreSQL Expenses suite: `35/35 passed, 0 skipped` (includes entity-scoped report-detail read acceptance).
 - Architecture suite: `21/21 passed`.
 - Backend build and format verification: passed.
 - First active failing gate: **EX06 OCR worker recovery evidence** (the failure-path is now proven, but retry/recovery and provider/manual fallback still need an end-to-end worker assertion), followed by EX08/EX09 policy/approval depth, EX14 provider feed, EX30/EX31/EX32 operations, EX33 red-team, and EX36–EX43.
