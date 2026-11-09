@@ -12,7 +12,7 @@ public sealed class ExpensesNotificationConsumer(INotificationStore notification
     public async Task Consume(ConsumeContext<OutboxPublishedMessage> context)
     {
         var message = context.Message;
-        if (!string.Equals(message.MessageType, "ExpenseFinalizedV1", StringComparison.Ordinal)) return;
+        if (message.MessageType is not ("ExpenseFinalizedV1" or "ExpenseReimbursementRequestedV1")) return;
         if (!await inboxStore.TryBeginAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken)) return;
         try
         {
@@ -20,7 +20,8 @@ public sealed class ExpensesNotificationConsumer(INotificationStore notification
             var root = document.RootElement;
             if (root.TryGetProperty("EmployeeId", out var employee) && employee.ValueKind == JsonValueKind.String && employee.TryGetGuid(out var employeeId))
             {
-                await notifications.EnqueueAsync(new Notification(Guid.CreateVersion7(), message.TenantId, $"employee:{employeeId:D}", "expenses.expense_finalized", NotificationChannel.InApp, root.Clone(), NotificationStatus.Pending, 0, DateTimeOffset.UtcNow, null), context.CancellationToken);
+                var template = message.MessageType == "ExpenseFinalizedV1" ? "expenses.expense_finalized" : "expenses.reimbursement_requested";
+                await notifications.EnqueueAsync(new Notification(Guid.CreateVersion7(), message.TenantId, $"employee:{employeeId:D}", template, NotificationChannel.InApp, root.Clone(), NotificationStatus.Pending, 0, DateTimeOffset.UtcNow, null), context.CancellationToken);
             }
 
             await inboxStore.MarkProcessedAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken);
