@@ -15,6 +15,8 @@ namespace Modules.Expenses;
 
 public static class ExpensesModuleExtensions
 {
+    private static readonly string[] ElevatedReadPermissions = ["expenses.edit", "expenses.approve", "expenses.finalize", "expenses.reverse", "expenses.reimbursement.manage", "expenses.category.manage", "expenses.audit.read"];
+
     public static IServiceCollection AddExpensesModule(this IServiceCollection services)
     {
         services.AddSingleton<IModuleManifestProvider, ExpensesModuleManifestProvider>();
@@ -44,6 +46,11 @@ public static class ExpensesModuleExtensions
                 var authorizer = http.RequestServices.GetRequiredService<IPermissionAuthorizer>();
                 var subject = await subjects.LoadAsync(tenant, membershipId, http.RequestAborted);
                 if (subject is null) return Results.Unauthorized();
+                // Employee self-service identities are intentionally restricted to /my routes.
+                // A broad expenses.read grant must not turn a self-service account into an
+                // entity-wide IDOR reader; elevated operational permissions opt into this group.
+                if (subject.Permissions.All(p => !ElevatedReadPermissions.Contains(p.PermissionCode, StringComparer.Ordinal)))
+                    return Results.Forbid();
                 if (!authorizer.Authorize(subject, PermissionFor(http), PermissionScope.ForLegalEntity(tenant, new(entityId))))
                     return Results.Forbid();
                 return await next(context);

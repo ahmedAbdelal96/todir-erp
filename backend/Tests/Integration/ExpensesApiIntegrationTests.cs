@@ -104,6 +104,7 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         Guid tenantId;
         Guid legalEntityId;
         Guid employeeId;
+        Guid expenseId;
         string employeeEmail;
         await using (var connection = new NpgsqlConnection(adminConnection))
         {
@@ -116,6 +117,10 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
             employeeId = reader.GetGuid(2);
             employeeEmail = reader.GetString(3);
             await reader.CloseAsync();
+            await using var expense = new NpgsqlCommand("select id from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 order by created_at limit 1", connection);
+            expense.Parameters.AddWithValue(tenantId);
+            expense.Parameters.AddWithValue(legalEntityId);
+            expenseId = (Guid)(await expense.ExecuteScalarAsync() ?? throw new InvalidOperationException("Atlas seed expense is missing."));
             await using var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select m.tenant_id,a.role_id,'expenses.read' from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id where m.tenant_id=$1 and i.email=$2 on conflict do nothing", connection);
             grant.Parameters.AddWithValue(tenantId);
             grant.Parameters.AddWithValue(employeeEmail);
@@ -140,6 +145,11 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         Assert.True(body.TryGetProperty("items", out var items));
         foreach (var item in items.EnumerateArray())
             Assert.Equal(employeeId, item.GetProperty("employeeId").GetGuid());
+
+        // Self-service employees must not use the entity-wide route to read another
+        // employee's expense, even when the role has the generic expenses.read grant.
+        var direct = await client.GetAsync($"/api/v1/expenses/legal-entities/{legalEntityId:D}/{expenseId:D}");
+        Assert.Equal(HttpStatusCode.Forbidden, direct.StatusCode);
     }
 
     private static Task LoginAsync(HttpClient client, string password, Guid tenantId) => LoginAsync(client, password, tenantId, "admin@atlas.com");
