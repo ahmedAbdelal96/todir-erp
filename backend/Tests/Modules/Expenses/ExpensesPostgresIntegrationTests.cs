@@ -190,6 +190,25 @@ public sealed class ExpensesPostgresIntegrationTests
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.ArchiveCategoryAsync(new(Atlas), entity, category.Id, default));
     }
 
+    [ExpensesPostgresFact]
+    public async Task PublishedPolicyVersionCanBeRetiredWithoutChangingItsRules()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var policy = await repository.CreatePolicyAsync(new(Atlas), new(entity, $"RET-{Guid.CreateVersion7():N}", "Retirement acceptance"), default);
+        using var rules = JsonDocument.Parse("{\"maxAmount\":900}");
+        var version = await repository.CreatePolicyVersionAsync(new(Atlas), entity, policy.Id, new(rules.RootElement.Clone(), new(2026, 1, 1)), default);
+        await repository.PublishPolicyVersionAsync(new(Atlas), entity, version.Id, new(), default);
+        var retired = await repository.RetirePolicyVersionAsync(new(Atlas), entity, version.Id, default);
+        Assert.Equal("Retired", retired.Status);
+        Assert.Equal(900m, retired.Rules.GetProperty("maxAmount").GetDecimal());
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.RetirePolicyVersionAsync(new(Atlas), entity, version.Id, default));
+    }
+
     [ExpensesFinancialPostgresFact]
     public async Task FinalizationPostsExpenseAndReversalToLedgerExactlyOnce()
     {
