@@ -467,6 +467,8 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public async Task<ExpenseImportBatchDto> ImportExpensesAsync(TenantId tenant, ImportExpensesRequest request, CancellationToken ct)
     {
         if (request.LegalEntityId == Guid.Empty || string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.Rows is null || request.Rows.Count is < 1 or > 500) throw new ExpenseRepositoryException("expenses.import_invalid");
+        var externalReferences = request.Rows.Select(row => row.ExternalReference.Trim()).ToArray();
+        if (externalReferences.Any(string.IsNullOrWhiteSpace) || externalReferences.Distinct(StringComparer.OrdinalIgnoreCase).Count() != externalReferences.Length) throw new ExpenseRepositoryException("expenses.import_duplicate_reference");
         var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request))));
         await using var scope = await OpenAsync(tenant, ct);
         await using var existing = new NpgsqlCommand("select id,payload_hash from business_expenses.expense_import_batch where tenant_id=$1 and legal_entity_id=$2 and idempotency_key=$3", scope.Connection, scope.Transaction); Add(existing, tenant.Value, request.LegalEntityId, request.IdempotencyKey.Trim());
