@@ -40,6 +40,7 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<PayrollPaymentRequestedConsumer, PayrollPaymentRequestedConsumerDefinition>();
     bus.AddConsumer<PayrollPaymentReconciliationConsumer, PayrollPaymentReconciliationConsumerDefinition>();
     bus.AddConsumer<CrmExternalEventConsumer, CrmExternalEventConsumerDefinition>();
+    bus.AddConsumer<ExpensesOcrConsumer, ExpensesOcrConsumerDefinition>();
 });
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();

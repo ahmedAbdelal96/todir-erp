@@ -3,6 +3,7 @@ using Modules.Ledger.Repositories;
 using Modules.Ledger.Services;
 using Core.Transactions;
 using Core.Services;
+using Modules.Expenses.Services;
 using Npgsql;
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.Payments;
@@ -464,6 +465,37 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Pending", (await approvals.GetAsync(new(Delta), request.Id, default))!.State);
     }
 
+    [ExpensesPostgresFact]
+    public async Task OcrProviderFailureIsDurableRetryableAndSupportsManualFallback()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), approvals: new TestApprovalCapability(), ocrProvider: new FailingOcrProvider());
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var expense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "OCR receipt", new(2026, 10, 22), 55m, "EGP", "EmployeePaid", categoryVersion), default);
+        var evidenceId = Guid.CreateVersion7(); var fileRef = Guid.CreateVersion7();
+        await using (var insert = new NpgsqlCommand("insert into business_expenses.expense_evidence(tenant_id,id,legal_entity_id,expense_id,evidence_type,file_reference,status) values($1,$2,$3,$4,'Receipt',$5,'Ready')", connection))
+        { insert.Parameters.AddWithValue(Atlas); insert.Parameters.AddWithValue(evidenceId); insert.Parameters.AddWithValue(entity); insert.Parameters.AddWithValue(expense.Id); insert.Parameters.AddWithValue(fileRef.ToString("D")); await insert.ExecuteNonQueryAsync(); }
+        var job = await repository.RequestOcrAsync(new(Atlas), entity, expense.Id, evidenceId, default);
+        Assert.Equal("Requested", job.State);
+        await repository.ProcessOcrJobAsync(new(Atlas), entity, expense.Id, job.Id, evidenceId, default);
+        var failed = (await repository.GetOcrAsync(new(Atlas), entity, expense.Id, job.Id, default))!;
+        Assert.Equal("Failed", failed.State);
+        Assert.Equal("expenses.ocr_provider_unavailable", failed.FailureCode);
+        var retried = await repository.RetryOcrAsync(new(Atlas), entity, expense.Id, job.Id, default);
+        Assert.Equal("Requested", retried.State);
+        using var suggestions = JsonDocument.Parse("{\"merchantName\":\"Manual merchant\",\"amount\":55}");
+        var manual = await repository.CompleteOcrManuallyAsync(new(Atlas), entity, expense.Id, job.Id, new(suggestions.RootElement.Clone(), "Provider unavailable; reviewed by Finance"), default);
+        Assert.Equal("Manual", manual.State);
+        Assert.Equal("Manual merchant", manual.Suggestions!.Value.GetProperty("merchantName").GetString());
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='ocr.manual'", Atlas, expense.Id));
+    }
+
     private static async Task<(Guid IdentityId, Guid MembershipId)> ReadUserAsync(NpgsqlConnection connection, string prefix)
     {
         await using var command = new NpgsqlCommand("select i.id,m.id from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id where i.tenant_id=$1 and i.login_prefix=$2 and m.status='Active'", connection);
@@ -512,6 +544,12 @@ public sealed class ExpensesPostgresIntegrationTests
         }
 
         public Task<PlatformApprovalRequestResult?> GetAsync(TenantId tenantId, Guid requestId, CancellationToken cancellationToken = default) => Task.FromResult(requests.GetValueOrDefault(requestId));
+    }
+
+    private sealed class FailingOcrProvider : IExpenseOcrProvider
+    {
+        public Task<ExpenseOcrResult> ExtractAsync(TenantId tenant, Guid fileReference, CancellationToken cancellationToken = default) =>
+            throw new ExpenseOcrProviderException("expenses.ocr_provider_unavailable", "test provider unavailable");
     }
 
     private sealed class TestAdvancePaymentCapability : IBusinessAdvancePaymentCapability

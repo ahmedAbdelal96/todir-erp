@@ -19,6 +19,8 @@ public sealed record AddExpenseEvidenceRequest(string EvidenceType, string FileR
 public sealed record CreateExpenseEvidenceUploadRequest(string FileName, string ContentType, long SizeBytes, string Classification = "expense-receipt");
 public sealed record ExpenseEvidenceUploadIntentDto(Guid FileRef, string Url, IReadOnlyDictionary<string, string> Fields, string ContentType, long SizeBytes, DateTimeOffset ExpiresAt);
 public sealed record CompleteExpenseEvidenceUploadRequest(Guid FileRef, string EvidenceType = "Receipt", Guid? ReplacesEvidenceId = null);
+public sealed record ExpenseOcrJobDto(Guid Id, Guid ExpenseId, Guid EvidenceId, string State, int AttemptCount, System.Text.Json.JsonElement? Suggestions, string? FailureCode, string? FailureReason, DateTimeOffset RequestedAt, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt);
+public sealed record CompleteExpenseOcrManuallyRequest(System.Text.Json.JsonElement Suggestions, string Reason);
 public sealed record DeclareMissingReceiptRequest(string Reason);
 public sealed record MissingReceiptDeclarationDto(Guid Id, Guid ExpenseId, string Reason, string Status, Guid DeclaredBy, DateTimeOffset DeclaredAt, DateTimeOffset? ResolvedAt);
 public sealed record ReimbursementDto(Guid Id, Guid ExpenseId, Guid? EmployeeId, decimal Amount, decimal SettledAmount, string CurrencyCode, string Status, DateTimeOffset CreatedAt);

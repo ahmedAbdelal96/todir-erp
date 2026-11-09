@@ -8,10 +8,12 @@ using Shared.Contracts.Ledger;
 using Shared.Contracts.Payments;
 using Shared.Contracts.Platform;
 using Modules.Expenses.DTOs;
+using Modules.Expenses.Services;
+using System.Text.Json;
 
 namespace Modules.Expenses.Repositories;
 
-public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null, IPlatformFileUploadCapability? fileUploads = null, IPlatformApprovalCapability? approvals = null)
+public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null, IPlatformFileUploadCapability? fileUploads = null, IPlatformApprovalCapability? approvals = null, IExpenseOcrProvider? ocrProvider = null)
 {
     public async Task<ExpensePage<ExpenseDto>> ListAsync(TenantId tenant, Guid entity, Guid? employeeId, string? state, string? search, int page, int pageSize, CancellationToken ct)
     {
@@ -264,6 +266,110 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         var completion = await fileUploads.CompleteUploadAsync(tenant, actorId, membershipId, "expenses", "expense", expenseId, request.FileRef, ct);
         if (completion is null || !completion.Ready) throw new ExpenseRepositoryException(completion?.ReasonCode ?? "expenses.file_not_ready");
         return await AddEvidenceAsync(tenant, entity, expenseId, new AddExpenseEvidenceRequest(request.EvidenceType, request.FileRef.ToString("D"), request.ReplacesEvidenceId), ct);
+    }
+
+    public Task<ExpenseOcrJobDto> RequestOcrAsync(TenantId tenant, Guid entity, Guid expenseId, Guid evidenceId, CancellationToken ct) =>
+        transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var evidence = await ReadOcrEvidenceAsync(context, tenant, entity, expenseId, evidenceId, token);
+            if (evidence is null || evidence.Value.Status != "Ready" || !Guid.TryParse(evidence.Value.FileReference, out var fileRef))
+                throw new ExpenseRepositoryException("expenses.ocr_evidence_not_ready");
+            var jobId = Guid.CreateVersion7();
+            await using (var insert = new NpgsqlCommand("insert into business_expenses.expense_ocr_job(tenant_id,id,legal_entity_id,expense_id,evidence_id) values($1,$2,$3,$4,$5) on conflict do nothing returning id,state,attempt_count,suggestions,failure_code,failure_reason,requested_at,started_at,completed_at", context.Connection, context.Transaction))
+            {
+                Add(insert, tenant.Value, jobId, entity, expenseId, evidenceId);
+                await using var reader = await insert.ExecuteReaderAsync(token);
+                if (await reader.ReadAsync(token))
+                {
+                    var result = ReadOcrJob(reader, expenseId, evidenceId);
+                    await reader.CloseAsync();
+                    context.AddOutbox(new(Guid.CreateVersion7(), "expenses.ocr.requested", JsonSerializer.Serialize(new { JobId = result.Id, LegalEntityId = entity, ExpenseId = expenseId, EvidenceId = evidenceId, FileReference = fileRef }), tenant, DateTimeOffset.UtcNow, result.Id, result.Id, "expenses"));
+                    return result;
+                }
+                await reader.CloseAsync();
+            }
+            await using var existing = new NpgsqlCommand("select id,state,attempt_count,suggestions,failure_code,failure_reason,requested_at,started_at,completed_at from business_expenses.expense_ocr_job where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and evidence_id=$4 order by requested_at desc limit 1", context.Connection, context.Transaction);
+            Add(existing, tenant.Value, entity, expenseId, evidenceId);
+            await using var existingReader = await existing.ExecuteReaderAsync(token);
+            if (!await existingReader.ReadAsync(token)) throw new ExpenseRepositoryException("expenses.ocr_unavailable");
+            var existingResult = ReadOcrJob(existingReader, expenseId, evidenceId);
+            await existingReader.CloseAsync();
+            return existingResult;
+        }, ct);
+
+    public async Task<ExpenseOcrJobDto?> GetOcrAsync(TenantId tenant, Guid entity, Guid expenseId, Guid jobId, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select id,state,attempt_count,suggestions,failure_code,failure_reason,requested_at,started_at,completed_at,evidence_id from business_expenses.expense_ocr_job where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4", scope.Connection, scope.Transaction);
+        Add(command, tenant.Value, entity, expenseId, jobId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        ExpenseOcrJobDto? result = null;
+        if (await reader.ReadAsync(ct)) result = ReadOcrJob(reader, expenseId, reader.GetGuid(9));
+        await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
+    }
+
+    public Task<ExpenseOcrJobDto> RetryOcrAsync(TenantId tenant, Guid entity, Guid expenseId, Guid jobId, CancellationToken ct) =>
+        transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await using var update = new NpgsqlCommand("update business_expenses.expense_ocr_job set state='Requested',failure_code=null,failure_reason=null,requested_at=now(),started_at=null,completed_at=null where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4 and state='Failed' returning id,state,attempt_count,suggestions,failure_code,failure_reason,requested_at,started_at,completed_at,evidence_id", context.Connection, context.Transaction);
+            Add(update, tenant.Value, entity, expenseId, jobId);
+            await using var reader = await update.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token)) throw new ExpenseRepositoryException("expenses.ocr_not_retryable");
+            var result = ReadOcrJob(reader, expenseId, reader.GetGuid(9)); await reader.CloseAsync();
+            context.AddOutbox(new(Guid.CreateVersion7(), "expenses.ocr.requested", JsonSerializer.Serialize(new { JobId = result.Id, LegalEntityId = entity, ExpenseId = expenseId, EvidenceId = result.EvidenceId }), tenant, DateTimeOffset.UtcNow, result.Id, result.Id, "expenses"));
+            return result;
+        }, ct);
+
+    public Task<ExpenseOcrJobDto> CompleteOcrManuallyAsync(TenantId tenant, Guid entity, Guid expenseId, Guid jobId, CompleteExpenseOcrManuallyRequest request, CancellationToken ct) =>
+        transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            if (request.Suggestions.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null || string.IsNullOrWhiteSpace(request.Reason)) throw new ExpenseRepositoryException("expenses.ocr_manual_invalid");
+            await using var update = new NpgsqlCommand("update business_expenses.expense_ocr_job set state='Manual',suggestions=$5::jsonb,failure_code=null,failure_reason=$6,completed_at=now() where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4 and state in ('Failed','Requested') returning id,state,attempt_count,suggestions,failure_code,failure_reason,requested_at,started_at,completed_at,evidence_id", context.Connection, context.Transaction);
+            Add(update, tenant.Value, entity, expenseId, jobId, request.Suggestions.GetRawText(), request.Reason.Trim());
+            await using var reader = await update.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token)) throw new ExpenseRepositoryException("expenses.ocr_manual_not_allowed");
+            var result = ReadOcrJob(reader, expenseId, reader.GetGuid(9)); await reader.CloseAsync();
+            await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,'ocr.manual',jsonb_build_object('jobId',$5::text,'reason',$6::text))", context.Connection, context.Transaction);
+            Add(history, tenant.Value, Guid.CreateVersion7(), entity, expenseId, jobId, request.Reason.Trim()); await history.ExecuteNonQueryAsync(token);
+            return result;
+        }, ct);
+
+    public async Task ProcessOcrJobAsync(TenantId tenant, Guid entity, Guid expenseId, Guid jobId, Guid evidenceId, CancellationToken ct)
+    {
+        Guid fileRef;
+        await using (var scope = await OpenAsync(tenant, ct))
+        {
+            await using var lockCommand = new NpgsqlCommand("select j.evidence_id,e.file_reference,j.state from business_expenses.expense_ocr_job j join business_expenses.expense_evidence e on e.tenant_id=j.tenant_id and e.id=j.evidence_id where j.tenant_id=$1 and j.legal_entity_id=$2 and j.expense_id=$3 and j.id=$4 for update", scope.Connection, scope.Transaction);
+            Add(lockCommand, tenant.Value, entity, expenseId, jobId);
+            await using var reader = await lockCommand.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) { await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return; }
+            if (reader.GetString(2) is not ("Requested" or "Failed")) { await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return; }
+            if (!Guid.TryParse(reader.GetString(1), out fileRef)) { await reader.CloseAsync(); await scope.Transaction.RollbackAsync(ct); throw new ExpenseRepositoryException("expenses.ocr_evidence_not_ready"); }
+            await reader.CloseAsync();
+            await using var mark = new NpgsqlCommand("update business_expenses.expense_ocr_job set state='Processing',attempt_count=attempt_count+1,started_at=now(),failure_code=null,failure_reason=null where tenant_id=$1 and id=$2", scope.Connection, scope.Transaction); Add(mark, tenant.Value, jobId); await mark.ExecuteNonQueryAsync(ct); await scope.Transaction.CommitAsync(ct);
+        }
+        try
+        {
+            var result = await (ocrProvider ?? throw new ExpenseOcrProviderException("expenses.ocr_provider_unavailable", "No approved OCR provider is configured.")).ExtractAsync(tenant, fileRef, ct);
+            await using var scope = await OpenAsync(tenant, ct);
+            await using var update = new NpgsqlCommand("update business_expenses.expense_ocr_job set state='Succeeded',suggestions=$3::jsonb,completed_at=now() where tenant_id=$1 and id=$2 and state='Processing'", scope.Connection, scope.Transaction); Add(update, tenant.Value, jobId, result.Suggestions.GetRawText()); await update.ExecuteNonQueryAsync(ct);
+            await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,'ocr.completed',jsonb_build_object('jobId',$5::text))", scope.Connection, scope.Transaction); Add(history, tenant.Value, Guid.CreateVersion7(), entity, expenseId, jobId); await history.ExecuteNonQueryAsync(ct); await scope.Transaction.CommitAsync(ct);
+        }
+        catch (ExpenseOcrProviderException ex)
+        {
+            await MarkOcrFailedAsync(tenant, entity, expenseId, jobId, ex.Code, ex.Message, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await MarkOcrFailedAsync(tenant, entity, expenseId, jobId, "expenses.ocr_provider_failed", ex.Message, ct);
+        }
+    }
+
+    private async Task MarkOcrFailedAsync(TenantId tenant, Guid entity, Guid expenseId, Guid jobId, string code, string reason, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var update = new NpgsqlCommand("update business_expenses.expense_ocr_job set state='Failed',failure_code=$3,failure_reason=$4,completed_at=now() where tenant_id=$1 and id=$2 and state='Processing'", scope.Connection, scope.Transaction); Add(update, tenant.Value, jobId, code, reason); await update.ExecuteNonQueryAsync(ct);
+        await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,'ocr.failed',jsonb_build_object('jobId',$5::text,'code',$6::text))", scope.Connection, scope.Transaction); Add(history, tenant.Value, Guid.CreateVersion7(), entity, expenseId, jobId, code); await history.ExecuteNonQueryAsync(ct); await scope.Transaction.CommitAsync(ct);
     }
 
     public async Task<MissingReceiptDeclarationDto> DeclareMissingReceiptAsync(TenantId tenant, Guid actorId, Guid entity, Guid expenseId, DeclareMissingReceiptRequest request, CancellationToken ct)
@@ -621,6 +727,16 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         var outstanding = r.GetDecimal(5) - r.GetDecimal(6) - r.GetDecimal(7);
         var overdue = dueDate is { } due && due < DateOnly.FromDateTime(DateTime.UtcNow.Date) && outstanding > 0m && r.GetString(9) is "Issued" or "PartiallyIssued" or "PartiallySettled";
         return new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetString(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6), r.GetDecimal(7), r.GetString(8), r.GetString(9), r.GetInt64(10), r.GetFieldValue<DateTimeOffset>(11), r.IsDBNull(12) ? null : r.GetGuid(12), dueDate, overdue);
+    }
+    private static ExpenseOcrJobDto ReadOcrJob(NpgsqlDataReader r, Guid expenseId, Guid evidenceId)
+    {
+        JsonElement? suggestions = null;
+        if (!r.IsDBNull(3)) suggestions = JsonDocument.Parse(r.GetString(3)).RootElement.Clone();
+        return new(r.GetGuid(0), expenseId, evidenceId, r.GetString(1), r.GetInt32(2), suggestions, r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5), r.GetFieldValue<DateTimeOffset>(6), r.IsDBNull(7) ? null : r.GetFieldValue<DateTimeOffset>(7), r.IsDBNull(8) ? null : r.GetFieldValue<DateTimeOffset>(8));
+    }
+    private static async Task<(string FileReference, string Status)?> ReadOcrEvidenceAsync(ITransactionContext context, TenantId tenant, Guid entity, Guid expenseId, Guid evidenceId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select file_reference,status from business_expenses.expense_evidence where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4", context.Connection, context.Transaction); Add(command, tenant.Value, entity, expenseId, evidenceId); await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) { await reader.CloseAsync(); return null; } var result = (reader.GetString(0), reader.GetString(1)); await reader.CloseAsync(); return result;
     }
     private async Task<BusinessAdvanceDto?> GetAdvanceAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct)
     {
