@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using Modules.Payments.DTOs;
 using Modules.Payments.Entities;
 using Modules.Payments.Services;
@@ -653,7 +654,8 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => { builder.UseEnvironment("Development"); builder.UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString); builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty); });
         var expenses = factory.Services.GetRequiredService<ExpenseRepository>();
         var tenant = new TenantId(fixture.TenantId);
-        var employeeId = await ReadEmployeeIdAsync(adminConnectionString, fixture.TenantId, fixture.LegalEntityId);
+        var employeeActor = await ReadEmployeeActorAsync(adminConnectionString, fixture.TenantId, fixture.LegalEntityId);
+        var employeeId = employeeActor.EmployeeId;
         var advance = await expenses.CreateAdvanceAsync(tenant, new(fixture.LegalEntityId, employeeId, "Project travel advance", 250m), CancellationToken.None);
         advance = await expenses.TransitionAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, advance.Version, "approve", CancellationToken.None);
         var issued = await expenses.IssueAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, fixture.ActorId, fixture.MembershipId,
@@ -676,6 +678,65 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
             new(fixture.PaymentAccountId, "BankTransfer", 250m, new(2026, 10, 15), new(2026, 10, 15), issued.Version), CancellationToken.None);
         Assert.Equal(issued.IssuancePaymentId, retry.IssuancePaymentId);
         Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='ExpensesAdvance' and source_reference=$3", fixture.TenantId, fixture.LegalEntityId, sourceReference));
+    }
+
+    [Fact]
+    public async Task ExpensesFinancialFactsReconcileAcrossLedgerPaymentsAndAdvanceBalance()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for payment integration tests.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for payment integration tests.");
+        var fixture = await ReadFixtureAsync(adminConnectionString);
+        var tenant = new TenantId(fixture.TenantId);
+        var employeeActor = await ReadEmployeeActorAsync(adminConnectionString, fixture.TenantId, fixture.LegalEntityId);
+        var employeeId = employeeActor.EmployeeId;
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+        var expenses = factory.Services.GetRequiredService<ExpenseRepository>();
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+
+        var categoryVersionId = (Guid)(await ScalarAsync(admin, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", fixture.TenantId, fixture.LegalEntityId) ?? throw new InvalidOperationException("The canonical Expenses category fixture is unavailable."));
+        var approver = await ReadApproverAsync(admin, fixture.TenantId);
+        await using (var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select $1,a.role_id,'expenses.approve' from platform.membership_role_assignment a where a.tenant_id=$1 and a.membership_id=$2 on conflict do nothing", admin))
+        { grant.Parameters.AddWithValue(fixture.TenantId); grant.Parameters.AddWithValue(approver.MembershipId); await grant.ExecuteNonQueryAsync(); }
+        await using (var employeeGrant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select $1,a.role_id,'expenses.submit' from platform.membership_role_assignment a where a.tenant_id=$1 and a.membership_id=$2 on conflict do nothing", admin))
+        { employeeGrant.Parameters.AddWithValue(fixture.TenantId); employeeGrant.Parameters.AddWithValue(employeeActor.MembershipId); await employeeGrant.ExecuteNonQueryAsync(); }
+
+        var expense = await expenses.CreateAsync(tenant, new(fixture.LegalEntityId, employeeId, "Reconciliation expense", new(2026, 11, 9), 125m, "EGP", "CompanyPaid", categoryVersionId, "Customer meeting"), CancellationToken.None);
+        await expenses.DeclareMissingReceiptAsync(tenant, fixture.ActorId, fixture.LegalEntityId, expense.Id, new("Receipt unavailable for reconciliation acceptance"), CancellationToken.None);
+        var submitted = await expenses.TransitionAsync(tenant, fixture.LegalEntityId, expense.Id, new(expense.Version), "submit", CancellationToken.None);
+        await expenses.EvaluatePolicyAsync(tenant, fixture.LegalEntityId, expense.Id, CancellationToken.None);
+        var requested = await expenses.RequestApprovalAsync(tenant, employeeActor.IdentityId, employeeActor.MembershipId, fixture.LegalEntityId, expense.Id, "Reconciliation review", CancellationToken.None);
+        await expenses.DecideApprovalAsync(tenant, approver.IdentityId, approver.MembershipId, fixture.LegalEntityId, expense.Id, new(requested.RequestId, "Approved", "Reconciliation approved"), CancellationToken.None);
+        var approvedExpense = (await expenses.GetAsync(tenant, fixture.LegalEntityId, expense.Id, CancellationToken.None))!;
+        var finalized = await expenses.TransitionAsync(tenant, fixture.LegalEntityId, expense.Id, new(approvedExpense.Version), "finalize", CancellationToken.None);
+        Assert.Equal("Posted", finalized.AccountingState);
+
+        var card = await expenses.ImportCardTransactionAsync(tenant, fixture.LegalEntityId, new($"reconciliation-card-{Guid.CreateVersion7():N}", "Reconciliation Card", new(2026, 11, 9), 75m), CancellationToken.None);
+        await expenses.MarkCardTransactionPersonalAsync(tenant, fixture.LegalEntityId, card.Id, new(employeeId), CancellationToken.None);
+        var repayment = (await expenses.ListEmployeeRepaymentsAsync(tenant, fixture.LegalEntityId, employeeId, "Requested", 1, 20, CancellationToken.None)).Items.Single(x => x.SourceReference == $"corporate-card:{card.Id:D}");
+        var settledRepayment = await expenses.SettleEmployeeRepaymentAsync(tenant, fixture.LegalEntityId, repayment.Id, fixture.ActorId, fixture.MembershipId, new(fixture.PaymentAccountId, "BankTransfer", 75m, new(2026, 11, 9), new(2026, 11, 9), repayment.Version), CancellationToken.None);
+        Assert.Equal("Recorded", settledRepayment.State);
+
+        var advance = await expenses.CreateAdvanceAsync(tenant, new(fixture.LegalEntityId, employeeId, "Reconciliation advance", 250m, "EGP", new(2026, 12, 1)), CancellationToken.None);
+        var approvedAdvance = await expenses.TransitionAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, advance.Version, "approve", CancellationToken.None);
+        var issuedAdvance = await expenses.IssueAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, fixture.ActorId, fixture.MembershipId, new(fixture.PaymentAccountId, "BankTransfer", 250m, new(2026, 11, 9), new(2026, 11, 9), approvedAdvance.Version), CancellationToken.None);
+        var settledAdvance = await expenses.ReturnAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, new(250m, issuedAdvance.Version), CancellationToken.None);
+        Assert.Equal("Settled", settledAdvance.State);
+        Assert.Equal(0m, settledAdvance.IssuedAmount - settledAdvance.AppliedAmount - settledAdvance.ReturnedAmount - settledAdvance.WrittenOffAmount);
+
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and source_module='expenses' and source_reference=$3 and fact_type='ExpenseRecognized' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, expense.Id.ToString("D")));
+        Assert.Equal(125m, Convert.ToDecimal(await ScalarAsync(admin, "select (payload_jsonb->>'baseAmount')::numeric from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and source_module='expenses' and source_reference=$3 and fact_type='ExpenseRecognized' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, expense.Id.ToString("D")), CultureInfo.InvariantCulture));
+        Assert.Equal(75m, Convert.ToDecimal(await ScalarAsync(admin, "select amount from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='ExpensesEmployeeRepayment' and source_reference=$3 and business_state='Completed'", fixture.TenantId, fixture.LegalEntityId, $"expenses-repayment:{repayment.Id:D}"), CultureInfo.InvariantCulture));
+        Assert.Equal(250m, Convert.ToDecimal(await ScalarAsync(admin, "select amount from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and source_type='ExpensesAdvance' and source_reference=$3 and business_state='Completed'", fixture.TenantId, fixture.LegalEntityId, $"expenses-advance:{advance.Id:D}"), CultureInfo.InvariantCulture));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 and fact_type='PaymentReceived' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, settledRepayment.PaymentId!));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 and fact_type='PaymentMade' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, issuedAdvance.IssuancePaymentId!));
     }
 
     private static async Task<Fixture> ReadFixtureAsync(string adminConnectionString)
@@ -705,6 +766,15 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetGuid(4), reader.GetGuid(5), reader.GetGuid(6), reader.GetGuid(7), reader.GetGuid(8));
     }
 
+    private static async Task<(Guid IdentityId, Guid MembershipId)> ReadApproverAsync(NpgsqlConnection connection, Guid tenantId)
+    {
+        await using var command = new NpgsqlCommand("select i.id,m.id from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id where i.tenant_id=$1 and i.email='accountant@atlas.com' and m.status='Active'", connection);
+        command.Parameters.AddWithValue(tenantId);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) throw new InvalidOperationException("The canonical Expenses approver fixture is unavailable.");
+        return (reader.GetGuid(0), reader.GetGuid(1));
+    }
+
     private static async Task<long> CountAsync(NpgsqlConnection connection, string sql, params object[] values)
     {
         await using var command = new NpgsqlCommand(sql, connection);
@@ -720,6 +790,17 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         command.Parameters.AddWithValue(tenantId);
         command.Parameters.AddWithValue(legalEntityId);
         return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("The canonical Atlas HR employee fixture is unavailable."));
+    }
+
+    private static async Task<(Guid IdentityId, Guid MembershipId, Guid EmployeeId)> ReadEmployeeActorAsync(string adminConnectionString, Guid tenantId, Guid legalEntityId)
+    {
+        await using var connection = new NpgsqlConnection(adminConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("select i.id,m.id,e.id from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join business_hr.employee e on e.tenant_id=m.tenant_id and e.membership_id=m.id join business_hr.employment employment on employment.tenant_id=e.tenant_id and employment.employee_id=e.id where i.tenant_id=$1 and employment.legal_entity_id=$2 and i.status='Active' and m.status='Active' and e.status='Active' and employment.status in ('Active','Suspended','NoticePeriod') order by employment.employment_number,e.id limit 1", connection);
+        command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(legalEntityId);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) throw new InvalidOperationException("The canonical Atlas employee actor fixture is unavailable.");
+        return (reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2));
     }
 
     private static async Task<long> ScalarCountAsync(NpgsqlConnection connection, string sql)

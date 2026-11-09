@@ -141,7 +141,18 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("update business_expenses.expense_category_version v set status='Published',effective_to=coalesce($4,effective_to) from business_expenses.expense_category c where v.tenant_id=$1 and v.id=$2 and v.category_id=c.id and c.legal_entity_id=$3 and c.status='Active' and v.status='Draft' returning v.id,v.category_id,v.version,v.status,v.requires_receipt,v.receipt_threshold,v.effective_from,v.effective_to", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, versionId, entity, Db(request.EffectiveTo)); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.category_version_not_publishable"); var result = new ExpenseCategoryVersionDto(r.GetGuid(0), r.GetGuid(1), r.GetInt32(2), r.GetString(3), r.GetBoolean(4), r.IsDBNull(5) ? null : r.GetDecimal(5), r.GetFieldValue<DateOnly>(6), r.IsDBNull(7) ? null : r.GetFieldValue<DateOnly>(7)); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
 
     public async Task<ExpenseDto> CreateAsync(TenantId tenant, CreateExpenseRequest request, CancellationToken ct)
-    { if (request.Amount <= 0 || string.IsNullOrWhiteSpace(request.MerchantName) || string.IsNullOrWhiteSpace(request.CurrencyCode)) throw new ExpenseRepositoryException("expenses.invalid_amount"); await using var scope = await OpenAsync(tenant, ct); await EnsureUsableCategoryVersionAsync(scope.Connection, scope.Transaction, tenant, request.LegalEntityId, request.CategoryVersionId, ct); var id = Guid.CreateVersion7(); await using var cmd = new NpgsqlCommand("insert into business_expenses.expense(tenant_id,id,legal_entity_id,employee_id,merchant_name,expense_date,amount,currency_code,payment_source,category_version_id,expense_state,approval_state,accounting_state,settlement_state,evidence_state,policy_state,business_purpose,description,version,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Draft','Pending','NotFinalized','NotSettled','Missing','NotEvaluated',$11,$12,1,now(),now())", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, id, request.LegalEntityId, Db(request.EmployeeId), request.MerchantName.Trim(), request.ExpenseDate, request.Amount, request.CurrencyCode.Trim().ToUpperInvariant(), request.PaymentSource.Trim(), request.CategoryVersionId, Db(request.BusinessPurpose), Db(request.Description)); await cmd.ExecuteNonQueryAsync(ct); await scope.Transaction.CommitAsync(ct); return (await GetAsync(tenant, request.LegalEntityId, id, ct))!; }
+    {
+        if (request.Amount <= 0 || string.IsNullOrWhiteSpace(request.MerchantName) || string.IsNullOrWhiteSpace(request.CurrencyCode)) throw new ExpenseRepositoryException("expenses.invalid_amount");
+        await EnsureEmployeeScopeAsync(tenant, request.EmployeeId, request.LegalEntityId, ct);
+        await using var scope = await OpenAsync(tenant, ct);
+        await EnsureUsableCategoryVersionAsync(scope.Connection, scope.Transaction, tenant, request.LegalEntityId, request.CategoryVersionId, ct);
+        var id = Guid.CreateVersion7();
+        await using var cmd = new NpgsqlCommand("insert into business_expenses.expense(tenant_id,id,legal_entity_id,employee_id,merchant_name,expense_date,amount,currency_code,payment_source,category_version_id,expense_state,approval_state,accounting_state,settlement_state,evidence_state,policy_state,business_purpose,description,version,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Draft','Pending','NotFinalized','NotSettled','Missing','NotEvaluated',$11,$12,1,now(),now())", scope.Connection, scope.Transaction);
+        Add(cmd, tenant.Value, id, request.LegalEntityId, Db(request.EmployeeId), request.MerchantName.Trim(), request.ExpenseDate, request.Amount, request.CurrencyCode.Trim().ToUpperInvariant(), request.PaymentSource.Trim(), request.CategoryVersionId, Db(request.BusinessPurpose), Db(request.Description));
+        await cmd.ExecuteNonQueryAsync(ct);
+        await scope.Transaction.CommitAsync(ct);
+        return (await GetAsync(tenant, request.LegalEntityId, id, ct))!;
+    }
 
     public async Task<ExpenseDto> UpdateAsync(TenantId tenant, Guid entity, Guid id, UpdateExpenseRequest request, CancellationToken ct)
     { if (request.Amount <= 0) throw new ExpenseRepositoryException("expenses.invalid_amount"); await using var scope = await OpenAsync(tenant, ct); await EnsureUsableCategoryVersionAsync(scope.Connection, scope.Transaction, tenant, entity, request.CategoryVersionId, ct); await using var cmd = new NpgsqlCommand("update business_expenses.expense set merchant_name=$4,expense_date=$5,amount=$6,currency_code=$7,category_version_id=$8,business_purpose=$9,description=$10,version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$11 and expense_state='Draft' returning id", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, id, request.MerchantName.Trim(), request.ExpenseDate, request.Amount, request.CurrencyCode.Trim().ToUpperInvariant(), request.CategoryVersionId, Db(request.BusinessPurpose), Db(request.Description), request.Version); if (await cmd.ExecuteScalarAsync(ct) is null) throw new ExpenseRepositoryException("expenses.concurrent_change_or_not_editable"); await scope.Transaction.CommitAsync(ct); return (await GetAsync(tenant, entity, id, ct))!; }
@@ -705,6 +716,13 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         if (await command.ExecuteScalarAsync(ct) is null) throw new ExpenseRepositoryException("expenses.category_not_usable");
     }
 
+    private async Task EnsureEmployeeScopeAsync(TenantId tenant, Guid? employeeId, Guid entity, CancellationToken ct)
+    {
+        if (!employeeId.HasValue || hr is null) return;
+        if (!await hr.EmployeeBelongsToLegalEntityAsync(tenant, employeeId.Value, entity, ct))
+            throw new ExpenseRepositoryException("expenses.employee_scope_invalid");
+    }
+
     private static async Task EnsureOcrEditableAsync(ITransactionContext context, TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
     {
         await using var command = new NpgsqlCommand("select expense_state from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction);
@@ -993,6 +1011,8 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             rowNumber++;
             var raw = JsonSerializer.Serialize(row); string? error = null;
             if (string.IsNullOrWhiteSpace(row.ExternalReference) || string.IsNullOrWhiteSpace(row.MerchantName) || row.Amount <= 0m || row.CurrencyCode.Trim().Length != 3 || row.CategoryVersionId == Guid.Empty) error = "expenses.import_row_invalid";
+            if (error is null && row.EmployeeId.HasValue && hr is not null && !await hr.EmployeeBelongsToLegalEntityAsync(tenant, row.EmployeeId.Value, request.LegalEntityId, ct))
+                error = "expenses.employee_scope_invalid";
             if (error is null)
             {
                 await using var duplicate = new NpgsqlCommand("select 1 from business_expenses.expense_import_row r join business_expenses.expense_import_batch b on b.tenant_id=r.tenant_id and b.id=r.batch_id where r.tenant_id=$1 and b.legal_entity_id=$2 and lower(r.external_reference)=lower($3) limit 1", scope.Connection, scope.Transaction);

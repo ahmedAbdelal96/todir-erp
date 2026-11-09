@@ -187,6 +187,64 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
     }
 
     [Fact]
+    public async Task AccountantCanDecideExpenseApprovalButEmployeeCannotUseApprovalAuthority()
+    {
+        var adminConnection = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for Expenses API integration tests.");
+        var runtimeConnection = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Expenses API integration tests.");
+        var password = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_PASSWORD")
+            ?? Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set TODIR_EXPENSES_TEST_PASSWORD or SEED_DEFAULT_PASSWORD for Expenses API integration tests.");
+
+        Guid tenantId, legalEntityId, categoryVersionId, employeeId;
+        string employeeEmail;
+        await using (var connection = new NpgsqlConnection(adminConnection))
+        {
+            await connection.OpenAsync();
+            await using var ids = new NpgsqlCommand("select t.id,(select id from platform.legal_entity where tenant_id=t.id and status='Active' order by id limit 1),(select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=t.id and c.legal_entity_id=(select id from platform.legal_entity where tenant_id=t.id and status='Active' order by id limit 1) and v.status='Published' order by v.effective_from desc limit 1),(select e.id from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join business_hr.employee e on e.tenant_id=m.tenant_id and e.membership_id=m.id where i.tenant_id=t.id order by i.email limit 1),(select i.email from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join business_hr.employee e on e.tenant_id=m.tenant_id and e.membership_id=m.id where i.tenant_id=t.id order by i.email limit 1) from platform.tenant t where t.slug='atlas-trading'", connection);
+            await using var reader = await ids.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync(), "Atlas seed tenant, entity, category, and employee are required.");
+            tenantId = reader.GetGuid(0); legalEntityId = reader.GetGuid(1); categoryVersionId = reader.GetGuid(2); employeeId = reader.GetGuid(3); employeeEmail = reader.GetString(4);
+            await reader.CloseAsync();
+            await using var reset = new NpgsqlCommand("update platform.identity set password_hash=$1,must_change_password=false,status='Active',security_stamp=gen_random_uuid(),version=version+1 where tenant_id=$2 and email in ('admin@atlas.com','accountant@atlas.com',$3)", connection);
+            reset.Parameters.AddWithValue(IdentityConventions.HashPassword(password)); reset.Parameters.AddWithValue(tenantId); reset.Parameters.AddWithValue(employeeEmail); await reset.ExecuteNonQueryAsync();
+            await using var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select $1,a.role_id,p.permission_code from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id cross join (values ('expenses.create'),('expenses.submit'),('expenses.read')) p(permission_code) where m.tenant_id=$1 and i.email=$2 on conflict do nothing", connection);
+            grant.Parameters.AddWithValue(tenantId); grant.Parameters.AddWithValue(employeeEmail); await grant.ExecuteNonQueryAsync();
+        }
+
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var admin = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(admin, password, tenantId);
+        using var forgedEmployee = JsonContent.Create(new { legalEntityId, employeeId = Guid.CreateVersion7(), merchantName = "Forged employee acceptance", expenseDate = "2026-11-09", amount = 61m, currencyCode = "EGP", paymentSource = "EmployeePaid", categoryVersionId, businessPurpose = "Scope validation" });
+        var forgedResponse = await PostWithCsrfAsync(admin, $"/api/v1/expenses/legal-entities/{legalEntityId:D}", forgedEmployee);
+        Assert.Equal(HttpStatusCode.BadRequest, forgedResponse.StatusCode);
+        Assert.Equal("expenses.employee_scope_invalid", (await forgedResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        using var create = JsonContent.Create(new { legalEntityId, employeeId, merchantName = "Approval authority acceptance", expenseDate = "2026-11-09", amount = 61m, currencyCode = "EGP", paymentSource = "EmployeePaid", categoryVersionId, businessPurpose = "Authority separation" });
+        var created = await PostWithCsrfAsync(admin, $"/api/v1/expenses/legal-entities/{legalEntityId:D}", create);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var createdBody = await created.Content.ReadFromJsonAsync<JsonElement>(); var expenseId = createdBody.GetProperty("id").GetGuid(); var version = createdBody.GetProperty("version").GetInt64();
+        using var missingReceipt = JsonContent.Create(new { reason = "Supplier receipt is pending for authority test" });
+        Assert.Equal(HttpStatusCode.Created, (await PostWithCsrfAsync(admin, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/{expenseId:D}/missing-receipt", missingReceipt)).StatusCode);
+        using var employee = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(employee, password, tenantId, employeeEmail);
+        using var submit = JsonContent.Create(new { version }); Assert.Equal(HttpStatusCode.OK, (await PostWithCsrfAsync(employee, $"/api/v1/expenses/my/expenses/{expenseId:D}/submit?legalEntityId={legalEntityId:D}", submit)).StatusCode);
+        using var request = await PostWithCsrfAsync(employee, $"/api/v1/expenses/my/expenses/{expenseId:D}/approval/request?legalEntityId={legalEntityId:D}", JsonContent.Create(new { reason = "Authority separation" }));
+        var requestPayload = await request.Content.ReadAsStringAsync(); Assert.True(request.StatusCode == HttpStatusCode.OK, $"Approval request failed with {(int)request.StatusCode}: {requestPayload}"); var approval = JsonSerializer.Deserialize<JsonElement>(requestPayload); var requestId = approval.GetProperty("requestId").GetGuid();
+
+        using var accountant = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(accountant, password, tenantId, "accountant@atlas.com");
+        var decision = await PostWithCsrfAsync(accountant, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/{expenseId:D}/approval/decision", JsonContent.Create(new { requestId, decision = "Approved", reason = "Finance reviewed" }));
+        Assert.Equal(HttpStatusCode.OK, decision.StatusCode);
+
+        var denied = await PostWithCsrfAsync(employee, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/{expenseId:D}/approval/decision", JsonContent.Create(new { requestId, decision = "Rejected", reason = "IDOR attempt" }));
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+    }
+
+    [Fact]
     public async Task EmployeeSelfServiceReadUsesAuthenticatedMembershipScope()
     {
         var adminConnection = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
