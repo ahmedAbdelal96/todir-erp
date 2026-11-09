@@ -1,4 +1,4 @@
-import { httpClient } from "../../../core/api/http-client.ts";
+import { ApiError, httpClient } from "../../../core/api/http-client.ts";
 import type {
   EmployeePage,
   EmployeeListItem,
@@ -446,8 +446,15 @@ export const hrApi = {
     httpClient<OffboardingCaseView | null>(`${BASE}/employees/${encodeURIComponent(employeeId)}/employments/${encodeURIComponent(employmentId)}/offboarding?legalEntityId=${encodeURIComponent(legalEntityId)}`),
 
   // Self-Service & Manager
-  getMyProfile: (legalEntityId: string): Promise<EmployeeProfile> =>
-    httpClient<EmployeeProfile>(`${BASE}/me/profile?legalEntityId=${encodeURIComponent(legalEntityId)}`),
+  getMyProfile: async (legalEntityId: string): Promise<EmployeeProfile | null> => {
+    try {
+      return await httpClient<EmployeeProfile>(`${BASE}/me/profile?legalEntityId=${encodeURIComponent(legalEntityId)}`);
+    } catch (error) {
+      // An unlinked membership is the supported self-service empty state.
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }
+  },
 
   getMyTeam: (legalEntityId: string): Promise<HrTeamPage> =>
     httpClient<HrTeamPage>(`${BASE}/me/team?legalEntityId=${encodeURIComponent(legalEntityId)}`),

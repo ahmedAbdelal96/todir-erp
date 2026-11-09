@@ -24,6 +24,7 @@ export const en = {
     saving: "Saving...",
     loading: "Loading...",
     close: "Close",
+    retry: "Retry",
     submit: "Submit",
     submitting: "Submitting...",
     upload: "Upload",

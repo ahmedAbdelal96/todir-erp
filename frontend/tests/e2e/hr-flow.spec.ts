@@ -962,4 +962,16 @@ test.describe('TODIR HR — Comprehensive Enterprise HR & UX Acceptance Suite', 
     await expect(page.getByText('محاسب أول')).toBeVisible();
     await expect(pageErrors).toEqual([]);
   });
+
+  test('HR10 — Unlinked self-service membership shows the supported empty state', async ({ page }) => {
+    await page.route('**/api/v1/hr/me/profile*', async (route) => {
+      await route.fulfill({ status: 404, contentType: 'application/problem+json', body: '{}' });
+    });
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/hr?tab=selfservice');
+
+    await expect(page.getByText('لا يوجد ملف موظف مرتبط بحساب المستخدم الحالي.')).toBeVisible();
+    expect(pageErrors).toEqual([]);
+  });
 });

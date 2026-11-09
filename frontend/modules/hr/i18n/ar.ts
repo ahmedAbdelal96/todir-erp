@@ -24,6 +24,7 @@ export const ar = {
     saving: "جارٍ الحفظ...",
     loading: "جارٍ التحميل...",
     close: "إغلاق",
+    retry: "إعادة المحاولة",
     submit: "إرسال",
     submitting: "جارٍ الإرسال...",
     upload: "رفع",

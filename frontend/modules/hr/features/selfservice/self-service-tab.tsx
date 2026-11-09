@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
+import { Button } from "../../../../components/primitives/button.tsx";
 import { HrStatusBadge } from "../../components/hr-status-badge.tsx";
 import { useMyProfile, useEmployments } from "../../hooks/use-hr-queries.ts";
 
@@ -21,6 +22,13 @@ export function SelfServiceTab({ legalEntityId }: SelfServiceTabProps): React.JS
       <Surface title={t("selfservice.title")}>
         {profileQuery.isLoading ? (
           <p>{t("actions.loading")}</p>
+        ) : profileQuery.isError ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", alignItems: "flex-start" }}>
+            <p style={{ color: "var(--color-content-danger)" }}>{t("errors.generic")}</p>
+            <Button variant="secondary" onPress={() => void profileQuery.refetch()}>
+              {t("actions.retry")}
+            </Button>
+          </div>
         ) : !profile ? (
           <p style={{ color: "var(--color-content-muted)" }}>{t("selfservice.noProfileLinked")}</p>
         ) : (
