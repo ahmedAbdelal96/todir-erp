@@ -661,6 +661,7 @@ public sealed class ExpensesPostgresIntegrationTests
         var pendingRetry = await repository.RequestApprovalAsync(new(Delta), requester.IdentityId, requester.MembershipId, entity, expense.Id, "Manager review retry", default);
         Assert.Equal(pending.RequestId, pendingRetry.RequestId);
         Assert.Equal("Pending", pendingRetry.State);
+        Assert.Equal("Manager review", (string)(await ScalarAsync(connection, "select request_reason from platform.approval_request where tenant_id=$1 and id=$2", Delta, pending.RequestId))!);
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.DecideApprovalAsync(new(Delta), decider.IdentityId, decider.MembershipId, entity, Guid.CreateVersion7(), new(pending.RequestId, "Approved", "Wrong expense"), default));
         Assert.Equal("Pending", (await approvals.GetAsync(new(Delta), pending.RequestId, default))!.State);
         var approved = await repository.DecideApprovalAsync(new(Delta), decider.IdentityId, decider.MembershipId, entity, expense.Id, new(pending.RequestId, "Approved", "Reviewed by Finance"), default);
