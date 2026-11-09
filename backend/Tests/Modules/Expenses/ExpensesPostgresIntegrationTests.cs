@@ -97,6 +97,7 @@ public sealed class ExpensesPostgresIntegrationTests
         var posted = await ReadPostingAsync(connection, finalized.Id);
         Assert.Equal(1, posted.EntryCount);
         Assert.Equal(125m, posted.Debit);
+        Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from platform.outbox_message where tenant_id=$1 and causation_id=$2 and message_type='ExpenseFinalizedV1'", Atlas, finalized.Id));
         Assert.Equal(125m, posted.Credit);
         var reversed = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(finalized.Version, "Duplicate claim correction"), "reverse", default);
         Assert.Equal("Reversed", reversed.ExpenseState);

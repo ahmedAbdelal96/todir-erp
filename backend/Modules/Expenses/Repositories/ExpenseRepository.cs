@@ -202,6 +202,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             { Add(history, tenant.Value, Guid.CreateVersion7(), entity, id, posted.JournalEntryId); await history.ExecuteNonQueryAsync(token); }
             await using var obligation = new NpgsqlCommand("insert into business_expenses.expense_reimbursement_obligation(tenant_id,id,legal_entity_id,expense_id,employee_id,amount,currency_code,status) select tenant_id,$4,legal_entity_id,id,employee_id,amount,currency_code,'Pending' from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 and payment_source='EmployeePaid' and employee_id is not null on conflict(tenant_id,expense_id) do nothing", context.Connection, context.Transaction);
             Add(obligation, tenant.Value, entity, id, Guid.CreateVersion7()); await obligation.ExecuteNonQueryAsync(token);
+            context.AddOutbox(new(Guid.CreateVersion7(), "ExpenseFinalizedV1", JsonSerializer.Serialize(new { ExpenseId = id, LegalEntityId = entity, EmployeeId = employee, Amount = amount, CurrencyCode = currency }), tenant, DateTimeOffset.UtcNow, id, id, "expenses"));
             return posted;
         }, ct);
         return (await GetAsync(tenant, entity, id, ct))!;
