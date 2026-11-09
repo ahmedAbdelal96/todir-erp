@@ -1370,6 +1370,11 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         EmployeeRepaymentPaymentResult payment;
         try { payment = await (repaymentPayments ?? throw new ExpenseRepositoryException("expenses.payments_capability_unavailable")).ReceiveEmployeeRepaymentAsync(tenant, actorId, membershipId, Guid.CreateVersion7(), entity, repaymentId, request.PaymentAccountId, request.Method, request.Amount, currency, request.PaymentDate, request.PostingDate, $"expenses-repayment:{repaymentId:D}:{request.Amount.ToString(CultureInfo.InvariantCulture)}", ct); }
         catch { await SetRepaymentFailedAsync(tenant, entity, repaymentId, ct); throw; }
+        if (!string.Equals(payment.State, "Completed", StringComparison.OrdinalIgnoreCase) || payment.Amount != request.Amount || !string.Equals(payment.CurrencyCode.Trim(), currency, StringComparison.OrdinalIgnoreCase))
+        {
+            await SetRepaymentFailedAsync(tenant, entity, repaymentId, ct);
+            throw new ExpenseRepositoryException("expenses.payment_result_mismatch");
+        }
         await using (var scope = await OpenAsync(tenant, ct))
         {
             await using var complete = new NpgsqlCommand("update business_expenses.expense_employee_repayment set settled_amount=settled_amount+$4,state=case when settled_amount+$4 >= amount then 'Recorded' else 'Pending' end,recorded_at=case when settled_amount+$4 >= amount then now() else recorded_at end,payment_id=$5,version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and state='Pending' and settled_amount+$4 <= amount", scope.Connection, scope.Transaction); Add(complete, tenant.Value, entity, repaymentId, payment.Amount, payment.PaymentId); if (await complete.ExecuteNonQueryAsync(ct) != 1) throw new ExpenseRepositoryException("expenses.repayment_completion_conflict"); await scope.Transaction.CommitAsync(ct);

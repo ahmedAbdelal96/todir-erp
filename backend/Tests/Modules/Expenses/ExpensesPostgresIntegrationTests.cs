@@ -323,7 +323,6 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Single(cardPage.Items);
         var repaymentPage = await repository.ListEmployeeRepaymentsAsync(new(Atlas), entity, employee, "Requested", 1, 10, default);
         Assert.True(repaymentPage.TotalCount >= 1);
-
         var repositoryWithAdvancePayments = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)), advancePayments: new TestAdvancePaymentCapability(), approvals: new TestApprovalCapability());
         var advance = await repositoryWithAdvancePayments.CreateAdvanceAsync(new(Atlas), new(entity, employee, "سلفة رحلة", 500m), default);
         advance = await repositoryWithAdvancePayments.TransitionAdvanceAsync(new(Atlas), entity, advance.Id, advance.Version, "approve", default);
@@ -341,6 +340,12 @@ public sealed class ExpensesPostgresIntegrationTests
         var summary = await repository.GetExceptionSummaryAsync(new(Atlas), entity, default);
         Assert.True(summary.PersonalRepaymentDue >= 1);
         Assert.True(summary.OutstandingAdvances >= 0);
+        var repayment = repaymentPage.Items.Single(item => item.SourceReference == $"corporate-card:{card.Id:D}");
+        var mismatchedPaymentRepository = new ExpenseRepository(dataSource, coordinator,
+            new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)),
+            repaymentPayments: new MismatchedRepaymentPaymentCapability());
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => mismatchedPaymentRepository.SettleEmployeeRepaymentAsync(new(Atlas), entity, repayment.Id, Guid.CreateVersion7(), Guid.CreateVersion7(), new(Guid.CreateVersion7(), "Cash", repayment.Amount, new(2026, 10, 14), new(2026, 10, 14), repayment.Version), default));
+        Assert.Equal("Failed", (await mismatchedPaymentRepository.ListEmployeeRepaymentsAsync(new(Atlas), entity, employee, "Failed", 1, 10, default)).Items.Single(item => item.Id == repayment.Id).State);
     }
 
     [ExpensesPostgresFact]
@@ -1228,6 +1233,12 @@ public sealed class ExpensesPostgresIntegrationTests
     private sealed class TestAdvancePaymentCapability : IBusinessAdvancePaymentCapability
     {
         public Task<BusinessAdvancePaymentResult> IssueBusinessAdvanceAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid correlationId, Guid legalEntityId, Guid advanceId, Guid paymentAccountId, string method, decimal amount, string currencyCode, DateOnly paymentDate, DateOnly postingDate, string idempotencyKey, CancellationToken cancellationToken) => Task.FromResult(new BusinessAdvancePaymentResult(Guid.CreateVersion7(), amount, currencyCode, "Completed"));
+    }
+
+    private sealed class MismatchedRepaymentPaymentCapability : IEmployeeRepaymentPaymentCapability
+    {
+        public Task<EmployeeRepaymentPaymentResult> ReceiveEmployeeRepaymentAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid correlationId, Guid legalEntityId, Guid repaymentId, Guid paymentAccountId, string method, decimal amount, string currencyCode, DateOnly paymentDate, DateOnly postingDate, string idempotencyKey, CancellationToken cancellationToken)
+            => Task.FromResult(new EmployeeRepaymentPaymentResult(Guid.CreateVersion7(), amount - 1m, currencyCode, "Completed"));
     }
 
     private sealed class ExpensesPostgresFactAttribute : FactAttribute
