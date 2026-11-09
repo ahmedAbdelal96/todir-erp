@@ -105,6 +105,7 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         Guid legalEntityId;
         Guid employeeId;
         Guid expenseId;
+        Guid categoryVersionId;
         string employeeEmail;
         await using (var connection = new NpgsqlConnection(adminConnection))
         {
@@ -121,7 +122,11 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
             expense.Parameters.AddWithValue(tenantId);
             expense.Parameters.AddWithValue(legalEntityId);
             expenseId = (Guid)(await expense.ExecuteScalarAsync() ?? throw new InvalidOperationException("Atlas seed expense is missing."));
-            await using var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select m.tenant_id,a.role_id,'expenses.read' from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id where m.tenant_id=$1 and i.email=$2 on conflict do nothing", connection);
+            await using var category = new NpgsqlCommand("select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", connection);
+            category.Parameters.AddWithValue(tenantId);
+            category.Parameters.AddWithValue(legalEntityId);
+            categoryVersionId = (Guid)(await category.ExecuteScalarAsync() ?? throw new InvalidOperationException("Atlas expense category version is missing."));
+            await using var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select m.tenant_id,a.role_id,p.permission_code from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id cross join (values ('expenses.read'),('expenses.create'),('expenses.submit')) p(permission_code) where m.tenant_id=$1 and i.email=$2 on conflict do nothing", connection);
             grant.Parameters.AddWithValue(tenantId);
             grant.Parameters.AddWithValue(employeeEmail);
             await grant.ExecuteNonQueryAsync();
@@ -145,6 +150,29 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
         Assert.True(body.TryGetProperty("items", out var items));
         foreach (var item in items.EnumerateArray())
             Assert.Equal(employeeId, item.GetProperty("employeeId").GetGuid());
+
+        using var create = JsonContent.Create(new
+        {
+            legalEntityId,
+            merchantName = "API self-service journey",
+            expenseDate = "2026-11-01",
+            amount = 125m,
+            currencyCode = "EGP",
+            paymentSource = "EmployeePaid",
+            categoryVersionId,
+            businessPurpose = "Authenticated employee acceptance"
+        });
+        var created = await PostWithCsrfAsync(client, "/api/v1/expenses/my/expenses", create);
+        var createdPayload = await created.Content.ReadAsStringAsync();
+        Assert.True(created.StatusCode == HttpStatusCode.Created, $"Self-service create failed with {(int)created.StatusCode}: {createdPayload}");
+        var createdBody = JsonSerializer.Deserialize<JsonElement>(createdPayload);
+        var createdId = createdBody.GetProperty("id").GetGuid();
+        var missing = await PostWithCsrfAsync(client, $"/api/v1/expenses/my/expenses/{createdId:D}/missing-receipt?legalEntityId={legalEntityId:D}", JsonContent.Create(new { reason = "Receipt unavailable during API acceptance" }));
+        Assert.Equal(HttpStatusCode.OK, missing.StatusCode);
+        var submitted = await PostWithCsrfAsync(client, $"/api/v1/expenses/my/expenses/{createdId:D}/submit?legalEntityId={legalEntityId:D}", JsonContent.Create(new { version = createdBody.GetProperty("version").GetInt64() }));
+        var submittedPayload = await submitted.Content.ReadAsStringAsync();
+        Assert.True(submitted.StatusCode == HttpStatusCode.OK, $"Self-service submit failed with {(int)submitted.StatusCode}: {submittedPayload}");
+        Assert.Equal("Submitted", JsonSerializer.Deserialize<JsonElement>(submittedPayload).GetProperty("expenseState").GetString());
 
         // Self-service employees must not use the entity-wide route to read another
         // employee's expense, even when the role has the generic expenses.read grant.

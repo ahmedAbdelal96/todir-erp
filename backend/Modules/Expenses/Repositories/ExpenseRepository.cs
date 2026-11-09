@@ -29,6 +29,22 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         return await CreateAsync(tenant, new CreateExpenseRequest(request.LegalEntityId, employeeId, request.MerchantName, request.ExpenseDate, request.Amount, request.CurrencyCode, request.PaymentSource, request.CategoryVersionId, request.BusinessPurpose, request.Description), ct);
     }
 
+    public async Task<ExpenseDto> SubmitSelfAsync(TenantId tenant, Guid membershipId, Guid entity, Guid expenseId, ExpenseActionRequest request, CancellationToken ct)
+    {
+        var employeeId = await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct);
+        var expense = await GetAsync(tenant, entity, expenseId, ct);
+        if (expense is null || expense.EmployeeId != employeeId) throw new ExpenseRepositoryException("expenses.expense_not_found");
+        return await TransitionAsync(tenant, entity, expenseId, request, "submit", ct);
+    }
+
+    public async Task<MissingReceiptDeclarationDto> DeclareMissingReceiptSelfAsync(TenantId tenant, Guid membershipId, Guid actorId, Guid entity, Guid expenseId, DeclareMissingReceiptRequest request, CancellationToken ct)
+    {
+        var employeeId = await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct);
+        var expense = await GetAsync(tenant, entity, expenseId, ct);
+        if (expense is null || expense.EmployeeId != employeeId) throw new ExpenseRepositoryException("expenses.expense_not_found");
+        return await DeclareMissingReceiptAsync(tenant, actorId, entity, expenseId, request, ct);
+    }
+
     public async Task<ExpensePage<ExpenseDto>> ListSelfAsync(TenantId tenant, Guid membershipId, Guid entity, string? state, string? search, int page, int pageSize, CancellationToken ct)
         => await ListAsync(tenant, entity, await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct), state, search, page, pageSize, ct);
 
