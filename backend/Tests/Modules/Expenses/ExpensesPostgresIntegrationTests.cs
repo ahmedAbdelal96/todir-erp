@@ -461,6 +461,10 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(80m, (decimal)(await ScalarAsync(connection, "select coalesce(sum(amount),0) from business_expenses.expense_card_adjustment where tenant_id=$1 and card_transaction_id=$2 and state='Applied'", Atlas, card.Id))!);
         Assert.Equal("Applied", completed.State);
         Assert.Equal("Refunded", (await repository.ListCardTransactionsAsync(new(Atlas), entity, "Refunded", card.ProviderReference, 1, 10, default)).Items.Single().State);
+        var adjustments = await repository.ListCardAdjustmentsAsync(new(Atlas), entity, new ExpenseCardAdjustmentFilter(card.Id, "Refund", "Applied", "Merchant"), 1, 10, default);
+        Assert.Equal(2, adjustments.TotalCount);
+        Assert.Equal(2, adjustments.Items.Count);
+        Assert.Equal(1, adjustments.Page);
     }
 
     [ExpensesFinancialPostgresFact]

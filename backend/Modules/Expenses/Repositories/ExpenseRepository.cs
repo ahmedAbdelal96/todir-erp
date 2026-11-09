@@ -958,6 +958,23 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
     }
 
+    public async Task<ExpensePage<ExpenseCardAdjustmentDto>> ListCardAdjustmentsAsync(TenantId tenant, Guid entity, ExpenseCardAdjustmentFilter filter, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        await using var scope = await OpenAsync(tenant, ct);
+        const string where = "a.tenant_id=$1 and a.legal_entity_id=$2 and ($3::uuid is null or a.card_transaction_id=$3) and ($4::text is null or a.kind=$4) and ($5::text is null or a.state=$5) and ($6::text is null or a.provider_reference ilike '%'||$6||'%' or a.reason ilike '%'||$6||'%')";
+        await using var count = new NpgsqlCommand($"select count(*) from business_expenses.expense_card_adjustment a where {where}", scope.Connection, scope.Transaction);
+        Add(count, tenant.Value, entity, Db(filter.CardTransactionId), Db(string.IsNullOrWhiteSpace(filter.Kind) ? null : filter.Kind.Trim()), Db(string.IsNullOrWhiteSpace(filter.State) ? null : filter.State.Trim()), Db(string.IsNullOrWhiteSpace(filter.Search) ? null : filter.Search.Trim()));
+        var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand($"select a.id,a.card_transaction_id,a.kind,a.provider_reference,a.amount,a.currency_code,a.state,a.reason,a.created_at,a.applied_at from business_expenses.expense_card_adjustment a where {where} order by a.created_at desc,a.id desc offset $7 limit $8", scope.Connection, scope.Transaction);
+        Add(command, tenant.Value, entity, Db(filter.CardTransactionId), Db(string.IsNullOrWhiteSpace(filter.Kind) ? null : filter.Kind.Trim()), Db(string.IsNullOrWhiteSpace(filter.State) ? null : filter.State.Trim()), Db(string.IsNullOrWhiteSpace(filter.Search) ? null : filter.Search.Trim()), (page - 1) * pageSize, pageSize);
+        var items = new List<ExpenseCardAdjustmentDto>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) items.Add(ReadCardAdjustment(reader));
+        await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct);
+        return new(items, total, page, pageSize);
+    }
+
     public async Task<ExpenseCardTransactionDto> MatchCardTransactionAsync(TenantId tenant, Guid entity, Guid cardId, MatchExpenseCardTransactionRequest request, CancellationToken ct)
     {
         if (request.ExpenseId == Guid.Empty) throw new ExpenseRepositoryException("expenses.card_match_invalid");
