@@ -530,6 +530,29 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_import_row where tenant_id=$1 and batch_id=$2 and status='Created'", Atlas, batch.Id));
     }
 
+    [ExpensesPostgresFact]
+    public async Task DuplicateCandidatesArePersistedAndBoundedToTheSameLegalEntity()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var employee = Guid.CreateVersion7();
+        var original = await repository.CreateAsync(new(Atlas), new(entity, employee, "Cairo Hotel", new(2026, 10, 25), 975m, "EGP", "EmployeePaid", categoryVersion), default);
+        var duplicate = await repository.CreateAsync(new(Atlas), new(entity, employee, "Cairo Hotel", new(2026, 10, 25), 975m, "EGP", "EmployeePaid", categoryVersion), default);
+        var candidates = await repository.ListDuplicateCandidatesAsync(new(Atlas), entity, original.Id, 1, 10, default);
+        var match = Assert.Single(candidates.Items, item => item.ExpenseId == duplicate.Id);
+        Assert.Equal("EmployeeDateAmount", match.MatchReason);
+        Assert.True(candidates.TotalCount >= 1);
+        Assert.Equal(1, candidates.Page);
+        Assert.Equal(10, candidates.PageSize);
+    }
+
     private static async Task<(Guid IdentityId, Guid MembershipId)> ReadUserAsync(NpgsqlConnection connection, string prefix)
     {
         await using var command = new NpgsqlCommand("select i.id,m.id from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id where i.tenant_id=$1 and i.login_prefix=$2 and m.status='Active'", connection);

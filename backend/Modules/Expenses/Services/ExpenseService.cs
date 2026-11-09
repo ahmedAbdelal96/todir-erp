@@ -8,6 +8,7 @@ public sealed class ExpenseService(ExpenseRepository repository)
 {
     public Task<ExpensePage<ExpenseDto>> ListAsync(TenantId tenant, Guid entity, Guid? employeeId, string? state, string? search, int page, int pageSize, CancellationToken ct) => repository.ListAsync(tenant, entity, employeeId, state, search, page, pageSize, ct);
     public Task<ExpenseDto?> GetAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetAsync(tenant, entity, id, ct);
+    public Task<ExpensePage<ExpenseDuplicateCandidateDto>> ListDuplicateCandidatesAsync(TenantId tenant, Guid entity, Guid expenseId, int page, int pageSize, CancellationToken ct) => repository.ListDuplicateCandidatesAsync(tenant, entity, expenseId, page, pageSize, ct);
     public Task<IReadOnlyList<ExpenseCategoryDto>> ListCategoriesAsync(TenantId tenant, Guid entity, CancellationToken ct) => repository.ListCategoriesAsync(tenant, entity, ct);
     public Task<ExpenseCategoryDto> CreateCategoryAsync(TenantId tenant, CreateExpenseCategoryRequest request, CancellationToken ct) => repository.CreateCategoryAsync(tenant, request, ct);
     public Task<ExpenseCategoryVersionDto> CreateCategoryVersionAsync(TenantId tenant, Guid entity, Guid categoryId, CreateExpenseCategoryVersionRequest request, CancellationToken ct) => repository.CreateCategoryVersionAsync(tenant, entity, categoryId, request, ct);
