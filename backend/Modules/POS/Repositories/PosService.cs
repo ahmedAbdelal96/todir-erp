@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Core.Services;
 using Core.Transactions;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.Catalog;
@@ -16,7 +17,7 @@ using Todir.Sales.Contracts;
 
 namespace Modules.POS;
 
-public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource, ICatalogCapabilities catalog, IPricingCapabilities pricing, ITaxCapabilities tax, IPosPaymentCapabilities payments, IPosInvoicingCapabilities invoicing, IInvoiceComplianceSnapshotCapability snapshots, ISubledgerCapabilities subledger, ISalesInventoryCapabilities inventory, IQuantityConversion quantityConversion, ITransactionalLedgerPostingCapability ledger)
+public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSource dataSource, ICatalogCapabilities catalog, IPricingCapabilities pricing, ITaxCapabilities tax, IPosPaymentCapabilities payments, IPosInvoicingCapabilities invoicing, IInvoiceComplianceSnapshotCapability snapshots, ISubledgerCapabilities subledger, ISalesInventoryCapabilities inventory, IQuantityConversion quantityConversion, ITransactionalLedgerPostingCapability ledger, IConfiguration configuration)
 {
     private static readonly string[] OfflineCapabilities = ["CashSale", "ReceiptPrint", "QueuedSync"];
     private static readonly JsonSerializerOptions OfflineJsonOptions = new(JsonSerializerDefaults.Web);
@@ -1020,7 +1021,10 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
     public async Task<OfflinePackageResponse> DownloadOfflinePackageAsync(TenantId tenant, Guid registerId, string deviceIdentity, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(deviceIdentity)) throw new ArgumentException("pos.offline_device_invalid");
-        var signingSecret = Environment.GetEnvironmentVariable("TODIR_POS_OFFLINE_SIGNING_SECRET");
+        // Environment variables remain the production authority; repository
+        // Development configuration supplies the documented local key so a
+        // direct `dotnet run` behaves the same as scripts/backend.ps1.
+        var signingSecret = configuration["TODIR_POS_OFFLINE_SIGNING_SECRET"] ?? Environment.GetEnvironmentVariable("TODIR_POS_OFFLINE_SIGNING_SECRET");
         if (string.IsNullOrWhiteSpace(signingSecret)) throw new InvalidOperationException("pos.offline_signing_unavailable");
         var now = DateTimeOffset.UtcNow;
         var validUntil = now.AddHours(24);

@@ -6,7 +6,8 @@
       "dotnetRunMessages": true,
       "applicationUrl": "http://127.0.0.1:5080",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "TODIR_POS_OFFLINE_SIGNING_SECRET": "pos-offline-development-signing-key-2026"
       }
     }
   }
