@@ -13,7 +13,7 @@ This is an executable acceptance matrix. A gate is `PASS` only when the listed p
 | EX03 | Expense draft lifecycle and independent state dimensions enforce valid transitions and concurrency. | Create/update/submit/approve/finalize/reverse repository paths and persisted tests. | PASS | Expenses PostgreSQL suite. |
 | EX04 | Authenticated self-service capture resolves employee identity server-side and prevents cross-employee access. | HR capability resolution and `/my` contracts. | PARTIAL | Repository proof exists; authenticated red-team matrix still required. |
 | EX05 | Receipts use authorized Platform Files references, replacement history, malware state, and missing-receipt lifecycle. | Evidence lifecycle and Platform Files upload/download contracts. | PASS | `HrDocumentDownloadIntegrationTests.SensitiveDocumentRequiresSensitivePermissionAndReturnsPrivateShortLivedDownload`: real MinIO upload, private short-lived download, ClamAV fail-once recovery, clean upload, EICAR rejection, and cross-entity denial passed 1/1. |
-| EX06 | OCR runs asynchronously, retries safely, fails closed without blocking manual entry, and never becomes financial authority. | OCR job/outbox/worker, retry/manual fallback, provider success/failure tests. | PARTIAL | Expenses PostgreSQL 34/34; worker/provider recovery evidence incomplete. |
+| EX06 | OCR runs asynchronously, retries safely, fails closed without blocking manual entry, and never becomes financial authority. | OCR job/outbox/worker, retry/manual fallback, provider success/failure tests. | PARTIAL | Expenses PostgreSQL 34/34; real Worker run on disposable PostgreSQL/RabbitMQ published `expenses.ocr.requested`, persisted `Failed` with `expenses.ocr_provider_unavailable`, incremented attempt count, and marked inbox processed. Provider-success and manual-fallback assertions remain repository-level; end-to-end retry/recovery evidence is still incomplete. |
 | EX07 | Itemization and participants are draft-scoped and persisted with correct totals. | Repository commands and finalization guards. | PASS | Expenses PostgreSQL suite. |
 | EX08 | Typed, effective-dated policy rules evaluate applicability, findings, exceptions, and immutable snapshots. | Policy versions/evaluations and receipt/business-purpose rules. | PARTIAL | Persisted policy evidence exists; full typed exception matrix incomplete. |
 | EX09 | Platform Approvals routes authorized requests, enforces scope/separation of duties, stale protection, and decision replay. | Shared approval capability and Expense linkage. | PARTIAL | Persisted replay/stale tests; full authenticated authority matrix incomplete. |
@@ -50,7 +50,7 @@ This is an executable acceptance matrix. A gate is `PASS` only when the listed p
 | EX40 | Finalized expenses, Ledger/tax/control facts, Payments allocations, repayments, and advances reconcile exactly. | Ledger/Payments/FinanceBase assertions exist by workflow. | NOT COMPLETE | One complete zero-difference cross-module run not executed. |
 | EX41 | Applicable country-pack rules are tested only when configured and never invented globally. | Country-neutral provider seams. | PARTIAL | Optional country certification remains external/configuration-dependent. |
 | EX42 | Employee, card, personal repayment, advance, project, and optional payroll cross-module journeys pass end-to-end. | Individual contracts exist. | NOT COMPLETE | Full authenticated cross-module run not executed. |
-| EX43 | Release gate has fresh migrations/seed, all mandatory tests, security, financial reconciliation, clean tree, and pushed commit. | Build/format/architecture/Expenses gates and SSH push. | NOT COMPLETE | Fresh migration/seed and authenticated API gates now have evidence; EX06, EX33, EX36–EX42 remain incomplete. |
+| EX43 | Release gate has fresh migrations/seed, all mandatory tests, security, financial reconciliation, clean tree, and pushed commit. | Build/format/architecture/Expenses gates and SSH push. | NOT COMPLETE | Fresh migration/seed, authenticated API, and real Worker failure-path evidence now exist; EX06, EX33, EX36–EX42 remain incomplete. |
 
 ## Current execution baseline
 
@@ -58,6 +58,6 @@ This is an executable acceptance matrix. A gate is `PASS` only when the listed p
 - Isolated PostgreSQL Expenses suite: `34/34 passed, 0 skipped`.
 - Architecture suite: `21/21 passed`.
 - Backend build and format verification: passed.
-- First active failing gate: **EX06 OCR worker recovery evidence**, followed by EX08/EX09 policy/approval depth, EX14 provider feed, EX30/EX31/EX32 operations, EX33 red-team, and EX36–EX43.
+- First active failing gate: **EX06 OCR worker recovery evidence** (the failure-path is now proven, but retry/recovery and provider/manual fallback still need an end-to-end worker assertion), followed by EX08/EX09 policy/approval depth, EX14 provider feed, EX30/EX31/EX32 operations, EX33 red-team, and EX36–EX43.
 
 The matrix is intentionally not a completion claim. Update each row only with executable evidence from the current repository state.
