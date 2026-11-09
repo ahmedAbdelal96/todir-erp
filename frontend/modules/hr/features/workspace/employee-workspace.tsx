@@ -22,10 +22,12 @@ import {
   useQualifications,
   useCredentials,
   useTimeline,
-  useVerifyDocumentMutation
+  useVerifyDocumentMutation,
+  useDocumentDownloadMutation
 } from "../../hooks/use-hr-queries.ts";
 import { usePermissions } from "../../../../core/runtime/runtime-provider.tsx";
 import type { EmployeeDocumentView } from "../../types.ts";
+import { mapHrError } from "../../services/hr-error-map.ts";
 
 export interface EmployeeWorkspaceProps {
   readonly employeeId: string;
@@ -67,6 +69,7 @@ export function EmployeeWorkspace({
   const [renewContractId, setRenewContractId] = useState<string | null>(null);
   const [terminateMode, setTerminateMode] = useState<"terminate" | "rehire" | null>(null);
   const [isUploadDocOpen, setIsUploadDocOpen] = useState(false);
+  const [documentDownloadError, setDocumentDownloadError] = useState<string | null>(null);
 
   // Queries
   const employeeQuery = useEmployeeDetail(employeeId, legalEntityId);
@@ -86,6 +89,7 @@ export function EmployeeWorkspace({
   const credentialsQuery = useCredentials(employeeId, legalEntityId);
   const timelineQuery = useTimeline(employeeId, legalEntityId);
   const verifyDocMutation = useVerifyDocumentMutation(employeeId, legalEntityId);
+  const downloadDocMutation = useDocumentDownloadMutation(employeeId, legalEntityId);
 
   const handleVerifyDoc = async (doc: EmployeeDocumentView) => {
     try {
@@ -97,6 +101,25 @@ export function EmployeeWorkspace({
       });
     } catch {
       // Handled by react query
+    }
+  };
+
+  const handleDownloadDoc = async (doc: EmployeeDocumentView) => {
+    setDocumentDownloadError(null);
+    // Reserve the browser tab during the user gesture so popup blockers do not
+    // prevent opening the short-lived signed URL returned by the backend.
+    const pendingWindow = window.open("about:blank", "_blank");
+    try {
+      const download = await downloadDocMutation.mutateAsync({ documentId: doc.id });
+      if (pendingWindow) {
+        pendingWindow.location.href = download.url;
+      } else {
+        window.location.href = download.url;
+      }
+    } catch (error: unknown) {
+      pendingWindow?.close();
+      const mapped = mapHrError(error);
+      setDocumentDownloadError(t(mapped.messageKey, mapped.defaultMessage));
     }
   };
 
@@ -387,6 +410,21 @@ export function EmployeeWorkspace({
       {/* Section 5: Documents */}
       {activeSection === "documents" && (
         <Surface title={t("workspace.documents.title")}>
+          {documentDownloadError && (
+            <div
+              role="alert"
+              style={{
+                marginBottom: "0.75rem",
+                padding: "0.75rem",
+                borderRadius: "var(--radius-sm)",
+                background: "var(--color-status-danger-subtle, #fee2e2)",
+                color: "var(--color-status-danger, #b91c1c)",
+                fontSize: "0.875rem"
+              }}
+            >
+              {documentDownloadError}
+            </div>
+          )}
           <Table aria-label={t("workspace.documents.title")}>
             <TableHeader>
               <TableRow>
@@ -414,16 +452,27 @@ export function EmployeeWorkspace({
                       <TableCell>{doc.expiryDate ? <LocalDateDisplay value={doc.expiryDate} /> : "—"}</TableCell>
                       <TableCell><HrStatusBadge status={isDocVerified ? "Verified" : "Pending"} /></TableCell>
                       <TableCell style={{ textAlign: "end" }}>
-                        {!isDocVerified && (
-                          <Button
-                            size="compact"
-                            variant="secondary"
-                            onPress={() => handleVerifyDoc(doc)}
-                            isDisabled={verifyDocMutation.isPending}
-                          >
-                            {t("workspace.documents.verify")}
-                          </Button>
-                        )}
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", flexWrap: "wrap" }}>
+                          {isDocVerified ? (
+                            <Button
+                              size="compact"
+                              variant="secondary"
+                              onPress={() => void handleDownloadDoc(doc)}
+                              isDisabled={downloadDocMutation.isPending}
+                            >
+                              {downloadDocMutation.isPending ? t("actions.loading") : t("workspace.documents.download")}
+                            </Button>
+                          ) : (
+                            <Button
+                              size="compact"
+                              variant="secondary"
+                              onPress={() => void handleVerifyDoc(doc)}
+                              isDisabled={verifyDocMutation.isPending}
+                            >
+                              {t("workspace.documents.verify")}
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

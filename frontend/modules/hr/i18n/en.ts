@@ -268,6 +268,7 @@ export const en = {
       isSensitiveLabel: "Highly Sensitive (Restrict Access)",
       verified: "Verification",
       verify: "Verify",
+      download: "View / Download",
       empty: "No documents uploaded for this employee.",
       fileRequired: "Document file is required.",
       fileTooLarge: "File size exceeds the allowed limit (15 MB).",

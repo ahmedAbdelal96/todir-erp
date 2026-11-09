@@ -327,6 +327,13 @@ export function useVerifyDocumentMutation(employeeId: string, legalEntityId: str
   });
 }
 
+export function useDocumentDownloadMutation(employeeId: string, legalEntityId: string) {
+  return useMutation({
+    mutationFn: ({ documentId }: { documentId: string }) =>
+      hrApi.getDocumentDownload(employeeId, documentId, legalEntityId)
+  });
+}
+
 export function useIdentifiers(employeeId: string, legalEntityId: string) {
   return useQuery({
     queryKey: hrKeys.identifiers(employeeId, legalEntityId),
