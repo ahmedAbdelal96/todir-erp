@@ -1,4 +1,5 @@
 using Modules.Expenses.Repositories;
+using Modules.Expenses.DTOs;
 using Modules.Ledger.Repositories;
 using Modules.Ledger.Services;
 using Core.Transactions;
@@ -507,6 +508,26 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Manual", manual.State);
         Assert.Equal("Manual merchant", manual.Suggestions!.Value.GetProperty("merchantName").GetString());
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='ocr.manual'", Atlas, expense.Id));
+    }
+
+    [ExpensesPostgresFact]
+    public async Task ExpenseImportPersistsRowOutcomesAndReplaysIdempotently()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var ledgerRepository = new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(ledgerRepository));
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var request = new ImportExpensesRequest(entity, $"expenses-test-{Guid.CreateVersion7():N}", [new("legacy-1", null, "Imported Merchant", new DateOnly(2026, 10, 20), 42m, "EGP", "EmployeePaid", categoryVersion), new("legacy-2", null, "Broken", new DateOnly(2026, 10, 20), -1m, "EGP", "EmployeePaid", Guid.CreateVersion7())]);
+        var batch = await repository.ImportExpensesAsync(new(Atlas), request, default);
+        Assert.Equal("CompletedWithErrors", batch.State); Assert.Equal(1, batch.CreatedCount); Assert.Equal(1, batch.ErrorCount);
+        var replay = await repository.ImportExpensesAsync(new(Atlas), request, default); Assert.Equal(batch.Id, replay.Id); Assert.Equal(batch.CreatedCount, replay.CreatedCount);
+        Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_import_row where tenant_id=$1 and batch_id=$2 and status='Created'", Atlas, batch.Id));
     }
 
     private static async Task<(Guid IdentityId, Guid MembershipId)> ReadUserAsync(NpgsqlConnection connection, string prefix)

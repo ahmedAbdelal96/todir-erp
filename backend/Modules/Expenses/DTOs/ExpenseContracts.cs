@@ -40,6 +40,9 @@ public sealed record CreateExpenseReportRequest(Guid LegalEntityId, Guid? Employ
 public sealed record ExpenseReportItemDto(Guid Id, Guid ReportId, Guid ExpenseId, decimal Amount, DateTimeOffset CreatedAt);
 public sealed record AddExpenseReportItemRequest(Guid ExpenseId, decimal Amount);
 public sealed record ExpenseReportHistoryDto(Guid Id, Guid ReportId, string Action, System.Text.Json.JsonElement ToState, DateTimeOffset OccurredAt);
+public sealed record ImportExpenseRowRequest(string ExternalReference, Guid? EmployeeId, string MerchantName, DateOnly ExpenseDate, decimal Amount, string CurrencyCode, string PaymentSource, Guid CategoryVersionId, string? BusinessPurpose = null, string? Description = null);
+public sealed record ImportExpensesRequest(Guid LegalEntityId, string IdempotencyKey, IReadOnlyList<ImportExpenseRowRequest> Rows);
+public sealed record ExpenseImportBatchDto(Guid Id, Guid LegalEntityId, string IdempotencyKey, string State, int TotalRows, int CreatedCount, int ErrorCount, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
 public sealed record BusinessAdvanceDto(Guid Id, Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, decimal IssuedAmount, decimal AppliedAmount, decimal ReturnedAmount, string CurrencyCode, string State, long Version, DateTimeOffset CreatedAt, Guid? IssuancePaymentId = null, DateOnly? SettlementDueDate = null, bool IsOverdue = false);
 public sealed record CreateBusinessAdvanceRequest(Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, string CurrencyCode = "EGP", DateOnly? SettlementDueDate = null);
 public sealed record ApplyBusinessAdvanceRequest(Guid ExpenseId, decimal Amount);
