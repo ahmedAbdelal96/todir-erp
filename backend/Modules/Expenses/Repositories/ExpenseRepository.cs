@@ -710,6 +710,20 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         var result = new ExpenseReportItemDto(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetDecimal(3), reader.GetFieldValue<DateTimeOffset>(4)); await reader.CloseAsync();
         await using var total = new NpgsqlCommand("update business_expenses.expense_report set total_amount=(select coalesce(sum(amount),0) from business_expenses.expense_report_item where tenant_id=$1 and legal_entity_id=$2 and report_id=$3),version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction); Add(total, tenant.Value, entity, reportId); await total.ExecuteNonQueryAsync(ct); await scope.Transaction.CommitAsync(ct); return result;
     }
+
+    public async Task<ExpenseReportDto> RemoveReportItemAsync(TenantId tenant, Guid entity, Guid reportId, Guid expenseId, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var remove = new NpgsqlCommand("delete from business_expenses.expense_report_item where tenant_id=$1 and legal_entity_id=$2 and report_id=$3 and expense_id=$4 and exists(select 1 from business_expenses.expense_report where tenant_id=$1 and legal_entity_id=$2 and id=$3 and state='Draft')", scope.Connection, scope.Transaction);
+        Add(remove, tenant.Value, entity, reportId, expenseId);
+        if (await remove.ExecuteNonQueryAsync(ct) != 1) throw new ExpenseRepositoryException("expenses.report_item_not_editable");
+        await using var update = new NpgsqlCommand("update business_expenses.expense_report set total_amount=(select coalesce(sum(amount),0) from business_expenses.expense_report_item where tenant_id=$1 and legal_entity_id=$2 and report_id=$3),version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3 returning id,legal_entity_id,employee_id,title,state,total_amount,currency_code,version,created_at", scope.Connection, scope.Transaction);
+        Add(update, tenant.Value, entity, reportId);
+        await using var reader = await update.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.report_not_found");
+        var result = new ExpenseReportDto(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3), reader.GetString(4), reader.GetDecimal(5), reader.GetString(6), reader.GetInt64(7), reader.GetFieldValue<DateTimeOffset>(8));
+        await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
+    }
     public async Task<ExpensePage<ExpenseReportItemDto>> ListReportItemsAsync(TenantId tenant, Guid entity, Guid reportId, int page, int pageSize, CancellationToken ct)
     {
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200); await using var scope = await OpenAsync(tenant, ct);

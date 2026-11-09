@@ -200,6 +200,9 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(finalized.Id, reportItem.ExpenseId);
         var reportItems = await repository.ListReportItemsAsync(new(Atlas), entity, report.Id, 1, 10, default);
         Assert.Single(reportItems.Items);
+        var emptiedReport = await repository.RemoveReportItemAsync(new(Atlas), entity, report.Id, finalized.Id, default);
+        Assert.Equal(0m, emptiedReport.TotalAmount);
+        await repository.AddReportItemAsync(new(Atlas), entity, report.Id, new(finalized.Id, 125m), default);
         Assert.Contains((await repository.ListReportsAsync(new(Atlas), entity, "Draft", "October finance", 1, 10, default)).Items, item => item.TotalAmount == 125m);
         var currentReport = (await repository.ListReportsAsync(new(Atlas), entity, "Draft", "October finance", 1, 10, default)).Items.Single(item => item.Id == report.Id);
         var submittedReport = await repository.TransitionReportAsync(new(Atlas), entity, report.Id, new(currentReport.Version), "submit", default);
