@@ -20,6 +20,7 @@ import { identityRoutes } from "@modules/identity/public.ts";
 import { invoicingRoutes } from "@modules/invoicing/public.ts";
 import { migrationRoutes } from "@modules/migration/public.ts";
 import { paymentsRoutes } from "@modules/payments/public.ts";
+import { expensesRoutes } from "@modules/expenses/public.ts";
 import { useTranslation } from "react-i18next";
 
 function SettingsRoute(): React.JSX.Element {
@@ -83,6 +84,7 @@ const workspaceRoutes: RouteObject = {
     ...payrollRoutes.routes,
     ...crmRoutes.routes,
     ...posRoutes.routes,
+    ...expensesRoutes.routes,
     { path: "preview", element: <PreviewPage /> },
     { path: "settings", element: <SettingsRoute /> },
     { path: "*", element: <NotFoundRoute /> }

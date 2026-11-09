@@ -16,6 +16,7 @@ import { identityRoutes } from "@modules/identity/public.ts";
 import { invoicingRoutes } from "@modules/invoicing/public.ts";
 import { migrationRoutes } from "@modules/migration/public.ts";
 import { paymentsRoutes } from "@modules/payments/public.ts";
+import { expensesRoutes } from "@modules/expenses/public.ts";
 import type { ModuleNavigationRegistration } from "./route-contract.ts";
 
 const homeNavigation: ModuleNavigationRegistration = {
@@ -53,6 +54,7 @@ export const navigationRegistry: readonly ModuleNavigationRegistration[] = [
   payrollRoutes.navigation,
   crmRoutes.navigation,
   posRoutes.navigation,
+  expensesRoutes.navigation,
   previewNavigation,
   settingsNavigation
 ];

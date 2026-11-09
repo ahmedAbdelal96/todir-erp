@@ -24,7 +24,9 @@ export interface TextFieldProps
     | "autoFocus"
     | "disabled"
     | "isDisabled"
+    | "aria-label"
   > {
+  readonly "aria-label"?: string | undefined;
   readonly label?: string | undefined;
   readonly description?: string | undefined;
   readonly errorMessage?: string | undefined;
@@ -71,14 +73,16 @@ export function TextField({
   ...props
 }: TextFieldProps): React.JSX.Element {
   const isEffectivelyReadOnly = isReadOnly || isLocked;
+  const { "aria-label": explicitAriaLabel, ...restProps } = props;
+  const effectiveAriaLabel = explicitAriaLabel || label || placeholder;
 
   return (
     <AriaTextField
       // Search and compact domain fields may intentionally omit a visible
       // label; keep them accessible without making every caller duplicate the
       // placeholder as an aria-label. Explicit aria-label from props wins.
-      aria-label={label || placeholder}
-      {...props}
+      {...(effectiveAriaLabel ? { "aria-label": effectiveAriaLabel } : {})}
+      {...restProps}
       {...(value !== undefined ? { value } : {})}
       {...(defaultValue !== undefined ? { defaultValue } : {})}
       {...(name !== undefined ? { name } : {})}

@@ -16,6 +16,7 @@ export interface DialogProps extends Omit<AriaDialogProps, "className"> {
   readonly isDismissable?: boolean;
   readonly isOpen?: boolean;
   readonly onOpenChange?: (isOpen: boolean) => void;
+  readonly onClose?: () => void;
   readonly size?: "small" | "medium" | "large" | "fullscreen";
   readonly className?: string;
 }
@@ -26,6 +27,7 @@ export function Dialog({
   footer,
   isOpen,
   onOpenChange,
+  onClose,
   isDismissable = true,
   size = "medium",
   className,
@@ -36,6 +38,13 @@ export function Dialog({
   if (isOpen === false) {
     return null;
   }
+
+  const handleOpenChange = (open: boolean) => {
+    onOpenChange?.(open);
+    if (!open) {
+      onClose?.();
+    }
+  };
 
   const getMaxWidth = () => {
     switch (size) {
@@ -55,7 +64,7 @@ export function Dialog({
   return (
     <AriaModalOverlay
       {...(isOpen !== undefined ? { isOpen } : {})}
-      {...(onOpenChange !== undefined ? { onOpenChange } : {})}
+      {...(onOpenChange !== undefined || onClose !== undefined ? { onOpenChange: handleOpenChange } : {})}
       isDismissable={isDismissable}
       className="ui-modal-overlay"
       style={{
