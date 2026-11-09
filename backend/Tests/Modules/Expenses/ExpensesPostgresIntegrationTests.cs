@@ -216,6 +216,8 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Reversed", reversed.ExpenseState);
         Assert.Equal("Reversed", reversed.AccountingState);
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from finance_ledger.journal_entry_reversal r join business_expenses.expense e on e.tenant_id=$1 and e.id=$2 and r.original_entry_id=e.ledger_entry_id", Atlas, created.Id));
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.AddEvidenceAsync(new(Atlas), entity, created.Id, new("Receipt", "file://expenses/late-receipt"), default));
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.DeclareMissingReceiptAsync(new(Atlas), Guid.NewGuid(), entity, created.Id, new("Late declaration"), default));
     }
 
     [ExpensesPostgresFact]

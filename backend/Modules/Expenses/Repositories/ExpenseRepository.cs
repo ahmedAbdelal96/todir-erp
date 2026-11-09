@@ -363,6 +363,13 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             fileReference = verified.FileRef.ToString("D");
         }
         await using var scope = await OpenAsync(tenant, ct); var id = Guid.CreateVersion7();
+        await using (var stateCommand = new NpgsqlCommand("select expense_state from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction))
+        {
+            Add(stateCommand, tenant.Value, entity, expenseId);
+            var state = await stateCommand.ExecuteScalarAsync(ct) as string;
+            if (state is null) throw new ExpenseRepositoryException("expenses.expense_not_found");
+            if (state is not ("Draft" or "Submitted")) throw new ExpenseRepositoryException("expenses.evidence_not_editable");
+        }
         if (request.ReplacesEvidenceId.HasValue)
         {
             await using var replace = new NpgsqlCommand("update business_expenses.expense_evidence set status='Replaced' where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4 and status='Ready'", scope.Connection, scope.Transaction); Add(replace, tenant.Value, entity, expenseId, request.ReplacesEvidenceId.Value); if (await replace.ExecuteNonQueryAsync(ct) != 1) throw new ExpenseRepositoryException("expenses.evidence_replacement_invalid");
@@ -374,7 +381,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     {
         if (fileUploads is null) throw new ExpenseRepositoryException("expenses.files_capability_unavailable");
         if (request.SizeBytes <= 0 || string.IsNullOrWhiteSpace(request.FileName) || string.IsNullOrWhiteSpace(request.ContentType)) throw new ExpenseRepositoryException("expenses.file_upload_invalid");
-        await EnsureExpenseExistsAsync(tenant, entity, expenseId, ct);
+        await EnsureExpenseEditableAsync(tenant, entity, expenseId, ct);
         var intent = await fileUploads.CreateUploadIntentAsync(tenant, actorId, membershipId, "expenses", "expense", expenseId, request.FileName.Trim(), request.ContentType.Trim(), request.SizeBytes, request.Classification.Trim(), ct);
         return intent is null ? throw new ExpenseRepositoryException("expenses.file_upload_unavailable") : new(intent.FileRef, intent.Url, intent.Fields, intent.ContentType, intent.SizeBytes, intent.ExpiresAt);
     }
@@ -495,6 +502,13 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     {
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length < 5) throw new ExpenseRepositoryException("expenses.missing_receipt_reason_required");
         await using var scope = await OpenAsync(tenant, ct); var id = Guid.CreateVersion7();
+        await using (var stateCommand = new NpgsqlCommand("select expense_state from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction))
+        {
+            Add(stateCommand, tenant.Value, entity, expenseId);
+            var state = await stateCommand.ExecuteScalarAsync(ct) as string;
+            if (state is null) throw new ExpenseRepositoryException("expenses.expense_not_found");
+            if (state is not ("Draft" or "Submitted")) throw new ExpenseRepositoryException("expenses.missing_receipt_not_editable");
+        }
         await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_missing_receipt_declaration(tenant_id,id,legal_entity_id,expense_id,reason,status,declared_by,declared_at) select $1,$2,$3,id,$4,'Declared',$5,now() from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$6 on conflict(tenant_id,expense_id) do update set reason=excluded.reason,status='Declared',declared_by=excluded.declared_by,declared_at=now(),resolved_at=null returning id,expense_id,reason,status,declared_by,declared_at,resolved_at", scope.Connection, scope.Transaction);
         Add(cmd, tenant.Value, id, entity, request.Reason.Trim(), actorId, expenseId); await using var reader = await cmd.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found"); var result = ReadMissingReceipt(reader); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result;
     }
@@ -502,8 +516,8 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public async Task<MissingReceiptDeclarationDto?> GetMissingReceiptDeclarationAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select id,expense_id,reason,status,declared_by,declared_at,resolved_at from business_expenses.expense_missing_receipt_declaration where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, expenseId); await using var reader = await cmd.ExecuteReaderAsync(ct); var result = await reader.ReadAsync(ct) ? ReadMissingReceipt(reader) : null; await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
 
-    private async Task EnsureExpenseExistsAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
-    { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select 1 from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, expenseId); if (await cmd.ExecuteScalarAsync(ct) is null) throw new ExpenseRepositoryException("expenses.expense_not_found"); await scope.Transaction.CommitAsync(ct); }
+    private async Task EnsureExpenseEditableAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
+    { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select expense_state from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, expenseId); var state = await cmd.ExecuteScalarAsync(ct) as string; if (state is null) throw new ExpenseRepositoryException("expenses.expense_not_found"); if (state is not ("Draft" or "Submitted")) throw new ExpenseRepositoryException("expenses.evidence_not_editable"); await scope.Transaction.CommitAsync(ct); }
 
     public async Task<SignedPlatformFileDownload> CreateEvidenceDownloadAsync(TenantId tenant, Guid entity, Guid expenseId, Guid evidenceId, CancellationToken ct)
     {
