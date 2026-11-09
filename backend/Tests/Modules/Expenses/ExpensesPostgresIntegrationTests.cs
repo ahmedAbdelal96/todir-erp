@@ -781,6 +781,11 @@ public sealed class ExpensesPostgresIntegrationTests
         var request = new ImportExpensesRequest(entity, $"expenses-test-{Guid.CreateVersion7():N}", [new("legacy-1", null, "Imported Merchant", new DateOnly(2026, 10, 20), 42m, "EGP", "EmployeePaid", categoryVersion), new("legacy-2", null, "Broken", new DateOnly(2026, 10, 20), -1m, "EGP", "EmployeePaid", Guid.CreateVersion7())]);
         var batch = await repository.ImportExpensesAsync(new(Atlas), request, default);
         Assert.Equal("CompletedWithErrors", batch.State); Assert.Equal(1, batch.CreatedCount); Assert.Equal(1, batch.ErrorCount);
+        var rows = await repository.ListExpenseImportRowsAsync(new(Atlas), entity, batch.Id, null, 1, 10, default);
+        Assert.Equal(2, rows.TotalCount);
+        Assert.Equal("Created", rows.Items.Single(row => row.ExternalReference == "legacy-1").Status);
+        Assert.Equal("Error", rows.Items.Single(row => row.ExternalReference == "legacy-2").Status);
+        Assert.Equal("expenses.import_row_invalid", rows.Items.Single(row => row.ExternalReference == "legacy-2").ErrorCode);
         var replay = await repository.ImportExpensesAsync(new(Atlas), request, default); Assert.Equal(batch.Id, replay.Id); Assert.Equal(batch.CreatedCount, replay.CreatedCount);
         Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_import_row where tenant_id=$1 and batch_id=$2 and status='Created'", Atlas, batch.Id));
     }

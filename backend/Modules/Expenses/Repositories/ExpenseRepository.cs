@@ -646,6 +646,22 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     }
     public async Task<ExpenseImportBatchDto?> GetExpenseImportAsync(TenantId tenant, Guid entity, Guid batchId, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); await using var command = new NpgsqlCommand("select id,legal_entity_id,idempotency_key,state,total_rows,created_count,error_count,created_at,completed_at from business_expenses.expense_import_batch where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction); Add(command, tenant.Value, entity, batchId); await using var reader = await command.ExecuteReaderAsync(ct); var result = await reader.ReadAsync(ct) ? ReadImportBatch(reader) : null; await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
+    public async Task<ExpensePage<ExpenseImportRowDto>> ListExpenseImportRowsAsync(TenantId tenant, Guid entity, Guid batchId, string? status, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        await using var scope = await OpenAsync(tenant, ct);
+        const string where = "r.tenant_id=$1 and r.batch_id=$2 and exists(select 1 from business_expenses.expense_import_batch b where b.tenant_id=r.tenant_id and b.id=r.batch_id and b.legal_entity_id=$3) and ($4::text is null or r.status=$4)";
+        await using var count = new NpgsqlCommand($"select count(*) from business_expenses.expense_import_row r where {where}", scope.Connection, scope.Transaction);
+        Add(count, tenant.Value, batchId, entity, Db(string.IsNullOrWhiteSpace(status) ? null : status.Trim()));
+        var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand($"select r.batch_id,r.row_number,r.external_reference,r.expense_id,r.status,r.error_code,r.raw_payload::text from business_expenses.expense_import_row r where {where} order by r.row_number offset $5 limit $6", scope.Connection, scope.Transaction);
+        Add(command, tenant.Value, batchId, entity, Db(string.IsNullOrWhiteSpace(status) ? null : status.Trim()), (page - 1) * pageSize, pageSize);
+        var items = new List<ExpenseImportRowDto>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) items.Add(new(reader.GetGuid(0), reader.GetInt32(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetGuid(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), JsonDocument.Parse(reader.GetString(6)).RootElement.Clone()));
+        await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct);
+        return new(items, total, page, pageSize);
+    }
     public async Task<ExpenseReportItemDto> AddReportItemAsync(TenantId tenant, Guid entity, Guid reportId, AddExpenseReportItemRequest request, CancellationToken ct)
     {
         if (request.Amount <= 0) throw new ExpenseRepositoryException("expenses.report_item_invalid");
