@@ -112,16 +112,20 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found");
         var version = reader.GetInt64(0); var approvalState = reader.GetString(1); var expenseState = reader.GetString(2); var linkedApprovalId = reader.IsDBNull(3) ? (Guid?)null : reader.GetGuid(3); var policyVersionId = reader.IsDBNull(4) ? (Guid?)null : reader.GetGuid(4); var employeeId = reader.IsDBNull(5) ? (Guid?)null : reader.GetGuid(5);
         await reader.CloseAsync();
-        if (expenseState != "Submitted" || approvalState != "Pending") throw new ExpenseRepositoryException("expenses.approval_request_invalid_state");
+        if (expenseState != "Submitted") throw new ExpenseRepositoryException("expenses.approval_request_invalid_state");
         if (employeeId.HasValue && hr is not null && await hr.GetSelfEmployeeAsync(tenant, membershipId, entity, ct) != employeeId) throw new ExpenseRepositoryException("expenses.approval_request_actor_scope_invalid");
         await scope.Transaction.CommitAsync(ct);
         if (linkedApprovalId.HasValue)
         {
             var existing = await approvals.GetAsync(tenant, linkedApprovalId.Value, ct) ?? throw new ExpenseRepositoryException("expenses.approval_request_not_found");
-            if (existing.OwnerModule != "expenses" || existing.OwnerEntityType != "expense" || existing.OwnerEntityId != expenseId || existing.LegalEntityId != entity || existing.ResourceVersion != version)
+            var resourceVersionMatches = approvalState == "Pending"
+                ? existing.ResourceVersion == version && existing.State == "Pending"
+                : existing.ResourceVersion + 1 == version && existing.State == approvalState;
+            if (existing.OwnerModule != "expenses" || existing.OwnerEntityType != "expense" || existing.OwnerEntityId != expenseId || existing.LegalEntityId != entity || !resourceVersionMatches)
                 throw new ExpenseRepositoryException("expenses.approval_scope_invalid");
             return ToExpenseApproval(existing, expenseId);
         }
+        if (approvalState != "Pending") throw new ExpenseRepositoryException("expenses.approval_request_invalid_state");
         try
         {
             var request = await approvals.RequestAsync(tenant, actorId, membershipId, entity, "expenses", "expense", expenseId, version, policyVersionId, reason, "expenses.submit", ct);
@@ -150,7 +154,15 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found");
             var state = reader.GetString(1); var approvalState = reader.GetString(2); var linkedRequest = reader.IsDBNull(3) ? (Guid?)null : reader.GetGuid(3);
             await reader.CloseAsync(); await preflight.Transaction.CommitAsync(ct);
-            if (state != "Submitted" || approvalState != "Pending" || linkedRequest != request.RequestId) throw new ExpenseRepositoryException("expenses.approval_scope_or_state_invalid");
+            if (state != "Submitted" || linkedRequest != request.RequestId) throw new ExpenseRepositoryException("expenses.approval_scope_or_state_invalid");
+            if (approvalState == request.Decision)
+            {
+                var existing = await approvals.GetAsync(tenant, request.RequestId, ct);
+                if (existing is null || existing.State != request.Decision || existing.OwnerModule != "expenses" || existing.OwnerEntityType != "expense" || existing.OwnerEntityId != expenseId || existing.LegalEntityId != entity)
+                    throw new ExpenseRepositoryException("expenses.approval_stale_or_concurrent");
+                return ToExpenseApproval(existing, expenseId);
+            }
+            if (approvalState != "Pending") throw new ExpenseRepositoryException("expenses.approval_scope_or_state_invalid");
         }
         PlatformApprovalRequestResult approval;
         try

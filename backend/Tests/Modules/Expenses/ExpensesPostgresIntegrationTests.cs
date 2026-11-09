@@ -666,9 +666,15 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal("Pending", (await approvals.GetAsync(new(Delta), pending.RequestId, default))!.State);
         var approved = await repository.DecideApprovalAsync(new(Delta), decider.IdentityId, decider.MembershipId, entity, expense.Id, new(pending.RequestId, "Approved", "Reviewed by Finance"), default);
         Assert.Equal("Approved", approved.State);
+        var approvedRetry = await repository.DecideApprovalAsync(new(Delta), decider.IdentityId, decider.MembershipId, entity, expense.Id, new(pending.RequestId, "Approved", "Replay"), default);
+        Assert.Equal(approved.RequestId, approvedRetry.RequestId);
+        var requestAfterDecision = await repository.RequestApprovalAsync(new(Delta), requester.IdentityId, requester.MembershipId, entity, expense.Id, "Replay request", default);
+        Assert.Equal(approved.RequestId, requestAfterDecision.RequestId);
+        Assert.Equal("Approved", requestAfterDecision.State);
         var finalized = await repository.TransitionAsync(new(Delta), entity, expense.Id, new(submitted.Version + 1), "finalize", default);
         Assert.Equal("Posted", finalized.AccountingState);
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from platform.approval_request where tenant_id=$1 and id=$2 and state='Approved' and decided_by=$3", Delta, pending.RequestId, decider.IdentityId));
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='Approved'", Delta, expense.Id));
     }
 
     [ExpensesPostgresFact]
