@@ -242,7 +242,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             var current = await GetAsync(tenant, entity, expenseId, ct);
             if (current is null || current.ApprovalState != approval.State || current.Version != approval.ResourceVersion + 1) throw new ExpenseRepositoryException("expenses.approval_stale_or_concurrent");
         }
-        await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,$5,jsonb_build_object('expenseState','Submitted','approvalState',$5,'approvalRequestId',$6::text))", scope.Connection, scope.Transaction);
+        await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) select $1,$2,$3,$4,$5,jsonb_build_object('expenseState','Submitted','approvalState',$5,'approvalRequestId',$6::text) where not exists (select 1 from business_expenses.expense_history h where h.tenant_id=$1 and h.legal_entity_id=$3 and h.expense_id=$4 and h.action=$5 and h.to_state->>'approvalRequestId'=$6::text)", scope.Connection, scope.Transaction);
         Add(history, tenant.Value, Guid.CreateVersion7(), entity, expenseId, approval.State, approval.Id);
         await history.ExecuteNonQueryAsync(ct);
         await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status,attempts) select $1,'ExpenseApprovalDecidedV1',$2::jsonb,$3,$4,$5,$6,'expenses','Pending',0 where not exists (select 1 from platform.outbox_message where tenant_id=$3 and message_type='ExpenseApprovalDecidedV1' and causation_id=$6)", scope.Connection, scope.Transaction);
@@ -532,7 +532,10 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             return result;
         }, ct);
 
-    public async Task ProcessOcrJobAsync(TenantId tenant, Guid entity, Guid expenseId, Guid jobId, Guid evidenceId, CancellationToken ct)
+    /// <param name="rethrowProviderFailure">Worker callers set this to true so the broker retry policy can
+    /// redeliver a failed provider request. API/manual callers keep the default fail-closed behavior and
+    /// receive a durable Failed job that can be retried explicitly.</param>
+    public async Task ProcessOcrJobAsync(TenantId tenant, Guid entity, Guid expenseId, Guid jobId, Guid evidenceId, CancellationToken ct, bool rethrowProviderFailure = false)
     {
         Guid fileRef;
         await using (var scope = await OpenAsync(tenant, ct))
@@ -556,10 +559,12 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         catch (ExpenseOcrProviderException ex)
         {
             await MarkOcrFailedAsync(tenant, entity, expenseId, jobId, ex.Code, ex.Message, ct);
+            if (rethrowProviderFailure) throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await MarkOcrFailedAsync(tenant, entity, expenseId, jobId, "expenses.ocr_provider_failed", ex.Message, ct);
+            if (rethrowProviderFailure) throw;
         }
     }
 

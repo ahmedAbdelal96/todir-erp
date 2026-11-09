@@ -913,7 +913,7 @@ public sealed class ExpensesPostgresIntegrationTests
         await using (var insert = new NpgsqlCommand("insert into business_expenses.expense_evidence(tenant_id,id,legal_entity_id,expense_id,evidence_type,file_reference,status) values($1,$2,$3,$4,'Receipt',$5,'Ready')", connection))
         { insert.Parameters.AddWithValue(Atlas); insert.Parameters.AddWithValue(evidenceId); insert.Parameters.AddWithValue(entity); insert.Parameters.AddWithValue(expense.Id); insert.Parameters.AddWithValue(fileRef.ToString("D")); await insert.ExecuteNonQueryAsync(); }
         var job = await repository.RequestOcrAsync(new(Atlas), entity, expense.Id, evidenceId, default);
-        await repository.ProcessOcrJobAsync(new(Atlas), entity, expense.Id, job.Id, evidenceId, default);
+        await Assert.ThrowsAsync<ExpenseOcrProviderException>(() => repository.ProcessOcrJobAsync(new(Atlas), entity, expense.Id, job.Id, evidenceId, default, rethrowProviderFailure: true));
         Assert.Equal("Failed", (await repository.GetOcrAsync(new(Atlas), entity, expense.Id, job.Id, default))!.State);
         await repository.RetryOcrAsync(new(Atlas), entity, expense.Id, job.Id, default);
         await repository.ProcessOcrJobAsync(new(Atlas), entity, expense.Id, job.Id, evidenceId, default);

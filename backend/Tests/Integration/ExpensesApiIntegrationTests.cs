@@ -91,6 +91,102 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
     }
 
     [Fact]
+    public async Task AuthenticatedExpenseImportIsIdempotentAndReportsPersistedRowOutcome()
+    {
+        var adminConnection = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for Expenses API integration tests.");
+        var runtimeConnection = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Expenses API integration tests.");
+        var password = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_PASSWORD")
+            ?? Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set TODIR_EXPENSES_TEST_PASSWORD or SEED_DEFAULT_PASSWORD for Expenses API integration tests.");
+
+        Guid tenantId;
+        Guid legalEntityId;
+        Guid categoryVersionId;
+        await using (var connection = new NpgsqlConnection(adminConnection))
+        {
+            await connection.OpenAsync();
+            await using var ids = new NpgsqlCommand("select t.id,(select id from platform.legal_entity where tenant_id=t.id and status='Active' order by id limit 1),(select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=t.id and c.legal_entity_id=(select id from platform.legal_entity where tenant_id=t.id and status='Active' order by id limit 1) and v.status='Published' order by v.effective_from desc limit 1) from platform.tenant t where t.slug='atlas-trading'", connection);
+            await using var reader = await ids.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync(), "Atlas seed tenant, legal entity, or expense category is missing.");
+            tenantId = reader.GetGuid(0);
+            legalEntityId = reader.GetGuid(1);
+            categoryVersionId = reader.GetGuid(2);
+            await reader.CloseAsync();
+            await using var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select $1,id,'expenses.create' from platform.role where tenant_id=$1 and code='administrator' on conflict do nothing", connection);
+            grant.Parameters.AddWithValue(tenantId);
+            await grant.ExecuteNonQueryAsync();
+            await using var reset = new NpgsqlCommand("update platform.identity set password_hash=$1,must_change_password=false,status='Active',security_stamp=gen_random_uuid(),version=version+1 where tenant_id=$2 and email='admin@atlas.com'", connection);
+            reset.Parameters.AddWithValue(IdentityConventions.HashPassword(password));
+            reset.Parameters.AddWithValue(tenantId);
+            await reset.ExecuteNonQueryAsync();
+        }
+
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnection)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(client, password, tenantId);
+
+        var idempotencyKey = "api-import-" + Guid.CreateVersion7().ToString("N");
+        var externalReference = "api-ext-" + Guid.CreateVersion7().ToString("N");
+        using var content = JsonContent.Create(new
+        {
+            legalEntityId,
+            idempotencyKey,
+            rows = new[]
+            {
+                new
+                {
+                    externalReference,
+                    employeeId = (Guid?)null,
+                    merchantName = "API import acceptance",
+                    expenseDate = "2026-11-09",
+                    amount = 42.50m,
+                    currencyCode = "EGP",
+                    paymentSource = "CompanyPaid",
+                    categoryVersionId,
+                    businessPurpose = "Authenticated replay proof"
+                }
+            }
+        });
+        var first = await PostWithCsrfAsync(client, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/imports/expenses", content);
+        var firstPayload = await first.Content.ReadAsStringAsync();
+        Assert.True(first.StatusCode == HttpStatusCode.Created, $"Import failed with {(int)first.StatusCode}: {firstPayload}");
+        var firstBody = JsonSerializer.Deserialize<JsonElement>(firstPayload);
+        Assert.Equal(1, firstBody.GetProperty("totalRows").GetInt32());
+        Assert.Equal(1, firstBody.GetProperty("createdCount").GetInt32());
+        var batchId = firstBody.GetProperty("id").GetGuid();
+
+        using var replayContent = JsonContent.Create(new
+        {
+            legalEntityId,
+            idempotencyKey,
+            rows = new[]
+            {
+                new
+                {
+                    externalReference,
+                    employeeId = (Guid?)null,
+                    merchantName = "API import acceptance",
+                    expenseDate = "2026-11-09",
+                    amount = 42.50m,
+                    currencyCode = "EGP",
+                    paymentSource = "CompanyPaid",
+                    categoryVersionId,
+                    businessPurpose = "Authenticated replay proof"
+                }
+            }
+        });
+        var replay = await PostWithCsrfAsync(client, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/imports/expenses", replayContent);
+        var replayPayload = await replay.Content.ReadAsStringAsync();
+        Assert.True(replay.StatusCode == HttpStatusCode.Created, $"Import replay failed with {(int)replay.StatusCode}: {replayPayload}");
+        Assert.Equal(batchId, JsonSerializer.Deserialize<JsonElement>(replayPayload).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task EmployeeSelfServiceReadUsesAuthenticatedMembershipScope()
     {
         var adminConnection = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")

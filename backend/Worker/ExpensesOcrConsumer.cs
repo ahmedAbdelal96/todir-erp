@@ -23,7 +23,9 @@ public sealed class ExpensesOcrConsumer(ExpenseRepository expenses, IInboxStore 
                 !root.TryGetProperty("ExpenseId", out var expense) || !expense.TryGetGuid(out var expenseId) ||
                 !root.TryGetProperty("EvidenceId", out var evidence) || !evidence.TryGetGuid(out var evidenceId))
                 throw new InvalidDataException("expenses.ocr_event_payload_invalid");
-            await expenses.ProcessOcrJobAsync(message.TenantId, entityId, expenseId, jobId, evidenceId, context.CancellationToken);
+            // Provider failures are persisted as Failed and rethrown so MassTransit can perform
+            // bounded broker retries. Manual/API callers retain explicit retry semantics.
+            await expenses.ProcessOcrJobAsync(message.TenantId, entityId, expenseId, jobId, evidenceId, context.CancellationToken, rethrowProviderFailure: true);
             await inboxStore.MarkProcessedAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken);
         }
         catch
@@ -37,4 +39,9 @@ public sealed class ExpensesOcrConsumer(ExpenseRepository expenses, IInboxStore 
 public sealed class ExpensesOcrConsumerDefinition : ConsumerDefinition<ExpensesOcrConsumer>
 {
     public ExpensesOcrConsumerDefinition() => EndpointName = ExpensesOcrConsumer.EndpointName;
+
+    protected override void ConfigureConsumer(IReceiveEndpointConfigurator endpointConfigurator, IConsumerConfigurator<ExpensesOcrConsumer> consumerConfigurator, IRegistrationContext context)
+    {
+        endpointConfigurator.UseMessageRetry(retry => retry.Exponential(3, TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(250)));
+    }
 }
