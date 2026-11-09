@@ -316,6 +316,7 @@ public sealed class ExpensesPostgresIntegrationTests
         var personal = await repository.MarkCardTransactionPersonalAsync(new(Atlas), entity, card.Id, new(employee), default);
         Assert.Equal("Personal", personal.State);
         await repository.MarkCardTransactionPersonalAsync(new(Atlas), entity, card.Id, new(employee), default);
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.MarkCardTransactionPersonalAsync(new(Atlas), entity, card.Id, new(Guid.CreateVersion7()), default));
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_employee_repayment where tenant_id=$1 and source_reference=$2", Atlas, $"corporate-card:{card.Id:D}"));
         Assert.Equal(210m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense_employee_repayment where tenant_id=$1 and source_reference=$2", Atlas, $"corporate-card:{card.Id:D}"))!);
         var cardPage = await repository.ListCardTransactionsAsync(new(Atlas), entity, "Personal", providerReference, 1, 1, default);
