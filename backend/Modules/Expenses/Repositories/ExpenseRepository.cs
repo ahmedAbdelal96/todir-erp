@@ -1396,6 +1396,12 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             await using var settleObligations = new NpgsqlCommand("update business_expenses.expense_reimbursement_obligation o set settled_amount=o.amount,status='Settled' where o.tenant_id=$1 and o.legal_entity_id=$2 and exists(select 1 from business_expenses.expense_reimbursement_allocation a where a.tenant_id=o.tenant_id and a.batch_id=$3 and a.obligation_id=o.id)", scope.Connection, scope.Transaction);
             Add(settleObligations, tenant.Value, entity, batchId);
             await settleObligations.ExecuteNonQueryAsync(ct);
+            await using var recipients = new NpgsqlCommand("select coalesce(jsonb_agg(distinct o.employee_id) filter(where o.employee_id is not null),'[]'::jsonb) from business_expenses.expense_reimbursement_obligation o join business_expenses.expense_reimbursement_allocation a on a.tenant_id=o.tenant_id and a.obligation_id=o.id where a.tenant_id=$1 and a.batch_id=$2", scope.Connection, scope.Transaction);
+            Add(recipients, tenant.Value, batchId);
+            var employeeIds = (string?)await recipients.ExecuteScalarAsync(ct) ?? "[]";
+            await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status,attempts) select $1,'ExpenseReimbursementPaidV1',jsonb_build_object('BatchId',$2::text,'LegalEntityId',$3::text,'EmployeeIds',$4::jsonb,'Amount',$5::numeric,'CurrencyCode',$6::text),$7,$8,$2,$2,'expenses','Pending',0 where not exists (select 1 from platform.outbox_message where tenant_id=$7 and message_type='ExpenseReimbursementPaidV1' and causation_id=$2)", scope.Connection, scope.Transaction);
+            Add(outbox, Guid.CreateVersion7(), batchId, entity, employeeIds, amount, currency, tenant.Value, DateTimeOffset.UtcNow);
+            await outbox.ExecuteNonQueryAsync(ct);
             await scope.Transaction.CommitAsync(ct);
         }
         return (await GetReimbursementBatchAsync(tenant, entity, batchId, ct))!;

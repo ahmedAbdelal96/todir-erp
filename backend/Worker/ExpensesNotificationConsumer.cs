@@ -12,13 +12,21 @@ public sealed class ExpensesNotificationConsumer(INotificationStore notification
     public async Task Consume(ConsumeContext<OutboxPublishedMessage> context)
     {
         var message = context.Message;
-        if (message.MessageType is not ("ExpenseFinalizedV1" or "ExpenseReimbursementRequestedV1" or "ExpenseMissingReceiptDeclaredV1" or "ExpenseApprovalDecidedV1")) return;
+        if (message.MessageType is not ("ExpenseFinalizedV1" or "ExpenseReimbursementRequestedV1" or "ExpenseMissingReceiptDeclaredV1" or "ExpenseApprovalDecidedV1" or "ExpenseReimbursementPaidV1")) return;
         if (!await inboxStore.TryBeginAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken)) return;
         try
         {
             using var document = JsonDocument.Parse(message.Payload);
             var root = document.RootElement;
-            if (root.TryGetProperty("EmployeeId", out var employee) && employee.ValueKind == JsonValueKind.String && employee.TryGetGuid(out var employeeId))
+            if (message.MessageType == "ExpenseReimbursementPaidV1" && root.TryGetProperty("EmployeeIds", out var recipients) && recipients.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var recipient in recipients.EnumerateArray())
+                {
+                    if (recipient.ValueKind == JsonValueKind.String && recipient.TryGetGuid(out var employeeId))
+                        await notifications.EnqueueAsync(new Notification(Guid.CreateVersion7(), message.TenantId, $"employee:{employeeId:D}", "expenses.reimbursement_paid", NotificationChannel.InApp, root.Clone(), NotificationStatus.Pending, 0, DateTimeOffset.UtcNow, null), context.CancellationToken);
+                }
+            }
+            else if (root.TryGetProperty("EmployeeId", out var employee) && employee.ValueKind == JsonValueKind.String && employee.TryGetGuid(out var employeeId))
             {
                 var template = message.MessageType switch
                 {
