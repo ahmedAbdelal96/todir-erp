@@ -284,6 +284,57 @@ public sealed class ExpensesPostgresIntegrationTests
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.TransitionAdvanceAsync(new(Atlas), advance.LegalEntityId, advance.Id, advance.Version, "settle", default));
     }
 
+    [ExpensesFinancialPostgresFact]
+    public async Task CrossCurrencyAdvanceApplicationUsesFinanceBaseSnapshotAndIsIdempotent()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_FINANCIAL_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var financialRead = new NpgsqlLegalEntityFinancialReadStore(dataSource);
+        var financeRepository = new FinanceBaseRepository(dataSource, coordinator, financialRead, TimeProvider.System);
+        var financeBase = new FinanceBaseCapabilities(financeRepository, financialRead, TimeProvider.System);
+        var repository = new ExpenseRepository(dataSource, coordinator,
+            new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, financialRead, TimeProvider.System)),
+            advancePayments: new TestAdvancePaymentCapability(), approvals: new TestApprovalCapability(), financeBase: financeBase);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var employee = Guid.NewGuid();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var businessDate = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var usdToEgp = Convert.ToDecimal(await ScalarAsync(connection, "select rate from foundation_finbase.exchange_rate where tenant_id=$1 and legal_entity_id=$2 and from_currency='USD' and to_currency='EGP' and purpose='Accounting' and status='Approved' and effective_date <= $3 order by effective_date desc limit 1", Atlas, entity, businessDate), CultureInfo.InvariantCulture);
+        Assert.True(usdToEgp > 0m);
+
+        var advance = await repository.CreateAdvanceAsync(new(Atlas), new(entity, employee, "International travel advance", 100m, "USD", businessDate.AddDays(30)), default);
+        advance = await repository.TransitionAdvanceAsync(new(Atlas), entity, advance.Id, advance.Version, "approve", default);
+        advance = await repository.IssueAdvanceAsync(new(Atlas), entity, advance.Id, Guid.NewGuid(), Guid.NewGuid(), new(Guid.NewGuid(), "BankTransfer", 100m, businessDate, businessDate, advance.Version), default);
+
+        var expense = await repository.CreateAsync(new(Atlas), new(entity, employee, "Local travel paid from USD advance", businessDate, 250m, "EGP", "EmployeePaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Atlas), entity, expense.Id, new("Receipt", "file://expenses/cross-currency-advance"), default);
+        var submitted = await repository.TransitionAsync(new(Atlas), entity, expense.Id, new(expense.Version), "submit", default);
+        await repository.EvaluatePolicyAsync(new(Atlas), entity, expense.Id, default);
+        await ApproveAsync(repository, new(Atlas), entity, expense.Id, submitted.Version);
+
+        var expectedEquivalent = Math.Round(250m / usdToEgp, 2, MidpointRounding.AwayFromZero);
+        advance = await repository.ApplyAdvanceAsync(new(Atlas), entity, advance.Id, new(expense.Id, 250m, "EGP", expectedEquivalent, 1m / usdToEgp, "FinanceBase:Accounting"), default);
+        Assert.Equal(expectedEquivalent, advance.AppliedAmount);
+        var repeated = await repository.ApplyAdvanceAsync(new(Atlas), entity, advance.Id, new(expense.Id, 250m, "EGP", expectedEquivalent, 1m / usdToEgp, "FinanceBase:Accounting"), default);
+        Assert.Equal(advance.AppliedAmount, repeated.AppliedAmount);
+        Assert.Equal(advance.Version, repeated.Version);
+
+        await using var persisted = new NpgsqlCommand("select amount,expense_currency_code,advance_equivalent_amount,fx_snapshot->>'rate' from business_expenses.business_advance_application where tenant_id=$1 and advance_id=$2 and expense_id=$3", connection);
+        persisted.Parameters.AddWithValue(Atlas); persisted.Parameters.AddWithValue(advance.Id); persisted.Parameters.AddWithValue(expense.Id);
+        await using var reader = await persisted.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(250m, reader.GetDecimal(0));
+        Assert.Equal("EGP", reader.GetString(1).Trim());
+        Assert.Equal(expectedEquivalent, reader.GetDecimal(2));
+        Assert.Equal(1m / usdToEgp, decimal.Parse(reader.GetString(3), CultureInfo.InvariantCulture), 12);
+        Assert.False(await reader.ReadAsync());
+    }
+
     [ExpensesPostgresFact]
     public async Task IssuedAdvanceWithPastDueDateIsReturnedByOverdueFilter()
     {

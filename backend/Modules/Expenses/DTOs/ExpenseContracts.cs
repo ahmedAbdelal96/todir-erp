@@ -46,7 +46,7 @@ public sealed record ImportExpensesRequest(Guid LegalEntityId, string Idempotenc
 public sealed record ExpenseImportBatchDto(Guid Id, Guid LegalEntityId, string IdempotencyKey, string State, int TotalRows, int CreatedCount, int ErrorCount, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
 public sealed record BusinessAdvanceDto(Guid Id, Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, decimal IssuedAmount, decimal AppliedAmount, decimal ReturnedAmount, string CurrencyCode, string State, long Version, DateTimeOffset CreatedAt, Guid? IssuancePaymentId = null, DateOnly? SettlementDueDate = null, bool IsOverdue = false);
 public sealed record CreateBusinessAdvanceRequest(Guid LegalEntityId, Guid EmployeeId, string Purpose, decimal Amount, string CurrencyCode = "EGP", DateOnly? SettlementDueDate = null);
-public sealed record ApplyBusinessAdvanceRequest(Guid ExpenseId, decimal Amount);
+public sealed record ApplyBusinessAdvanceRequest(Guid ExpenseId, decimal Amount, string? ExpenseCurrencyCode = null, decimal? AdvanceEquivalentAmount = null, decimal? ExchangeRate = null, string? ExchangeRateReference = null);
 public sealed record ReturnBusinessAdvanceRequest(decimal Amount, long Version);
 public sealed record IssueBusinessAdvanceRequest(Guid PaymentAccountId, string Method, decimal Amount, DateOnly PaymentDate, DateOnly PostingDate, long Version);
 public sealed record ExpenseCardTransactionDto(Guid Id, Guid LegalEntityId, string ProviderReference, string MerchantName, DateOnly TransactionDate, decimal Amount, string CurrencyCode, string State, Guid? EmployeeId, Guid? MatchedExpenseId);
