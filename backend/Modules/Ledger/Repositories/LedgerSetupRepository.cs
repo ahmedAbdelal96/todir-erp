@@ -315,7 +315,7 @@ public sealed class LedgerSetupRepository(
         ("pos", AccountingFactTypes.PosCashSalePosted),
         ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment), ("inventory", AccountingFactTypes.InventoryValuationReversal),
         ("payroll", AccountingFactTypes.PayrollPosted), ("expenses", AccountingFactTypes.ExpenseRecognized), ("tax", AccountingFactTypes.TaxAdjustment),
-        ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff),
+        ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff), ("expenses", AccountingFactTypes.SettlementWriteOff),
         ("accounting", AccountingFactTypes.UnrealizedFxRevaluation)
     ];
 

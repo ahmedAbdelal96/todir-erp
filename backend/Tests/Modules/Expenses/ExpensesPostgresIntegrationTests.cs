@@ -352,6 +352,61 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Contains(overdue.Items, item => item.Id == advance.Id && item.IsOverdue && item.SettlementDueDate == DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-2)));
     }
 
+    [ExpensesFinancialPostgresFact]
+    public async Task BusinessAdvanceWriteOffRequiresApprovalPostsBalancedLedgerAndIsIdempotent()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_FINANCIAL_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var financialRead = new NpgsqlLegalEntityFinancialReadStore(dataSource);
+        var financeRepository = new FinanceBaseRepository(dataSource, coordinator, financialRead, TimeProvider.System);
+        var financeBase = new FinanceBaseCapabilities(financeRepository, financialRead, TimeProvider.System);
+        var ledger = new LedgerRepository(dataSource, coordinator, financialRead, TimeProvider.System);
+        var approvals = new TestApprovalCapability();
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(ledger), advancePayments: new TestAdvancePaymentCapability(), approvals: approvals, financeBase: financeBase);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var employee = Guid.CreateVersion7();
+        var advance = await repository.CreateAdvanceAsync(new(Atlas), new(entity, employee, "Write-off acceptance", 100m, "EGP", DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-1))), default);
+        advance = await repository.TransitionAdvanceAsync(new(Atlas), entity, advance.Id, advance.Version, "approve", default);
+        advance = await repository.IssueAdvanceAsync(new(Atlas), entity, advance.Id, Guid.NewGuid(), Guid.NewGuid(), new(Guid.NewGuid(), "BankTransfer", 100m, DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date), advance.Version), default);
+
+        var idempotencyKey = $"writeoff-{Guid.CreateVersion7():N}";
+        var requested = await repository.RequestAdvanceWriteOffAsync(new(Atlas), Guid.CreateVersion7(), Guid.CreateVersion7(), entity, advance.Id, new(100m, "Employee departed; receivable uncollectible", advance.Version, null, idempotencyKey), default);
+        Assert.Equal("PendingApproval", requested.State);
+        var replay = await repository.RequestAdvanceWriteOffAsync(new(Atlas), Guid.CreateVersion7(), Guid.CreateVersion7(), entity, advance.Id, new(100m, "Employee departed; receivable uncollectible", advance.Version, null, idempotencyKey), default);
+        Assert.Equal(requested.Id, replay.Id);
+        Assert.Equal(requested.ApprovalRequestId, replay.ApprovalRequestId);
+
+        var approved = await repository.DecideAdvanceWriteOffAsync(new(Atlas), Guid.CreateVersion7(), Guid.CreateVersion7(), entity, advance.Id, new(requested.ApprovalRequestId!.Value, "Approved", "Finance approved write-off"), default);
+        Assert.Equal("Approved", approved.State);
+        Assert.Equal("Approved", approved.ApprovalState);
+        Assert.NotNull(approved.LedgerFactId);
+        Assert.NotNull(approved.LedgerEntryId);
+        var settled = (await repository.ListAdvancesAsync(new(Atlas), entity, "Settled", employee, false, 1, 20, default)).Items.Single(item => item.Id == advance.Id);
+        Assert.Equal("Settled", settled.State);
+        Assert.Equal(100m, settled.WrittenOffAmount);
+
+        await using var persisted = new NpgsqlCommand("select count(*),coalesce(sum(l.debit),0),coalesce(sum(l.credit),0) from finance_ledger.journal_entry j join finance_ledger.journal_entry_line l on l.tenant_id=j.tenant_id and l.journal_entry_id=j.id where j.tenant_id=$1 and j.id=$2", connection);
+        persisted.Parameters.AddWithValue(Atlas); persisted.Parameters.AddWithValue(approved.LedgerEntryId!.Value);
+        await using var reader = await persisted.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(2L, reader.GetInt64(0));
+        Assert.Equal(reader.GetDecimal(1), reader.GetDecimal(2));
+        Assert.Equal(100m, reader.GetDecimal(1));
+        await reader.CloseAsync();
+        var retry = await repository.DecideAdvanceWriteOffAsync(new(Atlas), Guid.CreateVersion7(), Guid.CreateVersion7(), entity, advance.Id, new(requested.ApprovalRequestId.Value, "Approved", "Replay"), default);
+        Assert.Equal(approved.Id, retry.Id);
+        Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and id=$2", Atlas, approved.LedgerFactId!.Value));
+        Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from business_expenses.business_advance_write_off_history where tenant_id=$1 and write_off_id=$2 and action='Approved'", Atlas, approved.Id));
+        await using var immutable = new NpgsqlCommand("update business_expenses.business_advance_write_off_history set action='Tampered' where tenant_id=$1 and write_off_id=$2 and action='Approved'", connection);
+        immutable.Parameters.AddWithValue(Atlas); immutable.Parameters.AddWithValue(approved.Id);
+        await Assert.ThrowsAsync<PostgresException>(() => immutable.ExecuteNonQueryAsync());
+    }
+
     [ExpensesPostgresFact]
     public async Task CorporateCardAllocationSupportsSplitExpensesAndIsIdempotent()
     {
@@ -772,6 +827,30 @@ public sealed class ExpensesPostgresIntegrationTests
         var rates = await repository.ListRatePoliciesAsync(new(Atlas), entity, "Mileage", "Draft", 1, 200, default);
         Assert.Contains(rates.Items, item => item.Id == rate.Id);
         Assert.Equal(200, rates.PageSize);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task PolicyCurrencyAndMerchantConditionsAreTypedAndVersioned()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var policy = await repository.CreatePolicyAsync(new(Atlas), new(entity, $"TYPED-{Guid.CreateVersion7():N}", "Typed merchant and currency policy"), default);
+        using var rules = JsonDocument.Parse("{\"maxAmount\":1000,\"currencyCodes\":[\"EGP\"],\"merchantNames\":[\"Trusted Merchant\"]}");
+        var version = await repository.CreatePolicyVersionAsync(new(Atlas), entity, policy.Id, new(rules.RootElement.Clone(), DateOnly.FromDateTime(DateTime.UtcNow.Date)), default);
+        await repository.PublishPolicyVersionAsync(new(Atlas), entity, version.Id, new(), default);
+        var expense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Trusted Merchant", DateOnly.FromDateTime(DateTime.UtcNow.Date), 1250m, "EGP", "EmployeePaid", categoryVersion), default);
+        var evaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, expense.Id, default);
+        Assert.Equal("Blocked", evaluation.State);
+        Assert.Equal(version.Id, Guid.Parse(evaluation.Snapshot.GetProperty("policyVersionId").GetString()!));
+        Assert.Equal("EGP", evaluation.Snapshot.GetProperty("currencyCode").GetString());
     }
 
     private static async Task<(Guid IdentityId, Guid MembershipId)> ReadUserAsync(NpgsqlConnection connection, string prefix)

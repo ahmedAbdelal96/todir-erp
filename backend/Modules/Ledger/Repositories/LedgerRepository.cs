@@ -1186,7 +1186,7 @@ public sealed class LedgerRepository(
 
     public async Task<LedgerPostingResult> PostSettlementWriteOffInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementWriteOffPayload payload, CancellationToken ct)
     {
-        if (fact.FactType != AccountingFactTypes.SettlementWriteOff || fact.SourceModule != "subledger" || payload.WriteOffId == Guid.Empty
+        if (fact.FactType != AccountingFactTypes.SettlementWriteOff || fact.SourceModule is not ("subledger" or "expenses") || payload.WriteOffId == Guid.Empty
             || payload.PartyId == Guid.Empty || payload.OpenItemId == Guid.Empty || payload.Direction is not ("Receivable" or "Payable")
             || payload.BaseAmount <= 0m || string.IsNullOrWhiteSpace(payload.ReasonCode) || string.IsNullOrWhiteSpace(payload.ReasonText))
             throw new LedgerDomainException("ledger.fact_invalid", "The settlement write-off fact has invalid semantic details.");
