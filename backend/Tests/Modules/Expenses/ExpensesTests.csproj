@@ -7,5 +7,6 @@
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="../../../Modules/Expenses/Expenses.csproj" />
     <ProjectReference Include="../../../Modules/Ledger/Ledger.csproj" />
+    <ProjectReference Include="../../../Modules/FinanceBase/FinanceBase.csproj" />
   </ItemGroup>
 </Project>

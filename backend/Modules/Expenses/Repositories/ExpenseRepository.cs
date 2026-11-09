@@ -7,13 +7,15 @@ using Shared.Primitives.Identifiers;
 using Shared.Contracts.Ledger;
 using Shared.Contracts.Payments;
 using Shared.Contracts.Platform;
+using Shared.Contracts.FinanceBase;
+using Shared.Contracts.Tax;
 using Modules.Expenses.DTOs;
 using Modules.Expenses.Services;
 using System.Text.Json;
 
 namespace Modules.Expenses.Repositories;
 
-public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null, IPlatformFileUploadCapability? fileUploads = null, IPlatformApprovalCapability? approvals = null, IExpenseOcrProvider? ocrProvider = null)
+public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null, IPlatformFileUploadCapability? fileUploads = null, IPlatformApprovalCapability? approvals = null, IExpenseOcrProvider? ocrProvider = null, IFinanceBaseCapabilities? financeBase = null, ITaxCapabilities? tax = null)
 {
     public async Task<ExpensePage<ExpenseDto>> ListAsync(TenantId tenant, Guid entity, Guid? employeeId, string? state, string? search, int page, int pageSize, CancellationToken ct)
     {
@@ -21,11 +23,11 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         await using var scope = await OpenAsync(tenant, ct);
         const string where = "tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or employee_id=$3) and ($4::text is null or expense_state=$4) and ($5::text is null or merchant_name ilike '%'||$5||'%' or coalesce(description,'') ilike '%'||$5||'%')";
         await using var count = new NpgsqlCommand($"select count(*) from business_expenses.expense where {where}", scope.Connection, scope.Transaction); Add(count, tenant.Value, entity, Db(employeeId), Db(state), Db(string.IsNullOrWhiteSpace(search) ? null : search.Trim())); var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
-        await using var cmd = new NpgsqlCommand($"select id,legal_entity_id,employee_id,merchant_name,expense_date,amount,currency_code,payment_source,category_version_id,expense_state,approval_state,accounting_state,settlement_state,evidence_state,policy_state,business_purpose,description,version,created_at,finalized_at from business_expenses.expense where {where} order by created_at desc,id desc offset $6 limit $7", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, Db(employeeId), Db(state), Db(string.IsNullOrWhiteSpace(search) ? null : search.Trim()), offset, pageSize); var items = new List<ExpenseDto>(); await using var reader = await cmd.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(ReadExpense(reader)); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return new(items, total, page, pageSize);
+        await using var cmd = new NpgsqlCommand($"select id,legal_entity_id,employee_id,merchant_name,expense_date,amount,currency_code,payment_source,category_version_id,expense_state,approval_state,accounting_state,settlement_state,evidence_state,policy_state,business_purpose,description,version,created_at,finalized_at,base_amount,base_currency_code,tax_amount,financial_context_snapshot,tax_snapshot from business_expenses.expense where {where} order by created_at desc,id desc offset $6 limit $7", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, Db(employeeId), Db(state), Db(string.IsNullOrWhiteSpace(search) ? null : search.Trim()), offset, pageSize); var items = new List<ExpenseDto>(); await using var reader = await cmd.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(ReadExpense(reader)); await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return new(items, total, page, pageSize);
     }
 
     public async Task<ExpenseDto?> GetAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct)
-    { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select id,legal_entity_id,employee_id,merchant_name,expense_date,amount,currency_code,payment_source,category_version_id,expense_state,approval_state,accounting_state,settlement_state,evidence_state,policy_state,business_purpose,description,version,created_at,finalized_at from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, id); await using var r = await cmd.ExecuteReaderAsync(ct); var result = await r.ReadAsync(ct) ? ReadExpense(r) : null; await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
+    { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select id,legal_entity_id,employee_id,merchant_name,expense_date,amount,currency_code,payment_source,category_version_id,expense_state,approval_state,accounting_state,settlement_state,evidence_state,policy_state,business_purpose,description,version,created_at,finalized_at,base_amount,base_currency_code,tax_amount,financial_context_snapshot,tax_snapshot from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, id); await using var r = await cmd.ExecuteReaderAsync(ct); var result = await r.ReadAsync(ct) ? ReadExpense(r) : null; await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
     public async Task<ExpensePage<ExpenseDuplicateCandidateDto>> ListDuplicateCandidatesAsync(TenantId tenant, Guid entity, Guid expenseId, int page, int pageSize, CancellationToken ct)
     {
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200); await using var scope = await OpenAsync(tenant, ct);
@@ -201,12 +203,42 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
                 if (platformApproval is null || platformApproval.State != "Approved" || platformApproval.OwnerModule != "expenses" || platformApproval.OwnerEntityType != "expense" || platformApproval.OwnerEntityId != id || platformApproval.LegalEntityId != entity || platformApproval.PolicyVersionId != applicablePolicyVersion || platformApproval.ResourceVersion < version - 1 || platformApproval.ResourceVersion > version)
                     throw new ExpenseRepositoryException("expenses.platform_approval_stale_or_invalid");
             }
+            var financialContext = financeBase is null
+                ? null
+                : await financeBase.ResolveCalculationContextAsync(tenant, new LegalEntityId(entity), currency, FinancialCalculationPurpose.Accounting, date, token)
+                    ?? throw new ExpenseRepositoryException("expenses.financial_context_unavailable");
+            var baseCurrency = financialContext?.BaseCurrencyCode ?? currency;
+            var baseAmount = financialContext is null || string.Equals(currency, baseCurrency, StringComparison.OrdinalIgnoreCase)
+                ? amount
+                : CalculateBaseAmount(amount, financialContext);
+            var exchangeRate = financialContext?.ExchangeRate is { } rate
+                ? decimal.Parse(rate.Rate, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture)
+                : 1m;
+            var financialContextJson = financialContext is null ? null : JsonSerializer.Serialize(financialContext);
+            decimal taxAmount = 0m;
+            string? taxSnapshotJson = null;
+            if (tax is not null)
+            {
+                var taxContext = new TaxContextContract(tenant, new LegalEntityId(entity), "Purchase", "Expense", "Expense", date, date, null, date,
+                    null, null, null, null, null, null, 1m, null, "TaxInclusive", amount.ToString(CultureInfo.InvariantCulture), "0", "0",
+                    currency, baseCurrency, null, null, "PurchaseInvoice");
+                try
+                {
+                    var taxResult = await tax.CalculateAsync(taxContext, token);
+                    taxAmount = decimal.Parse(taxResult.TaxTotal, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+                    taxSnapshotJson = JsonSerializer.Serialize(new { context = taxContext, result = taxResult });
+                }
+                catch (Exception exception) when (IsTaxContextUnavailable(exception))
+                {
+                    taxSnapshotJson = JsonSerializer.Serialize(new { state = "NotEvaluated", reason = TaxErrorCode(exception), capturedAt = DateTimeOffset.UtcNow });
+                }
+            }
             var factId = StableFactId(id);
-            var payload = new ExpenseRecognizedPayload(amount, currency, category, source == "EmployeePaid" ? "EmployeeReimbursementPayable" : "Cash");
+            var payload = new ExpenseRecognizedPayload(amount, currency, category, source == "EmployeePaid" ? "EmployeeReimbursementPayable" : "Cash", baseAmount, baseCurrency, exchangeRate, financialContext?.ExchangeRate?.ApprovedRateId?.ToString("D"), financialContextJson, taxAmount, taxSnapshotJson);
             var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new LegalEntityId(entity), AccountingFactTypes.ExpenseRecognized, 1, "expenses", id.ToString("D"), $"expense-finalize:{id:D}", date, date, payload, Guid.CreateVersion7(), Guid.Empty);
             var posted = await ledgerPosting.PostExpenseAsync(context, fact, payload, token);
-            await using (var update = new NpgsqlCommand("update business_expenses.expense set expense_state='Finalized',accounting_state='Posted',accounting_fact_id=$4,ledger_entry_id=$5,settlement_state=case when payment_source='EmployeePaid' then 'ReimbursementPending' else 'NotApplicable' end,policy_state=$6,version=version+1,finalized_at=now(),updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$7 and expense_state='Submitted' and approval_state='Approved'", context.Connection, context.Transaction))
-            { Add(update, tenant.Value, entity, id, posted.FactId, posted.JournalEntryId, policyState, request.Version); if (await update.ExecuteNonQueryAsync(token) == 0) throw new ExpenseRepositoryException("expenses.invalid_transition_or_concurrency"); }
+            await using (var update = new NpgsqlCommand("update business_expenses.expense set expense_state='Finalized',accounting_state='Posted',accounting_fact_id=$4,ledger_entry_id=$5,settlement_state=case when payment_source='EmployeePaid' then 'ReimbursementPending' else 'NotApplicable' end,policy_state=$6,base_currency_code=$8,base_amount=$9,financial_context_snapshot=$10::jsonb,tax_amount=$11,tax_snapshot=$12::jsonb,version=version+1,finalized_at=now(),updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$7 and expense_state='Submitted' and approval_state='Approved'", context.Connection, context.Transaction))
+            { Add(update, tenant.Value, entity, id, posted.FactId, posted.JournalEntryId, policyState, request.Version, baseCurrency, baseAmount, (object?)financialContextJson ?? DBNull.Value, taxAmount, (object?)taxSnapshotJson ?? DBNull.Value); if (await update.ExecuteNonQueryAsync(token) == 0) throw new ExpenseRepositoryException("expenses.invalid_transition_or_concurrency"); }
             await using (var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,'finalize',jsonb_build_object('expenseState','Finalized','approvalState','Approved','accountingState','Posted','ledgerEntryId',$5::text))", context.Connection, context.Transaction))
             { Add(history, tenant.Value, Guid.CreateVersion7(), entity, id, posted.JournalEntryId); await history.ExecuteNonQueryAsync(token); }
             await using var obligation = new NpgsqlCommand("insert into business_expenses.expense_reimbursement_obligation(tenant_id,id,legal_entity_id,expense_id,employee_id,amount,currency_code,status) select tenant_id,$4,legal_entity_id,id,employee_id,amount,currency_code,'Pending' from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 and payment_source='EmployeePaid' and employee_id is not null on conflict(tenant_id,expense_id) do nothing", context.Connection, context.Transaction);
@@ -216,6 +248,29 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         }, ct);
         return (await GetAsync(tenant, entity, id, ct))!;
     }
+
+    private static decimal CalculateBaseAmount(decimal amount, FinancialCalculationContextSnapshotContract context)
+    {
+        if (context.ExchangeRate is null || !decimal.TryParse(context.ExchangeRate.Rate, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var rate) || rate <= 0m)
+            throw new ExpenseRepositoryException("expenses.fx_rate_missing");
+        var scale = Math.Clamp(context.RoundingPolicy.MoneyScale, 0, 8);
+        var mode = context.RoundingPolicy.ContextRules.FirstOrDefault(rule => rule.Context == FinancialRoundingContext.FxBaseAmount)?.Mode ?? FinancialRoundingMode.HalfUp;
+        var midpoint = mode switch
+        {
+            FinancialRoundingMode.HalfEven => MidpointRounding.ToEven,
+            FinancialRoundingMode.Down => MidpointRounding.ToZero,
+            _ => MidpointRounding.AwayFromZero
+        };
+        return Math.Round(amount * rate, scale, midpoint);
+    }
+
+    private static bool IsTaxContextUnavailable(Exception exception)
+    {
+        var code = TaxErrorCode(exception);
+        return code is "tax.jurisdiction_unresolved" or "tax.rule_not_effective" or "tax.tax_date_unresolved" or "tax.capability_disabled";
+    }
+
+    private static string TaxErrorCode(Exception exception) => exception.GetType().GetProperty("Code")?.GetValue(exception) as string ?? "tax.unavailable";
 
     private async Task<ExpenseDto> ReverseAsync(TenantId tenant, Guid entity, Guid id, ExpenseActionRequest request, CancellationToken ct)
     {
@@ -405,7 +460,12 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     }
 
     private async Task<Scope> OpenAsync(TenantId tenant, CancellationToken ct) { var c = await dataSource.OpenConnectionAsync(ct); var t = await c.BeginTransactionAsync(ct); await using var set = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", c, t); Add(set, tenant.Value.ToString("D")); await set.ExecuteNonQueryAsync(ct); return new(c, t); }
-    private static ExpenseDto ReadExpense(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), GuidValue(r, 2), r.GetString(3), r.GetFieldValue<DateOnly>(4), r.GetDecimal(5), r.GetString(6), r.GetString(7), r.GetGuid(8), r.GetString(9), r.GetString(10), r.GetString(11), r.GetString(12), r.GetString(13), r.GetString(14), Text(r, 15), Text(r, 16), r.GetInt64(17), r.GetFieldValue<DateTimeOffset>(18), r.IsDBNull(19) ? null : r.GetFieldValue<DateTimeOffset>(19));
+    private static ExpenseDto ReadExpense(NpgsqlDataReader r)
+    {
+        JsonElement? financialContext = r.IsDBNull(23) ? null : JsonDocument.Parse(r.GetString(23)).RootElement.Clone();
+        JsonElement? taxSnapshot = r.IsDBNull(24) ? null : JsonDocument.Parse(r.GetString(24)).RootElement.Clone();
+        return new(r.GetGuid(0), r.GetGuid(1), GuidValue(r, 2), r.GetString(3), r.GetFieldValue<DateOnly>(4), r.GetDecimal(5), r.GetString(6), r.GetString(7), r.GetGuid(8), r.GetString(9), r.GetString(10), r.GetString(11), r.GetString(12), r.GetString(13), r.GetString(14), Text(r, 15), Text(r, 16), r.GetInt64(17), r.GetFieldValue<DateTimeOffset>(18), r.IsDBNull(19) ? null : r.GetFieldValue<DateTimeOffset>(19), r.IsDBNull(20) ? null : r.GetDecimal(20), Text(r, 21)?.Trim(), r.IsDBNull(22) ? null : r.GetDecimal(22), financialContext, taxSnapshot);
+    }
     private static Guid? GuidValue(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetGuid(i); private static string? Text(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i); private static object Db(object? v) => v ?? DBNull.Value; private static void Add(NpgsqlCommand c, params object?[] values) { foreach (var value in values) c.Parameters.AddWithValue(value ?? DBNull.Value); }
     private static MissingReceiptDeclarationDto ReadMissingReceipt(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetGuid(4), r.GetFieldValue<DateTimeOffset>(5), r.IsDBNull(6) ? null : r.GetFieldValue<DateTimeOffset>(6));
     private static bool SnapshotMatches(System.Text.Json.JsonElement snapshot, long version, decimal amount, string currency, string source, Guid? employee, Guid categoryVersionId, string evidenceState)

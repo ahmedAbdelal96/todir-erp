@@ -5,12 +5,16 @@ using Modules.Ledger.Services;
 using Core.Transactions;
 using Core.Services;
 using Modules.Expenses.Services;
+using Modules.FinanceBase.Repositories;
+using Modules.FinanceBase.Services;
 using Npgsql;
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.Payments;
 using Shared.Contracts.Platform;
+using Shared.Contracts.Tax;
 using Xunit;
 using System.Text.Json;
+using System.Globalization;
 
 namespace Modules.Expenses.Tests;
 
@@ -18,6 +22,114 @@ public sealed class ExpensesPostgresIntegrationTests
 {
     private static readonly Guid Atlas = Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b");
     private static readonly Guid Delta = Guid.Parse("3f93b180-d6a9-3e50-9c92-6be0607e96eb");
+
+    [ExpensesFinancialPostgresFact]
+    public async Task FinalizationPersistsAuthoritativeFinanceBaseContextAndBaseAmount()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_FINANCIAL_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var financialRead = new NpgsqlLegalEntityFinancialReadStore(dataSource);
+        var financeRepository = new FinanceBaseRepository(dataSource, coordinator, financialRead, TimeProvider.System);
+        var financeBase = new FinanceBaseCapabilities(financeRepository, financialRead, TimeProvider.System);
+        var repository = new ExpenseRepository(dataSource, coordinator,
+            new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, financialRead, TimeProvider.System)),
+            approvals: new TestApprovalCapability(), financeBase: financeBase);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D"));
+        await context.ExecuteNonQueryAsync();
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var created = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "FinanceBase context", new(2026, 10, 18), 125m, "EGP", "EmployeePaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Atlas), entity, created.Id, new("Receipt", "file://expenses/finbase-context"), default);
+        var submitted = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(created.Version), "submit", default);
+        await repository.EvaluatePolicyAsync(new(Atlas), entity, created.Id, default);
+        var approvedVersion = await ApproveAsync(repository, new(Atlas), entity, created.Id, submitted.Version);
+        var finalized = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(approvedVersion), "finalize", default);
+        Assert.Equal("Posted", finalized.AccountingState);
+
+        await using var persisted = new NpgsqlCommand("select base_currency_code,base_amount,financial_context_snapshot->>'TransactionCurrencyCode',financial_context_snapshot->'RoundingPolicy'->>'MoneyScale' from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection);
+        persisted.Parameters.AddWithValue(Atlas); persisted.Parameters.AddWithValue(entity); persisted.Parameters.AddWithValue(created.Id);
+        await using var reader = await persisted.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("EGP", reader.GetString(0).Trim());
+        Assert.Equal(125m, reader.GetDecimal(1));
+        Assert.Equal("EGP", reader.GetString(2));
+        Assert.False(reader.IsDBNull(3));
+    }
+
+    [ExpensesFinancialPostgresFact]
+    public async Task ForeignCurrencyExpenseUsesApprovedFinanceBaseRateInLedger()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_FINANCIAL_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var financialRead = new NpgsqlLegalEntityFinancialReadStore(dataSource);
+        var financeRepository = new FinanceBaseRepository(dataSource, coordinator, financialRead, TimeProvider.System);
+        var financeBase = new FinanceBaseCapabilities(financeRepository, financialRead, TimeProvider.System);
+        var ledger = new LedgerRepository(dataSource, coordinator, financialRead, TimeProvider.System);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(ledger), approvals: new TestApprovalCapability(), financeBase: financeBase);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var expenseDate = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var approvedRate = Convert.ToDecimal(await ScalarAsync(connection, "select rate from foundation_finbase.exchange_rate where tenant_id=$1 and legal_entity_id=$2 and from_currency='USD' and to_currency='EGP' and purpose='Accounting' and status='Approved' and effective_date <= $3 order by effective_date desc limit 1", Atlas, entity, expenseDate), CultureInfo.InvariantCulture);
+        Assert.True(approvedRate > 0m);
+        var created = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Foreign currency claim", expenseDate, 10m, "USD", "EmployeePaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Atlas), entity, created.Id, new("Receipt", "file://expenses/fx-context"), default);
+        var submitted = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(created.Version), "submit", default);
+        await repository.EvaluatePolicyAsync(new(Atlas), entity, created.Id, default);
+        var approvedVersion = await ApproveAsync(repository, new(Atlas), entity, created.Id, submitted.Version);
+        var finalized = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(approvedVersion), "finalize", default);
+
+        await using var persisted = new NpgsqlCommand("select e.base_currency_code,e.base_amount,l.currency_code,l.transaction_debit,l.base_debit,l.exchange_rate from business_expenses.expense e join finance_ledger.journal_entry j on j.id=e.ledger_entry_id join finance_ledger.journal_entry_line l on l.journal_entry_id=j.id and l.sequence_no=1 where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3", connection);
+        persisted.Parameters.AddWithValue(Atlas); persisted.Parameters.AddWithValue(entity); persisted.Parameters.AddWithValue(created.Id);
+        await using var reader = await persisted.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("EGP", reader.GetString(0).Trim());
+        Assert.Equal(Math.Round(10m * approvedRate, 2, MidpointRounding.AwayFromZero), reader.GetDecimal(1));
+        Assert.Equal("USD", reader.GetString(2));
+        Assert.Equal(10m, reader.GetDecimal(3));
+        Assert.Equal(reader.GetDecimal(1), reader.GetDecimal(4));
+        Assert.Equal(approvedRate, reader.GetDecimal(5));
+        Assert.Equal("Posted", finalized.AccountingState);
+    }
+
+    [ExpensesFinancialPostgresFact]
+    public async Task FinalizationPersistsTaxEngineEvidenceWithoutChangingLedgerGrossAmount()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_FINANCIAL_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var tax = new RecordingTaxCapability();
+        var repository = new ExpenseRepository(dataSource, coordinator,
+            new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)),
+            approvals: new TestApprovalCapability(), tax: tax);
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var created = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Tax evidence", new(2026, 10, 19), 100m, "EGP", "EmployeePaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Atlas), entity, created.Id, new("Receipt", "file://expenses/tax-evidence"), default);
+        var submitted = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(created.Version), "submit", default);
+        await repository.EvaluatePolicyAsync(new(Atlas), entity, created.Id, default);
+        var approvedVersion = await ApproveAsync(repository, new(Atlas), entity, created.Id, submitted.Version);
+        await repository.TransitionAsync(new(Atlas), entity, created.Id, new(approvedVersion), "finalize", default);
+        Assert.True(tax.Called);
+        await using var persisted = new NpgsqlCommand("select tax_amount,tax_snapshot->'result'->>'RuleSetVersion' from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection);
+        persisted.Parameters.AddWithValue(Atlas); persisted.Parameters.AddWithValue(entity); persisted.Parameters.AddWithValue(created.Id);
+        await using var reader = await persisted.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(14m, reader.GetDecimal(0));
+        Assert.Equal("expense-tax-v1", reader.GetString(1));
+    }
 
     [ExpensesPostgresFact]
     public async Task SeededEmployeeExpenseHasSingleReimbursementObligation()
@@ -637,6 +749,27 @@ public sealed class ExpensesPostgresIntegrationTests
     {
         public Task<ExpenseOcrResult> ExtractAsync(TenantId tenant, Guid fileReference, CancellationToken cancellationToken = default) =>
             throw new ExpenseOcrProviderException("expenses.ocr_provider_unavailable", "test provider unavailable");
+    }
+
+    private sealed class RecordingTaxCapability : ITaxCapabilities
+    {
+        public bool Called { get; private set; }
+        public Task<TaxResultContract> CalculateAsync(TaxContextContract context, CancellationToken cancellationToken = default)
+        {
+            Called = true;
+            var explanation = new TaxExplanationContract("local-test", "1", context.DocumentDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), "EG-C", "Registered", null, null, null, ["VAT"], "PerLine", "Expense tax test");
+            return Task.FromResult(new TaxResultContract("Evaluated", "Standard", "100", "14", "114", [], "EG-C", "Registered", "expense-tax-v1", "expense-calc-v1", explanation));
+        }
+
+        public async Task<IReadOnlyList<TaxResultContract>> CalculateBatchAsync(IReadOnlyList<TaxContextContract> contexts, CancellationToken cancellationToken = default)
+        {
+            var results = new List<TaxResultContract>(contexts.Count);
+            foreach (var context in contexts) results.Add(await CalculateAsync(context, cancellationToken));
+            return results;
+        }
+
+        public Task<TaxSnapshotContract> CaptureSnapshotAsync(TaxSnapshotCaptureContract snapshot, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<InvoiceDocumentValidationResult> ValidateInvoiceDocumentAsync(InvoiceDocumentValidationRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class TestAdvancePaymentCapability : IBusinessAdvancePaymentCapability

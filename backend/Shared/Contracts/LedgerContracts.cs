@@ -109,7 +109,18 @@ public sealed record InventoryValuationFactPayload(decimal Amount, string Curren
     string? BaseCurrencyCode = null, decimal? BaseAmount = null) : IAccountingFactPayload;
 public sealed record InventoryValuationReversalPayload(Guid OriginalFactId, Guid OriginalMovementId, Guid ReversalMovementId,
     string Reason) : IAccountingFactPayload;
-public sealed record ExpenseRecognizedPayload(decimal Amount, string CurrencyCode, string ExpenseCategory, string SettlementAccountRole = "EmployeeReimbursementPayable") : IAccountingFactPayload;
+public sealed record ExpenseRecognizedPayload(
+    decimal Amount,
+    string CurrencyCode,
+    string ExpenseCategory,
+    string SettlementAccountRole = "EmployeeReimbursementPayable",
+    decimal? BaseAmount = null,
+    string? BaseCurrencyCode = null,
+    decimal? ExchangeRate = null,
+    string? ExchangeRateReference = null,
+    string? FinancialContextSnapshot = null,
+    decimal? TaxAmount = null,
+    string? TaxSnapshot = null) : IAccountingFactPayload;
 public sealed record PayrollPostedPayload(decimal GrossAmount, decimal PayableAmount, string CurrencyCode, decimal DeductionsAmount = 0m,
     decimal TaxAmount = 0m, decimal InsuranceAmount = 0m, decimal RecoveryAmount = 0m) : IAccountingFactPayload;
 public sealed record TaxAdjustmentPayload(decimal Amount, string CurrencyCode, string TaxCode, string AdjustmentRole) : IAccountingFactPayload;

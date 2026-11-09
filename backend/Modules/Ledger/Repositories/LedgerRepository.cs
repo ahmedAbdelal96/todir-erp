@@ -666,8 +666,15 @@ public sealed class LedgerRepository(
         var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
             ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
         var currency = payload.CurrencyCode.Trim().ToUpperInvariant();
-        if (!string.Equals(currency, baseCurrency, StringComparison.OrdinalIgnoreCase))
-            throw new LedgerDomainException("ledger.currency_mismatch", "Expense posting currently requires the legal-entity base currency.");
+        var factBaseCurrency = string.IsNullOrWhiteSpace(payload.BaseCurrencyCode) ? baseCurrency : payload.BaseCurrencyCode.Trim().ToUpperInvariant();
+        var baseAmount = payload.BaseAmount ?? payload.Amount;
+        if (factBaseCurrency != baseCurrency || baseAmount <= 0m)
+            throw new LedgerDomainException("ledger.currency_mismatch", "Expense posting requires an immutable legal-entity base-currency snapshot.");
+        if (!string.Equals(currency, baseCurrency, StringComparison.OrdinalIgnoreCase) && payload.BaseAmount is null)
+            throw new LedgerDomainException("ledger.currency_mismatch", "Foreign-currency expense posting requires an approved base amount.");
+        var exchangeRate = payload.ExchangeRate ?? baseAmount / payload.Amount;
+        if (exchangeRate <= 0m)
+            throw new LedgerDomainException("ledger.currency_mismatch", "Expense exchange rate must be positive.");
         var configuration = await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, ct);
         var expenseAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration, "PurchaseExpense", ct);
         var reimbursementAccount = await ResolveSemanticAccountIdAsync(context, fact, configuration,
@@ -676,8 +683,8 @@ public sealed class LedgerRepository(
             ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
         var lines = new[]
         {
-            new LedgerPostingLinePayload(expenseAccount, payload.Amount, 0m, currency, payload.Amount, 0m, payload.Amount, 0m, 1m, [], $"Expense: {payload.ExpenseCategory}", fact.SourceReference),
-            new LedgerPostingLinePayload(reimbursementAccount, 0m, payload.Amount, currency, 0m, payload.Amount, 0m, payload.Amount, 1m, [], payload.SettlementAccountRole == "Cash" ? "Company-paid cash settlement" : "Employee reimbursement payable", fact.SourceReference)
+            new LedgerPostingLinePayload(expenseAccount, baseAmount, 0m, currency, payload.Amount, 0m, baseAmount, 0m, exchangeRate, [], $"Expense: {payload.ExpenseCategory}", fact.SourceReference),
+            new LedgerPostingLinePayload(reimbursementAccount, 0m, baseAmount, currency, 0m, payload.Amount, 0m, baseAmount, exchangeRate, [], payload.SettlementAccountRole == "Cash" ? "Company-paid cash settlement" : "Employee reimbursement payable", fact.SourceReference)
         };
         return await PostSemanticExplicitInTransactionAsync(context, fact,
             new ExplicitLedgerPostingPayload(journal, $"Expense recognized: {payload.ExpenseCategory}", baseCurrency, lines), payload, configuration, ct);
