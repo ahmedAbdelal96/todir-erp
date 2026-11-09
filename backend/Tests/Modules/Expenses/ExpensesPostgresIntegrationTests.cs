@@ -1054,6 +1054,25 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task ReminderScanEmitsDurableIdempotentEmployeeActionEvents()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var expense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), $"Reminder {Guid.CreateVersion7():N}", DateOnly.FromDateTime(DateTime.UtcNow.Date), 35m, "EGP", "EmployeePaid", categoryVersion), default);
+        Assert.True(await repository.ProcessReminderNotificationsAsync(new(Atlas), entity, default) >= 1);
+        Assert.Equal(0, await repository.ProcessReminderNotificationsAsync(new(Atlas), entity, default));
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from platform.outbox_message where tenant_id=$1 and message_type='ExpenseReminderV1' and payload->>'SourceId'=$2", Atlas, expense.Id.ToString("D")));
+    }
+
+    [ExpensesPostgresFact]
     public async Task PublishedPolicyVersionsAreImmutableForHistoricalReproducibility()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");

@@ -72,6 +72,16 @@ builder.Services.AddScheduling(builder.Configuration, options =>
         .WithCronSchedule("0 0 2 * * ?", schedule => schedule
             .InTimeZone(TimeZoneInfo.Utc)
             .WithMisfireHandlingInstructionFireAndProceed()));
+    options.AddJob<ExpensesReminderJob>(job => job
+        .WithIdentity(ExpensesReminderJob.Key)
+        .StoreDurably()
+        .RequestRecovery());
+    options.AddTrigger(trigger => trigger
+        .ForJob(ExpensesReminderJob.Key)
+        .WithIdentity(ExpensesReminderJob.Trigger)
+        .WithCronSchedule("0 */15 * * * ?", schedule => schedule
+            .InTimeZone(TimeZoneInfo.Utc)
+            .WithMisfireHandlingInstructionFireAndProceed()));
 });
 builder.Services.AddHostedService<OutboxDispatchWorker>();
 builder.Services.AddHostedService<FinanceBaseRateSyncWorker>();

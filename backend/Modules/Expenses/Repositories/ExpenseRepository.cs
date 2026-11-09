@@ -765,6 +765,46 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     private static string Csv(string value) => value.Contains(',', StringComparison.Ordinal) || value.Contains('"', StringComparison.Ordinal) || value.Contains('\n', StringComparison.Ordinal) ? '"' + value.Replace("\"", "\"\"", StringComparison.Ordinal) + '"' : value;
     public async Task<ExpenseExceptionSummaryDto> GetExceptionSummaryAsync(TenantId tenant, Guid entity, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("select (select count(*) from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and expense_state='Submitted' and approval_state='Pending'),(select count(*) from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and expense_state in ('Draft','Submitted') and evidence_state='Missing'),(select count(*) from business_expenses.expense_reimbursement_obligation where tenant_id=$1 and legal_entity_id=$2 and status in ('Pending','PartiallySettled')),(select coalesce(sum(amount-settled_amount),0) from business_expenses.expense_reimbursement_obligation where tenant_id=$1 and legal_entity_id=$2 and status in ('Pending','PartiallySettled')),(select count(*) from business_expenses.expense_employee_repayment where tenant_id=$1 and legal_entity_id=$2 and state in ('Requested','Pending')),(select coalesce(sum(amount),0) from business_expenses.expense_employee_repayment where tenant_id=$1 and legal_entity_id=$2 and state in ('Requested','Pending')),(select count(*) from business_expenses.business_advance where tenant_id=$1 and legal_entity_id=$2 and state in ('Issued','PartiallySettled')),(select coalesce(sum(amount-applied_amount-returned_amount-written_off_amount),0) from business_expenses.business_advance where tenant_id=$1 and legal_entity_id=$2 and state in ('Issued','PartiallySettled'))", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.report_unavailable"); var result = new ExpenseExceptionSummaryDto(checked((int)r.GetInt64(0)), checked((int)r.GetInt64(1)), checked((int)r.GetInt64(2)), r.GetDecimal(3), checked((int)r.GetInt64(4)), r.GetDecimal(5), checked((int)r.GetInt64(6)), r.GetDecimal(7)); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
+
+    /// <summary>Emits one durable reminder event per unresolved employee action; source records remain authoritative.</summary>
+    public async Task<int> ProcessReminderNotificationsAsync(TenantId tenant, Guid entity, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var candidates = new NpgsqlCommand("""
+            select 'MissingReceipt'::text as reminder_type,e.id,e.employee_id,e.amount,e.currency_code
+            from business_expenses.expense e
+            where e.tenant_id=$1 and e.legal_entity_id=$2 and e.employee_id is not null and e.expense_state in ('Draft','Submitted') and e.evidence_state='Missing'
+            union all
+            select 'ApprovalPending',e.id,e.employee_id,e.amount,e.currency_code
+            from business_expenses.expense e
+            where e.tenant_id=$1 and e.legal_entity_id=$2 and e.employee_id is not null and e.expense_state='Submitted' and e.approval_state='Pending'
+            union all
+            select 'AdvanceDue',a.id,a.employee_id,a.amount-a.applied_amount-a.returned_amount-a.written_off_amount,a.currency_code
+            from business_expenses.business_advance a
+            where a.tenant_id=$1 and a.legal_entity_id=$2 and a.employee_id is not null and a.state in ('Issued','PartiallySettled') and a.settlement_due_date is not null and a.settlement_due_date <= current_date
+            union all
+            select 'EmployeeRepaymentDue',r.id,r.employee_id,r.amount-r.settled_amount,r.currency_code
+            from business_expenses.expense_employee_repayment r
+            where r.tenant_id=$1 and r.legal_entity_id=$2 and r.state in ('Requested','Pending')
+            order by reminder_type,id
+            limit 500
+            """, scope.Connection, scope.Transaction);
+        Add(candidates, tenant.Value, entity);
+        var inserted = 0;
+        await using var reader = await candidates.ExecuteReaderAsync(ct);
+        var rows = new List<(string Type, Guid Id, Guid EmployeeId, decimal Amount, string Currency)>();
+        while (await reader.ReadAsync(ct)) rows.Add((reader.GetString(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetDecimal(3), reader.GetString(4).Trim()));
+        await reader.CloseAsync();
+        foreach (var row in rows)
+        {
+            var reminderId = new Guid(SHA256.HashData(Encoding.UTF8.GetBytes($"expenses:reminder:{row.Type}:{row.Id:D}"))[..16]);
+            await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status,attempts) select $1,'ExpenseReminderV1',jsonb_build_object('ReminderType',$2::text,'LegalEntityId',$3::text,'EmployeeId',$4::text,'SourceId',$5::text,'Amount',$6::numeric,'CurrencyCode',$7::text),$8,now(),$1,$1,'expenses','Pending',0 where not exists(select 1 from platform.outbox_message where tenant_id=$8 and message_type='ExpenseReminderV1' and causation_id=$1)", scope.Connection, scope.Transaction);
+            Add(outbox, reminderId, row.Type, entity, row.EmployeeId, row.Id, row.Amount, row.Currency, tenant.Value);
+            inserted += await outbox.ExecuteNonQueryAsync(ct);
+        }
+        await scope.Transaction.CommitAsync(ct);
+        return inserted;
+    }
     public async Task<ExpensePage<ExpenseSpendReportRowDto>> GetSpendReportAsync(TenantId tenant, Guid entity, string groupBy, DateOnly? from, DateOnly? to, string? search, int page, int pageSize, CancellationToken ct)
     {
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
