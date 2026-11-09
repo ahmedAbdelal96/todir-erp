@@ -10,6 +10,9 @@ using Modules.Payments.Entities;
 using Modules.Payments.Services;
 using Modules.Expenses.Repositories;
 using Modules.Expenses.Services;
+using Modules.Hr.DTOs;
+using Modules.Hr.Entities;
+using Modules.Hr.Repositories;
 using Npgsql;
 using Shared.Primitives.Identifiers;
 using Xunit;
@@ -724,9 +727,19 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         var settledRepayment = await expenses.SettleEmployeeRepaymentAsync(tenant, fixture.LegalEntityId, repayment.Id, fixture.ActorId, fixture.MembershipId, new(fixture.PaymentAccountId, "BankTransfer", 75m, new(2026, 11, 9), new(2026, 11, 9), repayment.Version), CancellationToken.None);
         Assert.Equal("Recorded", settledRepayment.State);
 
-        var advance = await expenses.CreateAdvanceAsync(tenant, new(fixture.LegalEntityId, employeeId, "Reconciliation advance", 250m, "EGP", new(2026, 12, 1)), CancellationToken.None);
+        var advanceEmployeeId = await ReadUnlinkedEmployeeIdAsync(adminConnectionString, fixture.TenantId, fixture.LegalEntityId);
+        var advance = await expenses.CreateAdvanceAsync(tenant, new(fixture.LegalEntityId, advanceEmployeeId, "Reconciliation advance", 250m, "EGP", new(2026, 12, 1)), CancellationToken.None);
         var approvedAdvance = await expenses.TransitionAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, advance.Version, "approve", CancellationToken.None);
         var issuedAdvance = await expenses.IssueAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, fixture.ActorId, fixture.MembershipId, new(fixture.PaymentAccountId, "BankTransfer", 250m, new(2026, 11, 9), new(2026, 11, 9), approvedAdvance.Version), CancellationToken.None);
+        var hr = factory.Services.GetRequiredService<HrRepository>();
+        var employment = await ReadEmploymentAsync(adminConnectionString, fixture.TenantId, fixture.LegalEntityId, advanceEmployeeId);
+        var terminationDate = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        await hr.ChangeEmploymentStatusAsync(tenant, fixture.ActorId, fixture.MembershipId, advanceEmployeeId, employment.EmploymentId, fixture.LegalEntityId,
+            new(EmploymentStatus.Terminated, terminationDate, "VOLUNTARY_RESIGNATION", employment.Version,
+                new("Resignation", terminationDate.AddDays(-1), terminationDate, true, "LastWorkingDay")), Guid.CreateVersion7(), CancellationToken.None);
+        var outstandingAfterTermination = await expenses.ListAdvancesAsync(tenant, fixture.LegalEntityId, "Issued", advanceEmployeeId, false, 1, 20, CancellationToken.None);
+        var retainedAdvance = Assert.Single(outstandingAfterTermination.Items, item => item.Id == advance.Id);
+        Assert.Equal(250m, retainedAdvance.IssuedAmount - retainedAdvance.AppliedAmount - retainedAdvance.ReturnedAmount - retainedAdvance.WrittenOffAmount);
         var settledAdvance = await expenses.ReturnAdvanceAsync(tenant, fixture.LegalEntityId, advance.Id, new(250m, issuedAdvance.Version), CancellationToken.None);
         Assert.Equal("Settled", settledAdvance.State);
         Assert.Equal(0m, settledAdvance.IssuedAmount - settledAdvance.AppliedAmount - settledAdvance.ReturnedAmount - settledAdvance.WrittenOffAmount);
@@ -801,6 +814,26 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) throw new InvalidOperationException("The canonical Atlas employee actor fixture is unavailable.");
         return (reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2));
+    }
+
+    private static async Task<(Guid EmploymentId, long Version)> ReadEmploymentAsync(string adminConnectionString, Guid tenantId, Guid legalEntityId, Guid employeeId)
+    {
+        await using var connection = new NpgsqlConnection(adminConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("select id,version from business_hr.employment where tenant_id=$1 and legal_entity_id=$2 and employee_id=$3 and status in ('Active','Suspended','NoticePeriod') order by start_date desc,id limit 1", connection);
+        command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(employeeId);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) throw new InvalidOperationException("The canonical active employment fixture is unavailable.");
+        return (reader.GetGuid(0), reader.GetInt64(1));
+    }
+
+    private static async Task<Guid> ReadUnlinkedEmployeeIdAsync(string adminConnectionString, Guid tenantId, Guid legalEntityId)
+    {
+        await using var connection = new NpgsqlConnection(adminConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("select e.id from business_hr.employee e join business_hr.employment em on em.tenant_id=e.tenant_id and em.employee_id=e.id where e.tenant_id=$1 and e.membership_id is null and e.status='Active' and em.legal_entity_id=$2 and em.status in ('Active','Suspended','NoticePeriod') order by em.employment_number,e.id limit 1", connection);
+        command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(legalEntityId);
+        return (Guid)(await command.ExecuteScalarAsync() ?? throw new InvalidOperationException("The isolated active employee fixture is unavailable."));
     }
 
     private static async Task<long> ScalarCountAsync(NpgsqlConnection connection, string sql)

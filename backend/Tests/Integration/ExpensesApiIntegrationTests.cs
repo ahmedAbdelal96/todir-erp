@@ -207,7 +207,7 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
             Assert.True(await reader.ReadAsync(), "Atlas seed tenant, entity, category, and employee are required.");
             tenantId = reader.GetGuid(0); legalEntityId = reader.GetGuid(1); categoryVersionId = reader.GetGuid(2); employeeId = reader.GetGuid(3); employeeEmail = reader.GetString(4);
             await reader.CloseAsync();
-            await using var reset = new NpgsqlCommand("update platform.identity set password_hash=$1,must_change_password=false,status='Active',security_stamp=gen_random_uuid(),version=version+1 where tenant_id=$2 and email in ('admin@atlas.com','accountant@atlas.com',$3)", connection);
+            await using var reset = new NpgsqlCommand("update platform.identity set password_hash=$1,must_change_password=false,status='Active',security_stamp=gen_random_uuid(),version=version+1 where tenant_id=$2 and email in ('admin@atlas.com','accountant@atlas.com','expense-manager@atlas.com',$3)", connection);
             reset.Parameters.AddWithValue(IdentityConventions.HashPassword(password)); reset.Parameters.AddWithValue(tenantId); reset.Parameters.AddWithValue(employeeEmail); await reset.ExecuteNonQueryAsync();
             await using var grant = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) select $1,a.role_id,p.permission_code from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id cross join (values ('expenses.create'),('expenses.submit'),('expenses.read')) p(permission_code) where m.tenant_id=$1 and i.email=$2 on conflict do nothing", connection);
             grant.Parameters.AddWithValue(tenantId); grant.Parameters.AddWithValue(employeeEmail); await grant.ExecuteNonQueryAsync();
@@ -242,6 +242,29 @@ public sealed class ExpensesApiIntegrationTests : DatabaseIntegrationTestBase
 
         var denied = await PostWithCsrfAsync(employee, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/{expenseId:D}/approval/decision", JsonContent.Create(new { requestId, decision = "Rejected", reason = "IDOR attempt" }));
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+
+        using var managerExpense = JsonContent.Create(new { legalEntityId, employeeId, merchantName = "Manager approval acceptance", expenseDate = "2026-11-09", amount = 62m, currencyCode = "EGP", paymentSource = "EmployeePaid", categoryVersionId, businessPurpose = "Manager authority" });
+        var managerCreated = await PostWithCsrfAsync(admin, $"/api/v1/expenses/legal-entities/{legalEntityId:D}", managerExpense);
+        Assert.Equal(HttpStatusCode.Created, managerCreated.StatusCode);
+        var managerBody = await managerCreated.Content.ReadFromJsonAsync<JsonElement>();
+        var managerExpenseId = managerBody.GetProperty("id").GetGuid();
+        Assert.Equal(HttpStatusCode.Created, (await PostWithCsrfAsync(admin, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/{managerExpenseId:D}/missing-receipt", JsonContent.Create(new { reason = "Manager approval acceptance" }))).StatusCode);
+        using var managerSubmit = JsonContent.Create(new { version = managerBody.GetProperty("version").GetInt64() });
+        Assert.Equal(HttpStatusCode.OK, (await PostWithCsrfAsync(employee, $"/api/v1/expenses/my/expenses/{managerExpenseId:D}/submit?legalEntityId={legalEntityId:D}", managerSubmit)).StatusCode);
+        var managerRequest = await PostWithCsrfAsync(employee, $"/api/v1/expenses/my/expenses/{managerExpenseId:D}/approval/request?legalEntityId={legalEntityId:D}", JsonContent.Create(new { reason = "Manager authority" }));
+        Assert.Equal(HttpStatusCode.OK, managerRequest.StatusCode);
+        var managerRequestBody = await managerRequest.Content.ReadFromJsonAsync<JsonElement>();
+        using var expenseManager = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(expenseManager, password, tenantId, "expense-manager@atlas.com");
+        var managerDecision = await PostWithCsrfAsync(expenseManager, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/{managerExpenseId:D}/approval/decision", JsonContent.Create(new { requestId = managerRequestBody.GetProperty("requestId").GetGuid(), decision = "Approved", reason = "Manager reviewed" }));
+        Assert.Equal(HttpStatusCode.OK, managerDecision.StatusCode);
+
+        var financeReports = await accountant.GetAsync($"/api/v1/expenses/legal-entities/{legalEntityId:D}/reports?page=1&pageSize=50");
+        Assert.Equal(HttpStatusCode.OK, financeReports.StatusCode);
+        var financeExceptions = await accountant.GetAsync($"/api/v1/expenses/legal-entities/{legalEntityId:D}/reports/exceptions");
+        Assert.Equal(HttpStatusCode.OK, financeExceptions.StatusCode);
+        var preparedBatch = await PostWithCsrfAsync(accountant, $"/api/v1/expenses/legal-entities/{legalEntityId:D}/reimbursements/prepare?currency=EGP", JsonContent.Create(new { }));
+        Assert.Equal(HttpStatusCode.Created, preparedBatch.StatusCode);
     }
 
     [Fact]

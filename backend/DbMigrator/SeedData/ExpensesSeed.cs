@@ -7,7 +7,7 @@ public static class ExpensesSeed
         var category = SeedIds.Child(context.Tenant.Id, "expenses-category", 1);
         var version = SeedIds.Child(context.Tenant.Id, "expenses-category-version", 1);
         await context.ExecuteAsync("insert into business_expenses.expense_category(tenant_id,id,legal_entity_id,code,name,status,created_at) values($1,$2,$3,'TRAVEL','تنقلات ومهمات عمل','Active',$4) on conflict(tenant_id,legal_entity_id,code) do update set name=excluded.name,status='Active'", cancellationToken, context.Tenant.Id, category, context.EntityId, context.AsOf);
-        await context.ExecuteAsync("insert into business_expenses.expense_category_version(tenant_id,id,category_id,version,status,requires_receipt,receipt_threshold,effective_from) values($1,$2,$3,1,'Published',true,500,'2025-01-01') on conflict(tenant_id,category_id,version) do update set status='Published',requires_receipt=true,receipt_threshold=500", cancellationToken, context.Tenant.Id, version, category);
+        await context.ExecuteAsync("insert into business_expenses.expense_category_version(tenant_id,id,category_id,version,status,requires_receipt,receipt_threshold,effective_from) values($1,$2,$3,1,'Published',true,500,'2025-01-01') on conflict(tenant_id,category_id,version) do nothing", cancellationToken, context.Tenant.Id, version, category);
         var draft = SeedIds.Child(context.Tenant.Id, "expenses-draft", 1);
         var submitted = SeedIds.Child(context.Tenant.Id, "expenses-submitted", 2);
         var finalized = SeedIds.Child(context.Tenant.Id, "expenses-finalized", 3);

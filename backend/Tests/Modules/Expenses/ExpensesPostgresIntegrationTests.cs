@@ -180,6 +180,31 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task FinanceWorkbenchReadModelsAreBoundedAndCsvEscapesAuthoritativeReportData()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var report = await repository.CreateReportAsync(new(Atlas), new(entity, null, $"Workbench, \"{Guid.CreateVersion7():N}\""), default);
+
+        var page = await repository.ListReportsAsync(new(Atlas), entity, null, "Workbench", 1, 1000, default);
+        Assert.True(page.PageSize <= 200);
+        Assert.Contains(page.Items, item => item.Id == report.Id && item.Title == report.Title);
+
+        var csv = await repository.ExportReportsCsvAsync(new(Atlas), entity, null, "Workbench", default);
+        Assert.Contains("id,title,state,total_amount,currency_code,created_at", csv, StringComparison.Ordinal);
+        Assert.Contains("\"Workbench, \"\"", csv, StringComparison.Ordinal);
+
+        var summary = await repository.GetExceptionSummaryAsync(new(Atlas), entity, default);
+        Assert.True(summary.PendingApproval >= 0);
+        Assert.True(summary.MissingEvidence >= 0);
+        Assert.True(summary.OutstandingAdvances >= 0);
+    }
+
+    [ExpensesPostgresFact]
     public async Task ExpenseListQueryHasScopedIndexAndBoundedPlan()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
