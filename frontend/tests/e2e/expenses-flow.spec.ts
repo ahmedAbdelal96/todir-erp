@@ -111,6 +111,25 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — Mocked Component 
       });
     });
 
+    await page.route('**/api/v1/authorization/permissions*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          '*',
+          'expenses.read',
+          'expenses.create',
+          'expenses.approve',
+          'expenses.finalize',
+          'expenses.reimbursement.manage',
+          'expenses.category.manage',
+          'expenses.advance.manage',
+          'expenses.card.manage',
+          'expenses.audit.read'
+        ])
+      });
+    });
+
     await page.route('**/api/v1/me/preferences', async (route) => {
       if (route.request().method() === 'PATCH') {
         const body = JSON.parse(route.request().postData() || '{}');

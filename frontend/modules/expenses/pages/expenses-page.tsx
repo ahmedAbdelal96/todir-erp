@@ -34,21 +34,24 @@ export function ExpensesPage(): React.JSX.Element {
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const runtimeContext = useOptionalLegalEntityContext();
-  const permissions = useOptionalPermissions();
+  const permissions = outletCtx?.permissions ?? useOptionalPermissions();
 
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = (searchParams.get("tab") as ExpensesTabId | null) ?? "self-service";
 
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || null;
 
-  // Check elevated / finance permissions (if permissions context is provided, enforce strictly; otherwise allow shell access)
-  const canManage = permissions
-    ? permissions.hasPermission("expenses.approve") ||
-      permissions.hasPermission("expenses.finalize") ||
-      permissions.hasPermission("expenses.reimbursement.manage") ||
-      permissions.hasPermission("expenses.category.manage") ||
-      permissions.hasPermission("admin")
-    : true;
+  // Check elevated / finance permissions (fail closed if context is missing)
+  const canManage = Boolean(
+    permissions &&
+      (permissions.hasPermission("expenses.approve") ||
+        permissions.hasPermission("expenses.finalize") ||
+        permissions.hasPermission("expenses.reimbursement.manage") ||
+        permissions.hasPermission("expenses.category.manage") ||
+        permissions.hasPermission("expenses.audit.read") ||
+        permissions.hasPermission("admin") ||
+        permissions.hasPermission("*"))
+  );
 
   const handleTabChange = (newTab: ExpensesTabId) => {
     setSearchParams((prev) => {
@@ -58,7 +61,13 @@ export function ExpensesPage(): React.JSX.Element {
     });
   };
 
-  const tabs: readonly { id: ExpensesTabId; label: string; icon: React.ReactNode; requiresManager?: boolean }[] = [
+  const tabs: readonly {
+    id: ExpensesTabId;
+    label: string;
+    icon: React.ReactNode;
+    requiresManager?: boolean;
+    isPermitted?: () => boolean;
+  }[] = [
     {
       id: "self-service",
       label: t("tabs.selfService"),
@@ -68,41 +77,85 @@ export function ExpensesPage(): React.JSX.Element {
       id: "review",
       label: t("tabs.review"),
       icon: <CheckCircleIcon size={16} />,
-      requiresManager: true
+      requiresManager: true,
+      isPermitted: () =>
+        Boolean(
+          permissions?.hasPermission("expenses.approve") ||
+            permissions?.hasPermission("expenses.finalize") ||
+            permissions?.hasPermission("admin") ||
+            permissions?.hasPermission("*")
+        )
     },
     {
       id: "advances",
       label: t("tabs.advances"),
       icon: <BanknoteIcon size={16} />,
-      requiresManager: true
+      requiresManager: true,
+      isPermitted: () =>
+        Boolean(
+          permissions?.hasPermission("expenses.reimbursement.manage") ||
+            permissions?.hasPermission("expenses.finalize") ||
+            permissions?.hasPermission("expenses.approve") ||
+            permissions?.hasPermission("admin") ||
+            permissions?.hasPermission("*")
+        )
     },
     {
       id: "corporate-cards",
       label: t("tabs.corporateCards"),
       icon: <CreditCardIcon size={16} />,
-      requiresManager: true
+      requiresManager: true,
+      isPermitted: () =>
+        Boolean(
+          permissions?.hasPermission("expenses.finalize") ||
+            permissions?.hasPermission("expenses.approve") ||
+            permissions?.hasPermission("admin") ||
+            permissions?.hasPermission("*")
+        )
     },
     {
       id: "reimbursements",
       label: t("tabs.reimbursements"),
       icon: <ArrowRightLeftIcon size={16} />,
-      requiresManager: true
+      requiresManager: true,
+      isPermitted: () =>
+        Boolean(
+          permissions?.hasPermission("expenses.reimbursement.manage") ||
+            permissions?.hasPermission("expenses.finalize") ||
+            permissions?.hasPermission("admin") ||
+            permissions?.hasPermission("*")
+        )
     },
     {
       id: "reports",
       label: t("tabs.reports"),
       icon: <TrendingUpIcon size={16} />,
-      requiresManager: true
+      requiresManager: true,
+      isPermitted: () =>
+        Boolean(
+          permissions?.hasPermission("expenses.audit.read") ||
+            permissions?.hasPermission("expenses.approve") ||
+            permissions?.hasPermission("expenses.finalize") ||
+            permissions?.hasPermission("admin") ||
+            permissions?.hasPermission("*")
+        )
     },
     {
       id: "settings",
       label: t("tabs.settings"),
       icon: <SettingsIcon size={16} />,
-      requiresManager: true
+      requiresManager: true,
+      isPermitted: () =>
+        Boolean(
+          permissions?.hasPermission("expenses.category.manage") ||
+            permissions?.hasPermission("admin") ||
+            permissions?.hasPermission("*")
+        )
     }
   ];
 
-  const visibleTabs = tabs.filter((tab) => !tab.requiresManager || canManage);
+  const visibleTabs = tabs.filter((tab) => !tab.requiresManager || (canManage && (tab.isPermitted ? tab.isPermitted() : true)));
+  const currentTab = visibleTabs.some((t) => t.id === activeTab) ? activeTab : "self-service";
 
   if (!legalEntityId) {
     return (
@@ -294,13 +347,13 @@ export function ExpensesPage(): React.JSX.Element {
           boxSizing: "border-box"
         }}
       >
-        {activeTab === "self-service" && <ExpensesSelfServiceTab legalEntityId={legalEntityId} />}
-        {activeTab === "review" && <ExpensesReviewTab legalEntityId={legalEntityId} />}
-        {activeTab === "advances" && <ExpensesAdvancesTab legalEntityId={legalEntityId} />}
-        {activeTab === "corporate-cards" && <ExpensesCorporateCardsTab legalEntityId={legalEntityId} />}
-        {activeTab === "reimbursements" && <ExpensesReimbursementsTab legalEntityId={legalEntityId} />}
-        {activeTab === "reports" && <ExpensesReportsTab legalEntityId={legalEntityId} />}
-        {activeTab === "settings" && <ExpensesSettingsTab legalEntityId={legalEntityId} />}
+        {currentTab === "self-service" && <ExpensesSelfServiceTab legalEntityId={legalEntityId} />}
+        {currentTab === "review" && <ExpensesReviewTab legalEntityId={legalEntityId} />}
+        {currentTab === "advances" && <ExpensesAdvancesTab legalEntityId={legalEntityId} />}
+        {currentTab === "corporate-cards" && <ExpensesCorporateCardsTab legalEntityId={legalEntityId} />}
+        {currentTab === "reimbursements" && <ExpensesReimbursementsTab legalEntityId={legalEntityId} />}
+        {currentTab === "reports" && <ExpensesReportsTab legalEntityId={legalEntityId} />}
+        {currentTab === "settings" && <ExpensesSettingsTab legalEntityId={legalEntityId} />}
       </main>
     </div>
   );

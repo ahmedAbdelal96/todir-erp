@@ -39,6 +39,7 @@ export interface ExpenseDto {
   readonly taxAmount?: number | null;
   readonly financialContextSnapshot?: Record<string, unknown> | null;
   readonly taxSnapshot?: Record<string, unknown> | null;
+  readonly approvalRequestId?: string | null;
 }
 
 export interface CreateExpenseRequest {

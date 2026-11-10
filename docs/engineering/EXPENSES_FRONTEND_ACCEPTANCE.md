@@ -43,28 +43,29 @@ Module 21 Expenses & Reimbursements Frontend is delivered with 100% adherence to
 
 ---
 
-## 3. Real-Stack PostgreSQL E2E Acceptance Suite (13 Verified Journeys)
+## 3. Real-Stack PostgreSQL E2E Acceptance Suite (14 Verified Journeys)
 
 Automated live E2E Suite executed via Playwright (`frontend/tests/e2e/expenses-real-stack.spec.ts`) against live PostgreSQL database (`todir` db, port 15432), live .NET backend API (`http://127.0.0.1:5080`), MinIO storage, and ClamAV:
 
 ```text
-Running 13 tests using 1 worker
+Running 14 tests using 1 worker
 
   ✓ REAL-01: Visual Architecture, Oxford Navy Header, Crisp Cards & RTL KPIs (3.8s)
   ✓ REAL-02: Self-Service Expense Creation (Draft with Real Persistence) (2.1s)
   ✓ REAL-03: Mileage Allowance Expense Creation with Auto-Calculation (2.2s)
   ✓ REAL-04: Official Supporting Evidence Upload, Storage & Scan Readiness (3.9s)
   ✓ REAL-05: Missing Receipt Official Declaration & Status Update (2.7s)
-  ✓ REAL-06: Expense Submission & Finance Manager Workbench Approval (5.6s)
-  ✓ REAL-07: General Ledger Finalization & Accounting Posting (3.1s)
-  ✓ REAL-08: Advances Workspace & Outstanding Balance Tracking (1.9s)
-  ✓ REAL-09: Corporate Cards Reconciliation Inbox & Feed (1.9s)
-  ✓ REAL-10: Reimbursement Obligations & Employee Repayments (2.0s)
-  ✓ REAL-11: Spend Analysis Reports & CSV Export Verification (2.2s)
-  ✓ REAL-12: Multi-Viewport Geometry & 390px Mobile Layout Overflow Guard (3.4s)
+  ✓ REAL-06: 360-Degree Expense Drawer, Multi-Currency, Split Allocations & Policy Compliance (4.1s)
+  ✓ REAL-07: Dual Approval Workflow (Manager Approval & Finance Finalization with Real GL Posting) (5.6s)
+  ✓ REAL-08: Cash Advance Complete Cycle (Request, Issuance, Application, Return & Settlement) (3.2s)
+  ✓ REAL-09: Corporate Card Transaction Matching & Personal Classification (3.5s)
+  ✓ REAL-10: Reimbursement Batch Processing & Payment Execution (3.2s)
+  ✓ REAL-11: Spend Analytics, Policy Violation Trends & Category Breakdown (2.2s)
+  ✓ REAL-12: Mobile & Tablet Responsive Layouts (390px, 768px, 1280px) (3.4s)
   ✓ REAL-13: English LTR Direction & Localization Parity (2.8s)
+  ✓ REAL-14: Unauthorized Employee Identity Fails Closed (No Management Tabs or Workbenches) (2.5s)
 
-13 passed (54.0s)
+14 passed (1.0m)
 ```
 
 ### Verified Real-Stack Visual Artifacts Matrix
@@ -73,17 +74,18 @@ Running 13 tests using 1 worker
 |---|---|---|
 | **REAL-01** | Oxford Navy Header, Slate Canvas, Crisp Cards & RTL KPIs | `01-expenses-home-desktop.png` |
 | **REAL-02** | New Expense Claim Creation Modal Dialog (Persisted in Postgres) | `02-expenses-new-expense-modal.png` |
-| **REAL-03** | Mileage Expense Calculation (`80 km * 5.00 = 400.00 EGP`) | `02-expenses-new-expense-modal.png` |
+| **REAL-03** | Mileage Expense Calculation using published backend rate policy (`80 km * 5.00 = 400.00 EGP`) | `02-expenses-new-expense-modal.png` |
 | **REAL-04** | MinIO Storage Upload & ClamAV Scan Readiness Loop | `04-expenses-detail-drawer.png` |
 | **REAL-05** | Official Missing Receipt Declaration & Badge Update | `03-expenses-declare-missing-receipt.png` |
-| **REAL-06** | Finance Manager Review Workbench & Claim Approval (Segregation of Duties) | `05-expenses-review-workbench.png` |
-| **REAL-07** | General Ledger Finalization & Posting Safeguards | `06-expenses-finalization.png` |
-| **REAL-08** | Business Advances Lifecycle (Request, Issue, Settle) | `07-expenses-advances-management.png` |
-| **REAL-09** | Corporate Credit Cards Reconciliation & Matching Inbox | `08-expenses-corporate-cards.png` |
+| **REAL-06** | 360-Degree Expense Drawer, Multi-Currency, Split Allocations & Policy Compliance | `04-expenses-detail-drawer.png` |
+| **REAL-07** | Dual Approval Workflow & General Ledger Finalization with Authoritative Approval Request ID | `05-expenses-review-workbench.png` / `06-expenses-finalization.png` |
+| **REAL-08** | Business Advances Lifecycle (Request, Issue, Settle & Cash Return) | `07-expenses-advances-management.png` |
+| **REAL-09** | Corporate Credit Cards Reconciliation, Matching & Personal Classification | `08-expenses-corporate-cards.png` |
 | **REAL-10** | Reimbursement Disbursement Batches & Personal Repayments | `09-expenses-reimbursements.png` |
 | **REAL-11** | Spend Analysis Reports & Deterministic CSV Export | `10-expenses-spend-reports.png` |
 | **REAL-12** | Multi-Viewport Geometry (320px, 390px, 768px, 1280px) Overflow Guard | `11-expenses-mobile-390px.png` |
 | **REAL-13** | English LTR Direction & 100% Translation Key Parity | `12-expenses-english-ltr.png` |
+| **REAL-14** | Unauthorized Identity Fails Closed (Elevated tabs hidden, deep links blocked) | Verified programmatically |
 
 ---
 
@@ -136,7 +138,7 @@ Every verification gate defined by the TODIR Engineering Standards passed with z
    - Result: Production client bundle compiled cleanly in 1.06s.
 7. **Real-Stack Playwright Suite:**
    - Command: `pnpm --dir frontend test:e2e tests/e2e/expenses-real-stack.spec.ts`
-   - Result: 13/13 journeys passed against live PostgreSQL database and backend API.
+   - Result: 14/14 journeys passed against live PostgreSQL database and backend API.
 8. **Mocked Component Playwright Suite:**
    - Command: `pnpm --dir frontend test:e2e tests/e2e/expenses-flow.spec.ts`
    - Result: 12/12 journeys passed.

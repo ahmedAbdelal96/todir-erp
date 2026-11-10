@@ -86,7 +86,7 @@ public static class IdentitySeed
                 "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize", "invoicing.customer_invoice.cancel_draft",
                 "invoicing.supplier_invoice.read", "invoicing.supplier_invoice.create", "invoicing.supplier_invoice.edit", "invoicing.supplier_invoice.finalize",
                 "invoicing.credit_note.create", "invoicing.debit_note.create", "invoicing.price_override", "invoicing.payment_term_override", "invoicing.date_override",
-                "invoicing.accounting_preview", "invoicing.regulatory_details", "invoicing.attachment.manage", "invoicing.audit.view", "expenses.read", "expenses.approve", "expenses.finalize", "expenses.reimbursement.read", "expenses.reimbursement.manage", "expenses.audit.read"]),
+                "invoicing.accounting_preview", "invoicing.regulatory_details", "invoicing.attachment.manage", "invoicing.audit.view", "expenses.read", "expenses.create", "expenses.edit", "expenses.submit", "expenses.approve", "expenses.finalize", "expenses.reverse", "expenses.reimbursement.read", "expenses.reimbursement.manage", "expenses.audit.read"]),
             ("sales", "مبيعات", ["platform.organization.read", "directory.party.read", "directory.party.create", "directory.party.edit", "catalog.product.read", "finbase.currency.read", "finbase.payment_term.read", "pricing.read", "pricing.simulate",
                 "invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.cancel_draft"]),
             ("warehouse", "مخازن", ["platform.organization.read", "catalog.product.read", "catalog.product.edit", "catalog.uom.manage"]),

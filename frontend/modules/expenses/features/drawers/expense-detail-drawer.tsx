@@ -96,12 +96,9 @@ export function ExpenseDetailDrawer({
     try {
       await submitMutation.mutateAsync({ version: expense.version });
       try {
-        const approval = await expensesApi.requestApproval(legalEntityId, expense.id, {
+        await expensesApi.requestApproval(legalEntityId, expense.id, {
           reason: "طلب اعتماد المصروف"
         });
-        if (approval?.requestId) {
-          window.sessionStorage.setItem(`expense_approval_${expense.id}`, approval.requestId);
-        }
       } catch (appErr) {
         console.warn("Approval request notification:", appErr);
       }
@@ -114,11 +111,7 @@ export function ExpenseDetailDrawer({
   const handleApprove = async () => {
     if (!expense) return;
     try {
-      let reqId =
-        (expense as unknown as { approvalRequestId?: string }).approvalRequestId ||
-        window.sessionStorage.getItem(`expense_approval_${expense.id}`) ||
-        window.sessionStorage.getItem("__TODIR_APPROVAL_REQUEST_ID__") ||
-        (window as unknown as Record<string, string>).__TODIR_APPROVAL_REQUEST_ID__;
+      let reqId = expense.approvalRequestId;
       if (!reqId) {
         try {
           const approval = await expensesApi.requestApproval(legalEntityId, expense.id, {
@@ -145,11 +138,7 @@ export function ExpenseDetailDrawer({
   const handleReject = async () => {
     if (!expense) return;
     try {
-      let reqId =
-        (expense as unknown as { approvalRequestId?: string }).approvalRequestId ||
-        window.sessionStorage.getItem(`expense_approval_${expense.id}`) ||
-        window.sessionStorage.getItem("__TODIR_APPROVAL_REQUEST_ID__") ||
-        (window as unknown as Record<string, string>).__TODIR_APPROVAL_REQUEST_ID__;
+      let reqId = expense.approvalRequestId;
       if (!reqId) {
         try {
           const approval = await expensesApi.requestApproval(legalEntityId, expense.id, {

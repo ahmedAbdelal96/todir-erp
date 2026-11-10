@@ -8,9 +8,11 @@ import { useOptionalLegalEntityContext } from "../../../../core/runtime/runtime-
 import {
   useExpenseCategoriesQuery,
   useCreateExpenseMutation,
-  useCreateMyExpenseMutation
+  useCreateMyExpenseMutation,
+  useExpenseRatePoliciesQuery
 } from "../../hooks/use-expenses-queries.ts";
-import type { PaymentSource } from "../../types.ts";
+import { expensesApi } from "../../services/expenses-api.ts";
+import type { PaymentSource, ExpenseDto } from "../../types.ts";
 
 export interface NewExpenseModalProps {
   readonly isOpen: boolean;
@@ -30,8 +32,13 @@ export function NewExpenseModal({
   const defaultCurrency = legalEntityContext?.baseCurrencyCode || "EGP";
 
   const categoriesQuery = useExpenseCategoriesQuery(legalEntityId);
+  const mileagePoliciesQuery = useExpenseRatePoliciesQuery(legalEntityId, { kind: "Mileage", status: "Published" });
+  const perDiemPoliciesQuery = useExpenseRatePoliciesQuery(legalEntityId, { kind: "PerDiem", status: "Published" });
   const createMutation = useCreateExpenseMutation(legalEntityId);
   const createMyMutation = useCreateMyExpenseMutation(legalEntityId);
+
+  const publishedMileagePolicy = mileagePoliciesQuery.data?.items?.[0];
+  const publishedPerDiemPolicy = perDiemPoliciesQuery.data?.items?.[0];
 
   const [expenseMode, setExpenseMode] = useState<"general" | "mileage" | "perDiem">("general");
   const [merchantName, setMerchantName] = useState("");
@@ -54,23 +61,35 @@ export function NewExpenseModal({
   const [dailyRate, setDailyRate] = useState<string>("500.00");
   const [destinationCity, setDestinationCity] = useState<string>("");
 
+  React.useEffect(() => {
+    if (publishedMileagePolicy?.rate) {
+      setRatePerKm(String(publishedMileagePolicy.rate));
+    }
+  }, [publishedMileagePolicy?.rate]);
+
+  React.useEffect(() => {
+    if (publishedPerDiemPolicy?.rate) {
+      setDailyRate(String(publishedPerDiemPolicy.rate));
+    }
+  }, [publishedPerDiemPolicy?.rate]);
+
   const categories = categoriesQuery.data ?? [];
   const selectedCategory = categories.find((c) => c.id === categoryId) ?? categories[0];
   const activeVersionId = selectedCategory?.publishedVersionId ?? "";
 
-  const handleDistanceChange = (kmVal: string, rateVal: string) => {
+  const handleDistanceChange = (kmVal: string, manualRate?: string) => {
     setDistanceKm(kmVal);
     const km = parseFloat(kmVal);
-    const rate = parseFloat(rateVal);
+    const rate = manualRate !== undefined ? parseFloat(manualRate) : (publishedMileagePolicy ? Number(publishedMileagePolicy.rate) : parseFloat(ratePerKm));
     if (!isNaN(km) && !isNaN(rate) && km > 0 && rate > 0) {
       setAmount((km * rate).toFixed(2));
     }
   };
 
-  const handleDaysChange = (daysVal: string, dailyRateVal: string) => {
+  const handleDaysChange = (daysVal: string, manualRate?: string) => {
     setDaysCount(daysVal);
     const days = parseFloat(daysVal);
-    const rate = parseFloat(dailyRateVal);
+    const rate = manualRate !== undefined ? parseFloat(manualRate) : (publishedPerDiemPolicy ? Number(publishedPerDiemPolicy.rate) : parseFloat(dailyRate));
     if (!isNaN(days) && !isNaN(rate) && days > 0 && rate > 0) {
       setAmount((days * rate).toFixed(2));
     }
@@ -110,8 +129,9 @@ export function NewExpenseModal({
         : businessPurpose.trim() || null;
 
     try {
+      let createdExpense: ExpenseDto;
       if (isSelfService) {
-        await createMyMutation.mutateAsync({
+        createdExpense = await createMyMutation.mutateAsync({
           legalEntityId,
           merchantName: finalMerchant,
           expenseDate,
@@ -123,7 +143,7 @@ export function NewExpenseModal({
           description: description.trim() || null
         });
       } else {
-        await createMutation.mutateAsync({
+        createdExpense = await createMutation.mutateAsync({
           legalEntityId,
           merchantName: finalMerchant,
           expenseDate,
@@ -133,6 +153,29 @@ export function NewExpenseModal({
           categoryVersionId: activeVersionId,
           businessPurpose: finalPurpose,
           description: description.trim() || null
+        });
+      }
+
+      if (expenseMode === "mileage" && distanceKm) {
+        const km = parseFloat(distanceKm);
+        const rate = publishedMileagePolicy ? Number(publishedMileagePolicy.rate) : parseFloat(ratePerKm) || 0;
+        await expensesApi.setMileage(legalEntityId, createdExpense.id, {
+          distance: km,
+          rate,
+          ratePolicyVersionId: publishedMileagePolicy?.id || null,
+          vehicleType: publishedMileagePolicy?.vehicleType || null,
+          route: travelRoute.trim() || null,
+          distanceUnit: "KM"
+        });
+      } else if (expenseMode === "perDiem" && daysCount) {
+        const days = parseFloat(daysCount);
+        const rate = publishedPerDiemPolicy ? Number(publishedPerDiemPolicy.rate) : parseFloat(dailyRate) || 0;
+        await expensesApi.setPerDiem(legalEntityId, createdExpense.id, {
+          days,
+          dailyRate: rate,
+          ratePolicyVersionId: publishedPerDiemPolicy?.id || null,
+          destination: destinationCity.trim() || publishedPerDiemPolicy?.locationCode || null,
+          providedMeals: 0
         });
       }
 

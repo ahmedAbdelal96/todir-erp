@@ -36,6 +36,7 @@ import { requestCsrf, clearCsrfToken, logoutUser } from "../../core/api/auth-ser
 import { changeLanguage, currentDirection, currentLanguage, i18n } from "../../core/i18n/i18n.ts";
 import { resolveNavigation } from "../router/navigation-registry.ts";
 import type { ModuleNavigationRegistration, WorkspaceOutletContext } from "../router/route-contract.ts";
+import { PermissionSet } from "../../core/runtime/permissions.ts";
 import { useNavigationPreferences } from "./use-navigation-preferences.ts";
 import { Dialog } from "../../components/primitives/dialog.tsx";
 import { Tooltip, TooltipTrigger } from "../../components/primitives/tooltip.tsx";
@@ -156,6 +157,7 @@ export function AppShell() {
   const [branches, setBranches] = useState<Session["context"]["branches"]>([]);
   const [legalEntity, setLegalEntity] = useState("");
   const [branch, setBranch] = useState("");
+  const [permissions, setPermissions] = useState<PermissionSet>(() => new PermissionSet());
   const [modules, setModules] = useState<readonly ModuleNavigationRegistration[]>(resolveNavigation(fallbackModuleIds));
   const [contextError, setContextError] = useState<string | undefined>();
   const [operation, setOperation] = useState<string | undefined>();
@@ -320,6 +322,17 @@ export function AppShell() {
         || session.context.branches.find(item => !defaultEntity || item.legalEntityId === defaultEntity)?.id
         || "";
       setBranch(defaultBranch);
+      try {
+        const permResponse = await fetch("/api/v1/authorization/permissions", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
+        if (permResponse.ok) {
+          const perms = (await permResponse.json()) as string[];
+          setPermissions(new PermissionSet(perms));
+        } else {
+          setPermissions(new PermissionSet());
+        }
+      } catch {
+        setPermissions(new PermissionSet());
+      }
       await loadNavigation();
       setScreen("authenticated");
     } catch {
@@ -382,6 +395,7 @@ export function AppShell() {
 
   async function signOut() {
     permCacheRef.current = {};
+    setPermissions(new PermissionSet());
     await logoutUser();
     queryClient.clear();
     setActiveTenantId("");
@@ -687,7 +701,7 @@ export function AppShell() {
         <main className="content" aria-live="polite">
           {contextError ? <div className="error" role="alert">{contextError}</div> : null}
           <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>{labels.loading}</div>}>
-            <Outlet context={{ density, legalEntityId: legalEntity, branchId: branch } satisfies WorkspaceOutletContext} />
+            <Outlet context={{ density, legalEntityId: legalEntity, branchId: branch, permissions } satisfies WorkspaceOutletContext} />
           </Suspense>
         </main>
       </div>

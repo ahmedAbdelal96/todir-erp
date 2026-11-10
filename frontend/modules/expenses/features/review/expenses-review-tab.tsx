@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useOutletContext } from "react-router-dom";
+import type { WorkspaceOutletContext } from "../../../../app/router/route-contract.ts";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Table } from "../../../../components/primitives/table.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
@@ -41,20 +43,19 @@ export function ExpensesReviewTab({ legalEntityId }: ExpensesReviewTabProps): Re
   const [selectedExpenseId, setSelectedExpenseId] = useState<string | null>(null);
   const [isNewExpenseOpen, setIsNewExpenseOpen] = useState(false);
 
-  const permissions = useOptionalPermissions();
+  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+  const permissions = outletCtx?.permissions ?? useOptionalPermissions();
   const canApprove = Boolean(
-    !permissions ||
-    permissions.hasPermission("expenses.approve") ||
-    permissions.hasPermission("admin") ||
-    permissions.hasPermission("*") ||
-    true
+    permissions &&
+      (permissions.hasPermission("expenses.approve") ||
+        permissions.hasPermission("admin") ||
+        permissions.hasPermission("*"))
   );
   const canFinalize = Boolean(
-    !permissions ||
-    permissions.hasPermission("expenses.finalize") ||
-    permissions.hasPermission("admin") ||
-    permissions.hasPermission("*") ||
-    true
+    permissions &&
+      (permissions.hasPermission("expenses.finalize") ||
+        permissions.hasPermission("admin") ||
+        permissions.hasPermission("*"))
   );
 
   const summaryQuery = useExpenseExceptionSummaryQuery(legalEntityId);

@@ -1,4 +1,5 @@
 import type { RouteObject } from "react-router-dom";
+import type { PermissionSet } from "../../core/runtime/permissions.ts";
 
 export type ModuleNavigationRegistration = Readonly<{
   id: string;
@@ -19,4 +20,5 @@ export type WorkspaceOutletContext = Readonly<{
   density: "comfortable" | "compact";
   legalEntityId?: string | undefined;
   branchId?: string | undefined;
+  permissions?: PermissionSet | undefined;
 }>;

@@ -253,6 +253,16 @@ public static class PlatformHostingExtensions
                     : PermissionScope.ForTenant(new(tenantId));
             return authorizer.Authorize(subject, permission, scope) ? Results.Ok(new { authorized = true }) : Results.Forbid();
         }).RequireAuthorization();
+        group.MapGet("/authorization/permissions", async (HttpContext context, IAuthorizationSubjectStore subjectStore, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(context.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
+            var subject = await subjectStore.LoadAsync(new(tenantId), membershipId, cancellationToken);
+            if (subject is null) return Results.Forbid();
+            var isSuper = subject.Roles.Any(r => r.Code is "administrator" or "admin");
+            var perms = subject.Permissions.Select(p => p.PermissionCode).Distinct().ToList();
+            if (isSuper) perms.Add("*");
+            return Results.Ok(perms);
+        }).RequireAuthorization();
         group.MapPost("/context/organization", async (OrganizationSelection request, HttpContext context, IPlatformAdminSurfaceStore surfaceStore, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId)) return Results.Unauthorized();
