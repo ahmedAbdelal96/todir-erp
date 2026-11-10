@@ -6,6 +6,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import {
   useExpenseRepaymentsQuery
 } from "../../hooks/use-expenses-queries.ts";
+import { useIsMobile } from "../../hooks/use-is-mobile.ts";
 import {
   PrepareBatchModal,
   PayBatchModal,
@@ -19,6 +20,7 @@ export interface ExpensesReimbursementsTabProps {
 
 export function ExpensesReimbursementsTab({ legalEntityId }: ExpensesReimbursementsTabProps): React.JSX.Element {
   const { t } = useTranslation("expenses");
+  const isMobile = useIsMobile(768);
 
   const [subtab, setSubtab] = useState<"toEmployees" | "fromEmployees">("toEmployees");
   const [isPrepareOpen, setIsPrepareOpen] = useState(false);
@@ -100,6 +102,73 @@ export function ExpensesReimbursementsTab({ legalEntityId }: ExpensesReimburseme
             ) : !repaymentsQuery.data?.items || repaymentsQuery.data.items.length === 0 ? (
               <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
                 {t("reimbursements.emptyRepayments")}
+              </div>
+            ) : isMobile ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {repaymentsQuery.data.items.map((rep) => {
+                  const remaining = rep.amount - rep.settledAmount;
+                  return (
+                    <div
+                      key={rep.id}
+                      style={{
+                        backgroundColor: "#ffffff",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: "0.5rem",
+                        padding: "0.875rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.5rem"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{rep.sourceReference}</div>
+                          <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                            {rep.createdAt.slice(0, 10)}
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            padding: "0.25rem 0.625rem",
+                            borderRadius: "var(--radius-full, 9999px)",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            backgroundColor: rep.state === "Settled" ? "#ecfdf5" : "#fffbeb",
+                            color: rep.state === "Settled" ? "#059669" : "#d97706",
+                            flexShrink: 0
+                          }}
+                        >
+                          {rep.state === "Settled" ? t("reimbursements.collectedStatus") : t("reimbursements.dueStatus")}
+                        </span>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.375rem", fontSize: "0.8125rem" }}>
+                        <div>
+                          <span style={{ color: "var(--color-content-muted, #64748b)" }}>{t("reimbursements.totalAmount")}: </span>
+                          <bdi style={{ fontWeight: 600 }}>{rep.amount.toFixed(2)} {rep.currencyCode}</bdi>
+                        </div>
+                        <div>
+                          <span style={{ color: "var(--color-content-muted, #64748b)" }}>{t("reimbursements.collectedAmount")}: </span>
+                          <bdi style={{ fontWeight: 600 }}>{rep.settledAmount.toFixed(2)} {rep.currencyCode}</bdi>
+                        </div>
+                        <div style={{ gridColumn: "span 2" }}>
+                          <span style={{ color: "var(--color-content-muted, #64748b)" }}>{t("reimbursements.remainingAmount")}: </span>
+                          <bdi style={{ fontWeight: 700, color: remaining > 0 ? "var(--color-status-danger)" : "inherit" }}>
+                            {remaining.toFixed(2)} {rep.currencyCode}
+                          </bdi>
+                        </div>
+                      </div>
+
+                      {rep.state !== "Settled" && (
+                        <div style={{ marginTop: "0.25rem", paddingTop: "0.5rem", borderTop: "1px solid #f1f5f9" }}>
+                          <Button variant="primary" size="compact" onClick={() => setSettleRepayment(rep)}>
+                            {t("reimbursements.settleRepaymentAction")}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div style={{ width: "100%", overflowX: "auto" }}>

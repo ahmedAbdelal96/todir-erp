@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { useIsMobile } from "../hooks/use-is-mobile.ts";
 import { ExpensesSelfServiceTab } from "../features/self-service/expenses-self-service-tab.tsx";
 import { ExpensesReviewTab } from "../features/review/expenses-review-tab.tsx";
 import { ExpensesAdvancesTab } from "../features/advances/expenses-advances-tab.tsx";
@@ -31,6 +32,7 @@ export type ExpensesTabId =
 
 export function ExpensesPage(): React.JSX.Element {
   const { t } = useTranslation("expenses");
+  const isMobile = useIsMobile(768);
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const runtimeContext = useOptionalLegalEntityContext();
@@ -221,7 +223,7 @@ export function ExpensesPage(): React.JSX.Element {
         style={{
           backgroundColor: "#102a43",
           color: "#ffffff",
-          padding: "1.25rem 2rem 0",
+          padding: isMobile ? "1rem 1rem 0" : "1.25rem 2rem 0",
           borderBottom: "1px solid rgba(255, 255, 255, 0.1)"
         }}
       >
@@ -231,16 +233,16 @@ export function ExpensesPage(): React.JSX.Element {
             justifyContent: "space-between",
             alignItems: "center",
             flexWrap: "wrap",
-            gap: "1rem",
+            gap: "0.75rem",
             marginBottom: "1rem"
           }}
         >
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <h1
                 style={{
                   margin: 0,
-                  fontSize: "1.5rem",
+                  fontSize: isMobile ? "1.25rem" : "1.5rem",
                   fontWeight: 700,
                   color: "#ffffff",
                   letterSpacing: "-0.02em"
@@ -252,7 +254,7 @@ export function ExpensesPage(): React.JSX.Element {
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  padding: "0.2rem 0.625rem",
+                  padding: "0.15rem 0.5rem",
                   borderRadius: "9999px",
                   fontSize: "0.75rem",
                   fontWeight: 600,
@@ -265,8 +267,8 @@ export function ExpensesPage(): React.JSX.Element {
             </div>
             <p
               style={{
-                margin: "0.375rem 0 0",
-                fontSize: "0.875rem",
+                margin: "0.25rem 0 0",
+                fontSize: isMobile ? "0.8125rem" : "0.875rem",
                 color: "#94a3b8"
               }}
             >
@@ -316,8 +318,8 @@ export function ExpensesPage(): React.JSX.Element {
                   display: "flex",
                   alignItems: "center",
                   gap: "0.5rem",
-                  padding: "0.75rem 1rem",
-                  fontSize: "0.875rem",
+                  padding: isMobile ? "0.625rem 0.75rem" : "0.75rem 1rem",
+                  fontSize: isMobile ? "0.8125rem" : "0.875rem",
                   fontWeight: isActive ? 600 : 500,
                   color: isActive ? "#ffffff" : "#94a3b8",
                   backgroundColor: "transparent",
@@ -340,7 +342,7 @@ export function ExpensesPage(): React.JSX.Element {
       <main
         style={{
           flex: 1,
-          padding: "1.5rem 2rem",
+          padding: isMobile ? "1rem" : "1.5rem 2rem",
           maxWidth: "1600px",
           width: "100%",
           margin: "0 auto",

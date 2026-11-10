@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
@@ -37,9 +37,6 @@ export function NewExpenseModal({
   const createMutation = useCreateExpenseMutation(legalEntityId);
   const createMyMutation = useCreateMyExpenseMutation(legalEntityId);
 
-  const publishedMileagePolicy = mileagePoliciesQuery.data?.items?.[0];
-  const publishedPerDiemPolicy = perDiemPoliciesQuery.data?.items?.[0];
-
   const [expenseMode, setExpenseMode] = useState<"general" | "mileage" | "perDiem">("general");
   const [merchantName, setMerchantName] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -53,51 +50,90 @@ export function NewExpenseModal({
 
   // Mileage-specific fields
   const [distanceKm, setDistanceKm] = useState<string>("");
-  const [ratePerKm, setRatePerKm] = useState<string>("5.00");
   const [travelRoute, setTravelRoute] = useState<string>("");
+  const [selectedMileagePolicyId, setSelectedMileagePolicyId] = useState<string>("");
 
   // Per-diem-specific fields
   const [daysCount, setDaysCount] = useState<string>("");
-  const [dailyRate, setDailyRate] = useState<string>("500.00");
   const [destinationCity, setDestinationCity] = useState<string>("");
+  const [providedMeals, setProvidedMeals] = useState<number>(0);
+  const [selectedPerDiemPolicyId, setSelectedPerDiemPolicyId] = useState<string>("");
 
-  React.useEffect(() => {
-    if (publishedMileagePolicy?.rate) {
-      setRatePerKm(String(publishedMileagePolicy.rate));
-    }
-  }, [publishedMileagePolicy?.rate]);
+  // Filter effective published rate policies based on date
+  const effectiveMileagePolicies = useMemo(() => {
+    const list = mileagePoliciesQuery.data?.items ?? [];
+    return list.filter((p) => p.effectiveFrom <= expenseDate && (!p.effectiveTo || p.effectiveTo >= expenseDate));
+  }, [mileagePoliciesQuery.data?.items, expenseDate]);
 
-  React.useEffect(() => {
-    if (publishedPerDiemPolicy?.rate) {
-      setDailyRate(String(publishedPerDiemPolicy.rate));
+  const selectedMileagePolicy = useMemo(() => {
+    if (effectiveMileagePolicies.length === 0) return null;
+    return effectiveMileagePolicies.find((p) => p.id === selectedMileagePolicyId) ?? effectiveMileagePolicies[0];
+  }, [effectiveMileagePolicies, selectedMileagePolicyId]);
+
+  const effectivePerDiemPolicies = useMemo(() => {
+    const list = perDiemPoliciesQuery.data?.items ?? [];
+    return list.filter((p) => p.effectiveFrom <= expenseDate && (!p.effectiveTo || p.effectiveTo >= expenseDate));
+  }, [perDiemPoliciesQuery.data?.items, expenseDate]);
+
+  const selectedPerDiemPolicy = useMemo(() => {
+    if (effectivePerDiemPolicies.length === 0) return null;
+    return effectivePerDiemPolicies.find((p) => p.id === selectedPerDiemPolicyId) ?? effectivePerDiemPolicies[0];
+  }, [effectivePerDiemPolicies, selectedPerDiemPolicyId]);
+
+  // Recalculate amount when distance or selected mileage policy changes
+  useEffect(() => {
+    if (expenseMode === "mileage") {
+      if (selectedMileagePolicy && distanceKm) {
+        const km = parseFloat(distanceKm);
+        const rate = Number(selectedMileagePolicy.rate);
+        if (!isNaN(km) && km > 0 && !isNaN(rate) && rate > 0) {
+          setAmount((km * rate).toFixed(2));
+          setCurrencyCode(selectedMileagePolicy.currencyCode);
+        } else {
+          setAmount("");
+        }
+      } else {
+        setAmount("");
+      }
     }
-  }, [publishedPerDiemPolicy?.rate]);
+  }, [expenseMode, distanceKm, selectedMileagePolicy]);
+
+  // Recalculate amount when days, meals, or selected per-diem policy changes
+  useEffect(() => {
+    if (expenseMode === "perDiem") {
+      if (selectedPerDiemPolicy && daysCount) {
+        const days = parseFloat(daysCount);
+        const dailyRate = Number(selectedPerDiemPolicy.rate);
+        if (!isNaN(days) && days > 0 && !isNaN(dailyRate) && dailyRate > 0) {
+          const reduction = providedMeals * (dailyRate / 3);
+          const computed = Math.max(0, days * dailyRate - reduction);
+          setAmount(computed.toFixed(2));
+          setCurrencyCode(selectedPerDiemPolicy.currencyCode);
+        } else {
+          setAmount("");
+        }
+      } else {
+        setAmount("");
+      }
+    }
+  }, [expenseMode, daysCount, providedMeals, selectedPerDiemPolicy]);
 
   const categories = categoriesQuery.data ?? [];
   const selectedCategory = categories.find((c) => c.id === categoryId) ?? categories[0];
   const activeVersionId = selectedCategory?.publishedVersionId ?? "";
 
-  const handleDistanceChange = (kmVal: string, manualRate?: string) => {
-    setDistanceKm(kmVal);
-    const km = parseFloat(kmVal);
-    const rate = manualRate !== undefined ? parseFloat(manualRate) : (publishedMileagePolicy ? Number(publishedMileagePolicy.rate) : parseFloat(ratePerKm));
-    if (!isNaN(km) && !isNaN(rate) && km > 0 && rate > 0) {
-      setAmount((km * rate).toFixed(2));
-    }
-  };
-
-  const handleDaysChange = (daysVal: string, manualRate?: string) => {
-    setDaysCount(daysVal);
-    const days = parseFloat(daysVal);
-    const rate = manualRate !== undefined ? parseFloat(manualRate) : (publishedPerDiemPolicy ? Number(publishedPerDiemPolicy.rate) : parseFloat(dailyRate));
-    if (!isNaN(days) && !isNaN(rate) && days > 0 && rate > 0) {
-      setAmount((days * rate).toFixed(2));
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (expenseMode === "mileage" && !selectedMileagePolicy) {
+      setError(t("mileagePerDiem.noMileagePolicyNotice"));
+      return;
+    }
+    if (expenseMode === "perDiem" && !selectedPerDiemPolicy) {
+      setError(t("mileagePerDiem.noPerDiemPolicyNotice"));
+      return;
+    }
 
     const parsedAmount = parseFloat(amount);
     const finalMerchant =
@@ -128,8 +164,8 @@ export function NewExpenseModal({
         ? `${businessPurpose.trim()} [${t("mileagePerDiem.daysCount")}: ${daysCount}, ${destinationCity}]`.trim()
         : businessPurpose.trim() || null;
 
+    let createdExpense: ExpenseDto | null = null;
     try {
-      let createdExpense: ExpenseDto;
       if (isSelfService) {
         createdExpense = await createMyMutation.mutateAsync({
           legalEntityId,
@@ -156,26 +192,24 @@ export function NewExpenseModal({
         });
       }
 
-      if (expenseMode === "mileage" && distanceKm) {
+      if (expenseMode === "mileage" && selectedMileagePolicy && distanceKm) {
         const km = parseFloat(distanceKm);
-        const rate = publishedMileagePolicy ? Number(publishedMileagePolicy.rate) : parseFloat(ratePerKm) || 0;
         await expensesApi.setMileage(legalEntityId, createdExpense.id, {
           distance: km,
-          rate,
-          ratePolicyVersionId: publishedMileagePolicy?.id || null,
-          vehicleType: publishedMileagePolicy?.vehicleType || null,
+          rate: Number(selectedMileagePolicy.rate),
+          ratePolicyVersionId: selectedMileagePolicy.id,
+          vehicleType: selectedMileagePolicy.vehicleType ?? null,
           route: travelRoute.trim() || null,
           distanceUnit: "KM"
         });
-      } else if (expenseMode === "perDiem" && daysCount) {
+      } else if (expenseMode === "perDiem" && selectedPerDiemPolicy && daysCount) {
         const days = parseFloat(daysCount);
-        const rate = publishedPerDiemPolicy ? Number(publishedPerDiemPolicy.rate) : parseFloat(dailyRate) || 0;
         await expensesApi.setPerDiem(legalEntityId, createdExpense.id, {
           days,
-          dailyRate: rate,
-          ratePolicyVersionId: publishedPerDiemPolicy?.id || null,
-          destination: destinationCity.trim() || publishedPerDiemPolicy?.locationCode || null,
-          providedMeals: 0
+          dailyRate: Number(selectedPerDiemPolicy.rate),
+          ratePolicyVersionId: selectedPerDiemPolicy.id,
+          destination: destinationCity.trim() || selectedPerDiemPolicy.locationCode || null,
+          providedMeals
         });
       }
 
@@ -188,7 +222,16 @@ export function NewExpenseModal({
       setTravelRoute("");
       setDaysCount("");
       setDestinationCity("");
+      setProvidedMeals(0);
     } catch (err: unknown) {
+      // Safe recovery: if expense creation succeeded but typed detail setup failed, delete the draft expense
+      if (createdExpense) {
+        if (isSelfService) {
+          await expensesApi.deleteMyExpense(legalEntityId, createdExpense.id).catch(() => {});
+        } else {
+          await expensesApi.deleteExpense(legalEntityId, createdExpense.id).catch(() => {});
+        }
+      }
       const message = err instanceof Error ? err.message : t("common.errorTitle");
       setError(message);
     }
@@ -205,37 +248,58 @@ export function NewExpenseModal({
 
   const categoryOptions: readonly SelectOption[] = categories.map((cat) => ({
     id: cat.id,
-    label: `${cat.name} (${cat.code})`
+    label: cat.name
   }));
+
+  const mileageVehicleOptions: readonly SelectOption[] = effectiveMileagePolicies.map((p) => ({
+    id: p.id,
+    label: `${p.vehicleType || t("mileagePerDiem.vehicleType")} (${p.rate} ${p.currencyCode}/كم)`
+  }));
+
+  const perDiemLocationOptions: readonly SelectOption[] = effectivePerDiemPolicies.map((p) => ({
+    id: p.id,
+    label: `${p.locationCode || t("modals.newRatePolicy.locationCodeLabel")} (${p.rate} ${p.currencyCode}/يوم)`
+  }));
+
+  const mealReductionOptions: readonly SelectOption[] = [
+    { id: "0", label: t("mileagePerDiem.providedMealsNone") },
+    { id: "1", label: t("mileagePerDiem.providedMealsOne") },
+    { id: "2", label: t("mileagePerDiem.providedMealsTwo") },
+    { id: "3", label: t("mileagePerDiem.providedMealsThree") }
+  ];
 
   return (
     <Dialog
       isOpen={isOpen}
-      onOpenChange={(open: boolean) => {
-        if (!open) onClose();
-      }}
-      title={t("modals.newExpense.title")}
-      description={t("modals.newExpense.description")}
+      onClose={onClose}
+      title={isSelfService ? t("selfService.newExpense") : t("modals.newExpense.title")}
       footer={
-        <>
-          <Button variant="secondary" onPress={onClose} isDisabled={isSubmitting}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+          <Button variant="secondary" onClick={onClose} isDisabled={isSubmitting}>
             {t("common.cancel")}
           </Button>
-          <Button variant="primary" type="submit" form="new-expense-form" isDisabled={isSubmitting}>
+          <Button
+            variant="primary"
+            onClick={(e) => void handleSubmit(e)}
+            isDisabled={
+              isSubmitting ||
+              (expenseMode === "mileage" && !selectedMileagePolicy) ||
+              (expenseMode === "perDiem" && !selectedPerDiemPolicy)
+            }
+          >
             {isSubmitting ? t("common.loading") : t("modals.newExpense.submitButton")}
           </Button>
-        </>
+        </div>
       }
     >
-      <form id="new-expense-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form onSubmit={(e) => void handleSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {error && (
           <div
-            role="alert"
             style={{
               padding: "0.75rem",
-              backgroundColor: "var(--color-surface-danger, #fef2f2)",
-              color: "var(--color-status-danger, #dc2626)",
-              borderRadius: "var(--radius-md, 0.5rem)",
+              backgroundColor: "#fee2e2",
+              color: "#991b1b",
+              borderRadius: "0.375rem",
               fontSize: "0.875rem"
             }}
           >
@@ -243,8 +307,8 @@ export function NewExpenseModal({
           </div>
         )}
 
-        {/* Expense Mode Selector */}
-        <div style={{ display: "flex", gap: "0.5rem", borderBottom: "1px solid #cbd5e1", paddingBottom: "0.5rem" }}>
+        {/* Expense Kind Switcher */}
+        <div style={{ display: "flex", gap: "0.5rem", borderBottom: "1px solid #e2e8f0", paddingBottom: "0.5rem" }}>
           <button
             type="button"
             onClick={() => setExpenseMode("general")}
@@ -306,61 +370,91 @@ export function NewExpenseModal({
 
         {expenseMode === "mileage" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", backgroundColor: "#f8fafc", padding: "0.75rem", borderRadius: "0.375rem" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-              <TextField
-                label={t("mileagePerDiem.distanceKm")}
-                type="number"
-                value={distanceKm}
-                onChange={(val) => handleDistanceChange(val, ratePerKm)}
-                isRequired
-              />
-              <TextField
-                label={t("mileagePerDiem.ratePerKm")}
-                type="number"
-                value={ratePerKm}
-                onChange={(val) => {
-                  setRatePerKm(val);
-                  handleDistanceChange(distanceKm, val);
-                }}
-                isRequired
-              />
-            </div>
-            <TextField
-              label={t("common.description")}
-              placeholder={t("mileagePerDiem.routePlaceholder")}
-              value={travelRoute}
-              onChange={setTravelRoute}
-            />
+            {effectiveMileagePolicies.length === 0 ? (
+              <div style={{ padding: "0.75rem", backgroundColor: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "0.375rem", color: "#9a3412", fontSize: "0.875rem" }}>
+                {t("mileagePerDiem.noMileagePolicyNotice")}
+              </div>
+            ) : (
+              <>
+                {effectiveMileagePolicies.length > 1 && (
+                  <Select
+                    label={t("mileagePerDiem.vehicleType")}
+                    selectedKey={selectedMileagePolicy?.id ?? effectiveMileagePolicies[0]?.id ?? ""}
+                    onSelectionChange={(key) => setSelectedMileagePolicyId(String(key))}
+                    options={mileageVehicleOptions}
+                  />
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                  <TextField
+                    label={t("mileagePerDiem.distanceKm")}
+                    type="number"
+                    value={distanceKm}
+                    onChange={setDistanceKm}
+                    isRequired
+                  />
+                  <TextField
+                    label={t("mileagePerDiem.ratePerKm")}
+                    value={selectedMileagePolicy ? `${selectedMileagePolicy.rate} ${selectedMileagePolicy.currencyCode}` : "—"}
+                    onChange={() => {}}
+                    isReadOnly
+                  />
+                </div>
+                <TextField
+                  label={t("common.description")}
+                  placeholder={t("mileagePerDiem.routePlaceholder")}
+                  value={travelRoute}
+                  onChange={setTravelRoute}
+                />
+              </>
+            )}
           </div>
         )}
 
         {expenseMode === "perDiem" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", backgroundColor: "#f8fafc", padding: "0.75rem", borderRadius: "0.375rem" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-              <TextField
-                label={t("mileagePerDiem.daysCount")}
-                type="number"
-                value={daysCount}
-                onChange={(val) => handleDaysChange(val, dailyRate)}
-                isRequired
-              />
-              <TextField
-                label={t("mileagePerDiem.dailyRate")}
-                type="number"
-                value={dailyRate}
-                onChange={(val) => {
-                  setDailyRate(val);
-                  handleDaysChange(daysCount, val);
-                }}
-                isRequired
-              />
-            </div>
-            <TextField
-              label={t("modals.newRatePolicy.locationCodeLabel")}
-              placeholder={t("mileagePerDiem.locationPlaceholder")}
-              value={destinationCity}
-              onChange={setDestinationCity}
-            />
+            {effectivePerDiemPolicies.length === 0 ? (
+              <div style={{ padding: "0.75rem", backgroundColor: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "0.375rem", color: "#9a3412", fontSize: "0.875rem" }}>
+                {t("mileagePerDiem.noPerDiemPolicyNotice")}
+              </div>
+            ) : (
+              <>
+                {effectivePerDiemPolicies.length > 1 && (
+                  <Select
+                    label={t("modals.newRatePolicy.locationCodeLabel")}
+                    selectedKey={selectedPerDiemPolicy?.id ?? effectivePerDiemPolicies[0]?.id ?? ""}
+                    onSelectionChange={(key) => setSelectedPerDiemPolicyId(String(key))}
+                    options={perDiemLocationOptions}
+                  />
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                  <TextField
+                    label={t("mileagePerDiem.daysCount")}
+                    type="number"
+                    value={daysCount}
+                    onChange={setDaysCount}
+                    isRequired
+                  />
+                  <TextField
+                    label={t("mileagePerDiem.dailyRate")}
+                    value={selectedPerDiemPolicy ? `${selectedPerDiemPolicy.rate} ${selectedPerDiemPolicy.currencyCode}` : "—"}
+                    onChange={() => {}}
+                    isReadOnly
+                  />
+                </div>
+                <Select
+                  label={t("mileagePerDiem.providedMeals")}
+                  selectedKey={String(providedMeals)}
+                  onSelectionChange={(key) => setProvidedMeals(Number(key))}
+                  options={mealReductionOptions}
+                />
+                <TextField
+                  label={t("modals.newRatePolicy.locationCodeLabel")}
+                  placeholder={t("mileagePerDiem.locationPlaceholder")}
+                  value={destinationCity}
+                  onChange={setDestinationCity}
+                />
+              </>
+            )}
           </div>
         )}
 
@@ -370,6 +464,7 @@ export function NewExpenseModal({
             type="number"
             value={amount}
             onChange={setAmount}
+            isReadOnly={expenseMode === "mileage" || expenseMode === "perDiem"}
             isRequired
           />
 
@@ -377,6 +472,7 @@ export function NewExpenseModal({
             label={t("modals.newExpense.currencyLabel")}
             value={currencyCode}
             onChange={(val) => setCurrencyCode(val.toUpperCase())}
+            isReadOnly={expenseMode === "mileage" || expenseMode === "perDiem"}
             isRequired
           />
         </div>

@@ -17,6 +17,7 @@ import {
   useExpenseCardReconciliationQuery,
   useMarkCardPersonalMutation
 } from "../../hooks/use-expenses-queries.ts";
+import { useIsMobile } from "../../hooks/use-is-mobile.ts";
 import {
   MatchCardModal,
   CreateExpenseFromCardModal,
@@ -30,6 +31,7 @@ export interface ExpensesCorporateCardsTabProps {
 
 export function ExpensesCorporateCardsTab({ legalEntityId }: ExpensesCorporateCardsTabProps): React.JSX.Element {
   const { t } = useTranslation("expenses");
+  const isMobile = useIsMobile(768);
 
   const [stateFilter, setStateFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -165,7 +167,7 @@ export function ExpensesCorporateCardsTab({ legalEntityId }: ExpensesCorporateCa
           </div>
         </div>
 
-        {/* Card Transactions Table */}
+        {/* Card Transactions Table / Mobile Cards */}
         {cardsQuery.isLoading ? (
           <div style={{ padding: "3rem", textAlign: "center" }}>{t("common.loading")}</div>
         ) : !cardsQuery.data?.items || cardsQuery.data.items.length === 0 ? (
@@ -174,30 +176,28 @@ export function ExpensesCorporateCardsTab({ legalEntityId }: ExpensesCorporateCa
           </div>
         ) : (
           <>
-            <div style={{ width: "100%", overflowX: "auto" }}>
-              <Table style={{ minWidth: "700px" }}>
-                <thead>
-                  <tr>
-                    <th>{t("common.merchant")}</th>
-                    <th>{t("corporateCards.bankReference")}</th>
-                    <th>{t("common.date")}</th>
-                    <th>{t("common.amount")}</th>
-                    <th>{t("common.status")}</th>
-                    <th>{t("common.actions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
+            {isMobile ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {cardsQuery.data.items.map((card) => (
-                  <tr key={card.id}>
-                    <td style={{ fontWeight: 600 }}>{card.merchantName}</td>
-                    <td>{card.providerReference}</td>
-                    <td>{card.transactionDate}</td>
-                    <td style={{ fontWeight: 600 }}>
-                      <bdi>
-                        {card.amount.toFixed(2)} {card.currencyCode}
-                      </bdi>
-                    </td>
-                    <td>
+                  <div
+                    key={card.id}
+                    style={{
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "0.5rem",
+                      padding: "0.875rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{card.merchantName}</div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                          {card.providerReference} • {card.transactionDate}
+                        </div>
+                      </div>
                       <span
                         style={{
                           padding: "0.25rem 0.625rem",
@@ -215,42 +215,126 @@ export function ExpensesCorporateCardsTab({ legalEntityId }: ExpensesCorporateCa
                               ? "#059669"
                               : card.state === "Personal"
                                 ? "#d97706"
-                                : "#475569"
+                                : "#475569",
+                          flexShrink: 0
                         }}
                       >
                         {t(`states.card.${card.state}` as any, { defaultValue: card.state })}
                       </span>
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
-                        {card.state === "Unmatched" && (
-                          <>
-                            <Button variant="primary" size="compact" onClick={() => setCreateCard(card)}>
-                              {t("corporateCards.createExpenseAction")}
-                            </Button>
-                            <Button variant="secondary" size="compact" onClick={() => setMatchCard(card)}>
-                              {t("corporateCards.matchAction")}
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="compact"
-                              onClick={() => handleMarkPersonal(card)}
-                              isDisabled={markPersonalMutation.isPending}
-                            >
-                              {t("corporateCards.personalAction")}
-                            </Button>
-                          </>
-                        )}
-                        <Button variant="secondary" size="compact" onClick={() => setAdjustCard(card)}>
-                          {t("corporateCards.adjustAction")}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.25rem" }}>
+                      <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>{t("common.amount")}</span>
+                      <bdi style={{ fontWeight: 700, fontSize: "0.9375rem" }}>
+                        {card.amount.toFixed(2)} {card.currencyCode}
+                      </bdi>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap", marginTop: "0.25rem", paddingTop: "0.5rem", borderTop: "1px solid #f1f5f9" }}>
+                      {card.state === "Unmatched" && (
+                        <>
+                          <Button variant="primary" size="compact" onClick={() => setCreateCard(card)}>
+                            {t("corporateCards.createExpenseAction")}
+                          </Button>
+                          <Button variant="secondary" size="compact" onClick={() => setMatchCard(card)}>
+                            {t("corporateCards.matchAction")}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="compact"
+                            onClick={() => handleMarkPersonal(card)}
+                            isDisabled={markPersonalMutation.isPending}
+                          >
+                            {t("corporateCards.personalAction")}
+                          </Button>
+                        </>
+                      )}
+                      <Button variant="secondary" size="compact" onClick={() => setAdjustCard(card)}>
+                        {t("corporateCards.adjustAction")}
+                      </Button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </Table>
-          </div>
+              </div>
+            ) : (
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <Table style={{ minWidth: "700px" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("common.merchant")}</th>
+                      <th>{t("corporateCards.bankReference")}</th>
+                      <th>{t("common.date")}</th>
+                      <th>{t("common.amount")}</th>
+                      <th>{t("common.status")}</th>
+                      <th>{t("common.actions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cardsQuery.data.items.map((card) => (
+                      <tr key={card.id}>
+                        <td style={{ fontWeight: 600 }}>{card.merchantName}</td>
+                        <td>{card.providerReference}</td>
+                        <td>{card.transactionDate}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          <bdi>
+                            {card.amount.toFixed(2)} {card.currencyCode}
+                          </bdi>
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              padding: "0.25rem 0.625rem",
+                              borderRadius: "var(--radius-full, 9999px)",
+                              fontSize: "0.75rem",
+                              fontWeight: 600,
+                              backgroundColor:
+                                card.state === "Matched"
+                                  ? "#ecfdf5"
+                                  : card.state === "Personal"
+                                    ? "#fffbeb"
+                                    : "#f1f5f9",
+                              color:
+                                card.state === "Matched"
+                                  ? "#059669"
+                                  : card.state === "Personal"
+                                    ? "#d97706"
+                                    : "#475569"
+                            }}
+                          >
+                            {t(`states.card.${card.state}` as any, { defaultValue: card.state })}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
+                            {card.state === "Unmatched" && (
+                              <>
+                                <Button variant="primary" size="compact" onClick={() => setCreateCard(card)}>
+                                  {t("corporateCards.createExpenseAction")}
+                                </Button>
+                                <Button variant="secondary" size="compact" onClick={() => setMatchCard(card)}>
+                                  {t("corporateCards.matchAction")}
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="compact"
+                                  onClick={() => handleMarkPersonal(card)}
+                                  isDisabled={markPersonalMutation.isPending}
+                                >
+                                  {t("corporateCards.personalAction")}
+                                </Button>
+                              </>
+                            )}
+                            <Button variant="secondary" size="compact" onClick={() => setAdjustCard(card)}>
+                              {t("corporateCards.adjustAction")}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            )}
 
             {cardsQuery.data.totalCount > 15 && (
               <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem" }}>

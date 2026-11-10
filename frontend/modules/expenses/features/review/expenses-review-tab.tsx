@@ -27,6 +27,7 @@ import {
   useExpenseExceptionSummaryQuery
 } from "../../hooks/use-expenses-queries.ts";
 import { useOptionalPermissions } from "../../../../core/runtime/runtime-provider.tsx";
+import { useIsMobile } from "../../hooks/use-is-mobile.ts";
 import { ExpenseDetailDrawer } from "../drawers/expense-detail-drawer.tsx";
 import { NewExpenseModal } from "../modals/new-expense-modal.tsx";
 
@@ -36,6 +37,7 @@ export interface ExpensesReviewTabProps {
 
 export function ExpensesReviewTab({ legalEntityId }: ExpensesReviewTabProps): React.JSX.Element {
   const { t } = useTranslation("expenses");
+  const isMobile = useIsMobile(768);
 
   const [stateFilter, setStateFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -203,67 +205,123 @@ export function ExpensesReviewTab({ legalEntityId }: ExpensesReviewTabProps): Re
           </div>
         ) : (
           <>
-            <div style={{ width: "100%", overflowX: "auto" }}>
-              <Table style={{ minWidth: "750px" }}>
-                <thead>
-                  <tr>
-                    <th>{t("common.merchant")}</th>
-                    <th>{t("common.date")}</th>
-                    <th>{t("common.amount")}</th>
-                    <th>{t("common.source")}</th>
-                    <th>{t("common.status")}</th>
-                    <th>{t("review.approvalCol")}</th>
-                    <th>{t("review.postingCol")}</th>
-                    <th>{t("review.settlementCol")}</th>
-                    <th>{t("common.actions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expensesQuery.data.items.map((exp) => (
-                    <tr
-                      key={exp.id}
-                      style={{ cursor: "pointer" }}
-                      onClick={() => setSelectedExpenseId(exp.id)}
-                    >
-                      <td style={{ fontWeight: 600 }}>{exp.merchantName}</td>
-                      <td>{exp.expenseDate}</td>
-                      <td style={{ fontWeight: 600 }}>
-                        <bdi>
-                          {exp.amount.toFixed(2)} {exp.currencyCode}
-                        </bdi>
-                      </td>
-                      <td>
-                        <PaymentSourceBadge source={exp.paymentSource} />
-                      </td>
-                      <td>
-                        <ExpenseStateBadge state={exp.expenseState} />
-                      </td>
-                      <td>
-                        <ApprovalStateBadge state={exp.approvalState} />
-                      </td>
-                      <td>
-                        <AccountingStateBadge state={exp.accountingState} />
-                      </td>
-                      <td>
-                        <SettlementStateBadge state={exp.settlementState} />
-                      </td>
-                      <td>
-                        <Button
-                          variant="secondary"
-                          size="compact"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedExpenseId(exp.id);
-                          }}
-                        >
-                          {t("review.inspectAction")}
-                        </Button>
-                      </td>
+            {isMobile ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {expensesQuery.data.items.map((exp) => (
+                  <div
+                    key={exp.id}
+                    style={{
+                      padding: "1rem",
+                      backgroundColor: "#ffffff",
+                      border: "1px solid var(--color-border-default, #cbd5e1)",
+                      borderRadius: "var(--radius-md, 0.5rem)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem",
+                      cursor: "pointer",
+                      boxShadow: "0 1px 3px rgba(15, 23, 42, 0.05)"
+                    }}
+                    onClick={() => setSelectedExpenseId(exp.id)}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                      <span style={{ fontWeight: 600, fontSize: "0.9375rem", color: "var(--color-content-primary, #0f172a)" }}>
+                        {exp.merchantName}
+                      </span>
+                      <span style={{ fontWeight: 700, fontSize: "1rem", color: "var(--color-content-primary, #0f172a)", whiteSpace: "nowrap" }}>
+                        <bdi>{exp.amount.toFixed(2)} {exp.currencyCode}</bdi>
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+                      <span>{exp.expenseDate}</span>
+                      <PaymentSourceBadge source={exp.paymentSource} />
+                    </div>
+
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem", marginTop: "0.25rem" }}>
+                      <ExpenseStateBadge state={exp.expenseState} />
+                      <ApprovalStateBadge state={exp.approvalState} />
+                      <AccountingStateBadge state={exp.accountingState} />
+                      <SettlementStateBadge state={exp.settlementState} />
+                    </div>
+
+                    <div style={{ marginTop: "0.5rem", display: "flex", justifyContent: "flex-end" }}>
+                      <Button
+                        variant="secondary"
+                        size="compact"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedExpenseId(exp.id);
+                        }}
+                      >
+                        {t("review.inspectAction")}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <Table style={{ minWidth: "750px" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("common.merchant")}</th>
+                      <th>{t("common.date")}</th>
+                      <th>{t("common.amount")}</th>
+                      <th>{t("common.source")}</th>
+                      <th>{t("common.status")}</th>
+                      <th>{t("review.approvalCol")}</th>
+                      <th>{t("review.postingCol")}</th>
+                      <th>{t("review.settlementCol")}</th>
+                      <th>{t("common.actions")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {expensesQuery.data.items.map((exp) => (
+                      <tr
+                        key={exp.id}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => setSelectedExpenseId(exp.id)}
+                      >
+                        <td style={{ fontWeight: 600 }}>{exp.merchantName}</td>
+                        <td>{exp.expenseDate}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          <bdi>
+                            {exp.amount.toFixed(2)} {exp.currencyCode}
+                          </bdi>
+                        </td>
+                        <td>
+                          <PaymentSourceBadge source={exp.paymentSource} />
+                        </td>
+                        <td>
+                          <ExpenseStateBadge state={exp.expenseState} />
+                        </td>
+                        <td>
+                          <ApprovalStateBadge state={exp.approvalState} />
+                        </td>
+                        <td>
+                          <AccountingStateBadge state={exp.accountingState} />
+                        </td>
+                        <td>
+                          <SettlementStateBadge state={exp.settlementState} />
+                        </td>
+                        <td>
+                          <Button
+                            variant="secondary"
+                            size="compact"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedExpenseId(exp.id);
+                            }}
+                          >
+                            {t("review.inspectAction")}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            )}
 
             {expensesQuery.data.totalCount > 15 && (
               <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem" }}>

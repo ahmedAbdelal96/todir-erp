@@ -23,7 +23,9 @@ Module 21 Expenses & Reimbursements Frontend is delivered with 100% adherence to
 - **Zero Tailwind Utility Classes:** 100% styled using TODIR CSS Custom Properties and design system primitives.
 - **Domain & Financial Truth:**
   - Strict bi-directional `<bdi>` isolation on every monetary and numerical figure.
-  - Zero floating-point arithmetic on client.
+  - Zero floating-point arithmetic or hardcoded rates on client: Mileage and Per-Diem policies fetch published, effective-dated enterprise rates (`/api/v1/expenses/legal-entities/{entityId}/rate-policies`), enforce immutable rate snapshots, and support meal reduction tiers.
+  - Transactional draft deletion & cascade rollback (`DELETE /api/v1/expenses/legal-entities/{entityId}/{id}` and `/api/v1/expenses/my/expenses/{id}`) guaranteeing clean recovery if multi-step creation or detail setup fails.
+  - Native responsive card layout on mobile viewports (320px/390px) via `useIsMobile`, replacing cramped tables with touch-friendly, high-contrast cards.
   - Complete compliance with General Ledger finalization immutability and anti-reversal safeguards.
   - Complete segregation of duties: employee creates and submits expense, finance officer/accountant reviews and approves from workbench.
 

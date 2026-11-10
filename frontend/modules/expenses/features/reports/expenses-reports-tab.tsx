@@ -7,6 +7,7 @@ import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Select } from "../../../../components/primitives/select.tsx";
 import { Pagination } from "../../../../components/primitives/pagination.tsx";
 import { useExpenseSpendReportQuery } from "../../hooks/use-expenses-queries.ts";
+import { useIsMobile } from "../../hooks/use-is-mobile.ts";
 import { expensesApi } from "../../services/expenses-api.ts";
 
 export interface ExpensesReportsTabProps {
@@ -15,6 +16,7 @@ export interface ExpensesReportsTabProps {
 
 export function ExpensesReportsTab({ legalEntityId }: ExpensesReportsTabProps): React.JSX.Element {
   const { t } = useTranslation("expenses");
+  const isMobile = useIsMobile(768);
 
   const [groupBy, setGroupBy] = useState<"category" | "employee" | "source">("category");
   const [from, setFrom] = useState("");
@@ -102,7 +104,7 @@ export function ExpensesReportsTab({ legalEntityId }: ExpensesReportsTabProps): 
           />
         </div>
 
-        {/* Spend Report Data Table */}
+        {/* Spend Report Data Table / Mobile Cards */}
         {reportQuery.isLoading ? (
           <div style={{ padding: "3rem", textAlign: "center" }}>{t("common.loading")}</div>
         ) : !reportQuery.data?.items || reportQuery.data.items.length === 0 ? (
@@ -111,36 +113,87 @@ export function ExpensesReportsTab({ legalEntityId }: ExpensesReportsTabProps): 
           </div>
         ) : (
           <>
-            <div style={{ width: "100%", overflowX: "auto" }}>
-              <Table style={{ minWidth: "600px" }}>
-                <thead>
-                  <tr>
-                    <th>{t("reports.groupHeader")}</th>
-                    <th>{t("reports.totalSpend")}</th>
-                    <th>{t("reports.totalBase")}</th>
-                    <th>{t("reports.totalTax")}</th>
-                    <th>{t("reports.expenseCount")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportQuery.data.items.map((row) => (
-                    <tr key={`${row.groupBy}-${row.groupKey}`}>
-                      <td style={{ fontWeight: 600 }}>{row.groupKey || t("reports.unclassified")}</td>
-                      <td style={{ fontWeight: 600 }}>
-                        <bdi>{row.originalAmount.toFixed(2)}</bdi>
-                      </td>
-                      <td>
+            {isMobile ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {reportQuery.data.items.map((row) => (
+                  <div
+                    key={`${row.groupBy}-${row.groupKey}`}
+                    style={{
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "0.5rem",
+                      padding: "0.875rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, fontSize: "0.875rem" }}>
+                        {row.groupKey || t("reports.unclassified")}
+                      </span>
+                      <span
+                        style={{
+                          padding: "0.125rem 0.5rem",
+                          borderRadius: "var(--radius-full, 9999px)",
+                          fontSize: "0.75rem",
+                          backgroundColor: "#f1f5f9",
+                          color: "#475569"
+                        }}
+                      >
+                        {row.expenseCount} {t("reports.expenseCount")}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.375rem", fontSize: "0.8125rem" }}>
+                      <div>
+                        <span style={{ color: "var(--color-content-muted, #64748b)" }}>{t("reports.totalSpend")}: </span>
+                        <bdi style={{ fontWeight: 700 }}>{row.originalAmount.toFixed(2)}</bdi>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-content-muted, #64748b)" }}>{t("reports.totalBase")}: </span>
                         <bdi>{row.baseAmount.toFixed(2)}</bdi>
-                      </td>
-                      <td>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--color-content-muted, #64748b)" }}>{t("reports.totalTax")}: </span>
                         <bdi>{row.taxAmount.toFixed(2)}</bdi>
-                      </td>
-                      <td>{row.expenseCount}</td>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <Table style={{ minWidth: "600px" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("reports.groupHeader")}</th>
+                      <th>{t("reports.totalSpend")}</th>
+                      <th>{t("reports.totalBase")}</th>
+                      <th>{t("reports.totalTax")}</th>
+                      <th>{t("reports.expenseCount")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {reportQuery.data.items.map((row) => (
+                      <tr key={`${row.groupBy}-${row.groupKey}`}>
+                        <td style={{ fontWeight: 600 }}>{row.groupKey || t("reports.unclassified")}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          <bdi>{row.originalAmount.toFixed(2)}</bdi>
+                        </td>
+                        <td>
+                          <bdi>{row.baseAmount.toFixed(2)}</bdi>
+                        </td>
+                        <td>
+                          <bdi>{row.taxAmount.toFixed(2)}</bdi>
+                        </td>
+                        <td>{row.expenseCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            )}
 
             {reportQuery.data.totalCount > 15 && (
               <div style={{ display: "flex", justifyContent: "center", marginTop: "1rem" }}>

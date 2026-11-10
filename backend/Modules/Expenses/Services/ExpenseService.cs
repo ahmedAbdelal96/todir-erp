@@ -30,6 +30,8 @@ public sealed class ExpenseService(ExpenseRepository repository)
     public Task<IReadOnlyList<ExpenseItemizationDto>> ListItemizationsAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ListItemizationsAsync(tenant, entity, id, ct);
     public Task<ExpenseItemizationDto> AddItemizationAsync(TenantId tenant, Guid entity, Guid id, CreateExpenseItemizationRequest request, CancellationToken ct) => repository.AddItemizationAsync(tenant, entity, id, request, ct);
     public Task DeleteItemizationAsync(TenantId tenant, Guid entity, Guid id, Guid itemizationId, CancellationToken ct) => repository.DeleteItemizationAsync(tenant, entity, id, itemizationId, ct);
+    public Task DeleteDraftExpenseAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.DeleteDraftExpenseAsync(tenant, entity, id, ct);
+    public Task DeleteSelfDraftAsync(TenantId tenant, Guid membershipId, Guid entity, Guid id, CancellationToken ct) => repository.DeleteSelfDraftAsync(tenant, membershipId, entity, id, ct);
     public Task<ExpenseDto> TransitionAsync(TenantId tenant, Guid entity, Guid id, ExpenseActionRequest request, string action, CancellationToken ct) => repository.TransitionAsync(tenant, entity, id, request, action, ct);
     public Task<IReadOnlyList<ExpenseEvidenceDto>> ListEvidenceAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ListEvidenceAsync(tenant, entity, id, ct);
     public Task<IReadOnlyList<ExpenseHistoryDto>> ListHistoryAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.ListHistoryAsync(tenant, entity, id, ct);

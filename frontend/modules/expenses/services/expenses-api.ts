@@ -170,6 +170,11 @@ export const expensesApi = {
       body: JSON.stringify(request)
     }),
 
+  deleteExpense: (legalEntityId: string, id: string): Promise<{ readonly deleted: boolean }> =>
+    httpClient<{ readonly deleted: boolean }>(`${BASE}/legal-entities/${legalEntityId}/${id}`, {
+      method: "DELETE"
+    }),
+
   submitExpense: (legalEntityId: string, id: string, request: ExpenseActionRequest): Promise<ExpenseDto> =>
     httpClient<ExpenseDto>(`${BASE}/legal-entities/${legalEntityId}/${id}/submit`, {
       method: "POST",
@@ -882,6 +887,13 @@ export const expensesApi = {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(request)
+    });
+  },
+
+  deleteMyExpense: (legalEntityId: string, id: string): Promise<{ readonly deleted: boolean }> => {
+    const q = new URLSearchParams({ legalEntityId });
+    return httpClient<{ readonly deleted: boolean }>(`${BASE}/my/expenses/${id}?${q.toString()}`, {
+      method: "DELETE"
     });
   },
 

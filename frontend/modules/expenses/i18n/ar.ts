@@ -557,6 +557,15 @@ export const expensesAr = {
     dailyRate: "البدل اليومي المعتمد",
     calculatedNotice: "المبلغ محسوب آلياً وفق سياسة البدلات المعتمدة:",
     routePlaceholder: "مثال: من المقر الرئيسي إلى فرع الإسكندرية",
-    locationPlaceholder: "مثال: دبي / الرياض / أسوان"
+    locationPlaceholder: "مثال: دبي / الرياض / أسوان",
+    policyLabel: "السياسة المعتمدة",
+    noMileagePolicyNotice: "لا توجد سياسة معتمدة لبدل الانتقال سارية في هذا التاريخ لهذه المنشأة",
+    noPerDiemPolicyNotice: "لا توجد سياسة معتمدة لبدل السفر والإقامة سارية في هذا التاريخ لهذه المنشأة",
+    vehicleType: "نوع المركبة",
+    providedMeals: "الوجبات الموفرة",
+    providedMealsNone: "لا توجد وجبات موفرة (استحقاق كامل)",
+    providedMealsOne: "وجبة واحدة موفرة (خصم ثلث البدل)",
+    providedMealsTwo: "وجبتان موفرتان (خصم ثلثي البدل)",
+    providedMealsThree: "3 وجبات موفرة (إقامة شاملة)"
   }
 } as const;

@@ -557,6 +557,15 @@ export const expensesEn = {
     dailyRate: "Approved Daily Rate",
     calculatedNotice: "Calculated automatically per policy rates:",
     routePlaceholder: "e.g. From headquarters to Alexandria branch",
-    locationPlaceholder: "e.g. Dubai / Riyadh / Aswan"
+    locationPlaceholder: "e.g. Dubai / Riyadh / Aswan",
+    policyLabel: "Approved Policy",
+    noMileagePolicyNotice: "No approved mileage rate policy is effective on this date for this legal entity",
+    noPerDiemPolicyNotice: "No approved per diem rate policy is effective on this date for this legal entity",
+    vehicleType: "Vehicle Type",
+    providedMeals: "Provided Meals",
+    providedMealsNone: "No provided meals (Full entitlement)",
+    providedMealsOne: "1 provided meal (1/3 deduction)",
+    providedMealsTwo: "2 provided meals (2/3 deduction)",
+    providedMealsThree: "3 provided meals (Full board)"
   }
 } as const;

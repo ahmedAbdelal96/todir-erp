@@ -844,6 +844,47 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public async Task DeleteItemizationAsync(TenantId tenant, Guid entity, Guid expenseId, Guid itemizationId, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("delete from business_expenses.expense_itemization where tenant_id=$1 and legal_entity_id=$2 and expense_id=$3 and id=$4 and exists(select 1 from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 and expense_state='Draft')", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, expenseId, itemizationId); if (await cmd.ExecuteNonQueryAsync(ct) == 0) throw new ExpenseRepositoryException("expenses.itemization_not_editable"); await scope.Transaction.CommitAsync(ct); }
 
+    public async Task DeleteDraftExpenseAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var check = new NpgsqlCommand("select expense_state from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction);
+        Add(check, tenant.Value, entity, expenseId);
+        var state = await check.ExecuteScalarAsync(ct) as string;
+        if (state is null) throw new ExpenseRepositoryException("expenses.expense_not_found");
+        if (state != "Draft") throw new ExpenseRepositoryException("expenses.cannot_delete_non_draft");
+
+        await using var del = new NpgsqlCommand(@"
+            update business_expenses.expense_card_transaction set matched_expense_id=null, state='Unmatched' where tenant_id=$1 and matched_expense_id=$2;
+            delete from business_expenses.expense_card_allocation where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.business_advance_application where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_report_item where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_missing_receipt_declaration where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_policy_exception where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_ocr_job where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_evidence where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.mileage_expense_detail where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.per_diem_expense_detail where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_dimension where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_itemization where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_participant where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_policy_evaluation where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_reimbursement_obligation where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense_history where tenant_id=$1 and expense_id=$2;
+            delete from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$2 and expense_state='Draft';
+        ", scope.Connection, scope.Transaction);
+        Add(del, tenant.Value, expenseId, entity);
+        await del.ExecuteNonQueryAsync(ct);
+        await scope.Transaction.CommitAsync(ct);
+    }
+
+    public async Task DeleteSelfDraftAsync(TenantId tenant, Guid membershipId, Guid entity, Guid expenseId, CancellationToken ct)
+    {
+        var employeeId = await ResolveSelfEmployeeAsync(tenant, membershipId, entity, ct);
+        var expense = await GetAsync(tenant, entity, expenseId, ct);
+        if (expense is null || expense.EmployeeId != employeeId) throw new ExpenseRepositoryException("expenses.expense_not_found");
+        await DeleteDraftExpenseAsync(tenant, entity, expenseId, ct);
+    }
+
     public async Task<ExpenseParticipantDto> AddParticipantAsync(TenantId tenant, Guid entity, Guid expenseId, AddExpenseParticipantRequest request, CancellationToken ct)
     { if (string.IsNullOrWhiteSpace(request.DisplayName)) throw new ExpenseRepositoryException("expenses.participant_invalid"); await using var scope = await OpenAsync(tenant, ct); await using var cmd = new NpgsqlCommand("insert into business_expenses.expense_participant(tenant_id,id,legal_entity_id,expense_id,party_id,display_name,role) select $1,$2,$3,id,$4,$5,$6 from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$7 and expense_state='Draft' returning id,expense_id,party_id,display_name,role", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, Guid.CreateVersion7(), entity, Db(request.PartyId), request.DisplayName.Trim(), request.Role.Trim(), expenseId); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.participant_not_editable"); var result = new ExpenseParticipantDto(r.GetGuid(0), r.GetGuid(1), r.IsDBNull(2) ? null : r.GetGuid(2), r.GetString(3), r.GetString(4)); await r.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
     public async Task<IReadOnlyList<ExpenseParticipantDto>> ListParticipantsAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
