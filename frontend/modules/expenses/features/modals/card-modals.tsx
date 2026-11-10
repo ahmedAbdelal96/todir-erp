@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
@@ -119,7 +119,9 @@ export function CreateExpenseFromCardModal({
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const categories = categoriesQuery.data ?? [];
+  const categories = useMemo(() => {
+    return (categoriesQuery.data ?? []).filter((c) => c.status === "Active" && Boolean(c.publishedVersionId));
+  }, [categoriesQuery.data]);
   const selectedCategory = categories.find((c) => c.id === categoryId) ?? categories[0];
   const activeVersionId = selectedCategory?.publishedVersionId ?? "";
 

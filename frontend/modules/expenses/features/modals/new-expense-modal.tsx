@@ -105,13 +105,9 @@ export function NewExpenseModal({
         const days = parseFloat(daysCount);
         const dailyRate = Number(selectedPerDiemPolicy.rate);
         if (!isNaN(days) && days > 0 && !isNaN(dailyRate) && dailyRate > 0) {
-          const bRed = Number(selectedPerDiemPolicy.breakfastReduction || 0);
-          const lRed = Number(selectedPerDiemPolicy.lunchReduction || 0);
-          const dRed = Number(selectedPerDiemPolicy.dinnerReduction || 0);
-          const hasPolicyReductions = bRed > 0 || lRed > 0 || dRed > 0;
-          const effBRed = hasPolicyReductions ? bRed : dailyRate * 0.20;
-          const effLRed = hasPolicyReductions ? lRed : dailyRate * 0.40;
-          const effDRed = hasPolicyReductions ? dRed : dailyRate * 0.40;
+          const effBRed = Number(selectedPerDiemPolicy.breakfastReduction ?? 0);
+          const effLRed = Number(selectedPerDiemPolicy.lunchReduction ?? 0);
+          const effDRed = Number(selectedPerDiemPolicy.dinnerReduction ?? 0);
 
           const wholeDays = Math.floor(days);
           const partialFactor = days - wholeDays;
@@ -144,7 +140,9 @@ export function NewExpenseModal({
     }
   }, [expenseMode, daysCount, providedMeals, selectedPerDiemPolicy]);
 
-  const categories = categoriesQuery.data ?? [];
+  const categories = useMemo(() => {
+    return (categoriesQuery.data ?? []).filter((c) => c.status === "Active" && Boolean(c.publishedVersionId));
+  }, [categoriesQuery.data]);
   const selectedCategory = categories.find((c) => c.id === categoryId) ?? categories[0];
   const activeVersionId = selectedCategory?.publishedVersionId ?? "";
 

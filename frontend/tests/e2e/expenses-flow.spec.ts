@@ -7,9 +7,9 @@ const TEST_ADVANCE_ID = '00000000-0000-0000-0000-000000000020';
 const TEST_CARD_ID = '00000000-0000-0000-0000-000000000030';
 const TEST_REPAYMENT_ID = '00000000-0000-0000-0000-000000000040';
 
-// Artifacts directory for visual proof
-const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/expenses-acceptance');
-const ARTIFACTS_DIR = process.env.TEST_ARTIFACTS_DIR || LOCAL_ARTIFACTS_DIR;
+// Artifacts directory for visual proof (mocked suite outputs to /mocked subfolder so real-stack is never overwritten)
+const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/expenses-acceptance/mocked');
+const ARTIFACTS_DIR = process.env.TEST_ARTIFACTS_DIR ? path.join(process.env.TEST_ARTIFACTS_DIR, 'mocked') : LOCAL_ARTIFACTS_DIR;
 
 let consoleErrors: string[] = [];
 let pageErrors: string[] = [];
@@ -896,7 +896,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — Mocked Component 
   // ==========================================
   // JOURNEY 02: Record New Expense Claim via Modal
   // ==========================================
-  test('EXP02 — Employee Self-Service: Record New Expense Modal Dialog', async ({ page }) => {
+  test('EXP02 — Mocked Component: Record New Expense Modal Form & Client Validation', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/expenses');
 
@@ -996,7 +996,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — Mocked Component 
   // ==========================================
   // JOURNEY 05: Finance Manager Review Workbench
   // ==========================================
-  test('EXP05 — Finance Manager Review Workbench & Claim Approval', async ({ page }) => {
+  test('EXP05 — Mocked Component: Finance Manager Review Workbench & Claim Modal Inspection', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/expenses');
 
@@ -1031,7 +1031,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — Mocked Component 
   // ==========================================
   // JOURNEY 06: General Ledger Finalization
   // ==========================================
-  test('EXP06 — General Ledger Finalization & Accounting Reversal Protection', async ({ page }) => {
+  test('EXP06 — Mocked Component: General Ledger Finalization Review Modal Inspection', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/expenses');
 
@@ -1052,7 +1052,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — Mocked Component 
   // ==========================================
   // JOURNEY 07: Business Advances Lifecycle
   // ==========================================
-  test('EXP07 — Business Advances Lifecycle (Request, Disbursement, & Settle)', async ({ page }) => {
+  test('EXP07 — Mocked Component: Business Advances Request Modal Form Interaction', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/expenses');
 
@@ -1086,7 +1086,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — Mocked Component 
   // ==========================================
   // JOURNEY 08: Corporate Credit Cards Inbox & Matching
   // ==========================================
-  test('EXP08 — Corporate Credit Cards Inbox & Expense Claim Matching', async ({ page }) => {
+  test('EXP08 — Mocked Component: Corporate Credit Cards Inbox & Create Expense Modal UI', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/expenses');
 
@@ -1118,7 +1118,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — Mocked Component 
   // ==========================================
   // JOURNEY 09: Reimbursement Settlement
   // ==========================================
-  test('EXP09 — Employee Reimbursement Settlement & Disbursement Batches', async ({ page }) => {
+  test('EXP09 — Mocked Component: Employee Reimbursement Settlement Batch Modal Interaction', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/expenses');
 

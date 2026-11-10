@@ -321,15 +321,15 @@ export function ExpensesReimbursementsTab({ legalEntityId }: ExpensesReimburseme
                                 borderRadius: "var(--radius-full, 9999px)",
                                 fontSize: "0.75rem",
                                 fontWeight: 600,
-                                backgroundColor: rep.state === "Settled" ? "#ecfdf5" : "#fffbeb",
-                                color: rep.state === "Settled" ? "#059669" : "#d97706"
+                                backgroundColor: rep.state === "Settled" || remaining <= 0 ? "#ecfdf5" : "#fffbeb",
+                                color: rep.state === "Settled" || remaining <= 0 ? "#059669" : "#d97706"
                               }}
                             >
-                              {rep.state === "Settled" ? t("reimbursements.collectedStatus") : t("reimbursements.dueStatus")}
+                              {rep.state === "Settled" || remaining <= 0 ? t("reimbursements.collectedStatus") : t("reimbursements.dueStatus")}
                             </span>
                           </td>
                           <td>
-                            {rep.state !== "Settled" && (
+                            {rep.state !== "Settled" && remaining > 0 && (
                               <Button variant="primary" size="compact" onClick={() => setSettleRepayment(rep)}>
                                 {t("reimbursements.settleRepaymentAction")}
                               </Button>

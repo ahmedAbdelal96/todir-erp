@@ -686,6 +686,14 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(2, lineDetail.DailyLines!.Count);
         Assert.Equal(125.0000m, lineDetail.DailyLines[0].FinalAmount);
         Assert.Equal(50.0000m, lineDetail.DailyLines[1].FinalAmount);
+
+        // Scenario 4: Policy with explicit zero reductions (2 days, 2 provided meals with 0 reduction = 300 * 2 = 600 EGP, zero never defaults to invented percentage)
+        var zeroReductionPolicy = await repository.CreateRatePolicyAsync(new(Atlas), new(entity, "PerDiem", new(2026, 1, 1), null, "EGP", 300m, null, "ALX", BreakfastReduction: 0m, LunchReduction: 0m, DinnerReduction: 0m), default);
+        zeroReductionPolicy = await repository.PublishRatePolicyAsync(new(Atlas), entity, zeroReductionPolicy.Id, new(), default);
+        var zeroRedExpense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Zero reduction per diem", new(2026, 10, 20), 1m, "EGP", "EmployeePaid", categoryVersion), default);
+        var zeroRedDetail = await repository.SetPerDiemDetailAsync(new(Atlas), entity, zeroRedExpense.Id, new(2m, 0m, 2, "ALX", zeroReductionPolicy.Id), default);
+        Assert.Equal(600.0000m, zeroRedDetail.CalculatedAmount);
+        Assert.Equal(600m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, zeroRedExpense.Id))!);
     }
 
     [ExpensesPostgresFact]
@@ -1093,7 +1101,7 @@ public sealed class ExpensesPostgresIntegrationTests
         using var listener = new HttpListener();
         listener.Prefixes.Add($"http://127.0.0.1:{port}/"); listener.Start();
         var providerEndpoint = $"http://127.0.0.1:{port}/extract";
-        var providerTask = ServeTransientOcrAsync(listener);
+        var providerTask = ServeTransientOcrAsync(listener, fileReference);
         using var worker = StartExpensesWorker(connectionString!, providerEndpoint);
         try
         {
@@ -1133,17 +1141,19 @@ public sealed class ExpensesPostgresIntegrationTests
         await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
         var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
         var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
-        var request = new ImportExpensesRequest(entity, $"expenses-test-{Guid.CreateVersion7():N}", [new("legacy-1", null, "Imported Merchant", new DateOnly(2026, 10, 20), 42m, "EGP", "EmployeePaid", categoryVersion), new("legacy-2", null, "Broken", new DateOnly(2026, 10, 20), -1m, "EGP", "EmployeePaid", Guid.CreateVersion7())]);
+        var legacy1 = $"legacy-1-{Guid.CreateVersion7():N}";
+        var legacy2 = $"legacy-2-{Guid.CreateVersion7():N}";
+        var request = new ImportExpensesRequest(entity, $"expenses-test-{Guid.CreateVersion7():N}", [new(legacy1, null, "Imported Merchant", new DateOnly(2026, 10, 20), 42m, "EGP", "EmployeePaid", categoryVersion), new(legacy2, null, "Broken", new DateOnly(2026, 10, 20), -1m, "EGP", "EmployeePaid", Guid.CreateVersion7())]);
         var batch = await repository.ImportExpensesAsync(new(Atlas), request, default);
         Assert.Equal("CompletedWithErrors", batch.State); Assert.Equal(1, batch.CreatedCount); Assert.Equal(1, batch.ErrorCount);
         var rows = await repository.ListExpenseImportRowsAsync(new(Atlas), entity, batch.Id, null, 1, 10, default);
         Assert.Equal(2, rows.TotalCount);
-        Assert.Equal("Created", rows.Items.Single(row => row.ExternalReference == "legacy-1").Status);
-        Assert.Equal("Error", rows.Items.Single(row => row.ExternalReference == "legacy-2").Status);
-        Assert.Equal("expenses.import_row_invalid", rows.Items.Single(row => row.ExternalReference == "legacy-2").ErrorCode);
+        Assert.Equal("Created", rows.Items.Single(row => row.ExternalReference == legacy1).Status);
+        Assert.Equal("Error", rows.Items.Single(row => row.ExternalReference == legacy2).Status);
+        Assert.Equal("expenses.import_row_invalid", rows.Items.Single(row => row.ExternalReference == legacy2).ErrorCode);
         var replay = await repository.ImportExpensesAsync(new(Atlas), request, default); Assert.Equal(batch.Id, replay.Id); Assert.Equal(batch.CreatedCount, replay.CreatedCount);
         Assert.Equal(1L, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_import_row where tenant_id=$1 and batch_id=$2 and status='Created'", Atlas, batch.Id));
-        var duplicateBatch = await repository.ImportExpensesAsync(new(Atlas), new ImportExpensesRequest(entity, $"expenses-duplicate-{Guid.CreateVersion7():N}", [new("legacy-1", null, "Duplicate external reference", new DateOnly(2026, 10, 20), 42m, "EGP", "EmployeePaid", categoryVersion)]), default);
+        var duplicateBatch = await repository.ImportExpensesAsync(new(Atlas), new ImportExpensesRequest(entity, $"expenses-duplicate-{Guid.CreateVersion7():N}", [new(legacy1, null, "Duplicate external reference", new DateOnly(2026, 10, 20), 42m, "EGP", "EmployeePaid", categoryVersion)]), default);
         Assert.Equal("CompletedWithErrors", duplicateBatch.State);
         Assert.Equal(0, duplicateBatch.CreatedCount);
         Assert.Equal("expenses.import_duplicate_external_reference", (await repository.ListExpenseImportRowsAsync(new(Atlas), entity, duplicateBatch.Id, "Error", 1, 10, default)).Items.Single().ErrorCode);
@@ -1422,15 +1432,29 @@ public sealed class ExpensesPostgresIntegrationTests
         await using var reader = await command.ExecuteReaderAsync(); Assert.True(await reader.ReadAsync()); return (reader.GetGuid(0), reader.GetGuid(1));
     }
 
-    private static async Task ServeTransientOcrAsync(HttpListener listener)
+    private static async Task ServeTransientOcrAsync(HttpListener listener, Guid targetFileReference = default)
     {
-        var call = 0;
+        var targetCalls = 0;
         try
         {
             while (listener.IsListening)
             {
                 var context = await listener.GetContextAsync();
-                if (Interlocked.Increment(ref call) == 1)
+                var isTarget = true;
+                if (targetFileReference != default)
+                {
+                    using var streamReader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding);
+                    var raw = await streamReader.ReadToEndAsync();
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(raw);
+                        if (doc.RootElement.TryGetProperty("fileReference", out var prop) && prop.TryGetGuid(out var fRef))
+                            isTarget = (fRef == targetFileReference);
+                    }
+                    catch { }
+                }
+
+                if (isTarget && Interlocked.Increment(ref targetCalls) == 1)
                 {
                     context.Response.StatusCode = 503;
                     context.Response.Close();

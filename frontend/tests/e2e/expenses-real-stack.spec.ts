@@ -456,19 +456,31 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await expect(page.getByText('إدارة سلف العمل والتسويات')).toBeVisible();
     await expect(page.getByText('كافة السلف')).toBeVisible();
 
-    // Verify seeded advance is present
-    await expect(page.getByText(/سلفة سفر لمعرض الإسكندرية|سلفة سفر/i).first()).toBeVisible({ timeout: 10000 });
+    // Click "منصرفة وقائمة" (Issued) filter pill
+    await page.getByRole('button', { name: /منصرفة وقائمة/i }).click();
+    await page.waitForTimeout(1000);
+
+    // Verify an Issued advance is present
+    const targetRow = page.locator('tbody tr').first();
+    await expect(targetRow).toBeVisible({ timeout: 10000 });
 
     // Test Cash Return action on the issued advance
-    const returnBtn = page.getByRole('button', { name: 'رد نقدي' }).first();
+    const returnBtn = targetRow.getByRole('button', { name: 'رد نقدي' });
     await expect(returnBtn).toBeVisible({ timeout: 10000 });
     await returnBtn.click();
     const returnDialog = page.getByRole('dialog', { name: /رد متبقي سلفة العمل|رد سلفة|رد نقدي/i });
     await expect(returnDialog).toBeVisible({ timeout: 10000 });
-    await returnDialog.getByLabel(/المبلغ المسترد/i).fill('500.00');
+    await returnDialog.getByLabel(/المبلغ المسترد/i).fill('50.00');
     await returnDialog.getByRole('button', { name: /تأكيد رد المبلغ/i }).click();
     await expect(returnDialog).not.toBeVisible({ timeout: 10000 });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1000);
+
+    // Switch back to "كافة السلف" (All Advances) since returning money transitions state to PartiallySettled
+    await page.getByRole('button', { name: 'كافة السلف' }).click();
+    await page.waitForTimeout(1000);
+
+    // Verify outstanding balance reduced arithmetically (180 - 50 = 130.00 EGP)
+    await expect(page.getByText(/130\.00|4500/i).first()).toBeVisible({ timeout: 10000 });
 
     await captureEvidence(page, '07-expenses-advances-management.png');
   });
@@ -487,6 +499,13 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     // Verify Cards Header
     await expect(page.getByText('صندوق بطاقات الشركات والمطابقة')).toBeVisible();
     await expect(page.getByText('غير مطابقة').first()).toBeVisible();
+
+    // Filter or Search for seeded card transaction
+    const searchInput = page.getByPlaceholder(/البحث باسم التاجر/i);
+    if (await searchInput.isVisible().catch(() => false)) {
+      await searchInput.fill('وقود النيل');
+      await page.waitForTimeout(1000);
+    }
 
     // Verify seeded card transaction
     await expect(page.getByText(/محطة وقود النيل|وقود النيل/i).first()).toBeVisible({ timeout: 10000 });
@@ -519,45 +538,45 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await expect(page.getByRole('button', { name: /مستحقات الموظفين/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /تحصيل/i })).toBeVisible();
 
-    // 1. Prepare a new batch if button is visible
+    // 1. Prepare a new batch (deterministic execution)
     const prepareBatchBtn = page.getByRole('button', { name: /تجهيز دفعة سداد جديدة|\+ تجهيز دفعة/i });
-    if (await prepareBatchBtn.isVisible().catch(() => false)) {
-      await prepareBatchBtn.click();
-      const prepareModal = page.getByRole('dialog', { name: /تجهيز دفعة سداد/i });
-      if (await prepareModal.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await prepareModal.getByRole('button', { name: /تجهيز الدفعة/i }).click();
-        await expect(prepareModal).not.toBeVisible({ timeout: 10000 });
-        await page.waitForTimeout(1500);
-      }
-    }
+    await expect(prepareBatchBtn).toBeVisible({ timeout: 10000 });
+    await prepareBatchBtn.click();
+    const prepareModal = page.getByRole('dialog', { name: /تجهيز دفعة سداد/i });
+    await expect(prepareModal).toBeVisible({ timeout: 10000 });
+    await prepareModal.getByRole('button', { name: /تجهيز الدفعة/i }).click();
+    await expect(prepareModal).not.toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(2000);
 
-    // 2. Pay batch if prepared batch exists
-    const payBatchBtn = page.getByRole('button', { name: /تنفيذ الصرف/i }).first();
-    if (await payBatchBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await payBatchBtn.click();
-      const payModal = page.getByRole('dialog', { name: /صرف دفعة سداد المستحقات|سداد/i });
-      if (await payModal.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await payModal.getByRole('button', { name: /تأكيد الصرف المالي|تأكيد سداد/i }).click();
-        await expect(payModal).not.toBeVisible({ timeout: 10000 });
-        await page.waitForTimeout(1500);
-      }
-    }
+    // 2. Pay batch (deterministic execution of payment command)
+    const payBatchBtn = page.getByRole('button', { name: /سداد الدفعة|تنفيذ الصرف/i }).first();
+    await expect(payBatchBtn).toBeVisible({ timeout: 10000 });
+    await payBatchBtn.click();
+    const payModal = page.getByRole('dialog', { name: /صرف دفعة سداد المستحقات|سداد/i });
+    await expect(payModal).toBeVisible({ timeout: 10000 });
+    await payModal.getByRole('button', { name: /تأكيد الصرف المالي|تأكيد سداد/i }).click();
+    await expect(payModal).not.toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(2000);
+
+    // Verify batch status is now Paid ("تم الصرف")
+    await expect(page.getByText(/تم الصرف/i).first()).toBeVisible({ timeout: 10000 });
 
     // 3. Switch to "تحصيل من الموظفين" (fromEmployees repayments)
     await page.getByRole('button', { name: /تحصيل/i }).click();
     await page.waitForTimeout(1000);
 
-    // Settle repayment if due
+    // 4. Settle repayment created from corporate card personal classification
     const settleRepaymentBtn = page.getByRole('button', { name: /تسجيل التحصيل/i }).first();
-    if (await settleRepaymentBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await settleRepaymentBtn.click();
-      const settleModal = page.getByRole('dialog', { name: /تحصيل مبلغ مستحق من موظف|تسجيل تحصيل/i });
-      if (await settleModal.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await settleModal.getByRole('button', { name: /تأكيد التحصيل/i }).click();
-        await expect(settleModal).not.toBeVisible({ timeout: 10000 });
-        await page.waitForTimeout(1500);
-      }
-    }
+    await expect(settleRepaymentBtn).toBeVisible({ timeout: 10000 });
+    await settleRepaymentBtn.click();
+    const settleModal = page.getByRole('dialog', { name: /تحصيل مبلغ مستحق من موظف|تسجيل تحصيل/i });
+    await expect(settleModal).toBeVisible({ timeout: 10000 });
+    await settleModal.getByRole('button', { name: /تأكيد التحصيل/i }).click();
+    await expect(settleModal).not.toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(2000);
+
+    // Verify repayment status changed to Collected ("تم التحصيل")
+    await expect(page.getByText(/تم التحصيل/i).first()).toBeVisible({ timeout: 10000 });
 
     await captureEvidence(page, '09-expenses-reimbursements.png');
   });

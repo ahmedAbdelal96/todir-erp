@@ -868,7 +868,6 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             "delete from business_expenses.expense_itemization where tenant_id=$1 and expense_id=$2",
             "delete from business_expenses.expense_participant where tenant_id=$1 and expense_id=$2",
             "delete from business_expenses.expense_policy_evaluation where tenant_id=$1 and expense_id=$2",
-            "delete from business_expenses.expense_reimbursement_obligation where tenant_id=$1 and expense_id=$2",
             "delete from business_expenses.expense_history where tenant_id=$1 and expense_id=$2"
         ];
 
@@ -1749,10 +1748,9 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             await pr.CloseAsync();
         }
 
-        var hasPolicyReductions = (bRed > 0m || lRed > 0m || dRed > 0m);
-        var effBRed = hasPolicyReductions ? bRed : decimal.Round(rate * 0.20m, 4, MidpointRounding.AwayFromZero);
-        var effLRed = hasPolicyReductions ? lRed : decimal.Round(rate * 0.40m, 4, MidpointRounding.AwayFromZero);
-        var effDRed = hasPolicyReductions ? dRed : decimal.Round(rate * 0.40m, 4, MidpointRounding.AwayFromZero);
+        var effBRed = bRed;
+        var effLRed = lRed;
+        var effDRed = dRed;
 
         var lines = new List<PerDiemDailyLineDto>();
         decimal calculatedAmount = 0m;
