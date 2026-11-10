@@ -4,7 +4,8 @@ import { Surface } from "../../../../components/pages/surface.tsx";
 import { Table } from "../../../../components/primitives/table.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import {
-  useExpenseRepaymentsQuery
+  useExpenseRepaymentsQuery,
+  useExpenseReimbursementBatchesQuery
 } from "../../hooks/use-expenses-queries.ts";
 import { useIsMobile } from "../../hooks/use-is-mobile.ts";
 import {
@@ -27,6 +28,7 @@ export function ExpensesReimbursementsTab({ legalEntityId }: ExpensesReimburseme
   const [payBatch, setPayBatch] = useState<{ id: string; version: number } | null>(null);
   const [settleRepayment, setSettleRepayment] = useState<ExpenseEmployeeRepaymentDto | null>(null);
 
+  const batchesQuery = useExpenseReimbursementBatchesQuery(legalEntityId);
   const repaymentsQuery = useExpenseRepaymentsQuery(legalEntityId);
 
   return (
@@ -88,9 +90,115 @@ export function ExpensesReimbursementsTab({ legalEntityId }: ExpensesReimburseme
         {/* View 1: To Employees (Prepared Batches) */}
         {subtab === "toEmployees" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
-              {t("reimbursements.emptyBatches")}
-            </div>
+            {batchesQuery.isLoading ? (
+              <div style={{ padding: "3rem", textAlign: "center" }}>{t("common.loading")}</div>
+            ) : !batchesQuery.data || batchesQuery.data.length === 0 ? (
+              <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
+                {t("reimbursements.emptyBatches")}
+              </div>
+            ) : isMobile ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {batchesQuery.data.map((batch) => (
+                  <div
+                    key={batch.id}
+                    style={{
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "0.5rem",
+                      padding: "0.875rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>
+                          {batch.id.slice(0, 8)}...
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                          {batch.createdAt.slice(0, 10)}
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          padding: "0.25rem 0.625rem",
+                          borderRadius: "var(--radius-full, 9999px)",
+                          fontSize: "0.75rem",
+                          fontWeight: 600,
+                          backgroundColor: batch.state === "Paid" ? "#ecfdf5" : "#eff6ff",
+                          color: batch.state === "Paid" ? "#059669" : "#2563eb",
+                          flexShrink: 0
+                        }}
+                      >
+                        {batch.state === "Paid" ? t("reimbursements.batchPaidStatus") : t("reimbursements.batchPreparedStatus")}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: "0.8125rem" }}>
+                      <span style={{ color: "var(--color-content-muted, #64748b)" }}>{t("reimbursements.batchTotal")}: </span>
+                      <bdi style={{ fontWeight: 700 }}>{batch.totalAmount.toFixed(2)} {batch.currencyCode}</bdi>
+                    </div>
+
+                    {batch.state === "Prepared" && (
+                      <div style={{ marginTop: "0.25rem", paddingTop: "0.5rem", borderTop: "1px solid #f1f5f9" }}>
+                        <Button variant="primary" size="compact" onClick={() => setPayBatch({ id: batch.id, version: batch.version })}>
+                          {t("reimbursements.payBatchAction")}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <Table style={{ minWidth: "650px" }}>
+                  <thead>
+                    <tr>
+                      <th>{t("reimbursements.batchId")}</th>
+                      <th>{t("reimbursements.preparedDate")}</th>
+                      <th>{t("reimbursements.batchTotal")}</th>
+                      <th>{t("common.status")}</th>
+                      <th>{t("common.actions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batchesQuery.data.map((batch) => (
+                      <tr key={batch.id}>
+                        <td style={{ fontWeight: 600 }}>{batch.id}</td>
+                        <td>{batch.createdAt.slice(0, 10)}</td>
+                        <td style={{ fontWeight: 600 }}>
+                          <bdi>
+                            {batch.totalAmount.toFixed(2)} {batch.currencyCode}
+                          </bdi>
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              padding: "0.25rem 0.625rem",
+                              borderRadius: "var(--radius-full, 9999px)",
+                              fontSize: "0.75rem",
+                              fontWeight: 600,
+                              backgroundColor: batch.state === "Paid" ? "#ecfdf5" : "#eff6ff",
+                              color: batch.state === "Paid" ? "#059669" : "#2563eb"
+                            }}
+                          >
+                            {batch.state === "Paid" ? t("reimbursements.batchPaidStatus") : t("reimbursements.batchPreparedStatus")}
+                          </span>
+                        </td>
+                        <td>
+                          {batch.state === "Prepared" && (
+                            <Button variant="primary" size="compact" onClick={() => setPayBatch({ id: batch.id, version: batch.version })}>
+                              {t("reimbursements.payBatchAction")}
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            )}
           </div>
         )}
 

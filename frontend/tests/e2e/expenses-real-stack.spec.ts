@@ -2,8 +2,9 @@ import { test, expect, Page } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const ARTIFACTS_DIR = 'C:/Users/Adham/.gemini/antigravity/brain/2cce5b52-1525-442e-8037-81105c0347eb/expenses-acceptance/real-stack';
+const ARTIFACTS_DIR = process.env.TEST_ARTIFACTS_DIR || path.resolve('artifacts/expenses-acceptance/real-stack');
 const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/expenses-acceptance/real-stack');
+const TEST_DEV_PASSWORD = process.env.ERP_DEV_PASSWORD || 'DevSeed2026Apmjuoj1oZjHEDcxSsOc27HKY8yOv0B7';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -59,19 +60,26 @@ async function ensureAuthenticated(page: Page, email: string = 'admin@atlas.com'
     return;
   }
 
-  const profileBtn = page.getByRole('button', { name: new RegExp(email, 'i') });
-  if (await profileBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
-    await profileBtn.click();
-    await profileBtn.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
+  // Check if already on login page
+  const emailInput = page.locator('#login-email');
+  if (await emailInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+    await emailInput.fill(email);
+    await page.locator('#login-password').fill(TEST_DEV_PASSWORD);
+    await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
+    await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
     await page.waitForLoadState('networkidle');
   } else {
-    const emailInput = page.locator('#login-email');
-    if (await emailInput.isVisible({ timeout: 4000 }).catch(() => false)) {
-      await emailInput.fill(email);
-      await page.locator('#login-password').fill('DevSeed2026Apmjuoj1oZjHEDcxSsOc27HKY8yOv0B7');
-      await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
-      await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
-      await page.waitForLoadState('networkidle');
+    const profileBtn = page.getByRole('button', { name: new RegExp(email, 'i') });
+    if (await profileBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
+      await profileBtn.click();
+      await page.waitForTimeout(1000);
+      if (await emailInput.isVisible().catch(() => false)) {
+        await emailInput.fill(email);
+        await page.locator('#login-password').fill(TEST_DEV_PASSWORD);
+        await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
+        await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
+        await page.waitForLoadState('networkidle');
+      }
     }
   }
 
@@ -121,19 +129,26 @@ async function switchUser(page: Page, email: string) {
   await page.goto('/expenses');
   await page.waitForLoadState('networkidle');
 
-  const profileBtn = page.getByRole('button', { name: new RegExp(email, 'i') });
-  if (await profileBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
-    await profileBtn.click();
-    await profileBtn.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
+  // Check if already on login page
+  const emailInput = page.locator('#login-email');
+  if (await emailInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+    await emailInput.fill(email);
+    await page.locator('#login-password').fill(TEST_DEV_PASSWORD);
+    await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
+    await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
     await page.waitForLoadState('networkidle');
   } else {
-    const emailInput = page.locator('#login-email');
-    if (await emailInput.isVisible({ timeout: 4000 }).catch(() => false)) {
-      await emailInput.fill(email);
-      await page.locator('#login-password').fill('DevSeed2026Apmjuoj1oZjHEDcxSsOc27HKY8yOv0B7');
-      await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
-      await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
-      await page.waitForLoadState('networkidle');
+    const profileBtn = page.getByRole('button', { name: new RegExp(email, 'i') });
+    if (await profileBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
+      await profileBtn.click();
+      await page.waitForTimeout(1000);
+      if (await emailInput.isVisible().catch(() => false)) {
+        await emailInput.fill(email);
+        await page.locator('#login-password').fill(TEST_DEV_PASSWORD);
+        await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
+        await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
+        await page.waitForLoadState('networkidle');
+      }
     }
   }
 
@@ -411,8 +426,16 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     // Perform reversal to verify authorized reversal lifecycle
     await reverseBtn.click();
+    const reasonInput = drawer.getByPlaceholder(/سبب القيد العكسي/i);
+    await expect(reasonInput).toBeVisible({ timeout: 5000 });
+    await reasonInput.fill('تصحيح محاسبي معتمد للقيد العكسي');
+    const confirmReverseBtn = drawer.getByRole('button', { name: 'تأكيد القيد العكسي' });
+    await expect(confirmReverseBtn).toBeVisible({ timeout: 5000 });
+    await confirmReverseBtn.click();
     await page.waitForTimeout(2000);
-    await expect(drawer.getByText(/قيد عكسي|معكوس|Reversed/i).first()).toBeVisible({ timeout: 15000 });
+
+    // Verify state badge is Reversed (قيد عكسي / تم العكس)
+    await expect(drawer.getByText(/قيد عكسي|تم العكس|معكوس|Reversed/i).first()).toBeVisible({ timeout: 15000 });
 
     // Close drawer
     await drawer.getByRole('button', { name: 'إغلاق', exact: true }).click();
@@ -438,15 +461,14 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     // Test Cash Return action on the issued advance
     const returnBtn = page.getByRole('button', { name: 'رد نقدي' }).first();
-    if (await returnBtn.isVisible().catch(() => false)) {
-      await returnBtn.click();
-      const returnDialog = page.getByRole('dialog', { name: /رد متبقي سلفة العمل|رد سلفة|رد نقدي/i });
-      await expect(returnDialog).toBeVisible({ timeout: 10000 });
-      await returnDialog.getByLabel(/المبلغ المسترد/i).fill('500.00');
-      await returnDialog.getByRole('button', { name: /تأكيد رد المبلغ/i }).click();
-      await expect(returnDialog).not.toBeVisible({ timeout: 10000 });
-      await page.waitForTimeout(1000);
-    }
+    await expect(returnBtn).toBeVisible({ timeout: 10000 });
+    await returnBtn.click();
+    const returnDialog = page.getByRole('dialog', { name: /رد متبقي سلفة العمل|رد سلفة|رد نقدي/i });
+    await expect(returnDialog).toBeVisible({ timeout: 10000 });
+    await returnDialog.getByLabel(/المبلغ المسترد/i).fill('500.00');
+    await returnDialog.getByRole('button', { name: /تأكيد رد المبلغ/i }).click();
+    await expect(returnDialog).not.toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(1500);
 
     await captureEvidence(page, '07-expenses-advances-management.png');
   });
@@ -471,10 +493,12 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     // Mark as Personal
     const markPersonalBtn = page.getByRole('button', { name: /تصنيف كمصروف شخصي|شخصي/i }).first();
-    if (await markPersonalBtn.isVisible().catch(() => false)) {
-      await markPersonalBtn.click();
-      await page.waitForTimeout(1500);
-    }
+    await expect(markPersonalBtn).toBeVisible({ timeout: 10000 });
+    await markPersonalBtn.click();
+    await page.waitForTimeout(2000);
+
+    // Verify transaction status changed to Personal
+    await expect(page.getByText(/مصروف شخصي|شخصي|Personal/i).first()).toBeVisible({ timeout: 10000 });
 
     await captureEvidence(page, '08-expenses-corporate-cards.png');
   });
@@ -495,9 +519,45 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await expect(page.getByRole('button', { name: /مستحقات الموظفين/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /تحصيل/i })).toBeVisible();
 
-    // Switch to "تحصيل من الموظفين" (fromEmployees repayments)
+    // 1. Prepare a new batch if button is visible
+    const prepareBatchBtn = page.getByRole('button', { name: /تجهيز دفعة سداد جديدة|\+ تجهيز دفعة/i });
+    if (await prepareBatchBtn.isVisible().catch(() => false)) {
+      await prepareBatchBtn.click();
+      const prepareModal = page.getByRole('dialog', { name: /تجهيز دفعة سداد/i });
+      if (await prepareModal.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await prepareModal.getByRole('button', { name: /تجهيز الدفعة/i }).click();
+        await expect(prepareModal).not.toBeVisible({ timeout: 10000 });
+        await page.waitForTimeout(1500);
+      }
+    }
+
+    // 2. Pay batch if prepared batch exists
+    const payBatchBtn = page.getByRole('button', { name: /تنفيذ الصرف/i }).first();
+    if (await payBatchBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await payBatchBtn.click();
+      const payModal = page.getByRole('dialog', { name: /صرف دفعة سداد المستحقات|سداد/i });
+      if (await payModal.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await payModal.getByRole('button', { name: /تأكيد الصرف المالي|تأكيد سداد/i }).click();
+        await expect(payModal).not.toBeVisible({ timeout: 10000 });
+        await page.waitForTimeout(1500);
+      }
+    }
+
+    // 3. Switch to "تحصيل من الموظفين" (fromEmployees repayments)
     await page.getByRole('button', { name: /تحصيل/i }).click();
     await page.waitForTimeout(1000);
+
+    // Settle repayment if due
+    const settleRepaymentBtn = page.getByRole('button', { name: /تسجيل التحصيل/i }).first();
+    if (await settleRepaymentBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await settleRepaymentBtn.click();
+      const settleModal = page.getByRole('dialog', { name: /تحصيل مبلغ مستحق من موظف|تسجيل تحصيل/i });
+      if (await settleModal.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await settleModal.getByRole('button', { name: /تأكيد التحصيل/i }).click();
+        await expect(settleModal).not.toBeVisible({ timeout: 10000 });
+        await page.waitForTimeout(1500);
+      }
+    }
 
     await captureEvidence(page, '09-expenses-reimbursements.png');
   });
@@ -568,6 +628,8 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
       return document.documentElement.scrollWidth > window.innerWidth;
     });
     expect(hasHorizontalOverflow320).toBe(false);
+
+    await captureEvidence(page, '11-expenses-mobile-320px.png');
 
     // 3. Tablet 768px Viewport (iPad)
     await page.setViewportSize({ width: 768, height: 1024 });

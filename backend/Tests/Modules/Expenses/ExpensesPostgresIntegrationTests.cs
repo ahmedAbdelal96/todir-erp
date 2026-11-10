@@ -656,13 +656,75 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(7.5m, mileage.Rate);
         Assert.Equal(mileagePolicy.Id, mileage.RatePolicyVersionId);
         Assert.Equal(750m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, mileageExpense.Id))!);
-        var perDiemPolicy = await repository.CreateRatePolicyAsync(new(Atlas), new(entity, "PerDiem", new(2026, 1, 1), null, "EGP", 100m, null, "CAI"), default);
+        var perDiemPolicy = await repository.CreateRatePolicyAsync(new(Atlas), new(entity, "PerDiem", new(2026, 1, 1), null, "EGP", 300m, null, "CAI", BreakfastReduction: 50m, LunchReduction: 100m, DinnerReduction: 100m), default);
         perDiemPolicy = await repository.PublishRatePolicyAsync(new(Atlas), entity, perDiemPolicy.Id, new(), default);
         var perDiemExpense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Per diem policy", new(2026, 10, 20), 1m, "EGP", "EmployeePaid", categoryVersion), default);
+
+        // Scenario 1: Policy-defined meal deductions (2 days, 1 breakfast provided = 300 * 2 - 50 = 550 EGP)
         var perDiem = await repository.SetPerDiemDetailAsync(new(Atlas), entity, perDiemExpense.Id, new(2m, 0m, 1, "CAI", perDiemPolicy.Id), default);
-        Assert.Equal(100m, perDiem.DailyRate);
+        Assert.Equal(300m, perDiem.DailyRate);
         Assert.Equal(perDiemPolicy.Id, perDiem.RatePolicyVersionId);
-        Assert.Equal(166.6667m, perDiem.CalculatedAmount);
+        Assert.Equal(550.0000m, perDiem.CalculatedAmount);
+        Assert.Equal(550m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, perDiemExpense.Id))!);
+
+        // Scenario 2: Partial travel day (1.5 days, 2 meals: breakfast 50 + lunch 100 = (1.0 * 300 - 150) + (0.5 * 300) = 150 + 150 = 300 EGP)
+        var partialPerDiem = await repository.SetPerDiemDetailAsync(new(Atlas), entity, perDiemExpense.Id, new(1.5m, 0m, 2, "CAI", perDiemPolicy.Id), default);
+        Assert.Equal(1.5m, partialPerDiem.Days);
+        Assert.Equal(300.0000m, partialPerDiem.CalculatedAmount);
+
+        // Scenario 3: Explicit daily lines (line 1: 0.75 partial day factor with lunch = 0.75 * 300 - 100 = 125; line 2: full day with all 3 meals = 300 - 250 = 50 => total 175 EGP)
+        var dailyLinesReq = new List<SetPerDiemDailyLineRequest>
+        {
+            new(new(2026, 10, 20), PartialDayFactor: 0.75m, BreakfastProvided: false, LunchProvided: true, DinnerProvided: false),
+            new(new(2026, 10, 21), PartialDayFactor: 1.0m, BreakfastProvided: true, LunchProvided: true, DinnerProvided: true)
+        };
+        var lineDetail = await repository.SetPerDiemDetailAsync(new(Atlas), entity, perDiemExpense.Id, new(0m, 0m, 0, "CAI", perDiemPolicy.Id, dailyLinesReq), default);
+        Assert.Equal(1.75m, lineDetail.Days);
+        Assert.Equal(4, lineDetail.ProvidedMeals);
+        Assert.Equal(175.0000m, lineDetail.CalculatedAmount);
+        Assert.NotNull(lineDetail.DailyLines);
+        Assert.Equal(2, lineDetail.DailyLines!.Count);
+        Assert.Equal(125.0000m, lineDetail.DailyLines[0].FinalAmount);
+        Assert.Equal(50.0000m, lineDetail.DailyLines[1].FinalAmount);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task SafeDraftDeletionEnforcesAuthorizationEntityIsolationAndConcurrency()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var otherEntity = Guid.Parse("bbdcc188-1acc-805e-8721-f43308540a4d");
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection); context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var employee = Guid.NewGuid();
+
+        // 1. Create a draft expense with child records (evidence, dimension, participant)
+        var draft = await repository.CreateAsync(new(Atlas), new(entity, employee, "Draft for safe delete", new(2026, 10, 22), 250m, "EGP", "EmployeePaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Atlas), entity, draft.Id, new("Receipt", "file://test/draft-receipt"), default);
+        await repository.SetDimensionAsync(new(Atlas), entity, draft.Id, new("PROJECT", "PROJ-101"), default);
+        await repository.AddParticipantAsync(new(Atlas), entity, draft.Id, new(null, "Client Contact", "Customer"), default);
+
+        // 2. Entity Isolation: Attempt deletion with another legal entity must fail
+        await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.DeleteDraftExpenseAsync(new(Atlas), otherEntity, draft.Id, default));
+
+        // 3. Safe deletion from matching legal entity succeeds and cascades child records
+        await repository.DeleteDraftExpenseAsync(new(Atlas), entity, draft.Id, default);
+        Assert.Null(await repository.GetAsync(new(Atlas), entity, draft.Id, default));
+        Assert.Equal(0, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_evidence where tenant_id=$1 and expense_id=$2", Atlas, draft.Id));
+        Assert.Equal(0, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_dimension where tenant_id=$1 and expense_id=$2", Atlas, draft.Id));
+        Assert.Equal(0, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_participant where tenant_id=$1 and expense_id=$2", Atlas, draft.Id));
+
+        // 4. Non-Draft Deletion Protection: Create, attach evidence, and submit an expense -> cannot be deleted
+        var nonDraft = await repository.CreateAsync(new(Atlas), new(entity, employee, "Non-draft protection", new(2026, 10, 22), 300m, "EGP", "EmployeePaid", categoryVersion), default);
+        await repository.AddEvidenceAsync(new(Atlas), entity, nonDraft.Id, new("Receipt", "file://test/nondraft-receipt"), default);
+        await repository.TransitionAsync(new(Atlas), entity, nonDraft.Id, new(nonDraft.Version), "submit", default);
+        var ex = await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.DeleteDraftExpenseAsync(new(Atlas), entity, nonDraft.Id, default));
+        Assert.Equal("expenses.cannot_delete_non_draft", ex.Message);
     }
 
     [ExpensesPostgresFact]

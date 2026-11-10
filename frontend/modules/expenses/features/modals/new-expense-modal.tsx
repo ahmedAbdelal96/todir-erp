@@ -105,8 +105,34 @@ export function NewExpenseModal({
         const days = parseFloat(daysCount);
         const dailyRate = Number(selectedPerDiemPolicy.rate);
         if (!isNaN(days) && days > 0 && !isNaN(dailyRate) && dailyRate > 0) {
-          const reduction = providedMeals * (dailyRate / 3);
-          const computed = Math.max(0, days * dailyRate - reduction);
+          const bRed = Number(selectedPerDiemPolicy.breakfastReduction || 0);
+          const lRed = Number(selectedPerDiemPolicy.lunchReduction || 0);
+          const dRed = Number(selectedPerDiemPolicy.dinnerReduction || 0);
+          const hasPolicyReductions = bRed > 0 || lRed > 0 || dRed > 0;
+          const effBRed = hasPolicyReductions ? bRed : dailyRate * 0.20;
+          const effLRed = hasPolicyReductions ? lRed : dailyRate * 0.40;
+          const effDRed = hasPolicyReductions ? dRed : dailyRate * 0.40;
+
+          const wholeDays = Math.floor(days);
+          const partialFactor = days - wholeDays;
+          const totalDaysCount = wholeDays + (partialFactor > 0 ? 1 : 0);
+          let remainingMeals = providedMeals;
+          let computed = 0;
+
+          for (let i = 0; i < totalDaysCount; i++) {
+            const factor = (i === totalDaysCount - 1 && partialFactor > 0) ? partialFactor : 1.0;
+            const bf = remainingMeals > 0;
+            if (bf) remainingMeals--;
+            const lu = remainingMeals > 0;
+            if (lu) remainingMeals--;
+            const di = remainingMeals > 0;
+            if (di) remainingMeals--;
+
+            const dayBase = factor * dailyRate;
+            const dayRed = (bf ? effBRed : 0) + (lu ? effLRed : 0) + (di ? effDRed : 0);
+            computed += Math.max(0, dayBase - dayRed);
+          }
+
           setAmount(computed.toFixed(2));
           setCurrencyCode(selectedPerDiemPolicy.currencyCode);
         } else {

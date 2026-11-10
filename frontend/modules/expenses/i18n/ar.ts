@@ -116,6 +116,7 @@ export const expensesAr = {
     preparedDate: "تاريخ الإعداد",
     batchTotal: "إجمالي الدفعة",
     batchPreparedStatus: "جاهزة للصرف",
+    batchPaidStatus: "تم الصرف",
     reference: "المرجع",
     entryDate: "تاريخ القيد",
     totalAmount: "المبلغ الإجمالي",
@@ -245,6 +246,7 @@ export const expensesAr = {
       Approved: "معتمدة",
       Issued: "منصرفة",
       Applied: "مطبقة جزئياً",
+      PartiallySettled: "مسواة جزئياً",
       Settled: "مسواة بالكامل"
     },
     card: {

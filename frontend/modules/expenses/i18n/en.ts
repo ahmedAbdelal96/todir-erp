@@ -116,6 +116,7 @@ export const expensesEn = {
     preparedDate: "Prepared Date",
     batchTotal: "Batch Total",
     batchPreparedStatus: "Ready for Payment",
+    batchPaidStatus: "Paid",
     reference: "Reference",
     entryDate: "Entry Date",
     totalAmount: "Total Amount",
@@ -245,6 +246,7 @@ export const expensesEn = {
       Approved: "Approved",
       Issued: "Issued",
       Applied: "Partially Applied",
+      PartiallySettled: "Partially Settled",
       Settled: "Settled"
     },
     card: {

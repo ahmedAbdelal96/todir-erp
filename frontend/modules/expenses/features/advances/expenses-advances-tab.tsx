@@ -196,7 +196,7 @@ export function ExpensesAdvancesTab({ legalEntityId }: ExpensesAdvancesTabProps)
                             {t("advances.issueAction")}
                           </Button>
                         )}
-                        {adv.state === "Issued" && (
+                        {(adv.state === "Issued" || adv.state === "PartiallySettled") && (
                           <>
                             <Button variant="secondary" size="compact" onClick={() => setApplyAdvance(adv)}>
                               {t("advances.applyAction")}
@@ -308,7 +308,7 @@ export function ExpensesAdvancesTab({ legalEntityId }: ExpensesAdvancesTabProps)
                                   {t("advances.issueAction")}
                                 </Button>
                               )}
-                              {adv.state === "Issued" && (
+                              {(adv.state === "Issued" || adv.state === "PartiallySettled") && (
                                 <>
                                   <Button variant="secondary" size="compact" onClick={() => setApplyAdvance(adv)}>
                                     {t("advances.applyAction")}

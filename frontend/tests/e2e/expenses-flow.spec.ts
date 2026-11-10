@@ -8,8 +8,8 @@ const TEST_CARD_ID = '00000000-0000-0000-0000-000000000030';
 const TEST_REPAYMENT_ID = '00000000-0000-0000-0000-000000000040';
 
 // Artifacts directory for visual proof
-const ARTIFACTS_DIR = 'C:/Users/Adham/.gemini/antigravity/brain/2cce5b52-1525-442e-8037-81105c0347eb/expenses-acceptance';
 const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/expenses-acceptance');
+const ARTIFACTS_DIR = process.env.TEST_ARTIFACTS_DIR || LOCAL_ARTIFACTS_DIR;
 
 let consoleErrors: string[] = [];
 let pageErrors: string[] = [];

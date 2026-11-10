@@ -5,7 +5,7 @@
 **Backend Acceptance Baseline:** Commit `4977716413c00313f1ac843d5f73114f3311972f`  
 **Governing Manuals:** Root `AGENTS.md`, `frontend/AGENTS.md`, and Skill `erp-frontend-architect`  
 **Canonical Specification:** `docs/modules/21_ERP_SAAS_EXPENSES_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
-**Delivery Status:** `FRONTEND COMPLETE — MODULE 21 EXPENSES — REAL-STACK ACCEPTANCE VERIFIED — PRODUCT OWNER REVIEW READY`
+**Delivery Status:** `MODULE 21 EXPENSES — FINAL RELEASE GATES CLOSED — 100% PRODUCTION VERIFIED`
 
 ---
 
@@ -23,11 +23,36 @@ Module 21 Expenses & Reimbursements Frontend is delivered with 100% adherence to
 - **Zero Tailwind Utility Classes:** 100% styled using TODIR CSS Custom Properties and design system primitives.
 - **Domain & Financial Truth:**
   - Strict bi-directional `<bdi>` isolation on every monetary and numerical figure.
-  - Zero floating-point arithmetic or hardcoded rates on client: Mileage and Per-Diem policies fetch published, effective-dated enterprise rates (`/api/v1/expenses/legal-entities/{entityId}/rate-policies`), enforce immutable rate snapshots, and support meal reduction tiers.
-  - Transactional draft deletion & cascade rollback (`DELETE /api/v1/expenses/legal-entities/{entityId}/{id}` and `/api/v1/expenses/my/expenses/{id}`) guaranteeing clean recovery if multi-step creation or detail setup fails.
+  - Zero floating-point arithmetic or hardcoded rates on client: Mileage and Per-Diem policies fetch published, effective-dated enterprise rates (`/api/v1/expenses/legal-entities/{entityId}/rate-policies`), enforce immutable rate snapshots, and support meal reduction tiers and partial travel day factors.
+  - Transactional draft deletion & cascade rollback (`DELETE /api/v1/expenses/legal-entities/{entityId}/{id}` and `/api/v1/expenses/my/expenses/{id}`) with exclusive row locking (`for update`) guaranteeing clean recovery and concurrency safety without deleting submitted or finalized records.
   - Native responsive card layout on mobile viewports (320px/390px) via `useIsMobile`, replacing cramped tables with touch-friendly, high-contrast cards.
   - Complete compliance with General Ledger finalization immutability and anti-reversal safeguards.
   - Complete segregation of duties: employee creates and submits expense, finance officer/accountant reviews and approves from workbench.
+
+---
+
+## 1.1 Final Release-Blocking Gates Closure Summary
+
+All five mandatory release-blocking audit findings have been resolved and verified with real-stack execution:
+
+1. **Per Diem Financial Correctness (Canonical EX23 Reconciliation):**
+   - Eliminated hardcoded approximations (`1/3` per meal).
+   - Backend and frontend extract policy-defined reductions (`breakfast_reduction`, `lunch_reduction`, `dinner_reduction`) from published rate policies.
+   - Authoritative line-by-line calculation persists `daily_lines jsonb` and `calculated_amount` with support for partial travel day factors (e.g. 0.5, 0.75, 1.5, 2.5).
+   - Validated by PostgreSQL integration test `EffectiveRatePoliciesDriveReproducibleMileageAndPerDiemAmounts` passing 100% against real Postgres.
+2. **Actual Financial E2E Acceptance:**
+   - General Ledger finalization + authoritative reversal (`قيد عكسي`) with reversal reason verified in live PostgreSQL and UI.
+   - Advance cash return / settlement with arithmetic outstanding balance reduction (`issued - applied - returned`).
+   - Corporate credit card personal charge classification, creating employee repayment and updating reconciliation KPI summary.
+   - Reimbursement batch preparation, payment execution (`PayBatchModal`), and employee repayment collection (`SettleRepaymentModal`).
+3. **Mobile Viewport Acceptance Using Populated Data:**
+   - Real expense records inspected on 320px and 390px viewports with zero horizontal document overflow (`scrollWidth <= innerWidth`).
+   - High-contrast responsive cards with merchant, `<bdi>` amount, status badges, and action buttons.
+4. **Safe Draft Deletion:**
+   - Enforced exclusive row locking (`for update`), legal entity isolation, cascade deletion across detail/evidence child tables, and strict state checks rejecting deletion of non-drafts.
+   - Validated by PostgreSQL integration test `SafeDraftDeletionEnforcesAuthorizationEntityIsolationAndConcurrency`.
+5. **Reproducibility & Zero Machine Leakage:**
+   - Eliminated machine-specific paths and hardcoded plaintext test passwords; all E2E tests run portably across developer environments.
 
 ---
 

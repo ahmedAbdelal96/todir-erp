@@ -843,6 +843,11 @@ export const expensesApi = {
     }),
 
   // --- Reimbursement Batches ---
+  listReimbursementBatches: (legalEntityId: string): Promise<readonly ExpenseReimbursementBatchDto[]> =>
+    httpClient<readonly ExpenseReimbursementBatchDto[]>(
+      `${BASE}/legal-entities/${legalEntityId}/reimbursements/batches`
+    ),
+
   prepareReimbursementBatch: (legalEntityId: string, currency?: string): Promise<ExpenseReimbursementBatchDto> => {
     const q = new URLSearchParams();
     if (currency) q.set("currency", currency);

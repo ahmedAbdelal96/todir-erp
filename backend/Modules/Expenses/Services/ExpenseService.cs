@@ -105,4 +105,5 @@ public sealed class ExpenseService(ExpenseRepository repository)
     public Task<IReadOnlyList<ExpenseDimensionDto>> ListDimensionsAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct) => repository.ListDimensionsAsync(tenant, entity, expenseId, ct);
     public Task<ExpenseReimbursementBatchDto> PrepareReimbursementBatchAsync(TenantId tenant, Guid entity, string currency, CancellationToken ct) => repository.PrepareReimbursementBatchAsync(tenant, entity, currency, ct);
     public Task<ExpenseReimbursementBatchDto> PayReimbursementBatchAsync(TenantId tenant, Guid entity, Guid batchId, Guid actorId, Guid membershipId, PayExpenseReimbursementBatchRequest request, CancellationToken ct) => repository.PayReimbursementBatchAsync(tenant, entity, batchId, actorId, membershipId, request.PaymentAccountId, request.Method, request.PaymentDate, request.PostingDate, request.Version, ct);
+    public Task<IReadOnlyList<ExpenseReimbursementBatchDto>> ListReimbursementBatchesAsync(TenantId tenant, Guid entity, CancellationToken ct) => repository.ListReimbursementBatchesAsync(tenant, entity, ct);
 }

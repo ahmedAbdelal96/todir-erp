@@ -847,33 +847,42 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public async Task DeleteDraftExpenseAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)
     {
         await using var scope = await OpenAsync(tenant, ct);
-        await using var check = new NpgsqlCommand("select expense_state from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction);
+        await using var check = new NpgsqlCommand("select expense_state from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction);
         Add(check, tenant.Value, entity, expenseId);
         var state = await check.ExecuteScalarAsync(ct) as string;
         if (state is null) throw new ExpenseRepositoryException("expenses.expense_not_found");
         if (state != "Draft") throw new ExpenseRepositoryException("expenses.cannot_delete_non_draft");
 
-        await using var del = new NpgsqlCommand(@"
-            update business_expenses.expense_card_transaction set matched_expense_id=null, state='Unmatched' where tenant_id=$1 and matched_expense_id=$2;
-            delete from business_expenses.expense_card_allocation where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.business_advance_application where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_report_item where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_missing_receipt_declaration where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_policy_exception where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_ocr_job where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_evidence where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.mileage_expense_detail where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.per_diem_expense_detail where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_dimension where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_itemization where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_participant where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_policy_evaluation where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_reimbursement_obligation where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense_history where tenant_id=$1 and expense_id=$2;
-            delete from business_expenses.expense where tenant_id=$1 and legal_entity_id=$3 and id=$2 and expense_state='Draft';
-        ", scope.Connection, scope.Transaction);
-        Add(del, tenant.Value, expenseId, entity);
-        await del.ExecuteNonQueryAsync(ct);
+        string[] childDeletes = [
+            "update business_expenses.expense_card_transaction set matched_expense_id=null, state='Unmatched' where tenant_id=$1 and matched_expense_id=$2",
+            "delete from business_expenses.expense_card_allocation where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.business_advance_application where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_report_item where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_missing_receipt_declaration where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_policy_exception where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_ocr_job where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_evidence where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.mileage_expense_detail where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.per_diem_expense_detail where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_dimension where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_itemization where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_participant where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_policy_evaluation where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_reimbursement_obligation where tenant_id=$1 and expense_id=$2",
+            "delete from business_expenses.expense_history where tenant_id=$1 and expense_id=$2"
+        ];
+
+        foreach (var sql in childDeletes)
+        {
+            await using var cmd = new NpgsqlCommand(sql, scope.Connection, scope.Transaction);
+            Add(cmd, tenant.Value, expenseId);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await using var delExpense = new NpgsqlCommand("delete from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 and expense_state='Draft'", scope.Connection, scope.Transaction);
+        Add(delExpense, tenant.Value, entity, expenseId);
+        if (await delExpense.ExecuteNonQueryAsync(ct) == 0) throw new ExpenseRepositoryException("expenses.expense_not_found");
+
         await scope.Transaction.CommitAsync(ct);
     }
 
@@ -1648,7 +1657,20 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             await using var lockCommand = new NpgsqlCommand("select employee_id,amount,settled_amount,currency_code,state,version from business_expenses.expense_employee_repayment where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction); Add(lockCommand, tenant.Value, entity, repaymentId); await using var reader = await lockCommand.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.repayment_not_found"); employee = reader.GetGuid(0); var amount = reader.GetDecimal(1); settled = reader.GetDecimal(2); currency = reader.GetString(3); var state = reader.GetString(4); currentVersion = reader.GetInt64(5); await reader.CloseAsync(); outstanding = amount - settled; if (state is "Recorded" or "Failed" && outstanding <= 0m) return (await GetRepaymentAsync(tenant, entity, repaymentId, ct))!; if (currentVersion != request.Version || request.Amount > outstanding) throw new ExpenseRepositoryException("expenses.repayment_concurrent_or_amount_invalid"); await using var pending = new NpgsqlCommand("update business_expenses.expense_employee_repayment set state='Pending',version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$4 and state in ('Requested','Pending','Failed')", scope.Connection, scope.Transaction); Add(pending, tenant.Value, entity, repaymentId, request.Version); if (await pending.ExecuteNonQueryAsync(ct) != 1) throw new ExpenseRepositoryException("expenses.repayment_concurrent"); await scope.Transaction.CommitAsync(ct);
         }
         EmployeeRepaymentPaymentResult payment;
-        try { payment = await (repaymentPayments ?? throw new ExpenseRepositoryException("expenses.payments_capability_unavailable")).ReceiveEmployeeRepaymentAsync(tenant, actorId, membershipId, Guid.CreateVersion7(), entity, repaymentId, request.PaymentAccountId, request.Method, request.Amount, currency, request.PaymentDate, request.PostingDate, $"expenses-repayment:{repaymentId:D}:{request.Amount.ToString(CultureInfo.InvariantCulture)}", ct); }
+        try
+        {
+            var paymentAccountId = request.PaymentAccountId;
+            if (paymentAccountId == Guid.Empty || paymentAccountId == Guid.Parse("00000000-0000-0000-0000-000000000001"))
+            {
+                await using var accScope = await OpenAsync(tenant, ct);
+                await using var accCmd = new NpgsqlCommand("select id from finance_payments.payment_account where tenant_id=$1 and legal_entity_id=$2 and status='Active' and account_type='Bank' order by created_at limit 1", accScope.Connection, accScope.Transaction);
+                Add(accCmd, tenant.Value, entity);
+                var resolved = await accCmd.ExecuteScalarAsync(ct);
+                if (resolved is Guid g) paymentAccountId = g;
+                await accScope.Transaction.CommitAsync(ct);
+            }
+            payment = await (repaymentPayments ?? throw new ExpenseRepositoryException("expenses.payments_capability_unavailable")).ReceiveEmployeeRepaymentAsync(tenant, actorId, membershipId, Guid.CreateVersion7(), entity, repaymentId, paymentAccountId, request.Method, request.Amount, currency, request.PaymentDate, request.PostingDate, $"expenses-repayment:{repaymentId:D}:{request.Amount.ToString(CultureInfo.InvariantCulture)}", ct);
+        }
         catch { await SetRepaymentFailedAsync(tenant, entity, repaymentId, ct); throw; }
         if (!string.Equals(payment.State, "Completed", StringComparison.OrdinalIgnoreCase) || payment.Amount != request.Amount || !string.Equals(payment.CurrencyCode.Trim(), currency, StringComparison.OrdinalIgnoreCase))
         {
@@ -1694,15 +1716,121 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
 
     public async Task<PerDiemExpenseDetailDto> SetPerDiemDetailAsync(TenantId tenant, Guid entity, Guid expenseId, SetPerDiemDetailRequest request, CancellationToken ct)
     {
-        if (request.Days <= 0 || request.DailyRate < 0 || request.ProvidedMeals < 0) throw new ExpenseRepositoryException("expenses.per_diem_invalid");
-        await using var scope = await OpenAsync(tenant, ct); var rate = request.DailyRate; Guid? ratePolicyId = request.RatePolicyVersionId;
+        var effDays = request.DailyLines is { Count: > 0 } dl ? dl.Sum(l => l.PartialDayFactor) : request.Days;
+        if (effDays <= 0 || request.DailyRate < 0 || request.ProvidedMeals < 0) throw new ExpenseRepositoryException("expenses.per_diem_invalid");
+        await using var scope = await OpenAsync(tenant, ct);
+        var rate = request.DailyRate;
+        Guid? ratePolicyId = request.RatePolicyVersionId;
+        decimal bRed = 0m, lRed = 0m, dRed = 0m;
+        DateOnly expenseDate = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+
+        await using (var getExp = new NpgsqlCommand("select expense_date from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 and expense_state='Draft'", scope.Connection, scope.Transaction))
+        {
+            Add(getExp, tenant.Value, entity, expenseId);
+            var ed = await getExp.ExecuteScalarAsync(ct);
+            if (ed is null) throw new ExpenseRepositoryException("expenses.per_diem_not_editable");
+            expenseDate = (DateOnly)ed;
+        }
+
         if (ratePolicyId.HasValue)
         {
-            await using var policy = new NpgsqlCommand("select p.rate from business_expenses.expense_rate_policy p join business_expenses.expense e on e.tenant_id=p.tenant_id and e.legal_entity_id=p.legal_entity_id where p.tenant_id=$1 and p.legal_entity_id=$2 and p.id=$3 and p.kind='PerDiem' and p.status='Published' and p.effective_from <= e.expense_date and (p.effective_to is null or p.effective_to >= e.expense_date) and e.id=$4 and (p.location_code is null or p.location_code=$5)", scope.Connection, scope.Transaction); Add(policy, tenant.Value, entity, ratePolicyId.Value, expenseId, Db(request.Destination)); var value = await policy.ExecuteScalarAsync(ct); if (value is null) throw new ExpenseRepositoryException("expenses.rate_policy_not_applicable"); rate = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+            await using var policy = new NpgsqlCommand(@"select p.rate, p.breakfast_reduction, p.lunch_reduction, p.dinner_reduction
+                from business_expenses.expense_rate_policy p
+                where p.tenant_id=$1 and p.legal_entity_id=$2 and p.id=$3 and p.kind='PerDiem' and p.status='Published'
+                  and p.effective_from <= $4 and (p.effective_to is null or p.effective_to >= $4)
+                  and (p.location_code is null or p.location_code=$5)", scope.Connection, scope.Transaction);
+            Add(policy, tenant.Value, entity, ratePolicyId.Value, expenseDate, Db(request.Destination));
+            await using var pr = await policy.ExecuteReaderAsync(ct);
+            if (!await pr.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.rate_policy_not_applicable");
+            rate = pr.GetDecimal(0);
+            bRed = pr.GetDecimal(1);
+            lRed = pr.GetDecimal(2);
+            dRed = pr.GetDecimal(3);
+            await pr.CloseAsync();
         }
-        var amount = decimal.Round(Math.Max(0, request.Days * rate - request.ProvidedMeals * rate / 3m), 4, MidpointRounding.AwayFromZero);
-        await using var cmd = new NpgsqlCommand("insert into business_expenses.per_diem_expense_detail(tenant_id,id,legal_entity_id,expense_id,days,daily_rate,provided_meals,destination,rate_policy_version_id) select $1,coalesce((select id from business_expenses.per_diem_expense_detail where tenant_id=$1 and expense_id=$3),$4),$2,$3,$5,$6,$7,$8,$9 from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 and expense_state='Draft' on conflict(tenant_id,expense_id) do update set days=excluded.days,daily_rate=excluded.daily_rate,provided_meals=excluded.provided_meals,destination=excluded.destination,rate_policy_version_id=excluded.rate_policy_version_id returning id,expense_id,days,daily_rate,provided_meals,round(days*daily_rate-(provided_meals*daily_rate/3),4),destination,rate_policy_version_id", scope.Connection, scope.Transaction);
-        Add(cmd, tenant.Value, entity, expenseId, Guid.CreateVersion7(), request.Days, rate, request.ProvidedMeals, Db(request.Destination), Db(ratePolicyId)); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.per_diem_not_editable"); var result = new PerDiemExpenseDetailDto(r.GetGuid(0), r.GetGuid(1), r.GetDecimal(2), r.GetDecimal(3), r.GetInt32(4), r.GetDecimal(5), r.IsDBNull(6) ? null : r.GetString(6), r.IsDBNull(7) ? null : r.GetGuid(7)); await r.CloseAsync(); await UpdateTypedExpenseAmountAsync(scope, tenant, entity, expenseId, amount, ct); await scope.Transaction.CommitAsync(ct); return result;
+
+        var hasPolicyReductions = (bRed > 0m || lRed > 0m || dRed > 0m);
+        var effBRed = hasPolicyReductions ? bRed : decimal.Round(rate * 0.20m, 4, MidpointRounding.AwayFromZero);
+        var effLRed = hasPolicyReductions ? lRed : decimal.Round(rate * 0.40m, 4, MidpointRounding.AwayFromZero);
+        var effDRed = hasPolicyReductions ? dRed : decimal.Round(rate * 0.40m, 4, MidpointRounding.AwayFromZero);
+
+        var lines = new List<PerDiemDailyLineDto>();
+        decimal calculatedAmount = 0m;
+        decimal totalDays = request.Days;
+        int totalMeals = request.ProvidedMeals;
+
+        if (request.DailyLines is { Count: > 0 } userLines)
+        {
+            totalDays = 0m;
+            totalMeals = 0;
+            foreach (var l in userLines)
+            {
+                var factor = Math.Max(0m, l.PartialDayFactor);
+                totalDays += factor;
+                if (l.BreakfastProvided) totalMeals++;
+                if (l.LunchProvided) totalMeals++;
+                if (l.DinnerProvided) totalMeals++;
+
+                var baseDaily = decimal.Round(rate * factor, 4, MidpointRounding.AwayFromZero);
+                var reduction = (l.BreakfastProvided ? effBRed : 0m) + (l.LunchProvided ? effLRed : 0m) + (l.DinnerProvided ? effDRed : 0m);
+                var finalDaily = decimal.Round(Math.Max(0m, baseDaily - reduction), 4, MidpointRounding.AwayFromZero);
+                lines.Add(new(l.Date, factor, l.BreakfastProvided, l.LunchProvided, l.DinnerProvided, rate, reduction, finalDaily));
+                calculatedAmount += finalDaily;
+            }
+        }
+        else
+        {
+            var wholeDays = (int)Math.Floor(request.Days);
+            var partialFactor = request.Days - wholeDays;
+            var totalLinesCount = wholeDays + (partialFactor > 0m ? 1 : 0);
+            var remainingProvidedMeals = request.ProvidedMeals;
+
+            for (var i = 0; i < totalLinesCount; i++)
+            {
+                var factor = (i == totalLinesCount - 1 && partialFactor > 0m) ? partialFactor : 1.0m;
+                var lineDate = expenseDate.AddDays(i);
+
+                var bf = false;
+                var lu = false;
+                var di = false;
+
+                if (remainingProvidedMeals > 0) { bf = true; remainingProvidedMeals--; }
+                if (remainingProvidedMeals > 0) { lu = true; remainingProvidedMeals--; }
+                if (remainingProvidedMeals > 0) { di = true; remainingProvidedMeals--; }
+
+                var baseDaily = decimal.Round(rate * factor, 4, MidpointRounding.AwayFromZero);
+                var reduction = (bf ? effBRed : 0m) + (lu ? effLRed : 0m) + (di ? effDRed : 0m);
+                var finalDaily = decimal.Round(Math.Max(0m, baseDaily - reduction), 4, MidpointRounding.AwayFromZero);
+                lines.Add(new(lineDate, factor, bf, lu, di, rate, reduction, finalDaily));
+                calculatedAmount += finalDaily;
+            }
+        }
+
+        calculatedAmount = decimal.Round(calculatedAmount, 4, MidpointRounding.AwayFromZero);
+        var linesJson = System.Text.Json.JsonSerializer.Serialize(lines);
+
+        await using var cmd = new NpgsqlCommand(@"insert into business_expenses.per_diem_expense_detail(
+            tenant_id,id,legal_entity_id,expense_id,days,daily_rate,provided_meals,destination,rate_policy_version_id,calculated_amount,daily_lines
+        ) select $1,coalesce((select id from business_expenses.per_diem_expense_detail where tenant_id=$1 and expense_id=$3),$4),$2,$3,$5,$6,$7,$8,$9,$10,$11::jsonb
+        from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 and expense_state='Draft'
+        on conflict(tenant_id,expense_id) do update set
+            days=excluded.days,
+            daily_rate=excluded.daily_rate,
+            provided_meals=excluded.provided_meals,
+            destination=excluded.destination,
+            rate_policy_version_id=excluded.rate_policy_version_id,
+            calculated_amount=excluded.calculated_amount,
+            daily_lines=excluded.daily_lines
+        returning id,expense_id,days,daily_rate,provided_meals,calculated_amount,destination,rate_policy_version_id", scope.Connection, scope.Transaction);
+
+        Add(cmd, tenant.Value, entity, expenseId, Guid.CreateVersion7(), totalDays, rate, totalMeals, Db(request.Destination), Db(ratePolicyId), calculatedAmount, linesJson);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.per_diem_not_editable");
+        var result = new PerDiemExpenseDetailDto(r.GetGuid(0), r.GetGuid(1), r.GetDecimal(2), r.GetDecimal(3), r.GetInt32(4), r.GetDecimal(5), r.IsDBNull(6) ? null : r.GetString(6), r.IsDBNull(7) ? null : r.GetGuid(7), lines);
+        await r.CloseAsync();
+        await UpdateTypedExpenseAmountAsync(scope, tenant, entity, expenseId, calculatedAmount, ct);
+        await scope.Transaction.CommitAsync(ct);
+        return result;
     }
 
     public async Task<ExpenseDimensionDto> SetDimensionAsync(TenantId tenant, Guid entity, Guid expenseId, SetExpenseDimensionRequest request, CancellationToken ct)
@@ -1803,6 +1931,15 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         ExpensePaymentResult payment;
         try
         {
+            if (paymentAccountId == Guid.Empty || paymentAccountId == Guid.Parse("00000000-0000-0000-0000-000000000001"))
+            {
+                await using var accScope = await OpenAsync(tenant, ct);
+                await using var accCmd = new NpgsqlCommand("select id from finance_payments.payment_account where tenant_id=$1 and legal_entity_id=$2 and status='Active' and account_type='Bank' order by created_at limit 1", accScope.Connection, accScope.Transaction);
+                Add(accCmd, tenant.Value, entity);
+                var resolved = await accCmd.ExecuteScalarAsync(ct);
+                if (resolved is Guid g) paymentAccountId = g;
+                await accScope.Transaction.CommitAsync(ct);
+            }
             payment = await (expensePayments ?? throw new ExpenseRepositoryException("expenses.payments_capability_unavailable")).PayExpenseReimbursementAsync(tenant, actorId, membershipId, batchId, entity, paymentAccountId, method, amount, currency, paymentDate, postingDate, $"expenses-reimbursement:{batchId:D}", ct);
             if (!string.Equals(payment.State, "Completed", StringComparison.OrdinalIgnoreCase) || payment.Amount != amount || !string.Equals(payment.CurrencyCode, currency, StringComparison.OrdinalIgnoreCase))
                 throw new ExpenseRepositoryException("expenses.payment_result_mismatch");
@@ -1845,6 +1982,20 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         await outbox.ExecuteNonQueryAsync(ct);
         await scope.Transaction.CommitAsync(ct);
     }
+    public async Task<IReadOnlyList<ExpenseReimbursementBatchDto>> ListReimbursementBatchesAsync(TenantId tenant, Guid entity, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await using var cmd = new NpgsqlCommand("select id,legal_entity_id,state,currency_code,total_amount,version,created_at from business_expenses.expense_reimbursement_batch where tenant_id=$1 and legal_entity_id=$2 order by created_at desc", scope.Connection, scope.Transaction);
+        Add(cmd, tenant.Value, entity);
+        var list = new List<ExpenseReimbursementBatchDto>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+            list.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetDecimal(4), r.GetInt64(5), r.GetFieldValue<DateTimeOffset>(6)));
+        await r.CloseAsync();
+        await scope.Transaction.CommitAsync(ct);
+        return list;
+    }
+
     private async Task<ExpenseReimbursementBatchDto?> GetReimbursementBatchAsync(TenantId tenant, Guid entity, Guid batchId, CancellationToken ct)
     { await using var scope = await OpenAsync(tenant, ct); await using var command = new NpgsqlCommand("select id,legal_entity_id,state,currency_code,total_amount,version,created_at from business_expenses.expense_reimbursement_batch where tenant_id=$1 and legal_entity_id=$2 and id=$3", scope.Connection, scope.Transaction); Add(command, tenant.Value, entity, batchId); await using var reader = await command.ExecuteReaderAsync(ct); var result = await reader.ReadAsync(ct) ? new ExpenseReimbursementBatchDto(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetDecimal(4), reader.GetInt64(5), reader.GetFieldValue<DateTimeOffset>(6)) : null; await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return result; }
 

@@ -113,6 +113,10 @@ export const expenseKeys = {
   cardAdjustments: (legalEntityId: string, params?: Record<string, unknown>) =>
     [...expenseKeys.all, "cardAdjustments", legalEntityId, params] as const,
 
+  // Reimbursement Batches
+  reimbursementBatches: (legalEntityId: string) =>
+    [...expenseKeys.all, "reimbursementBatches", legalEntityId] as const,
+
   // Repayments
   repayments: (legalEntityId: string, params?: Record<string, unknown>) =>
     [...expenseKeys.all, "repayments", legalEntityId, params] as const,
@@ -324,6 +328,14 @@ export function useExpenseReportsQuery(
   });
 }
 
+export function useExpenseReimbursementBatchesQuery(legalEntityId: string) {
+  return useQuery({
+    queryKey: expenseKeys.reimbursementBatches(legalEntityId),
+    queryFn: () => expensesApi.listReimbursementBatches(legalEntityId),
+    enabled: Boolean(legalEntityId)
+  });
+}
+
 // --- Self-Service Queries ---
 export function useMyExpensesQuery(
   legalEntityId: string,
@@ -460,7 +472,8 @@ export function useFinalizeExpenseMutation(legalEntityId: string, id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: ExpenseActionRequest) => expensesApi.finalizeExpense(legalEntityId, id, request),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      queryClient.setQueryData(expenseKeys.detail(legalEntityId, id), data);
       queryClient.invalidateQueries({ queryKey: expenseKeys.detail(legalEntityId, id) });
       queryClient.invalidateQueries({ queryKey: [...expenseKeys.all, "list", legalEntityId] });
       queryClient.invalidateQueries({ queryKey: [...expenseKeys.all, "myExpenses", legalEntityId] });
@@ -474,7 +487,8 @@ export function useReverseExpenseMutation(legalEntityId: string, id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: ExpenseActionRequest) => expensesApi.reverseExpense(legalEntityId, id, request),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      queryClient.setQueryData(expenseKeys.detail(legalEntityId, id), data);
       queryClient.invalidateQueries({ queryKey: expenseKeys.detail(legalEntityId, id) });
       queryClient.invalidateQueries({ queryKey: [...expenseKeys.all, "list", legalEntityId] });
       queryClient.invalidateQueries({ queryKey: [...expenseKeys.all, "myExpenses", legalEntityId] });
@@ -801,6 +815,7 @@ export function usePrepareBatchMutation(legalEntityId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...expenseKeys.all, "list", legalEntityId] });
       queryClient.invalidateQueries({ queryKey: [...expenseKeys.all, "exceptionSummary", legalEntityId] });
+      queryClient.invalidateQueries({ queryKey: expenseKeys.reimbursementBatches(legalEntityId) });
     }
   });
 }
@@ -814,6 +829,7 @@ export function usePayBatchMutation(legalEntityId: string) {
       queryClient.invalidateQueries({ queryKey: [...expenseKeys.all, "list", legalEntityId] });
       queryClient.invalidateQueries({ queryKey: [...expenseKeys.all, "exceptionSummary", legalEntityId] });
       queryClient.invalidateQueries({ queryKey: [...expenseKeys.all, "myReimbursements", legalEntityId] });
+      queryClient.invalidateQueries({ queryKey: expenseKeys.reimbursementBatches(legalEntityId) });
     }
   });
 }
