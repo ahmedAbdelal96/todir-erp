@@ -515,6 +515,73 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         }, ct);
     }
 
+    public async Task<OpeningImportView> CreateOpeningImportAsync(TenantId tenant, Guid actor, CreateOpeningImportRequest request, CancellationToken ct)
+    {
+        if (request.LegalEntityId == Guid.Empty || string.IsNullOrWhiteSpace(request.SourceSystem) || string.IsNullOrWhiteSpace(request.BatchReference) || request.OpeningDate == default || request.Lines.Count == 0)
+            throw new FixedAssetException("assets.opening_import_required");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var importId = Guid.CreateVersion7();
+            await using var import = new NpgsqlCommand("insert into business_assets.asset_opening_import(tenant_id,id,legal_entity_id,source_system,batch_reference,opening_date,status,created_by,created_at) values($1,$2,$3,$4,$5,$6,'Draft',$7,now())", context.Connection, context.Transaction);
+            import.Parameters.AddWithValue(tenant.Value); import.Parameters.AddWithValue(importId); import.Parameters.AddWithValue(request.LegalEntityId); import.Parameters.AddWithValue(request.SourceSystem.Trim()); import.Parameters.AddWithValue(request.BatchReference.Trim()); import.Parameters.AddWithValue(request.OpeningDate); import.Parameters.AddWithValue(actor);
+            var createdAt = DateTimeOffset.UtcNow;
+            try { await import.ExecuteNonQueryAsync(token); }
+            catch (PostgresException ex) when (ex.SqlState == "23505") { throw new FixedAssetException("assets.opening_import_exists"); }
+            var validCount = 0;
+            foreach (var line in request.Lines)
+            {
+                var lineId = Guid.CreateVersion7();
+                var error = ValidateOpeningLine(line);
+                if (error is null) validCount++;
+                await using var insert = new NpgsqlCommand("insert into business_assets.asset_opening_import_line(tenant_id,id,import_id,legacy_asset_number,category_id,asset_name,book_definition_id,acquisition_date,placed_in_service_date,original_cost,accumulated_depreciation,net_book_value,residual_value,useful_life_months,depreciation_method,outcome,error_code) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)", context.Connection, context.Transaction);
+                insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(lineId); insert.Parameters.AddWithValue(importId); insert.Parameters.AddWithValue(line.LegacyAssetNumber.Trim()); insert.Parameters.AddWithValue(line.CategoryId); insert.Parameters.AddWithValue(line.Name.Trim()); insert.Parameters.AddWithValue(line.BookDefinitionId); insert.Parameters.AddWithValue((object?)line.AcquisitionDate ?? DBNull.Value); insert.Parameters.AddWithValue(line.PlacedInServiceDate); insert.Parameters.AddWithValue(line.OriginalCost); insert.Parameters.AddWithValue(line.AccumulatedDepreciation); insert.Parameters.AddWithValue(line.NetBookValue); insert.Parameters.AddWithValue(line.ResidualValue); insert.Parameters.AddWithValue((object?)line.UsefulLifeMonths ?? DBNull.Value); insert.Parameters.AddWithValue(line.DepreciationMethod.Trim()); insert.Parameters.AddWithValue(error is null ? "Valid" : "Rejected"); insert.Parameters.AddWithValue((object?)error ?? DBNull.Value); await insert.ExecuteNonQueryAsync(token);
+            }
+            var status = validCount == request.Lines.Count ? "Validated" : "Draft";
+            await using var update = new NpgsqlCommand("update business_assets.asset_opening_import set status=$1 where tenant_id=$2 and id=$3", context.Connection, context.Transaction); update.Parameters.AddWithValue(status); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(importId); await update.ExecuteNonQueryAsync(token);
+            return new OpeningImportView(importId, request.LegalEntityId, request.SourceSystem.Trim(), request.BatchReference.Trim(), request.OpeningDate, status, request.Lines.Count, validCount, createdAt);
+        }, ct);
+    }
+
+    public async Task<OpeningImportView> PostOpeningImportAsync(TenantId tenant, Guid actor, Guid importId, CancellationToken ct)
+    {
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await using var import = new NpgsqlCommand("select legal_entity_id,source_system,batch_reference,opening_date,status,created_at from business_assets.asset_opening_import where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); import.Parameters.AddWithValue(tenant.Value); import.Parameters.AddWithValue(importId);
+            await using var importReader = await import.ExecuteReaderAsync(token);
+            if (!await importReader.ReadAsync(token)) throw new FixedAssetException("assets.opening_import_not_found");
+            var legalEntityId = importReader.GetGuid(0); var sourceSystem = importReader.GetString(1); var batchReference = importReader.GetString(2); var openingDate = importReader.GetFieldValue<DateOnly>(3); var status = importReader.GetString(4); var createdAt = importReader.GetFieldValue<DateTimeOffset>(5); await importReader.CloseAsync();
+            if (status == "Posted") return new OpeningImportView(importId, legalEntityId, sourceSystem, batchReference, openingDate, status, await OpeningLineCountAsync(context, tenant, importId, token), await OpeningValidLineCountAsync(context, tenant, importId, token), createdAt);
+            if (status != "Validated") throw new FixedAssetException("assets.opening_import_not_validated");
+            await using var lines = new NpgsqlCommand("select l.id,l.legacy_asset_number,l.category_id,l.asset_name,l.book_definition_id,l.acquisition_date,l.placed_in_service_date,l.original_cost,l.accumulated_depreciation,l.residual_value,l.useful_life_months,l.depreciation_method,c.asset_nature,c.tracking_granularity,bd.legal_entity_id from business_assets.asset_opening_import_line l join business_assets.asset_category c on c.tenant_id=l.tenant_id and c.id=l.category_id join business_assets.asset_book_definition bd on bd.tenant_id=l.tenant_id and bd.id=l.book_definition_id where l.tenant_id=$1 and l.import_id=$2 and l.outcome='Valid' order by l.id", context.Connection, context.Transaction); lines.Parameters.AddWithValue(tenant.Value); lines.Parameters.AddWithValue(importId);
+            await using var lineReader = await lines.ExecuteReaderAsync(token); var rows = new List<(Guid Id, string Legacy, Guid CategoryId, string Name, Guid BookDefinitionId, DateOnly? AcquisitionDate, DateOnly PlacedInServiceDate, decimal Cost, decimal Accumulated, decimal Residual, int? UsefulLife, string Method, string Nature, string Tracking, Guid BookEntity)>(); while (await lineReader.ReadAsync(token)) rows.Add((lineReader.GetGuid(0), lineReader.GetString(1), lineReader.GetGuid(2), lineReader.GetString(3), lineReader.GetGuid(4), lineReader.IsDBNull(5) ? null : lineReader.GetFieldValue<DateOnly>(5), lineReader.GetFieldValue<DateOnly>(6), lineReader.GetDecimal(7), lineReader.GetDecimal(8), lineReader.GetDecimal(9), lineReader.IsDBNull(10) ? null : lineReader.GetInt32(10), lineReader.GetString(11), lineReader.GetString(12), lineReader.GetString(13), lineReader.GetGuid(14))); await lineReader.CloseAsync();
+            if (rows.Count != await OpeningPendingValidLineCountAsync(context, tenant, importId, token)) throw new FixedAssetException("assets.opening_import_reference_invalid");
+            foreach (var row in rows)
+            {
+                if (row.BookEntity != legalEntityId) throw new FixedAssetException("assets.opening_import_book_entity_mismatch");
+                var assetId = Guid.CreateVersion7(); var assetNumber = $"FA-OPEN-{row.Id:N}"[..20];
+                await using var asset = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,asset_tag,lifecycle_state,asset_nature,tracking_granularity,source_origin_type,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,$6,$7,'Operational',$8,$9,'OpeningMigration',$10,$10,$11,1,$12,now(),1)", context.Connection, context.Transaction); asset.Parameters.AddWithValue(tenant.Value); asset.Parameters.AddWithValue(assetId); asset.Parameters.AddWithValue(legalEntityId); asset.Parameters.AddWithValue(row.CategoryId); asset.Parameters.AddWithValue(assetNumber); asset.Parameters.AddWithValue(row.Name.Trim()); asset.Parameters.AddWithValue(row.Legacy.Trim()); asset.Parameters.AddWithValue(row.Nature); asset.Parameters.AddWithValue(row.Tracking); asset.Parameters.AddWithValue(row.AcquisitionDate ?? openingDate); asset.Parameters.AddWithValue(row.PlacedInServiceDate); asset.Parameters.AddWithValue(actor); await asset.ExecuteNonQueryAsync(token);
+                var bookId = Guid.CreateVersion7(); await using var book = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),1)", context.Connection, context.Transaction); book.Parameters.AddWithValue(tenant.Value); book.Parameters.AddWithValue(bookId); book.Parameters.AddWithValue(assetId); book.Parameters.AddWithValue(row.BookDefinitionId); book.Parameters.AddWithValue(row.Cost); book.Parameters.AddWithValue(row.Residual); book.Parameters.AddWithValue((object?)row.UsefulLife ?? DBNull.Value); book.Parameters.AddWithValue(row.Method); book.Parameters.AddWithValue(row.PlacedInServiceDate); await book.ExecuteNonQueryAsync(token);
+                await using var transaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,accumulated_depreciation,source_reference,idempotency_key,created_by,created_at) values($1,$2,$3,'Opening',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction); transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue(Guid.CreateVersion7()); transaction.Parameters.AddWithValue(bookId); transaction.Parameters.AddWithValue(openingDate); transaction.Parameters.AddWithValue(row.Cost); transaction.Parameters.AddWithValue(row.Accumulated); transaction.Parameters.AddWithValue($"opening:{importId:D}:line:{row.Id:D}"); transaction.Parameters.AddWithValue($"opening:{importId:D}:line:{row.Id:D}:book:{bookId:D}"); transaction.Parameters.AddWithValue(actor); await transaction.ExecuteNonQueryAsync(token);
+                await using var updateLine = new NpgsqlCommand("update business_assets.asset_opening_import_line set asset_id=$1,outcome='Created',error_code=null where tenant_id=$2 and id=$3", context.Connection, context.Transaction); updateLine.Parameters.AddWithValue(assetId); updateLine.Parameters.AddWithValue(tenant.Value); updateLine.Parameters.AddWithValue(row.Id); await updateLine.ExecuteNonQueryAsync(token);
+            }
+            await using var updateImport = new NpgsqlCommand("update business_assets.asset_opening_import set status='Posted' where tenant_id=$1 and id=$2", context.Connection, context.Transaction); updateImport.Parameters.AddWithValue(tenant.Value); updateImport.Parameters.AddWithValue(importId); await updateImport.ExecuteNonQueryAsync(token);
+            return new OpeningImportView(importId, legalEntityId, sourceSystem, batchReference, openingDate, "Posted", rows.Count, rows.Count, createdAt);
+        }, ct);
+    }
+
+    private static string? ValidateOpeningLine(OpeningImportLineRequest line)
+    {
+        if (string.IsNullOrWhiteSpace(line.LegacyAssetNumber) || string.IsNullOrWhiteSpace(line.Name) || line.CategoryId == Guid.Empty || line.BookDefinitionId == Guid.Empty) return "assets.opening_line_required";
+        if (line.OriginalCost < 0m || line.AccumulatedDepreciation < 0m || line.NetBookValue < 0m || line.ResidualValue < 0m || line.ResidualValue > line.OriginalCost) return "assets.opening_line_amount_invalid";
+        if (Math.Abs(line.OriginalCost - line.AccumulatedDepreciation - line.NetBookValue) > 0.000001m) return "assets.opening_line_not_balanced";
+        if (line.PlacedInServiceDate == default || line.AcquisitionDate > line.PlacedInServiceDate || line.UsefulLifeMonths is <= 0 || line.DepreciationMethod is not ("StraightLine" or "NoDepreciation" or "DecliningBalance")) return "assets.opening_line_policy_invalid";
+        return null;
+    }
+
+    private static async Task<int> OpeningLineCountAsync(ITransactionContext context, TenantId tenant, Guid importId, CancellationToken ct) { await using var command = new NpgsqlCommand("select count(*) from business_assets.asset_opening_import_line where tenant_id=$1 and import_id=$2", context.Connection, context.Transaction); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(importId); return Convert.ToInt32(await command.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture); }
+    private static async Task<int> OpeningPendingValidLineCountAsync(ITransactionContext context, TenantId tenant, Guid importId, CancellationToken ct) { await using var command = new NpgsqlCommand("select count(*) from business_assets.asset_opening_import_line where tenant_id=$1 and import_id=$2 and outcome='Valid'", context.Connection, context.Transaction); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(importId); return Convert.ToInt32(await command.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture); }
+    private static async Task<int> OpeningValidLineCountAsync(ITransactionContext context, TenantId tenant, Guid importId, CancellationToken ct) { await using var command = new NpgsqlCommand("select count(*) from business_assets.asset_opening_import_line where tenant_id=$1 and import_id=$2 and outcome='Created'", context.Connection, context.Transaction); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(importId); return Convert.ToInt32(await command.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture); }
+
     public async Task<DisposalView> DisposeAsync(TenantId tenant, Guid actor, Guid assetId, DisposeAssetRequest request, CancellationToken ct)
     {
         if (request.Proceeds < 0m || request.DirectCosts < 0m || string.IsNullOrWhiteSpace(request.Reason)) throw new FixedAssetException("assets.disposal_invalid");

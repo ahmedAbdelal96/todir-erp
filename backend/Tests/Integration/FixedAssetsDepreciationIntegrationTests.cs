@@ -176,6 +176,47 @@ public sealed class FixedAssetsDepreciationIntegrationTests
     }
 
     [Fact]
+    public async Task OpeningImportCreatesOpeningAssetAndBookHistoryWithoutFakeInvoice()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Fixed Assets integration verification.");
+        var password = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for Fixed Assets integration verification.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        var loginCsrf = await GetCsrfAsync(client);
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email = "admin@atlas.com", password }) };
+        login.Headers.Add("X-CSRF-TOKEN", loginCsrf.Token);
+        using var loginResponse = await client.SendAsync(login);
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var legacy = $"LEGACY-{Guid.CreateVersion7():N}";
+        await using var setup = new NpgsqlConnection(connectionString); await setup.OpenAsync();
+        await using var categoryCommand = new NpgsqlCommand("select id from business_assets.asset_category where tenant_id=$1 and code='LAPTOP'", setup); categoryCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); var categoryId = (Guid)(await categoryCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed laptop category was not found."));
+        await using var bookCommand = new NpgsqlCommand("select id from business_assets.asset_book_definition where tenant_id=$1 and code='CORP' and legal_entity_id=$2", setup); bookCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); bookCommand.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); var bookDefinitionId = (Guid)(await bookCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed corporate book was not found."));
+        var createCsrf = await GetCsrfAsync(client);
+        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/v1/fixed-assets/opening-imports")
+        {
+            Content = JsonContent.Create(new
+            {
+                legalEntityId = Guid.Parse(LegalEntityId), sourceSystem = "Legacy ERP", batchReference = $"opening-{legacy}", openingDate = "2026-01-01",
+                lines = new[] { new { legacyAssetNumber = legacy, categoryId, name = "Legacy laptop", bookDefinitionId, acquisitionDate = "2025-01-01", placedInServiceDate = "2025-01-01", originalCost = 1000m, accumulatedDepreciation = 400m, netBookValue = 600m, residualValue = 0m, usefulLifeMonths = 36, depreciationMethod = "StraightLine" } }
+            })
+        };
+        create.Headers.Add("X-CSRF-TOKEN", createCsrf.Token);
+        using var createResponse = await client.SendAsync(create); var createBody = await createResponse.Content.ReadAsStringAsync(); Assert.True(createResponse.StatusCode == HttpStatusCode.OK, createBody); using var createJson = JsonDocument.Parse(createBody); Assert.Equal("Validated", createJson.RootElement.GetProperty("status").GetString()); var importId = createJson.RootElement.GetProperty("id").GetGuid(); Assert.Equal(1, createJson.RootElement.GetProperty("validLineCount").GetInt32());
+
+        var postCsrf = await GetCsrfAsync(client); using var post = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/opening-imports/{importId:D}/post"); post.Headers.Add("X-CSRF-TOKEN", postCsrf.Token); using var postResponse = await client.SendAsync(post); var postBody = await postResponse.Content.ReadAsStringAsync(); Assert.True(postResponse.StatusCode == HttpStatusCode.OK, postBody); using var postJson = JsonDocument.Parse(postBody); Assert.Equal("Posted", postJson.RootElement.GetProperty("status").GetString());
+        var retryCsrf = await GetCsrfAsync(client); using var retry = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/opening-imports/{importId:D}/post"); retry.Headers.Add("X-CSRF-TOKEN", retryCsrf.Token); using var retryResponse = await client.SendAsync(retry); Assert.Equal(HttpStatusCode.OK, retryResponse.StatusCode); using var retryJson = JsonDocument.Parse(await retryResponse.Content.ReadAsStringAsync()); Assert.Equal("Posted", retryJson.RootElement.GetProperty("status").GetString());
+
+        await using var verify = new NpgsqlConnection(connectionString); await verify.OpenAsync();
+        await using var verifyCommand = new NpgsqlCommand("select a.source_origin_type,b.original_cost,t.accumulated_depreciation,(b.original_cost-t.accumulated_depreciation),count(*) over() from business_assets.fixed_asset a join business_assets.asset_book b on b.tenant_id=a.tenant_id and b.asset_id=a.id join business_assets.asset_book_transaction t on t.tenant_id=b.tenant_id and t.asset_book_id=b.id where a.tenant_id=$1 and a.asset_tag=$2 and t.transaction_type='Opening'", verify); verifyCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); verifyCommand.Parameters.AddWithValue(legacy); await using var verifyReader = await verifyCommand.ExecuteReaderAsync(); Assert.True(await verifyReader.ReadAsync()); Assert.Equal("OpeningMigration", verifyReader.GetString(0)); Assert.Equal(1000m, verifyReader.GetDecimal(1)); Assert.Equal(400m, verifyReader.GetDecimal(2)); Assert.Equal(600m, verifyReader.GetDecimal(3)); Assert.Equal(1L, verifyReader.GetInt64(4));
+    }
+
+    [Fact]
     public async Task DepreciationPostingIsBlockedForClosedAccountingPeriod()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
