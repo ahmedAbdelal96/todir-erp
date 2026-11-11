@@ -59,7 +59,7 @@ public sealed record CreateDepreciationRunRequest(Guid LegalEntityId, Guid BookI
 public sealed record DisposeAssetRequest(Guid LegalEntityId, string DisposalType, DateOnly DisposalDate, decimal Proceeds, decimal DirectCosts, string Reason, string? IdempotencyKey);
 public sealed record CreateCapitalizationCandidateRequest(Guid LegalEntityId, string SourceType, string SourceReference, decimal EligibleAmount, JsonElement SourceSnapshot);
 public sealed record ReviewCapitalizationCandidateRequest(string Decision, string? Reason);
-public sealed record AllocateCapitalizationCandidateRequest(Guid AssetId, decimal Amount, string AllocationType = "Acquisition");
+public sealed record AllocateCapitalizationCandidateRequest(Guid AssetId, decimal Amount, string AllocationType = "Acquisition", DateOnly? EffectiveDate = null);
 public sealed record CorrectSourceAllocationRequest(Guid AllocationId, decimal Amount, string Reason, string IdempotencyKey);
 public sealed record CreateCipAssetRequest(Guid LegalEntityId, Guid CategoryId, string Name, DateOnly AcquisitionDate, string SourceType, string SourceReference, decimal Amount, string? Description);
 public sealed record AddCipCostSourceRequest(string SourceType, string SourceReference, decimal Amount, Guid? ReversalOfId = null);

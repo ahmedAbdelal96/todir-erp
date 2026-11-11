@@ -262,9 +262,10 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             }
             await existingAllocationReader.CloseAsync();
             if (status != "Approved") throw new FixedAssetException("assets.capitalization_candidate_not_approved");
-            await using var asset = new NpgsqlCommand("select legal_entity_id,lifecycle_state from business_assets.fixed_asset where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); asset.Parameters.AddWithValue(tenant.Value); asset.Parameters.AddWithValue(request.AssetId);
+            await using var asset = new NpgsqlCommand("select a.legal_entity_id,a.lifecycle_state,a.asset_number,c.code from business_assets.fixed_asset a join business_assets.asset_category c on c.tenant_id=a.tenant_id and c.id=a.category_id where a.tenant_id=$1 and a.id=$2 for update of a", context.Connection, context.Transaction); asset.Parameters.AddWithValue(tenant.Value); asset.Parameters.AddWithValue(request.AssetId);
             await using var assetReader = await asset.ExecuteReaderAsync(token);
             if (!await assetReader.ReadAsync(token)) throw new FixedAssetException("assets.asset_not_found");
+            var assetNumber = assetReader.GetString(2); var assetCategory = assetReader.GetString(3);
             if (assetReader.GetGuid(0) != legalEntityId || assetReader.GetString(1) is "Disposed" or "Archived") throw new FixedAssetException("assets.source_allocation_asset_invalid");
             await assetReader.CloseAsync();
             var newAllocatedAmount = allocatedAmount + request.Amount;
@@ -280,6 +281,40 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
                 createdAt = createdReader.GetFieldValue<DateTimeOffset>(0);
             }
             catch (PostgresException exception) when (exception.SqlState == "23505") { throw new FixedAssetException("assets.source_allocation_exists"); }
+            await using var books = new NpgsqlCommand("select b.id,b.original_cost,bd.posts_to_ledger,bd.currency_code from business_assets.asset_book b join business_assets.asset_book_definition bd on bd.tenant_id=b.tenant_id and bd.id=b.book_definition_id where b.tenant_id=$1 and b.asset_id=$2 for update of b", context.Connection, context.Transaction); books.Parameters.AddWithValue(tenant.Value); books.Parameters.AddWithValue(request.AssetId);
+            await using var bookReader = await books.ExecuteReaderAsync(token); var bookRows = new List<(Guid Id, decimal OriginalCost, bool PostsToLedger, string Currency)>(); while (await bookReader.ReadAsync(token)) bookRows.Add((bookReader.GetGuid(0), bookReader.GetDecimal(1), bookReader.GetBoolean(2), bookReader.GetString(3).Trim())); await bookReader.CloseAsync();
+            var transactionDate = request.EffectiveDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            foreach (var bookRow in bookRows)
+            {
+                var delta = request.AllocationType == "CostReduction" ? -request.Amount : request.Amount;
+                var newCost = bookRow.OriginalCost + delta;
+                if (newCost < 0m) throw new FixedAssetException("assets.source_allocation_cost_invalid");
+                if (delta < 0m)
+                {
+                    await using var accumulated = new NpgsqlCommand("select coalesce(sum(amount),0) from business_assets.asset_book_transaction where tenant_id=$1 and asset_book_id=$2 and transaction_type='Depreciation'", context.Connection, context.Transaction); accumulated.Parameters.AddWithValue(tenant.Value); accumulated.Parameters.AddWithValue(bookRow.Id);
+                    if (newCost < (decimal)(await accumulated.ExecuteScalarAsync(token) ?? 0m)) throw new FixedAssetException("assets.source_allocation_cost_invalid");
+                }
+                Guid? ledgerFact = null;
+                if (bookRow.PostsToLedger)
+                {
+                    var factId = DeterministicGuid(allocationId, bookRow.Id);
+                    var factDate = transactionDate;
+                    if (request.AllocationType == "Acquisition")
+                    {
+                        var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(legalEntityId), AccountingFactTypes.FixedAssetAcquisitionPosted, 1, "fixed-assets", $"source-allocation:{allocationId:D}:book:{bookRow.Id:D}", $"fixed-assets:source-allocation:{allocationId:D}:book:{bookRow.Id:D}", factDate, factDate, new FixedAssetAcquisitionPostedPayload(request.Amount, bookRow.Currency, assetNumber, assetCategory), Guid.CreateVersion7(), actor);
+                        ledgerFact = (await ledger.PostFixedAssetAcquisitionAsync(context, fact, (FixedAssetAcquisitionPostedPayload)fact.Payload, token)).FactId;
+                    }
+                    else
+                    {
+                        var factType = request.AllocationType == "CostReduction" ? AccountingFactTypes.FixedAssetCostReduced : AccountingFactTypes.FixedAssetCostAdded;
+                        var payload = new FixedAssetCostAdjustmentPostedPayload(request.Amount, bookRow.Currency, $"{assetNumber}/{bookRow.Id:D}", assetNumber, $"Source allocation {candidateId:D}");
+                        var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(legalEntityId), factType, 1, "fixed-assets", $"source-allocation:{allocationId:D}:book:{bookRow.Id:D}", $"fixed-assets:source-allocation:{allocationId:D}:book:{bookRow.Id:D}", factDate, factDate, payload, Guid.CreateVersion7(), actor);
+                        ledgerFact = (request.AllocationType == "CostReduction" ? await ledger.PostFixedAssetCostReducedAsync(context, fact, payload, token) : await ledger.PostFixedAssetCostAddedAsync(context, fact, payload, token)).FactId;
+                    }
+                }
+                await using var updateBook = new NpgsqlCommand("update business_assets.asset_book set original_cost=$1,row_version=row_version+1 where tenant_id=$2 and id=$3", context.Connection, context.Transaction); updateBook.Parameters.AddWithValue(newCost); updateBook.Parameters.AddWithValue(tenant.Value); updateBook.Parameters.AddWithValue(bookRow.Id); await updateBook.ExecuteNonQueryAsync(token);
+                await using var bookTransaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())", context.Connection, context.Transaction); bookTransaction.Parameters.AddWithValue(tenant.Value); bookTransaction.Parameters.AddWithValue(Guid.CreateVersion7()); bookTransaction.Parameters.AddWithValue(bookRow.Id); bookTransaction.Parameters.AddWithValue(request.AllocationType == "Acquisition" ? "Acquisition" : request.AllocationType == "CostReduction" ? "CostReduction" : "CapitalAddition"); bookTransaction.Parameters.AddWithValue(transactionDate); bookTransaction.Parameters.AddWithValue(request.Amount); bookTransaction.Parameters.AddWithValue($"candidate:{candidateId:D}:allocation:{allocationId:D}"); bookTransaction.Parameters.AddWithValue($"source-allocation:{allocationId:D}:book:{bookRow.Id:D}"); bookTransaction.Parameters.AddWithValue((object?)ledgerFact?.ToString("D") ?? DBNull.Value); bookTransaction.Parameters.AddWithValue(actor); await bookTransaction.ExecuteNonQueryAsync(token);
+            }
             await using var update = new NpgsqlCommand("update business_assets.asset_capitalization_candidate set allocated_amount=$1,status=case when $1=eligible_amount then 'Consumed' else status end where tenant_id=$2 and id=$3", context.Connection, context.Transaction); update.Parameters.AddWithValue(newAllocatedAmount); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(candidateId); await update.ExecuteNonQueryAsync(token);
             return new SourceAllocationView(allocationId, candidateId, request.AssetId, request.Amount, request.AllocationType, createdAt);
         }, ct);
@@ -304,20 +339,39 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             }
             await existingReader.CloseAsync();
 
-            await using var candidate = new NpgsqlCommand("select allocated_amount,status from business_assets.asset_capitalization_candidate where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); candidate.Parameters.AddWithValue(tenant.Value); candidate.Parameters.AddWithValue(candidateId);
+            await using var candidate = new NpgsqlCommand("select allocated_amount,status,legal_entity_id from business_assets.asset_capitalization_candidate where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); candidate.Parameters.AddWithValue(tenant.Value); candidate.Parameters.AddWithValue(candidateId);
             await using var candidateReader = await candidate.ExecuteReaderAsync(token);
             if (!await candidateReader.ReadAsync(token)) throw new FixedAssetException("assets.capitalization_candidate_not_found");
-            var candidateAllocatedAmount = candidateReader.GetDecimal(0); var candidateStatus = candidateReader.GetString(1); await candidateReader.CloseAsync();
+            var candidateAllocatedAmount = candidateReader.GetDecimal(0); var candidateStatus = candidateReader.GetString(1); var legalEntityId = candidateReader.GetGuid(2); await candidateReader.CloseAsync();
             if (candidateStatus is "Rejected" or "PendingReview") throw new FixedAssetException("assets.source_allocation_correction_not_allowed");
 
             await using var allocation = new NpgsqlCommand("select asset_id,amount from business_assets.asset_source_allocation where tenant_id=$1 and id=$2 and candidate_id=$3 for update", context.Connection, context.Transaction); allocation.Parameters.AddWithValue(tenant.Value); allocation.Parameters.AddWithValue(request.AllocationId); allocation.Parameters.AddWithValue(candidateId);
             await using var allocationReader = await allocation.ExecuteReaderAsync(token);
             if (!await allocationReader.ReadAsync(token)) throw new FixedAssetException("assets.source_allocation_not_found");
             var assetId = allocationReader.GetGuid(0); var originalAmount = allocationReader.GetDecimal(1); await allocationReader.CloseAsync();
+            await using var asset = new NpgsqlCommand("select asset_number from business_assets.fixed_asset where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); asset.Parameters.AddWithValue(tenant.Value); asset.Parameters.AddWithValue(assetId); var assetNumber = (string?)await asset.ExecuteScalarAsync(token) ?? throw new FixedAssetException("assets.asset_not_found");
             await using var totalCorrections = new NpgsqlCommand("select coalesce(sum(amount),0) from business_assets.asset_source_allocation_correction where tenant_id=$1 and allocation_id=$2", context.Connection, context.Transaction); totalCorrections.Parameters.AddWithValue(tenant.Value); totalCorrections.Parameters.AddWithValue(request.AllocationId); var correctedAmount = (decimal)(await totalCorrections.ExecuteScalarAsync(token) ?? 0m);
             if (correctedAmount + request.Amount > originalAmount || request.Amount > candidateAllocatedAmount) throw new FixedAssetException("assets.source_allocation_correction_exceeds_amount");
             var correctionId = Guid.CreateVersion7();
             await using var insert = new NpgsqlCommand("insert into business_assets.asset_source_allocation_correction(tenant_id,id,allocation_id,candidate_id,asset_id,amount,reason,idempotency_key,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction); insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(correctionId); insert.Parameters.AddWithValue(request.AllocationId); insert.Parameters.AddWithValue(candidateId); insert.Parameters.AddWithValue(assetId); insert.Parameters.AddWithValue(request.Amount); insert.Parameters.AddWithValue(request.Reason.Trim()); insert.Parameters.AddWithValue(key); insert.Parameters.AddWithValue(actor); await insert.ExecuteNonQueryAsync(token);
+            await using var books = new NpgsqlCommand("select b.id,b.original_cost,bd.posts_to_ledger,bd.currency_code from business_assets.asset_book b join business_assets.asset_book_definition bd on bd.tenant_id=b.tenant_id and bd.id=b.book_definition_id where b.tenant_id=$1 and b.asset_id=$2 for update of b", context.Connection, context.Transaction); books.Parameters.AddWithValue(tenant.Value); books.Parameters.AddWithValue(assetId);
+            await using var bookReader = await books.ExecuteReaderAsync(token); var bookRows = new List<(Guid Id, decimal OriginalCost, bool PostsToLedger, string Currency)>(); while (await bookReader.ReadAsync(token)) bookRows.Add((bookReader.GetGuid(0), bookReader.GetDecimal(1), bookReader.GetBoolean(2), bookReader.GetString(3).Trim())); await bookReader.CloseAsync();
+            foreach (var bookRow in bookRows)
+            {
+                var newCost = bookRow.OriginalCost - request.Amount;
+                if (newCost < 0m) throw new FixedAssetException("assets.source_allocation_cost_invalid");
+                await using var accumulated = new NpgsqlCommand("select coalesce(sum(amount),0) from business_assets.asset_book_transaction where tenant_id=$1 and asset_book_id=$2 and transaction_type='Depreciation'", context.Connection, context.Transaction); accumulated.Parameters.AddWithValue(tenant.Value); accumulated.Parameters.AddWithValue(bookRow.Id);
+                if (newCost < (decimal)(await accumulated.ExecuteScalarAsync(token) ?? 0m)) throw new FixedAssetException("assets.source_allocation_cost_invalid");
+                Guid? ledgerFact = null;
+                if (bookRow.PostsToLedger)
+                {
+                    var factId = DeterministicGuid(correctionId, bookRow.Id); var payload = new FixedAssetCostAdjustmentPostedPayload(request.Amount, bookRow.Currency, $"{assetNumber}/{bookRow.Id:D}", assetNumber, request.Reason.Trim());
+                    var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(legalEntityId), AccountingFactTypes.FixedAssetCostReduced, 1, "fixed-assets", $"source-allocation-correction:{correctionId:D}:book:{bookRow.Id:D}", $"fixed-assets:source-allocation-correction:{correctionId:D}:book:{bookRow.Id:D}", DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), payload, Guid.CreateVersion7(), actor);
+                    ledgerFact = (await ledger.PostFixedAssetCostReducedAsync(context, fact, payload, token)).FactId;
+                }
+                await using var updateBook = new NpgsqlCommand("update business_assets.asset_book set original_cost=$1,row_version=row_version+1 where tenant_id=$2 and id=$3", context.Connection, context.Transaction); updateBook.Parameters.AddWithValue(newCost); updateBook.Parameters.AddWithValue(tenant.Value); updateBook.Parameters.AddWithValue(bookRow.Id); await updateBook.ExecuteNonQueryAsync(token);
+                await using var bookTransaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'CostReduction',current_date,$4,$5,$6,$7,$8,now())", context.Connection, context.Transaction); bookTransaction.Parameters.AddWithValue(tenant.Value); bookTransaction.Parameters.AddWithValue(Guid.CreateVersion7()); bookTransaction.Parameters.AddWithValue(bookRow.Id); bookTransaction.Parameters.AddWithValue(request.Amount); bookTransaction.Parameters.AddWithValue($"source-allocation-correction:{correctionId:D}"); bookTransaction.Parameters.AddWithValue($"source-allocation-correction:{correctionId:D}:book:{bookRow.Id:D}"); bookTransaction.Parameters.AddWithValue((object?)ledgerFact?.ToString("D") ?? DBNull.Value); bookTransaction.Parameters.AddWithValue(actor); await bookTransaction.ExecuteNonQueryAsync(token);
+            }
             var candidateNewAmount = candidateAllocatedAmount - request.Amount;
             await using var update = new NpgsqlCommand("update business_assets.asset_capitalization_candidate set allocated_amount=$1,status=case when status='Consumed' then 'Approved' else status end where tenant_id=$2 and id=$3", context.Connection, context.Transaction); update.Parameters.AddWithValue(candidateNewAmount); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(candidateId); await update.ExecuteNonQueryAsync(token);
             return new SourceAllocationCorrectionView(correctionId, request.AllocationId, candidateId, assetId, request.Amount, originalAmount - correctedAmount - request.Amount, candidateNewAmount, request.Reason.Trim(), DateTimeOffset.UtcNow, false);

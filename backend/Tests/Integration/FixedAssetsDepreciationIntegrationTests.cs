@@ -222,6 +222,17 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         using var loginResponse = await client.SendAsync(login);
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
 
+        var allocatedAssetId = Guid.CreateVersion7();
+        var allocatedBookId = Guid.CreateVersion7();
+        await using var allocationSetupConnection = new NpgsqlConnection(connectionString);
+        await allocationSetupConnection.OpenAsync();
+        await using var allocationActorCommand = new NpgsqlCommand("select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", allocationSetupConnection); allocationActorCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
+        var allocationActorId = (Guid)(await allocationActorCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed administrator was not found."));
+        await using var allocationCategoryCommand = new NpgsqlCommand("select id from business_assets.asset_category where tenant_id=$1 and code='LAPTOP'", allocationSetupConnection); allocationCategoryCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
+        var allocationCategoryId = (Guid)(await allocationCategoryCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed laptop category was not found."));
+        await using var allocationAssetSetup = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,'Allocation Integration Asset','Operational','Equipment','Individual','2026-10-01','2026-10-01','2026-10-01',1,$6,now(),1)", allocationSetupConnection); allocationAssetSetup.Parameters.AddWithValue(Guid.Parse(TenantId)); allocationAssetSetup.Parameters.AddWithValue(allocatedAssetId); allocationAssetSetup.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); allocationAssetSetup.Parameters.AddWithValue(allocationCategoryId); allocationAssetSetup.Parameters.AddWithValue($"FA-TEST-ALLOC-{allocatedAssetId:N}"); allocationAssetSetup.Parameters.AddWithValue(allocationActorId); await allocationAssetSetup.ExecuteNonQueryAsync();
+        await using var allocationBookSetup = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,12000,0,36,'StraightLine','2026-10-01',now(),1)", allocationSetupConnection); allocationBookSetup.Parameters.AddWithValue(Guid.Parse(TenantId)); allocationBookSetup.Parameters.AddWithValue(allocatedBookId); allocationBookSetup.Parameters.AddWithValue(allocatedAssetId); allocationBookSetup.Parameters.AddWithValue(Guid.Parse(BookDefinitionId)); await allocationBookSetup.ExecuteNonQueryAsync();
+
         var sourceReference = $"integration-source-{Guid.CreateVersion7():N}";
         var candidateCsrf = await GetCsrfAsync(client);
         using var create = new HttpRequestMessage(HttpMethod.Post, "/api/v1/fixed-assets/capitalization-candidates")
@@ -255,7 +266,7 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         {
             Content = JsonContent.Create(new
             {
-                assetId = Guid.Parse("7e5e47f1-55bc-ca5c-a033-568e9d957125"),
+                assetId = allocatedAssetId,
                 amount = 5000m,
                 allocationType = "Acquisition"
             })
@@ -271,7 +282,7 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         {
             Content = JsonContent.Create(new
             {
-                assetId = Guid.Parse("7e5e47f1-55bc-ca5c-a033-568e9d957125"),
+                assetId = allocatedAssetId,
                 amount = 5000m,
                 allocationType = "Acquisition"
             })
@@ -296,7 +307,7 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         await using var allocationCommand = new NpgsqlCommand("select id from business_assets.asset_source_allocation where tenant_id=$1 and candidate_id=$2 and asset_id=$3 and amount=$4", connection);
         allocationCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
         allocationCommand.Parameters.AddWithValue(candidateId);
-        allocationCommand.Parameters.AddWithValue(Guid.Parse("7e5e47f1-55bc-ca5c-a033-568e9d957125"));
+        allocationCommand.Parameters.AddWithValue(allocatedAssetId);
         allocationCommand.Parameters.AddWithValue(5000m);
         var allocationId = (Guid?)(await allocationCommand.ExecuteScalarAsync());
         Assert.NotNull(allocationId);
@@ -334,6 +345,13 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         Assert.True(await correctedCandidateReader.ReadAsync());
         Assert.Equal(4000m, correctedCandidateReader.GetDecimal(0));
         Assert.Equal("Approved", correctedCandidateReader.GetString(1));
+        await correctedCandidateReader.CloseAsync();
+        await using var allocatedBookCommand = new NpgsqlCommand("select original_cost from business_assets.asset_book where tenant_id=$1 and id=$2", connection); allocatedBookCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); allocatedBookCommand.Parameters.AddWithValue(allocatedBookId);
+        Assert.Equal(16000m, (decimal?)await allocatedBookCommand.ExecuteScalarAsync());
+        await using var allocationTransactionCount = new NpgsqlCommand("select count(*) from business_assets.asset_book_transaction where tenant_id=$1 and asset_book_id=$2 and (source_reference like 'candidate:%' or source_reference like 'source-allocation-correction:%')", connection); allocationTransactionCount.Parameters.AddWithValue(Guid.Parse(TenantId)); allocationTransactionCount.Parameters.AddWithValue(allocatedBookId);
+        Assert.Equal(2L, (long)(await allocationTransactionCount.ExecuteScalarAsync() ?? 0L));
+        await using var allocationFactCount = new NpgsqlCommand("select count(*) from business_assets.asset_book_transaction t join finance_ledger.accounting_fact f on f.tenant_id=t.tenant_id and f.id::text=t.ledger_fact_reference where t.tenant_id=$1 and t.asset_book_id=$2 and f.fact_type in ('FixedAssetAcquisitionPosted','FixedAssetCostReduced') and f.source_module='fixed-assets'", connection); allocationFactCount.Parameters.AddWithValue(Guid.Parse(TenantId)); allocationFactCount.Parameters.AddWithValue(allocatedBookId);
+        Assert.Equal(2L, (long)(await allocationFactCount.ExecuteScalarAsync() ?? 0L));
     }
 
     [Fact]
