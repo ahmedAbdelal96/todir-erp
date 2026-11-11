@@ -877,6 +877,41 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         await using var handover = new NpgsqlCommand("select handover_type,assignment_id from business_assets.asset_handover where tenant_id=$1 and asset_id=$2 order by created_at desc limit 1", verify); handover.Parameters.AddWithValue(Guid.Parse(TenantId)); handover.Parameters.AddWithValue(assetId); await using var handoverReader = await handover.ExecuteReaderAsync(); Assert.True(await handoverReader.ReadAsync()); Assert.Equal("Return", handoverReader.GetString(0)); Assert.Equal(assignmentId, handoverReader.GetGuid(1));
     }
 
+    [Fact]
+    public async Task VerificationMismatchIsResolvedWithoutMutatingCustody()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Fixed Assets integration verification.");
+        var password = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD") ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for Fixed Assets integration verification.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Development").UseSetting("TODIR_DATABASE_CONNECTION", connectionString).UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        var loginCsrf = await GetCsrfAsync(client);
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email = "admin@atlas.com", password }) };
+        login.Headers.Add("X-CSRF-TOKEN", loginCsrf.Token); using var loginResponse = await client.SendAsync(login); Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var assetId = Guid.CreateVersion7(); var locationId = Guid.CreateVersion7(); var assetNumber = $"FA-TEST-VERIFY-{assetId:N}"; Guid actorId; Guid categoryId;
+        await using (var setup = new NpgsqlConnection(connectionString))
+        {
+            await setup.OpenAsync();
+            await using var actor = new NpgsqlCommand("select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", setup); actor.Parameters.AddWithValue(Guid.Parse(TenantId)); actorId = (Guid)(await actor.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed administrator was not found."));
+            await using var category = new NpgsqlCommand("select id from business_assets.asset_category where tenant_id=$1 and code='LAPTOP'", setup); category.Parameters.AddWithValue(Guid.Parse(TenantId)); categoryId = (Guid)(await category.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed laptop category was not found."));
+            await using var location = new NpgsqlCommand("insert into business_assets.asset_location(tenant_id,id,legal_entity_id,code,name,location_type,created_by,created_at) values($1,$2,$3,$4,$5,'Room',$6,now())", setup); location.Parameters.AddWithValue(Guid.Parse(TenantId)); location.Parameters.AddWithValue(locationId); location.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); location.Parameters.AddWithValue($"VERIFY-{locationId:N}"); location.Parameters.AddWithValue("Verification Room"); location.Parameters.AddWithValue(actorId); await location.ExecuteNonQueryAsync();
+            await using var asset = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,'Verification Laptop','Operational','Equipment','Individual','2026-01-01','2026-01-01','2026-01-01',1,$6,now(),1)", setup); asset.Parameters.AddWithValue(Guid.Parse(TenantId)); asset.Parameters.AddWithValue(assetId); asset.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); asset.Parameters.AddWithValue(categoryId); asset.Parameters.AddWithValue(assetNumber); asset.Parameters.AddWithValue(actorId); await asset.ExecuteNonQueryAsync();
+        }
+
+        var createCsrf = await GetCsrfAsync(client);
+        using var create = new HttpRequestMessage(HttpMethod.Post, "/api/v1/fixed-assets/verification/campaigns") { Content = JsonContent.Create(new { legalEntityId = Guid.Parse(LegalEntityId), name = $"Verification {assetNumber}" }) };
+        create.Headers.Add("X-CSRF-TOKEN", createCsrf.Token); using var createResponse = await client.SendAsync(create); var createBody = await createResponse.Content.ReadAsStringAsync(); Assert.True(createResponse.StatusCode == HttpStatusCode.OK, createBody); using var campaignJson = JsonDocument.Parse(createBody); var campaignId = campaignJson.RootElement.GetProperty("id").GetGuid(); var initialPending = campaignJson.RootElement.GetProperty("pendingCount").GetInt32(); Assert.True(initialPending > 0);
+
+        var verifyCsrf = await GetCsrfAsync(client);
+        using var verifyRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/verification/campaigns/{campaignId:D}/items/{assetId:D}/verify") { Content = JsonContent.Create(new { result = "WrongLocation", observedLocationId = locationId, notes = "Found in the wrong room" }) };
+        verifyRequest.Headers.Add("X-CSRF-TOKEN", verifyCsrf.Token); using var verifyResponse = await client.SendAsync(verifyRequest); var verifyBody = await verifyResponse.Content.ReadAsStringAsync(); Assert.True(verifyResponse.StatusCode == HttpStatusCode.OK, verifyBody); using var verifyJson = JsonDocument.Parse(verifyBody); Assert.Equal("Review", verifyJson.RootElement.GetProperty("status").GetString()); Assert.Equal(initialPending - 1, verifyJson.RootElement.GetProperty("pendingCount").GetInt32());
+
+        await using var evidence = new NpgsqlConnection(connectionString); await evidence.OpenAsync();
+        await using var line = new NpgsqlCommand("select result,observed_location_id from business_assets.asset_verification_line where tenant_id=$1 and campaign_id=$2 and asset_id=$3", evidence); line.Parameters.AddWithValue(Guid.Parse(TenantId)); line.Parameters.AddWithValue(campaignId); line.Parameters.AddWithValue(assetId); await using var lineReader = await line.ExecuteReaderAsync(); Assert.True(await lineReader.ReadAsync()); Assert.Equal("WrongLocation", lineReader.GetString(0)); Assert.Equal(locationId, lineReader.GetGuid(1)); await lineReader.CloseAsync();
+        await using var assignment = new NpgsqlCommand("select count(*) from business_assets.asset_assignment where tenant_id=$1 and asset_id=$2", evidence); assignment.Parameters.AddWithValue(Guid.Parse(TenantId)); assignment.Parameters.AddWithValue(assetId); Assert.Equal(0L, (long)(await assignment.ExecuteScalarAsync() ?? -1L));
+
+    }
+
     private static async Task<CsrfResponse> GetCsrfAsync(HttpClient client) => await client.GetFromJsonAsync<CsrfResponse>("/api/v1/auth/csrf") ?? throw new InvalidOperationException("CSRF token was not returned.");
 
     private sealed record CsrfResponse(string Token);
