@@ -82,3 +82,7 @@ Canonical pack: `docs/modules/21_ERP_SAAS_EXPENSES_REQUIREMENTS_AND_TECHNICAL_DE
 | EX43 | PASS | Final affected verification passes; source commit `92603470a2d3043ad16a65e298d99d9557ef01d0` is pushed on `dev` over SSH and the worktree is clean. |
 
 This document is the final backend execution checkpoint for the verified source commit; frontend and human Product Owner acceptance remain separate lifecycle gates.
+
+## Correction checkpoint — 2026-11-11
+
+This checkpoint supersedes earlier historical counts and commit references in this document. The final approval-policy correction removed broad exception swallowing from automatic policy evaluation and added persisted PostgreSQL proof for automatic success, legitimate no-policy behavior, and fail-closed unexpected evaluation failure. After that source change, the full isolated Expenses suite passed `49/50` (`49 passed, 1 optional live Worker/RabbitMQ/provider skip`) and authenticated Expenses API passed `4/4`. No large synthetic dataset was generated; EX34 remains proven with the small deterministic pagination/index scenario. The current real-stack flow contains no manual SQL reversal; reversal is performed through the authorized business transition and verified through persisted Ledger/history facts. The correction commit containing this checkpoint is the final `dev` handoff commit; its exact SHA is recorded in the delivery report.

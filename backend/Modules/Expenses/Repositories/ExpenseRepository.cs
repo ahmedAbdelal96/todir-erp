@@ -191,17 +191,10 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         if (approvalState != "Pending") throw new ExpenseRepositoryException("expenses.approval_request_invalid_state");
         if (!policyVersionId.HasValue)
         {
-            try
+            var evaluation = await EvaluatePolicyAsync(tenant, entity, expenseId, ct);
+            if (evaluation.Snapshot.TryGetProperty("policyVersionId", out var pvi) && Guid.TryParse(pvi.GetString(), out var parsedId))
             {
-                var evaluation = await EvaluatePolicyAsync(tenant, entity, expenseId, ct);
-                if (evaluation.Snapshot.TryGetProperty("policyVersionId", out var pvi) && Guid.TryParse(pvi.GetString(), out var parsedId))
-                {
-                    policyVersionId = parsedId;
-                }
-            }
-            catch
-            {
-                // policy evaluation non-blocking if no policy matches
+                policyVersionId = parsedId;
             }
         }
         try
