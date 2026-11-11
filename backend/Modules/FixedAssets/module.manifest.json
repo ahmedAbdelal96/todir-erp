@@ -1,0 +1,30 @@
+{
+  "$schema": "../../../../docs/platform/module-manifest-schema.json",
+  "id": "fixed-assets",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L4",
+  "type": "business-module",
+  "purchasable": true,
+  "scope": "tenant",
+  "dependencies": {
+    "hard": ["platform-kernel", "finbase", "ledger"],
+    "optionalCapabilities": ["catalog.product", "inventory.history", "hr.core", "platform.files", "platform.approvals", "platform.outbox"]
+  },
+  "owns": {
+    "schema": "business_assets",
+    "entities": ["asset_category", "asset_category_version", "fixed_asset", "asset_location", "asset_assignment", "asset_handover", "asset_book_definition", "asset_book", "asset_book_transaction", "asset_depreciation_run", "asset_depreciation_run_line", "asset_capitalization_candidate", "asset_source_allocation", "asset_cip_cost_source", "asset_verification_campaign", "asset_verification_line", "asset_disposal", "asset_opening_import", "asset_opening_import_line", "asset_audit_event", "asset_idempotency_key"]
+  },
+  "permissions": [
+    "assets.read", "assets.financial.read", "assets.create", "assets.edit", "assets.assign", "assets.capitalize", "assets.book.manage", "assets.depreciation.prepare", "assets.depreciation.post", "assets.depreciation.reverse", "assets.disposal.manage", "assets.verification.manage", "assets.opening.manage", "assets.audit.read", "assets.export"
+  ],
+  "capabilities": {
+    "provides": ["fixed-assets.registry", "fixed-assets.custody", "fixed-assets.books", "fixed-assets.depreciation", "fixed-assets.capitalization", "fixed-assets.reconciliation"],
+    "consumes": ["platform.organization", "platform.numbering", "finbase.financial-context", "ledger.semantic-facts", "catalog.product", "inventory.history", "hr.core", "platform.files", "platform.approvals", "platform.outbox"]
+  },
+  "messaging": {
+    "publishes": ["FixedAssetCreatedV1", "FixedAssetAssignedV1", "FixedAssetCapitalizedV1", "FixedAssetDepreciatedV1", "FixedAssetDisposedV1"],
+    "consumes": ["StockIssuedV1", "InvoicePostedV1", "ExpenseFinalizedV1", "EmployeeOffboardingStartedV1"]
+  },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}

@@ -26,6 +26,9 @@ public static class SeedIds
     public static Guid PosRegister(Guid tenantId) => Stable($"{tenantId:D}:pos:register:main");
     public static Guid PosTerminal(Guid tenantId) => Stable($"{tenantId:D}:pos:terminal:main");
     public static Guid PosSession(Guid tenantId) => Stable($"{tenantId:D}:pos:session:open");
+    public static Guid AssetCategory(Guid tenantId, string code) => Stable($"{tenantId:D}:asset-category:{code}");
+    public static Guid Asset(Guid tenantId, string code) => Stable($"{tenantId:D}:asset:{code}");
+    public static Guid AssetBook(Guid tenantId, string code) => Stable($"{tenantId:D}:asset-book:{code}");
 
     public static Guid Stable(string value)
     {
