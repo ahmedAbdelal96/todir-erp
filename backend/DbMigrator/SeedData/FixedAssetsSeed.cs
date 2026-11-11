@@ -9,7 +9,10 @@ public static class FixedAssetsSeed
             ("LAND", "Land", "Land", "Individual", false, false, false, (decimal?)null, "NoDepreciation", (int?)null, 0m),
             ("BUILDING", "Building", "Building", "Individual", true, false, true, (decimal?)null, "StraightLine", (int?)240, 0m),
             ("LAPTOP", "Laptop", "Equipment", "Individual", false, true, true, (decimal?)null, "StraightLine", (int?)36, 0m),
+            ("VEHICLE", "Vehicle", "Vehicle", "Individual", true, true, true, (decimal?)null, "StraightLine", (int?)60, 0m),
+            ("MACHINE", "Machine", "Equipment", "Individual", true, false, true, (decimal?)null, "StraightLine", (int?)120, 0m),
             ("FURNITURE", "Grouped Furniture", "Furniture", "Grouped", true, false, true, (decimal?)null, "StraightLine", (int?)60, 0m),
+            ("INTANGIBLE", "Intangible asset", "Intangible", "Individual", false, false, true, (decimal?)null, "StraightLine", (int?)36, 0m),
             ("CIP", "Construction in progress", "CIP", "Individual", false, false, false, (decimal?)null, "NoDepreciation", (int?)null, 0m)
         };
         foreach (var category in categories)
@@ -30,6 +33,8 @@ public static class FixedAssetsSeed
 
         var landId = SeedIds.Asset(context.Tenant.Id, "land");
         var laptopId = SeedIds.Asset(context.Tenant.Id, "laptop");
+        var vehicleId = SeedIds.Asset(context.Tenant.Id, "vehicle");
+        var cipId = SeedIds.Asset(context.Tenant.Id, "cip");
         await context.ExecuteAsync("""
             insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,asset_tag,lifecycle_state,asset_nature,tracking_granularity,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version)
             values($1,$2,$3,$4,'FA-SEED-LAND','Atlas Land Parcel','LAND-SEED','Capitalized','Land','Individual',$5,$5,$5,1,$6,$7,1)
@@ -46,7 +51,28 @@ public static class FixedAssetsSeed
             on conflict(tenant_id,asset_id,book_definition_id) do update set original_cost=excluded.original_cost,useful_life_months=excluded.useful_life_months
             """, ct, context.Tenant.Id, SeedIds.AssetBook(context.Tenant.Id, "laptop-corporate"), laptopId, bookId, 12000m, 36, context.AsOf.Date, context.AsOf);
 
-        return new(5, 2, 1);
+        await context.ExecuteAsync("""
+            insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,asset_tag,lifecycle_state,asset_nature,tracking_granularity,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version)
+            values($1,$2,$3,$4,'FA-SEED-VEHICLE','Delivery Vehicle','VEHICLE-SEED','Operational','Vehicle','Individual',$5,$5,$5,1,$6,$7,1)
+            on conflict(tenant_id,asset_number) do update set name=excluded.name,lifecycle_state=excluded.lifecycle_state
+            """, ct, context.Tenant.Id, vehicleId, context.EntityId, SeedIds.AssetCategory(context.Tenant.Id, "VEHICLE"), context.AsOf.Date, context.AdministratorId, context.AsOf);
+        await context.ExecuteAsync("""
+            insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version)
+            values($1,$2,$3,$4,$5,0,$6,'StraightLine',$7,$8,1)
+            on conflict(tenant_id,asset_id,book_definition_id) do update set original_cost=excluded.original_cost,useful_life_months=excluded.useful_life_months
+            """, ct, context.Tenant.Id, SeedIds.AssetBook(context.Tenant.Id, "vehicle-corporate"), vehicleId, bookId, 450000m, 60, context.AsOf.Date, context.AsOf);
+        await context.ExecuteAsync("""
+            insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,asset_tag,lifecycle_state,asset_nature,tracking_granularity,source_origin_type,acquisition_date,quantity,created_by,created_at,row_version)
+            values($1,$2,$3,$4,'FA-SEED-CIP','Warehouse Expansion','CIP-SEED','UnderConstruction','CIP','Individual','Seed',$5,1,$6,$7,1)
+            on conflict(tenant_id,asset_number) do update set name=excluded.name,lifecycle_state=excluded.lifecycle_state
+            """, ct, context.Tenant.Id, cipId, context.EntityId, SeedIds.AssetCategory(context.Tenant.Id, "CIP"), context.AsOf.Date, context.AdministratorId, context.AsOf);
+        await context.ExecuteAsync("""
+            insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,created_at,row_version)
+            values($1,$2,$3,$4,$5,0,null,'NoDepreciation',$6,1)
+            on conflict(tenant_id,asset_id,book_definition_id) do update set original_cost=excluded.original_cost,depreciation_method=excluded.depreciation_method
+            """, ct, context.Tenant.Id, SeedIds.AssetBook(context.Tenant.Id, "cip-corporate"), cipId, bookId, 75000m, context.AsOf);
+
+        return new(8, 4, 3);
     }
 }
 

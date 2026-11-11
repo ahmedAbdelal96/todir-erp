@@ -3,14 +3,37 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Core.Transactions;
+using Core.Services;
 using Npgsql;
 using Shared.Contracts.Ledger;
+using Shared.Contracts.FixedAssets;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.FixedAssets;
 
-public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransactionCoordinator coordinator, ITransactionalFixedAssetLedgerPostingCapability ledger, ILedgerControlBalanceRead ledgerBalances)
+public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransactionCoordinator coordinator, ITransactionalFixedAssetLedgerPostingCapability ledger, ITransactionalLedgerPostingCapability posting, ILedgerControlBalanceRead ledgerBalances, ITransactionalSequenceAllocator sequences)
 {
+    public async Task<Guid?> ResolveLegalEntityAsync(TenantId tenant, string resourceType, Guid resourceId, CancellationToken ct)
+    {
+        var sql = resourceType switch
+        {
+            "asset" => "select legal_entity_id from business_assets.fixed_asset where tenant_id=$1 and id=$2",
+            "book" => "select a.legal_entity_id from business_assets.asset_book b join business_assets.fixed_asset a on a.tenant_id=b.tenant_id and a.id=b.asset_id where b.tenant_id=$1 and b.id=$2",
+            "run" => "select legal_entity_id from business_assets.asset_depreciation_run where tenant_id=$1 and id=$2",
+            "candidate" => "select legal_entity_id from business_assets.asset_capitalization_candidate where tenant_id=$1 and id=$2",
+            "opening" => "select legal_entity_id from business_assets.asset_opening_import where tenant_id=$1 and id=$2",
+            _ => throw new ArgumentException("Unknown fixed-asset resource type.", nameof(resourceType))
+        };
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(resourceId);
+        var value = await command.ExecuteScalarAsync(ct);
+        await transaction.CommitAsync(ct);
+        return value is Guid entityId ? entityId : null;
+    }
+
     public async Task<AssetCategoryView> CreateCategoryAsync(TenantId tenant, Guid actor, CreateAssetCategoryRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name)) throw new FixedAssetException("assets.category_required");
@@ -46,7 +69,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         return await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var id = Guid.CreateVersion7();
-            var number = $"FA-{DateTime.UtcNow:yyyyMMdd}-{id.ToString("N")[..8].ToUpperInvariant()}";
+            var number = await sequences.AllocateAsync(context, new SequenceDefinition("fixed-assets.asset-number", tenant, request.LegalEntityId, null, null, null, "FA-", 8, 1), token);
             await using var command = new NpgsqlCommand("""
                 insert into business_assets.fixed_asset (tenant_id,id,legal_entity_id,category_id,asset_number,name,description,asset_tag,lifecycle_state,asset_nature,tracking_granularity,product_variant_ref,inventory_serial_ref,source_origin_type,acquisition_date,capitalization_date,placed_in_service_date,parent_asset_id,quantity,created_by,created_at,row_version)
                 select $1,$2,$3,c.id,$4,$5,$6,$7,'Draft',c.asset_nature,c.tracking_granularity,$8,$9,$10,$11,$12,$13,$14,coalesce($15,1),$16,now(),1
@@ -57,6 +80,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             await using var reader = await command.ExecuteReaderAsync(token);
             if (!await reader.ReadAsync(token)) throw new FixedAssetException("assets.category_not_found");
             var result = new AssetView(id, request.LegalEntityId, request.CategoryId, reader.GetString(0), request.Name.Trim(), request.Description, request.AssetTag, "Draft", reader.GetString(1), reader.GetString(2), request.ProductVariantRef, request.InventorySerialRef, request.AcquisitionDate, request.CapitalizationDate, request.PlacedInServiceDate, request.Quantity ?? 1m, reader.GetFieldValue<DateTimeOffset>(3), reader.GetInt64(4));
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetCreatedV1", JsonSerializer.Serialize(new FixedAssetCreatedV1(id, request.LegalEntityId, result.AssetNumber, result.LifecycleState, result.AssetNature, result.CreatedAt)), tenant, result.CreatedAt, id, id, "fixed-assets"));
             return result;
         }, ct);
     }
@@ -86,6 +110,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
                 """, context.Connection, context.Transaction);
             command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(assetId); command.Parameters.AddWithValue(request.AssignmentType); command.Parameters.AddWithValue((object?)request.EmployeeId ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.DepartmentId ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.CustodianName ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.LocationId ?? DBNull.Value); command.Parameters.AddWithValue(request.EffectiveFrom); command.Parameters.AddWithValue((object?)request.EffectiveTo ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.Condition ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.Accessories ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.AcknowledgementReference ?? DBNull.Value); command.Parameters.AddWithValue(actor);
             try { await command.ExecuteNonQueryAsync(token); } catch (PostgresException ex) when (ex.SqlState == "23P01") { throw new FixedAssetException("assets.assignment_overlap"); }
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetAssignedV1", JsonSerializer.Serialize(new FixedAssetAssignedV1(assetId, id, await ResolveAssetEntityAsync(context, tenant, assetId, token), request.EmployeeId, request.DepartmentId, request.LocationId, request.EffectiveFrom, request.EffectiveTo, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, id, assetId, "fixed-assets"));
             return new AssetAssignmentView(id, assetId, request.AssignmentType, request.EmployeeId, request.DepartmentId, request.CustodianName, request.LocationId, request.EffectiveFrom, request.EffectiveTo, request.Condition, request.Accessories, request.AcknowledgementReference);
         }, ct);
     }
@@ -193,6 +218,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
                 await using var lineUpdate = new NpgsqlCommand("update business_assets.asset_depreciation_run_line set ledger_fact_reference=$1 where tenant_id=$2 and id=$3", context.Connection, context.Transaction); lineUpdate.Parameters.AddWithValue((object?)ledgerFact?.ToString("D") ?? DBNull.Value); lineUpdate.Parameters.AddWithValue(tenant.Value); lineUpdate.Parameters.AddWithValue(row.LineId); await lineUpdate.ExecuteNonQueryAsync(token);
             }
             await using var update = new NpgsqlCommand("update business_assets.asset_depreciation_run set status='Posted',posted_at=now() where tenant_id=$1 and id=$2", context.Connection, context.Transaction); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(runId); await update.ExecuteNonQueryAsync(token);
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetDepreciatedV1", JsonSerializer.Serialize(new FixedAssetDepreciatedV1(runId, entity, bookDefinition, periodStart, periodEnd, total, rows.Count, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, runId, runId, "fixed-assets"));
             return new DepreciationRunView(runId, entity, bookDefinition, periodStart, periodEnd, "Posted", total, rows.Count, createdAt);
         }, ct);
     }
@@ -419,7 +445,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             if (!await categoryReader.ReadAsync(token)) throw new FixedAssetException("assets.category_not_found");
             if (categoryReader.GetString(0) != "CIP") throw new FixedAssetException("assets.cip_category_required");
             var trackingGranularity = categoryReader.GetString(1); await categoryReader.CloseAsync();
-            var assetId = Guid.CreateVersion7(); var assetNumber = $"FA-{DateTime.UtcNow:yyyyMMdd}-{assetId.ToString("N")[..8].ToUpperInvariant()}";
+            var assetId = Guid.CreateVersion7(); var assetNumber = await sequences.AllocateAsync(context, new SequenceDefinition("fixed-assets.asset-number", tenant, request.LegalEntityId, null, null, null, "FA-", 8, 1), token);
             await using var asset = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,description,lifecycle_state,asset_nature,tracking_granularity,source_origin_type,acquisition_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,$6,$7,'UnderConstruction','CIP',$8,'CIP',$9,1,$10,now(),1)", context.Connection, context.Transaction);
             asset.Parameters.AddWithValue(tenant.Value); asset.Parameters.AddWithValue(assetId); asset.Parameters.AddWithValue(request.LegalEntityId); asset.Parameters.AddWithValue(request.CategoryId); asset.Parameters.AddWithValue(assetNumber); asset.Parameters.AddWithValue(request.Name.Trim()); asset.Parameters.AddWithValue((object?)request.Description ?? DBNull.Value); asset.Parameters.AddWithValue(trackingGranularity); asset.Parameters.AddWithValue(request.AcquisitionDate); asset.Parameters.AddWithValue(actor); await asset.ExecuteNonQueryAsync(token);
             await using var source = new NpgsqlCommand("insert into business_assets.asset_cip_cost_source(tenant_id,id,asset_id,source_type,source_reference,amount,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,now())", context.Connection, context.Transaction); source.Parameters.AddWithValue(tenant.Value); source.Parameters.AddWithValue(Guid.CreateVersion7()); source.Parameters.AddWithValue(assetId); source.Parameters.AddWithValue(request.SourceType.Trim()); source.Parameters.AddWithValue(request.SourceReference.Trim()); source.Parameters.AddWithValue(request.Amount); source.Parameters.AddWithValue(actor);
@@ -474,6 +500,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             await using var cost = new NpgsqlCommand("select coalesce(sum(amount),0) from business_assets.asset_cip_cost_source where tenant_id=$1 and asset_id=$2", context.Connection, context.Transaction); cost.Parameters.AddWithValue(tenant.Value); cost.Parameters.AddWithValue(assetId); var total = (decimal)(await cost.ExecuteScalarAsync(token) ?? 0m); if (total <= 0m) throw new FixedAssetException("assets.cip_without_cost");
             await using var update = new NpgsqlCommand("update business_assets.fixed_asset set category_id=$1,asset_nature=$2,tracking_granularity=$3,lifecycle_state='Capitalized',name=coalesce($4,name),capitalization_date=$5,placed_in_service_date=$6,updated_by=$7,updated_at=now(),row_version=row_version+1 where tenant_id=$8 and id=$9", context.Connection, context.Transaction); update.Parameters.AddWithValue(request.TargetCategoryId); update.Parameters.AddWithValue(nature); update.Parameters.AddWithValue(tracking); update.Parameters.AddWithValue((object?)request.Name?.Trim() ?? DBNull.Value); update.Parameters.AddWithValue(request.CapitalizationDate); update.Parameters.AddWithValue((object?)request.PlacedInServiceDate ?? DBNull.Value); update.Parameters.AddWithValue(actor); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(assetId); await update.ExecuteNonQueryAsync(token);
             await using var books = new NpgsqlCommand("update business_assets.asset_book set depreciation_method=$1,useful_life_months=$2,placed_in_service_date=$3,row_version=row_version+1 where tenant_id=$4 and asset_id=$5", context.Connection, context.Transaction); books.Parameters.AddWithValue(method); books.Parameters.AddWithValue((object?)usefulLife ?? DBNull.Value); books.Parameters.AddWithValue((object?)request.PlacedInServiceDate ?? DBNull.Value); books.Parameters.AddWithValue(tenant.Value); books.Parameters.AddWithValue(assetId); await books.ExecuteNonQueryAsync(token);
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetCapitalizedV1", JsonSerializer.Serialize(new FixedAssetCapitalizedV1(assetId, await ResolveAssetEntityAsync(context, tenant, assetId, token), request.CapitalizationDate, request.PlacedInServiceDate, total, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, assetId, assetId, "fixed-assets"));
             await using var view = new NpgsqlCommand("select a.asset_number,a.name,a.lifecycle_state,coalesce(sum(s.amount),0),count(s.id),a.capitalization_date,a.placed_in_service_date from business_assets.fixed_asset a left join business_assets.asset_cip_cost_source s on s.tenant_id=a.tenant_id and s.asset_id=a.id where a.tenant_id=$1 and a.id=$2 group by a.asset_number,a.name,a.lifecycle_state,a.capitalization_date,a.placed_in_service_date", context.Connection, context.Transaction); view.Parameters.AddWithValue(tenant.Value); view.Parameters.AddWithValue(assetId); await using var viewReader = await view.ExecuteReaderAsync(token); if (!await viewReader.ReadAsync(token)) throw new FixedAssetException("assets.asset_not_found"); return new CipAssetView(assetId, viewReader.GetString(0), viewReader.GetString(1), viewReader.GetString(2), viewReader.GetDecimal(3), viewReader.GetInt32(4), viewReader.GetFieldValue<DateOnly>(5), viewReader.IsDBNull(6) ? null : viewReader.GetFieldValue<DateOnly>(6));
         }, ct);
     }
@@ -552,16 +579,36 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             var legalEntityId = importReader.GetGuid(0); var sourceSystem = importReader.GetString(1); var batchReference = importReader.GetString(2); var openingDate = importReader.GetFieldValue<DateOnly>(3); var status = importReader.GetString(4); var createdAt = importReader.GetFieldValue<DateTimeOffset>(5); await importReader.CloseAsync();
             if (status == "Posted") return new OpeningImportView(importId, legalEntityId, sourceSystem, batchReference, openingDate, status, await OpeningLineCountAsync(context, tenant, importId, token), await OpeningValidLineCountAsync(context, tenant, importId, token), createdAt);
             if (status != "Validated") throw new FixedAssetException("assets.opening_import_not_validated");
-            await using var lines = new NpgsqlCommand("select l.id,l.legacy_asset_number,l.category_id,l.asset_name,l.book_definition_id,l.acquisition_date,l.placed_in_service_date,l.original_cost,l.accumulated_depreciation,l.residual_value,l.useful_life_months,l.depreciation_method,c.asset_nature,c.tracking_granularity,bd.legal_entity_id from business_assets.asset_opening_import_line l join business_assets.asset_category c on c.tenant_id=l.tenant_id and c.id=l.category_id join business_assets.asset_book_definition bd on bd.tenant_id=l.tenant_id and bd.id=l.book_definition_id where l.tenant_id=$1 and l.import_id=$2 and l.outcome='Valid' order by l.id", context.Connection, context.Transaction); lines.Parameters.AddWithValue(tenant.Value); lines.Parameters.AddWithValue(importId);
-            await using var lineReader = await lines.ExecuteReaderAsync(token); var rows = new List<(Guid Id, string Legacy, Guid CategoryId, string Name, Guid BookDefinitionId, DateOnly? AcquisitionDate, DateOnly PlacedInServiceDate, decimal Cost, decimal Accumulated, decimal Residual, int? UsefulLife, string Method, string Nature, string Tracking, Guid BookEntity)>(); while (await lineReader.ReadAsync(token)) rows.Add((lineReader.GetGuid(0), lineReader.GetString(1), lineReader.GetGuid(2), lineReader.GetString(3), lineReader.GetGuid(4), lineReader.IsDBNull(5) ? null : lineReader.GetFieldValue<DateOnly>(5), lineReader.GetFieldValue<DateOnly>(6), lineReader.GetDecimal(7), lineReader.GetDecimal(8), lineReader.GetDecimal(9), lineReader.IsDBNull(10) ? null : lineReader.GetInt32(10), lineReader.GetString(11), lineReader.GetString(12), lineReader.GetString(13), lineReader.GetGuid(14))); await lineReader.CloseAsync();
+            await using var lines = new NpgsqlCommand("select l.id,l.legacy_asset_number,l.category_id,l.asset_name,l.book_definition_id,l.acquisition_date,l.placed_in_service_date,l.original_cost,l.accumulated_depreciation,l.residual_value,l.useful_life_months,l.depreciation_method,c.asset_nature,c.tracking_granularity,bd.legal_entity_id,bd.posts_to_ledger,bd.currency_code from business_assets.asset_opening_import_line l join business_assets.asset_category c on c.tenant_id=l.tenant_id and c.id=l.category_id join business_assets.asset_book_definition bd on bd.tenant_id=l.tenant_id and bd.id=l.book_definition_id where l.tenant_id=$1 and l.import_id=$2 and l.outcome='Valid' order by l.id", context.Connection, context.Transaction); lines.Parameters.AddWithValue(tenant.Value); lines.Parameters.AddWithValue(importId);
+            await using var lineReader = await lines.ExecuteReaderAsync(token); var rows = new List<(Guid Id, string Legacy, Guid CategoryId, string Name, Guid BookDefinitionId, DateOnly? AcquisitionDate, DateOnly PlacedInServiceDate, decimal Cost, decimal Accumulated, decimal Residual, int? UsefulLife, string Method, string Nature, string Tracking, Guid BookEntity, bool PostsToLedger, string Currency)>(); while (await lineReader.ReadAsync(token)) rows.Add((lineReader.GetGuid(0), lineReader.GetString(1), lineReader.GetGuid(2), lineReader.GetString(3), lineReader.GetGuid(4), lineReader.IsDBNull(5) ? null : lineReader.GetFieldValue<DateOnly>(5), lineReader.GetFieldValue<DateOnly>(6), lineReader.GetDecimal(7), lineReader.GetDecimal(8), lineReader.GetDecimal(9), lineReader.IsDBNull(10) ? null : lineReader.GetInt32(10), lineReader.GetString(11), lineReader.GetString(12), lineReader.GetString(13), lineReader.GetGuid(14), lineReader.GetBoolean(15), lineReader.GetString(16))); await lineReader.CloseAsync();
             if (rows.Count != await OpeningPendingValidLineCountAsync(context, tenant, importId, token)) throw new FixedAssetException("assets.opening_import_reference_invalid");
             foreach (var row in rows)
             {
                 if (row.BookEntity != legalEntityId) throw new FixedAssetException("assets.opening_import_book_entity_mismatch");
-                var assetId = Guid.CreateVersion7(); var assetNumber = $"FA-OPEN-{row.Id:N}"[..20];
+                var assetId = Guid.CreateVersion7(); var assetNumber = await sequences.AllocateAsync(context, new SequenceDefinition("fixed-assets.asset-number", tenant, legalEntityId, null, null, null, "FA-", 8, 1), token);
                 await using var asset = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,asset_tag,lifecycle_state,asset_nature,tracking_granularity,source_origin_type,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,$6,$7,'Operational',$8,$9,'OpeningMigration',$10,$10,$11,1,$12,now(),1)", context.Connection, context.Transaction); asset.Parameters.AddWithValue(tenant.Value); asset.Parameters.AddWithValue(assetId); asset.Parameters.AddWithValue(legalEntityId); asset.Parameters.AddWithValue(row.CategoryId); asset.Parameters.AddWithValue(assetNumber); asset.Parameters.AddWithValue(row.Name.Trim()); asset.Parameters.AddWithValue(row.Legacy.Trim()); asset.Parameters.AddWithValue(row.Nature); asset.Parameters.AddWithValue(row.Tracking); asset.Parameters.AddWithValue(row.AcquisitionDate ?? openingDate); asset.Parameters.AddWithValue(row.PlacedInServiceDate); asset.Parameters.AddWithValue(actor); await asset.ExecuteNonQueryAsync(token);
                 var bookId = Guid.CreateVersion7(); await using var book = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),1)", context.Connection, context.Transaction); book.Parameters.AddWithValue(tenant.Value); book.Parameters.AddWithValue(bookId); book.Parameters.AddWithValue(assetId); book.Parameters.AddWithValue(row.BookDefinitionId); book.Parameters.AddWithValue(row.Cost); book.Parameters.AddWithValue(row.Residual); book.Parameters.AddWithValue((object?)row.UsefulLife ?? DBNull.Value); book.Parameters.AddWithValue(row.Method); book.Parameters.AddWithValue(row.PlacedInServiceDate); await book.ExecuteNonQueryAsync(token);
-                await using var transaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,accumulated_depreciation,source_reference,idempotency_key,created_by,created_at) values($1,$2,$3,'Opening',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction); transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue(Guid.CreateVersion7()); transaction.Parameters.AddWithValue(bookId); transaction.Parameters.AddWithValue(openingDate); transaction.Parameters.AddWithValue(row.Cost); transaction.Parameters.AddWithValue(row.Accumulated); transaction.Parameters.AddWithValue($"opening:{importId:D}:line:{row.Id:D}"); transaction.Parameters.AddWithValue($"opening:{importId:D}:line:{row.Id:D}:book:{bookId:D}"); transaction.Parameters.AddWithValue(actor); await transaction.ExecuteNonQueryAsync(token);
+                Guid? ledgerFact = null;
+                if (row.PostsToLedger)
+                {
+                    if (row.Cost < row.Accumulated) throw new FixedAssetException("assets.opening_book_value_invalid");
+                    var costAccount = await ledgerBalances.GetActiveControlBalanceAsync(tenant, new LegalEntityId(legalEntityId), "FixedAssetCost", openingDate, token);
+                    var accumulatedAccount = await ledgerBalances.GetActiveControlBalanceAsync(tenant, new LegalEntityId(legalEntityId), "FixedAssetAccumulatedDepreciation", openingDate, token);
+                    var offsetAccount = await ledgerBalances.GetActiveControlBalanceAsync(tenant, new LegalEntityId(legalEntityId), "FixedAssetCapitalizationOffset", openingDate, token);
+                    var baseCurrency = costAccount.BaseCurrencyCode.Trim().ToUpperInvariant();
+                    var currency = row.Currency.Trim().ToUpperInvariant();
+                    if (currency != baseCurrency) throw new FixedAssetException("assets.opening_currency_mismatch");
+                    var linesForLedger = new List<LedgerPostingLinePayload>();
+                    if (row.Cost > 0m) linesForLedger.Add(new(costAccount.AccountId, row.Cost, 0m, currency, row.Cost, 0m, row.Cost, 0m, 1m, [], $"Opening fixed asset {row.Legacy}", row.Legacy));
+                    if (row.Accumulated > 0m) linesForLedger.Add(new(accumulatedAccount.AccountId, 0m, row.Accumulated, currency, 0m, row.Accumulated, 0m, row.Accumulated, 1m, [], $"Opening accumulated depreciation {row.Legacy}", row.Legacy));
+                    var net = row.Cost - row.Accumulated;
+                    if (net > 0m) linesForLedger.Add(new(offsetAccount.AccountId, 0m, net, currency, 0m, net, 0m, net, 1m, [], $"Opening fixed asset offset {row.Legacy}", row.Legacy));
+                    var factId = DeterministicGuid(row.Id, bookId);
+                    var payload = new ExplicitLedgerPostingPayload(await OpeningJournalAsync(context, tenant, legalEntityId, token), $"Opening fixed asset {row.Legacy}", baseCurrency, linesForLedger, row.Legacy, $"{importId:D}:{row.Id:D}");
+                    var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(legalEntityId), AccountingFactTypes.OpeningBalancePosted, 1, "fixed-assets", $"opening:{importId:D}:line:{row.Id:D}:book:{bookId:D}", $"opening:{importId:D}:line:{row.Id:D}:book:{bookId:D}", openingDate, openingDate, payload, Guid.CreateVersion7(), actor);
+                    ledgerFact = (await posting.PostExplicitAsync(context, fact, payload, token)).FactId;
+                }
+                await using var transaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,accumulated_depreciation,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'Opening',$4,$5,$6,$7,$8,$9,$10,now())", context.Connection, context.Transaction); transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue(Guid.CreateVersion7()); transaction.Parameters.AddWithValue(bookId); transaction.Parameters.AddWithValue(openingDate); transaction.Parameters.AddWithValue(row.Cost); transaction.Parameters.AddWithValue(row.Accumulated); transaction.Parameters.AddWithValue($"opening:{importId:D}:line:{row.Id:D}"); transaction.Parameters.AddWithValue($"opening:{importId:D}:line:{row.Id:D}:book:{bookId:D}"); transaction.Parameters.AddWithValue((object?)ledgerFact?.ToString("D") ?? DBNull.Value); transaction.Parameters.AddWithValue(actor); await transaction.ExecuteNonQueryAsync(token);
                 await using var updateLine = new NpgsqlCommand("update business_assets.asset_opening_import_line set asset_id=$1,outcome='Created',error_code=null where tenant_id=$2 and id=$3", context.Connection, context.Transaction); updateLine.Parameters.AddWithValue(assetId); updateLine.Parameters.AddWithValue(tenant.Value); updateLine.Parameters.AddWithValue(row.Id); await updateLine.ExecuteNonQueryAsync(token);
             }
             await using var updateImport = new NpgsqlCommand("update business_assets.asset_opening_import set status='Posted' where tenant_id=$1 and id=$2", context.Connection, context.Transaction); updateImport.Parameters.AddWithValue(tenant.Value); updateImport.Parameters.AddWithValue(importId); await updateImport.ExecuteNonQueryAsync(token);
@@ -648,11 +695,24 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             }
             await using var updateDisposal = new NpgsqlCommand("update business_assets.asset_disposal set status='Posted' where tenant_id=$1 and id=$2", context.Connection, context.Transaction); updateDisposal.Parameters.AddWithValue(tenant.Value); updateDisposal.Parameters.AddWithValue(disposalId); await updateDisposal.ExecuteNonQueryAsync(token);
             await using var updateAsset = new NpgsqlCommand("update business_assets.fixed_asset set lifecycle_state='Disposed',row_version=row_version+1,updated_by=$1,updated_at=now() where tenant_id=$2 and id=$3", context.Connection, context.Transaction); updateAsset.Parameters.AddWithValue(actor); updateAsset.Parameters.AddWithValue(tenant.Value); updateAsset.Parameters.AddWithValue(assetId); await updateAsset.ExecuteNonQueryAsync(token);
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetDisposedV1", JsonSerializer.Serialize(new FixedAssetDisposedV1(assetId, legalEntityId, request.DisposalType.Trim(), request.DisposalDate, primaryNbv, primaryGainLoss, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, disposalId, assetId, "fixed-assets"));
             return new DisposalView(assetId, request.DisposalType.Trim(), request.DisposalDate, primaryGross, primaryAccumulated, primaryNbv, request.Proceeds, request.DirectCosts, primaryGainLoss, "Posted");
         }, ct);
     }
 
     private static async Task SetTenantAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, CancellationToken ct) { await using var command = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction); command.Parameters.AddWithValue(tenant.Value.ToString("D")); await command.ExecuteNonQueryAsync(ct); }
+    private static async Task<Guid> ResolveAssetEntityAsync(ITransactionContext context, TenantId tenant, Guid assetId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select legal_entity_id from business_assets.fixed_asset where tenant_id=$1 and id=$2", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(assetId);
+        return (Guid?)(await command.ExecuteScalarAsync(ct)) ?? throw new FixedAssetException("assets.asset_not_found");
+    }
+    private static async Task<Guid> OpeningJournalAsync(ITransactionContext context, TenantId tenant, Guid legalEntityId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='OPENING' and status='Active'", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId);
+        return (Guid?)(await command.ExecuteScalarAsync(ct)) ?? throw new FixedAssetException("assets.opening_journal_missing");
+    }
     private static Guid DeterministicGuid(Guid first, Guid second) => new(SHA256.HashData(Encoding.UTF8.GetBytes($"fixed-assets:{first:D}:{second:D}"))[..16]);
     private static Guid StableGuid(string value) => new(SHA256.HashData(Encoding.UTF8.GetBytes($"fixed-assets:key:{value}"))[..16]);
     private static JsonElement ReadJsonElement(NpgsqlDataReader reader, int ordinal) => JsonDocument.Parse(reader.GetString(ordinal)).RootElement.Clone();

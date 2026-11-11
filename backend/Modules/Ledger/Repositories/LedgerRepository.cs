@@ -29,7 +29,7 @@ public sealed class LedgerRepository(
 
     public async Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default)
     {
-        if (controlRole is not ("Receivable" or "Payable" or "Inventory" or "FixedAssetCost" or "FixedAssetAccumulatedDepreciation" or "FixedAssetImpairment" or "FixedAssetCIP") || configurationVersionId == Guid.Empty)
+        if (controlRole is not ("Receivable" or "Payable" or "Inventory" or "FixedAssetCost" or "FixedAssetAccumulatedDepreciation" or "FixedAssetCapitalizationOffset" or "FixedAssetImpairment" or "FixedAssetCIP") || configurationVersionId == Guid.Empty)
             throw new LedgerDomainException("ledger.control_balance_query_invalid", "A valid control role and accounting configuration are required.");
         await using var connection = await OpenAsync(tenantId, cancellationToken);
         const string sql = """

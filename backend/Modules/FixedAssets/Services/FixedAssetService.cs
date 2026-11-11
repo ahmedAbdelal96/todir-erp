@@ -4,6 +4,7 @@ namespace Modules.FixedAssets.Services;
 
 public sealed class FixedAssetService(FixedAssetRepository repository)
 {
+    public Task<Guid?> ResolveLegalEntityAsync(TenantId tenant, string resourceType, Guid resourceId, CancellationToken ct) => repository.ResolveLegalEntityAsync(tenant, resourceType, resourceId, ct);
     public Task<AssetCategoryView> CreateCategoryAsync(TenantId tenant, Guid actor, CreateAssetCategoryRequest request, CancellationToken ct) => repository.CreateCategoryAsync(tenant, actor, request, ct);
     public Task<IReadOnlyList<AssetCategoryView>> ListCategoriesAsync(TenantId tenant, int limit, CancellationToken ct) => repository.ListCategoriesAsync(tenant, limit, ct);
     public Task<AssetView> CreateAssetAsync(TenantId tenant, Guid actor, CreateAssetRequest request, CancellationToken ct) => repository.CreateAssetAsync(tenant, actor, request, ct);
