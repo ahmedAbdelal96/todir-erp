@@ -55,7 +55,7 @@ Unfinished requirements / next executable work:
 
 Last meaningful change: added Inventory/Expenses/Purchasing source capability seams, approval-gated impairment and provider-validated revaluation proposals, the bounded register report, and the semantic recovery runbook; the forward migration/development seed and live Fixed Assets integration gate are fresh and PASS, 8/8.
 
-Next executable action: add runtime vectors for the new source and financial-event seams, then continue grouped/CIP split, partial disposal/reinstatement, sale linkage, HR offboarding, country-pack implementation, bulk operations, reports, migration-upgrade/OpenAPI/security gates, and the complete backend release gate before commit/push.
+Current implementation checkpoint is committed as `0477535` and pushed to `origin/dev`. Next executable action: add runtime vectors for the new source and financial-event seams, then continue grouped/CIP split, partial disposal/reinstatement, sale linkage, HR offboarding, country-pack implementation, bulk operations, reports, migration-upgrade/OpenAPI/security gates, and the complete backend release gate.
 
 ## FA00–FA45 coverage matrix
 
