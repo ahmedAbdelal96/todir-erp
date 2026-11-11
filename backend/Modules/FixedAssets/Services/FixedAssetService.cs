@@ -13,5 +13,6 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<AssetBookView> CreateBookAsync(TenantId tenant, Guid actor, CreateBookRequest request, CancellationToken ct) => repository.CreateBookAsync(tenant, actor, request, ct);
     public Task<Guid> AddAssetBookAsync(TenantId tenant, Guid actor, Guid assetId, CreateAssetBookRequest request, CancellationToken ct) => repository.AddAssetBookAsync(tenant, actor, assetId, request, ct);
     public Task<DepreciationRunView> PrepareDepreciationRunAsync(TenantId tenant, Guid actor, CreateDepreciationRunRequest request, CancellationToken ct) => repository.PrepareDepreciationRunAsync(tenant, actor, request, ct);
+    public Task<DepreciationRunView> PostDepreciationRunAsync(TenantId tenant, Guid actor, Guid runId, CancellationToken ct) => repository.PostDepreciationRunAsync(tenant, actor, runId, ct);
     public Task<DisposalView> DisposeAsync(TenantId tenant, Guid actor, Guid assetId, DisposeAssetRequest request, CancellationToken ct) => repository.DisposeAsync(tenant, actor, assetId, request, ct);
 }
