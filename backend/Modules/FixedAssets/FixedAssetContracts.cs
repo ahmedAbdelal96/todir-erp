@@ -81,4 +81,5 @@ public sealed record SourceAllocationCorrectionView(Guid Id, Guid AllocationId, 
 public sealed record CipAssetView(Guid AssetId, string AssetNumber, string Name, string LifecycleState, decimal TotalCost, int CostSourceCount, DateOnly? CapitalizationDate, DateOnly? PlacedInServiceDate);
 public sealed record AssetBookCostChangeView(Guid AssetId, Guid BookId, decimal Amount, string TransactionType, decimal PreviousCost, decimal NewCost, string? LedgerFactReference, bool AlreadyApplied);
 public sealed record OpeningImportView(Guid Id, Guid LegalEntityId, string SourceSystem, string BatchReference, DateOnly OpeningDate, string Status, int LineCount, int ValidLineCount, DateTimeOffset CreatedAt);
+public sealed record AssetBookBalanceView(Guid AssetId, Guid BookId, Guid LegalEntityId, decimal OriginalCost, decimal AccumulatedDepreciation, decimal NetBookValue, string LifecycleState, int TransactionCount, DateOnly? LastTransactionDate);
 

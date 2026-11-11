@@ -569,6 +569,17 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         }, ct);
     }
 
+    public async Task<AssetBookBalanceView> GetAssetBookBalanceAsync(TenantId tenant, Guid assetId, Guid bookId, Guid legalEntityId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand("select a.id,b.id,a.legal_entity_id,b.original_cost,a.lifecycle_state,coalesce(sum(case when t.transaction_type='Opening' then t.accumulated_depreciation when t.transaction_type='Depreciation' then t.amount when t.transaction_type='Reversal' then -t.amount else 0 end),0),count(t.id),max(t.transaction_date) from business_assets.fixed_asset a join business_assets.asset_book b on b.tenant_id=a.tenant_id and b.asset_id=a.id left join business_assets.asset_book_transaction t on t.tenant_id=b.tenant_id and t.asset_book_id=b.id where a.tenant_id=$1 and a.id=$2 and b.id=$3 and a.legal_entity_id=$4 group by a.id,b.id,a.legal_entity_id,b.original_cost,a.lifecycle_state", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(assetId); command.Parameters.AddWithValue(bookId); command.Parameters.AddWithValue(legalEntityId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new FixedAssetException("assets.book_not_found");
+        var originalCost = reader.GetDecimal(3); var accumulated = Math.Clamp(reader.GetDecimal(5), 0m, originalCost); var lifecycle = reader.GetString(4); var netBookValue = lifecycle == "Disposed" ? 0m : originalCost - accumulated;
+        return new AssetBookBalanceView(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), originalCost, accumulated, netBookValue, lifecycle, Convert.ToInt32(reader.GetInt64(6), System.Globalization.CultureInfo.InvariantCulture), reader.IsDBNull(7) ? null : reader.GetFieldValue<DateOnly>(7));
+    }
+
     private static string? ValidateOpeningLine(OpeningImportLineRequest line)
     {
         if (string.IsNullOrWhiteSpace(line.LegacyAssetNumber) || string.IsNullOrWhiteSpace(line.Name) || line.CategoryId == Guid.Empty || line.BookDefinitionId == Guid.Empty) return "assets.opening_line_required";

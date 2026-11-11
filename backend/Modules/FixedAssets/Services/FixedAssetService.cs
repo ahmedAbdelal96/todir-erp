@@ -26,5 +26,6 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<AssetBookCostChangeView> ChangeAssetBookCostAsync(TenantId tenant, Guid actor, Guid assetId, ChangeAssetBookCostRequest request, CancellationToken ct) => repository.ChangeAssetBookCostAsync(tenant, actor, assetId, request, ct);
     public Task<OpeningImportView> CreateOpeningImportAsync(TenantId tenant, Guid actor, CreateOpeningImportRequest request, CancellationToken ct) => repository.CreateOpeningImportAsync(tenant, actor, request, ct);
     public Task<OpeningImportView> PostOpeningImportAsync(TenantId tenant, Guid actor, Guid importId, CancellationToken ct) => repository.PostOpeningImportAsync(tenant, actor, importId, ct);
+    public Task<AssetBookBalanceView> GetAssetBookBalanceAsync(TenantId tenant, Guid assetId, Guid bookId, Guid legalEntityId, CancellationToken ct) => repository.GetAssetBookBalanceAsync(tenant, assetId, bookId, legalEntityId, ct);
     public Task<DisposalView> DisposeAsync(TenantId tenant, Guid actor, Guid assetId, DisposeAssetRequest request, CancellationToken ct) => repository.DisposeAsync(tenant, actor, assetId, request, ct);
 }
