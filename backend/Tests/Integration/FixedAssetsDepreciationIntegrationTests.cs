@@ -293,12 +293,47 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         Assert.Equal("Consumed", candidateReader.GetString(1));
         await candidateReader.CloseAsync();
 
-        await using var allocationCommand = new NpgsqlCommand("select count(*) from business_assets.asset_source_allocation where tenant_id=$1 and candidate_id=$2 and asset_id=$3 and amount=$4", connection);
+        await using var allocationCommand = new NpgsqlCommand("select id from business_assets.asset_source_allocation where tenant_id=$1 and candidate_id=$2 and asset_id=$3 and amount=$4", connection);
         allocationCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
         allocationCommand.Parameters.AddWithValue(candidateId);
         allocationCommand.Parameters.AddWithValue(Guid.Parse("7e5e47f1-55bc-ca5c-a033-568e9d957125"));
         allocationCommand.Parameters.AddWithValue(5000m);
-        Assert.Equal(1L, (long)(await allocationCommand.ExecuteScalarAsync() ?? 0L));
+        var allocationId = (Guid?)(await allocationCommand.ExecuteScalarAsync());
+        Assert.NotNull(allocationId);
+
+        var correctionKey = $"integration-allocation-correction-{Guid.CreateVersion7():N}";
+        var correctionCsrf = await GetCsrfAsync(client);
+        using var correction = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/capitalization-candidates/{candidateId:D}/allocations/{allocationId.Value:D}/correct")
+        {
+            Content = JsonContent.Create(new { allocationId, amount = 1000m, reason = "Corrected source allocation", idempotencyKey = correctionKey })
+        };
+        correction.Headers.Add("X-CSRF-TOKEN", correctionCsrf.Token);
+        using var correctionResponse = await client.SendAsync(correction);
+        var correctionBody = await correctionResponse.Content.ReadAsStringAsync();
+        Assert.True(correctionResponse.StatusCode == HttpStatusCode.OK, correctionBody);
+        using var correctionJson = JsonDocument.Parse(correctionBody);
+        Assert.Equal(4000m, correctionJson.RootElement.GetProperty("candidateAllocatedAmount").GetDecimal());
+        Assert.Equal(4000m, correctionJson.RootElement.GetProperty("remainingAllocationAmount").GetDecimal());
+        Assert.False(correctionJson.RootElement.GetProperty("alreadyApplied").GetBoolean());
+
+        var correctionRetryCsrf = await GetCsrfAsync(client);
+        using var correctionRetry = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/capitalization-candidates/{candidateId:D}/allocations/{allocationId.Value:D}/correct")
+        {
+            Content = JsonContent.Create(new { allocationId, amount = 1000m, reason = "Corrected source allocation", idempotencyKey = correctionKey })
+        };
+        correctionRetry.Headers.Add("X-CSRF-TOKEN", correctionRetryCsrf.Token);
+        using var correctionRetryResponse = await client.SendAsync(correctionRetry);
+        Assert.Equal(HttpStatusCode.OK, correctionRetryResponse.StatusCode);
+        using var correctionRetryJson = JsonDocument.Parse(await correctionRetryResponse.Content.ReadAsStringAsync());
+        Assert.True(correctionRetryJson.RootElement.GetProperty("alreadyApplied").GetBoolean());
+
+        await using var correctedCandidate = new NpgsqlCommand("select allocated_amount,status from business_assets.asset_capitalization_candidate where tenant_id=$1 and id=$2", connection);
+        correctedCandidate.Parameters.AddWithValue(Guid.Parse(TenantId));
+        correctedCandidate.Parameters.AddWithValue(candidateId);
+        await using var correctedCandidateReader = await correctedCandidate.ExecuteReaderAsync();
+        Assert.True(await correctedCandidateReader.ReadAsync());
+        Assert.Equal(4000m, correctedCandidateReader.GetDecimal(0));
+        Assert.Equal("Approved", correctedCandidateReader.GetString(1));
     }
 
     [Fact]

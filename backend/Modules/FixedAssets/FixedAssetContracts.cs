@@ -60,6 +60,7 @@ public sealed record DisposeAssetRequest(Guid LegalEntityId, string DisposalType
 public sealed record CreateCapitalizationCandidateRequest(Guid LegalEntityId, string SourceType, string SourceReference, decimal EligibleAmount, JsonElement SourceSnapshot);
 public sealed record ReviewCapitalizationCandidateRequest(string Decision, string? Reason);
 public sealed record AllocateCapitalizationCandidateRequest(Guid AssetId, decimal Amount, string AllocationType = "Acquisition");
+public sealed record CorrectSourceAllocationRequest(Guid AllocationId, decimal Amount, string Reason, string IdempotencyKey);
 public sealed record CreateCipAssetRequest(Guid LegalEntityId, Guid CategoryId, string Name, DateOnly AcquisitionDate, string SourceType, string SourceReference, decimal Amount, string? Description);
 public sealed record AddCipCostSourceRequest(string SourceType, string SourceReference, decimal Amount, Guid? ReversalOfId = null);
 public sealed record CapitalizeCipRequest(Guid TargetCategoryId, string? Name, DateOnly CapitalizationDate, DateOnly? PlacedInServiceDate = null);
@@ -73,6 +74,7 @@ public sealed record DepreciationRunView(Guid Id, Guid LegalEntityId, Guid BookI
 public sealed record DisposalView(Guid AssetId, string DisposalType, DateOnly DisposalDate, decimal GrossCost, decimal AccumulatedDepreciation, decimal NetBookValue, decimal Proceeds, decimal DirectCosts, decimal GainLoss, string Status);
 public sealed record CapitalizationCandidateView(Guid Id, Guid LegalEntityId, string SourceType, string SourceReference, JsonElement SourceSnapshot, decimal EligibleAmount, decimal AllocatedAmount, string Status, string? Decision, DateTimeOffset CreatedAt);
 public sealed record SourceAllocationView(Guid Id, Guid CandidateId, Guid AssetId, decimal Amount, string AllocationType, DateTimeOffset CreatedAt, bool AlreadyApplied = false);
+public sealed record SourceAllocationCorrectionView(Guid Id, Guid AllocationId, Guid CandidateId, Guid AssetId, decimal Amount, decimal RemainingAllocationAmount, decimal CandidateAllocatedAmount, string Reason, DateTimeOffset CreatedAt, bool AlreadyApplied);
 public sealed record CipAssetView(Guid AssetId, string AssetNumber, string Name, string LifecycleState, decimal TotalCost, int CostSourceCount, DateOnly? CapitalizationDate, DateOnly? PlacedInServiceDate);
 public sealed record AssetBookCostChangeView(Guid AssetId, Guid BookId, decimal Amount, string TransactionType, decimal PreviousCost, decimal NewCost, string? LedgerFactReference, bool AlreadyApplied);
 

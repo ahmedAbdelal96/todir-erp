@@ -285,6 +285,45 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         }, ct);
     }
 
+    public async Task<SourceAllocationCorrectionView> CorrectSourceAllocationAsync(TenantId tenant, Guid actor, Guid candidateId, CorrectSourceAllocationRequest request, CancellationToken ct)
+    {
+        if (request.AllocationId == Guid.Empty || request.Amount <= 0m || string.IsNullOrWhiteSpace(request.Reason) || string.IsNullOrWhiteSpace(request.IdempotencyKey))
+            throw new FixedAssetException("assets.source_allocation_correction_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var key = request.IdempotencyKey.Trim();
+            await using var existing = new NpgsqlCommand("select id,allocation_id,candidate_id,asset_id,amount,reason,created_at from business_assets.asset_source_allocation_correction where tenant_id=$1 and idempotency_key=$2", context.Connection, context.Transaction); existing.Parameters.AddWithValue(tenant.Value); existing.Parameters.AddWithValue(key);
+            await using var existingReader = await existing.ExecuteReaderAsync(token);
+            if (await existingReader.ReadAsync(token))
+            {
+                var existingId = existingReader.GetGuid(0); var existingAllocationId = existingReader.GetGuid(1); var existingCandidateId = existingReader.GetGuid(2); var existingAssetId = existingReader.GetGuid(3); var existingAmount = existingReader.GetDecimal(4); var existingReason = existingReader.GetString(5); var existingCreatedAt = existingReader.GetFieldValue<DateTimeOffset>(6); await existingReader.CloseAsync();
+                if (existingAllocationId != request.AllocationId || existingCandidateId != candidateId || existingAmount != request.Amount || existingReason != request.Reason.Trim()) throw new FixedAssetException("assets.source_allocation_correction_conflict");
+                await using var existingTotal = new NpgsqlCommand("select allocated_amount from business_assets.asset_capitalization_candidate where tenant_id=$1 and id=$2", context.Connection, context.Transaction); existingTotal.Parameters.AddWithValue(tenant.Value); existingTotal.Parameters.AddWithValue(candidateId); var candidateAllocated = (decimal?)(await existingTotal.ExecuteScalarAsync(token)) ?? throw new FixedAssetException("assets.capitalization_candidate_not_found");
+                await using var existingRemaining = new NpgsqlCommand("select a.amount-coalesce((select sum(c.amount) from business_assets.asset_source_allocation_correction c where c.tenant_id=a.tenant_id and c.allocation_id=a.id),0) from business_assets.asset_source_allocation a where a.tenant_id=$1 and a.id=$2", context.Connection, context.Transaction); existingRemaining.Parameters.AddWithValue(tenant.Value); existingRemaining.Parameters.AddWithValue(request.AllocationId); var remaining = (decimal?)(await existingRemaining.ExecuteScalarAsync(token)) ?? 0m;
+                return new SourceAllocationCorrectionView(existingId, existingAllocationId, existingCandidateId, existingAssetId, existingAmount, remaining, candidateAllocated, existingReason, existingCreatedAt, true);
+            }
+            await existingReader.CloseAsync();
+
+            await using var candidate = new NpgsqlCommand("select allocated_amount,status from business_assets.asset_capitalization_candidate where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); candidate.Parameters.AddWithValue(tenant.Value); candidate.Parameters.AddWithValue(candidateId);
+            await using var candidateReader = await candidate.ExecuteReaderAsync(token);
+            if (!await candidateReader.ReadAsync(token)) throw new FixedAssetException("assets.capitalization_candidate_not_found");
+            var candidateAllocatedAmount = candidateReader.GetDecimal(0); var candidateStatus = candidateReader.GetString(1); await candidateReader.CloseAsync();
+            if (candidateStatus is "Rejected" or "PendingReview") throw new FixedAssetException("assets.source_allocation_correction_not_allowed");
+
+            await using var allocation = new NpgsqlCommand("select asset_id,amount from business_assets.asset_source_allocation where tenant_id=$1 and id=$2 and candidate_id=$3 for update", context.Connection, context.Transaction); allocation.Parameters.AddWithValue(tenant.Value); allocation.Parameters.AddWithValue(request.AllocationId); allocation.Parameters.AddWithValue(candidateId);
+            await using var allocationReader = await allocation.ExecuteReaderAsync(token);
+            if (!await allocationReader.ReadAsync(token)) throw new FixedAssetException("assets.source_allocation_not_found");
+            var assetId = allocationReader.GetGuid(0); var originalAmount = allocationReader.GetDecimal(1); await allocationReader.CloseAsync();
+            await using var totalCorrections = new NpgsqlCommand("select coalesce(sum(amount),0) from business_assets.asset_source_allocation_correction where tenant_id=$1 and allocation_id=$2", context.Connection, context.Transaction); totalCorrections.Parameters.AddWithValue(tenant.Value); totalCorrections.Parameters.AddWithValue(request.AllocationId); var correctedAmount = (decimal)(await totalCorrections.ExecuteScalarAsync(token) ?? 0m);
+            if (correctedAmount + request.Amount > originalAmount || request.Amount > candidateAllocatedAmount) throw new FixedAssetException("assets.source_allocation_correction_exceeds_amount");
+            var correctionId = Guid.CreateVersion7();
+            await using var insert = new NpgsqlCommand("insert into business_assets.asset_source_allocation_correction(tenant_id,id,allocation_id,candidate_id,asset_id,amount,reason,idempotency_key,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction); insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(correctionId); insert.Parameters.AddWithValue(request.AllocationId); insert.Parameters.AddWithValue(candidateId); insert.Parameters.AddWithValue(assetId); insert.Parameters.AddWithValue(request.Amount); insert.Parameters.AddWithValue(request.Reason.Trim()); insert.Parameters.AddWithValue(key); insert.Parameters.AddWithValue(actor); await insert.ExecuteNonQueryAsync(token);
+            var candidateNewAmount = candidateAllocatedAmount - request.Amount;
+            await using var update = new NpgsqlCommand("update business_assets.asset_capitalization_candidate set allocated_amount=$1,status=case when status='Consumed' then 'Approved' else status end where tenant_id=$2 and id=$3", context.Connection, context.Transaction); update.Parameters.AddWithValue(candidateNewAmount); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(candidateId); await update.ExecuteNonQueryAsync(token);
+            return new SourceAllocationCorrectionView(correctionId, request.AllocationId, candidateId, assetId, request.Amount, originalAmount - correctedAmount - request.Amount, candidateNewAmount, request.Reason.Trim(), DateTimeOffset.UtcNow, false);
+        }, ct);
+    }
+
     public async Task<CipAssetView> CreateCipAssetAsync(TenantId tenant, Guid actor, CreateCipAssetRequest request, CancellationToken ct)
     {
         if (request.LegalEntityId == Guid.Empty || request.CategoryId == Guid.Empty || string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.SourceType) || string.IsNullOrWhiteSpace(request.SourceReference) || request.Amount <= 0m)
