@@ -1,16 +1,60 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, Locator } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
 
 const ARTIFACTS_DIR = process.env.TEST_ARTIFACTS_DIR || path.resolve('artifacts/expenses-acceptance/real-stack');
 const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/expenses-acceptance/real-stack');
-const TEST_DEV_PASSWORD = process.env.ERP_DEV_PASSWORD || 'DevSeed2026Apmjuoj1oZjHEDcxSsOc27HKY8yOv0B7';
+const TEST_DEV_PASSWORD = process.env.ERP_DEV_PASSWORD;
+
+function requireTestDevPassword(): string {
+  if (!TEST_DEV_PASSWORD) {
+    throw new Error('ERP_DEV_PASSWORD must be set for the real-stack Expenses acceptance suite.');
+  }
+  return TEST_DEV_PASSWORD;
+}
 
 test.describe.configure({ mode: 'serial' });
 
 const RUN_ID = Date.now().toString().slice(-5);
 const TEST_MERCHANT_NAME = `مؤسسة النيل للخدمات اللوجستية ${RUN_ID}`;
 const TEST_MILEAGE_MERCHANT = `بدل انتقال ${RUN_ID}`;
+const ATLAS_ENTITY_ID = 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
+let REAL_EXPENSE_ID: string | null = null;
+let REAL_CARD_TRANSACTION_ID: string | null = null;
+let REAL_REPAYMENT_ID: string | null = null;
+
+async function getExpense(page: Page, id: string) {
+  const response = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/${id}`);
+  expect(response.ok()).toBeTruthy();
+  return response.json();
+}
+
+async function getExpenseHistory(page: Page, id: string) {
+  const response = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/${id}/history`);
+  expect(response.ok()).toBeTruthy();
+  const payload = await response.json();
+  return Array.isArray(payload) ? payload : payload.items ?? [];
+}
+
+async function getMileageDetail(page: Page, id: string) {
+  const response = await page.request.get(`/api/v1/expenses/my/expenses/${id}/mileage?legalEntityId=${ATLAS_ENTITY_ID}`);
+  expect(response.ok()).toBeTruthy();
+  return response.json();
+}
+
+async function getExpensePage(page: Page, search: string) {
+  const response = await page.request.get(`/api/v1/expenses/my/expenses?legalEntityId=${ATLAS_ENTITY_ID}&search=${encodeURIComponent(search)}&page=1&pageSize=50`);
+  expect(response.ok()).toBeTruthy();
+  return response.json();
+}
+
+async function chooseFirstExpenseCategory(page: Page, dialog: Locator) {
+  const categoryButton = dialog.getByRole('button', { name: /اختر خيارًا|Select an option/i });
+  if (await categoryButton.isVisible({ timeout: 1500 }).catch(() => false)) {
+    await categoryButton.click();
+    await page.getByRole('listbox').getByRole('option').first().click();
+  }
+}
 
 async function ensureArabicLanguage(page: Page) {
   const switchToArabicBtn = page.getByRole('button', { name: /Switch to Arabic|التبديل إلى العربية/i });
@@ -64,7 +108,7 @@ async function ensureAuthenticated(page: Page, email: string = 'admin@atlas.com'
   const emailInput = page.locator('#login-email');
   if (await emailInput.isVisible({ timeout: 4000 }).catch(() => false)) {
     await emailInput.fill(email);
-    await page.locator('#login-password').fill(TEST_DEV_PASSWORD);
+    await page.locator('#login-password').fill(requireTestDevPassword());
     await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
     await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
     await page.waitForLoadState('networkidle');
@@ -75,7 +119,7 @@ async function ensureAuthenticated(page: Page, email: string = 'admin@atlas.com'
       await page.waitForTimeout(1000);
       if (await emailInput.isVisible().catch(() => false)) {
         await emailInput.fill(email);
-        await page.locator('#login-password').fill(TEST_DEV_PASSWORD);
+        await page.locator('#login-password').fill(requireTestDevPassword());
         await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
         await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
         await page.waitForLoadState('networkidle');
@@ -133,7 +177,7 @@ async function switchUser(page: Page, email: string) {
   const emailInput = page.locator('#login-email');
   if (await emailInput.isVisible({ timeout: 4000 }).catch(() => false)) {
     await emailInput.fill(email);
-    await page.locator('#login-password').fill(TEST_DEV_PASSWORD);
+    await page.locator('#login-password').fill(requireTestDevPassword());
     await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
     await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
     await page.waitForLoadState('networkidle');
@@ -144,7 +188,7 @@ async function switchUser(page: Page, email: string) {
       await page.waitForTimeout(1000);
       if (await emailInput.isVisible().catch(() => false)) {
         await emailInput.fill(email);
-        await page.locator('#login-password').fill(TEST_DEV_PASSWORD);
+        await page.locator('#login-password').fill(requireTestDevPassword());
         await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
         await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
         await page.waitForLoadState('networkidle');
@@ -186,7 +230,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
   // ==========================================
   test('REAL-01: Visual Architecture, Oxford Navy Header, Crisp Cards & RTL KPIs', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await ensureAuthenticated(page);
+    await ensureAuthenticated(page, 'admin@atlas.com');
 
     // Verify Dark Oxford Navy Header
     const header = page.locator('header').first();
@@ -217,7 +261,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
   // ==========================================
   test('REAL-02: Self-Service Expense Creation (Draft with Real Persistence)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await ensureAuthenticated(page);
+    await ensureAuthenticated(page, 'hr-manager@atlas.com');
 
     // Open Modal
     await page.getByRole('button', { name: /تسجيل مصروف جديد/i }).first().click();
@@ -227,6 +271,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     // Fill form
     await dialog.getByLabel(/اسم التاجر|التاجر أو مزود الخدمة/i).fill(TEST_MERCHANT_NAME);
     await dialog.getByLabel(/المبلغ/i).fill('1450.00');
+    await chooseFirstExpenseCategory(page, dialog);
     await dialog.getByPlaceholder(/الغرض من المصروف/i).fill('شحن بضائع ومستلزمات معرض القاهرة');
 
     // Submit
@@ -237,6 +282,12 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await page.waitForTimeout(1000);
     await expect(page.getByText(TEST_MERCHANT_NAME).first()).toBeVisible({ timeout: 10000 });
 
+    const createdPage = await getExpensePage(page, TEST_MERCHANT_NAME);
+    const created = createdPage.items.find((item: { merchantName: string }) => item.merchantName === TEST_MERCHANT_NAME);
+    expect(created?.id).toBeTruthy();
+    REAL_EXPENSE_ID = created.id;
+    expect(created.expenseState).toBe('Draft');
+
     await captureEvidence(page, '02-expenses-new-expense-modal.png');
   });
 
@@ -245,7 +296,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
   // ==========================================
   test('REAL-03: Mileage Allowance Expense Creation with Auto-Calculation', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await ensureAuthenticated(page);
+    await ensureAuthenticated(page, 'hr-manager@atlas.com');
 
     // Open Modal
     await page.getByRole('button', { name: /تسجيل مصروف جديد/i }).first().click();
@@ -254,12 +305,17 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     // Switch to Mileage mode
     await dialog.getByRole('button', { name: /بدل انتقال/i }).click();
+    await chooseFirstExpenseCategory(page, dialog);
 
     // Fill distance (80 km) -> auto calculates using published policy
     await dialog.getByLabel(/المسافة المقطوعة/i).fill('80');
     await page.waitForTimeout(300);
-    const amountVal = await dialog.getByLabel(/المبلغ/i).inputValue();
-    expect(Number(amountVal)).toBeGreaterThan(0);
+    const oneWayAmount = Number(await dialog.getByLabel(/المبلغ/i).inputValue());
+    expect(oneWayAmount).toBeGreaterThan(0);
+    await dialog.getByLabel(/رحلة ذهاب وعودة|Round trip/i).check();
+    await page.waitForTimeout(300);
+    const roundTripAmount = Number(await dialog.getByLabel(/المبلغ/i).inputValue());
+    expect(roundTripAmount).toBeCloseTo(oneWayAmount * 2, 2);
 
     await dialog.getByPlaceholder(/فرع الإسكندرية|Alexandria branch/i).fill('القاهرة - السويس');
 
@@ -269,12 +325,20 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     await page.waitForTimeout(1000);
     await expect(page.getByText(/بدل انتقال/i).first()).toBeVisible({ timeout: 10000 });
+    const mileagePage = await getExpensePage(page, 'بدل انتقال');
+    const mileageExpense = mileagePage.items.find((item: { merchantName: string; businessPurpose?: string }) => item.businessPurpose?.includes('القاهرة - السويس') || item.merchantName.includes('بدل انتقال'));
+    expect(mileageExpense?.id).toBeTruthy();
+    const mileage = await getMileageDetail(page, mileageExpense!.id);
+    expect(mileage.roundTrip).toBe(true);
+    expect(Number(mileage.calculatedDistance)).toBeCloseTo(160, 4);
+    expect(Number(mileage.calculatedAmount)).toBeCloseTo(roundTripAmount, 2);
   });
 
   // ==========================================
   // JOURNEY 04: Real Supporting Receipt Upload & ClamAV Loop
   // ==========================================
   test('REAL-04: Official Supporting Evidence Upload, Storage & Scan Readiness', async ({ page }) => {
+    test.skip(process.env.ERP_RUN_FILES_ACCEPTANCE !== '1', 'Optional live Platform Files/S3/ClamAV acceptance requires ERP_RUN_FILES_ACCEPTANCE=1 and configured providers.');
     await page.setViewportSize({ width: 1280, height: 800 });
     await ensureAuthenticated(page);
 
@@ -322,6 +386,8 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await page.setViewportSize({ width: 1280, height: 800 });
     await ensureAuthenticated(page);
 
+    await page.getByRole('tab', { name: 'مراجعة واعتماد المصروفات' }).click();
+
     // Open detail drawer for the test expense
     await page.getByText(TEST_MERCHANT_NAME).first().click();
     const drawer = page.locator('.quick-peek-panel, [role="dialog"]').first();
@@ -353,6 +419,8 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
   test('REAL-06: Expense Submission & Finance Manager Workbench Approval', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await ensureAuthenticated(page, 'admin@atlas.com');
+
+    await page.getByRole('tab', { name: 'مراجعة واعتماد المصروفات' }).click();
 
     // Open detail drawer for the test expense
     await page.getByText(TEST_MERCHANT_NAME).first().click();
@@ -422,6 +490,14 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     const reverseBtn = drawer.getByRole('button', { name: 'قيد عكسي', exact: true });
     await expect(reverseBtn).toBeVisible({ timeout: 15000 });
 
+    expect(REAL_EXPENSE_ID).toBeTruthy();
+    const finalized = await getExpense(page, REAL_EXPENSE_ID!);
+    expect(finalized.expenseState).toBe('Finalized');
+    expect(finalized.accountingState).toBe('Posted');
+    expect(finalized.settlementState).toBe('ReimbursementPending');
+    const finalizedHistory = await getExpenseHistory(page, REAL_EXPENSE_ID!);
+    expect(finalizedHistory.some((entry: { action: string; toState?: Record<string, unknown> }) => entry.action === 'finalize' && entry.toState?.accountingState === 'Posted')).toBeTruthy();
+
     await captureEvidence(page, '06-expenses-finalization.png');
 
     // Perform reversal to verify authorized reversal lifecycle
@@ -436,6 +512,11 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     // Verify state badge is Reversed (قيد عكسي / تم العكس)
     await expect(drawer.getByText(/قيد عكسي|تم العكس|معكوس|Reversed/i).first()).toBeVisible({ timeout: 15000 });
+    const reversed = await getExpense(page, REAL_EXPENSE_ID!);
+    expect(reversed.expenseState).toBe('Reversed');
+    expect(reversed.accountingState).toBe('Reversed');
+    const reversalHistory = await getExpenseHistory(page, REAL_EXPENSE_ID!);
+    expect(reversalHistory.some((entry: { action: string; toState?: Record<string, unknown> }) => entry.action === 'reverse' && entry.toState?.accountingState === 'Reversed')).toBeTruthy();
 
     // Close drawer
     await drawer.getByRole('button', { name: 'إغلاق', exact: true }).click();
@@ -455,6 +536,12 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     // Verify Advances Title & Filters
     await expect(page.getByText('إدارة سلف العمل والتسويات')).toBeVisible();
     await expect(page.getByText('كافة السلف')).toBeVisible();
+
+    const advancesBeforeResponse = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/advances?page=1&pageSize=50`);
+    expect(advancesBeforeResponse.ok()).toBeTruthy();
+    const advancesBeforePayload = await advancesBeforeResponse.json();
+    const advancesBefore = advancesBeforePayload.items as Array<{ id: string; returnedAmount: number; issuedAmount: number; appliedAmount: number; writtenOffAmount?: number }>;
+    const returnedBefore = new Map(advancesBefore.map((advance) => [advance.id, advance]));
 
     // Click "منصرفة وقائمة" (Issued) filter pill
     await page.getByRole('button', { name: /منصرفة وقائمة/i }).click();
@@ -479,8 +566,18 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await page.getByRole('button', { name: 'كافة السلف' }).click();
     await page.waitForTimeout(1000);
 
-    // Verify outstanding balance reduced arithmetically (180 - 50 = 130.00 EGP)
-    await expect(page.getByText(/130\.00|4500/i).first()).toBeVisible({ timeout: 10000 });
+    // Verify the persisted return and outstanding balance from the authoritative API.
+    const advancesAfterResponse = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/advances?page=1&pageSize=50`);
+    expect(advancesAfterResponse.ok()).toBeTruthy();
+    const advancesAfterPayload = await advancesAfterResponse.json();
+    const returnedAdvance = (advancesAfterPayload.items as Array<{ id: string; returnedAmount: number; issuedAmount: number; appliedAmount: number; writtenOffAmount?: number }>)
+      .find((advance) => advance.returnedAmount === (returnedBefore.get(advance.id)?.returnedAmount ?? -1) + 50);
+    expect(returnedAdvance).toBeTruthy();
+    expect(returnedAdvance!.returnedAmount).toBeGreaterThan(0);
+    const beforeAdvance = returnedBefore.get(returnedAdvance!.id)!;
+    const outstanding = returnedAdvance!.issuedAmount - returnedAdvance!.appliedAmount - returnedAdvance!.returnedAmount - (returnedAdvance!.writtenOffAmount ?? 0);
+    const beforeOutstanding = beforeAdvance.issuedAmount - beforeAdvance.appliedAmount - beforeAdvance.returnedAmount - (beforeAdvance.writtenOffAmount ?? 0);
+    expect(outstanding).toBe(beforeOutstanding - 50);
 
     await captureEvidence(page, '07-expenses-advances-management.png');
   });
@@ -507,6 +604,13 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
       await page.waitForTimeout(1000);
     }
 
+    const cardBeforeResponse = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/corporate-card/inbox?state=Unmatched&search=${encodeURIComponent('وقود النيل')}&page=1&pageSize=50`);
+    expect(cardBeforeResponse.ok()).toBeTruthy();
+    const cardBeforePayload = await cardBeforeResponse.json();
+    const cardBefore = (cardBeforePayload.items as Array<{ id: string; amount: number; state: string }>)[0];
+    expect(cardBefore?.id).toBeTruthy();
+    REAL_CARD_TRANSACTION_ID = cardBefore.id;
+
     // Verify seeded card transaction
     await expect(page.getByText(/محطة وقود النيل|وقود النيل/i).first()).toBeVisible({ timeout: 10000 });
 
@@ -518,6 +622,19 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     // Verify transaction status changed to Personal
     await expect(page.getByText(/مصروف شخصي|شخصي|Personal/i).first()).toBeVisible({ timeout: 10000 });
+    const cardAfterResponse = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/corporate-card/inbox?state=Personal&search=${encodeURIComponent('وقود النيل')}&page=1&pageSize=50`);
+    expect(cardAfterResponse.ok()).toBeTruthy();
+    const cardAfterPayload = await cardAfterResponse.json();
+    const cardAfter = (cardAfterPayload.items as Array<{ id: string; amount: number; state: string; employeeId?: string | null }>).find((card) => card.id === REAL_CARD_TRANSACTION_ID);
+    expect(cardAfter?.state).toBe('Personal');
+    expect(cardAfter?.employeeId).toBeTruthy();
+    const repaymentResponse = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/employee-repayments?state=Requested&page=1&pageSize=50`);
+    expect(repaymentResponse.ok()).toBeTruthy();
+    const repaymentPayload = await repaymentResponse.json();
+    const repayment = (repaymentPayload.items as Array<{ id: string; sourceReference: string; amount: number; state: string }>).find((item) => item.sourceReference === `corporate-card:${REAL_CARD_TRANSACTION_ID}`);
+    expect(repayment?.amount).toBe(cardBefore.amount);
+    expect(repayment?.state).toBe('Requested');
+    REAL_REPAYMENT_ID = repayment?.id ?? null;
 
     await captureEvidence(page, '08-expenses-corporate-cards.png');
   });
@@ -537,6 +654,11 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await expect(page.getByText('تسوية مستحقات الموظفين والمدفوعات')).toBeVisible();
     await expect(page.getByRole('button', { name: /مستحقات الموظفين/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /تحصيل/i })).toBeVisible();
+
+    const batchesBeforeResponse = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/reimbursements/batches`);
+    expect(batchesBeforeResponse.ok()).toBeTruthy();
+    const batchesBeforePayload = await batchesBeforeResponse.json();
+    const batchIdsBefore = new Set((batchesBeforePayload as Array<{ id: string }>).map((batch) => batch.id));
 
     // 1. Prepare a new batch (deterministic execution)
     const prepareBatchBtn = page.getByRole('button', { name: /تجهيز دفعة سداد جديدة|\+ تجهيز دفعة/i });
@@ -560,6 +682,14 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     // Verify batch status is now Paid ("تم الصرف")
     await expect(page.getByText(/تم الصرف/i).first()).toBeVisible({ timeout: 10000 });
+    const batchesAfterResponse = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/reimbursements/batches`);
+    expect(batchesAfterResponse.ok()).toBeTruthy();
+    const batchesAfterPayload = await batchesAfterResponse.json();
+    const paidBatch = (batchesAfterPayload as Array<{ id: string; state: string; totalAmount: number }>).find((batch) => !batchIdsBefore.has(batch.id) && batch.state === 'Paid');
+    expect(paidBatch?.totalAmount).toBeGreaterThan(0);
+    expect(REAL_EXPENSE_ID).toBeTruthy();
+    const settledExpense = await getExpense(page, REAL_EXPENSE_ID!);
+    expect(settledExpense.settlementState).toBe('Settled');
 
     // 3. Switch to "تحصيل من الموظفين" (fromEmployees repayments)
     await page.getByRole('button', { name: /تحصيل/i }).click();
@@ -577,6 +707,13 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     // Verify repayment status changed to Collected ("تم التحصيل")
     await expect(page.getByText(/تم التحصيل/i).first()).toBeVisible({ timeout: 10000 });
+    expect(REAL_REPAYMENT_ID).toBeTruthy();
+    const repaymentsAfterResponse = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/employee-repayments?state=Recorded&page=1&pageSize=50`);
+    expect(repaymentsAfterResponse.ok()).toBeTruthy();
+    const repaymentsAfterPayload = await repaymentsAfterResponse.json();
+    const settledRepayment = (repaymentsAfterPayload.items as Array<{ id: string; state: string; settledAmount: number; amount: number }>).find((repayment) => repayment.id === REAL_REPAYMENT_ID);
+    expect(settledRepayment?.state).toBe('Recorded');
+    expect(settledRepayment?.settledAmount).toBe(settledRepayment?.amount);
 
     await captureEvidence(page, '09-expenses-reimbursements.png');
   });

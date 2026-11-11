@@ -7,9 +7,11 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { useOptionalLegalEntityContext } from "../../../../core/runtime/runtime-provider.tsx";
 import {
   useExpenseCategoriesQuery,
+  useMyExpenseCategoriesQuery,
   useCreateExpenseMutation,
   useCreateMyExpenseMutation,
-  useExpenseRatePoliciesQuery
+  useExpenseRatePoliciesQuery,
+  useMyExpenseRatePoliciesQuery
 } from "../../hooks/use-expenses-queries.ts";
 import { expensesApi } from "../../services/expenses-api.ts";
 import type { PaymentSource, ExpenseDto } from "../../types.ts";
@@ -31,9 +33,12 @@ export function NewExpenseModal({
   const legalEntityContext = useOptionalLegalEntityContext();
   const defaultCurrency = legalEntityContext?.baseCurrencyCode || "EGP";
 
-  const categoriesQuery = useExpenseCategoriesQuery(legalEntityId);
-  const mileagePoliciesQuery = useExpenseRatePoliciesQuery(legalEntityId, { kind: "Mileage", status: "Published" });
-  const perDiemPoliciesQuery = useExpenseRatePoliciesQuery(legalEntityId, { kind: "PerDiem", status: "Published" });
+  const categoriesQuery = useExpenseCategoriesQuery(legalEntityId, !isSelfService);
+  const myCategoriesQuery = useMyExpenseCategoriesQuery(legalEntityId, isSelfService);
+  const mileagePoliciesQuery = useExpenseRatePoliciesQuery(legalEntityId, { kind: "Mileage", status: "Published" }, !isSelfService);
+  const myMileagePoliciesQuery = useMyExpenseRatePoliciesQuery(legalEntityId, { kind: "Mileage" }, isSelfService);
+  const perDiemPoliciesQuery = useExpenseRatePoliciesQuery(legalEntityId, { kind: "PerDiem", status: "Published" }, !isSelfService);
+  const myPerDiemPoliciesQuery = useMyExpenseRatePoliciesQuery(legalEntityId, { kind: "PerDiem" }, isSelfService);
   const createMutation = useCreateExpenseMutation(legalEntityId);
   const createMyMutation = useCreateMyExpenseMutation(legalEntityId);
 
@@ -51,6 +56,7 @@ export function NewExpenseModal({
   // Mileage-specific fields
   const [distanceKm, setDistanceKm] = useState<string>("");
   const [travelRoute, setTravelRoute] = useState<string>("");
+  const [roundTrip, setRoundTrip] = useState(false);
   const [selectedMileagePolicyId, setSelectedMileagePolicyId] = useState<string>("");
 
   // Per-diem-specific fields
@@ -61,9 +67,9 @@ export function NewExpenseModal({
 
   // Filter effective published rate policies based on date
   const effectiveMileagePolicies = useMemo(() => {
-    const list = mileagePoliciesQuery.data?.items ?? [];
+    const list = (isSelfService ? myMileagePoliciesQuery.data?.items : mileagePoliciesQuery.data?.items) ?? [];
     return list.filter((p) => p.effectiveFrom <= expenseDate && (!p.effectiveTo || p.effectiveTo >= expenseDate));
-  }, [mileagePoliciesQuery.data?.items, expenseDate]);
+  }, [isSelfService, mileagePoliciesQuery.data?.items, myMileagePoliciesQuery.data?.items, expenseDate]);
 
   const selectedMileagePolicy = useMemo(() => {
     if (effectiveMileagePolicies.length === 0) return null;
@@ -71,9 +77,9 @@ export function NewExpenseModal({
   }, [effectiveMileagePolicies, selectedMileagePolicyId]);
 
   const effectivePerDiemPolicies = useMemo(() => {
-    const list = perDiemPoliciesQuery.data?.items ?? [];
+    const list = (isSelfService ? myPerDiemPoliciesQuery.data?.items : perDiemPoliciesQuery.data?.items) ?? [];
     return list.filter((p) => p.effectiveFrom <= expenseDate && (!p.effectiveTo || p.effectiveTo >= expenseDate));
-  }, [perDiemPoliciesQuery.data?.items, expenseDate]);
+  }, [isSelfService, perDiemPoliciesQuery.data?.items, myPerDiemPoliciesQuery.data?.items, expenseDate]);
 
   const selectedPerDiemPolicy = useMemo(() => {
     if (effectivePerDiemPolicies.length === 0) return null;
@@ -87,7 +93,7 @@ export function NewExpenseModal({
         const km = parseFloat(distanceKm);
         const rate = Number(selectedMileagePolicy.rate);
         if (!isNaN(km) && km > 0 && !isNaN(rate) && rate > 0) {
-          setAmount((km * rate).toFixed(2));
+          setAmount((km * rate * (roundTrip ? 2 : 1)).toFixed(2));
           setCurrencyCode(selectedMileagePolicy.currencyCode);
         } else {
           setAmount("");
@@ -96,7 +102,7 @@ export function NewExpenseModal({
         setAmount("");
       }
     }
-  }, [expenseMode, distanceKm, selectedMileagePolicy]);
+  }, [expenseMode, distanceKm, selectedMileagePolicy, roundTrip]);
 
   // Recalculate amount when days, meals, or selected per-diem policy changes
   useEffect(() => {
@@ -141,8 +147,9 @@ export function NewExpenseModal({
   }, [expenseMode, daysCount, providedMeals, selectedPerDiemPolicy]);
 
   const categories = useMemo(() => {
-    return (categoriesQuery.data ?? []).filter((c) => c.status === "Active" && Boolean(c.publishedVersionId));
-  }, [categoriesQuery.data]);
+    const source = isSelfService ? myCategoriesQuery.data : categoriesQuery.data;
+    return (source ?? []).filter((c) => c.status === "Active" && Boolean(c.publishedVersionId));
+  }, [categoriesQuery.data, isSelfService, myCategoriesQuery.data]);
   const selectedCategory = categories.find((c) => c.id === categoryId) ?? categories[0];
   const activeVersionId = selectedCategory?.publishedVersionId ?? "";
 
@@ -160,6 +167,9 @@ export function NewExpenseModal({
     }
 
     const parsedAmount = parseFloat(amount);
+    // Typed travel amounts are a display preview only. The backend recalculates
+    // from the selected policy version and overwrites the draft amount.
+    const submissionAmount = expenseMode === "general" ? parsedAmount : 1;
     const finalMerchant =
       merchantName.trim() ||
       (expenseMode === "mileage"
@@ -195,7 +205,7 @@ export function NewExpenseModal({
           legalEntityId,
           merchantName: finalMerchant,
           expenseDate,
-          amount: parsedAmount,
+          amount: submissionAmount,
           currencyCode,
           paymentSource,
           categoryVersionId: activeVersionId,
@@ -207,7 +217,7 @@ export function NewExpenseModal({
           legalEntityId,
           merchantName: finalMerchant,
           expenseDate,
-          amount: parsedAmount,
+          amount: submissionAmount,
           currencyCode,
           paymentSource,
           categoryVersionId: activeVersionId,
@@ -218,19 +228,22 @@ export function NewExpenseModal({
 
       if (expenseMode === "mileage" && selectedMileagePolicy && distanceKm) {
         const km = parseFloat(distanceKm);
-        await expensesApi.setMileage(legalEntityId, createdExpense.id, {
+        const setMileage = isSelfService ? expensesApi.setMyMileage : expensesApi.setMileage;
+        await setMileage(legalEntityId, createdExpense.id, {
           distance: km,
-          rate: Number(selectedMileagePolicy.rate),
+          rate: 0,
           ratePolicyVersionId: selectedMileagePolicy.id,
           vehicleType: selectedMileagePolicy.vehicleType ?? null,
           route: travelRoute.trim() || null,
-          distanceUnit: "KM"
+          distanceUnit: "KM",
+          roundTrip
         });
       } else if (expenseMode === "perDiem" && selectedPerDiemPolicy && daysCount) {
         const days = parseFloat(daysCount);
-        await expensesApi.setPerDiem(legalEntityId, createdExpense.id, {
+        const setPerDiem = isSelfService ? expensesApi.setMyPerDiem : expensesApi.setPerDiem;
+        await setPerDiem(legalEntityId, createdExpense.id, {
           days,
-          dailyRate: Number(selectedPerDiemPolicy.rate),
+          dailyRate: 0,
           ratePolicyVersionId: selectedPerDiemPolicy.id,
           destination: destinationCity.trim() || selectedPerDiemPolicy.locationCode || null,
           providedMeals
@@ -244,6 +257,7 @@ export function NewExpenseModal({
       setDescription("");
       setDistanceKm("");
       setTravelRoute("");
+      setRoundTrip(false);
       setDaysCount("");
       setDestinationCity("");
       setProvidedMeals(0);
@@ -423,6 +437,10 @@ export function NewExpenseModal({
                     isReadOnly
                   />
                 </div>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#334155", fontSize: "0.875rem" }}>
+                  <input type="checkbox" checked={roundTrip} onChange={(event) => setRoundTrip(event.target.checked)} />
+                  {t("mileagePerDiem.roundTrip")}
+                </label>
                 <TextField
                   label={t("common.description")}
                   placeholder={t("mileagePerDiem.routePlaceholder")}

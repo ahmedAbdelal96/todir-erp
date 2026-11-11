@@ -753,13 +753,13 @@ export function ExpenseDetailDrawer({
                   {showReversalInput ? (
                     <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                       <TextField
-                        placeholder="سبب القيد العكسي..."
-                        aria-label="سبب القيد العكسي"
+                        placeholder={t("review.reversalReasonPlaceholder")}
+                        aria-label={t("review.reversalReasonLabel")}
                         value={reversalReason}
                         onChange={(val) => setReversalReason(val)}
                       />
                       <Button type="button" variant="danger" onClick={handleReverse} isDisabled={reverseMutation.isPending || !reversalReason.trim()}>
-                        تأكيد القيد العكسي
+                        {t("review.confirmReverseAction")}
                       </Button>
                       <Button type="button" variant="secondary" onClick={() => setShowReversalInput(false)}>
                         {t("common.cancel")}

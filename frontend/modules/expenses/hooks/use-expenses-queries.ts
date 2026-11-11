@@ -51,6 +51,7 @@ export const expenseKeys = {
 
   // Categories
   categories: (legalEntityId: string) => [...expenseKeys.all, "categories", legalEntityId] as const,
+  myCategories: (legalEntityId: string) => [...expenseKeys.all, "myCategories", legalEntityId] as const,
 
   // Expenses management
   list: (
@@ -88,6 +89,8 @@ export const expenseKeys = {
     [...expenseKeys.all, "policyVersions", legalEntityId, policyId, page] as const,
   ratePolicies: (legalEntityId: string, params?: { kind?: string | null; status?: string | null; page?: number }) =>
     [...expenseKeys.all, "ratePolicies", legalEntityId, params] as const,
+  myRatePolicies: (legalEntityId: string, params?: { kind?: string | null; page?: number }) =>
+    [...expenseKeys.all, "myRatePolicies", legalEntityId, params] as const,
 
   // Reports
   reports: (legalEntityId: string, params?: { state?: string | null; search?: string | null; page?: number }) =>
@@ -146,11 +149,19 @@ export const expenseKeys = {
 // --- Queries ---
 // ==========================================
 
-export function useExpenseCategoriesQuery(legalEntityId: string) {
+export function useExpenseCategoriesQuery(legalEntityId: string, enabled = true) {
   return useQuery({
     queryKey: expenseKeys.categories(legalEntityId),
     queryFn: () => expensesApi.listCategories(legalEntityId),
-    enabled: Boolean(legalEntityId)
+    enabled: Boolean(legalEntityId) && enabled
+  });
+}
+
+export function useMyExpenseCategoriesQuery(legalEntityId: string, enabled = true) {
+  return useQuery({
+    queryKey: expenseKeys.myCategories(legalEntityId),
+    queryFn: () => expensesApi.listMyCategories(legalEntityId),
+    enabled: Boolean(legalEntityId) && enabled
   });
 }
 
@@ -308,12 +319,25 @@ export function useExpensePoliciesQuery(
 
 export function useExpenseRatePoliciesQuery(
   legalEntityId: string,
-  params?: { kind?: string | null; status?: string | null; page?: number; pageSize?: number }
+  params?: { kind?: string | null; status?: string | null; page?: number; pageSize?: number },
+  enabled = true
 ) {
   return useQuery({
     queryKey: expenseKeys.ratePolicies(legalEntityId, params),
     queryFn: () => expensesApi.listRatePolicies(legalEntityId, params),
-    enabled: Boolean(legalEntityId)
+    enabled: Boolean(legalEntityId) && enabled
+  });
+}
+
+export function useMyExpenseRatePoliciesQuery(
+  legalEntityId: string,
+  params?: { kind?: string | null; page?: number; pageSize?: number },
+  enabled = true
+) {
+  return useQuery({
+    queryKey: expenseKeys.myRatePolicies(legalEntityId, params),
+    queryFn: () => expensesApi.listMyRatePolicies(legalEntityId, params),
+    enabled: Boolean(legalEntityId) && enabled
   });
 }
 

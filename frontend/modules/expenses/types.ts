@@ -622,6 +622,8 @@ export interface MileageExpenseDetailDto {
   readonly vehicleType?: string | null;
   readonly route?: string | null;
   readonly ratePolicyVersionId?: string | null;
+  readonly roundTrip?: boolean;
+  readonly calculatedDistance?: number | null;
 }
 
 export interface SetMileageDetailRequest {
@@ -631,6 +633,7 @@ export interface SetMileageDetailRequest {
   readonly vehicleType?: string | null;
   readonly route?: string | null;
   readonly ratePolicyVersionId?: string | null;
+  readonly roundTrip?: boolean;
 }
 
 export interface PerDiemExpenseDetailDto {
@@ -642,6 +645,20 @@ export interface PerDiemExpenseDetailDto {
   readonly calculatedAmount: number;
   readonly destination?: string | null;
   readonly ratePolicyVersionId?: string | null;
+  readonly dailyLines?: readonly PerDiemDailyLineDto[] | null;
+  readonly tripStartAt?: string | null;
+  readonly tripEndAt?: string | null;
+}
+
+export interface PerDiemDailyLineDto {
+  readonly date: string;
+  readonly partialDayFactor: number;
+  readonly breakfastProvided: boolean;
+  readonly lunchProvided: boolean;
+  readonly dinnerProvided: boolean;
+  readonly baseRate: number;
+  readonly reductionAmount: number;
+  readonly finalAmount: number;
 }
 
 export interface SetPerDiemDetailRequest {
@@ -650,6 +667,8 @@ export interface SetPerDiemDetailRequest {
   readonly providedMeals?: number;
   readonly destination?: string | null;
   readonly ratePolicyVersionId?: string | null;
+  readonly tripStartAt?: string | null;
+  readonly tripEndAt?: string | null;
 }
 
 export interface ExpenseRatePolicyDto {

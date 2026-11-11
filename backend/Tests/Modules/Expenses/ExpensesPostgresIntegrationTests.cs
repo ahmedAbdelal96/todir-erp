@@ -224,6 +224,39 @@ public sealed class ExpensesPostgresIntegrationTests
     }
 
     [ExpensesPostgresFact]
+    public async Task ExpenseListPaginationIsStableFilteredAndDuplicateFreeWithSmallDataset()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var marker = $"Pagination-{Guid.CreateVersion7():N}";
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
+        context.Parameters.AddWithValue(Atlas.ToString("D"));
+        await context.ExecuteNonQueryAsync();
+        var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+
+        for (var i = 1; i <= 3; i++)
+            await repository.CreateAsync(new(Atlas), new(entity, Guid.CreateVersion7(), $"{marker}-{i}", new(2026, 11, i), i * 10m, "EGP", "EmployeePaid", categoryVersion), default);
+
+        var first = await repository.ListAsync(new(Atlas), entity, null, null, marker, 1, 2, default);
+        var second = await repository.ListAsync(new(Atlas), entity, null, null, marker, 2, 2, default);
+        Assert.Equal(3, first.TotalCount);
+        Assert.Equal(2, first.Items.Count);
+        Assert.Single(second.Items);
+        Assert.Empty(first.Items.Select(x => x.Id).Intersect(second.Items.Select(x => x.Id)));
+        Assert.Equal(3, first.Items.Select(x => x.Id).Concat(second.Items.Select(x => x.Id)).Distinct().Count());
+        Assert.All(first.Items.Concat(second.Items), item => Assert.StartsWith(marker, item.MerchantName, StringComparison.Ordinal));
+
+        var clamped = await repository.ListAsync(new(Atlas), entity, null, null, marker, 1, 1000, default);
+        Assert.Equal(200, clamped.PageSize);
+        Assert.Equal(3, clamped.Items.Count);
+    }
+
+    [ExpensesPostgresFact]
     public async Task RuntimeTenantContextCannotReadOtherTenantExpenses()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
@@ -349,8 +382,10 @@ public sealed class ExpensesPostgresIntegrationTests
         var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
         var employee = Guid.NewGuid();
         var categoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var mileagePolicy = await repository.CreateRatePolicyAsync(new(Atlas), new(entity, "Mileage", new(2026, 1, 1), null, "EGP", 7.5m, "Car"), default);
+        mileagePolicy = await repository.PublishRatePolicyAsync(new(Atlas), entity, mileagePolicy.Id, new(), default);
         var mileageExpense = await repository.CreateAsync(new(Atlas), new(entity, employee, "Mileage", new(2026, 10, 13), 1m, "EGP", "EmployeePaid", categoryVersion), default);
-        var mileage = await repository.SetMileageDetailAsync(new(Atlas), entity, mileageExpense.Id, new(100m, 7.5m), default);
+        var mileage = await repository.SetMileageDetailAsync(new(Atlas), entity, mileageExpense.Id, new(100m, 0m, "KM", "Car", null, mileagePolicy.Id), default);
         Assert.Equal(750m, mileage.CalculatedAmount);
         Assert.Equal(750m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, mileageExpense.Id))!);
         var dimension = await repository.SetDimensionAsync(new(Atlas), entity, mileageExpense.Id, new("COST_CENTER", "CC-001"), default);
@@ -686,6 +721,12 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(2, lineDetail.DailyLines!.Count);
         Assert.Equal(125.0000m, lineDetail.DailyLines[0].FinalAmount);
         Assert.Equal(50.0000m, lineDetail.DailyLines[1].FinalAmount);
+        Assert.NotNull(lineDetail.TripStartAt);
+        Assert.NotNull(lineDetail.TripEndAt);
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.per_diem_expense_detail where tenant_id=$1 and expense_id=$2 and daily_lines is not null and calculated_amount=$3", Atlas, perDiemExpense.Id, 175m));
+        var invalidLine = new List<SetPerDiemDailyLineRequest> { new(new(2026, 10, 20), PartialDayFactor: 1.25m) };
+        var lineException = await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.SetPerDiemDetailAsync(new(Atlas), entity, perDiemExpense.Id, new(0m, 0m, 0, "CAI", perDiemPolicy.Id, invalidLine), default));
+        Assert.Equal("expenses.per_diem_daily_line_invalid", lineException.Message);
 
         // Scenario 4: Policy with explicit zero reductions (2 days, 2 provided meals with 0 reduction = 300 * 2 = 600 EGP, zero never defaults to invented percentage)
         var zeroReductionPolicy = await repository.CreateRatePolicyAsync(new(Atlas), new(entity, "PerDiem", new(2026, 1, 1), null, "EGP", 300m, null, "ALX", BreakfastReduction: 0m, LunchReduction: 0m, DinnerReduction: 0m), default);
@@ -694,6 +735,75 @@ public sealed class ExpensesPostgresIntegrationTests
         var zeroRedDetail = await repository.SetPerDiemDetailAsync(new(Atlas), entity, zeroRedExpense.Id, new(2m, 0m, 2, "ALX", zeroReductionPolicy.Id), default);
         Assert.Equal(600.0000m, zeroRedDetail.CalculatedAmount);
         Assert.Equal(600m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, zeroRedExpense.Id))!);
+
+        // Scenario 5: Mileage persists original UOM, round-trip selection, and normalized policy distance.
+        var milesExpense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Mileage round trip", new(2026, 10, 20), 1m, "EGP", "EmployeePaid", categoryVersion), default);
+        var miles = await repository.SetMileageDetailAsync(new(Atlas), entity, milesExpense.Id, new(10m, 0m, "MILE", "Car", "Cairo-Alex", mileagePolicy.Id, true), default);
+        Assert.Equal("MI", miles.DistanceUnit);
+        Assert.True(miles.RoundTrip);
+        Assert.Equal(32.1869m, miles.CalculatedDistance);
+        Assert.Equal(241.4018m, miles.CalculatedAmount);
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.mileage_expense_detail where tenant_id=$1 and expense_id=$2 and round_trip=true and calculated_distance=$3 and calculated_amount=$4", Atlas, milesExpense.Id, 32.1869m, 241.4018m));
+
+        // A rate policy in another currency cannot silently calculate a claim.
+        var foreignExpense = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "Mileage currency guard", new(2026, 10, 20), 1m, "USD", "EmployeePaid", categoryVersion), default);
+        var currencyException = await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.SetMileageDetailAsync(new(Atlas), entity, foreignExpense.Id, new(10m, 0m, "KM", "Car", null, mileagePolicy.Id), default));
+        Assert.Equal("expenses.rate_policy_not_applicable", currencyException.Message);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task TypedTravelPoliciesBlockConfiguredFuelAndActualMealDoubleClaims()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(new LedgerRepository(dataSource, coordinator, new NpgsqlLegalEntityFinancialReadStore(dataSource), TimeProvider.System)));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var employee = Guid.CreateVersion7();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection)) { context.Parameters.AddWithValue(Atlas.ToString("D")); await context.ExecuteNonQueryAsync(); }
+        var baseCategoryVersion = (Guid)(await ScalarAsync(connection, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var fuelCategory = await repository.CreateCategoryAsync(new(Atlas), new(entity, $"FUEL-{Guid.CreateVersion7():N}", "Fuel receipt"), default);
+        var fuelVersion = await repository.CreateCategoryVersionAsync(new(Atlas), entity, fuelCategory.Id, new(true, null, new(2026, 1, 1), null), default);
+        await repository.PublishCategoryVersionAsync(new(Atlas), entity, fuelVersion.Id, new(), default);
+        var mealCategory = await repository.CreateCategoryAsync(new(Atlas), new(entity, $"MEAL-{Guid.CreateVersion7():N}", "Actual meals"), default);
+        var mealVersion = await repository.CreateCategoryVersionAsync(new(Atlas), entity, mealCategory.Id, new(true, null, new(2026, 1, 1), null), default);
+        await repository.PublishCategoryVersionAsync(new(Atlas), entity, mealVersion.Id, new(), default);
+
+        var typedPolicy = await repository.CreatePolicyAsync(new(Atlas), new(entity, $"TYPED-RULE-{Guid.CreateVersion7():N}", "Typed travel double claims"), default);
+        using var typedRules = JsonDocument.Parse($"{{\"fuelCategoryVersionIds\":[\"{fuelVersion.Id:D}\"],\"mileageFuelHandling\":\"Disallow\",\"actualMealCategoryVersionIds\":[\"{mealVersion.Id:D}\"],\"perDiemActualMealHandling\":\"AllowException\"}}");
+        var typedPolicyVersion = await repository.CreatePolicyVersionAsync(new(Atlas), entity, typedPolicy.Id, new(typedRules.RootElement.Clone(), new(2026, 1, 1)), default);
+        await repository.PublishPolicyVersionAsync(new(Atlas), entity, typedPolicyVersion.Id, new(), default);
+        var fuelExpense = await repository.CreateAsync(new(Atlas), new(entity, employee, "Fuel station", new(2026, 11, 6), 20m, "EGP", "EmployeePaid", fuelVersion.Id), default);
+        var mileageExpense = await repository.CreateAsync(new(Atlas), new(entity, employee, "Mileage with fuel", new(2026, 11, 6), 1m, "EGP", "EmployeePaid", baseCategoryVersion), default);
+        var mileageRate = await repository.CreateRatePolicyAsync(new(Atlas), new(entity, "Mileage", new(2026, 1, 1), null, "EGP", 5m, "Car"), default);
+        await repository.PublishRatePolicyAsync(new(Atlas), entity, mileageRate.Id, new(), default);
+        await repository.SetMileageDetailAsync(new(Atlas), entity, mileageExpense.Id, new(10m, 0m, "KM", "Car", "Cairo-Alex", mileageRate.Id), default);
+        var fuelEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, mileageExpense.Id, default);
+        Assert.Equal("Blocked", fuelEvaluation.State);
+        Assert.Contains("FuelReceiptConflict", fuelEvaluation.Snapshot.GetProperty("findings").EnumerateArray().Select(x => x.GetString()));
+        _ = fuelExpense;
+
+        var reducePolicy = await repository.CreatePolicyAsync(new(Atlas), new(entity, $"TYPED-REDUCE-{Guid.CreateVersion7():N}", "Reduce fuel from mileage"), default);
+        using var reduceRules = JsonDocument.Parse($"{{\"merchantNames\":[\"Mileage with fuel\"],\"fuelCategoryVersionIds\":[\"{fuelVersion.Id:D}\"],\"mileageFuelHandling\":\"Reduce\"}}");
+        var reduceVersion = await repository.CreatePolicyVersionAsync(new(Atlas), entity, reducePolicy.Id, new(reduceRules.RootElement.Clone(), new(2026, 1, 1)), default);
+        await repository.PublishPolicyVersionAsync(new(Atlas), entity, reduceVersion.Id, new(), default);
+        var reducedEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, mileageExpense.Id, default);
+        Assert.Equal("Warning", reducedEvaluation.State);
+        Assert.Contains("FuelReceiptReduced", reducedEvaluation.Snapshot.GetProperty("findings").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(30m, (decimal)(await ScalarAsync(connection, "select amount from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, mileageExpense.Id))!);
+        Assert.Equal(30m, reducedEvaluation.Snapshot.GetProperty("adjustedAmount").GetDecimal());
+
+        var actualMeal = await repository.CreateAsync(new(Atlas), new(entity, employee, "Actual meal", new(2026, 11, 7), 65m, "EGP", "EmployeePaid", mealVersion.Id), default);
+        var perDiem = await repository.CreateAsync(new(Atlas), new(entity, employee, "Per diem with meal", new(2026, 11, 7), 1m, "EGP", "EmployeePaid", baseCategoryVersion), default);
+        var perDiemRate = await repository.CreateRatePolicyAsync(new(Atlas), new(entity, "PerDiem", new(2026, 1, 1), null, "EGP", 300m, null, "CAI"), default);
+        await repository.PublishRatePolicyAsync(new(Atlas), entity, perDiemRate.Id, new(), default);
+        await repository.SetPerDiemDetailAsync(new(Atlas), entity, perDiem.Id, new(1m, 0m, 0, "CAI", perDiemRate.Id, null, new DateTimeOffset(2026, 11, 7, 8, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 11, 7, 20, 0, 0, TimeSpan.Zero)), default);
+        var mealEvaluation = await repository.EvaluatePolicyAsync(new(Atlas), entity, perDiem.Id, default);
+        Assert.Equal("Blocked", mealEvaluation.State);
+        Assert.Contains("ActualMealExceptionRequired", mealEvaluation.Snapshot.GetProperty("findings").EnumerateArray().Select(x => x.GetString()));
+        _ = actualMeal;
     }
 
     [ExpensesPostgresFact]
@@ -721,18 +831,73 @@ public sealed class ExpensesPostgresIntegrationTests
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.DeleteDraftExpenseAsync(new(Atlas), otherEntity, draft.Id, default));
 
         // 3. Safe deletion from matching legal entity succeeds and cascades child records
-        await repository.DeleteDraftExpenseAsync(new(Atlas), entity, draft.Id, default);
+        var actorId = Guid.CreateVersion7();
+        var membershipId = Guid.CreateVersion7();
+        await repository.DeleteDraftExpenseAsync(new(Atlas), entity, draft.Id, actorId, membershipId, default);
         Assert.Null(await repository.GetAsync(new(Atlas), entity, draft.Id, default));
         Assert.Equal(0, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_evidence where tenant_id=$1 and expense_id=$2", Atlas, draft.Id));
         Assert.Equal(0, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_dimension where tenant_id=$1 and expense_id=$2", Atlas, draft.Id));
         Assert.Equal(0, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_participant where tenant_id=$1 and expense_id=$2", Atlas, draft.Id));
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_deletion_history where tenant_id=$1 and expense_id=$2 and action='draft.deleted' and legal_entity_id=$3 and actor_id=$4 and membership_id=$5", Atlas, draft.Id, entity, actorId, membershipId));
 
-        // 4. Non-Draft Deletion Protection: Create, attach evidence, and submit an expense -> cannot be deleted
+        // 4. Two real overlapping deletes have exactly one winner.
+        var concurrentDraft = await repository.CreateAsync(new(Atlas), new(entity, employee, "Concurrent draft delete", new(2026, 10, 23), 275m, "EGP", "EmployeePaid", categoryVersion), default);
+        await using var blockerConnection = await dataSource.OpenConnectionAsync();
+        await using var blockerContext = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", blockerConnection);
+        blockerContext.Parameters.AddWithValue(Atlas.ToString("D"));
+        await blockerContext.ExecuteNonQueryAsync();
+        await using var blockerTransaction = await blockerConnection.BeginTransactionAsync();
+        await using var blocker = new NpgsqlCommand("select id from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", blockerConnection, blockerTransaction);
+        blocker.Parameters.AddWithValue(Atlas);
+        blocker.Parameters.AddWithValue(entity);
+        blocker.Parameters.AddWithValue(concurrentDraft.Id);
+        Assert.Equal(concurrentDraft.Id, (Guid)(await blocker.ExecuteScalarAsync())!);
+
+        async Task<string> DeleteAttemptAsync()
+        {
+            try
+            {
+                await repository.DeleteDraftExpenseAsync(new(Atlas), entity, concurrentDraft.Id, default);
+                return "Deleted";
+            }
+            catch (ExpenseRepositoryException exception)
+            {
+                return exception.Message;
+            }
+        }
+
+        var firstDelete = DeleteAttemptAsync();
+        await WaitForExpenseRowLockWaitAsync(dataSource);
+        var secondDelete = DeleteAttemptAsync();
+        await WaitForExpenseRowLockWaitAsync(dataSource, minimumWaiters: 2);
+        await blockerTransaction.CommitAsync();
+        var outcomes = await Task.WhenAll(firstDelete, secondDelete);
+        Assert.Equal(1, outcomes.Count(outcome => outcome == "Deleted"));
+        Assert.Equal(1, outcomes.Count(outcome => outcome == "expenses.expense_not_found"));
+        Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_deletion_history where tenant_id=$1 and expense_id=$2 and action='draft.deleted'", Atlas, concurrentDraft.Id));
+
+        // 5. Non-Draft Deletion Protection: Create, attach evidence, and submit an expense -> cannot be deleted
         var nonDraft = await repository.CreateAsync(new(Atlas), new(entity, employee, "Non-draft protection", new(2026, 10, 22), 300m, "EGP", "EmployeePaid", categoryVersion), default);
         await repository.AddEvidenceAsync(new(Atlas), entity, nonDraft.Id, new("Receipt", "file://test/nondraft-receipt"), default);
         await repository.TransitionAsync(new(Atlas), entity, nonDraft.Id, new(nonDraft.Version), "submit", default);
         var ex = await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.DeleteDraftExpenseAsync(new(Atlas), entity, nonDraft.Id, default));
         Assert.Equal("expenses.cannot_delete_non_draft", ex.Message);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task RuntimeRoleCannotMutateExpenseAuditFacts()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(connectionString));
+        await using var dataSource = NpgsqlDataSource.Create(connectionString!);
+        await using var connection = await dataSource.OpenConnectionAsync();
+
+        Assert.False(await HasTablePrivilegeAsync(connection, "business_expenses.expense_history", "UPDATE"));
+        Assert.False(await HasTablePrivilegeAsync(connection, "business_expenses.expense_history", "DELETE"));
+        Assert.False(await HasTablePrivilegeAsync(connection, "business_expenses.expense_deletion_history", "UPDATE"));
+        Assert.False(await HasTablePrivilegeAsync(connection, "business_expenses.expense_deletion_history", "DELETE"));
+        Assert.True(await HasFunctionPrivilegeAsync(connection, "business_expenses.delete_draft_expense(uuid,uuid,uuid)", "EXECUTE"));
+        Assert.True(await HasFunctionPrivilegeAsync(connection, "business_expenses.delete_draft_expense_with_actor(uuid,uuid,uuid,uuid,uuid)", "EXECUTE"));
     }
 
     [ExpensesPostgresFact]
@@ -1080,7 +1245,7 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from business_expenses.expense_history where tenant_id=$1 and expense_id=$2 and action='ocr.completed'", Atlas, expense.Id));
     }
 
-    [ExpensesPostgresFact]
+    [ExpensesWorkerFact]
     public async Task RealWorkerRetriesConfiguredOcrProviderAndPersistsSuccess()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION");
@@ -1506,6 +1671,37 @@ public sealed class ExpensesPostgresIntegrationTests
         return ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
     }
 
+    private static async Task WaitForExpenseRowLockWaitAsync(NpgsqlDataSource dataSource, int minimumWaiters = 1)
+    {
+        var deadline = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 5;
+        while (Stopwatch.GetTimestamp() < deadline)
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand("select count(*) from pg_stat_activity where wait_event_type='Lock' and state='active' and query ilike '%business_expenses.expense%' and query ilike '%for update%'", connection);
+            var waiters = Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            if (waiters >= minimumWaiters) return;
+            await Task.Delay(25);
+        }
+
+        throw new TimeoutException($"Expected at least {minimumWaiters} Expenses row-lock waiter(s), but the overlap was not observed.");
+    }
+
+    private static async Task<bool> HasTablePrivilegeAsync(NpgsqlConnection connection, string table, string privilege)
+    {
+        await using var command = new NpgsqlCommand("select has_table_privilege(current_user,$1,$2)", connection);
+        command.Parameters.AddWithValue(table);
+        command.Parameters.AddWithValue(privilege);
+        return (bool)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<bool> HasFunctionPrivilegeAsync(NpgsqlConnection connection, string signature, string privilege)
+    {
+        await using var command = new NpgsqlCommand("select has_function_privilege(current_user,$1,$2)", connection);
+        command.Parameters.AddWithValue(signature);
+        command.Parameters.AddWithValue(privilege);
+        return (bool)(await command.ExecuteScalarAsync())!;
+    }
+
     private static async Task<object?> ScalarAsync(NpgsqlConnection connection, string sql, params object[] values)
     { await using var command = new NpgsqlCommand(sql, connection); foreach (var value in values) command.Parameters.AddWithValue(value); return await command.ExecuteScalarAsync(); }
     private static async Task<long> ScalarLongAsync(NpgsqlConnection connection, string sql, params object[] values)
@@ -1645,6 +1841,15 @@ public sealed class ExpensesPostgresIntegrationTests
     private sealed class ExpensesPostgresFactAttribute : FactAttribute
     {
         public ExpensesPostgresFactAttribute() { if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION"))) Skip = "Set TODIR_EXPENSES_TEST_CONNECTION for PostgreSQL acceptance."; }
+    }
+
+    private sealed class ExpensesWorkerFactAttribute : FactAttribute
+    {
+        public ExpensesWorkerFactAttribute()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION"))) Skip = "Set TODIR_EXPENSES_TEST_CONNECTION for PostgreSQL acceptance.";
+            else if (!string.Equals(Environment.GetEnvironmentVariable("TODIR_EXPENSES_RUN_WORKER_ACCEPTANCE"), "1", StringComparison.Ordinal)) Skip = "Set TODIR_EXPENSES_RUN_WORKER_ACCEPTANCE=1 with RabbitMQ for optional live Worker acceptance.";
+        }
     }
 
     private sealed class ExpensesFinancialPostgresFactAttribute : FactAttribute

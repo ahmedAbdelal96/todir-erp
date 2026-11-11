@@ -2,16 +2,16 @@
 
 **Module:** Module 21 — Expenses & Employee Reimbursements (`المصروفات ومستحقات الموظفين`)  
 **Repository Branch:** `dev`  
-**Backend Acceptance Baseline:** Commit `4977716413c00313f1ac843d5f73114f3311972f`  
+**Backend Acceptance Baseline:** Current verified correction set on `dev` (commit SHA recorded in the delivery handoff)
 **Governing Manuals:** Root `AGENTS.md`, `frontend/AGENTS.md`, and Skill `erp-frontend-architect`  
 **Canonical Specification:** `docs/modules/21_ERP_SAAS_EXPENSES_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
-**Delivery Status:** `MODULE 21 EXPENSES — FINAL RELEASE GATES CLOSED — 100% PRODUCTION VERIFIED`
+**Delivery Status:** `BACKEND READY FOR FRONTEND HANDOFF — optional live provider and legacy chained UI evidence remain explicitly unclaimed`
 
 ---
 
 ## 1. Executive Summary & Design System Fidelity
 
-Module 21 Expenses & Reimbursements Frontend is delivered with 100% adherence to TODIR ERP SaaS enterprise guidelines:
+Module 21 Expenses & Reimbursements Frontend remains under acceptance correction; the design notes below describe implemented intent, not production certification:
 
 - **Authentic Oxford Navy Architecture:** Page header anchored in solid Oxford Navy (`#102a43`) with subtle border (`#1e3a5f`), white primary titles, and soft ice-blue accents (`#93c5fd`).
 - **Cool Neutral Slate Canvas:** Full viewport canvas rendered in crisp slate (`#f0f4f8`), strictly eliminating low-contrast "ghost" screens.
@@ -31,17 +31,17 @@ Module 21 Expenses & Reimbursements Frontend is delivered with 100% adherence to
 
 ---
 
-## 1.1 Final Release-Blocking Gates Closure Summary
+## 1.1 Current Release-Blocking Correction Status
 
-All five mandatory release-blocking audit findings have been resolved and verified with real-stack execution:
+The backend corrections below have fresh executable evidence. Optional live Files/S3/ClamAV provider activation is not available in this local environment and is not fabricated as passed:
 
 1. **Per Diem Financial Correctness (Canonical EX23 Reconciliation):**
    - Eliminated hardcoded approximations (`1/3` per meal).
    - Backend and frontend extract policy-defined reductions (`breakfast_reduction`, `lunch_reduction`, `dinner_reduction`) from published rate policies.
    - Authoritative line-by-line calculation persists `daily_lines jsonb` and `calculated_amount` with support for partial travel day factors (e.g. 0.5, 0.75, 1.5, 2.5).
-   - Validated by PostgreSQL integration test `EffectiveRatePoliciesDriveReproducibleMileageAndPerDiemAmounts` passing 100% against real Postgres.
+   - Backend and frontend corrections exist; fresh PostgreSQL persistence and configured actual-meal/fuel duplicate-rule verification pass in the Expenses suite.
 2. **Actual Financial E2E Acceptance:**
-   - General Ledger finalization + authoritative reversal (`قيد عكسي`) with reversal reason verified in live PostgreSQL and UI.
+   - REAL-02 and REAL-03 pass with persisted API assertions. REAL-07–REAL-10 remain separate chained UI evidence and are not used to overclaim backend acceptance.
    - Advance cash return / settlement with arithmetic outstanding balance reduction (`issued - applied - returned`).
    - Corporate credit card personal charge classification, creating employee repayment and updating reconciliation KPI summary.
    - Reimbursement batch preparation, payment execution (`PayBatchModal`), and employee repayment collection (`SettleRepaymentModal`).
@@ -49,10 +49,9 @@ All five mandatory release-blocking audit findings have been resolved and verifi
    - Real expense records inspected on 320px and 390px viewports with zero horizontal document overflow (`scrollWidth <= innerWidth`).
    - High-contrast responsive cards with merchant, `<bdi>` amount, status badges, and action buttons.
 4. **Safe Draft Deletion:**
-   - Enforced exclusive row locking (`for update`), legal entity isolation, cascade deletion across detail/evidence child tables, and strict state checks rejecting deletion of non-drafts.
-   - Validated by PostgreSQL integration test `SafeDraftDeletionEnforcesAuthorizationEntityIsolationAndConcurrency`.
+   - Enforced exclusive row locking (`for update`), legal entity isolation, controlled draft-deletion tombstones, and strict state checks rejecting deletion of non-drafts; fresh PostgreSQL concurrency verification passes.
 5. **Reproducibility & Zero Machine Leakage:**
-   - Eliminated machine-specific paths and hardcoded plaintext test passwords; all E2E tests run portably across developer environments.
+   - The E2E credential fallback has been removed; the suite requires `ERP_DEV_PASSWORD`. Optional REAL-04 live Files/S3/ClamAV requires `ERP_RUN_FILES_ACCEPTANCE=1` and configured providers.
 
 ---
 
@@ -70,9 +69,9 @@ All five mandatory release-blocking audit findings have been resolved and verifi
 
 ---
 
-## 3. Real-Stack PostgreSQL E2E Acceptance Suite (14 Verified Journeys)
+## 3. Real-Stack PostgreSQL E2E Acceptance Suite
 
-Automated live E2E Suite executed via Playwright (`frontend/tests/e2e/expenses-real-stack.spec.ts`) against live PostgreSQL database (`todir` db, port 15432), live .NET backend API (`http://127.0.0.1:5080`), MinIO storage, and ClamAV:
+The 14-journey run below is retained as historical context only and is not current evidence. Current focused verification uses an explicit `ERP_DEV_PASSWORD`: REAL-02 and REAL-03 pass with persisted API assertions. REAL-04 is skipped unless the optional live Files/S3/ClamAV activation is configured; the chained REAL-05–REAL-10 UI flow is not used to certify backend behavior.
 
 ```text
 Running 14 tests using 1 worker
@@ -92,7 +91,7 @@ Running 14 tests using 1 worker
   ✓ REAL-13: English LTR Direction & Localization Parity (2.8s)
   ✓ REAL-14: Unauthorized Employee Identity Fails Closed (No Management Tabs or Workbenches) (2.5s)
 
-14 passed (1.0m)
+Historical result only; not a current acceptance result.
 ```
 
 ### Verified Real-Stack Visual Artifacts Matrix
@@ -165,7 +164,7 @@ Every verification gate defined by the TODIR Engineering Standards passed with z
    - Result: Production client bundle compiled cleanly in 1.06s.
 7. **Real-Stack Playwright Suite:**
    - Command: `pnpm --dir frontend test:e2e tests/e2e/expenses-real-stack.spec.ts`
-   - Result: 14/14 journeys passed against live PostgreSQL database and backend API.
+   - Result: historical 14/14 only; not reused after the current correction set.
 8. **Mocked Component Playwright Suite:**
    - Command: `pnpm --dir frontend test:e2e tests/e2e/expenses-flow.spec.ts`
    - Result: 12/12 journeys passed.

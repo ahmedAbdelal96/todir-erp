@@ -302,6 +302,8 @@ foreach (var script in scripts)
         "ledger-forward-fix-pos-anonymous-cash-sale.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version" },
         "sales-forward-fix-return-lifecycle.sql" => new[] { "business_sales.sales_order_reservation" },
         "pos-forward-fix-exchanges-role-permissions.sql" => new[] { "platform.tenant", "platform.role", "platform.role_permission" },
+        "expenses-forward-fix-typed-travel-facts.sql" => new[] { "business_expenses.expense", "business_expenses.mileage_expense_detail", "business_expenses.per_diem_expense_detail" },
+        "expenses-forward-fix-deletion-attribution.sql" => new[] { "business_expenses.expense", "business_expenses.expense_deletion_history" },
         _ => null
     };
     if (Path.GetFileName(script) is "finbase-forward-fix-provider-history.sql" or "pricing-schema.sql")
@@ -582,6 +584,11 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("expenses-forward-fix-published-config-immutability.sql", StringComparison.Ordinal) => 12,
     _ when fileName.Equals("expenses-forward-fix-policy-retirement.sql", StringComparison.Ordinal) => 13,
     _ when fileName.Equals("expenses-forward-fix-daily-lines-and-draft-grants.sql", StringComparison.Ordinal) => 14,
+    _ when fileName.Equals("expenses-forward-fix-runtime-audit-privileges.sql", StringComparison.Ordinal) => 15,
+    _ when fileName.Equals("expenses-forward-fix-typed-travel-facts.sql", StringComparison.Ordinal) => 16,
+    _ when fileName.Equals("expenses-forward-fix-runtime-grants.sql", StringComparison.Ordinal) => 17,
+    _ when fileName.Equals("expenses-forward-fix-runtime-report-grants.sql", StringComparison.Ordinal) => 18,
+    _ when fileName.Equals("expenses-forward-fix-deletion-attribution.sql", StringComparison.Ordinal) => 19,
     // The exchange table is introduced by this forward-fix and must exist before
     // its grants and seeded permission rows are applied on a fresh database.
     _ when fileName.Equals("pos-forward-fix-exchanges.sql", StringComparison.Ordinal) => 4,

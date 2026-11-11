@@ -88,6 +88,9 @@ export const expensesApi = {
   listCategories: (legalEntityId: string): Promise<readonly ExpenseCategoryDto[]> =>
     httpClient<readonly ExpenseCategoryDto[]>(`${BASE}/legal-entities/${legalEntityId}/categories`),
 
+  listMyCategories: (legalEntityId: string): Promise<readonly ExpenseCategoryDto[]> =>
+    httpClient<readonly ExpenseCategoryDto[]>(`${BASE}/my/categories?legalEntityId=${encodeURIComponent(legalEntityId)}`),
+
   createCategory: (legalEntityId: string, request: CreateExpenseCategoryRequest): Promise<ExpenseCategoryDto> =>
     httpClient<ExpenseCategoryDto>(`${BASE}/legal-entities/${legalEntityId}/categories`, {
       method: "POST",
@@ -796,8 +799,23 @@ export const expensesApi = {
       body: JSON.stringify(request)
     }),
 
+  setMyMileage: (legalEntityId: string, id: string, request: SetMileageDetailRequest): Promise<MileageExpenseDetailDto> =>
+    httpClient<MileageExpenseDetailDto>(`${BASE}/my/expenses/${id}/mileage?legalEntityId=${encodeURIComponent(legalEntityId)}`, {
+      method: "PUT",
+      body: JSON.stringify(request)
+    }),
+
+  getMileage: (legalEntityId: string, id: string): Promise<MileageExpenseDetailDto> =>
+    httpClient<MileageExpenseDetailDto>(`${BASE}/legal-entities/${legalEntityId}/${id}/mileage`),
+
   setPerDiem: (legalEntityId: string, id: string, request: SetPerDiemDetailRequest): Promise<PerDiemExpenseDetailDto> =>
     httpClient<PerDiemExpenseDetailDto>(`${BASE}/legal-entities/${legalEntityId}/${id}/per-diem`, {
+      method: "PUT",
+      body: JSON.stringify(request)
+    }),
+
+  setMyPerDiem: (legalEntityId: string, id: string, request: SetPerDiemDetailRequest): Promise<PerDiemExpenseDetailDto> =>
+    httpClient<PerDiemExpenseDetailDto>(`${BASE}/my/expenses/${id}/per-diem?legalEntityId=${encodeURIComponent(legalEntityId)}`, {
       method: "PUT",
       body: JSON.stringify(request)
     }),
@@ -814,6 +832,17 @@ export const expensesApi = {
     return httpClient<ExpensePage<ExpenseRatePolicyDto>>(
       `${BASE}/legal-entities/${legalEntityId}/rate-policies?${q.toString()}`
     );
+  },
+
+  listMyRatePolicies: (
+    legalEntityId: string,
+    params?: { kind?: string | null; page?: number; pageSize?: number }
+  ): Promise<ExpensePage<ExpenseRatePolicyDto>> => {
+    const q = new URLSearchParams({ legalEntityId });
+    if (params?.kind) q.set("kind", params.kind);
+    if (params?.page) q.set("page", String(params.page));
+    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
+    return httpClient<ExpensePage<ExpenseRatePolicyDto>>(`${BASE}/my/rate-policies?${q.toString()}`);
   },
 
   createRatePolicy: (legalEntityId: string, request: CreateExpenseRatePolicyRequest): Promise<ExpenseRatePolicyDto> =>
