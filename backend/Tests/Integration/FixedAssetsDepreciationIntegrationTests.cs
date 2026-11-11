@@ -43,13 +43,28 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         using var loginResponse = await client.SendAsync(login);
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
 
+        var depreciationAssetId = Guid.CreateVersion7();
+        var depreciationAssetBookId = Guid.CreateVersion7();
+        var depreciationAssetNumber = $"FA-TEST-DEPR-{depreciationAssetId:N}";
+        await using var setupConnection = new NpgsqlConnection(connectionString);
+        await setupConnection.OpenAsync();
+        await using var setupActor = new NpgsqlCommand("select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", setupConnection); setupActor.Parameters.AddWithValue(Guid.Parse(TenantId));
+        var setupActorId = (Guid)(await setupActor.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed administrator was not found."));
+        await using var setupCategory = new NpgsqlCommand("select id from business_assets.asset_category where tenant_id=$1 and code='LAPTOP'", setupConnection); setupCategory.Parameters.AddWithValue(Guid.Parse(TenantId));
+        var setupCategoryId = (Guid)(await setupCategory.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed laptop category was not found."));
+        await using var setupAsset = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,'Depreciation Integration Asset','Operational','Equipment','Individual','2026-01-01','2026-01-01','2026-01-01',1,$6,now(),1)", setupConnection); setupAsset.Parameters.AddWithValue(Guid.Parse(TenantId)); setupAsset.Parameters.AddWithValue(depreciationAssetId); setupAsset.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); setupAsset.Parameters.AddWithValue(setupCategoryId); setupAsset.Parameters.AddWithValue(depreciationAssetNumber); setupAsset.Parameters.AddWithValue(setupActorId); await setupAsset.ExecuteNonQueryAsync();
+        await using var setupBook = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,12000,0,36,'StraightLine','2026-01-01',now(),1)", setupConnection); setupBook.Parameters.AddWithValue(Guid.Parse(TenantId)); setupBook.Parameters.AddWithValue(depreciationAssetBookId); setupBook.Parameters.AddWithValue(depreciationAssetId); setupBook.Parameters.AddWithValue(Guid.Parse(BookDefinitionId)); await setupBook.ExecuteNonQueryAsync();
+        await using var periodCommand = new NpgsqlCommand("select (date '2026-08-01' + candidate)::date from generate_series(1,27) candidate where not exists (select 1 from business_assets.asset_depreciation_run where tenant_id=$1 and legal_entity_id=$2 and book_definition_id=$3 and period_start=date '2026-08-01' and period_end=(date '2026-08-01' + candidate)::date) order by candidate limit 1", setupConnection); periodCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); periodCommand.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); periodCommand.Parameters.AddWithValue(Guid.Parse(BookDefinitionId));
+        var periodEnd = (DateOnly?)(await periodCommand.ExecuteScalarAsync()) ?? throw new InvalidOperationException("No unused August depreciation period is available for integration verification.");
+        var periodEndText = periodEnd.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
         var idempotencyKey = $"fixed-assets-integration-{Guid.CreateVersion7():N}";
         var request = new
         {
             legalEntityId = Guid.Parse(LegalEntityId),
             bookId = Guid.Parse(BookDefinitionId),
-            periodStart = "2026-11-01",
-            periodEnd = "2026-11-30",
+            periodStart = "2026-08-01",
+            periodEnd = periodEndText,
             idempotencyKey
         };
         var prepareCsrf = await client.GetFromJsonAsync<CsrfResponse>("/api/v1/auth/csrf");
@@ -74,8 +89,8 @@ public sealed class FixedAssetsDepreciationIntegrationTests
             {
                 legalEntityId = Guid.Parse(LegalEntityId),
                 bookId = Guid.Parse(BookDefinitionId),
-                periodStart = "2026-11-01",
-                periodEnd = "2026-11-30",
+                periodStart = "2026-08-01",
+                periodEnd = periodEndText,
                 idempotencyKey = idempotencyKey + "-different"
             })
         };
@@ -90,7 +105,8 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         using var post = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/depreciation-runs/{runId:D}/post?legalEntityId={LegalEntityId}");
         post.Headers.Add("X-CSRF-TOKEN", postCsrf.Token);
         using var postResponse = await client.SendAsync(post);
-        Assert.Equal(HttpStatusCode.OK, postResponse.StatusCode);
+        var postBody = await postResponse.Content.ReadAsStringAsync();
+        Assert.True(postResponse.StatusCode == HttpStatusCode.OK, postBody);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -105,14 +121,14 @@ public sealed class FixedAssetsDepreciationIntegrationTests
 
         await using var transactionCommand = new NpgsqlCommand("select ledger_fact_reference from business_assets.asset_book_transaction where tenant_id=$1 and idempotency_key=$2", connection);
         transactionCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
-        transactionCommand.Parameters.AddWithValue($"depreciation:{runId:D}:eba3c9e3-db53-e852-8ed1-4d34f2dd5f8b");
+        transactionCommand.Parameters.AddWithValue($"depreciation:{runId:D}:{depreciationAssetBookId:D}");
         var ledgerFactReference = (string?)await transactionCommand.ExecuteScalarAsync();
         Assert.False(string.IsNullOrWhiteSpace(ledgerFactReference));
 
         await using var factCommand = new NpgsqlCommand("select id,status,posted_entry_id from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and idempotency_key=$3", connection);
         factCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
         factCommand.Parameters.AddWithValue(Guid.Parse(LegalEntityId));
-        factCommand.Parameters.AddWithValue($"fixed-assets:depreciation:{runId:D}:eba3c9e3-db53-e852-8ed1-4d34f2dd5f8b");
+        factCommand.Parameters.AddWithValue($"fixed-assets:depreciation:{runId:D}:{depreciationAssetBookId:D}");
         await using var factReader = await factCommand.ExecuteReaderAsync();
         Assert.True(await factReader.ReadAsync());
         var factId = factReader.GetGuid(0);
@@ -129,6 +145,34 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         Assert.True(await balanceReader.ReadAsync());
         Assert.Equal(balanceReader.GetDecimal(0), balanceReader.GetDecimal(1));
         Assert.True(balanceReader.GetDecimal(0) > 0m);
+        await balanceReader.CloseAsync();
+
+        var reverseCsrf = await GetCsrfAsync(client);
+        using var reverse = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/depreciation-runs/{runId:D}/reverse?legalEntityId={LegalEntityId}")
+        {
+            Content = JsonContent.Create(new { reversalDate = periodEnd.AddDays(1).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), reason = "Integration reversal verification", idempotencyKey = $"reverse-{idempotencyKey}" })
+        };
+        reverse.Headers.Add("X-CSRF-TOKEN", reverseCsrf.Token);
+        using var reverseResponse = await client.SendAsync(reverse);
+        var reverseBody = await reverseResponse.Content.ReadAsStringAsync();
+        Assert.True(reverseResponse.StatusCode == HttpStatusCode.OK, reverseBody);
+        using var reverseJson = JsonDocument.Parse(reverseBody);
+        Assert.Equal("Reversed", reverseJson.RootElement.GetProperty("status").GetString());
+
+        await using var reversedTransaction = new NpgsqlCommand("select ledger_fact_reference from business_assets.asset_book_transaction where tenant_id=$1 and asset_book_id=$2 and idempotency_key=$3", connection); reversedTransaction.Parameters.AddWithValue(Guid.Parse(TenantId)); reversedTransaction.Parameters.AddWithValue(depreciationAssetBookId); reversedTransaction.Parameters.AddWithValue($"depreciation-reversal:{runId:D}:book:{depreciationAssetBookId:D}");
+        var reversedFactReference = (string?)await reversedTransaction.ExecuteScalarAsync();
+        Assert.False(string.IsNullOrWhiteSpace(reversedFactReference));
+        await using var reversedFact = new NpgsqlCommand("select status,posted_entry_id from finance_ledger.accounting_fact where tenant_id=$1 and id=$2 and fact_type='FixedAssetDepreciationReversed'", connection); reversedFact.Parameters.AddWithValue(Guid.Parse(TenantId)); reversedFact.Parameters.AddWithValue(Guid.Parse(reversedFactReference!));
+        await using var reversedFactReader = await reversedFact.ExecuteReaderAsync();
+        Assert.True(await reversedFactReader.ReadAsync());
+        Assert.Equal("Posted", reversedFactReader.GetString(0));
+        var reversedJournalEntryId = reversedFactReader.GetGuid(1);
+        await reversedFactReader.CloseAsync();
+        await using var reversedBalance = new NpgsqlCommand("select coalesce(sum(debit),0),coalesce(sum(credit),0) from finance_ledger.journal_entry_line where tenant_id=$1 and journal_entry_id=$2", connection); reversedBalance.Parameters.AddWithValue(Guid.Parse(TenantId)); reversedBalance.Parameters.AddWithValue(reversedJournalEntryId);
+        await using var reversedBalanceReader = await reversedBalance.ExecuteReaderAsync();
+        Assert.True(await reversedBalanceReader.ReadAsync());
+        Assert.Equal(reversedBalanceReader.GetDecimal(0), reversedBalanceReader.GetDecimal(1));
+        Assert.True(reversedBalanceReader.GetDecimal(0) > 0m);
     }
 
     [Fact]

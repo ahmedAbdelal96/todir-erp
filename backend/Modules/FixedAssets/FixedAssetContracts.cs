@@ -56,6 +56,7 @@ public sealed record CreateBookRequest(
 public sealed record CreateAssetBookRequest(Guid LegalEntityId, Guid BookDefinitionId, decimal OriginalCost, decimal ResidualValue, int UsefulLifeMonths, string DepreciationMethod, DateOnly PlacedInServiceDate);
 
 public sealed record CreateDepreciationRunRequest(Guid LegalEntityId, Guid BookId, DateOnly PeriodStart, DateOnly PeriodEnd, string? IdempotencyKey);
+public sealed record ReverseDepreciationRunRequest(DateOnly ReversalDate, string Reason, string? IdempotencyKey);
 public sealed record DisposeAssetRequest(Guid LegalEntityId, string DisposalType, DateOnly DisposalDate, decimal Proceeds, decimal DirectCosts, string Reason, string? IdempotencyKey);
 public sealed record CreateCapitalizationCandidateRequest(Guid LegalEntityId, string SourceType, string SourceReference, decimal EligibleAmount, JsonElement SourceSnapshot);
 public sealed record ReviewCapitalizationCandidateRequest(string Decision, string? Reason);

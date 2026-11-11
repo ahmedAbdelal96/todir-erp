@@ -773,6 +773,22 @@ public sealed class LedgerRepository(
         return await PostSemanticExplicitInTransactionAsync(context, fact, new ExplicitLedgerPostingPayload(journal, description, baseCurrency, lines), payload, configuration, ct);
     }
 
+    public async Task<LedgerPostingResult> PostFixedAssetDepreciationReversalInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetDepreciationReversedPayload payload, CancellationToken ct)
+    {
+        if (fact.SourceModule != "fixed-assets" || fact.FactType != AccountingFactTypes.FixedAssetDepreciationReversed || payload.Amount <= 0m || string.IsNullOrWhiteSpace(payload.AssetBookReference))
+            throw new LedgerDomainException("ledger.fixed_asset_reversal_fact_invalid", "The fixed asset depreciation reversal fact is incomplete.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct) ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var currency = payload.CurrencyCode.Trim().ToUpperInvariant(); var baseAmount = payload.BaseAmount ?? payload.Amount; var factBaseCurrency = payload.BaseCurrencyCode?.Trim().ToUpperInvariant() ?? currency;
+        if (currency.Length != 3 || factBaseCurrency != baseCurrency || baseAmount <= 0m || currency != baseCurrency && payload.BaseAmount is null) throw new LedgerDomainException("ledger.currency_mismatch", "Fixed asset depreciation reversal requires a base-currency snapshot.");
+        var configuration = await GetActiveConfigurationVersionIdAsync(context, fact.TenantId, fact.LegalEntityId, ct);
+        var expense = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetDepreciationExpense", ct);
+        var accumulated = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetAccumulatedDepreciation", ct);
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value) ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var rate = baseAmount / payload.Amount; var description = $"Depreciation reversal {payload.AssetBookReference}: {payload.DepreciationExpenseCategory}";
+        var lines = new[] { new LedgerPostingLinePayload(accumulated, baseAmount, 0m, currency, payload.Amount, 0m, baseAmount, 0m, rate, [], description, payload.AssetBookReference), new LedgerPostingLinePayload(expense, 0m, baseAmount, currency, 0m, payload.Amount, 0m, baseAmount, rate, [], description, payload.AssetBookReference) };
+        return await PostSemanticExplicitInTransactionAsync(context, fact, new ExplicitLedgerPostingPayload(journal, description, baseCurrency, lines), payload, configuration, ct);
+    }
+
     public async Task<LedgerPostingResult> PostFixedAssetDisposalInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetDisposalPostedPayload payload, CancellationToken ct)
     {
         if (fact.SourceModule != "fixed-assets" || fact.FactType != AccountingFactTypes.FixedAssetDisposalPosted || payload.GrossCost < 0m || payload.AccumulatedDepreciation < 0m || payload.NetBookValue < 0m || payload.Proceeds < 0m || payload.DirectCosts < 0m || string.IsNullOrWhiteSpace(payload.AssetReference) || payload.GrossCost - payload.AccumulatedDepreciation != payload.NetBookValue || payload.Proceeds - payload.DirectCosts - payload.NetBookValue != payload.GainLoss)

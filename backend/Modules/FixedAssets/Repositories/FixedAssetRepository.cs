@@ -197,6 +197,36 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         }, ct);
     }
 
+    public async Task<DepreciationRunView> ReverseDepreciationRunAsync(TenantId tenant, Guid actor, Guid runId, ReverseDepreciationRunRequest request, CancellationToken ct)
+    {
+        if (request.ReversalDate == default || string.IsNullOrWhiteSpace(request.Reason)) throw new FixedAssetException("assets.depreciation_reversal_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await using var run = new NpgsqlCommand("select legal_entity_id,book_definition_id,period_start,period_end,status,total_amount,created_at from business_assets.asset_depreciation_run where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); run.Parameters.AddWithValue(tenant.Value); run.Parameters.AddWithValue(runId);
+            await using var runReader = await run.ExecuteReaderAsync(token); if (!await runReader.ReadAsync(token)) throw new FixedAssetException("assets.depreciation_run_not_found"); var entity = runReader.GetGuid(0); var bookDefinition = runReader.GetGuid(1); var periodStart = runReader.GetFieldValue<DateOnly>(2); var periodEnd = runReader.GetFieldValue<DateOnly>(3); var status = runReader.GetString(4); var total = runReader.GetDecimal(5); var createdAt = runReader.GetFieldValue<DateTimeOffset>(6); await runReader.CloseAsync();
+            if (status == "Reversed")
+            {
+                await using var count = new NpgsqlCommand("select count(*) from business_assets.asset_depreciation_run_line where tenant_id=$1 and run_id=$2", context.Connection, context.Transaction); count.Parameters.AddWithValue(tenant.Value); count.Parameters.AddWithValue(runId); return new DepreciationRunView(runId, entity, bookDefinition, periodStart, periodEnd, status, total, Convert.ToInt32(await count.ExecuteScalarAsync(token), System.Globalization.CultureInfo.InvariantCulture), createdAt);
+            }
+            if (status != "Posted") throw new FixedAssetException("assets.depreciation_run_not_reversible");
+            await using var closedPeriod = new NpgsqlCommand("select exists (select 1 from finance_ledger.accounting_period where tenant_id=$1 and legal_entity_id=$2 and status in ('Closed','Locked') and start_date <= $3 and end_date >= $3)", context.Connection, context.Transaction); closedPeriod.Parameters.AddWithValue(tenant.Value); closedPeriod.Parameters.AddWithValue(entity); closedPeriod.Parameters.AddWithValue(request.ReversalDate);
+            if (Convert.ToBoolean(await closedPeriod.ExecuteScalarAsync(token), System.Globalization.CultureInfo.InvariantCulture)) throw new FixedAssetException("assets.accounting_period_closed");
+            await using var lines = new NpgsqlCommand("select l.asset_book_id,l.amount,l.ledger_fact_reference,bd.posts_to_ledger,bd.currency_code,a.asset_number from business_assets.asset_depreciation_run_line l join business_assets.asset_book b on b.tenant_id=l.tenant_id and b.id=l.asset_book_id join business_assets.asset_book_definition bd on bd.tenant_id=b.tenant_id and bd.id=b.book_definition_id join business_assets.fixed_asset a on a.tenant_id=b.tenant_id and a.id=b.asset_id where l.tenant_id=$1 and l.run_id=$2 order by l.asset_book_id,l.id", context.Connection, context.Transaction); lines.Parameters.AddWithValue(tenant.Value); lines.Parameters.AddWithValue(runId);
+            await using var lineReader = await lines.ExecuteReaderAsync(token); var rows = new List<(Guid BookId, decimal Amount, string? LedgerFactReference, bool PostsToLedger, string Currency, string AssetNumber)>(); while (await lineReader.ReadAsync(token)) rows.Add((lineReader.GetGuid(0), lineReader.GetDecimal(1), lineReader.IsDBNull(2) ? null : lineReader.GetString(2), lineReader.GetBoolean(3), lineReader.GetString(4), lineReader.GetString(5))); await lineReader.CloseAsync();
+            foreach (var row in rows)
+            {
+                Guid? ledgerFact = null;
+                if (row.PostsToLedger && row.LedgerFactReference is not null)
+                {
+                    var factId = DeterministicGuid(runId, StableGuid($"reversal:{row.BookId:D}")); var payload = new FixedAssetDepreciationReversedPayload(row.Amount, row.Currency, $"{row.AssetNumber}/{row.BookId:D}", "FixedAssetDepreciationExpense"); var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(entity), AccountingFactTypes.FixedAssetDepreciationReversed, 1, "fixed-assets", $"depreciation-reversal:{runId:D}:book:{row.BookId:D}", $"fixed-assets:depreciation-reversal:{runId:D}:{row.BookId:D}", request.ReversalDate, request.ReversalDate, payload, Guid.CreateVersion7(), actor); ledgerFact = (await ledger.PostFixedAssetDepreciationReversalAsync(context, fact, payload, token)).FactId;
+                }
+                await using var transaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'Reversal',$4,$5,$6,$7,$8,$9,now()) on conflict(tenant_id,asset_book_id,idempotency_key) do nothing", context.Connection, context.Transaction); transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue(DeterministicGuid(runId, StableGuid($"transaction-reversal:{row.BookId:D}"))); transaction.Parameters.AddWithValue(row.BookId); transaction.Parameters.AddWithValue(request.ReversalDate); transaction.Parameters.AddWithValue(row.Amount); transaction.Parameters.AddWithValue($"depreciation-reversal:{runId:D}:reason:{request.Reason.Trim()}"); transaction.Parameters.AddWithValue($"depreciation-reversal:{runId:D}:book:{row.BookId:D}"); transaction.Parameters.AddWithValue((object?)ledgerFact?.ToString("D") ?? DBNull.Value); transaction.Parameters.AddWithValue(actor); await transaction.ExecuteNonQueryAsync(token);
+            }
+            await using var update = new NpgsqlCommand("update business_assets.asset_depreciation_run set status='Reversed' where tenant_id=$1 and id=$2", context.Connection, context.Transaction); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(runId); await update.ExecuteNonQueryAsync(token);
+            return new DepreciationRunView(runId, entity, bookDefinition, periodStart, periodEnd, "Reversed", total, rows.Count, createdAt);
+        }, ct);
+    }
+
     public async Task<IReadOnlyList<CapitalizationCandidateView>> ListCapitalizationCandidatesAsync(TenantId tenant, Guid? legalEntityId, string? status, int limit, CancellationToken ct)
     {
         limit = Math.Clamp(limit, 1, 200);
