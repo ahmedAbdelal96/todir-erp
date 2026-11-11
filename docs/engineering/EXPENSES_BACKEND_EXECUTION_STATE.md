@@ -64,8 +64,8 @@ Canonical pack: `docs/modules/21_ERP_SAAS_EXPENSES_REQUIREMENTS_AND_TECHNICAL_DE
 - Verified after the latest source/test changes: API/Expenses/DbMigrator builds, Expenses acceptance `47 passed/1 skipped`, authenticated Expenses API `4/4`, focused REAL-03, and the affected typed-policy/deletion/runtime-audit tests all pass. Existing FinanceBase FX, Tax, card, OCR, report, approval, RLS, Payments and cross-currency evidence remains valid for unaffected paths.
 - Unfinished: optional live Files/S3/ClamAV and Worker/RabbitMQ/OCR-provider activation; chained legacy UI approval flow remains unclaimed. Project is not enabled and Payroll reimbursement is disabled.
 - Last meaningful change: added employee-scoped self-service category/rate-policy/mileage/per-diem routes, added the small deterministic pagination boundary test, and reran the affected backend/API and REAL-02/REAL-03 verification.
-- Next executable action: commit the verified tree on `dev`, push over SSH, verify the clean tree, and record the resulting SHA in the delivery handoff. Optional provider activation and human Product Owner acceptance remain separate lifecycle steps.
-- Acceptance matrix: `docs/engineering/EXPENSES_FINAL_ACCEPTANCE_GATES.md` is synchronized to current fresh evidence and records EX00–EX43 as PASS; the final SSH clean-tree check remains the handoff operation.
+- Final handoff state: source commit `92603470a2d3043ad16a65e298d99d9557ef01d0` is pushed on `dev` over SSH and the worktree is clean. Optional provider activation and human Product Owner acceptance remain separate lifecycle steps.
+- Acceptance matrix: `docs/engineering/EXPENSES_FINAL_ACCEPTANCE_GATES.md` is synchronized to current fresh evidence and records EX00–EX43 as PASS.
 
 ## Phase matrix
 
@@ -79,6 +79,6 @@ Canonical pack: `docs/modules/21_ERP_SAAS_EXPENSES_REQUIREMENTS_AND_TECHNICAL_DE
 | EX09–EX11 | PASS | Authenticated employee/accountant/manager authority, policy exceptions, stale protection, finalization, and immutable Ledger evidence pass. |
 | EX12–EX35 | PASS | Reimbursement, repayment, advances, Tax/FinanceBase, cards, reports, imports, reminders, bounded lists, scale plan, and recovery evidence pass; optional provider/Payroll activation remains explicitly conditional. |
 | EX36–EX42 | PASS | Employee, Finance, card, advance, termination-retention, reconciliation, security, and conditional cross-module acceptance pass. |
-| EX43 | PASS | Final affected verification passes; the verified tree is the release candidate for the single `dev` commit and SSH push, with clean-tree verification recorded immediately afterward. |
+| EX43 | PASS | Final affected verification passes; source commit `92603470a2d3043ad16a65e298d99d9557ef01d0` is pushed on `dev` over SSH and the worktree is clean. |
 
 This document is the final backend execution checkpoint for the verified source commit; frontend and human Product Owner acceptance remain separate lifecycle gates.

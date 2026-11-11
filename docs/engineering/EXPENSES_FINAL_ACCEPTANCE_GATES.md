@@ -54,7 +54,7 @@ This is an executable acceptance matrix. A gate is `PASS` only when the listed p
 
 ## Current execution baseline
 
-- Last verified source commit: `6c59092a557bf383c0255325e50b0fdfb798d624`; current correction set is uncommitted on `dev`.
+- Final verified source commit: `92603470a2d3043ad16a65e298d99d9557ef01d0` on `dev`; the post-push documentation checkpoint contains no code changes.
 - Isolated PostgreSQL Expenses suite: `47 passed, 0 failed, 1 skipped` (`ExpensesTests.dll`, duration 7s). Migration `183` applied and seed completed cleanly with a small deterministic dataset.
 - Typed-policy acceptance: `1/1 passed` on database, including actual `Reduce` behavior with a persisted partial amount adjustment, authoritative per diem meal reductions (0% means 0%, no invented fallbacks), daily lines jsonb persistence, and finalization fail-closed behavior.
 - Isolated financial Expenses acceptance: `8/8 passed`, including Tax Engine evidence, FinanceBase FX/context, General Ledger posting, reversal, cross-currency advance, write-off, card adjustments, and spend-report financial totals.

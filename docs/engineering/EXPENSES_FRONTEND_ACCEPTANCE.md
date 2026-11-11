@@ -2,7 +2,7 @@
 
 **Module:** Module 21 — Expenses & Employee Reimbursements (`المصروفات ومستحقات الموظفين`)  
 **Repository Branch:** `dev`  
-**Backend Acceptance Baseline:** Current verified correction set on `dev` (commit SHA recorded in the delivery handoff)
+**Backend Acceptance Baseline:** `92603470a2d3043ad16a65e298d99d9557ef01d0` (verified source correction commit on `dev`)
 **Governing Manuals:** Root `AGENTS.md`, `frontend/AGENTS.md`, and Skill `erp-frontend-architect`  
 **Canonical Specification:** `docs/modules/21_ERP_SAAS_EXPENSES_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
 **Delivery Status:** `BACKEND READY FOR FRONTEND HANDOFF — optional live provider and legacy chained UI evidence remain explicitly unclaimed`
