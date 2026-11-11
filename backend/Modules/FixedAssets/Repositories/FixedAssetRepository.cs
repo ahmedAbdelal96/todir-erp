@@ -38,7 +38,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
     public async Task<AssetCategoryView> CreateCategoryAsync(TenantId tenant, Guid actor, CreateAssetCategoryRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name)) throw new FixedAssetException("assets.category_required");
-        if (request.DefaultResidualValue < 0m || request.CapitalizationThreshold < 0m || request.DefaultUsefulLifeMonths is <= 0) throw new FixedAssetException("assets.invalid_category_policy");
+        if (request.DefaultResidualValue < 0m || request.CapitalizationThreshold < 0m || request.DefaultUsefulLifeMonths is <= 0 || request.DefaultDepreciationMethod is not ("StraightLine" or "NoDepreciation")) throw new FixedAssetException("assets.invalid_category_policy");
         var id = Guid.CreateVersion7();
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
@@ -69,6 +69,15 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         if (request.CapitalizationDate < request.AcquisitionDate || request.PlacedInServiceDate < request.CapitalizationDate) throw new FixedAssetException("assets.date_order_invalid");
         return await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
+            if (request.ParentAssetId is { } parentAssetId)
+            {
+                await using var parent = new NpgsqlCommand("select legal_entity_id,lifecycle_state from business_assets.fixed_asset where tenant_id=$1 and id=$2", context.Connection, context.Transaction);
+                parent.Parameters.AddWithValue(tenant.Value); parent.Parameters.AddWithValue(parentAssetId);
+                await using var parentReader = await parent.ExecuteReaderAsync(token);
+                if (!await parentReader.ReadAsync(token)) throw new FixedAssetException("assets.parent_asset_not_found");
+                if (parentReader.GetGuid(0) != request.LegalEntityId || parentReader.GetString(1) is "Disposed" or "Archived") throw new FixedAssetException("assets.parent_asset_invalid");
+                await parentReader.CloseAsync();
+            }
             var id = Guid.CreateVersion7();
             var number = await sequences.AllocateAsync(context, new SequenceDefinition("fixed-assets.asset-number", tenant, request.LegalEntityId, null, null, null, "FA-", 8, 1), token);
             await using var command = new NpgsqlCommand("""
@@ -216,6 +225,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
 
     public async Task<AssetBookView> CreateBookAsync(TenantId tenant, Guid actor, CreateBookRequest request, CancellationToken ct)
     {
+        if (request.DefaultDepreciationMethod is not ("StraightLine" or "NoDepreciation")) throw new FixedAssetException("assets.depreciation_method_not_supported");
         var id = Guid.CreateVersion7();
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, transaction, tenant, ct);
         await using var command = new NpgsqlCommand("insert into business_assets.asset_book_definition (tenant_id,id,legal_entity_id,code,name,posts_to_ledger,currency_code,default_depreciation_method,default_convention,default_useful_life_months,created_by,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())", connection, transaction);
@@ -227,7 +237,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
     public async Task<Guid> AddAssetBookAsync(TenantId tenant, Guid actor, Guid assetId, CreateAssetBookRequest request, CancellationToken ct)
     {
         if (request.OriginalCost < 0m || request.ResidualValue < 0m || request.ResidualValue > request.OriginalCost || request.UsefulLifeMonths <= 0) throw new FixedAssetException("assets.book_values_invalid");
-        if (request.DepreciationMethod is not ("StraightLine" or "NoDepreciation" or "DecliningBalance")) throw new FixedAssetException("assets.depreciation_method_invalid");
+        if (request.DepreciationMethod is not ("StraightLine" or "NoDepreciation")) throw new FixedAssetException("assets.depreciation_method_not_supported");
         return await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var bookId = Guid.CreateVersion7();
@@ -738,7 +748,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         if (string.IsNullOrWhiteSpace(line.LegacyAssetNumber) || string.IsNullOrWhiteSpace(line.Name) || line.CategoryId == Guid.Empty || line.BookDefinitionId == Guid.Empty) return "assets.opening_line_required";
         if (line.OriginalCost < 0m || line.AccumulatedDepreciation < 0m || line.NetBookValue < 0m || line.ResidualValue < 0m || line.ResidualValue > line.OriginalCost) return "assets.opening_line_amount_invalid";
         if (Math.Abs(line.OriginalCost - line.AccumulatedDepreciation - line.NetBookValue) > 0.000001m) return "assets.opening_line_not_balanced";
-        if (line.PlacedInServiceDate == default || line.AcquisitionDate > line.PlacedInServiceDate || line.UsefulLifeMonths is <= 0 || line.DepreciationMethod is not ("StraightLine" or "NoDepreciation" or "DecliningBalance")) return "assets.opening_line_policy_invalid";
+        if (line.PlacedInServiceDate == default || line.AcquisitionDate > line.PlacedInServiceDate || line.UsefulLifeMonths is <= 0 || line.DepreciationMethod is not ("StraightLine" or "NoDepreciation")) return "assets.opening_line_policy_invalid";
         return null;
     }
 
