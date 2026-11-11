@@ -26,6 +26,7 @@ Verified after the latest source change:
 - Fixed Asset event contracts — `FixedAssetCreatedV1`, `FixedAssetAssignedV1`, `FixedAssetCapitalizedV1`, `FixedAssetDepreciatedV1`, and `FixedAssetDisposedV1` are typed shared contracts and are queued through the transactional Outbox at their owning lifecycle transitions.
 - Development seed expansion — Atlas and Delta now receive 8 governed categories (including Vehicle, Machine, Intangible, and CIP), 4 representative assets, and 3 books; migrator seed rerun is PASS and idempotent.
 - Physical operations slice — legal-entity-scoped asset locations, parent-location validation, assignment location/entity validation, and immutable handover records are now exposed through authenticated API routes with resource-scoped authorization; the existing live Fixed Assets integration remains PASS, 7/7 after this change.
+- Physical verification slice — campaigns snapshot expected locations without mutating assignments; verification results are immutable line outcomes, and campaign closure rejects unresolved pending lines.
 - FA37 large-scale benchmarks — NOT EXECUTED by Product Owner directive.
 
 Unfinished requirements / next executable work:
@@ -39,4 +40,4 @@ Unfinished requirements / next executable work:
 
 Last meaningful change: added Ledger-backed fixed-asset book reconciliation through the cross-module control-balance contract, with live API proof of an explicit reconciliation state.
 
-Next executable action: complete documents/tags, source-module ingestion, estimate changes, impairment/revaluation seams, grouped split/partial disposal, verification/bulk operations, HR offboarding and country-pack contracts, then run the complete backend release gate and commit/push the verified mission.
+Next executable action: complete documents/tags, source-module ingestion, estimate changes, impairment/revaluation seams, grouped split/partial disposal, bulk operations, HR offboarding and country-pack contracts, then run the complete backend release gate and commit/push the verified mission.

@@ -22,6 +22,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             "run" => "select legal_entity_id from business_assets.asset_depreciation_run where tenant_id=$1 and id=$2",
             "candidate" => "select legal_entity_id from business_assets.asset_capitalization_candidate where tenant_id=$1 and id=$2",
             "opening" => "select legal_entity_id from business_assets.asset_opening_import where tenant_id=$1 and id=$2",
+            "campaign" => "select legal_entity_id from business_assets.asset_verification_campaign where tenant_id=$1 and id=$2",
             _ => throw new ArgumentException("Unknown fixed-asset resource type.", nameof(resourceType))
         };
         await using var connection = await dataSource.OpenConnectionAsync(ct);
@@ -161,6 +162,47 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             await using var command = new NpgsqlCommand("insert into business_assets.asset_handover(tenant_id,id,asset_id,assignment_id,handover_type,acknowledged_at,condition,evidence,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)", context.Connection, context.Transaction);
             command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(assetId); command.Parameters.AddWithValue(request.AssignmentId); command.Parameters.AddWithValue(request.HandoverType); command.Parameters.AddWithValue((object?)request.AcknowledgedAt ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.Condition ?? DBNull.Value); command.Parameters.AddWithValue(request.Evidence.GetRawText()); command.Parameters.AddWithValue(actor); command.Parameters.AddWithValue(createdAt); await command.ExecuteNonQueryAsync(token);
             return new AssetHandoverView(id, assetId, request.AssignmentId, request.HandoverType, request.AcknowledgedAt, request.Condition, request.Evidence.Clone(), createdAt);
+        }, ct);
+    }
+
+    public async Task<VerificationCampaignView> CreateVerificationCampaignAsync(TenantId tenant, Guid actor, CreateVerificationCampaignRequest request, CancellationToken ct)
+    {
+        if (request.LegalEntityId == Guid.Empty || string.IsNullOrWhiteSpace(request.Name)) throw new FixedAssetException("assets.verification_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var id = Guid.CreateVersion7(); var snapshotAt = DateTimeOffset.UtcNow; var createdAt = snapshotAt;
+            await using var campaign = new NpgsqlCommand("insert into business_assets.asset_verification_campaign(tenant_id,id,legal_entity_id,name,snapshot_at,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7)", context.Connection, context.Transaction);
+            campaign.Parameters.AddWithValue(tenant.Value); campaign.Parameters.AddWithValue(id); campaign.Parameters.AddWithValue(request.LegalEntityId); campaign.Parameters.AddWithValue(request.Name.Trim()); campaign.Parameters.AddWithValue(snapshotAt); campaign.Parameters.AddWithValue(actor); campaign.Parameters.AddWithValue(createdAt); await campaign.ExecuteNonQueryAsync(token);
+            await using var lines = new NpgsqlCommand("insert into business_assets.asset_verification_line(tenant_id,id,campaign_id,asset_id,expected_location_id) select $1,gen_random_uuid(),$2,a.id,current_assignment.location_id from business_assets.fixed_asset a left join lateral (select aa.location_id from business_assets.asset_assignment aa where aa.tenant_id=a.tenant_id and aa.asset_id=a.id and aa.effective_from <= $3::date and (aa.effective_to is null or aa.effective_to >= $3::date) order by aa.effective_from desc,aa.id desc limit 1) current_assignment on true where a.tenant_id=$1 and a.legal_entity_id=$4 and a.lifecycle_state <> 'Archived' on conflict (tenant_id,campaign_id,asset_id) do nothing", context.Connection, context.Transaction);
+            lines.Parameters.AddWithValue(tenant.Value); lines.Parameters.AddWithValue(id); lines.Parameters.AddWithValue(snapshotAt.Date); lines.Parameters.AddWithValue(request.LegalEntityId); await lines.ExecuteNonQueryAsync(token);
+            return await LoadVerificationCampaignAsync(context, tenant, id, token) ?? throw new FixedAssetException("assets.verification_not_found");
+        }, ct);
+    }
+
+    public async Task<VerificationCampaignView> VerifyAssetAsync(TenantId tenant, Guid actor, Guid campaignId, Guid assetId, VerifyAssetRequest request, CancellationToken ct)
+    {
+        if (request.Result is not ("Found" or "Missing" or "WrongLocation" or "WrongCustodian" or "Damaged" or "Unexpected") || request.Result is ("Found" or "WrongLocation") && request.ObservedLocationId is null) throw new FixedAssetException("assets.verification_result_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            if (request.ObservedLocationId is { } locationId)
+            {
+                await using var location = new NpgsqlCommand("select 1 from business_assets.asset_location l join business_assets.asset_verification_campaign c on c.tenant_id=l.tenant_id and c.legal_entity_id=l.legal_entity_id where l.tenant_id=$1 and l.id=$2 and c.id=$3 and l.active", context.Connection, context.Transaction);
+                location.Parameters.AddWithValue(tenant.Value); location.Parameters.AddWithValue(locationId); location.Parameters.AddWithValue(campaignId); if (await location.ExecuteScalarAsync(token) is null) throw new FixedAssetException("assets.verification_location_invalid");
+            }
+            await using var update = new NpgsqlCommand("update business_assets.asset_verification_line set observed_location_id=$1,result=$2,notes=$3,resolved_by=$4,resolved_at=now() where tenant_id=$5 and campaign_id=$6 and asset_id=$7 and exists(select 1 from business_assets.asset_verification_campaign c where c.tenant_id=$5 and c.id=$6 and c.status in ('Open','Review'))", context.Connection, context.Transaction);
+            update.Parameters.AddWithValue((object?)request.ObservedLocationId ?? DBNull.Value); update.Parameters.AddWithValue(request.Result); update.Parameters.AddWithValue((object?)request.Notes?.Trim() ?? DBNull.Value); update.Parameters.AddWithValue(actor); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(campaignId); update.Parameters.AddWithValue(assetId); if (await update.ExecuteNonQueryAsync(token) != 1) throw new FixedAssetException("assets.verification_line_not_found");
+            await using var status = new NpgsqlCommand("update business_assets.asset_verification_campaign set status='Review' where tenant_id=$1 and id=$2 and status='Open'", context.Connection, context.Transaction); status.Parameters.AddWithValue(tenant.Value); status.Parameters.AddWithValue(campaignId); await status.ExecuteNonQueryAsync(token);
+            return await LoadVerificationCampaignAsync(context, tenant, campaignId, token) ?? throw new FixedAssetException("assets.verification_not_found");
+        }, ct);
+    }
+
+    public async Task<VerificationCampaignView> CloseVerificationCampaignAsync(TenantId tenant, Guid actor, Guid campaignId, CancellationToken ct)
+    {
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await using var pending = new NpgsqlCommand("select count(*) from business_assets.asset_verification_line where tenant_id=$1 and campaign_id=$2 and result='Pending'", context.Connection, context.Transaction); pending.Parameters.AddWithValue(tenant.Value); pending.Parameters.AddWithValue(campaignId); if (Convert.ToInt32(await pending.ExecuteScalarAsync(token), System.Globalization.CultureInfo.InvariantCulture) != 0) throw new FixedAssetException("assets.verification_pending_lines");
+            await using var update = new NpgsqlCommand("update business_assets.asset_verification_campaign set status='Completed' where tenant_id=$1 and id=$2 and status in ('Open','Review')", context.Connection, context.Transaction); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(campaignId); if (await update.ExecuteNonQueryAsync(token) != 1) throw new FixedAssetException("assets.verification_not_closeable");
+            return await LoadVerificationCampaignAsync(context, tenant, campaignId, token) ?? throw new FixedAssetException("assets.verification_not_found");
         }, ct);
     }
 
@@ -750,6 +792,14 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
     }
 
     private static async Task SetTenantAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, CancellationToken ct) { await using var command = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction); command.Parameters.AddWithValue(tenant.Value.ToString("D")); await command.ExecuteNonQueryAsync(ct); }
+    private static async Task<VerificationCampaignView?> LoadVerificationCampaignAsync(ITransactionContext context, TenantId tenant, Guid campaignId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select c.legal_entity_id,c.name,c.snapshot_at,c.status,c.created_at,count(l.id),count(*) filter (where l.result='Pending') from business_assets.asset_verification_campaign c left join business_assets.asset_verification_line l on l.tenant_id=c.tenant_id and l.campaign_id=c.id where c.tenant_id=$1 and c.id=$2 group by c.id,c.legal_entity_id,c.name,c.snapshot_at,c.status,c.created_at", context.Connection, context.Transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(campaignId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        return new VerificationCampaignView(campaignId, reader.GetGuid(0), reader.GetString(1), reader.GetFieldValue<DateTimeOffset>(2), reader.GetString(3), Convert.ToInt32(reader.GetInt64(5), System.Globalization.CultureInfo.InvariantCulture), Convert.ToInt32(reader.GetInt64(6), System.Globalization.CultureInfo.InvariantCulture), reader.GetFieldValue<DateTimeOffset>(4));
+    }
     private static async Task<Guid> ResolveAssetEntityAsync(ITransactionContext context, TenantId tenant, Guid assetId, CancellationToken ct)
     {
         await using var command = new NpgsqlCommand("select legal_entity_id from business_assets.fixed_asset where tenant_id=$1 and id=$2", context.Connection, context.Transaction);
