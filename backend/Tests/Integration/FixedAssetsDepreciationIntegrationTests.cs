@@ -646,10 +646,12 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         await using var bookSetup = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,12000,0,36,'StraightLine','2026-10-01',now(),1)", connection);
         bookSetup.Parameters.AddWithValue(Guid.Parse(TenantId)); bookSetup.Parameters.AddWithValue(bookId); bookSetup.Parameters.AddWithValue(assetId); bookSetup.Parameters.AddWithValue(Guid.Parse(BookDefinitionId)); await bookSetup.ExecuteNonQueryAsync();
 
+        var idempotencyKey = $"integration-partial-disposal-{Guid.CreateVersion7():N}";
+        var disposalPayload = new { legalEntityId = Guid.Parse(LegalEntityId), disposalType = "Sale", disposalDate = "2026-12-15", proceeds = 5000m, directCosts = 0m, reason = "Partial disposal integration verification", idempotencyKey, quantity = 5m, saleReference = "SALE-TEST-001" };
         var csrf = await GetCsrfAsync(client);
         using var disposal = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/assets/{assetId:D}/disposal")
         {
-            Content = JsonContent.Create(new { legalEntityId = Guid.Parse(LegalEntityId), disposalType = "Sale", disposalDate = "2026-12-15", proceeds = 5000m, directCosts = 0m, reason = "Partial disposal integration verification", idempotencyKey = $"integration-partial-disposal-{Guid.CreateVersion7():N}", quantity = 5m, saleReference = "SALE-TEST-001" })
+            Content = JsonContent.Create(disposalPayload)
         };
         disposal.Headers.Add("X-CSRF-TOKEN", csrf.Token);
         using var response = await client.SendAsync(disposal);
@@ -658,6 +660,23 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         using var json = JsonDocument.Parse(body);
         Assert.Equal("Posted", json.RootElement.GetProperty("status").GetString());
         Assert.Equal(6000m, json.RootElement.GetProperty("grossCost").GetDecimal());
+
+        var retryCsrf = await GetCsrfAsync(client);
+        using var retry = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/assets/{assetId:D}/disposal") { Content = JsonContent.Create(disposalPayload) };
+        retry.Headers.Add("X-CSRF-TOKEN", retryCsrf.Token);
+        using var retryResponse = await client.SendAsync(retry);
+        var retryBody = await retryResponse.Content.ReadAsStringAsync();
+        Assert.True(retryResponse.StatusCode == HttpStatusCode.OK, retryBody);
+        using var retryJson = JsonDocument.Parse(retryBody);
+        Assert.Equal(json.RootElement.GetProperty("grossCost").GetDecimal(), retryJson.RootElement.GetProperty("grossCost").GetDecimal());
+
+        var conflictCsrf = await GetCsrfAsync(client);
+        using var conflict = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/assets/{assetId:D}/disposal") { Content = JsonContent.Create(new { disposalPayload.legalEntityId, disposalPayload.disposalType, disposalPayload.disposalDate, proceeds = 5001m, disposalPayload.directCosts, disposalPayload.reason, disposalPayload.idempotencyKey, disposalPayload.quantity, disposalPayload.saleReference }) };
+        conflict.Headers.Add("X-CSRF-TOKEN", conflictCsrf.Token);
+        using var conflictResponse = await client.SendAsync(conflict);
+        Assert.Equal(HttpStatusCode.BadRequest, conflictResponse.StatusCode);
+        using var conflictJson = JsonDocument.Parse(await conflictResponse.Content.ReadAsStringAsync());
+        Assert.Equal("assets.disposal_idempotency_conflict", conflictJson.RootElement.GetProperty("code").GetString());
 
         await using var assetState = new NpgsqlCommand("select quantity,lifecycle_state from business_assets.fixed_asset where tenant_id=$1 and id=$2", connection); assetState.Parameters.AddWithValue(Guid.Parse(TenantId)); assetState.Parameters.AddWithValue(assetId);
         await using var assetReader = await assetState.ExecuteReaderAsync(); Assert.True(await assetReader.ReadAsync()); Assert.Equal(5m, assetReader.GetDecimal(0)); Assert.Equal("Operational", assetReader.GetString(1)); await assetReader.CloseAsync();

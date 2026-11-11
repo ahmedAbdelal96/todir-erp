@@ -1156,19 +1156,36 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         if (request.Proceeds < 0m || request.DirectCosts < 0m || string.IsNullOrWhiteSpace(request.Reason)) throw new FixedAssetException("assets.disposal_invalid");
         return await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
+            var disposalKey = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? null : request.IdempotencyKey.Trim();
+            var replay = await TryReplayDisposalAsync(context, tenant, assetId, request, disposalKey, token);
+            if (replay is not null) return replay;
             await using var asset = new NpgsqlCommand("select legal_entity_id,asset_number,lifecycle_state,quantity from business_assets.fixed_asset where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); asset.Parameters.AddWithValue(tenant.Value); asset.Parameters.AddWithValue(assetId);
             await using var assetReader = await asset.ExecuteReaderAsync(token);
             if (!await assetReader.ReadAsync(token)) throw new FixedAssetException("assets.asset_not_found");
             var legalEntityId = assetReader.GetGuid(0); var assetNumber = assetReader.GetString(1); var lifecycleState = assetReader.GetString(2); var assetQuantity = assetReader.GetDecimal(3); await assetReader.CloseAsync();
-            if (lifecycleState is "Disposed" or "Draft") throw new FixedAssetException("assets.disposal_not_allowed");
+            if (request.LegalEntityId != legalEntityId) throw new FixedAssetException("assets.disposal_entity_mismatch");
+            if (lifecycleState is "Disposed" or "Draft")
+            {
+                replay = await TryReplayDisposalAsync(context, tenant, assetId, request, disposalKey, token);
+                if (replay is not null) return replay;
+                throw new FixedAssetException("assets.disposal_not_allowed");
+            }
             var disposalQuantity = request.Quantity ?? assetQuantity;
             if (disposalQuantity <= 0m || disposalQuantity > assetQuantity || request.Quantity is not null && disposalQuantity == assetQuantity && request.Quantity <= 0m) throw new FixedAssetException("assets.disposal_quantity_invalid");
             var isFullDisposal = disposalQuantity == assetQuantity;
             var disposalId = Guid.CreateVersion7();
-            var disposalKey = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? null : request.IdempotencyKey.Trim();
-            await using var disposal = new NpgsqlCommand("insert into business_assets.asset_disposal (tenant_id,id,asset_id,legal_entity_id,disposal_type,disposal_date,proceeds,direct_costs,reason,quantity,is_full_disposal,sale_reference,idempotency_key,status,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'Draft',$14,now())", context.Connection, context.Transaction);
-            disposal.Parameters.AddWithValue(tenant.Value); disposal.Parameters.AddWithValue(disposalId); disposal.Parameters.AddWithValue(assetId); disposal.Parameters.AddWithValue(legalEntityId); disposal.Parameters.AddWithValue(request.DisposalType.Trim()); disposal.Parameters.AddWithValue(request.DisposalDate); disposal.Parameters.AddWithValue(request.Proceeds); disposal.Parameters.AddWithValue(request.DirectCosts); disposal.Parameters.AddWithValue(request.Reason.Trim()); disposal.Parameters.AddWithValue(disposalQuantity); disposal.Parameters.AddWithValue(isFullDisposal); disposal.Parameters.AddWithValue((object?)request.SaleReference?.Trim() ?? DBNull.Value); disposal.Parameters.AddWithValue((object?)disposalKey ?? DBNull.Value); disposal.Parameters.AddWithValue(actor);
-            try { await disposal.ExecuteNonQueryAsync(token); } catch (PostgresException exception) when (exception.SqlState == "23505") { throw new FixedAssetException("assets.disposal_already_exists"); }
+            await using var disposal = new NpgsqlCommand("insert into business_assets.asset_disposal (tenant_id,id,asset_id,legal_entity_id,disposal_type,disposal_date,proceeds,direct_costs,reason,quantity,is_full_disposal,sale_reference,idempotency_key,quantity_was_explicit,status,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'Draft',$15,now()) on conflict (tenant_id,idempotency_key) where idempotency_key is not null do nothing returning id", context.Connection, context.Transaction);
+            disposal.Parameters.AddWithValue(tenant.Value); disposal.Parameters.AddWithValue(disposalId); disposal.Parameters.AddWithValue(assetId); disposal.Parameters.AddWithValue(legalEntityId); disposal.Parameters.AddWithValue(request.DisposalType.Trim()); disposal.Parameters.AddWithValue(request.DisposalDate); disposal.Parameters.AddWithValue(request.Proceeds); disposal.Parameters.AddWithValue(request.DirectCosts); disposal.Parameters.AddWithValue(request.Reason.Trim()); disposal.Parameters.AddWithValue(disposalQuantity); disposal.Parameters.AddWithValue(isFullDisposal); disposal.Parameters.AddWithValue((object?)request.SaleReference?.Trim() ?? DBNull.Value); disposal.Parameters.AddWithValue((object?)disposalKey ?? DBNull.Value); disposal.Parameters.AddWithValue(request.Quantity is not null); disposal.Parameters.AddWithValue(actor);
+            try
+            {
+                if (await disposal.ExecuteScalarAsync(token) is null)
+                {
+                    replay = await TryReplayDisposalAsync(context, tenant, assetId, request, disposalKey, token);
+                    if (replay is not null) return replay;
+                    throw new FixedAssetException("assets.disposal_already_exists");
+                }
+            }
+            catch (PostgresException exception) when (exception.SqlState == "23505") { throw new FixedAssetException("assets.disposal_already_exists"); }
             await using var books = new NpgsqlCommand("""
                 select b.id,b.original_cost,bd.posts_to_ledger,bd.currency_code,
                        coalesce(sum(case when t.transaction_type='Depreciation' then t.amount when t.transaction_type='Reversal' then -t.amount when t.transaction_type='Disposal' then -t.accumulated_depreciation else 0 end),0),
@@ -1204,6 +1221,26 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetDisposedV1", JsonSerializer.Serialize(new FixedAssetDisposedV1(assetId, legalEntityId, request.DisposalType.Trim(), request.DisposalDate, primaryNbv, primaryGainLoss, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, disposalId, assetId, "fixed-assets"));
             return new DisposalView(assetId, request.DisposalType.Trim(), request.DisposalDate, primaryGross, primaryAccumulated, primaryNbv, request.Proceeds, request.DirectCosts, primaryGainLoss, "Posted", primaryImpairment, primary.Revaluation);
         }, ct);
+    }
+
+    private static async Task<DisposalView?> TryReplayDisposalAsync(ITransactionContext context, TenantId tenant, Guid assetId, DisposeAssetRequest request, string? disposalKey, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(disposalKey)) return null;
+        await using var existing = new NpgsqlCommand("select id,asset_id,legal_entity_id,disposal_type,disposal_date,proceeds,direct_costs,reason,quantity,is_full_disposal,sale_reference,quantity_was_explicit,status from business_assets.asset_disposal where tenant_id=$1 and idempotency_key=$2 for update", context.Connection, context.Transaction);
+        existing.Parameters.AddWithValue(tenant.Value); existing.Parameters.AddWithValue(disposalKey);
+        await using var reader = await existing.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        var disposalId = reader.GetGuid(0); var existingAssetId = reader.GetGuid(1); var legalEntityId = reader.GetGuid(2); var disposalType = reader.GetString(3); var disposalDate = reader.GetFieldValue<DateOnly>(4); var proceeds = reader.GetDecimal(5); var directCosts = reader.GetDecimal(6); var reason = reader.GetString(7); var quantity = reader.GetDecimal(8); var isFull = reader.GetBoolean(9); var saleReference = reader.IsDBNull(10) ? null : reader.GetString(10); var quantityWasExplicit = reader.GetBoolean(11); var status = reader.GetString(12); await reader.CloseAsync();
+        var requestSaleReference = string.IsNullOrWhiteSpace(request.SaleReference) ? null : request.SaleReference.Trim();
+        if (existingAssetId != assetId || legalEntityId != request.LegalEntityId || !string.Equals(disposalType, request.DisposalType.Trim(), StringComparison.Ordinal) || disposalDate != request.DisposalDate || proceeds != request.Proceeds || directCosts != request.DirectCosts || !string.Equals(reason, request.Reason.Trim(), StringComparison.Ordinal) || quantityWasExplicit != (request.Quantity is not null) || request.Quantity is not null && quantity != request.Quantity.Value || !string.Equals(saleReference, requestSaleReference, StringComparison.Ordinal)) throw new FixedAssetException("assets.disposal_idempotency_conflict");
+        if (status != "Posted") throw new FixedAssetException("assets.disposal_retry_incomplete");
+        await using var transaction = new NpgsqlCommand("select amount,accumulated_depreciation,accumulated_impairment,revaluation_effect from business_assets.asset_book_transaction where tenant_id=$1 and idempotency_key like $2 order by id limit 1", context.Connection, context.Transaction);
+        transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue($"disposal:{disposalId:D}:%");
+        await using var transactionReader = await transaction.ExecuteReaderAsync(ct);
+        if (!await transactionReader.ReadAsync(ct)) throw new FixedAssetException("assets.disposal_retry_incomplete");
+        var gross = transactionReader.GetDecimal(0); var accumulated = transactionReader.GetDecimal(1); var impairment = transactionReader.GetDecimal(2); var revaluation = transactionReader.GetDecimal(3); await transactionReader.CloseAsync();
+        var netBookValue = Math.Max(0m, gross - accumulated - impairment + revaluation); var gainLoss = proceeds - directCosts - netBookValue;
+        return new DisposalView(assetId, disposalType, disposalDate, gross, accumulated, netBookValue, proceeds, directCosts, gainLoss, status, impairment, revaluation);
     }
 
     private static decimal CalculateProspectivePeriodAmount(decimal originalCost, decimal originalResidual, int originalLife, DateOnly placedInService, string changesJson, DateOnly periodStart, DateOnly periodEnd)

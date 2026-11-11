@@ -12,13 +12,14 @@ public interface IPurchasingSourceCapabilities
 }
 
 public sealed record FixedAssetPurchasingSourceLine(Guid? ProductVariantId, Guid? UnitOfMeasureId, string? UnitCode,
-    string Description, string Quantity, string FinalUnitPrice, string NetAmount, string? SourceLineReference);
+    string Description, string Quantity, string FinalUnitPrice, string NetAmount, string? SourceLineReference,
+    decimal ReceivedQuantity = 0m);
 
 public sealed record FixedAssetPurchasingSourceSnapshot(Guid PurchaseOrderId, Guid SupplierInvoiceId,
     IReadOnlyList<Guid> ReceiptIds, Guid LegalEntityId, Guid? BranchId, Guid SupplierPartyId,
     DateOnly DocumentDate, DateOnly PostingDate, DateOnly TaxDate, string CurrencyCode,
     string SupplierInvoiceNumber, decimal EligibleAmount, IReadOnlyList<FixedAssetPurchasingSourceLine> Lines,
-    InvoiceComplianceSnapshotContract InvoiceEvidence);
+    InvoiceComplianceSnapshotContract InvoiceEvidence, string ReceiptState = "Received");
 
 public interface IPurchasingFixedAssetCapabilities
 {

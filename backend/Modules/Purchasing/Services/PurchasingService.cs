@@ -66,23 +66,26 @@ public sealed class PurchasingService(
         if (order is null || order.State is PurchaseOrderStates.Draft or PurchaseOrderStates.PendingApproval or PurchaseOrderStates.Cancelled || order.ReceiptState is not ("Received" or "PartiallyReceived")) return null;
         var receiptIds = await repository.GetReceiptIdsAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
         if (receiptIds.Count == 0) return null;
+        var orderLines = order.Lines.ToDictionary(line => line.Id);
         foreach (var invoiceId in await repository.GetLinkedInvoiceIdsAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken))
         {
             var evidence = await invoiceSnapshots.GetInvoiceComplianceSnapshotAsync(tenantId, legalEntityId, invoiceId, cancellationToken);
             if (evidence is null || !string.Equals(evidence.Direction, "Payable", StringComparison.OrdinalIgnoreCase) || evidence.Lines.Count == 0) continue;
             var lines = new List<Shared.Contracts.Purchasing.FixedAssetPurchasingSourceLine>();
             var total = 0m;
+            var invalidEligibleLine = false;
             foreach (var line in evidence.Lines)
             {
-                if (!decimal.TryParse(line.NetAmount, NumberStyles.Number, CultureInfo.InvariantCulture, out var net) || net <= 0m || string.IsNullOrWhiteSpace(line.SourceLineReference)) continue;
-                if (!decimal.TryParse(line.Quantity, NumberStyles.Number, CultureInfo.InvariantCulture, out var quantity) || quantity <= 0m) continue;
-                lines.Add(new(line.ProductVariantId, line.UnitOfMeasureId, line.UnitCode, line.Description, line.Quantity, line.FinalUnitPrice, line.NetAmount, line.SourceLineReference));
+                if (!decimal.TryParse(line.NetAmount, NumberStyles.Number, CultureInfo.InvariantCulture, out var net) || net <= 0m) { invalidEligibleLine = true; continue; }
+                if (string.IsNullOrWhiteSpace(line.SourceLineReference) || !decimal.TryParse(line.Quantity, NumberStyles.Number, CultureInfo.InvariantCulture, out var quantity) || quantity <= 0m) { invalidEligibleLine = true; continue; }
+                if (!Guid.TryParse(line.SourceLineReference, out var sourceLineId) || !orderLines.TryGetValue(sourceLineId, out var orderLine) || quantity > orderLine.ReceivedQuantity + 0.000001m) { invalidEligibleLine = true; continue; }
+                lines.Add(new(line.ProductVariantId, line.UnitOfMeasureId, line.UnitCode, line.Description, line.Quantity, line.FinalUnitPrice, line.NetAmount, line.SourceLineReference, orderLine.ReceivedQuantity));
                 total += net;
             }
-            if (total <= 0m || lines.Count == 0) continue;
+            if (invalidEligibleLine || total <= 0m || lines.Count == 0) continue;
             return new(purchaseOrderId, invoiceId, receiptIds, legalEntityId, order.BranchId, order.SupplierPartyId,
                 evidence.DocumentDate, evidence.PostingDate, evidence.TaxDate, evidence.CurrencyCode,
-                evidence.DocumentNumber, total, lines, evidence);
+                evidence.DocumentNumber, total, lines, evidence, order.ReceiptState);
         }
         return null;
     }
