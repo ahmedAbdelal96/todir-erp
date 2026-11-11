@@ -349,18 +349,42 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         if (request.Proceeds < 0m || request.DirectCosts < 0m || string.IsNullOrWhiteSpace(request.Reason)) throw new FixedAssetException("assets.disposal_invalid");
         return await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
-            await using var command = new NpgsqlCommand("""
-                insert into business_assets.asset_disposal (tenant_id,id,asset_id,legal_entity_id,disposal_type,disposal_date,proceeds,direct_costs,reason,status,created_by,created_at)
-                select $1,$2,id,legal_entity_id,$3,$4,$5,$6,$7,'Posted',$8,now() from business_assets.fixed_asset where tenant_id=$1 and id=$9 and lifecycle_state not in ('Disposed','Draft')
-                returning asset_id,disposal_type,disposal_date,proceeds,direct_costs,status
-                """, context.Connection, context.Transaction);
-            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(Guid.CreateVersion7()); command.Parameters.AddWithValue(request.DisposalType); command.Parameters.AddWithValue(request.DisposalDate); command.Parameters.AddWithValue(request.Proceeds); command.Parameters.AddWithValue(request.DirectCosts); command.Parameters.AddWithValue(request.Reason.Trim()); command.Parameters.AddWithValue(actor); command.Parameters.AddWithValue(assetId);
-            await using var reader = await command.ExecuteReaderAsync(token);
-            if (!await reader.ReadAsync(token)) throw new FixedAssetException("assets.disposal_not_allowed");
-            var result = new DisposalView(reader.GetGuid(0), reader.GetString(1), reader.GetFieldValue<DateOnly>(2), 0m, 0m, 0m, reader.GetDecimal(3), reader.GetDecimal(4), reader.GetDecimal(3)-reader.GetDecimal(4), reader.GetString(5));
-            await reader.CloseAsync();
-            await using var update = new NpgsqlCommand("update business_assets.fixed_asset set lifecycle_state='Disposed', row_version=row_version+1, updated_by=$1, updated_at=now() where tenant_id=$2 and id=$3", context.Connection, context.Transaction); update.Parameters.AddWithValue(actor); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(assetId); await update.ExecuteNonQueryAsync(token);
-            return result;
+            await using var asset = new NpgsqlCommand("select legal_entity_id,asset_number,lifecycle_state from business_assets.fixed_asset where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); asset.Parameters.AddWithValue(tenant.Value); asset.Parameters.AddWithValue(assetId);
+            await using var assetReader = await asset.ExecuteReaderAsync(token);
+            if (!await assetReader.ReadAsync(token)) throw new FixedAssetException("assets.asset_not_found");
+            var legalEntityId = assetReader.GetGuid(0); var assetNumber = assetReader.GetString(1); var lifecycleState = assetReader.GetString(2); await assetReader.CloseAsync();
+            if (lifecycleState is "Disposed" or "Draft") throw new FixedAssetException("assets.disposal_not_allowed");
+            var disposalId = Guid.CreateVersion7();
+            await using var disposal = new NpgsqlCommand("insert into business_assets.asset_disposal (tenant_id,id,asset_id,legal_entity_id,disposal_type,disposal_date,proceeds,direct_costs,reason,status,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,'Draft',$10,now())", context.Connection, context.Transaction);
+            disposal.Parameters.AddWithValue(tenant.Value); disposal.Parameters.AddWithValue(disposalId); disposal.Parameters.AddWithValue(assetId); disposal.Parameters.AddWithValue(legalEntityId); disposal.Parameters.AddWithValue(request.DisposalType.Trim()); disposal.Parameters.AddWithValue(request.DisposalDate); disposal.Parameters.AddWithValue(request.Proceeds); disposal.Parameters.AddWithValue(request.DirectCosts); disposal.Parameters.AddWithValue(request.Reason.Trim()); disposal.Parameters.AddWithValue(actor);
+            try { await disposal.ExecuteNonQueryAsync(token); } catch (PostgresException exception) when (exception.SqlState == "23505") { throw new FixedAssetException("assets.disposal_already_exists"); }
+            await using var books = new NpgsqlCommand("""
+                select b.id,b.original_cost,bd.posts_to_ledger,bd.currency_code,
+                       coalesce(sum(case when t.transaction_type='Depreciation' then t.amount else 0 end),0)
+                from business_assets.asset_book b
+                join business_assets.asset_book_definition bd on bd.tenant_id=b.tenant_id and bd.id=b.book_definition_id
+                left join business_assets.asset_book_transaction t on t.tenant_id=b.tenant_id and t.asset_book_id=b.id
+                where b.tenant_id=$1 and b.asset_id=$2
+                group by b.id,b.original_cost,bd.posts_to_ledger,bd.currency_code
+                order by b.id
+                """, context.Connection, context.Transaction); books.Parameters.AddWithValue(tenant.Value); books.Parameters.AddWithValue(assetId);
+            await using var bookReader = await books.ExecuteReaderAsync(token); var bookRows = new List<(Guid BookId, decimal GrossCost, bool PostsToLedger, string Currency, decimal Accumulated)>(); while (await bookReader.ReadAsync(token)) bookRows.Add((bookReader.GetGuid(0), bookReader.GetDecimal(1), bookReader.GetBoolean(2), bookReader.GetString(3), bookReader.GetDecimal(4))); await bookReader.CloseAsync();
+            var primary = bookRows.FirstOrDefault(); var primaryGross = primary.GrossCost; var primaryAccumulated = Math.Min(primary.Accumulated, primaryGross); var primaryNbv = primaryGross - primaryAccumulated; var primaryGainLoss = request.Proceeds - request.DirectCosts - primaryNbv;
+            foreach (var book in bookRows)
+            {
+                var accumulated = Math.Min(book.Accumulated, book.GrossCost); var netBookValue = book.GrossCost - accumulated; var gainLoss = request.Proceeds - request.DirectCosts - netBookValue;
+                Guid? ledgerFact = null;
+                if (book.PostsToLedger)
+                {
+                    if (book.GrossCost <= 0m) throw new FixedAssetException("assets.disposal_book_value_invalid");
+                    var factId = DeterministicGuid(assetId, book.BookId); var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(legalEntityId), AccountingFactTypes.FixedAssetDisposalPosted, 1, "fixed-assets", $"disposal:{assetId:D}:book:{book.BookId:D}", $"fixed-assets:disposal:{assetId:D}:{book.BookId:D}", request.DisposalDate, request.DisposalDate, new FixedAssetDisposalPostedPayload(book.GrossCost, accumulated, netBookValue, request.Proceeds, request.DirectCosts, gainLoss, book.Currency, assetNumber), Guid.CreateVersion7(), actor);
+                    var posting = await ledger.PostFixedAssetDisposalAsync(context, fact, (FixedAssetDisposalPostedPayload)fact.Payload, token); ledgerFact = posting.FactId;
+                }
+                await using var transaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,accumulated_depreciation,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'Disposal',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction); transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue(Guid.CreateVersion7()); transaction.Parameters.AddWithValue(book.BookId); transaction.Parameters.AddWithValue(request.DisposalDate); transaction.Parameters.AddWithValue(book.GrossCost); transaction.Parameters.AddWithValue(accumulated); transaction.Parameters.AddWithValue($"disposal:{assetId:D}:{book.BookId:D}"); transaction.Parameters.AddWithValue((object?)ledgerFact?.ToString("D") ?? DBNull.Value); transaction.Parameters.AddWithValue(actor); await transaction.ExecuteNonQueryAsync(token);
+            }
+            await using var updateDisposal = new NpgsqlCommand("update business_assets.asset_disposal set status='Posted' where tenant_id=$1 and id=$2", context.Connection, context.Transaction); updateDisposal.Parameters.AddWithValue(tenant.Value); updateDisposal.Parameters.AddWithValue(disposalId); await updateDisposal.ExecuteNonQueryAsync(token);
+            await using var updateAsset = new NpgsqlCommand("update business_assets.fixed_asset set lifecycle_state='Disposed',row_version=row_version+1,updated_by=$1,updated_at=now() where tenant_id=$2 and id=$3", context.Connection, context.Transaction); updateAsset.Parameters.AddWithValue(actor); updateAsset.Parameters.AddWithValue(tenant.Value); updateAsset.Parameters.AddWithValue(assetId); await updateAsset.ExecuteNonQueryAsync(token);
+            return new DisposalView(assetId, request.DisposalType.Trim(), request.DisposalDate, primaryGross, primaryAccumulated, primaryNbv, request.Proceeds, request.DirectCosts, primaryGainLoss, "Posted");
         }, ct);
     }
 
