@@ -72,7 +72,7 @@ public sealed record AssetBookView(Guid Id, Guid LegalEntityId, string Code, str
 public sealed record DepreciationRunView(Guid Id, Guid LegalEntityId, Guid BookId, DateOnly PeriodStart, DateOnly PeriodEnd, string Status, decimal TotalAmount, int LineCount, DateTimeOffset CreatedAt);
 public sealed record DisposalView(Guid AssetId, string DisposalType, DateOnly DisposalDate, decimal GrossCost, decimal AccumulatedDepreciation, decimal NetBookValue, decimal Proceeds, decimal DirectCosts, decimal GainLoss, string Status);
 public sealed record CapitalizationCandidateView(Guid Id, Guid LegalEntityId, string SourceType, string SourceReference, JsonElement SourceSnapshot, decimal EligibleAmount, decimal AllocatedAmount, string Status, string? Decision, DateTimeOffset CreatedAt);
-public sealed record SourceAllocationView(Guid Id, Guid CandidateId, Guid AssetId, decimal Amount, string AllocationType, DateTimeOffset CreatedAt);
+public sealed record SourceAllocationView(Guid Id, Guid CandidateId, Guid AssetId, decimal Amount, string AllocationType, DateTimeOffset CreatedAt, bool AlreadyApplied = false);
 public sealed record CipAssetView(Guid AssetId, string AssetNumber, string Name, string LifecycleState, decimal TotalCost, int CostSourceCount, DateOnly? CapitalizationDate, DateOnly? PlacedInServiceDate);
 public sealed record AssetBookCostChangeView(Guid AssetId, Guid BookId, decimal Amount, string TransactionType, decimal PreviousCost, decimal NewCost, string? LedgerFactReference, bool AlreadyApplied);
 

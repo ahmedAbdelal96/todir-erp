@@ -250,6 +250,15 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             await using var candidateReader = await candidate.ExecuteReaderAsync(token);
             if (!await candidateReader.ReadAsync(token)) throw new FixedAssetException("assets.capitalization_candidate_not_found");
             var legalEntityId = candidateReader.GetGuid(0); var eligibleAmount = candidateReader.GetDecimal(1); var allocatedAmount = candidateReader.GetDecimal(2); var status = candidateReader.GetString(3); await candidateReader.CloseAsync();
+            await using var existingAllocation = new NpgsqlCommand("select id,amount,allocation_type,created_at from business_assets.asset_source_allocation where tenant_id=$1 and candidate_id=$2 and asset_id=$3", context.Connection, context.Transaction); existingAllocation.Parameters.AddWithValue(tenant.Value); existingAllocation.Parameters.AddWithValue(candidateId); existingAllocation.Parameters.AddWithValue(request.AssetId);
+            await using var existingAllocationReader = await existingAllocation.ExecuteReaderAsync(token);
+            if (await existingAllocationReader.ReadAsync(token))
+            {
+                var existingId = existingAllocationReader.GetGuid(0); var existingAmount = existingAllocationReader.GetDecimal(1); var existingType = existingAllocationReader.GetString(2); var existingCreatedAt = existingAllocationReader.GetFieldValue<DateTimeOffset>(3); await existingAllocationReader.CloseAsync();
+                if (existingAmount != request.Amount || existingType != request.AllocationType) throw new FixedAssetException("assets.source_allocation_conflict");
+                return new SourceAllocationView(existingId, candidateId, request.AssetId, existingAmount, existingType, existingCreatedAt, true);
+            }
+            await existingAllocationReader.CloseAsync();
             if (status != "Approved") throw new FixedAssetException("assets.capitalization_candidate_not_approved");
             await using var asset = new NpgsqlCommand("select legal_entity_id,lifecycle_state from business_assets.fixed_asset where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); asset.Parameters.AddWithValue(tenant.Value); asset.Parameters.AddWithValue(request.AssetId);
             await using var assetReader = await asset.ExecuteReaderAsync(token);

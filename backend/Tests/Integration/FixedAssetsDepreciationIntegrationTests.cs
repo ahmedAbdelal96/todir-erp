@@ -195,6 +195,24 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         allocation.Headers.Add("X-CSRF-TOKEN", allocationCsrf.Token);
         using var allocationResponse = await client.SendAsync(allocation);
         Assert.Equal(HttpStatusCode.OK, allocationResponse.StatusCode);
+        using var allocationJson = JsonDocument.Parse(await allocationResponse.Content.ReadAsStringAsync());
+        Assert.False(allocationJson.RootElement.GetProperty("alreadyApplied").GetBoolean());
+
+        var retryAllocationCsrf = await GetCsrfAsync(client);
+        using var retryAllocation = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/capitalization-candidates/{candidateId:D}/allocations")
+        {
+            Content = JsonContent.Create(new
+            {
+                assetId = Guid.Parse("7e5e47f1-55bc-ca5c-a033-568e9d957125"),
+                amount = 5000m,
+                allocationType = "Acquisition"
+            })
+        };
+        retryAllocation.Headers.Add("X-CSRF-TOKEN", retryAllocationCsrf.Token);
+        using var retryAllocationResponse = await client.SendAsync(retryAllocation);
+        Assert.Equal(HttpStatusCode.OK, retryAllocationResponse.StatusCode);
+        using var retryAllocationJson = JsonDocument.Parse(await retryAllocationResponse.Content.ReadAsStringAsync());
+        Assert.True(retryAllocationJson.RootElement.GetProperty("alreadyApplied").GetBoolean());
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
