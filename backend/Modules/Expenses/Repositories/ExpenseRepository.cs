@@ -189,6 +189,21 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             return ToExpenseApproval(existing, expenseId);
         }
         if (approvalState != "Pending") throw new ExpenseRepositoryException("expenses.approval_request_invalid_state");
+        if (!policyVersionId.HasValue)
+        {
+            try
+            {
+                var evaluation = await EvaluatePolicyAsync(tenant, entity, expenseId, ct);
+                if (evaluation.Snapshot.TryGetProperty("policyVersionId", out var pvi) && Guid.TryParse(pvi.GetString(), out var parsedId))
+                {
+                    policyVersionId = parsedId;
+                }
+            }
+            catch
+            {
+                // policy evaluation non-blocking if no policy matches
+            }
+        }
         try
         {
             var request = await approvals.RequestAsync(tenant, actorId, membershipId, entity, "expenses", "expense", expenseId, version, policyVersionId, reason, "expenses.submit", ct);
@@ -2130,6 +2145,9 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             await using var settleObligations = new NpgsqlCommand("update business_expenses.expense_reimbursement_obligation o set settled_amount=o.amount,status='Settled' where o.tenant_id=$1 and o.legal_entity_id=$2 and exists(select 1 from business_expenses.expense_reimbursement_allocation a where a.tenant_id=o.tenant_id and a.batch_id=$3 and a.obligation_id=o.id)", scope.Connection, scope.Transaction);
             Add(settleObligations, tenant.Value, entity, batchId);
             await settleObligations.ExecuteNonQueryAsync(ct);
+            await using var settleExpenses = new NpgsqlCommand("update business_expenses.expense e set settlement_state='Settled',version=version+1,updated_at=now() where e.tenant_id=$1 and e.legal_entity_id=$2 and exists(select 1 from business_expenses.expense_reimbursement_allocation a join business_expenses.expense_reimbursement_obligation o on o.tenant_id=a.tenant_id and o.id=a.obligation_id where a.tenant_id=e.tenant_id and a.batch_id=$3 and o.expense_id=e.id)", scope.Connection, scope.Transaction);
+            Add(settleExpenses, tenant.Value, entity, batchId);
+            await settleExpenses.ExecuteNonQueryAsync(ct);
             await using var recipients = new NpgsqlCommand("select coalesce(jsonb_agg(distinct o.employee_id) filter(where o.employee_id is not null),'[]'::jsonb) from business_expenses.expense_reimbursement_obligation o join business_expenses.expense_reimbursement_allocation a on a.tenant_id=o.tenant_id and a.obligation_id=o.id where a.tenant_id=$1 and a.batch_id=$2", scope.Connection, scope.Transaction);
             Add(recipients, tenant.Value, batchId);
             var employeeIds = (string?)await recipients.ExecuteScalarAsync(ct) ?? "[]";

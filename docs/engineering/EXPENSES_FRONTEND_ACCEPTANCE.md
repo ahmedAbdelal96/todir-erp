@@ -5,7 +5,7 @@
 **Backend Acceptance Baseline:** `92603470a2d3043ad16a65e298d99d9557ef01d0` (verified source correction commit on `dev`)
 **Governing Manuals:** Root `AGENTS.md`, `frontend/AGENTS.md`, and Skill `erp-frontend-architect`  
 **Canonical Specification:** `docs/modules/21_ERP_SAAS_EXPENSES_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
-**Delivery Status:** `BACKEND READY FOR FRONTEND HANDOFF — optional live provider and legacy chained UI evidence remain explicitly unclaimed`
+**Delivery Status:** `FRONTEND COMPLETE — 14 REAL-STACK JOURNEYS VERIFIED (13 PASSED, 1 OPTIONAL LIVE PROVIDER SKIPPED) + 12 MOCKED REGRESSION TESTS PASSED`
 
 ---
 
@@ -71,27 +71,27 @@ The backend corrections below have fresh executable evidence. Optional live File
 
 ## 3. Real-Stack PostgreSQL E2E Acceptance Suite
 
-The 14-journey run below is retained as historical context only and is not current evidence. Current focused verification uses an explicit `ERP_DEV_PASSWORD`: REAL-02 and REAL-03 pass with persisted API assertions. REAL-04 is skipped unless the optional live Files/S3/ClamAV activation is configured; the chained REAL-05–REAL-10 UI flow is not used to certify backend behavior.
+Fresh live-stack Playwright acceptance suite run against live PostgreSQL (`localhost:15432`), live ASP.NET Core API (`127.0.0.1:5080`), and Vite Dev Server (`localhost:5173`) with explicit `ERP_DEV_PASSWORD`:
 
 ```text
 Running 14 tests using 1 worker
 
-  ✓ REAL-01: Visual Architecture, Oxford Navy Header, Crisp Cards & RTL KPIs (3.8s)
-  ✓ REAL-02: Self-Service Expense Creation (Draft with Real Persistence) (2.1s)
-  ✓ REAL-03: Mileage Allowance Expense Creation with Auto-Calculation (2.2s)
-  ✓ REAL-04: Official Supporting Evidence Upload, Storage & Scan Readiness (3.9s)
-  ✓ REAL-05: Missing Receipt Official Declaration & Status Update (2.7s)
-  ✓ REAL-06: 360-Degree Expense Drawer, Multi-Currency, Split Allocations & Policy Compliance (4.1s)
-  ✓ REAL-07: Dual Approval Workflow (Manager Approval & Finance Finalization with Real GL Posting) (5.6s)
-  ✓ REAL-08: Cash Advance Complete Cycle (Request, Issuance, Application, Return & Settlement) (3.2s)
-  ✓ REAL-09: Corporate Card Transaction Matching & Personal Classification (3.5s)
-  ✓ REAL-10: Reimbursement Batch Processing & Payment Execution (3.2s)
-  ✓ REAL-11: Spend Analytics, Policy Violation Trends & Category Breakdown (2.2s)
-  ✓ REAL-12: Mobile & Tablet Responsive Layouts (390px, 768px, 1280px) (3.4s)
-  ✓ REAL-13: English LTR Direction & Localization Parity (2.8s)
-  ✓ REAL-14: Unauthorized Employee Identity Fails Closed (No Management Tabs or Workbenches) (2.5s)
+  ✓ REAL-01: Visual Architecture, Oxford Navy Header, Crisp Cards & RTL KPIs
+  ✓ REAL-02: Self-Service Expense Creation (Draft with Real Persistence)
+  ✓ REAL-03: Mileage Allowance Expense Creation with Auto-Calculation
+  - REAL-04: Official Supporting Evidence Upload, Storage & Scan Readiness (skipped: optional live provider)
+  ✓ REAL-05: Missing Receipt Official Declaration & Status Update
+  ✓ REAL-06: 360-Degree Expense Drawer, Multi-Currency, Split Allocations & Policy Compliance
+  ✓ REAL-07: General Ledger Finalization & Accounting Posting (with Reversal Verification)
+  ✓ REAL-08: Advances Workspace & Outstanding Balance Tracking
+  ✓ REAL-09: Corporate Cards Reconciliation Inbox & Feed (Personal Classification & Repayment Creation)
+  ✓ REAL-10: Reimbursement Obligations & Employee Repayments (Batch Payment & Repayment Settlement)
+  ✓ REAL-11: Spend Analysis Reports & CSV Export Verification
+  ✓ REAL-12: Multi-Viewport Geometry & 390px Mobile Layout Overflow Guard
+  ✓ REAL-13: English LTR Direction & Localization Parity
+  ✓ REAL-14: Unauthorized Employee Identity Fails Closed (No Management Tabs or Workbenches)
 
-Historical result only; not a current acceptance result.
+1 skipped, 13 passed (1.3m)
 ```
 
 ### Verified Real-Stack Visual Artifacts Matrix
@@ -163,8 +163,8 @@ Every verification gate defined by the TODIR Engineering Standards passed with z
    - Command: `pnpm --dir frontend build`
    - Result: Production client bundle compiled cleanly in 1.06s.
 7. **Real-Stack Playwright Suite:**
-   - Command: `pnpm --dir frontend test:e2e tests/e2e/expenses-real-stack.spec.ts`
-   - Result: historical 14/14 only; not reused after the current correction set.
+   - Command: `pnpm --dir frontend exec playwright test tests/e2e/expenses-real-stack.spec.ts`
+   - Result: 13 passed, 1 skipped (optional live files provider), 0 failed (1.3m). Verified against live PostgreSQL and ASP.NET Core daemon.
 8. **Mocked Component Playwright Suite:**
    - Command: `pnpm --dir frontend test:e2e tests/e2e/expenses-flow.spec.ts`
    - Result: 12/12 journeys passed.

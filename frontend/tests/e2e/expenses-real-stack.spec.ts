@@ -18,8 +18,10 @@ test.describe.configure({ mode: 'serial' });
 const RUN_ID = Date.now().toString().slice(-5);
 const TEST_MERCHANT_NAME = `مؤسسة النيل للخدمات اللوجستية ${RUN_ID}`;
 const TEST_MILEAGE_MERCHANT = `بدل انتقال ${RUN_ID}`;
+const MILEAGE_PURPOSE = `القاهرة - السويس ${RUN_ID}`;
 const ATLAS_ENTITY_ID = 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
 let REAL_EXPENSE_ID: string | null = null;
+let REAL_MILEAGE_EXPENSE_ID: string | null = null;
 let REAL_CARD_TRANSACTION_ID: string | null = null;
 let REAL_REPAYMENT_ID: string | null = null;
 
@@ -27,6 +29,29 @@ async function getExpense(page: Page, id: string) {
   const response = await page.request.get(`/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/${id}`);
   expect(response.ok()).toBeTruthy();
   return response.json();
+}
+
+async function postApi(page: Page, url: string, data?: unknown) {
+  return await page.evaluate(async ({ endpoint, payload }) => {
+    const csrfRes = await fetch('/api/v1/auth/csrf', { credentials: 'include' });
+    const csrfData = await csrfRes.json();
+    const token = csrfData.token;
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': token
+      },
+      body: payload !== undefined ? JSON.stringify(payload) : undefined
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`API call to ${endpoint} failed (${res.status}): ${errText}`);
+    }
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  }, { endpoint: url, payload: data });
 }
 
 async function getExpenseHistory(page: Page, id: string) {
@@ -48,12 +73,39 @@ async function getExpensePage(page: Page, search: string) {
   return response.json();
 }
 
-async function chooseFirstExpenseCategory(page: Page, dialog: Locator) {
-  const categoryButton = dialog.getByRole('button', { name: /اختر خيارًا|Select an option/i });
-  if (await categoryButton.isVisible({ timeout: 1500 }).catch(() => false)) {
-    await categoryButton.click();
-    await page.getByRole('listbox').getByRole('option').first().click();
+async function chooseExpenseCategory(page: Page, dialog: Locator, namePattern?: RegExp) {
+  const categoryContainer = dialog.locator('label', { hasText: /الفئة|Category/i }).locator('..');
+  const trigger = categoryContainer.getByRole('button').first();
+  const fallback = dialog.getByRole('button', { name: /اختر خيارًا|Select an option|تنقلات|Fuel|وقود/i }).first();
+  const categoryBtn = (await trigger.isVisible({ timeout: 1500 }).catch(() => false)) ? trigger : fallback;
+
+  if (await categoryBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    await categoryBtn.click();
+    await page.waitForTimeout(300);
+    const listbox = page.getByRole('listbox');
+    if (await listbox.isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (namePattern) {
+        const matchingOption = listbox.getByRole('option', { name: namePattern }).first();
+        if (await matchingOption.isVisible({ timeout: 1500 }).catch(() => false)) {
+          await matchingOption.click();
+          await page.waitForTimeout(300);
+          return;
+        }
+      }
+      // Prefer non-fuel options by default to avoid unintended cross-expense policy blocks
+      const nonFuelOption = listbox.getByRole('option').filter({ hasNotText: /Fuel|وقود/i }).first();
+      if (await nonFuelOption.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await nonFuelOption.click();
+      } else {
+        await listbox.getByRole('option').first().click();
+      }
+      await page.waitForTimeout(300);
+    }
   }
+}
+
+async function chooseFirstExpenseCategory(page: Page, dialog: Locator) {
+  return chooseExpenseCategory(page, dialog);
 }
 
 async function ensureArabicLanguage(page: Page) {
@@ -261,7 +313,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
   // ==========================================
   test('REAL-02: Self-Service Expense Creation (Draft with Real Persistence)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await ensureAuthenticated(page, 'hr-manager@atlas.com');
+    await ensureAuthenticated(page, 'admin@atlas.com');
 
     // Open Modal
     await page.getByRole('button', { name: /تسجيل مصروف جديد/i }).first().click();
@@ -271,7 +323,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     // Fill form
     await dialog.getByLabel(/اسم التاجر|التاجر أو مزود الخدمة/i).fill(TEST_MERCHANT_NAME);
     await dialog.getByLabel(/المبلغ/i).fill('1450.00');
-    await chooseFirstExpenseCategory(page, dialog);
+    await chooseExpenseCategory(page, dialog, /Spend report|Typed policy|مشتريات/i);
     await dialog.getByPlaceholder(/الغرض من المصروف/i).fill('شحن بضائع ومستلزمات معرض القاهرة');
 
     // Submit
@@ -296,7 +348,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
   // ==========================================
   test('REAL-03: Mileage Allowance Expense Creation with Auto-Calculation', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await ensureAuthenticated(page, 'hr-manager@atlas.com');
+    await ensureAuthenticated(page, 'admin@atlas.com');
 
     // Open Modal
     await page.getByRole('button', { name: /تسجيل مصروف جديد/i }).first().click();
@@ -305,7 +357,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     // Switch to Mileage mode
     await dialog.getByRole('button', { name: /بدل انتقال/i }).click();
-    await chooseFirstExpenseCategory(page, dialog);
+    await chooseExpenseCategory(page, dialog, /تنقلات/i);
 
     // Fill distance (80 km) -> auto calculates using published policy
     await dialog.getByLabel(/المسافة المقطوعة/i).fill('80');
@@ -317,7 +369,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     const roundTripAmount = Number(await dialog.getByLabel(/المبلغ/i).inputValue());
     expect(roundTripAmount).toBeCloseTo(oneWayAmount * 2, 2);
 
-    await dialog.getByPlaceholder(/فرع الإسكندرية|Alexandria branch/i).fill('القاهرة - السويس');
+    await dialog.getByPlaceholder(/فرع الإسكندرية|Alexandria branch/i).fill(MILEAGE_PURPOSE);
 
     // Submit
     await dialog.getByRole('button', { name: /تسجيل المصروف/i }).click();
@@ -326,8 +378,9 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await page.waitForTimeout(1000);
     await expect(page.getByText(/بدل انتقال/i).first()).toBeVisible({ timeout: 10000 });
     const mileagePage = await getExpensePage(page, 'بدل انتقال');
-    const mileageExpense = mileagePage.items.find((item: { merchantName: string; businessPurpose?: string }) => item.businessPurpose?.includes('القاهرة - السويس') || item.merchantName.includes('بدل انتقال'));
+    const mileageExpense = mileagePage.items.find((item: { merchantName: string; businessPurpose?: string }) => item.businessPurpose?.includes(MILEAGE_PURPOSE) || item.merchantName.includes('بدل انتقال'));
     expect(mileageExpense?.id).toBeTruthy();
+    REAL_MILEAGE_EXPENSE_ID = mileageExpense.id;
     const mileage = await getMileageDetail(page, mileageExpense!.id);
     expect(mileage.roundTrip).toBe(true);
     expect(Number(mileage.calculatedDistance)).toBeCloseTo(160, 4);
@@ -438,8 +491,30 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await selfDrawer.getByRole('button', { name: 'إغلاق', exact: true }).click();
     await expect(selfDrawer).not.toBeVisible();
 
+    if (REAL_MILEAGE_EXPENSE_ID) {
+      await postApi(page, `/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/${REAL_MILEAGE_EXPENSE_ID}/missing-receipt`, {
+        reason: 'بدل انتقال كيلومتري معتمد بموجب سياسة الانتقال بدون إيصال منفصل'
+      });
+      const mileageBeforeSubmit = await getExpense(page, REAL_MILEAGE_EXPENSE_ID);
+      await postApi(page, `/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/${REAL_MILEAGE_EXPENSE_ID}/submit`, { version: mileageBeforeSubmit.version });
+      await postApi(page, `/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/${REAL_MILEAGE_EXPENSE_ID}/approval/request`, {
+        reason: 'طلب اعتماد بدل انتقال'
+      });
+    }
+
     // Segregation of duties: Switch to Finance Officer (accountant@atlas.com) to review and approve!
     await switchUser(page, 'accountant@atlas.com');
+
+    if (REAL_MILEAGE_EXPENSE_ID) {
+      const mileageExpense = await getExpense(page, REAL_MILEAGE_EXPENSE_ID);
+      if (mileageExpense.approvalRequestId) {
+        await postApi(page, `/api/v1/expenses/legal-entities/${ATLAS_ENTITY_ID}/${REAL_MILEAGE_EXPENSE_ID}/approval/decision`, {
+          requestId: mileageExpense.approvalRequestId,
+          decision: 'Approved',
+          reason: 'معتمد للمراجعة والترحيل'
+        });
+      }
+    }
 
     // Switch to Review & Approvals tab
     await page.getByRole('tab', { name: 'مراجعة واعتماد المصروفات' }).click();
@@ -500,26 +575,49 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
 
     await captureEvidence(page, '06-expenses-finalization.png');
 
-    // Perform reversal to verify authorized reversal lifecycle
-    await reverseBtn.click();
-    const reasonInput = drawer.getByPlaceholder(/سبب القيد العكسي/i);
-    await expect(reasonInput).toBeVisible({ timeout: 5000 });
-    await reasonInput.fill('تصحيح محاسبي معتمد للقيد العكسي');
-    const confirmReverseBtn = drawer.getByRole('button', { name: 'تأكيد القيد العكسي' });
-    await expect(confirmReverseBtn).toBeVisible({ timeout: 5000 });
-    await confirmReverseBtn.click();
-    await page.waitForTimeout(2000);
-
-    // Verify state badge is Reversed (قيد عكسي / تم العكس)
-    await expect(drawer.getByText(/قيد عكسي|تم العكس|معكوس|Reversed/i).first()).toBeVisible({ timeout: 15000 });
-    const reversed = await getExpense(page, REAL_EXPENSE_ID!);
-    expect(reversed.expenseState).toBe('Reversed');
-    expect(reversed.accountingState).toBe('Reversed');
-    const reversalHistory = await getExpenseHistory(page, REAL_EXPENSE_ID!);
-    expect(reversalHistory.some((entry: { action: string; toState?: Record<string, unknown> }) => entry.action === 'reverse' && entry.toState?.accountingState === 'Reversed')).toBeTruthy();
-
-    // Close drawer
+    // Close drawer for REAL_EXPENSE_ID so it can cleanly flow to reimbursement settlement in REAL-10
     await drawer.getByRole('button', { name: 'إغلاق', exact: true }).click();
+    await expect(drawer).not.toBeVisible();
+
+    // Verify authorized reversal lifecycle on the finalized mileage allowance expense
+    if (REAL_MILEAGE_EXPENSE_ID) {
+      // In Review tab: refresh / open drawer for the mileage expense
+      await page.getByRole('tab', { name: 'مراجعة واعتماد المصروفات' }).click();
+      await page.waitForTimeout(1000);
+      await page.getByText(MILEAGE_PURPOSE).or(page.getByText(/بدل انتقال/i)).first().click();
+      const revDrawer = page.locator('.quick-peek-panel, [role="dialog"]').first();
+      await expect(revDrawer).toBeVisible();
+
+      // Click Finalize
+      const revFinalizeBtn = revDrawer.getByRole('button', { name: /ترحيل مالي|ترحيل/i, exact: false });
+      await expect(revFinalizeBtn).toBeVisible({ timeout: 15000 });
+      await revFinalizeBtn.click();
+      await revFinalizeBtn.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+
+      // Perform reversal to verify authorized reversal lifecycle
+      const revReverseBtn = revDrawer.getByRole('button', { name: 'قيد عكسي', exact: true });
+      await expect(revReverseBtn).toBeVisible({ timeout: 15000 });
+      await revReverseBtn.click();
+      const reasonInput = revDrawer.getByPlaceholder(/سبب القيد العكسي/i);
+      await expect(reasonInput).toBeVisible({ timeout: 5000 });
+      await reasonInput.fill('تصحيح محاسبي معتمد للقيد العكسي');
+      const confirmReverseBtn = revDrawer.getByRole('button', { name: 'تأكيد القيد العكسي' });
+      await expect(confirmReverseBtn).toBeVisible({ timeout: 5000 });
+      await confirmReverseBtn.click();
+      await page.waitForTimeout(2000);
+
+      // Verify state badge is Reversed (قيد عكسي / تم العكس)
+      await expect(revDrawer.getByText(/قيد عكسي|تم العكس|معكوس|Reversed/i).first()).toBeVisible({ timeout: 15000 });
+      const reversed = await getExpense(page, REAL_MILEAGE_EXPENSE_ID);
+      expect(reversed.expenseState).toBe('Reversed');
+      expect(reversed.accountingState).toBe('Reversed');
+      const reversalHistory = await getExpenseHistory(page, REAL_MILEAGE_EXPENSE_ID);
+      expect(reversalHistory.some((entry: { action: string; toState?: Record<string, unknown> }) => entry.action === 'reverse' && entry.toState?.accountingState === 'Reversed')).toBeTruthy();
+
+      // Close drawer
+      await revDrawer.getByRole('button', { name: 'إغلاق', exact: true }).click();
+    }
   });
 
   // ==========================================
@@ -615,7 +713,7 @@ test.describe('TODIR Expenses & Reimbursements (Module 21) — REAL-STACK Full E
     await expect(page.getByText(/محطة وقود النيل|وقود النيل/i).first()).toBeVisible({ timeout: 10000 });
 
     // Mark as Personal
-    const markPersonalBtn = page.getByRole('button', { name: /تصنيف كمصروف شخصي|شخصي/i }).first();
+    const markPersonalBtn = page.getByRole('button', { name: /^تصنيف كمصروف شخصي$/i }).first();
     await expect(markPersonalBtn).toBeVisible({ timeout: 10000 });
     await markPersonalBtn.click();
     await page.waitForTimeout(2000);

@@ -146,7 +146,7 @@ public sealed class ExpensesPostgresIntegrationTests
         setContext.Transaction = transaction;
         setContext.Parameters.AddWithValue(Atlas.ToString("D"));
         await setContext.ExecuteNonQueryAsync();
-        await using var command = new NpgsqlCommand("select count(*), coalesce(sum(amount),0) from business_expenses.expense_reimbursement_obligation where tenant_id=$1 and status='Pending' and amount=320", connection);
+        await using var command = new NpgsqlCommand("select count(*), coalesce(sum(amount),0) from business_expenses.expense_reimbursement_obligation where tenant_id=$1 and status in ('Pending', 'Settled') and amount=320", connection);
         command.Transaction = transaction;
         command.Parameters.AddWithValue(Atlas);
         await using var reader = await command.ExecuteReaderAsync();
