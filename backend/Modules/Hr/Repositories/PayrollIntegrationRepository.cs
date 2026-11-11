@@ -5,12 +5,13 @@ using Core.Services;
 using Core.Transactions;
 using Modules.Hr.Entities;
 using Npgsql;
+using Shared.Contracts.FixedAssets;
 using Shared.Contracts.Hr;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Hr.Repositories;
 
-public sealed class PayrollIntegrationRepository(ITransactionCoordinator transactions, TimeProvider clock) : IHumanResourcesPayrollCapability
+public sealed class PayrollIntegrationRepository(ITransactionCoordinator transactions, TimeProvider clock) : IHumanResourcesPayrollCapability, IHumanResourcesFixedAssetCapability
 {
     private const int ContractVersion = 5;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -274,6 +275,14 @@ public sealed class PayrollIntegrationRepository(ITransactionCoordinator transac
         {
             await using var command = new NpgsqlCommand("select exists(select 1 from business_hr.employee e join business_hr.employment em on em.tenant_id=e.tenant_id and em.employee_id=e.id where e.tenant_id=$1 and e.id=$2 and e.status<>'Archived' and em.legal_entity_id=$3 and em.status in ('Active','Suspended','NoticePeriod'))", context.Connection, context.Transaction);
             command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(employeeId); command.Parameters.AddWithValue(legalEntityId);
+            return (bool)(await command.ExecuteScalarAsync(token) ?? false);
+        }, cancellationToken);
+
+    public Task<bool> IsOffboardingEffectiveAsync(TenantId tenantId, Guid employeeId, Guid legalEntityId, DateOnly asOfDate, CancellationToken cancellationToken = default) =>
+        transactions.ExecuteAsync(tenantId, async (context, token) =>
+        {
+            await using var command = new NpgsqlCommand("select exists(select 1 from business_hr.offboarding_case where tenant_id=$1 and employee_id=$2 and legal_entity_id=$3 and effective_end_date <= $4 and termination_status in ('Scheduled','Effective'))", context.Connection, context.Transaction);
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(employeeId); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(asOfDate);
             return (bool)(await command.ExecuteScalarAsync(token) ?? false);
         }, cancellationToken);
 

@@ -45,6 +45,7 @@ public static class HrModuleExtensions
         services.AddSingleton<OvertimeRepository>();
         services.AddSingleton<PayrollIntegrationRepository>();
         services.AddSingleton<Shared.Contracts.Hr.IHumanResourcesPayrollCapability>(provider => provider.GetRequiredService<PayrollIntegrationRepository>());
+        services.AddSingleton<Shared.Contracts.FixedAssets.IHumanResourcesFixedAssetCapability>(provider => provider.GetRequiredService<PayrollIntegrationRepository>());
         services.AddSingleton<HrService>();
         services.AddSingleton<HrIdentifierCrypto>();
         return services;

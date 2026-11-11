@@ -13,7 +13,7 @@ namespace Modules.Inventory.Services;
 
 /// <summary>Application boundary for Inventory workflows exposed to the API host.</summary>
 public sealed class InventoryService(InventoryRepository repository, ILedgerPostingEngine? ledgerPosting = null,
-    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities, Shared.Contracts.Inventory.IInventoryPurchasingCapabilities, IInventoryAccountingRead
+    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities, Shared.Contracts.Inventory.IInventoryPurchasingCapabilities, Shared.Contracts.Inventory.IInventoryFixedAssetCapabilities, IInventoryAccountingRead
 {
     public Task<IReadOnlyList<InventoryAvailabilityLine>> GetBatchAvailabilityAsync(Guid tenantId, InventoryAvailabilityRequest request, CancellationToken cancellationToken = default) => repository.GetBatchAvailabilityAsync(new TenantId(tenantId), request, cancellationToken);
     public async Task<Guid> ReserveAsync(Guid tenantId, Guid actorId, InventoryReservationRequest request, CancellationToken cancellationToken = default)
@@ -59,6 +59,24 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
             item.MovementType, item.SourceModule, item.SourceDocumentId)).ToArray();
     }
     public Task<InventoryValuationSnapshot?> GetValuationAsync(Guid tenantId, InventoryValuationQuery query, CancellationToken cancellationToken = default) => repository.GetValuationAsync(new TenantId(tenantId), query, cancellationToken);
+    public async Task<Shared.Contracts.Inventory.FixedAssetInventorySourceSnapshot?> GetInternalUseCapitalizationSourceAsync(
+        TenantId tenantId, Guid legalEntityId, Guid productVariantId, Guid? serialId, DateOnly asOfDate,
+        CancellationToken cancellationToken = default)
+    {
+        var valuation = await repository.GetValuationAsync(tenantId,
+            new InventoryValuationQuery(legalEntityId, productVariantId, asOfDate), cancellationToken);
+        if (valuation is null || valuation.Quantity <= 0m || valuation.CarryingValue <= 0m)
+            return null;
+
+        var history = await repository.GetMovementHistoryAsync(tenantId, legalEntityId, productVariantId,
+            null, null, null, serialId, null, null, null, null, 100, cancellationToken);
+        return new Shared.Contracts.Inventory.FixedAssetInventorySourceSnapshot(
+            productVariantId, serialId, valuation.Quantity, valuation.CarryingValue,
+            valuation.CurrencyCode, valuation.CostingMethod, asOfDate,
+            history.Items.Select(item => item.Id).ToArray(),
+            history.Items.Where(item => item.SourceDocumentId is not null)
+                .Select(item => item.SourceDocumentId!.Value).Distinct().ToArray());
+    }
     public async Task<IReadOnlyList<InventoryNegativeStockCondition>> GetNegativeStockConditionsAsync(Guid tenantId, Guid legalEntityId,
         string? status = "Active", DateTimeOffset? beforeOpenedAt = null, Guid? beforeId = null, int pageSize = 100,
         CancellationToken cancellationToken = default) =>

@@ -26,6 +26,7 @@ public static class ExpensesModuleExtensions
             sp.GetRequiredService<IConfiguration>()["Expenses:Ocr:Endpoint"] ?? Environment.GetEnvironmentVariable("TODIR_EXPENSES_OCR_PROVIDER_URL")));
         services.AddSingleton<ExpenseRepository>();
         services.AddSingleton<ExpenseService>();
+        services.AddSingleton<Shared.Contracts.Expenses.IExpenseFixedAssetCapabilities>(provider => provider.GetRequiredService<ExpenseService>());
         return services;
     }
     public static WebApplication MapExpensesModule(this WebApplication app)
