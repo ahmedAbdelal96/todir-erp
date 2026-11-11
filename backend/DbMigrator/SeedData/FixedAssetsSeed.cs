@@ -9,7 +9,8 @@ public static class FixedAssetsSeed
             ("LAND", "Land", "Land", "Individual", false, false, false, (decimal?)null, "NoDepreciation", (int?)null, 0m),
             ("BUILDING", "Building", "Building", "Individual", true, false, true, (decimal?)null, "StraightLine", (int?)240, 0m),
             ("LAPTOP", "Laptop", "Equipment", "Individual", false, true, true, (decimal?)null, "StraightLine", (int?)36, 0m),
-            ("FURNITURE", "Grouped Furniture", "Furniture", "Grouped", true, false, true, (decimal?)null, "StraightLine", (int?)60, 0m)
+            ("FURNITURE", "Grouped Furniture", "Furniture", "Grouped", true, false, true, (decimal?)null, "StraightLine", (int?)60, 0m),
+            ("CIP", "Construction in progress", "CIP", "Individual", false, false, false, (decimal?)null, "NoDepreciation", (int?)null, 0m)
         };
         foreach (var category in categories)
         {
@@ -45,7 +46,7 @@ public static class FixedAssetsSeed
             on conflict(tenant_id,asset_id,book_definition_id) do update set original_cost=excluded.original_cost,useful_life_months=excluded.useful_life_months
             """, ct, context.Tenant.Id, SeedIds.AssetBook(context.Tenant.Id, "laptop-corporate"), laptopId, bookId, 12000m, 36, context.AsOf.Date, context.AsOf);
 
-        return new(4, 2, 1);
+        return new(5, 2, 1);
     }
 }
 
