@@ -9,7 +9,10 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<IReadOnlyList<AssetCategoryView>> ListCategoriesAsync(TenantId tenant, int limit, CancellationToken ct) => repository.ListCategoriesAsync(tenant, limit, ct);
     public Task<AssetView> CreateAssetAsync(TenantId tenant, Guid actor, CreateAssetRequest request, CancellationToken ct) => repository.CreateAssetAsync(tenant, actor, request, ct);
     public Task<IReadOnlyList<AssetView>> ListAssetsAsync(TenantId tenant, Guid? legalEntityId, string? state, string? search, int limit, int offset, CancellationToken ct) => repository.ListAssetsAsync(tenant, legalEntityId, state, search, limit, offset, ct);
+    public Task<AssetLocationView> CreateLocationAsync(TenantId tenant, Guid actor, CreateAssetLocationRequest request, CancellationToken ct) => repository.CreateLocationAsync(tenant, actor, request, ct);
+    public Task<IReadOnlyList<AssetLocationView>> ListLocationsAsync(TenantId tenant, Guid? legalEntityId, CancellationToken ct) => repository.ListLocationsAsync(tenant, legalEntityId, ct);
     public Task<AssetAssignmentView> AssignAsync(TenantId tenant, Guid actor, Guid assetId, AssignAssetRequest request, CancellationToken ct) => repository.AssignAsync(tenant, actor, assetId, request, ct);
+    public Task<AssetHandoverView> CreateHandoverAsync(TenantId tenant, Guid actor, Guid assetId, CreateAssetHandoverRequest request, CancellationToken ct) => repository.CreateHandoverAsync(tenant, actor, assetId, request, ct);
     public Task<IReadOnlyList<AssetBookView>> ListBooksAsync(TenantId tenant, Guid? legalEntityId, CancellationToken ct) => repository.ListBooksAsync(tenant, legalEntityId, ct);
     public Task<AssetBookView> CreateBookAsync(TenantId tenant, Guid actor, CreateBookRequest request, CancellationToken ct) => repository.CreateBookAsync(tenant, actor, request, ct);
     public Task<Guid> AddAssetBookAsync(TenantId tenant, Guid actor, Guid assetId, CreateAssetBookRequest request, CancellationToken ct) => repository.AddAssetBookAsync(tenant, actor, assetId, request, ct);

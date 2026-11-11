@@ -97,12 +97,46 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         return await ReadAsync(command, reader => new AssetView(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetFieldValue<DateOnly>(12), reader.IsDBNull(13) ? null : reader.GetFieldValue<DateOnly>(13), reader.IsDBNull(14) ? null : reader.GetFieldValue<DateOnly>(14), reader.GetDecimal(15), reader.GetFieldValue<DateTimeOffset>(16), reader.GetInt64(17)), ct);
     }
 
+    public async Task<AssetLocationView> CreateLocationAsync(TenantId tenant, Guid actor, CreateAssetLocationRequest request, CancellationToken ct)
+    {
+        if (request.LegalEntityId == Guid.Empty || string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name) || request.LocationType is not ("Site" or "Building" or "Floor" or "Room" or "External" or "Other")) throw new FixedAssetException("assets.location_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            if (request.ParentLocationId is { } parent)
+            {
+                await using var parentCommand = new NpgsqlCommand("select 1 from business_assets.asset_location where tenant_id=$1 and id=$2 and legal_entity_id=$3 and active", context.Connection, context.Transaction);
+                parentCommand.Parameters.AddWithValue(tenant.Value); parentCommand.Parameters.AddWithValue(parent); parentCommand.Parameters.AddWithValue(request.LegalEntityId);
+                if (await parentCommand.ExecuteScalarAsync(token) is null) throw new FixedAssetException("assets.parent_location_not_found");
+            }
+            var id = Guid.CreateVersion7();
+            await using var command = new NpgsqlCommand("insert into business_assets.asset_location(tenant_id,id,legal_entity_id,parent_location_id,code,name,location_type,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,now())", context.Connection, context.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(request.LegalEntityId); command.Parameters.AddWithValue((object?)request.ParentLocationId ?? DBNull.Value); command.Parameters.AddWithValue(request.Code.Trim()); command.Parameters.AddWithValue(request.Name.Trim()); command.Parameters.AddWithValue(request.LocationType); command.Parameters.AddWithValue(actor);
+            try { await command.ExecuteNonQueryAsync(token); } catch (PostgresException exception) when (exception.SqlState == "23505") { throw new FixedAssetException("assets.location_code_exists"); }
+            return new AssetLocationView(id, request.LegalEntityId, request.ParentLocationId, request.Code.Trim(), request.Name.Trim(), request.LocationType, true);
+        }, ct);
+    }
+
+    public async Task<IReadOnlyList<AssetLocationView>> ListLocationsAsync(TenantId tenant, Guid? legalEntityId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand("select id,legal_entity_id,parent_location_id,code,name,location_type,active from business_assets.asset_location where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) order by code,id", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value);
+        return await ReadAsync(command, reader => new AssetLocationView(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetBoolean(6)), ct);
+    }
+
     public async Task<AssetAssignmentView> AssignAsync(TenantId tenant, Guid actor, Guid assetId, AssignAssetRequest request, CancellationToken ct)
     {
         if (request.EffectiveTo < request.EffectiveFrom) throw new FixedAssetException("assets.assignment_dates_invalid");
         if (request.EmployeeId is null && request.DepartmentId is null && string.IsNullOrWhiteSpace(request.CustodianName)) throw new FixedAssetException("assets.assignee_required");
         return await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
+            var assetEntityId = await ResolveAssetEntityAsync(context, tenant, assetId, token);
+            if (request.LocationId is { } locationId)
+            {
+                await using var location = new NpgsqlCommand("select 1 from business_assets.asset_location where tenant_id=$1 and id=$2 and legal_entity_id=$3 and active", context.Connection, context.Transaction);
+                location.Parameters.AddWithValue(tenant.Value); location.Parameters.AddWithValue(locationId); location.Parameters.AddWithValue(assetEntityId);
+                if (await location.ExecuteScalarAsync(token) is null) throw new FixedAssetException("assets.location_invalid");
+            }
             var id = Guid.CreateVersion7();
             await using var command = new NpgsqlCommand("""
                 insert into business_assets.asset_assignment (tenant_id,id,asset_id,assignment_type,employee_id,department_id,custodian_name,location_id,effective_from,effective_to,condition,accessories,acknowledgement_reference,created_by,created_at)
@@ -110,8 +144,23 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
                 """, context.Connection, context.Transaction);
             command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(assetId); command.Parameters.AddWithValue(request.AssignmentType); command.Parameters.AddWithValue((object?)request.EmployeeId ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.DepartmentId ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.CustodianName ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.LocationId ?? DBNull.Value); command.Parameters.AddWithValue(request.EffectiveFrom); command.Parameters.AddWithValue((object?)request.EffectiveTo ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.Condition ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.Accessories ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.AcknowledgementReference ?? DBNull.Value); command.Parameters.AddWithValue(actor);
             try { await command.ExecuteNonQueryAsync(token); } catch (PostgresException ex) when (ex.SqlState == "23P01") { throw new FixedAssetException("assets.assignment_overlap"); }
-            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetAssignedV1", JsonSerializer.Serialize(new FixedAssetAssignedV1(assetId, id, await ResolveAssetEntityAsync(context, tenant, assetId, token), request.EmployeeId, request.DepartmentId, request.LocationId, request.EffectiveFrom, request.EffectiveTo, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, id, assetId, "fixed-assets"));
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetAssignedV1", JsonSerializer.Serialize(new FixedAssetAssignedV1(assetId, id, assetEntityId, request.EmployeeId, request.DepartmentId, request.LocationId, request.EffectiveFrom, request.EffectiveTo, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, id, assetId, "fixed-assets"));
             return new AssetAssignmentView(id, assetId, request.AssignmentType, request.EmployeeId, request.DepartmentId, request.CustodianName, request.LocationId, request.EffectiveFrom, request.EffectiveTo, request.Condition, request.Accessories, request.AcknowledgementReference);
+        }, ct);
+    }
+
+    public async Task<AssetHandoverView> CreateHandoverAsync(TenantId tenant, Guid actor, Guid assetId, CreateAssetHandoverRequest request, CancellationToken ct)
+    {
+        if (request.AssignmentId == Guid.Empty || request.HandoverType is not ("Issue" or "Return" or "Transfer" or "Acknowledgement") || request.Evidence.ValueKind is not JsonValueKind.Object) throw new FixedAssetException("assets.handover_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await using var assignment = new NpgsqlCommand("select 1 from business_assets.asset_assignment where tenant_id=$1 and id=$2 and asset_id=$3", context.Connection, context.Transaction);
+            assignment.Parameters.AddWithValue(tenant.Value); assignment.Parameters.AddWithValue(request.AssignmentId); assignment.Parameters.AddWithValue(assetId);
+            if (await assignment.ExecuteScalarAsync(token) is null) throw new FixedAssetException("assets.assignment_not_found");
+            var id = Guid.CreateVersion7(); var createdAt = DateTimeOffset.UtcNow;
+            await using var command = new NpgsqlCommand("insert into business_assets.asset_handover(tenant_id,id,asset_id,assignment_id,handover_type,acknowledged_at,condition,evidence,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)", context.Connection, context.Transaction);
+            command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(id); command.Parameters.AddWithValue(assetId); command.Parameters.AddWithValue(request.AssignmentId); command.Parameters.AddWithValue(request.HandoverType); command.Parameters.AddWithValue((object?)request.AcknowledgedAt ?? DBNull.Value); command.Parameters.AddWithValue((object?)request.Condition ?? DBNull.Value); command.Parameters.AddWithValue(request.Evidence.GetRawText()); command.Parameters.AddWithValue(actor); command.Parameters.AddWithValue(createdAt); await command.ExecuteNonQueryAsync(token);
+            return new AssetHandoverView(id, assetId, request.AssignmentId, request.HandoverType, request.AcknowledgedAt, request.Condition, request.Evidence.Clone(), createdAt);
         }, ct);
     }
 
