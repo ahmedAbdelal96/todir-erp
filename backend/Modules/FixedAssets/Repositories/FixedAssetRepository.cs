@@ -194,13 +194,31 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         return await ReadAsync(command, reader => new AssetLocationView(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetBoolean(6)), ct);
     }
 
-    public async Task<AssetAssignmentView> AssignAsync(TenantId tenant, Guid actor, Guid assetId, AssignAssetRequest request, CancellationToken ct)
+    public Task<AssetAssignmentView> AssignAsync(TenantId tenant, Guid actor, Guid assetId, AssignAssetRequest request, CancellationToken ct) => AssignInternalAsync(tenant, actor, assetId, request, false, ct);
+
+    public Task<AssetAssignmentView> TransferAsync(TenantId tenant, Guid actor, Guid assetId, AssignAssetRequest request, CancellationToken ct) => AssignInternalAsync(tenant, actor, assetId, request, true, ct);
+
+    private async Task<AssetAssignmentView> AssignInternalAsync(TenantId tenant, Guid actor, Guid assetId, AssignAssetRequest request, bool closeCurrent, CancellationToken ct)
     {
         if (request.EffectiveTo < request.EffectiveFrom) throw new FixedAssetException("assets.assignment_dates_invalid");
         if (request.EmployeeId is null && request.DepartmentId is null && string.IsNullOrWhiteSpace(request.CustodianName)) throw new FixedAssetException("assets.assignee_required");
         return await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var assetEntityId = await ResolveAssetEntityAsync(context, tenant, assetId, token);
+            if (closeCurrent)
+            {
+                await using var current = new NpgsqlCommand("select id,effective_from from business_assets.asset_assignment where tenant_id=$1 and asset_id=$2 and effective_from <= $3 and (effective_to is null or effective_to >= $3) order by effective_from desc,id desc limit 1 for update", context.Connection, context.Transaction);
+                current.Parameters.AddWithValue(tenant.Value); current.Parameters.AddWithValue(assetId); current.Parameters.AddWithValue(request.EffectiveFrom);
+                await using var currentReader = await current.ExecuteReaderAsync(token);
+                if (await currentReader.ReadAsync(token))
+                {
+                    var currentId = currentReader.GetGuid(0); var currentFrom = currentReader.GetFieldValue<DateOnly>(1); await currentReader.CloseAsync();
+                    if (currentFrom >= request.EffectiveFrom) throw new FixedAssetException("assets.transfer_date_invalid");
+                    await using var close = new NpgsqlCommand("update business_assets.asset_assignment set effective_to=$1 where tenant_id=$2 and id=$3", context.Connection, context.Transaction);
+                    close.Parameters.AddWithValue(request.EffectiveFrom.AddDays(-1)); close.Parameters.AddWithValue(tenant.Value); close.Parameters.AddWithValue(currentId); await close.ExecuteNonQueryAsync(token);
+                }
+                else await currentReader.CloseAsync();
+            }
             if (request.EmployeeId is { } employeeId)
             {
                 if (hr is null || !await hr.EmployeeBelongsToLegalEntityAsync(tenant, employeeId, assetEntityId, token)) throw new FixedAssetException("assets.employee_invalid");
@@ -221,6 +239,39 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             try { await command.ExecuteNonQueryAsync(token); } catch (PostgresException ex) when (ex.SqlState == "23P01") { throw new FixedAssetException("assets.assignment_overlap"); }
             context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetAssignedV1", JsonSerializer.Serialize(new FixedAssetAssignedV1(assetId, id, assetEntityId, request.EmployeeId, request.DepartmentId, request.LocationId, request.EffectiveFrom, request.EffectiveTo, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, id, assetId, "fixed-assets"));
             return new AssetAssignmentView(id, assetId, request.AssignmentType, request.EmployeeId, request.DepartmentId, request.CustodianName, request.LocationId, request.EffectiveFrom, request.EffectiveTo, request.Condition, request.Accessories, request.AcknowledgementReference);
+        }, ct);
+    }
+
+    public async Task<AssetAssignmentView> ReturnAsync(TenantId tenant, Guid actor, Guid assetId, ReturnAssetRequest request, CancellationToken ct)
+    {
+        if (request.EffectiveFrom == default || request.Evidence.ValueKind is not JsonValueKind.Object) throw new FixedAssetException("assets.return_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var assetEntityId = await ResolveAssetEntityAsync(context, tenant, assetId, token);
+            await using var current = new NpgsqlCommand("select id,assignment_type,employee_id,department_id,custodian_name,location_id,effective_from,effective_to,condition,accessories,acknowledgement_reference from business_assets.asset_assignment where tenant_id=$1 and asset_id=$2 and effective_from <= $3 and (effective_to is null or effective_to >= $3) order by effective_from desc,id desc limit 1 for update", context.Connection, context.Transaction);
+            current.Parameters.AddWithValue(tenant.Value); current.Parameters.AddWithValue(assetId); current.Parameters.AddWithValue(request.EffectiveFrom);
+            await using var currentReader = await current.ExecuteReaderAsync(token);
+            if (!await currentReader.ReadAsync(token)) throw new FixedAssetException("assets.return_assignment_not_found");
+            var assignmentId = currentReader.GetGuid(0); var assignmentType = currentReader.GetString(1); var employeeId = currentReader.IsDBNull(2) ? (Guid?)null : currentReader.GetGuid(2); var departmentId = currentReader.IsDBNull(3) ? (Guid?)null : currentReader.GetGuid(3); var custodian = currentReader.IsDBNull(4) ? null : currentReader.GetString(4); var existingLocation = currentReader.IsDBNull(5) ? (Guid?)null : currentReader.GetGuid(5); var effectiveFrom = currentReader.GetFieldValue<DateOnly>(6); var effectiveTo = currentReader.IsDBNull(7) ? (DateOnly?)null : currentReader.GetFieldValue<DateOnly>(7); var existingCondition = currentReader.IsDBNull(8) ? null : currentReader.GetString(8); var existingAccessories = currentReader.IsDBNull(9) ? null : currentReader.GetString(9); var existingAcknowledgement = currentReader.IsDBNull(10) ? null : currentReader.GetString(10); await currentReader.CloseAsync();
+            if (assignmentType == "Unassigned") throw new FixedAssetException("assets.return_not_allowed");
+            if (effectiveFrom >= request.EffectiveFrom) throw new FixedAssetException("assets.return_date_invalid");
+            var locationId = request.LocationId ?? existingLocation;
+            if (locationId is { } requestedLocation)
+            {
+                await using var location = new NpgsqlCommand("select 1 from business_assets.asset_location where tenant_id=$1 and id=$2 and legal_entity_id=$3 and active", context.Connection, context.Transaction);
+                location.Parameters.AddWithValue(tenant.Value); location.Parameters.AddWithValue(requestedLocation); location.Parameters.AddWithValue(assetEntityId);
+                if (await location.ExecuteScalarAsync(token) is null) throw new FixedAssetException("assets.location_invalid");
+            }
+            await using var close = new NpgsqlCommand("update business_assets.asset_assignment set effective_to=$1 where tenant_id=$2 and id=$3", context.Connection, context.Transaction);
+            close.Parameters.AddWithValue(request.EffectiveFrom.AddDays(-1)); close.Parameters.AddWithValue(tenant.Value); close.Parameters.AddWithValue(assignmentId); await close.ExecuteNonQueryAsync(token);
+            var returnedAssignmentId = Guid.CreateVersion7();
+            await using var returned = new NpgsqlCommand("insert into business_assets.asset_assignment(tenant_id,id,asset_id,assignment_type,location_id,effective_from,condition,accessories,acknowledgement_reference,created_by,created_at) values($1,$2,$3,'Unassigned',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction);
+            returned.Parameters.AddWithValue(tenant.Value); returned.Parameters.AddWithValue(returnedAssignmentId); returned.Parameters.AddWithValue(assetId); returned.Parameters.AddWithValue((object?)locationId ?? DBNull.Value); returned.Parameters.AddWithValue(request.EffectiveFrom); returned.Parameters.AddWithValue((object?)request.Condition ?? (object?)existingCondition ?? DBNull.Value); returned.Parameters.AddWithValue((object?)request.Accessories ?? (object?)existingAccessories ?? DBNull.Value); returned.Parameters.AddWithValue((object?)request.AcknowledgementReference ?? (object?)existingAcknowledgement ?? DBNull.Value); returned.Parameters.AddWithValue(actor); await returned.ExecuteNonQueryAsync(token);
+            var handoverId = Guid.CreateVersion7();
+            await using var handover = new NpgsqlCommand("insert into business_assets.asset_handover(tenant_id,id,asset_id,assignment_id,handover_type,acknowledged_at,condition,evidence,created_by,created_at) values($1,$2,$3,$4,'Return',now(),$5,$6::jsonb,$7,now())", context.Connection, context.Transaction);
+            handover.Parameters.AddWithValue(tenant.Value); handover.Parameters.AddWithValue(handoverId); handover.Parameters.AddWithValue(assetId); handover.Parameters.AddWithValue(assignmentId); handover.Parameters.AddWithValue((object?)request.Condition ?? DBNull.Value); handover.Parameters.AddWithValue(request.Evidence.GetRawText()); handover.Parameters.AddWithValue(actor); await handover.ExecuteNonQueryAsync(token);
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetAssignedV1", JsonSerializer.Serialize(new FixedAssetAssignedV1(assetId, returnedAssignmentId, assetEntityId, null, null, locationId, request.EffectiveFrom, null, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, returnedAssignmentId, assetId, "fixed-assets"));
+            return new AssetAssignmentView(returnedAssignmentId, assetId, "Unassigned", null, null, null, locationId, request.EffectiveFrom, null, request.Condition ?? existingCondition, request.Accessories ?? existingAccessories, request.AcknowledgementReference ?? existingAcknowledgement);
         }, ct);
     }
 
@@ -807,6 +858,107 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
                 await using var transaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,created_by,created_at) values($1,$2,$3,$4,current_date,$5,$6,$7,$8,now())", context.Connection, context.Transaction); transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue(Guid.CreateVersion7()); transaction.Parameters.AddWithValue(bookRow.Id); transaction.Parameters.AddWithValue(request.Amount > 0m ? "CapitalAddition" : "CostReduction"); transaction.Parameters.AddWithValue(Math.Abs(request.Amount)); transaction.Parameters.AddWithValue($"{request.SourceType.Trim()}:{request.SourceReference.Trim()}"); transaction.Parameters.AddWithValue($"cip:{assetId:D}:{bookRow.Id:D}:{request.SourceType.Trim()}:{request.SourceReference.Trim()}"); transaction.Parameters.AddWithValue(actor); await transaction.ExecuteNonQueryAsync(token);
             }
             await using var view = new NpgsqlCommand("select a.asset_number,a.name,a.lifecycle_state,coalesce(sum(s.amount),0),count(s.id),a.capitalization_date,a.placed_in_service_date from business_assets.fixed_asset a left join business_assets.asset_cip_cost_source s on s.tenant_id=a.tenant_id and s.asset_id=a.id where a.tenant_id=$1 and a.id=$2 group by a.asset_number,a.name,a.lifecycle_state,a.capitalization_date,a.placed_in_service_date", context.Connection, context.Transaction); view.Parameters.AddWithValue(tenant.Value); view.Parameters.AddWithValue(assetId); await using var viewReader = await view.ExecuteReaderAsync(token); if (!await viewReader.ReadAsync(token)) throw new FixedAssetException("assets.asset_not_found"); return new CipAssetView(assetId, viewReader.GetString(0), viewReader.GetString(1), viewReader.GetString(2), viewReader.GetDecimal(3), viewReader.GetInt32(4), viewReader.IsDBNull(5) ? null : viewReader.GetFieldValue<DateOnly>(5), viewReader.IsDBNull(6) ? null : viewReader.GetFieldValue<DateOnly>(6));
+        }, ct);
+    }
+
+    public async Task<CipSplitView> SplitCipAsync(TenantId tenant, Guid actor, Guid assetId, SplitCipRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.Targets.Count == 0 || request.Targets.Count > 200 || request.Targets.Any(target => target.TargetCategoryId == Guid.Empty || string.IsNullOrWhiteSpace(target.Name) || target.Amount <= 0m || target.Quantity <= 0m || target.CapitalizationDate == default || target.PlacedInServiceDate < target.CapitalizationDate))
+            throw new FixedAssetException("assets.cip_split_invalid");
+        var splitKey = request.IdempotencyKey.Trim();
+        var operation = $"cip-split:{assetId:D}";
+        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request)))).ToLowerInvariant();
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await using var existing = new NpgsqlCommand("select request_hash,response::text from business_assets.asset_idempotency_key where tenant_id=$1 and operation=$2 and idempotency_key=$3 for update", context.Connection, context.Transaction);
+            existing.Parameters.AddWithValue(tenant.Value); existing.Parameters.AddWithValue(operation); existing.Parameters.AddWithValue(splitKey);
+            await using var existingReader = await existing.ExecuteReaderAsync(token);
+            if (await existingReader.ReadAsync(token))
+            {
+                var existingHash = existingReader.GetString(0); var response = existingReader.IsDBNull(1) ? null : existingReader.GetString(1); await existingReader.CloseAsync();
+                if (!string.Equals(existingHash, requestHash, StringComparison.Ordinal)) throw new FixedAssetException("assets.cip_split_conflict");
+                if (string.IsNullOrWhiteSpace(response)) throw new FixedAssetException("assets.cip_split_retry_incomplete");
+                var replay = JsonSerializer.Deserialize<CipSplitView>(response) ?? throw new FixedAssetException("assets.cip_split_retry_incomplete");
+                return replay with { AlreadyApplied = true };
+            }
+            await existingReader.CloseAsync();
+
+            await using var cip = new NpgsqlCommand("select legal_entity_id,asset_number,lifecycle_state from business_assets.fixed_asset where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction);
+            cip.Parameters.AddWithValue(tenant.Value); cip.Parameters.AddWithValue(assetId);
+            await using var cipReader = await cip.ExecuteReaderAsync(token);
+            if (!await cipReader.ReadAsync(token)) throw new FixedAssetException("assets.asset_not_found");
+            var legalEntityId = cipReader.GetGuid(0); var cipNumber = cipReader.GetString(1); var lifecycle = cipReader.GetString(2); await cipReader.CloseAsync();
+            if (lifecycle != "UnderConstruction") throw new FixedAssetException("assets.cip_not_open");
+
+            await using var cipBooks = new NpgsqlCommand("select b.id,b.book_definition_id,b.original_cost,bd.posts_to_ledger,bd.currency_code from business_assets.asset_book b join business_assets.asset_book_definition bd on bd.tenant_id=b.tenant_id and bd.id=b.book_definition_id where b.tenant_id=$1 and b.asset_id=$2 order by b.id for update", context.Connection, context.Transaction);
+            cipBooks.Parameters.AddWithValue(tenant.Value); cipBooks.Parameters.AddWithValue(assetId);
+            await using var cipBookReader = await cipBooks.ExecuteReaderAsync(token);
+            var bookRows = new List<(Guid Id, Guid DefinitionId, decimal Cost, bool PostsToLedger, string Currency)>(); while (await cipBookReader.ReadAsync(token)) bookRows.Add((cipBookReader.GetGuid(0), cipBookReader.GetGuid(1), cipBookReader.GetDecimal(2), cipBookReader.GetBoolean(3), cipBookReader.GetString(4).Trim())); await cipBookReader.CloseAsync();
+            if (bookRows.Count == 0) throw new FixedAssetException("assets.book_not_found");
+            var cipOriginalCost = bookRows[0].Cost;
+
+            await using var sources = new NpgsqlCommand("select s.id,s.amount,coalesce((select sum(r.amount) from business_assets.asset_cip_cost_source r where r.tenant_id=s.tenant_id and r.reversal_of_id=s.id),0),coalesce((select sum(a.amount) from business_assets.asset_cip_split_allocation a where a.tenant_id=s.tenant_id and a.cost_source_id=s.id),0) from business_assets.asset_cip_cost_source s where s.tenant_id=$1 and s.asset_id=$2 and s.amount > 0 order by s.created_at,s.id", context.Connection, context.Transaction);
+            sources.Parameters.AddWithValue(tenant.Value); sources.Parameters.AddWithValue(assetId);
+            await using var sourceReader = await sources.ExecuteReaderAsync(token);
+            var sourceRows = new List<(Guid Id, decimal Available)>(); while (await sourceReader.ReadAsync(token)) { var available = sourceReader.GetDecimal(1) + sourceReader.GetDecimal(2) - sourceReader.GetDecimal(3); if (available > 0m) sourceRows.Add((sourceReader.GetGuid(0), available)); } await sourceReader.CloseAsync();
+            var eligibleCost = sourceRows.Sum(row => row.Available);
+            var requestedCost = request.Targets.Sum(target => target.Amount);
+            if (eligibleCost <= 0m || requestedCost > eligibleCost || requestedCost > cipOriginalCost) throw new FixedAssetException("assets.cip_split_amount_invalid");
+
+            var targetViews = new List<CipSplitTargetView>(); var sourceIndex = 0; var sourceRemaining = sourceRows.Count == 0 ? 0m : sourceRows[0].Available;
+            foreach (var target in request.Targets)
+            {
+                await using var category = new NpgsqlCommand("select code,asset_nature,tracking_granularity,default_depreciation_method,default_useful_life_months,default_residual_value from business_assets.asset_category where tenant_id=$1 and id=$2 and active", context.Connection, context.Transaction);
+                category.Parameters.AddWithValue(tenant.Value); category.Parameters.AddWithValue(target.TargetCategoryId);
+                await using var categoryReader = await category.ExecuteReaderAsync(token);
+                if (!await categoryReader.ReadAsync(token)) throw new FixedAssetException("assets.category_not_found");
+                var categoryCode = categoryReader.GetString(0); var nature = categoryReader.GetString(1); var tracking = categoryReader.GetString(2); var method = categoryReader.GetString(3); var usefulLife = categoryReader.IsDBNull(4) ? (int?)null : categoryReader.GetInt32(4); var residual = Math.Min(target.Amount, categoryReader.GetDecimal(5)); await categoryReader.CloseAsync();
+                if (nature == "CIP" || method is not ("StraightLine" or "NoDepreciation")) throw new FixedAssetException("assets.cip_split_target_policy_invalid");
+                var targetId = Guid.CreateVersion7(); var targetNumber = await sequences.AllocateAsync(context, new SequenceDefinition("fixed-assets.asset-number", tenant, legalEntityId, null, null, null, "FA-", 8, 1), token);
+                await using var targetAsset = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,source_origin_type,acquisition_date,capitalization_date,placed_in_service_date,parent_asset_id,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,$6,'Capitalized',$7,$8,'CIPSplit',$9,$10,$11,$12,$13,$14,now(),1)", context.Connection, context.Transaction);
+                targetAsset.Parameters.AddWithValue(tenant.Value); targetAsset.Parameters.AddWithValue(targetId); targetAsset.Parameters.AddWithValue(legalEntityId); targetAsset.Parameters.AddWithValue(target.TargetCategoryId); targetAsset.Parameters.AddWithValue(targetNumber); targetAsset.Parameters.AddWithValue(target.Name.Trim()); targetAsset.Parameters.AddWithValue(nature); targetAsset.Parameters.AddWithValue(tracking); targetAsset.Parameters.AddWithValue(target.CapitalizationDate); targetAsset.Parameters.AddWithValue(target.CapitalizationDate); targetAsset.Parameters.AddWithValue((object?)target.PlacedInServiceDate ?? DBNull.Value); targetAsset.Parameters.AddWithValue(assetId); targetAsset.Parameters.AddWithValue(target.Quantity); targetAsset.Parameters.AddWithValue(actor); await targetAsset.ExecuteNonQueryAsync(token);
+                foreach (var bookRow in bookRows)
+                {
+                    var bookId = Guid.CreateVersion7();
+                    await using var book = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) select $1,$2,$3,bd.id,$4,$5,$6,$7,$8,now(),1 from business_assets.asset_book_definition bd where bd.tenant_id=$1 and bd.id=$9", context.Connection, context.Transaction);
+                    book.Parameters.AddWithValue(tenant.Value); book.Parameters.AddWithValue(bookId); book.Parameters.AddWithValue(targetId); book.Parameters.AddWithValue(target.Amount); book.Parameters.AddWithValue(residual); book.Parameters.AddWithValue((object?)usefulLife ?? DBNull.Value); book.Parameters.AddWithValue(method); book.Parameters.AddWithValue((object?)target.PlacedInServiceDate ?? DBNull.Value); book.Parameters.AddWithValue(bookRow.DefinitionId); await book.ExecuteNonQueryAsync(token);
+                    Guid? ledgerFact = null;
+                    if (bookRow.PostsToLedger)
+                    {
+                        var factId = StableGuid($"cip-split:{splitKey}:target:{targetId:D}:book:{bookRow.Id:D}"); var payload = new FixedAssetAcquisitionPostedPayload(target.Amount, bookRow.Currency, $"{targetNumber}/{bookRow.Id:D}", categoryCode); var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(legalEntityId), AccountingFactTypes.FixedAssetAcquisitionPosted, 1, "fixed-assets", $"cip-split:{splitKey}:target:{targetId:D}:book:{bookRow.Id:D}", $"fixed-assets:cip-split:{splitKey}:target:{targetId:D}:book:{bookRow.Id:D}", target.CapitalizationDate, target.CapitalizationDate, payload, Guid.CreateVersion7(), actor); ledgerFact = (await ledger.PostFixedAssetAcquisitionAsync(context, fact, payload, token)).FactId;
+                    }
+                    await using var transaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'CapitalAddition',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction);
+                    transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue(Guid.CreateVersion7()); transaction.Parameters.AddWithValue(bookId); transaction.Parameters.AddWithValue(target.CapitalizationDate); transaction.Parameters.AddWithValue(target.Amount); transaction.Parameters.AddWithValue($"cip-split:{splitKey}:cip:{assetId:D}"); transaction.Parameters.AddWithValue($"cip-split:{splitKey}:target:{targetId:D}:book:{bookId:D}"); transaction.Parameters.AddWithValue((object?)ledgerFact?.ToString("D") ?? DBNull.Value); transaction.Parameters.AddWithValue(actor); await transaction.ExecuteNonQueryAsync(token);
+                }
+                var targetRemaining = target.Amount;
+                while (targetRemaining > 0m && sourceIndex < sourceRows.Count)
+                {
+                    var take = Math.Min(targetRemaining, sourceRemaining);
+                    await using var allocation = new NpgsqlCommand("insert into business_assets.asset_cip_split_allocation(tenant_id,id,cip_asset_id,target_asset_id,cost_source_id,split_key,amount,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,now())", context.Connection, context.Transaction);
+                    allocation.Parameters.AddWithValue(tenant.Value); allocation.Parameters.AddWithValue(Guid.CreateVersion7()); allocation.Parameters.AddWithValue(assetId); allocation.Parameters.AddWithValue(targetId); allocation.Parameters.AddWithValue(sourceRows[sourceIndex].Id); allocation.Parameters.AddWithValue(splitKey); allocation.Parameters.AddWithValue(take); allocation.Parameters.AddWithValue(actor); await allocation.ExecuteNonQueryAsync(token);
+                    targetRemaining -= take; sourceRemaining -= take;
+                    if (sourceRemaining <= 0.000001m) { sourceIndex++; sourceRemaining = sourceIndex < sourceRows.Count ? sourceRows[sourceIndex].Available : 0m; }
+                }
+                if (targetRemaining > 0.000001m) throw new FixedAssetException("assets.cip_split_source_balance_invalid");
+                foreach (var bookRow in bookRows)
+                {
+                    var newCost = bookRow.Cost - target.Amount; if (newCost < 0m) throw new FixedAssetException("assets.cip_cost_negative");
+                    Guid? ledgerFact = null;
+                    if (bookRow.PostsToLedger)
+                    {
+                        var factId = StableGuid($"cip-split:{splitKey}:cip:{assetId:D}:book:{bookRow.Id:D}:target:{targetId:D}"); var payload = new FixedAssetCostAdjustmentPostedPayload(target.Amount, bookRow.Currency, $"{cipNumber}/{bookRow.Id:D}", cipNumber, $"CIP split to {targetNumber}"); var fact = new AccountingFactEnvelope<IAccountingFactPayload>(factId, tenant, new(legalEntityId), AccountingFactTypes.FixedAssetCostReduced, 1, "fixed-assets", $"cip-split:{splitKey}:cip:{assetId:D}:book:{bookRow.Id:D}:target:{targetId:D}", $"fixed-assets:cip-split:{splitKey}:cip:{assetId:D}:book:{bookRow.Id:D}:target:{targetId:D}", target.CapitalizationDate, target.CapitalizationDate, payload, Guid.CreateVersion7(), actor); ledgerFact = (await ledger.PostFixedAssetCostReducedAsync(context, fact, payload, token)).FactId;
+                    }
+                    await using var updateBook = new NpgsqlCommand("update business_assets.asset_book set original_cost=$1,row_version=row_version+1 where tenant_id=$2 and id=$3", context.Connection, context.Transaction); updateBook.Parameters.AddWithValue(newCost); updateBook.Parameters.AddWithValue(tenant.Value); updateBook.Parameters.AddWithValue(bookRow.Id); await updateBook.ExecuteNonQueryAsync(token);
+                    await using var reduction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'CostReduction',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction); reduction.Parameters.AddWithValue(tenant.Value); reduction.Parameters.AddWithValue(Guid.CreateVersion7()); reduction.Parameters.AddWithValue(bookRow.Id); reduction.Parameters.AddWithValue(target.CapitalizationDate); reduction.Parameters.AddWithValue(target.Amount); reduction.Parameters.AddWithValue($"cip-split:{splitKey}:target:{targetId:D}"); reduction.Parameters.AddWithValue($"cip-split:{splitKey}:cip:{assetId:D}:book:{bookRow.Id:D}:target:{targetId:D}:reduction"); reduction.Parameters.AddWithValue((object?)ledgerFact?.ToString("D") ?? DBNull.Value); reduction.Parameters.AddWithValue(actor); await reduction.ExecuteNonQueryAsync(token);
+                }
+                targetViews.Add(new CipSplitTargetView(targetId, targetNumber, target.Name.Trim(), target.Amount, target.Quantity, "Capitalized"));
+                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetCapitalizedV1", JsonSerializer.Serialize(new FixedAssetCapitalizedV1(targetId, legalEntityId, target.CapitalizationDate, target.PlacedInServiceDate, target.Amount, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, targetId, targetId, "fixed-assets"));
+            }
+            var remainingCost = cipOriginalCost - requestedCost;
+            await using var lifecycleUpdate = new NpgsqlCommand("update business_assets.fixed_asset set lifecycle_state=case when $1 <= 0.000001 then 'Capitalized' else 'UnderConstruction' end,row_version=row_version+1 where tenant_id=$2 and id=$3", context.Connection, context.Transaction); lifecycleUpdate.Parameters.AddWithValue(remainingCost); lifecycleUpdate.Parameters.AddWithValue(tenant.Value); lifecycleUpdate.Parameters.AddWithValue(assetId); await lifecycleUpdate.ExecuteNonQueryAsync(token);
+            var result = new CipSplitView(assetId, remainingCost <= 0.000001m ? "Capitalized" : "UnderConstruction", cipOriginalCost, requestedCost, remainingCost, targetViews);
+            await using var idempotency = new NpgsqlCommand("insert into business_assets.asset_idempotency_key(tenant_id,operation,idempotency_key,request_hash,response,created_at) values($1,$2,$3,$4,$5::jsonb,now())", context.Connection, context.Transaction); idempotency.Parameters.AddWithValue(tenant.Value); idempotency.Parameters.AddWithValue(operation); idempotency.Parameters.AddWithValue(splitKey); idempotency.Parameters.AddWithValue(requestHash); idempotency.Parameters.AddWithValue(JsonSerializer.Serialize(result)); await idempotency.ExecuteNonQueryAsync(token);
+            return result;
         }, ct);
     }
 
