@@ -714,6 +714,44 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         Assert.True(reductionBalanceReader.GetDecimal(0) > 0m);
     }
 
+    [Fact]
+    public async Task EstimateChangeIsStoredIdempotentlyAndUsedProspectively()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Fixed Assets integration verification.");
+        var password = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD") ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for Fixed Assets integration verification.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Development").UseSetting("TODIR_DATABASE_CONNECTION", connectionString).UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        var loginCsrf = await GetCsrfAsync(client);
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email = "admin@atlas.com", password }) }; login.Headers.Add("X-CSRF-TOKEN", loginCsrf.Token); using var loginResponse = await client.SendAsync(login); Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var assetId = Guid.CreateVersion7(); var bookId = Guid.CreateVersion7(); var assetNumber = $"FA-TEST-EST-{assetId:N}"; var actorId = Guid.Empty; var categoryId = Guid.Empty; var periodStart = new DateOnly(2027, 1, 1); var periodEnd = new DateOnly(2027, 1, 31);
+        await using (var setup = new NpgsqlConnection(connectionString))
+        {
+            await setup.OpenAsync();
+            await using var actor = new NpgsqlCommand("select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", setup); actor.Parameters.AddWithValue(Guid.Parse(TenantId)); actorId = (Guid)(await actor.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed administrator was not found."));
+            await using var category = new NpgsqlCommand("select id from business_assets.asset_category where tenant_id=$1 and code='LAPTOP'", setup); category.Parameters.AddWithValue(Guid.Parse(TenantId)); categoryId = (Guid)(await category.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed laptop category was not found."));
+            await using var asset = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,'Estimate Integration Asset','Operational','Equipment','Individual','2026-01-01','2026-01-01','2026-01-01',1,$6,now(),1)", setup); asset.Parameters.AddWithValue(Guid.Parse(TenantId)); asset.Parameters.AddWithValue(assetId); asset.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); asset.Parameters.AddWithValue(categoryId); asset.Parameters.AddWithValue(assetNumber); asset.Parameters.AddWithValue(actorId); await asset.ExecuteNonQueryAsync();
+            await using var book = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,12000,0,36,'StraightLine','2026-01-01',now(),1)", setup); book.Parameters.AddWithValue(Guid.Parse(TenantId)); book.Parameters.AddWithValue(bookId); book.Parameters.AddWithValue(assetId); book.Parameters.AddWithValue(Guid.Parse(BookDefinitionId)); await book.ExecuteNonQueryAsync();
+            await using var period = new NpgsqlCommand("select candidate::date,(candidate + interval '1 month - 1 day')::date from generate_series(date '2027-01-01', date '2035-01-01', interval '1 month') candidate where not exists (select 1 from business_assets.asset_depreciation_run where tenant_id=$1 and legal_entity_id=$2 and book_definition_id=$3 and period_start=candidate::date) order by candidate limit 1", setup); period.Parameters.AddWithValue(Guid.Parse(TenantId)); period.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); period.Parameters.AddWithValue(Guid.Parse(BookDefinitionId)); await using var periodReader = await period.ExecuteReaderAsync(); Assert.True(await periodReader.ReadAsync()); periodStart = periodReader.GetFieldValue<DateOnly>(0); periodEnd = periodReader.GetFieldValue<DateOnly>(1); await periodReader.CloseAsync();
+        }
+
+        var estimateKey = $"integration-estimate-{assetId:N}";
+        async Task<HttpResponseMessage> PostEstimateAsync()
+        {
+            var csrf = await GetCsrfAsync(client);
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/assets/{assetId:D}/books/{bookId:D}/estimate-change") { Content = JsonContent.Create(new { legalEntityId = Guid.Parse(LegalEntityId), effectiveFrom = "2026-12-01", usefulLifeMonths = 48, residualValue = 1000m, reason = "Approved useful-life review", idempotencyKey = estimateKey }) };
+            request.Headers.Add("X-CSRF-TOKEN", csrf.Token); return await client.SendAsync(request);
+        }
+        using var estimate = await PostEstimateAsync(); var estimateBody = await estimate.Content.ReadAsStringAsync(); Assert.True(estimate.StatusCode == HttpStatusCode.OK, estimateBody); using var estimateJson = JsonDocument.Parse(estimateBody); Assert.Equal(48, estimateJson.RootElement.GetProperty("usefulLifeMonths").GetInt32()); Assert.Equal(1000m, estimateJson.RootElement.GetProperty("residualValue").GetDecimal());
+        using var retry = await PostEstimateAsync(); Assert.Equal(HttpStatusCode.OK, retry.StatusCode); using var retryJson = JsonDocument.Parse(await retry.Content.ReadAsStringAsync()); Assert.True(retryJson.RootElement.GetProperty("alreadyApplied").GetBoolean());
+
+        await using var verify = new NpgsqlConnection(connectionString); await verify.OpenAsync();
+        await using var stored = new NpgsqlCommand("select useful_life_months,residual_value from business_assets.asset_book_estimate_change where tenant_id=$1 and asset_book_id=$2 and idempotency_key=$3", verify); stored.Parameters.AddWithValue(Guid.Parse(TenantId)); stored.Parameters.AddWithValue(bookId); stored.Parameters.AddWithValue(estimateKey); await using var storedReader = await stored.ExecuteReaderAsync(); Assert.True(await storedReader.ReadAsync()); Assert.Equal(48, storedReader.GetInt32(0)); Assert.Equal(1000m, storedReader.GetDecimal(1)); await storedReader.CloseAsync();
+
+        var runKey = $"integration-estimate-run-{assetId:N}"; var runCsrf = await GetCsrfAsync(client); using var run = new HttpRequestMessage(HttpMethod.Post, "/api/v1/fixed-assets/depreciation-runs/prepare") { Content = JsonContent.Create(new { legalEntityId = Guid.Parse(LegalEntityId), bookId = Guid.Parse(BookDefinitionId), periodStart = periodStart.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), periodEnd = periodEnd.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), idempotencyKey = runKey }) }; run.Headers.Add("X-CSRF-TOKEN", runCsrf.Token); using var runResponse = await client.SendAsync(run); var runBody = await runResponse.Content.ReadAsStringAsync(); Assert.True(runResponse.StatusCode == HttpStatusCode.OK, runBody); using var runJson = JsonDocument.Parse(runBody); var runId = runJson.RootElement.GetProperty("id").GetGuid();
+        await using var basis = new NpgsqlCommand("select amount,calculation_basis from business_assets.asset_depreciation_run_line where tenant_id=$1 and run_id=$2 and asset_book_id=$3", verify); basis.Parameters.AddWithValue(Guid.Parse(TenantId)); basis.Parameters.AddWithValue(runId); basis.Parameters.AddWithValue(bookId); await using var basisReader = await basis.ExecuteReaderAsync(); Assert.True(await basisReader.ReadAsync()); Assert.True(basisReader.GetDecimal(0) > 0m); using var calculation = basisReader.GetFieldValue<JsonDocument>(1); Assert.True(calculation.RootElement.TryGetProperty("estimateChanges", out _));
+    }
+
     private static async Task<CsrfResponse> GetCsrfAsync(HttpClient client) => await client.GetFromJsonAsync<CsrfResponse>("/api/v1/auth/csrf") ?? throw new InvalidOperationException("CSRF token was not returned.");
 
     private sealed record CsrfResponse(string Token);

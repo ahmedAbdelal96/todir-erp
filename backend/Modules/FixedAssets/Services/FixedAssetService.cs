@@ -1,4 +1,5 @@
 using Shared.Primitives.Identifiers;
+using Shared.Contracts.FixedAssets;
 
 namespace Modules.FixedAssets.Services;
 
@@ -13,6 +14,11 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<AssetLocationView> CreateLocationAsync(TenantId tenant, Guid actor, CreateAssetLocationRequest request, CancellationToken ct) => repository.CreateLocationAsync(tenant, actor, request, ct);
     public Task<IReadOnlyList<AssetLocationView>> ListLocationsAsync(TenantId tenant, Guid? legalEntityId, CancellationToken ct) => repository.ListLocationsAsync(tenant, legalEntityId, ct);
     public Task<AssetAssignmentView> AssignAsync(TenantId tenant, Guid actor, Guid assetId, AssignAssetRequest request, CancellationToken ct) => repository.AssignAsync(tenant, actor, assetId, request, ct);
+    public Task<IReadOnlyList<AssetAssignmentView>> ListAssignmentsAsync(TenantId tenant, Guid assetId, DateOnly? asOfDate, CancellationToken ct) => repository.ListAssignmentsAsync(tenant, assetId, asOfDate, ct);
+    public Task<IReadOnlyList<FixedAssetCustodyItem>> ListEmployeeAssetsAsync(TenantId tenant, Guid employeeId, Guid legalEntityId, DateOnly asOfDate, CancellationToken ct) => repository.ListEmployeeAssetsAsync(tenant, employeeId, legalEntityId, asOfDate, ct);
+    public Task<AssetScanView?> GetAssetScanAsync(TenantId tenant, Guid? assetId, string? assetTag, CancellationToken ct) => repository.GetAssetScanAsync(tenant, assetId, assetTag, ct);
+    public Task<IReadOnlyList<AssetDocumentView>> ListAssetDocumentsAsync(TenantId tenant, Guid assetId, CancellationToken ct) => repository.ListAssetDocumentsAsync(tenant, assetId, ct);
+    public Task<AssetDocumentView> AddAssetDocumentAsync(TenantId tenant, Guid actor, Guid assetId, AddAssetDocumentRequest request, CancellationToken ct) => repository.AddAssetDocumentAsync(tenant, actor, assetId, request, ct);
     public Task<AssetHandoverView> CreateHandoverAsync(TenantId tenant, Guid actor, Guid assetId, CreateAssetHandoverRequest request, CancellationToken ct) => repository.CreateHandoverAsync(tenant, actor, assetId, request, ct);
     public Task<VerificationCampaignView> CreateVerificationCampaignAsync(TenantId tenant, Guid actor, CreateVerificationCampaignRequest request, CancellationToken ct) => repository.CreateVerificationCampaignAsync(tenant, actor, request, ct);
     public Task<IReadOnlyList<VerificationCampaignView>> ListVerificationCampaignsAsync(TenantId tenant, Guid? legalEntityId, string? status, int limit, CancellationToken ct) => repository.ListVerificationCampaignsAsync(tenant, legalEntityId, status, limit, ct);
@@ -26,6 +32,7 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<DepreciationRunView> ReverseDepreciationRunAsync(TenantId tenant, Guid actor, Guid runId, ReverseDepreciationRunRequest request, CancellationToken ct) => repository.ReverseDepreciationRunAsync(tenant, actor, runId, request, ct);
     public Task<IReadOnlyList<CapitalizationCandidateView>> ListCapitalizationCandidatesAsync(TenantId tenant, Guid? legalEntityId, string? status, int limit, CancellationToken ct) => repository.ListCapitalizationCandidatesAsync(tenant, legalEntityId, status, limit, ct);
     public Task<CapitalizationCandidateView> CreateCapitalizationCandidateAsync(TenantId tenant, Guid actor, CreateCapitalizationCandidateRequest request, CancellationToken ct) => repository.CreateCapitalizationCandidateAsync(tenant, actor, request, ct);
+    public Task<CapitalizationCandidateView> CreateCapitalizationCandidateFromInvoiceAsync(TenantId tenant, Guid actor, CreateCapitalizationCandidateFromInvoiceRequest request, CancellationToken ct) => repository.CreateCapitalizationCandidateFromInvoiceAsync(tenant, actor, request, ct);
     public Task<CapitalizationCandidateView> ReviewCapitalizationCandidateAsync(TenantId tenant, Guid actor, Guid candidateId, ReviewCapitalizationCandidateRequest request, CancellationToken ct) => repository.ReviewCapitalizationCandidateAsync(tenant, actor, candidateId, request, ct);
     public Task<SourceAllocationView> AllocateCapitalizationCandidateAsync(TenantId tenant, Guid actor, Guid candidateId, AllocateCapitalizationCandidateRequest request, CancellationToken ct) => repository.AllocateCapitalizationCandidateAsync(tenant, actor, candidateId, request, ct);
     public Task<SourceAllocationCorrectionView> CorrectSourceAllocationAsync(TenantId tenant, Guid actor, Guid candidateId, CorrectSourceAllocationRequest request, CancellationToken ct) => repository.CorrectSourceAllocationAsync(tenant, actor, candidateId, request, ct);
@@ -33,6 +40,7 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<CipAssetView> AddCipCostSourceAsync(TenantId tenant, Guid actor, Guid assetId, AddCipCostSourceRequest request, CancellationToken ct) => repository.AddCipCostSourceAsync(tenant, actor, assetId, request, ct);
     public Task<CipAssetView> CapitalizeCipAsync(TenantId tenant, Guid actor, Guid assetId, CapitalizeCipRequest request, CancellationToken ct) => repository.CapitalizeCipAsync(tenant, actor, assetId, request, ct);
     public Task<AssetBookCostChangeView> ChangeAssetBookCostAsync(TenantId tenant, Guid actor, Guid assetId, ChangeAssetBookCostRequest request, CancellationToken ct) => repository.ChangeAssetBookCostAsync(tenant, actor, assetId, request, ct);
+    public Task<AssetBookEstimateChangeView> CreateAssetBookEstimateChangeAsync(TenantId tenant, Guid actor, Guid assetId, Guid bookId, CreateAssetBookEstimateChangeRequest request, CancellationToken ct) => repository.CreateAssetBookEstimateChangeAsync(tenant, actor, assetId, bookId, request, ct);
     public Task<OpeningImportView> CreateOpeningImportAsync(TenantId tenant, Guid actor, CreateOpeningImportRequest request, CancellationToken ct) => repository.CreateOpeningImportAsync(tenant, actor, request, ct);
     public Task<OpeningImportView> PostOpeningImportAsync(TenantId tenant, Guid actor, Guid importId, CancellationToken ct) => repository.PostOpeningImportAsync(tenant, actor, importId, ct);
     public Task<AssetBookBalanceView> GetAssetBookBalanceAsync(TenantId tenant, Guid assetId, Guid bookId, Guid legalEntityId, CancellationToken ct) => repository.GetAssetBookBalanceAsync(tenant, assetId, bookId, legalEntityId, ct);

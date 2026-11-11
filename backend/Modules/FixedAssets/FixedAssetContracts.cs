@@ -44,6 +44,7 @@ public sealed record AssignAssetRequest(
     string? AcknowledgementReference);
 public sealed record CreateAssetLocationRequest(Guid LegalEntityId, Guid? ParentLocationId, string Code, string Name, string LocationType = "Site");
 public sealed record CreateAssetHandoverRequest(Guid AssignmentId, string HandoverType, DateTimeOffset? AcknowledgedAt, string? Condition, JsonElement Evidence);
+public sealed record AddAssetDocumentRequest(Guid FileRef, string Role, string? Title);
 public sealed record CreateVerificationCampaignRequest(Guid LegalEntityId, string Name);
 public sealed record VerifyAssetRequest(string Result, Guid? ObservedLocationId, string? Notes);
 
@@ -63,6 +64,7 @@ public sealed record CreateDepreciationRunRequest(Guid LegalEntityId, Guid BookI
 public sealed record ReverseDepreciationRunRequest(DateOnly ReversalDate, string Reason, string? IdempotencyKey);
 public sealed record DisposeAssetRequest(Guid LegalEntityId, string DisposalType, DateOnly DisposalDate, decimal Proceeds, decimal DirectCosts, string Reason, string? IdempotencyKey);
 public sealed record CreateCapitalizationCandidateRequest(Guid LegalEntityId, string SourceType, string SourceReference, decimal EligibleAmount, JsonElement SourceSnapshot);
+public sealed record CreateCapitalizationCandidateFromInvoiceRequest(Guid LegalEntityId, Guid InvoiceId);
 public sealed record ReviewCapitalizationCandidateRequest(string Decision, string? Reason);
 public sealed record AllocateCapitalizationCandidateRequest(Guid AssetId, decimal Amount, string AllocationType = "Acquisition", DateOnly? EffectiveDate = null);
 public sealed record CorrectSourceAllocationRequest(Guid AllocationId, decimal Amount, string Reason, string IdempotencyKey);
@@ -70,6 +72,7 @@ public sealed record CreateCipAssetRequest(Guid LegalEntityId, Guid CategoryId, 
 public sealed record AddCipCostSourceRequest(string SourceType, string SourceReference, decimal Amount, Guid? ReversalOfId = null);
 public sealed record CapitalizeCipRequest(Guid TargetCategoryId, string? Name, DateOnly CapitalizationDate, DateOnly? PlacedInServiceDate = null);
 public sealed record ChangeAssetBookCostRequest(Guid LegalEntityId, Guid BookId, decimal Amount, DateOnly EffectiveDate, string Reason, string? IdempotencyKey);
+public sealed record CreateAssetBookEstimateChangeRequest(Guid LegalEntityId, DateOnly EffectiveFrom, int? UsefulLifeMonths, decimal? ResidualValue, string Reason, string? IdempotencyKey);
 public sealed record CreateOpeningImportRequest(Guid LegalEntityId, string SourceSystem, string BatchReference, DateOnly OpeningDate, IReadOnlyList<OpeningImportLineRequest> Lines);
 public sealed record OpeningImportLineRequest(string LegacyAssetNumber, Guid CategoryId, string Name, Guid BookDefinitionId, DateOnly? AcquisitionDate, DateOnly PlacedInServiceDate, decimal OriginalCost, decimal AccumulatedDepreciation, decimal NetBookValue, decimal ResidualValue, int? UsefulLifeMonths, string DepreciationMethod = "StraightLine");
 
@@ -78,6 +81,8 @@ public sealed record AssetView(Guid Id, Guid LegalEntityId, Guid CategoryId, str
 public sealed record AssetAssignmentView(Guid Id, Guid AssetId, string AssignmentType, Guid? EmployeeId, Guid? DepartmentId, string? CustodianName, Guid? LocationId, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string? Condition, string? Accessories, string? AcknowledgementReference);
 public sealed record AssetLocationView(Guid Id, Guid LegalEntityId, Guid? ParentLocationId, string Code, string Name, string LocationType, bool Active);
 public sealed record AssetHandoverView(Guid Id, Guid AssetId, Guid AssignmentId, string HandoverType, DateTimeOffset? AcknowledgedAt, string? Condition, JsonElement Evidence, DateTimeOffset CreatedAt);
+public sealed record AssetDocumentView(Guid Id, Guid AssetId, Guid FileRef, string Role, string? Title, string Sha256, string ContentType, long SizeBytes, string Classification, DateTimeOffset CreatedAt);
+public sealed record AssetScanView(Guid AssetId, string AssetNumber, string Name, string? AssetTag, string LifecycleState, string QrPayload);
 public sealed record AssetTimelineEventView(Guid Id, string EventType, DateOnly? EffectiveDate, DateTimeOffset OccurredAt, JsonElement Payload);
 public sealed record VerificationCampaignView(Guid Id, Guid LegalEntityId, string Name, DateTimeOffset SnapshotAt, string Status, int LineCount, int PendingCount, DateTimeOffset CreatedAt);
 public sealed record AssetBookView(Guid Id, Guid LegalEntityId, string Code, string Name, bool PostsToLedger, string CurrencyCode, string DefaultDepreciationMethod, string DefaultConvention, int? DefaultUsefulLifeMonths);
@@ -88,6 +93,7 @@ public sealed record SourceAllocationView(Guid Id, Guid CandidateId, Guid AssetI
 public sealed record SourceAllocationCorrectionView(Guid Id, Guid AllocationId, Guid CandidateId, Guid AssetId, decimal Amount, decimal RemainingAllocationAmount, decimal CandidateAllocatedAmount, string Reason, DateTimeOffset CreatedAt, bool AlreadyApplied);
 public sealed record CipAssetView(Guid AssetId, string AssetNumber, string Name, string LifecycleState, decimal TotalCost, int CostSourceCount, DateOnly? CapitalizationDate, DateOnly? PlacedInServiceDate);
 public sealed record AssetBookCostChangeView(Guid AssetId, Guid BookId, decimal Amount, string TransactionType, decimal PreviousCost, decimal NewCost, string? LedgerFactReference, bool AlreadyApplied);
+public sealed record AssetBookEstimateChangeView(Guid AssetId, Guid BookId, DateOnly EffectiveFrom, int? UsefulLifeMonths, decimal? ResidualValue, string Reason, string IdempotencyKey, DateTimeOffset CreatedAt, bool AlreadyApplied);
 public sealed record OpeningImportView(Guid Id, Guid LegalEntityId, string SourceSystem, string BatchReference, DateOnly OpeningDate, string Status, int LineCount, int ValidLineCount, DateTimeOffset CreatedAt);
 public sealed record AssetBookBalanceView(Guid AssetId, Guid BookId, Guid LegalEntityId, decimal OriginalCost, decimal AccumulatedDepreciation, decimal NetBookValue, string LifecycleState, int TransactionCount, DateOnly? LastTransactionDate);
 public sealed record AssetGlReconciliationView(Guid LegalEntityId, Guid BookId, DateOnly AsOfDate, decimal AssetGrossCost, decimal LedgerGrossCost, decimal GrossCostDifference, decimal AssetAccumulatedDepreciation, decimal LedgerAccumulatedDepreciation, decimal AccumulatedDepreciationDifference, decimal AssetNetBookValue, string CurrencyCode, string Status);
