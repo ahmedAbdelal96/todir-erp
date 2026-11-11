@@ -1,4 +1,5 @@
 using Shared.Primitives.Identifiers;
+using Shared.Contracts.Invoicing;
 
 namespace Shared.Contracts.Purchasing;
 
@@ -8,6 +9,21 @@ public sealed record PurchaseOrderInvoiceSource(Guid PurchaseOrderId, string Pur
 public interface IPurchasingSourceCapabilities
 {
     Task<PurchaseOrderInvoiceSource?> GetInvoiceSourceAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default);
+}
+
+public sealed record FixedAssetPurchasingSourceLine(Guid? ProductVariantId, Guid? UnitOfMeasureId, string? UnitCode,
+    string Description, string Quantity, string FinalUnitPrice, string NetAmount, string? SourceLineReference);
+
+public sealed record FixedAssetPurchasingSourceSnapshot(Guid PurchaseOrderId, Guid SupplierInvoiceId,
+    IReadOnlyList<Guid> ReceiptIds, Guid LegalEntityId, Guid? BranchId, Guid SupplierPartyId,
+    DateOnly DocumentDate, DateOnly PostingDate, DateOnly TaxDate, string CurrencyCode,
+    string SupplierInvoiceNumber, decimal EligibleAmount, IReadOnlyList<FixedAssetPurchasingSourceLine> Lines,
+    InvoiceComplianceSnapshotContract InvoiceEvidence);
+
+public interface IPurchasingFixedAssetCapabilities
+{
+    Task<FixedAssetPurchasingSourceSnapshot?> GetFinalizedCapitalizationSourceAsync(TenantId tenantId,
+        Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default);
 }
 
 public interface IPurchasingReadCapabilities

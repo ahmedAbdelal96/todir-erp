@@ -30,7 +30,7 @@ public interface IPlatformFileUploadCapability
     Task<PlatformFileUploadCompletion?> CompleteUploadAsync(TenantId tenantId, Guid actorId, Guid membershipId, string ownerModule, string ownerEntityType, Guid ownerEntityId, Guid fileRef, CancellationToken cancellationToken = default);
 }
 
-public sealed record PlatformApprovalRequestResult(Guid Id, Guid LegalEntityId, string OwnerModule, string OwnerEntityType, Guid OwnerEntityId, long ResourceVersion, Guid? PolicyVersionId, string State, Guid? DecidedBy, string? DecisionReason, DateTimeOffset CreatedAt, DateTimeOffset? DecidedAt);
+public sealed record PlatformApprovalRequestResult(Guid Id, Guid LegalEntityId, string OwnerModule, string OwnerEntityType, Guid OwnerEntityId, long ResourceVersion, Guid? PolicyVersionId, string State, Guid? DecidedBy, string? DecisionReason, DateTimeOffset CreatedAt, DateTimeOffset? DecidedAt, string? RequestReason = null, Guid? RequestedBy = null);
 public interface IPlatformApprovalCapability
 {
     Task<PlatformApprovalRequestResult> RequestAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid legalEntityId, string ownerModule, string ownerEntityType, Guid ownerEntityId, long resourceVersion, Guid? policyVersionId, string? reason, string requesterPermission = "platform.approval.request", CancellationToken cancellationToken = default);

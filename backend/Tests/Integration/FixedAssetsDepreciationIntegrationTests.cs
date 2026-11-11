@@ -616,6 +616,58 @@ public sealed class FixedAssetsDepreciationIntegrationTests
     }
 
     [Fact]
+    public async Task PartialDisposalReducesQuantityAndReconstructsRemainingBook()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Fixed Assets integration verification.");
+        var password = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for Fixed Assets integration verification.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        var loginCsrf = await GetCsrfAsync(client);
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email = "admin@atlas.com", password }) };
+        login.Headers.Add("X-CSRF-TOKEN", loginCsrf.Token);
+        using var loginResponse = await client.SendAsync(login);
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var assetId = Guid.CreateVersion7();
+        var bookId = Guid.CreateVersion7();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var actorCommand = new NpgsqlCommand("select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", connection); actorCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
+        var actorId = (Guid)(await actorCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed administrator was not found."));
+        await using var categoryCommand = new NpgsqlCommand("select id from business_assets.asset_category where tenant_id=$1 and code='LAPTOP'", connection); categoryCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
+        var categoryId = (Guid)(await categoryCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed laptop category was not found."));
+        await using var assetSetup = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,'Partial Disposal Integration Asset','Operational','Equipment','Grouped','2026-10-01','2026-10-01','2026-10-01',10,$6,now(),1)", connection);
+        assetSetup.Parameters.AddWithValue(Guid.Parse(TenantId)); assetSetup.Parameters.AddWithValue(assetId); assetSetup.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); assetSetup.Parameters.AddWithValue(categoryId); assetSetup.Parameters.AddWithValue($"FA-TEST-PARTIAL-{assetId:N}"); assetSetup.Parameters.AddWithValue(actorId); await assetSetup.ExecuteNonQueryAsync();
+        await using var bookSetup = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,12000,0,36,'StraightLine','2026-10-01',now(),1)", connection);
+        bookSetup.Parameters.AddWithValue(Guid.Parse(TenantId)); bookSetup.Parameters.AddWithValue(bookId); bookSetup.Parameters.AddWithValue(assetId); bookSetup.Parameters.AddWithValue(Guid.Parse(BookDefinitionId)); await bookSetup.ExecuteNonQueryAsync();
+
+        var csrf = await GetCsrfAsync(client);
+        using var disposal = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/assets/{assetId:D}/disposal")
+        {
+            Content = JsonContent.Create(new { legalEntityId = Guid.Parse(LegalEntityId), disposalType = "Sale", disposalDate = "2026-12-15", proceeds = 5000m, directCosts = 0m, reason = "Partial disposal integration verification", idempotencyKey = $"integration-partial-disposal-{Guid.CreateVersion7():N}", quantity = 5m, saleReference = "SALE-TEST-001" })
+        };
+        disposal.Headers.Add("X-CSRF-TOKEN", csrf.Token);
+        using var response = await client.SendAsync(disposal);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, body);
+        using var json = JsonDocument.Parse(body);
+        Assert.Equal("Posted", json.RootElement.GetProperty("status").GetString());
+        Assert.Equal(6000m, json.RootElement.GetProperty("grossCost").GetDecimal());
+
+        await using var assetState = new NpgsqlCommand("select quantity,lifecycle_state from business_assets.fixed_asset where tenant_id=$1 and id=$2", connection); assetState.Parameters.AddWithValue(Guid.Parse(TenantId)); assetState.Parameters.AddWithValue(assetId);
+        await using var assetReader = await assetState.ExecuteReaderAsync(); Assert.True(await assetReader.ReadAsync()); Assert.Equal(5m, assetReader.GetDecimal(0)); Assert.Equal("Operational", assetReader.GetString(1)); await assetReader.CloseAsync();
+        await using var bookState = new NpgsqlCommand("select original_cost from business_assets.asset_book where tenant_id=$1 and id=$2", connection); bookState.Parameters.AddWithValue(Guid.Parse(TenantId)); bookState.Parameters.AddWithValue(bookId);
+        Assert.Equal(6000m, (decimal)(await bookState.ExecuteScalarAsync() ?? 0m));
+        await using var disposalState = new NpgsqlCommand("select quantity,is_full_disposal,sale_reference from business_assets.asset_disposal where tenant_id=$1 and asset_id=$2", connection); disposalState.Parameters.AddWithValue(Guid.Parse(TenantId)); disposalState.Parameters.AddWithValue(assetId);
+        await using var disposalReader = await disposalState.ExecuteReaderAsync(); Assert.True(await disposalReader.ReadAsync()); Assert.Equal(5m, disposalReader.GetDecimal(0)); Assert.False(disposalReader.GetBoolean(1)); Assert.Equal("SALE-TEST-001", disposalReader.GetString(2));
+    }
+
+    [Fact]
     public async Task AssetBookCostAdditionPostsLedgerFactAndIsIdempotent()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")

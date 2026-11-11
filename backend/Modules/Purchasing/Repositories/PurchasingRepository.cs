@@ -333,6 +333,26 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
         return new(id, "SupplierInvoice", "", legalEntityId, order.BranchId, order.SupplierPartyId, order.OrderDate, order.OrderDate, order.OrderDate, order.CurrencyCode, order.Lines.Select(x => new Shared.Contracts.Purchasing.PurchaseOrderSourceLine(x.ProductVariantId, x.UnitOfMeasureId, x.UnitCode, x.Description, x.OrderedQuantity.ToString(CultureInfo.InvariantCulture), x.UnitPrice.ToString(CultureInfo.InvariantCulture), x.Id.ToString("D"))).ToArray(), null);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetLinkedInvoiceIdsAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, null, tenant, ct);
+        await using var command = new NpgsqlCommand("select invoice_id from business_purchasing.purchase_order_invoice_link where tenant_id=$1 and legal_entity_id=$2 and purchase_order_id=$3 order by created_at,invoice_id", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(id);
+        var result = new List<Guid>(); await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result.Add(reader.GetGuid(0));
+        return result;
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetReceiptIdsAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, null, tenant, ct);
+        await using var command = new NpgsqlCommand("select distinct receipt_id from business_purchasing.purchase_order_receipt_link where tenant_id=$1 and legal_entity_id=$2 and purchase_order_id=$3 order by receipt_id", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(id);
+        var result = new List<Guid>(); await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result.Add(reader.GetGuid(0));
+        return result;
+    }
+
     private async Task<long> TransitionAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, string nextState, string approval, string history, Guid correlation, bool approve, CancellationToken ct)
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, transaction, tenant, ct);

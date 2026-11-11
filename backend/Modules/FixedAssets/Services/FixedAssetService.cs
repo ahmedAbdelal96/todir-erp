@@ -1,5 +1,6 @@
 using Shared.Primitives.Identifiers;
 using Shared.Contracts.FixedAssets;
+using Shared.Contracts.Platform;
 
 namespace Modules.FixedAssets.Services;
 
@@ -46,7 +47,9 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<AssetBookCostChangeView> ChangeAssetBookCostAsync(TenantId tenant, Guid actor, Guid assetId, ChangeAssetBookCostRequest request, CancellationToken ct) => repository.ChangeAssetBookCostAsync(tenant, actor, assetId, request, ct);
     public Task<AssetBookEstimateChangeView> CreateAssetBookEstimateChangeAsync(TenantId tenant, Guid actor, Guid assetId, Guid bookId, CreateAssetBookEstimateChangeRequest request, CancellationToken ct) => repository.CreateAssetBookEstimateChangeAsync(tenant, actor, assetId, bookId, request, ct);
     public Task<AssetImpairmentView> CreateAssetImpairmentAsync(TenantId tenant, Guid actor, Guid assetId, CreateAssetImpairmentRequest request, CancellationToken ct) => repository.CreateAssetImpairmentAsync(tenant, actor, assetId, request, ct);
+    public Task<PlatformApprovalRequestResult> RequestAssetImpairmentApprovalAsync(TenantId tenant, Guid actor, Guid membershipId, Guid assetId, RequestAssetImpairmentApprovalRequest request, CancellationToken ct) => repository.RequestAssetImpairmentApprovalAsync(tenant, actor, membershipId, assetId, request, ct);
     public Task<AssetRevaluationView> ProposeAssetRevaluationAsync(TenantId tenant, Guid actor, Guid assetId, CreateAssetRevaluationRequest request, CancellationToken ct) => repository.ProposeAssetRevaluationAsync(tenant, actor, assetId, request, ct);
+    public Task<PlatformApprovalRequestResult> RequestAssetRevaluationApprovalAsync(TenantId tenant, Guid actor, Guid membershipId, Guid assetId, RequestAssetRevaluationApprovalRequest request, CancellationToken ct) => repository.RequestAssetRevaluationApprovalAsync(tenant, actor, membershipId, assetId, request, ct);
     public Task<OpeningImportView> CreateOpeningImportAsync(TenantId tenant, Guid actor, CreateOpeningImportRequest request, CancellationToken ct) => repository.CreateOpeningImportAsync(tenant, actor, request, ct);
     public Task<OpeningImportView> PostOpeningImportAsync(TenantId tenant, Guid actor, Guid importId, CancellationToken ct) => repository.PostOpeningImportAsync(tenant, actor, importId, ct);
     public Task<AssetBookBalanceView> GetAssetBookBalanceAsync(TenantId tenant, Guid assetId, Guid bookId, Guid legalEntityId, CancellationToken ct) => repository.GetAssetBookBalanceAsync(tenant, assetId, bookId, legalEntityId, ct);

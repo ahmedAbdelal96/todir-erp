@@ -29,7 +29,7 @@ public sealed class LedgerRepository(
 
     public async Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default)
     {
-        if (controlRole is not ("Receivable" or "Payable" or "Inventory" or "FixedAssetCost" or "FixedAssetAccumulatedDepreciation" or "FixedAssetCapitalizationOffset" or "FixedAssetImpairment" or "FixedAssetCIP") || configurationVersionId == Guid.Empty)
+        if (controlRole is not ("Receivable" or "Payable" or "Inventory" or "FixedAssetCost" or "FixedAssetAccumulatedDepreciation" or "FixedAssetAccumulatedImpairment" or "FixedAssetCapitalizationOffset" or "FixedAssetImpairment" or "FixedAssetCIP") || configurationVersionId == Guid.Empty)
             throw new LedgerDomainException("ledger.control_balance_query_invalid", "A valid control role and accounting configuration are required.");
         await using var connection = await OpenAsync(tenantId, cancellationToken);
         const string sql = """
@@ -797,18 +797,19 @@ public sealed class LedgerRepository(
 
     public async Task<LedgerPostingResult> PostFixedAssetDisposalInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetDisposalPostedPayload payload, CancellationToken ct)
     {
-        if (fact.SourceModule != "fixed-assets" || fact.FactType != AccountingFactTypes.FixedAssetDisposalPosted || payload.GrossCost < 0m || payload.AccumulatedDepreciation < 0m || payload.NetBookValue < 0m || payload.Proceeds < 0m || payload.DirectCosts < 0m || string.IsNullOrWhiteSpace(payload.AssetReference) || payload.GrossCost - payload.AccumulatedDepreciation != payload.NetBookValue || payload.Proceeds - payload.DirectCosts - payload.NetBookValue != payload.GainLoss)
+        if (fact.SourceModule != "fixed-assets" || fact.FactType != AccountingFactTypes.FixedAssetDisposalPosted || payload.GrossCost < 0m || payload.AccumulatedDepreciation < 0m || payload.AccumulatedImpairment < 0m || payload.NetBookValue < 0m || payload.Proceeds < 0m || payload.DirectCosts < 0m || string.IsNullOrWhiteSpace(payload.AssetReference) || payload.GrossCost - payload.AccumulatedDepreciation - payload.AccumulatedImpairment != payload.NetBookValue || payload.Proceeds - payload.DirectCosts - payload.NetBookValue != payload.GainLoss)
             throw new LedgerDomainException("ledger.fixed_asset_fact_invalid", "The fixed asset disposal fact is financially inconsistent.");
         var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct) ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
         var currency = payload.CurrencyCode.Trim().ToUpperInvariant(); if (currency.Length != 3) throw new LedgerDomainException("ledger.currency_mismatch", "A three-letter currency code is required.");
-        var gross = payload.BaseGrossCost ?? payload.GrossCost; var accumulatedAmount = payload.BaseAccumulatedDepreciation ?? payload.AccumulatedDepreciation; var proceeds = payload.BaseProceeds ?? payload.Proceeds; var directCosts = payload.BaseDirectCosts ?? payload.DirectCosts; var baseNbv = gross - accumulatedAmount; var baseGainLoss = proceeds - directCosts - baseNbv;
-        if (gross < 0m || accumulatedAmount < 0m || proceeds < 0m || directCosts < 0m || baseNbv < 0m || baseGainLoss != (payload.GainLoss == 0m ? baseGainLoss : payload.GainLoss)) throw new LedgerDomainException("ledger.fixed_asset_fact_invalid", "The base-currency disposal values are inconsistent.");
+        var gross = payload.BaseGrossCost ?? payload.GrossCost; var accumulatedAmount = payload.BaseAccumulatedDepreciation ?? payload.AccumulatedDepreciation; var impairmentAmount = payload.AccumulatedImpairment; var proceeds = payload.BaseProceeds ?? payload.Proceeds; var directCosts = payload.BaseDirectCosts ?? payload.DirectCosts; var baseNbv = gross - accumulatedAmount - impairmentAmount; var baseGainLoss = proceeds - directCosts - baseNbv;
+        if (gross < 0m || accumulatedAmount < 0m || impairmentAmount < 0m || proceeds < 0m || directCosts < 0m || baseNbv < 0m || baseGainLoss != (payload.GainLoss == 0m ? baseGainLoss : payload.GainLoss)) throw new LedgerDomainException("ledger.fixed_asset_fact_invalid", "The base-currency disposal values are inconsistent.");
         var configuration = await GetActiveConfigurationVersionIdAsync(context, fact.TenantId, fact.LegalEntityId, ct);
-        var cost = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetCost", ct); var accumulated = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetAccumulatedDepreciation", ct); var cash = await ResolveSemanticAccountIdAsync(context, fact, configuration, "Cash", ct);
+        var cost = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetCost", ct); var accumulated = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetAccumulatedDepreciation", ct); var accumulatedImpairment = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetAccumulatedImpairment", ct); var cash = await ResolveSemanticAccountIdAsync(context, fact, configuration, "Cash", ct);
         var gain = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetDisposalGain", ct); var loss = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetDisposalLoss", ct);
         var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value) ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
         var description = $"Fixed asset disposal {payload.AssetReference}"; var lines = new List<LedgerPostingLinePayload>();
         if (accumulatedAmount > 0m) lines.Add(new(accumulated, accumulatedAmount, 0m, currency, payload.AccumulatedDepreciation, 0m, accumulatedAmount, 0m, 1m, [], description, payload.AssetReference));
+        if (impairmentAmount > 0m) lines.Add(new(accumulatedImpairment, impairmentAmount, 0m, currency, impairmentAmount, 0m, impairmentAmount, 0m, 1m, [], description, payload.AssetReference));
         if (proceeds > 0m) lines.Add(new(cash, proceeds, 0m, currency, payload.Proceeds, 0m, proceeds, 0m, 1m, [], description, payload.AssetReference));
         if (baseGainLoss < 0m) lines.Add(new(loss, -baseGainLoss, 0m, currency, -payload.GainLoss, 0m, -baseGainLoss, 0m, 1m, [], description, payload.AssetReference));
         if (baseGainLoss > 0m) lines.Add(new(gain, 0m, baseGainLoss, currency, 0m, payload.GainLoss, 0m, baseGainLoss, 1m, [], description, payload.AssetReference));
@@ -849,13 +850,13 @@ public sealed class LedgerRepository(
         if (currency.Length != 3 || factBaseCurrency != baseCurrency || baseAmount <= 0m || currency != baseCurrency && payload.BaseAmount is null) throw new LedgerDomainException("ledger.currency_mismatch", "Fixed asset impairment requires a base-currency snapshot.");
         var configuration = await GetActiveConfigurationVersionIdAsync(context, fact.TenantId, fact.LegalEntityId, ct);
         var expense = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetImpairment", ct);
-        var cost = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetCost", ct);
+        var accumulated = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetAccumulatedImpairment", ct);
         var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value) ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
         var rate = baseAmount / payload.Amount; var description = $"Fixed asset impairment {payload.AssetReference}: {payload.Reason}";
         var lines = new[]
         {
             new LedgerPostingLinePayload(expense, baseAmount, 0m, currency, payload.Amount, 0m, baseAmount, 0m, rate, [], description, payload.AssetBookReference),
-            new LedgerPostingLinePayload(cost, 0m, baseAmount, currency, 0m, payload.Amount, 0m, baseAmount, rate, [], description, payload.AssetBookReference)
+            new LedgerPostingLinePayload(accumulated, 0m, baseAmount, currency, 0m, payload.Amount, 0m, baseAmount, rate, [], description, payload.AssetBookReference)
         };
         return await PostSemanticExplicitInTransactionAsync(context, fact, new ExplicitLedgerPostingPayload(journal, description, baseCurrency, lines), payload, configuration, ct);
     }

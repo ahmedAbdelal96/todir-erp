@@ -237,9 +237,11 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase
         using var csrfResponse = await authenticated.GetAsync("/api/v1/auth/csrf");
         csrfResponse.EnsureSuccessStatusCode();
         using var csrf = JsonDocument.Parse(await csrfResponse.Content.ReadAsStreamAsync());
+        var seedPassword = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for the POS API contract gate.");
         using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login")
         {
-            Content = JsonContent.Create(new { email = "admin@atlas.com", password = "TodirDev2026!" })
+            Content = JsonContent.Create(new { email = "admin@atlas.com", password = seedPassword })
         };
         login.Headers.Add("X-CSRF-TOKEN", csrf.RootElement.GetProperty("token").GetString());
         var loginResponse = await authenticated.SendAsync(login);

@@ -52,6 +52,7 @@ public static class LedgerSeed
             var writeOffIncome = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 12);
             var fixedAssetCost = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 27);
             var fixedAssetAccumulated = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 28);
+            var fixedAssetAccumulatedImpairment = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 34);
             var fixedAssetDepreciationExpense = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 29);
             var fixedAssetCip = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 30);
             var fixedAssetCapitalizationOffset = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 31);
@@ -86,6 +87,7 @@ public static class LedgerSeed
                 (writeOffIncome, "420000", "إيرادات تسوية الديون", "Write-off income", "Revenue", "WriteOff", revenueCategory, (Guid?)revenue, true)
                 ,(fixedAssetCost, "150000", "تكلفة الأصول الثابتة", "Fixed asset cost", "Asset", "FixedAssetCost", assetCategory, (Guid?)assets, true)
                 ,(fixedAssetAccumulated, "159000", "مجمع إهلاك الأصول الثابتة", "Accumulated depreciation", "Asset", "FixedAssetAccumulatedDepreciation", assetCategory, (Guid?)assets, true)
+                ,(fixedAssetAccumulatedImpairment, "159100", "مجمع انخفاض قيمة الأصول الثابتة", "Accumulated impairment", "Asset", "FixedAssetAccumulatedImpairment", assetCategory, (Guid?)assets, true)
                 ,(fixedAssetDepreciationExpense, "560000", "مصروف إهلاك الأصول الثابتة", "Fixed asset depreciation expense", "Expense", "FixedAssetDepreciationExpense", expenseCategory, (Guid?)null, true)
                 ,(fixedAssetCip, "150900", "أصول تحت التنفيذ", "Construction in progress", "Asset", "FixedAssetCip", assetCategory, (Guid?)assets, true)
                 ,(fixedAssetCapitalizationOffset, "210800", "مقابل رسملة الأصول", "Fixed asset capitalization offset", "Liability", "FixedAssetCapitalizationOffset", liabilityCategory, (Guid?)null, true)
@@ -144,6 +146,7 @@ public static class LedgerSeed
             var roleEmployeeReimbursementPayable = await AddRoleAsync(context, entityId, suffix, 26, "EmployeeReimbursementPayable", "التزام رد مصروفات الموظفين", "Employee reimbursement payable", cancellationToken);
             var roleFixedAssetCost = await AddRoleAsync(context, entityId, suffix, 27, "FixedAssetCost", "تكلفة الأصول الثابتة", "Fixed asset cost", cancellationToken);
             var roleFixedAssetAccumulated = await AddRoleAsync(context, entityId, suffix, 28, "FixedAssetAccumulatedDepreciation", "مجمع إهلاك الأصول الثابتة", "Accumulated depreciation", cancellationToken);
+            var roleFixedAssetAccumulatedImpairment = await AddRoleAsync(context, entityId, suffix, 34, "FixedAssetAccumulatedImpairment", "مجمع انخفاض قيمة الأصول الثابتة", "Accumulated impairment", cancellationToken);
             var roleFixedAssetDepreciationExpense = await AddRoleAsync(context, entityId, suffix, 29, "FixedAssetDepreciationExpense", "مصروف إهلاك الأصول الثابتة", "Fixed asset depreciation expense", cancellationToken);
             var roleFixedAssetCip = await AddRoleAsync(context, entityId, suffix, 30, "FixedAssetCip", "أصول تحت التنفيذ", "Construction in progress", cancellationToken);
             var roleFixedAssetCapitalizationOffset = await AddRoleAsync(context, entityId, suffix, 31, "FixedAssetCapitalizationOffset", "مقابل رسملة الأصول", "Fixed asset capitalization offset", cancellationToken);
@@ -177,6 +180,7 @@ public static class LedgerSeed
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 26, roleEmployeeReimbursementPayable, employeeReimbursementPayable, "EmployeeReimbursementPayable", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 27, roleFixedAssetCost, fixedAssetCost, "FixedAssetCost", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 28, roleFixedAssetAccumulated, fixedAssetAccumulated, "FixedAssetAccumulatedDepreciation", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 34, roleFixedAssetAccumulatedImpairment, fixedAssetAccumulatedImpairment, "FixedAssetAccumulatedImpairment", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 29, roleFixedAssetDepreciationExpense, fixedAssetDepreciationExpense, "FixedAssetDepreciationExpense", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 30, roleFixedAssetCip, fixedAssetCip, "FixedAssetCip", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 31, roleFixedAssetCapitalizationOffset, fixedAssetCapitalizationOffset, "FixedAssetCapitalizationOffset", null, null, null, cancellationToken);
@@ -239,7 +243,7 @@ public static class LedgerSeed
             "FixedAssetAcquisitionPosted" => new[] { (1, "FixedAssetCost", "BaseAmount", "Debit"), (2, "FixedAssetCapitalizationOffset", "BaseAmount", "Credit") },
             "FixedAssetDepreciationPosted" => new[] { (1, "FixedAssetDepreciationExpense", "BaseAmount", "Debit"), (2, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Credit") },
             "FixedAssetDepreciationReversed" => new[] { (1, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Debit"), (2, "FixedAssetDepreciationExpense", "BaseAmount", "Credit") },
-            "FixedAssetDisposalPosted" => new[] { (1, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Debit"), (2, "FixedAssetCost", "GrossCost", "Credit"), (3, "Cash", "Proceeds", "Debit"), (4, "Cash", "DirectCosts", "Credit"), (5, "FixedAssetDisposalGain", "GainLoss", "Credit"), (6, "FixedAssetDisposalLoss", "GainLoss", "Debit") },
+            "FixedAssetDisposalPosted" => new[] { (1, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Debit"), (2, "FixedAssetAccumulatedImpairment", "BaseAmount", "Debit"), (3, "FixedAssetCost", "GrossCost", "Credit"), (4, "Cash", "Proceeds", "Debit"), (5, "Cash", "DirectCosts", "Credit"), (6, "FixedAssetDisposalGain", "GainLoss", "Credit"), (7, "FixedAssetDisposalLoss", "GainLoss", "Debit") },
             "FixedAssetCostAdded" => new[] { (1, "FixedAssetCost", "BaseAmount", "Debit"), (2, "FixedAssetCapitalizationOffset", "BaseAmount", "Credit") },
             "FixedAssetCostReduced" => new[] { (1, "FixedAssetCapitalizationOffset", "BaseAmount", "Debit"), (2, "FixedAssetCost", "BaseAmount", "Credit") },
             "InternalTransferCompleted" => new[] { (1, "Cash", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },

@@ -21,6 +21,7 @@ public static class PurchasingModuleExtensions
         services.AddSingleton<Repositories.PurchasingRepository>();
         services.AddSingleton<PurchasingService>();
         services.AddSingleton<Shared.Contracts.Purchasing.IPurchasingSourceCapabilities>(p => p.GetRequiredService<PurchasingService>());
+        services.AddSingleton<Shared.Contracts.Purchasing.IPurchasingFixedAssetCapabilities>(p => p.GetRequiredService<PurchasingService>());
         services.AddSingleton<Shared.Contracts.Purchasing.IPurchasingReadCapabilities>(p => p.GetRequiredService<PurchasingService>());
         services.AddSingleton<Shared.Contracts.Purchasing.IPurchasingLandedCostCapabilities>(p => p.GetRequiredService<PurchasingService>());
         return services;

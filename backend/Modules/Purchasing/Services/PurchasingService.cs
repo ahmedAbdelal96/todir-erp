@@ -23,7 +23,7 @@ public sealed class PurchasingService(
     IInvoiceComplianceSnapshotCapability invoiceSnapshots,
     TimeProvider clock,
     IInventoryPurchasingCapabilities? inventory = null,
-    IInvoicingCorrectionCapabilities? corrections = null) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities, Shared.Contracts.Purchasing.IPurchasingLandedCostCapabilities
+    IInvoicingCorrectionCapabilities? corrections = null) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingFixedAssetCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities, Shared.Contracts.Purchasing.IPurchasingLandedCostCapabilities
 {
     public async Task<Guid> CreateAsync(TenantId tenant, Guid actor, CreatePurchaseOrderRequest request, bool canOverridePrice, Guid correlation, CancellationToken ct)
     {
@@ -50,7 +50,42 @@ public sealed class PurchasingService(
     public Task<long> CloseAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CloseAsync(tenant, actor, entity, id, request, correlation, ct);
     public Task<long> CloseShortAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CloseShortAsync(tenant, actor, entity, id, request, correlation, ct);
     public Task<bool> IsPurchaseOrderApprovedAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default) => repository.IsApprovedAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
-    public Task<Shared.Contracts.Purchasing.PurchaseOrderInvoiceSource?> GetInvoiceSourceAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default) => repository.GetInvoiceSourceAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
+    public async Task<Shared.Contracts.Purchasing.PurchaseOrderInvoiceSource?> GetInvoiceSourceAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default)
+    {
+        var source = await GetFinalizedCapitalizationSourceAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
+        return source is null
+            ? null
+            : new(source.PurchaseOrderId, "SupplierInvoice", $"purchasing-invoice:{source.SupplierInvoiceId:D}", source.LegalEntityId,
+                source.BranchId, source.SupplierPartyId, source.DocumentDate, source.PostingDate, source.TaxDate, source.CurrencyCode,
+                source.Lines.Select(line => new Shared.Contracts.Purchasing.PurchaseOrderSourceLine(line.ProductVariantId, line.UnitOfMeasureId,
+                    line.UnitCode, line.Description, line.Quantity, line.FinalUnitPrice, line.SourceLineReference)).ToArray(), source.SupplierInvoiceNumber);
+    }
+    public async Task<Shared.Contracts.Purchasing.FixedAssetPurchasingSourceSnapshot?> GetFinalizedCapitalizationSourceAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default)
+    {
+        var order = await repository.GetAsync(tenantId, legalEntityId, purchaseOrderId, true, cancellationToken);
+        if (order is null || order.State is PurchaseOrderStates.Draft or PurchaseOrderStates.PendingApproval or PurchaseOrderStates.Cancelled || order.ReceiptState is not ("Received" or "PartiallyReceived")) return null;
+        var receiptIds = await repository.GetReceiptIdsAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
+        if (receiptIds.Count == 0) return null;
+        foreach (var invoiceId in await repository.GetLinkedInvoiceIdsAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken))
+        {
+            var evidence = await invoiceSnapshots.GetInvoiceComplianceSnapshotAsync(tenantId, legalEntityId, invoiceId, cancellationToken);
+            if (evidence is null || !string.Equals(evidence.Direction, "Payable", StringComparison.OrdinalIgnoreCase) || evidence.Lines.Count == 0) continue;
+            var lines = new List<Shared.Contracts.Purchasing.FixedAssetPurchasingSourceLine>();
+            var total = 0m;
+            foreach (var line in evidence.Lines)
+            {
+                if (!decimal.TryParse(line.NetAmount, NumberStyles.Number, CultureInfo.InvariantCulture, out var net) || net <= 0m || string.IsNullOrWhiteSpace(line.SourceLineReference)) continue;
+                if (!decimal.TryParse(line.Quantity, NumberStyles.Number, CultureInfo.InvariantCulture, out var quantity) || quantity <= 0m) continue;
+                lines.Add(new(line.ProductVariantId, line.UnitOfMeasureId, line.UnitCode, line.Description, line.Quantity, line.FinalUnitPrice, line.NetAmount, line.SourceLineReference));
+                total += net;
+            }
+            if (total <= 0m || lines.Count == 0) continue;
+            return new(purchaseOrderId, invoiceId, receiptIds, legalEntityId, order.BranchId, order.SupplierPartyId,
+                evidence.DocumentDate, evidence.PostingDate, evidence.TaxDate, evidence.CurrencyCode,
+                evidence.DocumentNumber, total, lines, evidence);
+        }
+        return null;
+    }
     public async Task<Shared.Contracts.Purchasing.PurchaseLandedCostContext?> GetLandedCostContextAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default)
     {
         var order = await repository.GetAsync(tenantId, legalEntityId, purchaseOrderId, true, cancellationToken);
