@@ -240,6 +240,33 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         }, ct);
     }
 
+    public async Task<IReadOnlyList<VerificationCampaignView>> ListVerificationCampaignsAsync(TenantId tenant, Guid? legalEntityId, string? status, int limit, CancellationToken ct)
+    {
+        var bounded = Math.Clamp(limit, 1, 200);
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        const string sql = """
+            select c.id,c.legal_entity_id,c.name,c.snapshot_at,c.status,
+                   count(l.id)::int as line_count,
+                   count(l.id) filter (where l.result='Pending')::int as pending_count,
+                   c.created_at
+            from business_assets.asset_verification_campaign c
+            left join business_assets.asset_verification_line l on l.tenant_id=c.tenant_id and l.campaign_id=c.id
+            where c.tenant_id=$1 and ($2::uuid is null or c.legal_entity_id=$2) and ($3::text is null or c.status=$3)
+            group by c.id,c.legal_entity_id,c.name,c.snapshot_at,c.status,c.created_at
+            order by c.created_at desc,c.id desc limit $4
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value); command.Parameters.AddWithValue((object?)status ?? DBNull.Value); command.Parameters.AddWithValue(bounded);
+        var rows = new List<VerificationCampaignView>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) rows.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetFieldValue<DateTimeOffset>(3), reader.GetString(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetFieldValue<DateTimeOffset>(7)));
+        await reader.CloseAsync();
+        await transaction.CommitAsync(ct);
+        return rows;
+    }
+
     public async Task<VerificationCampaignView> VerifyAssetAsync(TenantId tenant, Guid actor, Guid campaignId, Guid assetId, VerifyAssetRequest request, CancellationToken ct)
     {
         if (request.Result is not ("Found" or "Missing" or "WrongLocation" or "WrongCustodian" or "Damaged" or "Unexpected") || request.Result is ("Found" or "WrongLocation") && request.ObservedLocationId is null) throw new FixedAssetException("assets.verification_result_invalid");
