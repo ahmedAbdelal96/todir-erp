@@ -156,6 +156,7 @@ public sealed record LedgerControlBalanceSnapshot(Guid AccountId, string Control
 public interface ILedgerControlBalanceRead
 {
     Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default);
+    Task<LedgerControlBalanceSnapshot> GetActiveControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, DateOnly asOfDate, CancellationToken cancellationToken = default);
 }
 public sealed record OpeningBalancePostedPayload(decimal Amount, string CurrencyCode, string SemanticRole) : IAccountingFactPayload;
 public sealed record ManualGeneralJournalPostedPayload(string Description, string CurrencyCode, IReadOnlyList<string> SemanticRoles) : IAccountingFactPayload;

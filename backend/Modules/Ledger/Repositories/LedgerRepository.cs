@@ -29,7 +29,7 @@ public sealed class LedgerRepository(
 
     public async Task<LedgerControlBalanceSnapshot> GetControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, Guid configurationVersionId, DateOnly asOfDate, CancellationToken cancellationToken = default)
     {
-        if (controlRole is not ("Receivable" or "Payable" or "Inventory") || configurationVersionId == Guid.Empty)
+        if (controlRole is not ("Receivable" or "Payable" or "Inventory" or "FixedAssetCost" or "FixedAssetAccumulatedDepreciation" or "FixedAssetImpairment" or "FixedAssetCIP") || configurationVersionId == Guid.Empty)
             throw new LedgerDomainException("ledger.control_balance_query_invalid", "A valid control role and accounting configuration are required.");
         await using var connection = await OpenAsync(tenantId, cancellationToken);
         const string sql = """
@@ -37,7 +37,7 @@ public sealed class LedgerRepository(
               select id,effective_from from finance_ledger.accounting_configuration_version
               where tenant_id=$1 and legal_entity_id=$2 and id=$3
             ), aliases as (
-              select case when $4='Receivable' then array['Receivable','AccountsReceivableControl']::text[] when $4='Payable' then array['Payable','AccountsPayableControl']::text[] else array['InventoryAsset']::text[] end as codes
+              select case when $4='Receivable' then array['Receivable','AccountsReceivableControl']::text[] when $4='Payable' then array['Payable','AccountsPayableControl']::text[] when $4='Inventory' then array['InventoryAsset']::text[] else array[$4]::text[] end as codes
             ), candidates as (
               select v.target_account_id,(r.code=$4) as exact_role,v.specificity_rank
               from finance_ledger.account_role r
@@ -72,6 +72,12 @@ public sealed class LedgerRepository(
         var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(tenantId, legalEntityId, cancellationToken)
             ?? throw new LedgerDomainException("ledger.entity_missing", "The legal entity financial context is unavailable.");
         return new(accountId, controlRole, signedBalance, baseCurrency, configurationVersionId);
+    }
+
+    public async Task<LedgerControlBalanceSnapshot> GetActiveControlBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId, string controlRole, DateOnly asOfDate, CancellationToken cancellationToken = default)
+    {
+        var configurationVersionId = await GetActiveConfigurationVersionIdAsync(tenantId, legalEntityId, cancellationToken);
+        return await GetControlBalanceAsync(tenantId, legalEntityId, controlRole, configurationVersionId, asOfDate, cancellationToken);
     }
 
     public async Task<IReadOnlyList<AccountDto>> ListAccountsAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct)

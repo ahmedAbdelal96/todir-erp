@@ -9,7 +9,7 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.FixedAssets;
 
-public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransactionCoordinator coordinator, ITransactionalFixedAssetLedgerPostingCapability ledger)
+public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransactionCoordinator coordinator, ITransactionalFixedAssetLedgerPostingCapability ledger, ILedgerControlBalanceRead ledgerBalances)
 {
     public async Task<AssetCategoryView> CreateCategoryAsync(TenantId tenant, Guid actor, CreateAssetCategoryRequest request, CancellationToken ct)
     {
@@ -578,6 +578,21 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         if (!await reader.ReadAsync(ct)) throw new FixedAssetException("assets.book_not_found");
         var originalCost = reader.GetDecimal(3); var accumulated = Math.Clamp(reader.GetDecimal(5), 0m, originalCost); var lifecycle = reader.GetString(4); var netBookValue = lifecycle == "Disposed" ? 0m : originalCost - accumulated;
         return new AssetBookBalanceView(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), originalCost, accumulated, netBookValue, lifecycle, Convert.ToInt32(reader.GetInt64(6), System.Globalization.CultureInfo.InvariantCulture), reader.IsDBNull(7) ? null : reader.GetFieldValue<DateOnly>(7));
+    }
+
+    public async Task<AssetGlReconciliationView> ReconcileAssetBookAsync(TenantId tenant, Guid bookId, Guid legalEntityId, DateOnly asOfDate, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand("select bd.posts_to_ledger,bd.currency_code,coalesce(sum(case when a.lifecycle_state='Disposed' then 0 else b.original_cost end),0),coalesce(sum(case when a.lifecycle_state='Disposed' then 0 else coalesce((select sum(case when t.transaction_type='Opening' then t.accumulated_depreciation when t.transaction_type='Depreciation' then t.amount when t.transaction_type='Reversal' then -t.amount else 0 end) from business_assets.asset_book_transaction t where t.tenant_id=b.tenant_id and t.asset_book_id=b.id and t.transaction_date <= $5),0) end),0) from business_assets.asset_book b join business_assets.fixed_asset a on a.tenant_id=b.tenant_id and a.id=b.asset_id join business_assets.asset_book_definition bd on bd.tenant_id=b.tenant_id and bd.id=b.book_definition_id where b.tenant_id=$1 and b.book_definition_id=$2 and a.legal_entity_id=$3 group by bd.posts_to_ledger,bd.currency_code", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(bookId); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(asOfDate); command.Parameters.AddWithValue(asOfDate);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new FixedAssetException("assets.book_not_found");
+        var postsToLedger = reader.GetBoolean(0); var currency = reader.GetString(1).Trim(); var assetCost = reader.GetDecimal(2); var assetAccumulated = Math.Max(0m, reader.GetDecimal(3)); await reader.CloseAsync();
+        if (!postsToLedger) return new AssetGlReconciliationView(legalEntityId, bookId, asOfDate, assetCost, 0m, 0m, assetAccumulated, 0m, 0m, Math.Max(0m, assetCost - assetAccumulated), currency, "NotApplicable");
+        var ledgerCost = await ledgerBalances.GetActiveControlBalanceAsync(tenant, new(legalEntityId), "FixedAssetCost", asOfDate, ct);
+        var ledgerAccumulated = await ledgerBalances.GetActiveControlBalanceAsync(tenant, new(legalEntityId), "FixedAssetAccumulatedDepreciation", asOfDate, ct);
+        var ledgerAccumulatedPositive = -ledgerAccumulated.SignedBaseBalance; var costDifference = assetCost - ledgerCost.SignedBaseBalance; var accumulatedDifference = assetAccumulated - ledgerAccumulatedPositive; var status = Math.Abs(costDifference) <= 0.000001m && Math.Abs(accumulatedDifference) <= 0.000001m ? "Healthy" : "Difference";
+        return new AssetGlReconciliationView(legalEntityId, bookId, asOfDate, assetCost, ledgerCost.SignedBaseBalance, costDifference, assetAccumulated, ledgerAccumulatedPositive, accumulatedDifference, Math.Max(0m, assetCost - assetAccumulated), ledgerCost.BaseCurrencyCode, status);
     }
 
     private static string? ValidateOpeningLine(OpeningImportLineRequest line)
