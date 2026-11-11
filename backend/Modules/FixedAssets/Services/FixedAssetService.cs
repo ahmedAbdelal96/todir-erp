@@ -21,5 +21,6 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<CipAssetView> CreateCipAssetAsync(TenantId tenant, Guid actor, CreateCipAssetRequest request, CancellationToken ct) => repository.CreateCipAssetAsync(tenant, actor, request, ct);
     public Task<CipAssetView> AddCipCostSourceAsync(TenantId tenant, Guid actor, Guid assetId, AddCipCostSourceRequest request, CancellationToken ct) => repository.AddCipCostSourceAsync(tenant, actor, assetId, request, ct);
     public Task<CipAssetView> CapitalizeCipAsync(TenantId tenant, Guid actor, Guid assetId, CapitalizeCipRequest request, CancellationToken ct) => repository.CapitalizeCipAsync(tenant, actor, assetId, request, ct);
+    public Task<AssetBookCostChangeView> ChangeAssetBookCostAsync(TenantId tenant, Guid actor, Guid assetId, ChangeAssetBookCostRequest request, CancellationToken ct) => repository.ChangeAssetBookCostAsync(tenant, actor, assetId, request, ct);
     public Task<DisposalView> DisposeAsync(TenantId tenant, Guid actor, Guid assetId, DisposeAssetRequest request, CancellationToken ct) => repository.DisposeAsync(tenant, actor, assetId, request, ct);
 }

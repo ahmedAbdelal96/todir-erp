@@ -63,6 +63,7 @@ public sealed record AllocateCapitalizationCandidateRequest(Guid AssetId, decima
 public sealed record CreateCipAssetRequest(Guid LegalEntityId, Guid CategoryId, string Name, DateOnly AcquisitionDate, string SourceType, string SourceReference, decimal Amount, string? Description);
 public sealed record AddCipCostSourceRequest(string SourceType, string SourceReference, decimal Amount, Guid? ReversalOfId = null);
 public sealed record CapitalizeCipRequest(Guid TargetCategoryId, string? Name, DateOnly CapitalizationDate, DateOnly? PlacedInServiceDate = null);
+public sealed record ChangeAssetBookCostRequest(Guid LegalEntityId, Guid BookId, decimal Amount, DateOnly EffectiveDate, string Reason, string? IdempotencyKey);
 
 public sealed record AssetCategoryView(Guid Id, string Code, string Name, string AssetNature, string TrackingGranularity, bool RequiresLocation, bool RequiresCustody, bool RequiresDepreciation, decimal? CapitalizationThreshold, string DefaultDepreciationMethod, int? DefaultUsefulLifeMonths, decimal DefaultResidualValue);
 public sealed record AssetView(Guid Id, Guid LegalEntityId, Guid CategoryId, string AssetNumber, string Name, string? Description, string? AssetTag, string LifecycleState, string AssetNature, string TrackingGranularity, string? ProductVariantRef, string? InventorySerialRef, DateOnly? AcquisitionDate, DateOnly? CapitalizationDate, DateOnly? PlacedInServiceDate, decimal Quantity, DateTimeOffset CreatedAt, long RowVersion);
@@ -73,4 +74,5 @@ public sealed record DisposalView(Guid AssetId, string DisposalType, DateOnly Di
 public sealed record CapitalizationCandidateView(Guid Id, Guid LegalEntityId, string SourceType, string SourceReference, JsonElement SourceSnapshot, decimal EligibleAmount, decimal AllocatedAmount, string Status, string? Decision, DateTimeOffset CreatedAt);
 public sealed record SourceAllocationView(Guid Id, Guid CandidateId, Guid AssetId, decimal Amount, string AllocationType, DateTimeOffset CreatedAt);
 public sealed record CipAssetView(Guid AssetId, string AssetNumber, string Name, string LifecycleState, decimal TotalCost, int CostSourceCount, DateOnly? CapitalizationDate, DateOnly? PlacedInServiceDate);
+public sealed record AssetBookCostChangeView(Guid AssetId, Guid BookId, decimal Amount, string TransactionType, decimal PreviousCost, decimal NewCost, string? LedgerFactReference, bool AlreadyApplied);
 

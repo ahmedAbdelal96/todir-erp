@@ -795,6 +795,29 @@ public sealed class LedgerRepository(
         return await PostSemanticExplicitInTransactionAsync(context, fact, new ExplicitLedgerPostingPayload(journal, description, baseCurrency, lines), payload, configuration, ct);
     }
 
+    public Task<LedgerPostingResult> PostFixedAssetCostAddedInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetCostAdjustmentPostedPayload payload, CancellationToken ct) => PostFixedAssetCostAdjustmentInTransactionAsync(context, fact, payload, true, ct);
+
+    public Task<LedgerPostingResult> PostFixedAssetCostReducedInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetCostAdjustmentPostedPayload payload, CancellationToken ct) => PostFixedAssetCostAdjustmentInTransactionAsync(context, fact, payload, false, ct);
+
+    private async Task<LedgerPostingResult> PostFixedAssetCostAdjustmentInTransactionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetCostAdjustmentPostedPayload payload, bool added, CancellationToken ct)
+    {
+        var expectedFactType = added ? AccountingFactTypes.FixedAssetCostAdded : AccountingFactTypes.FixedAssetCostReduced;
+        if (fact.SourceModule != "fixed-assets" || fact.FactType != expectedFactType || payload.Amount <= 0m || string.IsNullOrWhiteSpace(payload.AssetBookReference) || string.IsNullOrWhiteSpace(payload.AssetReference) || string.IsNullOrWhiteSpace(payload.Reason))
+            throw new LedgerDomainException("ledger.fixed_asset_cost_fact_invalid", "The fixed asset cost adjustment fact is incomplete.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct) ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var currency = payload.CurrencyCode.Trim().ToUpperInvariant(); var baseAmount = payload.BaseAmount ?? payload.Amount; var factBaseCurrency = payload.BaseCurrencyCode?.Trim().ToUpperInvariant() ?? currency;
+        if (currency.Length != 3 || factBaseCurrency != baseCurrency || baseAmount <= 0m || currency != baseCurrency && payload.BaseAmount is null) throw new LedgerDomainException("ledger.currency_mismatch", "Fixed asset cost adjustments require a base-currency snapshot.");
+        var configuration = await GetActiveConfigurationVersionIdAsync(context, fact.TenantId, fact.LegalEntityId, ct);
+        var cost = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetCost", ct);
+        var offset = await ResolveSemanticAccountIdAsync(context, fact, configuration, "FixedAssetCapitalizationOffset", ct);
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value) ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var rate = baseAmount / payload.Amount; var description = $"Fixed asset {(added ? "cost addition" : "cost reduction")} {payload.AssetReference}: {payload.Reason}";
+        var lines = added
+            ? new[] { new LedgerPostingLinePayload(cost, baseAmount, 0m, currency, payload.Amount, 0m, baseAmount, 0m, rate, [], description, payload.AssetBookReference), new LedgerPostingLinePayload(offset, 0m, baseAmount, currency, 0m, payload.Amount, 0m, baseAmount, rate, [], description, payload.AssetBookReference) }
+            : new[] { new LedgerPostingLinePayload(offset, baseAmount, 0m, currency, payload.Amount, 0m, baseAmount, 0m, rate, [], description, payload.AssetBookReference), new LedgerPostingLinePayload(cost, 0m, baseAmount, currency, 0m, payload.Amount, 0m, baseAmount, rate, [], description, payload.AssetBookReference) };
+        return await PostSemanticExplicitInTransactionAsync(context, fact, new ExplicitLedgerPostingPayload(journal, description, baseCurrency, lines), payload, configuration, ct);
+    }
+
     public async Task<LedgerPostingResult> ReverseInventoryValuationInTransactionAsync(ITransactionContext context,
         AccountingFactEnvelope<IAccountingFactPayload> fact, InventoryValuationReversalPayload payload, CancellationToken ct)
     {

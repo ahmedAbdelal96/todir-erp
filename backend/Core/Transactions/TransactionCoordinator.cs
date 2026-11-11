@@ -35,6 +35,8 @@ public interface ITransactionalFixedAssetLedgerPostingCapability
     Task<LedgerPostingResult> PostFixedAssetAcquisitionAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetAcquisitionPostedPayload payload, CancellationToken cancellationToken = default);
     Task<LedgerPostingResult> PostFixedAssetDepreciationAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetDepreciationPostedPayload payload, CancellationToken cancellationToken = default);
     Task<LedgerPostingResult> PostFixedAssetDisposalAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetDisposalPostedPayload payload, CancellationToken cancellationToken = default);
+    Task<LedgerPostingResult> PostFixedAssetCostAddedAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetCostAdjustmentPostedPayload payload, CancellationToken cancellationToken = default);
+    Task<LedgerPostingResult> PostFixedAssetCostReducedAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, FixedAssetCostAdjustmentPostedPayload payload, CancellationToken cancellationToken = default);
 }
 
 public interface ITransactionalPaymentLedgerPostingCapability

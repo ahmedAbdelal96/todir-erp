@@ -387,6 +387,105 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         Assert.True(balanceReader.GetDecimal(0) > 0m);
     }
 
+    [Fact]
+    public async Task AssetBookCostAdditionPostsLedgerFactAndIsIdempotent()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Fixed Assets integration verification.");
+        var password = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for Fixed Assets integration verification.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        var loginCsrf = await GetCsrfAsync(client);
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email = "admin@atlas.com", password }) };
+        login.Headers.Add("X-CSRF-TOKEN", loginCsrf.Token);
+        using var loginResponse = await client.SendAsync(login);
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+        var assetId = Guid.CreateVersion7();
+        var bookId = Guid.CreateVersion7();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var actorCommand = new NpgsqlCommand("select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", connection); actorCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
+        var actorId = (Guid)(await actorCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed administrator was not found."));
+        await using var categoryCommand = new NpgsqlCommand("select id from business_assets.asset_category where tenant_id=$1 and code='LAPTOP'", connection); categoryCommand.Parameters.AddWithValue(Guid.Parse(TenantId));
+        var categoryId = (Guid)(await categoryCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed laptop category was not found."));
+        await using var assetSetup = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,'Cost Change Integration Asset','Operational','Equipment','Individual','2026-10-01','2026-10-01','2026-10-01',1,$6,now(),1)", connection); assetSetup.Parameters.AddWithValue(Guid.Parse(TenantId)); assetSetup.Parameters.AddWithValue(assetId); assetSetup.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); assetSetup.Parameters.AddWithValue(categoryId); assetSetup.Parameters.AddWithValue($"FA-TEST-COST-{assetId:N}"); assetSetup.Parameters.AddWithValue(actorId); await assetSetup.ExecuteNonQueryAsync();
+        await using var bookSetup = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,12000,0,36,'StraightLine','2026-10-01',now(),1)", connection); bookSetup.Parameters.AddWithValue(Guid.Parse(TenantId)); bookSetup.Parameters.AddWithValue(bookId); bookSetup.Parameters.AddWithValue(assetId); bookSetup.Parameters.AddWithValue(Guid.Parse(BookDefinitionId)); await bookSetup.ExecuteNonQueryAsync();
+        var key = $"integration-cost-addition-{Guid.CreateVersion7():N}";
+        async Task<HttpResponseMessage> PostChangeAsync(decimal amount, string idempotencyKey, string reason)
+        {
+            var csrf = await GetCsrfAsync(client);
+            var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/assets/{assetId:D}/books/{bookId:D}/cost-change")
+            {
+                Content = JsonContent.Create(new { legalEntityId = Guid.Parse(LegalEntityId), bookId, amount, effectiveDate = "2026-12-01", reason, idempotencyKey })
+            };
+            request.Headers.Add("X-CSRF-TOKEN", csrf.Token);
+            return await client.SendAsync(request);
+        }
+        using var first = await PostChangeAsync(2000m, key, "Integration capital improvement");
+        var firstBody = await first.Content.ReadAsStringAsync();
+        Assert.True(first.StatusCode == HttpStatusCode.OK, firstBody);
+        using var firstJson = JsonDocument.Parse(firstBody);
+        Assert.Equal(14000m, firstJson.RootElement.GetProperty("newCost").GetDecimal());
+        Assert.False(firstJson.RootElement.GetProperty("alreadyApplied").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(firstJson.RootElement.GetProperty("ledgerFactReference").GetString()));
+        using var retry = await PostChangeAsync(2000m, key, "Integration capital improvement");
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        using var retryJson = JsonDocument.Parse(await retry.Content.ReadAsStringAsync());
+        Assert.True(retryJson.RootElement.GetProperty("alreadyApplied").GetBoolean());
+        Assert.Equal(14000m, retryJson.RootElement.GetProperty("newCost").GetDecimal());
+
+        var reductionKey = $"integration-cost-reduction-{Guid.CreateVersion7():N}";
+        using var reduction = await PostChangeAsync(-500m, reductionKey, "Integration cost reduction");
+        var reductionBody = await reduction.Content.ReadAsStringAsync();
+        Assert.True(reduction.StatusCode == HttpStatusCode.OK, reductionBody);
+        using var reductionJson = JsonDocument.Parse(reductionBody);
+        Assert.Equal(13500m, reductionJson.RootElement.GetProperty("newCost").GetDecimal());
+        Assert.Equal("CostReduction", reductionJson.RootElement.GetProperty("transactionType").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(reductionJson.RootElement.GetProperty("ledgerFactReference").GetString()));
+
+        await using var bookCommand = new NpgsqlCommand("select original_cost from business_assets.asset_book where tenant_id=$1 and id=$2", connection); bookCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); bookCommand.Parameters.AddWithValue(bookId);
+        Assert.Equal(13500m, (decimal?)await bookCommand.ExecuteScalarAsync());
+        await using var factCommand = new NpgsqlCommand("select ledger_fact_reference from business_assets.asset_book_transaction where tenant_id=$1 and asset_book_id=$2 and idempotency_key=$3", connection); factCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); factCommand.Parameters.AddWithValue(bookId); factCommand.Parameters.AddWithValue(key);
+        var factReference = (string?)await factCommand.ExecuteScalarAsync();
+        Assert.False(string.IsNullOrWhiteSpace(factReference));
+        await using var factStatus = new NpgsqlCommand("select status,posted_entry_id from finance_ledger.accounting_fact where tenant_id=$1 and id=$2 and fact_type='FixedAssetCostAdded'", connection); factStatus.Parameters.AddWithValue(Guid.Parse(TenantId)); factStatus.Parameters.AddWithValue(Guid.Parse(factReference!));
+        await using var factReader = await factStatus.ExecuteReaderAsync();
+        Assert.True(await factReader.ReadAsync());
+        Assert.Equal("Posted", factReader.GetString(0));
+        var journalEntryId = factReader.GetGuid(1);
+        await factReader.CloseAsync();
+        await using var balanceCommand = new NpgsqlCommand("select coalesce(sum(debit),0),coalesce(sum(credit),0) from finance_ledger.journal_entry_line where tenant_id=$1 and journal_entry_id=$2", connection); balanceCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); balanceCommand.Parameters.AddWithValue(journalEntryId);
+        await using var balanceReader = await balanceCommand.ExecuteReaderAsync();
+        Assert.True(await balanceReader.ReadAsync());
+        Assert.Equal(balanceReader.GetDecimal(0), balanceReader.GetDecimal(1));
+        Assert.True(balanceReader.GetDecimal(0) > 0m);
+        await balanceReader.CloseAsync();
+
+        await using var reductionFactCommand = new NpgsqlCommand("select ledger_fact_reference from business_assets.asset_book_transaction where tenant_id=$1 and asset_book_id=$2 and idempotency_key=$3", connection); reductionFactCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); reductionFactCommand.Parameters.AddWithValue(bookId); reductionFactCommand.Parameters.AddWithValue(reductionKey);
+        var reductionFactReference = (string?)await reductionFactCommand.ExecuteScalarAsync();
+        Assert.False(string.IsNullOrWhiteSpace(reductionFactReference));
+        await using var reductionFactStatus = new NpgsqlCommand("select status,posted_entry_id from finance_ledger.accounting_fact where tenant_id=$1 and id=$2 and fact_type='FixedAssetCostReduced'", connection); reductionFactStatus.Parameters.AddWithValue(Guid.Parse(TenantId)); reductionFactStatus.Parameters.AddWithValue(Guid.Parse(reductionFactReference!));
+        await using var reductionFactReader = await reductionFactStatus.ExecuteReaderAsync();
+        Assert.True(await reductionFactReader.ReadAsync());
+        Assert.Equal("Posted", reductionFactReader.GetString(0));
+        var reductionJournalEntryId = reductionFactReader.GetGuid(1);
+        await reductionFactReader.CloseAsync();
+        await using var reductionBalanceCommand = new NpgsqlCommand("select coalesce(sum(debit),0),coalesce(sum(credit),0) from finance_ledger.journal_entry_line where tenant_id=$1 and journal_entry_id=$2", connection); reductionBalanceCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); reductionBalanceCommand.Parameters.AddWithValue(reductionJournalEntryId);
+        await using var reductionBalanceReader = await reductionBalanceCommand.ExecuteReaderAsync();
+        Assert.True(await reductionBalanceReader.ReadAsync());
+        Assert.Equal(reductionBalanceReader.GetDecimal(0), reductionBalanceReader.GetDecimal(1));
+        Assert.True(reductionBalanceReader.GetDecimal(0) > 0m);
+    }
+
     private static async Task<CsrfResponse> GetCsrfAsync(HttpClient client) => await client.GetFromJsonAsync<CsrfResponse>("/api/v1/auth/csrf") ?? throw new InvalidOperationException("CSRF token was not returned.");
 
     private sealed record CsrfResponse(string Token);
