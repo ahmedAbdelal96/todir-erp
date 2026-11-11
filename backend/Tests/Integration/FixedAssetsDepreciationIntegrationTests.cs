@@ -132,6 +132,74 @@ public sealed class FixedAssetsDepreciationIntegrationTests
     }
 
     [Fact]
+    public async Task DepreciationPostingIsBlockedForClosedAccountingPeriod()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Fixed Assets integration verification.");
+        var password = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for Fixed Assets integration verification.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        var loginCsrf = await GetCsrfAsync(client);
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email = "admin@atlas.com", password }) };
+        login.Headers.Add("X-CSRF-TOKEN", loginCsrf.Token);
+        using var loginResponse = await client.SendAsync(login);
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var idempotencyKey = $"fixed-assets-closed-period-{Guid.CreateVersion7():N}";
+        var prepareCsrf = await GetCsrfAsync(client);
+        using var prepare = new HttpRequestMessage(HttpMethod.Post, "/api/v1/fixed-assets/depreciation-runs/prepare")
+        {
+            Content = JsonContent.Create(new
+            {
+                legalEntityId = Guid.Parse(LegalEntityId),
+                bookId = Guid.Parse(BookDefinitionId),
+                periodStart = "2026-12-01",
+                periodEnd = "2026-12-31",
+                idempotencyKey
+            })
+        };
+        prepare.Headers.Add("X-CSRF-TOKEN", prepareCsrf.Token);
+        using var prepareResponse = await client.SendAsync(prepare);
+        var prepareBody = await prepareResponse.Content.ReadAsStringAsync();
+        Assert.True(prepareResponse.StatusCode == HttpStatusCode.OK, prepareBody);
+        using var prepared = JsonDocument.Parse(prepareBody);
+        var runId = prepared.RootElement.GetProperty("id").GetGuid();
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var closePeriod = new NpgsqlCommand("update finance_ledger.accounting_period set status='Closed' where tenant_id=$1 and legal_entity_id=$2 and start_date='2026-12-01'", connection);
+        closePeriod.Parameters.AddWithValue(Guid.Parse(TenantId));
+        closePeriod.Parameters.AddWithValue(Guid.Parse(LegalEntityId));
+        Assert.Equal(1, await closePeriod.ExecuteNonQueryAsync());
+        try
+        {
+            var postCsrf = await GetCsrfAsync(client);
+            using var post = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/depreciation-runs/{runId:D}/post?legalEntityId={LegalEntityId}");
+            post.Headers.Add("X-CSRF-TOKEN", postCsrf.Token);
+            using var postResponse = await client.SendAsync(post);
+            var postBody = await postResponse.Content.ReadAsStringAsync();
+            Assert.True(postResponse.StatusCode == HttpStatusCode.BadRequest, postBody);
+            Assert.Contains("assets.accounting_period_closed", postBody, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await using var reopenPeriod = new NpgsqlCommand("update finance_ledger.accounting_period set status='Open' where tenant_id=$1 and legal_entity_id=$2 and start_date='2026-12-01'", connection);
+            reopenPeriod.Parameters.AddWithValue(Guid.Parse(TenantId));
+            reopenPeriod.Parameters.AddWithValue(Guid.Parse(LegalEntityId));
+            await reopenPeriod.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
     public async Task CapitalizationCandidateCanBeReviewedAndAllocatedWithoutOverAllocation()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")

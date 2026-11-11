@@ -170,6 +170,8 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
                 await using var count = new NpgsqlCommand("select count(*) from business_assets.asset_depreciation_run_line where tenant_id=$1 and run_id=$2", context.Connection, context.Transaction); count.Parameters.AddWithValue(tenant.Value); count.Parameters.AddWithValue(runId); var existingCount = Convert.ToInt32(await count.ExecuteScalarAsync(token), System.Globalization.CultureInfo.InvariantCulture); return new DepreciationRunView(runId, entity, bookDefinition, periodStart, periodEnd, status, total, existingCount, createdAt);
             }
             if (status != "Calculated") throw new FixedAssetException("assets.depreciation_run_not_postable");
+            await using var closedPeriod = new NpgsqlCommand("select exists (select 1 from finance_ledger.accounting_period where tenant_id=$1 and legal_entity_id=$2 and status in ('Closed','Locked') and start_date <= $3 and end_date >= $4)", context.Connection, context.Transaction); closedPeriod.Parameters.AddWithValue(tenant.Value); closedPeriod.Parameters.AddWithValue(entity); closedPeriod.Parameters.AddWithValue(periodEnd); closedPeriod.Parameters.AddWithValue(periodStart);
+            if (Convert.ToBoolean(await closedPeriod.ExecuteScalarAsync(token), System.Globalization.CultureInfo.InvariantCulture)) throw new FixedAssetException("assets.accounting_period_closed");
             await using var lines = new NpgsqlCommand("""
                 select l.id,l.asset_book_id,l.amount,b.book_definition_id,bd.posts_to_ledger,bd.currency_code,a.asset_number,a.legal_entity_id
                 from business_assets.asset_depreciation_run_line l
