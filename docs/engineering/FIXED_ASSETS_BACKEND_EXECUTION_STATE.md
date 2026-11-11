@@ -57,7 +57,7 @@ Unfinished requirements / next executable work:
 
 Last meaningful change: added finalized Purchasing source eligibility, economic-source de-duplication, approval binding, separate impairment/revaluation accounting, estimate/disposal-aware financial projections, and partial-disposal persistence; fresh migration/seed, API composition, Ledger 55/55, architecture 21/21, build, and Fixed Assets integration 9/9 gates pass. The broader Module 22 mission remains NOT COMPLETE.
 
-Current implementation checkpoint is being refreshed with the current working changes. Next executable action: implement and verify CIP/grouped split, disposal reinstatement and sale linkage, HR offboarding/return workflow, country/tax provider, verification resolution and bulk operations, full reports/drilldown/export, upstream source correction/reversal, concurrency/recovery, migration-upgrade and security acceptance, then run the complete backend release gate. `FA37 LARGE-SCALE PERFORMANCE HARDENING — NOT EXECUTED BY PRODUCT OWNER DIRECTIVE`.
+Current implementation checkpoint is committed as `9933148` and pushed to `origin/dev`. Next executable action: implement and verify CIP/grouped split, disposal reinstatement and sale linkage, HR offboarding/return workflow, country/tax provider, verification resolution and bulk operations, full reports/drilldown/export, upstream source correction/reversal, concurrency/recovery, migration-upgrade and security acceptance, then run the complete backend release gate. `FA37 LARGE-SCALE PERFORMANCE HARDENING — NOT EXECUTED BY PRODUCT OWNER DIRECTIVE`.
 
 ## FA00–FA45 coverage matrix
 
