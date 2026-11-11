@@ -107,6 +107,58 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         return await ReadAsync(command, reader => new AssetView(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetFieldValue<DateOnly>(12), reader.IsDBNull(13) ? null : reader.GetFieldValue<DateOnly>(13), reader.IsDBNull(14) ? null : reader.GetFieldValue<DateOnly>(14), reader.GetDecimal(15), reader.GetFieldValue<DateTimeOffset>(16), reader.GetInt64(17)), ct);
     }
 
+    public async Task<IReadOnlyList<AssetTimelineEventView>> GetAssetTimelineAsync(TenantId tenant, Guid assetId, int limit, CancellationToken ct)
+    {
+        var bounded = Math.Clamp(limit, 1, 200);
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        const string sql = """
+            select id, event_type, effective_date, occurred_at, payload
+            from (
+                select a.id, 'AssetCreated'::text event_type, a.acquisition_date effective_date, a.created_at occurred_at,
+                       jsonb_build_object('assetNumber', a.asset_number, 'name', a.name, 'lifecycleState', a.lifecycle_state) payload
+                from business_assets.fixed_asset a where a.tenant_id=$1 and a.id=$2
+                union all
+                select aa.id, 'AssignmentRecorded'::text, aa.effective_from, aa.created_at,
+                       jsonb_build_object('assignmentType', aa.assignment_type, 'employeeId', aa.employee_id, 'departmentId', aa.department_id, 'locationId', aa.location_id, 'condition', aa.condition)
+                from business_assets.asset_assignment aa where aa.tenant_id=$1 and aa.asset_id=$2
+                union all
+                select h.id, 'HandoverRecorded'::text, h.created_at::date, h.created_at,
+                       jsonb_build_object('assignmentId', h.assignment_id, 'handoverType', h.handover_type, 'acknowledgedAt', h.acknowledged_at, 'condition', h.condition)
+                from business_assets.asset_handover h where h.tenant_id=$1 and h.asset_id=$2
+                union all
+                select bt.id, bt.transaction_type, bt.transaction_date, bt.created_at,
+                       jsonb_build_object('sourceReference', bt.source_reference, 'ledgerFactReference', bt.ledger_fact_reference)
+                from business_assets.asset_book_transaction bt
+                join business_assets.asset_book b on b.tenant_id=bt.tenant_id and b.id=bt.asset_book_id
+                where bt.tenant_id=$1 and b.asset_id=$2
+                union all
+                select d.id, 'DisposalRecorded'::text, d.disposal_date, d.created_at,
+                       jsonb_build_object('disposalType', d.disposal_type, 'status', d.status, 'reason', d.reason)
+                from business_assets.asset_disposal d where d.tenant_id=$1 and d.asset_id=$2
+                union all
+                select e.id, e.action, e.occurred_at::date, e.occurred_at,
+                       jsonb_build_object('entityType', e.entity_type, 'actorId', e.actor_id)
+                from business_assets.asset_audit_event e where e.tenant_id=$1 and e.entity_id=$2
+            ) events
+            order by occurred_at desc, id desc
+            limit $3
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(assetId); command.Parameters.AddWithValue(bounded);
+        var rows = new List<AssetTimelineEventView>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            using var payload = await reader.GetFieldValueAsync<JsonDocument>(4, ct);
+            rows.Add(new(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetFieldValue<DateOnly>(2), reader.GetFieldValue<DateTimeOffset>(3), payload.RootElement.Clone()));
+        }
+        await reader.CloseAsync();
+        await transaction.CommitAsync(ct);
+        return rows;
+    }
+
     public async Task<AssetLocationView> CreateLocationAsync(TenantId tenant, Guid actor, CreateAssetLocationRequest request, CancellationToken ct)
     {
         if (request.LegalEntityId == Guid.Empty || string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name) || request.LocationType is not ("Site" or "Building" or "Floor" or "Room" or "External" or "Other")) throw new FixedAssetException("assets.location_invalid");

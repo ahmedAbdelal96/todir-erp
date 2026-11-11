@@ -78,6 +78,7 @@ public sealed record AssetView(Guid Id, Guid LegalEntityId, Guid CategoryId, str
 public sealed record AssetAssignmentView(Guid Id, Guid AssetId, string AssignmentType, Guid? EmployeeId, Guid? DepartmentId, string? CustodianName, Guid? LocationId, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string? Condition, string? Accessories, string? AcknowledgementReference);
 public sealed record AssetLocationView(Guid Id, Guid LegalEntityId, Guid? ParentLocationId, string Code, string Name, string LocationType, bool Active);
 public sealed record AssetHandoverView(Guid Id, Guid AssetId, Guid AssignmentId, string HandoverType, DateTimeOffset? AcknowledgedAt, string? Condition, JsonElement Evidence, DateTimeOffset CreatedAt);
+public sealed record AssetTimelineEventView(Guid Id, string EventType, DateOnly? EffectiveDate, DateTimeOffset OccurredAt, JsonElement Payload);
 public sealed record VerificationCampaignView(Guid Id, Guid LegalEntityId, string Name, DateTimeOffset SnapshotAt, string Status, int LineCount, int PendingCount, DateTimeOffset CreatedAt);
 public sealed record AssetBookView(Guid Id, Guid LegalEntityId, string Code, string Name, bool PostsToLedger, string CurrencyCode, string DefaultDepreciationMethod, string DefaultConvention, int? DefaultUsefulLifeMonths);
 public sealed record DepreciationRunView(Guid Id, Guid LegalEntityId, Guid BookId, DateOnly PeriodStart, DateOnly PeriodEnd, string Status, decimal TotalAmount, int LineCount, DateTimeOffset CreatedAt);

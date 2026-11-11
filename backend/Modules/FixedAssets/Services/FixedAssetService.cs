@@ -9,6 +9,7 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<IReadOnlyList<AssetCategoryView>> ListCategoriesAsync(TenantId tenant, int limit, CancellationToken ct) => repository.ListCategoriesAsync(tenant, limit, ct);
     public Task<AssetView> CreateAssetAsync(TenantId tenant, Guid actor, CreateAssetRequest request, CancellationToken ct) => repository.CreateAssetAsync(tenant, actor, request, ct);
     public Task<IReadOnlyList<AssetView>> ListAssetsAsync(TenantId tenant, Guid? legalEntityId, string? state, string? search, int limit, int offset, CancellationToken ct) => repository.ListAssetsAsync(tenant, legalEntityId, state, search, limit, offset, ct);
+    public Task<IReadOnlyList<AssetTimelineEventView>> GetAssetTimelineAsync(TenantId tenant, Guid assetId, int limit, CancellationToken ct) => repository.GetAssetTimelineAsync(tenant, assetId, limit, ct);
     public Task<AssetLocationView> CreateLocationAsync(TenantId tenant, Guid actor, CreateAssetLocationRequest request, CancellationToken ct) => repository.CreateLocationAsync(tenant, actor, request, ct);
     public Task<IReadOnlyList<AssetLocationView>> ListLocationsAsync(TenantId tenant, Guid? legalEntityId, CancellationToken ct) => repository.ListLocationsAsync(tenant, legalEntityId, ct);
     public Task<AssetAssignmentView> AssignAsync(TenantId tenant, Guid actor, Guid assetId, AssignAssetRequest request, CancellationToken ct) => repository.AssignAsync(tenant, actor, assetId, request, ct);
