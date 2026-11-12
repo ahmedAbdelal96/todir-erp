@@ -37,6 +37,7 @@ public static class AccountingFactTypes
     public const string FixedAssetDepreciationPosted = "FixedAssetDepreciationPosted";
     public const string FixedAssetDepreciationReversed = "FixedAssetDepreciationReversed";
     public const string FixedAssetDisposalPosted = "FixedAssetDisposalPosted";
+    public const string FixedAssetDisposalReversed = "FixedAssetDisposalReversed";
     public const string FixedAssetCostAdded = "FixedAssetCostAdded";
     public const string FixedAssetCostReduced = "FixedAssetCostReduced";
     public const string FixedAssetImpairmentPosted = "FixedAssetImpairmentPosted";
@@ -46,7 +47,7 @@ public static class AccountingFactTypes
         CustomerInvoicePosted, CustomerCreditNotePosted, VendorBillPosted, VendorCreditNotePosted, CustomerDebitNotePosted, VendorDebitNotePosted,
         PaymentReceived, PaymentMade, RefundPaid, InternalTransferCompleted, PaymentFeeRecognized, PaymentFeeReversed, PosCashSalePosted, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment, InventoryValuationReversal,
         ExpenseRecognized, PayrollPosted, TaxAdjustment, SettlementFxDifference, SettlementWriteOff, UnrealizedFxRevaluation,
-        OpeningBalancePosted, ManualGeneralJournalPosted, FixedAssetAcquisitionPosted, FixedAssetDepreciationPosted, FixedAssetDepreciationReversed, FixedAssetDisposalPosted, FixedAssetCostAdded, FixedAssetCostReduced, FixedAssetImpairmentPosted
+        OpeningBalancePosted, ManualGeneralJournalPosted, FixedAssetAcquisitionPosted, FixedAssetDepreciationPosted, FixedAssetDepreciationReversed, FixedAssetDisposalPosted, FixedAssetDisposalReversed, FixedAssetCostAdded, FixedAssetCostReduced, FixedAssetImpairmentPosted
     };
 }
 
@@ -165,6 +166,7 @@ public sealed record FixedAssetAcquisitionPostedPayload(decimal Amount, string C
 public sealed record FixedAssetDepreciationPostedPayload(decimal Amount, string CurrencyCode, string AssetBookReference, string DepreciationExpenseCategory, decimal? BaseAmount = null, string? BaseCurrencyCode = null, decimal? ExchangeRate = null) : IAccountingFactPayload;
 public sealed record FixedAssetDepreciationReversedPayload(decimal Amount, string CurrencyCode, string AssetBookReference, string DepreciationExpenseCategory, decimal? BaseAmount = null, string? BaseCurrencyCode = null, decimal? ExchangeRate = null) : IAccountingFactPayload;
 public sealed record FixedAssetDisposalPostedPayload(decimal GrossCost, decimal AccumulatedDepreciation, decimal NetBookValue, decimal Proceeds, decimal DirectCosts, decimal GainLoss, string CurrencyCode, string AssetReference, decimal? BaseGrossCost = null, decimal? BaseAccumulatedDepreciation = null, decimal? BaseProceeds = null, decimal? BaseDirectCosts = null, decimal AccumulatedImpairment = 0m) : IAccountingFactPayload;
+public sealed record FixedAssetDisposalReversedPayload(decimal GrossCost, decimal AccumulatedDepreciation, decimal NetBookValue, decimal Proceeds, decimal DirectCosts, decimal GainLoss, string CurrencyCode, string AssetReference, Guid OriginalDisposalFactId, decimal? BaseGrossCost = null, decimal? BaseAccumulatedDepreciation = null, decimal? BaseProceeds = null, decimal? BaseDirectCosts = null, decimal AccumulatedImpairment = 0m) : IAccountingFactPayload;
 public sealed record FixedAssetCostAdjustmentPostedPayload(decimal Amount, string CurrencyCode, string AssetBookReference, string AssetReference, string Reason, decimal? BaseAmount = null, string? BaseCurrencyCode = null) : IAccountingFactPayload;
 public sealed record FixedAssetImpairmentPostedPayload(decimal Amount, string CurrencyCode, string AssetBookReference, string AssetReference, string Reason, decimal? BaseAmount = null, string? BaseCurrencyCode = null) : IAccountingFactPayload;
 

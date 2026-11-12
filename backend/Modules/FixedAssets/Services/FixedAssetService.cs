@@ -11,6 +11,10 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<IReadOnlyList<AssetCategoryView>> ListCategoriesAsync(TenantId tenant, int limit, CancellationToken ct) => repository.ListCategoriesAsync(tenant, limit, ct);
     public Task<AssetView> CreateAssetAsync(TenantId tenant, Guid actor, CreateAssetRequest request, CancellationToken ct) => repository.CreateAssetAsync(tenant, actor, request, ct);
     public Task<IReadOnlyList<AssetView>> ListAssetsAsync(TenantId tenant, Guid? legalEntityId, string? state, string? search, int limit, int offset, CancellationToken ct) => repository.ListAssetsAsync(tenant, legalEntityId, state, search, limit, offset, ct);
+    public Task<IReadOnlyList<AssetRegisterRowView>> ListAssetRegisterAsync(TenantId tenant, Guid legalEntityId, DateOnly asOfDate, Guid? bookId, string? state, string? search, int limit, int offset, CancellationToken ct) => repository.ListAssetRegisterAsync(tenant, legalEntityId, asOfDate, bookId, state, search, limit, offset, ct);
+    public Task<FixedAssetPolicyDefaults?> GetCountryBookDefaultsAsync(TenantId tenant, Guid legalEntityId, string bookCode, CancellationToken ct) => repository.GetCountryBookDefaultsAsync(tenant, legalEntityId, bookCode, ct);
+    public Task<MassTransferPreviewView> PreviewMassTransferAsync(TenantId tenant, MassTransferRequest request, CancellationToken ct) => repository.PreviewMassTransferAsync(tenant, request, ct);
+    public Task<MassTransferView> ExecuteMassTransferAsync(TenantId tenant, Guid actor, MassTransferRequest request, CancellationToken ct) => repository.ExecuteMassTransferAsync(tenant, actor, request, ct);
     public Task<IReadOnlyList<AssetTimelineEventView>> GetAssetTimelineAsync(TenantId tenant, Guid assetId, int limit, CancellationToken ct) => repository.GetAssetTimelineAsync(tenant, assetId, limit, ct);
     public Task<AssetLocationView> CreateLocationAsync(TenantId tenant, Guid actor, CreateAssetLocationRequest request, CancellationToken ct) => repository.CreateLocationAsync(tenant, actor, request, ct);
     public Task<IReadOnlyList<AssetLocationView>> ListLocationsAsync(TenantId tenant, Guid? legalEntityId, CancellationToken ct) => repository.ListLocationsAsync(tenant, legalEntityId, ct);
@@ -59,4 +63,6 @@ public sealed class FixedAssetService(FixedAssetRepository repository)
     public Task<AssetGlReconciliationView> ReconcileAssetBookAsync(TenantId tenant, Guid bookId, Guid legalEntityId, DateOnly asOfDate, CancellationToken ct) => repository.ReconcileAssetBookAsync(tenant, bookId, legalEntityId, asOfDate, ct);
     public Task<IReadOnlyList<AssetDepreciationScheduleLineView>> GetDepreciationScheduleAsync(TenantId tenant, Guid assetId, Guid bookId, Guid legalEntityId, DateOnly from, DateOnly to, CancellationToken ct) => repository.GetDepreciationScheduleAsync(tenant, assetId, bookId, legalEntityId, from, to, ct);
     public Task<DisposalView> DisposeAsync(TenantId tenant, Guid actor, Guid assetId, DisposeAssetRequest request, CancellationToken ct) => repository.DisposeAsync(tenant, actor, assetId, request, ct);
+    public Task<AssetSaleView> SellAsync(TenantId tenant, Guid actor, Guid assetId, SellAssetRequest request, CancellationToken ct) => repository.SellAsync(tenant, actor, assetId, request, ct);
+    public Task<ReinstatementView> ReinstateAsync(TenantId tenant, Guid actor, Guid assetId, ReinstateAssetRequest request, CancellationToken ct) => repository.ReinstateAsync(tenant, actor, assetId, request, ct);
 }

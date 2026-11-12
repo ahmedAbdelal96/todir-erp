@@ -596,6 +596,7 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         await using var bookSetup = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,12000,0,36,'StraightLine','2026-10-01',now(),1)", connection); bookSetup.Parameters.AddWithValue(Guid.Parse(TenantId)); bookSetup.Parameters.AddWithValue(bookId); bookSetup.Parameters.AddWithValue(assetId); bookSetup.Parameters.AddWithValue(Guid.Parse(BookDefinitionId)); await bookSetup.ExecuteNonQueryAsync();
 
         var disposalCsrf = await GetCsrfAsync(client);
+        var disposalKey = $"integration-disposal-{Guid.CreateVersion7():N}";
         using var disposal = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/assets/{assetId:D}/disposal")
         {
             Content = JsonContent.Create(new
@@ -606,7 +607,7 @@ public sealed class FixedAssetsDepreciationIntegrationTests
                 proceeds = 10000m,
                 directCosts = 100m,
                 reason = "Integration disposal verification",
-                idempotencyKey = $"integration-disposal-{Guid.CreateVersion7():N}"
+                 idempotencyKey = disposalKey
             })
         };
         disposal.Headers.Add("X-CSRF-TOKEN", disposalCsrf.Token);
@@ -633,6 +634,14 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         Assert.True(await balanceReader.ReadAsync());
         Assert.Equal(balanceReader.GetDecimal(0), balanceReader.GetDecimal(1));
         Assert.True(balanceReader.GetDecimal(0) > 0m);
+        await balanceReader.CloseAsync();
+        await using var disposalIdCommand = new NpgsqlCommand("select id from business_assets.asset_disposal where tenant_id=$1 and asset_id=$2 and idempotency_key=$3", connection); disposalIdCommand.Parameters.AddWithValue(Guid.Parse(TenantId)); disposalIdCommand.Parameters.AddWithValue(assetId); disposalIdCommand.Parameters.AddWithValue(disposalKey); var disposalId = (Guid)(await disposalIdCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Disposal row was not found."));
+        var reinstateCsrf = await GetCsrfAsync(client);
+        using var reinstate = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/fixed-assets/assets/{assetId:D}/reinstate") { Content = JsonContent.Create(new { legalEntityId = Guid.Parse(LegalEntityId), disposalId, reinstatementDate = "2026-12-20", reason = "Corrected disposal decision", idempotencyKey = $"integration-reinstatement-{Guid.CreateVersion7():N}" }) };
+        reinstate.Headers.Add("X-CSRF-TOKEN", reinstateCsrf.Token);
+        using var reinstateResponse = await client.SendAsync(reinstate); var reinstateBody = await reinstateResponse.Content.ReadAsStringAsync(); Assert.True(reinstateResponse.StatusCode == HttpStatusCode.OK, reinstateBody); using var reinstateJson = JsonDocument.Parse(reinstateBody); Assert.Equal("Completed", reinstateJson.RootElement.GetProperty("status").GetString()); Assert.Equal(1, reinstateJson.RootElement.GetProperty("restoredBookCount").GetInt32());
+        await using var reinstatedState = new NpgsqlCommand("select lifecycle_state from business_assets.fixed_asset where tenant_id=$1 and id=$2", connection); reinstatedState.Parameters.AddWithValue(Guid.Parse(TenantId)); reinstatedState.Parameters.AddWithValue(assetId); Assert.Equal("Operational", (string?)await reinstatedState.ExecuteScalarAsync());
+        await using var reversalFact = new NpgsqlCommand("select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and fact_type='FixedAssetDisposalReversed' and source_reference like $2", connection); reversalFact.Parameters.AddWithValue(Guid.Parse(TenantId)); reversalFact.Parameters.AddWithValue("disposal-reinstatement:%"); Assert.True((long)(await reversalFact.ExecuteScalarAsync() ?? 0L) >= 1L);
     }
 
     [Fact]
@@ -910,6 +919,41 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         await using var line = new NpgsqlCommand("select result,observed_location_id from business_assets.asset_verification_line where tenant_id=$1 and campaign_id=$2 and asset_id=$3", evidence); line.Parameters.AddWithValue(Guid.Parse(TenantId)); line.Parameters.AddWithValue(campaignId); line.Parameters.AddWithValue(assetId); await using var lineReader = await line.ExecuteReaderAsync(); Assert.True(await lineReader.ReadAsync()); Assert.Equal("WrongLocation", lineReader.GetString(0)); Assert.Equal(locationId, lineReader.GetGuid(1)); await lineReader.CloseAsync();
         await using var assignment = new NpgsqlCommand("select count(*) from business_assets.asset_assignment where tenant_id=$1 and asset_id=$2", evidence); assignment.Parameters.AddWithValue(Guid.Parse(TenantId)); assignment.Parameters.AddWithValue(assetId); Assert.Equal(0L, (long)(await assignment.ExecuteScalarAsync() ?? -1L));
 
+    }
+
+    [Fact]
+    public async Task MassTransferIsPreviewedIdempotentAndVisibleInRegisterWithCountryDefaults()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for Fixed Assets integration verification.");
+        var password = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD") ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for Fixed Assets integration verification.");
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Development").UseSetting("TODIR_DATABASE_CONNECTION", connectionString).UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        var loginCsrf = await GetCsrfAsync(client);
+        using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email = "admin@atlas.com", password }) };
+        login.Headers.Add("X-CSRF-TOKEN", loginCsrf.Token); using var loginResponse = await client.SendAsync(login); Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var firstAssetId = Guid.CreateVersion7(); var secondAssetId = Guid.CreateVersion7(); var locationId = Guid.CreateVersion7(); Guid actorId; Guid categoryId;
+        await using (var setup = new NpgsqlConnection(connectionString))
+        {
+            await setup.OpenAsync();
+            await using var actor = new NpgsqlCommand("select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", setup); actor.Parameters.AddWithValue(Guid.Parse(TenantId)); actorId = (Guid)(await actor.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed administrator was not found."));
+            await using var category = new NpgsqlCommand("select id from business_assets.asset_category where tenant_id=$1 and code='LAPTOP'", setup); category.Parameters.AddWithValue(Guid.Parse(TenantId)); categoryId = (Guid)(await category.ExecuteScalarAsync() ?? throw new InvalidOperationException("Seed laptop category was not found."));
+            await using var location = new NpgsqlCommand("insert into business_assets.asset_location(tenant_id,id,legal_entity_id,code,name,location_type,created_by,created_at) values($1,$2,$3,$4,$5,'Room',$6,now())", setup); location.Parameters.AddWithValue(Guid.Parse(TenantId)); location.Parameters.AddWithValue(locationId); location.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); location.Parameters.AddWithValue($"MASS-{locationId:N}"); location.Parameters.AddWithValue("Mass Transfer Room"); location.Parameters.AddWithValue(actorId); await location.ExecuteNonQueryAsync();
+            foreach (var assetId in new[] { firstAssetId, secondAssetId })
+            {
+                await using var asset = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,$6,'Operational','Equipment','Individual','2026-01-01','2026-01-01','2026-01-01',1,$7,now(),1)", setup); asset.Parameters.AddWithValue(Guid.Parse(TenantId)); asset.Parameters.AddWithValue(assetId); asset.Parameters.AddWithValue(Guid.Parse(LegalEntityId)); asset.Parameters.AddWithValue(categoryId); asset.Parameters.AddWithValue($"FA-TEST-MASS-{assetId:N}"); asset.Parameters.AddWithValue("Mass Transfer Laptop"); asset.Parameters.AddWithValue(actorId); await asset.ExecuteNonQueryAsync();
+            }
+        }
+
+        var policy = await client.GetAsync($"/api/v1/fixed-assets/country-policy/book-defaults?legalEntityId={LegalEntityId}&bookCode=EG-TAX"); var policyBody = await policy.Content.ReadAsStringAsync(); Assert.Equal(HttpStatusCode.OK, policy.StatusCode); using var policyJson = JsonDocument.Parse(policyBody); Assert.Equal("EGY_FIXED_ASSETS", policyJson.RootElement.GetProperty("providerCode").GetString()); Assert.Equal(60, policyJson.RootElement.GetProperty("usefulLifeMonths").GetInt32());
+        var transferPayload = new { legalEntityId = Guid.Parse(LegalEntityId), assetIds = new[] { firstAssetId, secondAssetId }, assignment = new { assignmentType = "LocationOnly", locationId, effectiveFrom = "2026-12-01", condition = "Good", acknowledgementReference = "MASS-ACK-001" }, idempotencyKey = $"mass-transfer-{locationId:N}", reason = "Move to verification room" };
+        var previewCsrf = await GetCsrfAsync(client); using var preview = new HttpRequestMessage(HttpMethod.Post, "/api/v1/fixed-assets/mass-transfers/preview") { Content = JsonContent.Create(transferPayload) }; preview.Headers.Add("X-CSRF-TOKEN", previewCsrf.Token); using var previewResponse = await client.SendAsync(preview); var previewBody = await previewResponse.Content.ReadAsStringAsync(); Assert.True(previewResponse.StatusCode == HttpStatusCode.OK, previewBody); using var previewJson = JsonDocument.Parse(previewBody); Assert.Equal(2, previewJson.RootElement.GetProperty("eligibleCount").GetInt32()); Assert.Equal(0, previewJson.RootElement.GetProperty("rejectedCount").GetInt32());
+        var executeCsrf = await GetCsrfAsync(client); using var execute = new HttpRequestMessage(HttpMethod.Post, "/api/v1/fixed-assets/mass-transfers") { Content = JsonContent.Create(transferPayload) }; execute.Headers.Add("X-CSRF-TOKEN", executeCsrf.Token); using var executeResponse = await client.SendAsync(execute); var executeBody = await executeResponse.Content.ReadAsStringAsync(); Assert.True(executeResponse.StatusCode == HttpStatusCode.OK, executeBody); using var executeJson = JsonDocument.Parse(executeBody); var operationId = executeJson.RootElement.GetProperty("operationId").GetGuid(); Assert.Equal(2, executeJson.RootElement.GetProperty("appliedCount").GetInt32());
+        var retryCsrf = await GetCsrfAsync(client); using var retry = new HttpRequestMessage(HttpMethod.Post, "/api/v1/fixed-assets/mass-transfers") { Content = JsonContent.Create(transferPayload) }; retry.Headers.Add("X-CSRF-TOKEN", retryCsrf.Token); using var retryResponse = await client.SendAsync(retry); Assert.Equal(HttpStatusCode.OK, retryResponse.StatusCode); using var retryJson = JsonDocument.Parse(await retryResponse.Content.ReadAsStringAsync()); Assert.True(retryJson.RootElement.GetProperty("alreadyApplied").GetBoolean()); Assert.Equal(operationId, retryJson.RootElement.GetProperty("operationId").GetGuid());
+        var register = await client.GetAsync($"/api/v1/fixed-assets/reports/register?legalEntityId={LegalEntityId}&asOfDate=2026-12-01&search=FA-TEST-MASS"); var registerBody = await register.Content.ReadAsStringAsync(); Assert.True(register.StatusCode == HttpStatusCode.OK, registerBody); using var registerJson = JsonDocument.Parse(registerBody); Assert.True(registerJson.RootElement.GetProperty("items").GetArrayLength() >= 2);
+        await using var verify = new NpgsqlConnection(connectionString); await verify.OpenAsync();
+        await using var assignment = new NpgsqlCommand("select count(*) from business_assets.asset_assignment where tenant_id=$1 and asset_id=any($2::uuid[]) and location_id=$3 and effective_from=date '2026-12-01'", verify); assignment.Parameters.AddWithValue(Guid.Parse(TenantId)); assignment.Parameters.AddWithValue(new[] { firstAssetId, secondAssetId }); assignment.Parameters.AddWithValue(locationId); Assert.Equal(2L, (long)(await assignment.ExecuteScalarAsync() ?? -1L));
+        await using var operation = new NpgsqlCommand("select status,applied_count from business_assets.asset_mass_transfer where tenant_id=$1 and id=$2", verify); operation.Parameters.AddWithValue(Guid.Parse(TenantId)); operation.Parameters.AddWithValue(operationId); await using var operationReader = await operation.ExecuteReaderAsync(); Assert.True(await operationReader.ReadAsync()); Assert.Equal("Completed", operationReader.GetString(0)); Assert.Equal(2, operationReader.GetInt32(1));
     }
 
     private static async Task<CsrfResponse> GetCsrfAsync(HttpClient client) => await client.GetFromJsonAsync<CsrfResponse>("/api/v1/auth/csrf") ?? throw new InvalidOperationException("CSRF token was not returned.");

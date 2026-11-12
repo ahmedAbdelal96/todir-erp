@@ -48,6 +48,7 @@ public sealed record CreateAssetHandoverRequest(Guid AssignmentId, string Handov
 public sealed record AddAssetDocumentRequest(Guid FileRef, string Role, string? Title);
 public sealed record CreateVerificationCampaignRequest(Guid LegalEntityId, string Name);
 public sealed record VerifyAssetRequest(string Result, Guid? ObservedLocationId, string? Notes);
+public sealed record MassTransferRequest(Guid LegalEntityId, IReadOnlyList<Guid> AssetIds, AssignAssetRequest Assignment, string IdempotencyKey, string Reason);
 
 public sealed record CreateBookRequest(
     Guid LegalEntityId,
@@ -64,6 +65,8 @@ public sealed record CreateAssetBookRequest(Guid LegalEntityId, Guid BookDefinit
 public sealed record CreateDepreciationRunRequest(Guid LegalEntityId, Guid BookId, DateOnly PeriodStart, DateOnly PeriodEnd, string? IdempotencyKey);
 public sealed record ReverseDepreciationRunRequest(DateOnly ReversalDate, string Reason, string? IdempotencyKey);
 public sealed record DisposeAssetRequest(Guid LegalEntityId, string DisposalType, DateOnly DisposalDate, decimal Proceeds, decimal DirectCosts, string Reason, string? IdempotencyKey, decimal? Quantity = null, string? SaleReference = null);
+public sealed record SellAssetRequest(Guid LegalEntityId, Guid InvoiceId, DateOnly SaleDate, string Reason, string IdempotencyKey, string? PaymentReference = null, decimal? Quantity = null);
+public sealed record ReinstateAssetRequest(Guid LegalEntityId, Guid DisposalId, DateOnly ReinstatementDate, string Reason, string IdempotencyKey);
 public sealed record CreateCapitalizationCandidateRequest(Guid LegalEntityId, string SourceType, string SourceReference, decimal EligibleAmount, JsonElement SourceSnapshot, string? EconomicSourceKey = null);
 public sealed record CreateCapitalizationCandidateFromInvoiceRequest(Guid LegalEntityId, Guid InvoiceId);
 public sealed record CreateCapitalizationCandidateFromInventoryRequest(Guid LegalEntityId, Guid ProductVariantId, Guid? SerialId, DateOnly AsOfDate);
@@ -98,6 +101,8 @@ public sealed record VerificationCampaignView(Guid Id, Guid LegalEntityId, strin
 public sealed record AssetBookView(Guid Id, Guid LegalEntityId, string Code, string Name, bool PostsToLedger, string CurrencyCode, string DefaultDepreciationMethod, string DefaultConvention, int? DefaultUsefulLifeMonths);
 public sealed record DepreciationRunView(Guid Id, Guid LegalEntityId, Guid BookId, DateOnly PeriodStart, DateOnly PeriodEnd, string Status, decimal TotalAmount, int LineCount, DateTimeOffset CreatedAt);
 public sealed record DisposalView(Guid AssetId, string DisposalType, DateOnly DisposalDate, decimal GrossCost, decimal AccumulatedDepreciation, decimal NetBookValue, decimal Proceeds, decimal DirectCosts, decimal GainLoss, string Status, decimal AccumulatedImpairment = 0m, decimal RevaluationEffects = 0m);
+public sealed record AssetSaleView(Guid AssetId, Guid DisposalId, Guid InvoiceId, string? PaymentReference, DisposalView Disposal, string Status);
+public sealed record ReinstatementView(Guid AssetId, Guid DisposalId, DateOnly ReinstatementDate, decimal RestoredQuantity, int RestoredBookCount, string Status, bool AlreadyApplied = false);
 public sealed record CapitalizationCandidateView(Guid Id, Guid LegalEntityId, string SourceType, string SourceReference, JsonElement SourceSnapshot, decimal EligibleAmount, decimal AllocatedAmount, string Status, string? Decision, DateTimeOffset CreatedAt);
 public sealed record SourceAllocationView(Guid Id, Guid CandidateId, Guid AssetId, decimal Amount, string AllocationType, DateTimeOffset CreatedAt, bool AlreadyApplied = false);
 public sealed record SourceAllocationCorrectionView(Guid Id, Guid AllocationId, Guid CandidateId, Guid AssetId, decimal Amount, decimal RemainingAllocationAmount, decimal CandidateAllocatedAmount, string Reason, DateTimeOffset CreatedAt, bool AlreadyApplied);
@@ -112,4 +117,8 @@ public sealed record AssetRevaluationView(Guid AssetId, Guid BookId, decimal Pro
 public sealed record OpeningImportView(Guid Id, Guid LegalEntityId, string SourceSystem, string BatchReference, DateOnly OpeningDate, string Status, int LineCount, int ValidLineCount, DateTimeOffset CreatedAt);
 public sealed record AssetBookBalanceView(Guid AssetId, Guid BookId, Guid LegalEntityId, decimal OriginalCost, decimal AccumulatedDepreciation, decimal NetBookValue, string LifecycleState, int TransactionCount, DateOnly? LastTransactionDate, decimal AccumulatedImpairment = 0m, decimal RevaluationEffects = 0m);
 public sealed record AssetGlReconciliationView(Guid LegalEntityId, Guid BookId, DateOnly AsOfDate, decimal AssetGrossCost, decimal LedgerGrossCost, decimal GrossCostDifference, decimal AssetAccumulatedDepreciation, decimal LedgerAccumulatedDepreciation, decimal AccumulatedDepreciationDifference, decimal AssetNetBookValue, string CurrencyCode, string Status, decimal AssetAccumulatedImpairment = 0m, decimal RevaluationEffects = 0m);
+public sealed record AssetRegisterRowView(Guid AssetId, Guid LegalEntityId, string AssetNumber, string Name, string LifecycleState, string AssetNature, string TrackingGranularity, string? AssetTag, string? ProductVariantRef, string? InventorySerialRef, decimal Quantity, Guid? BookId, string? BookCode, string? CurrencyCode, decimal GrossCost, decimal AccumulatedDepreciation, decimal AccumulatedImpairment, decimal RevaluationEffects, decimal NetBookValue, string? AssignmentType, Guid? EmployeeId, Guid? DepartmentId, string? CustodianName, Guid? LocationId);
+public sealed record MassTransferPreviewItemView(Guid AssetId, string? AssetNumber, string Status, string? Reason);
+public sealed record MassTransferPreviewView(Guid LegalEntityId, int RequestedCount, int EligibleCount, int RejectedCount, IReadOnlyList<MassTransferPreviewItemView> Items);
+public sealed record MassTransferView(Guid OperationId, string Status, int RequestedCount, int AppliedCount, IReadOnlyList<MassTransferPreviewItemView> Items, bool AlreadyApplied = false);
 
