@@ -37,6 +37,8 @@ import { ar as posAr } from "../modules/pos/i18n/ar.ts";
 import { en as posEn } from "../modules/pos/i18n/en.ts";
 import { expensesAr } from "../modules/expenses/i18n/ar.ts";
 import { expensesEn } from "../modules/expenses/i18n/en.ts";
+import { fixedAssetsAr } from "../modules/fixed-assets/i18n/ar.ts";
+import { fixedAssetsEn } from "../modules/fixed-assets/i18n/en.ts";
 
 const resources = {
   ar: {
@@ -58,7 +60,8 @@ const resources = {
     payroll: payrollAr,
     crm: crmAr,
     pos: posAr,
-    expenses: expensesAr
+    expenses: expensesAr,
+    fixedAssets: fixedAssetsAr
   },
   en: {
     accounting: accountingEn,
@@ -79,7 +82,8 @@ const resources = {
     payroll: payrollEn,
     crm: crmEn,
     pos: posEn,
-    expenses: expensesEn
+    expenses: expensesEn,
+    fixedAssets: fixedAssetsEn
   }
 } as const;
 
