@@ -556,6 +556,11 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("catalog-forward-fix-import.sql", StringComparison.Ordinal) => 2,
     _ when fileName.Equals("catalog-forward-fix-import-reconciliation.sql", StringComparison.Ordinal) => 3,
     _ when fileName.Equals("catalog-forward-fix-import-worker.sql", StringComparison.Ordinal) => 4,
+    // The managed ledger configuration and producer-registration tables are
+    // referenced by later ledger fixes, including the Fixed Assets posting
+    // rules. Keep their foundation migration ahead of those data migrations
+    // during a fresh bootstrap as well as on an upgrade.
+    _ when fileName.Equals("ledger-forward-fix-managed-accounting-contracts.sql", StringComparison.Ordinal) => 4,
     _ when fileName.Equals("ledger-forward-fix-invoicing-debit-notes.sql", StringComparison.Ordinal) => 6,
     _ when fileName.Equals("ledger-forward-fix-payment-fee-fact.sql", StringComparison.Ordinal) => 7,
     _ when fileName.Equals("ledger-forward-fix-payment-fee-legs.sql", StringComparison.Ordinal) => 8,
