@@ -53,6 +53,7 @@ public static class LedgerSeed
             var fixedAssetCost = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 27);
             var fixedAssetAccumulated = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 28);
             var fixedAssetAccumulatedImpairment = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 34);
+            var fixedAssetImpairment = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 35);
             var fixedAssetDepreciationExpense = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 29);
             var fixedAssetCip = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 30);
             var fixedAssetCapitalizationOffset = SeedIds.Child(context.Tenant.Id, $"ledger-account:{suffix}", 31);
@@ -88,6 +89,7 @@ public static class LedgerSeed
                 ,(fixedAssetCost, "150000", "تكلفة الأصول الثابتة", "Fixed asset cost", "Asset", "FixedAssetCost", assetCategory, (Guid?)assets, true)
                 ,(fixedAssetAccumulated, "159000", "مجمع إهلاك الأصول الثابتة", "Accumulated depreciation", "Asset", "FixedAssetAccumulatedDepreciation", assetCategory, (Guid?)assets, true)
                 ,(fixedAssetAccumulatedImpairment, "159100", "مجمع انخفاض قيمة الأصول الثابتة", "Accumulated impairment", "Asset", "FixedAssetAccumulatedImpairment", assetCategory, (Guid?)assets, true)
+                ,(fixedAssetImpairment, "560200", "مصروف انخفاض قيمة الأصول الثابتة", "Fixed asset impairment expense", "Expense", "FixedAssetImpairment", expenseCategory, (Guid?)null, true)
                 ,(fixedAssetDepreciationExpense, "560000", "مصروف إهلاك الأصول الثابتة", "Fixed asset depreciation expense", "Expense", "FixedAssetDepreciationExpense", expenseCategory, (Guid?)null, true)
                 ,(fixedAssetCip, "150900", "أصول تحت التنفيذ", "Construction in progress", "Asset", "FixedAssetCip", assetCategory, (Guid?)assets, true)
                 ,(fixedAssetCapitalizationOffset, "210800", "مقابل رسملة الأصول", "Fixed asset capitalization offset", "Liability", "FixedAssetCapitalizationOffset", liabilityCategory, (Guid?)null, true)
@@ -115,7 +117,7 @@ public static class LedgerSeed
             var entityConfigurationId = SeedIds.Child(context.Tenant.Id, $"ledger-entity-configuration:{suffix}", 1);
             await context.ExecuteAsync("insert into finance_ledger.ledger_entity_configuration (tenant_id,legal_entity_id,id,mode,setup_template_code,active_configuration_version_id,initialized_at,version) values ($1,$2,$3,'Managed','development-core',$4,$5,1) on conflict (tenant_id,legal_entity_id) do nothing", cancellationToken, context.Tenant.Id, entityId, entityConfigurationId, configId, context.AsOf);
             var activeConfigId = await context.ScalarAsync<Guid>("select active_configuration_version_id from finance_ledger.ledger_entity_configuration where tenant_id=$1 and legal_entity_id=$2", cancellationToken, context.Tenant.Id, entityId);
-            foreach (var producer in new[] { ("sales", "CustomerInvoicePosted"), ("sales", "CustomerCreditNotePosted"), ("invoicing", "CustomerInvoicePosted"), ("invoicing", "CustomerCreditNotePosted"), ("invoicing", "VendorBillPosted"), ("invoicing", "VendorCreditNotePosted"), ("invoicing", "CustomerDebitNotePosted"), ("invoicing", "VendorDebitNotePosted"), ("payments", "PaymentReceived"), ("payments", "PaymentMade"), ("payments", "RefundPaid"), ("payments", "PaymentFeeRecognized"), ("payments", "PaymentFeeReversed"), ("payments", "InternalTransferCompleted"), ("pos", "PosCashSalePosted"), ("inventory", "InventoryReceiptValued"), ("inventory", "InventoryIssueValued"), ("inventory", "InventoryCostAdjustment"), ("inventory", "InventoryValuationReversal"), ("payroll", "PayrollPosted"), ("expenses", "ExpenseRecognized"), ("expenses", "SettlementWriteOff"), ("subledger", "SettlementFxDifference"), ("subledger", "SettlementWriteOff"), ("tax", "TaxAdjustment"), ("accounting", "UnrealizedFxRevaluation"), ("fixed-assets", "FixedAssetAcquisitionPosted"), ("fixed-assets", "FixedAssetDepreciationPosted"), ("fixed-assets", "FixedAssetDepreciationReversed"), ("fixed-assets", "FixedAssetDisposalPosted"), ("fixed-assets", "FixedAssetDisposalReversed"), ("fixed-assets", "FixedAssetCostAdded"), ("fixed-assets", "FixedAssetCostReduced") })
+            foreach (var producer in new[] { ("sales", "CustomerInvoicePosted"), ("sales", "CustomerCreditNotePosted"), ("invoicing", "CustomerInvoicePosted"), ("invoicing", "CustomerCreditNotePosted"), ("invoicing", "VendorBillPosted"), ("invoicing", "VendorCreditNotePosted"), ("invoicing", "CustomerDebitNotePosted"), ("invoicing", "VendorDebitNotePosted"), ("payments", "PaymentReceived"), ("payments", "PaymentMade"), ("payments", "RefundPaid"), ("payments", "PaymentFeeRecognized"), ("payments", "PaymentFeeReversed"), ("payments", "InternalTransferCompleted"), ("pos", "PosCashSalePosted"), ("inventory", "InventoryReceiptValued"), ("inventory", "InventoryIssueValued"), ("inventory", "InventoryCostAdjustment"), ("inventory", "InventoryValuationReversal"), ("payroll", "PayrollPosted"), ("expenses", "ExpenseRecognized"), ("expenses", "SettlementWriteOff"), ("subledger", "SettlementFxDifference"), ("subledger", "SettlementWriteOff"), ("tax", "TaxAdjustment"), ("accounting", "UnrealizedFxRevaluation"), ("fixed-assets", "FixedAssetAcquisitionPosted"), ("fixed-assets", "FixedAssetDepreciationPosted"), ("fixed-assets", "FixedAssetDepreciationReversed"), ("fixed-assets", "FixedAssetDisposalPosted"), ("fixed-assets", "FixedAssetDisposalReversed"), ("fixed-assets", "FixedAssetCostAdded"), ("fixed-assets", "FixedAssetCostReduced"), ("fixed-assets", "FixedAssetImpairmentPosted") })
             {
                 var producerId = SeedIds.Child(context.Tenant.Id, $"ledger-producer:{suffix}:{producer.Item1}:{producer.Item2}", 1);
                 await context.ExecuteAsync("insert into finance_ledger.fact_producer_registration (tenant_id,legal_entity_id,id,producer_module,fact_type,fact_version,status,registered_at) values ($1,$2,$3,$4,$5,1,'Active',$6) on conflict (tenant_id,legal_entity_id,producer_module,fact_type,fact_version) do nothing", cancellationToken, context.Tenant.Id, entityId, producerId, producer.Item1, producer.Item2, context.AsOf);
@@ -147,6 +149,7 @@ public static class LedgerSeed
             var roleFixedAssetCost = await AddRoleAsync(context, entityId, suffix, 27, "FixedAssetCost", "تكلفة الأصول الثابتة", "Fixed asset cost", cancellationToken);
             var roleFixedAssetAccumulated = await AddRoleAsync(context, entityId, suffix, 28, "FixedAssetAccumulatedDepreciation", "مجمع إهلاك الأصول الثابتة", "Accumulated depreciation", cancellationToken);
             var roleFixedAssetAccumulatedImpairment = await AddRoleAsync(context, entityId, suffix, 34, "FixedAssetAccumulatedImpairment", "مجمع انخفاض قيمة الأصول الثابتة", "Accumulated impairment", cancellationToken);
+            var roleFixedAssetImpairment = await AddRoleAsync(context, entityId, suffix, 35, "FixedAssetImpairment", "مصروف انخفاض قيمة الأصول الثابتة", "Fixed asset impairment expense", cancellationToken);
             var roleFixedAssetDepreciationExpense = await AddRoleAsync(context, entityId, suffix, 29, "FixedAssetDepreciationExpense", "مصروف إهلاك الأصول الثابتة", "Fixed asset depreciation expense", cancellationToken);
             var roleFixedAssetCip = await AddRoleAsync(context, entityId, suffix, 30, "FixedAssetCip", "أصول تحت التنفيذ", "Construction in progress", cancellationToken);
             var roleFixedAssetCapitalizationOffset = await AddRoleAsync(context, entityId, suffix, 31, "FixedAssetCapitalizationOffset", "مقابل رسملة الأصول", "Fixed asset capitalization offset", cancellationToken);
@@ -181,6 +184,7 @@ public static class LedgerSeed
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 27, roleFixedAssetCost, fixedAssetCost, "FixedAssetCost", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 28, roleFixedAssetAccumulated, fixedAssetAccumulated, "FixedAssetAccumulatedDepreciation", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 34, roleFixedAssetAccumulatedImpairment, fixedAssetAccumulatedImpairment, "FixedAssetAccumulatedImpairment", null, null, null, cancellationToken);
+            await AddMappingAsync(context, entityId, activeConfigId, suffix, 35, roleFixedAssetImpairment, fixedAssetImpairment, "FixedAssetImpairment", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 29, roleFixedAssetDepreciationExpense, fixedAssetDepreciationExpense, "FixedAssetDepreciationExpense", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 30, roleFixedAssetCip, fixedAssetCip, "FixedAssetCip", null, null, null, cancellationToken);
             await AddMappingAsync(context, entityId, activeConfigId, suffix, 31, roleFixedAssetCapitalizationOffset, fixedAssetCapitalizationOffset, "FixedAssetCapitalizationOffset", null, null, null, cancellationToken);
@@ -222,6 +226,7 @@ public static class LedgerSeed
              await AddSimpleRuleAsync(context, entityId, suffix, 33, "FixedAssetDisposalReversed", "FIXED_ASSET_DISPOSAL_REVERSED_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 30, "FixedAssetCostAdded", "FIXED_ASSET_COST_ADDED_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 31, "FixedAssetCostReduced", "FIXED_ASSET_COST_REDUCED_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 34, "FixedAssetImpairmentPosted", "FIXED_ASSET_IMPAIRMENT_V1", cancellationToken);
         }
         return new SeedLedgerSummary(entities.Length, accountCount, periodCount, true);
     }
@@ -248,6 +253,7 @@ public static class LedgerSeed
              "FixedAssetDisposalReversed" => new[] { (1, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Credit"), (2, "FixedAssetAccumulatedImpairment", "BaseAmount", "Credit"), (3, "FixedAssetCost", "GrossCost", "Debit"), (4, "Cash", "Proceeds", "Credit"), (5, "Cash", "DirectCosts", "Debit"), (6, "FixedAssetDisposalGain", "GainLoss", "Debit"), (7, "FixedAssetDisposalLoss", "GainLoss", "Credit") },
             "FixedAssetCostAdded" => new[] { (1, "FixedAssetCost", "BaseAmount", "Debit"), (2, "FixedAssetCapitalizationOffset", "BaseAmount", "Credit") },
             "FixedAssetCostReduced" => new[] { (1, "FixedAssetCapitalizationOffset", "BaseAmount", "Debit"), (2, "FixedAssetCost", "BaseAmount", "Credit") },
+            "FixedAssetImpairmentPosted" => new[] { (1, "FixedAssetImpairment", "BaseAmount", "Debit"), (2, "FixedAssetAccumulatedImpairment", "BaseAmount", "Credit") },
             "InternalTransferCompleted" => new[] { (1, "Cash", "BaseAmount", "Debit"), (2, "Cash", "BaseAmount", "Credit") },
             "PosCashSalePosted" => new[] { (1, "Cash", "GrossAmount", "Debit"), (2, "SalesRevenue", "NetAmount", "Credit") },
             "PayrollPosted" => new[] { (1, "PayrollExpense", "BaseAmount", "Debit"), (2, "PayrollPayable", "BaseAmount", "Credit") },

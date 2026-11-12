@@ -425,7 +425,8 @@ public sealed class HrEmployeeImportIntegrationTests : DatabaseIntegrationTestBa
         Assert.NotNull(offboardingCase);
         Assert.Equal("Open", offboardingCase.Status);
         Assert.True(offboardingCase.FinalPayrollRequired);
-        Assert.Equal(2, offboardingCase.Tasks.Count);
+        Assert.Equal(3, offboardingCase.Tasks.Count);
+        Assert.Contains(offboardingCase.Tasks, task => task.Code == "FIXED_ASSET_RETURN" && task.TitleAr == "تسليم الأصول الثابتة" && task.ExternalReference == $"fixed-assets:employee:{committed.EmployeeId:D}");
         await using (var reminderDataSource = NpgsqlDataSource.Create(runtimeConnectionString))
         {
             var reminders = new HrReminderRepository(reminderDataSource, TimeProvider.System);
@@ -437,20 +438,16 @@ public sealed class HrEmployeeImportIntegrationTests : DatabaseIntegrationTestBa
         var reminderPage = await remindersResponse.Content.ReadFromJsonAsync<HrReminderPage>();
         Assert.NotNull(reminderPage);
         Assert.NotEmpty(reminderPage.Items);
-        var offboardingTask = offboardingCase.Tasks[0];
-        using var completeTaskResponse = await SendWithCsrfAsync(client, HttpMethod.Post,
-            $"/api/v1/hr/offboarding/tasks/{offboardingTask.Id:D}/complete?legalEntityId={legalEntityId:D}", new CompleteOffboardingTaskRequest(offboardingTask.Version, "تم تسليم العهدة"));
-        Assert.Equal(HttpStatusCode.OK, completeTaskResponse.StatusCode);
-        var completedOffboarding = await completeTaskResponse.Content.ReadFromJsonAsync<OffboardingCaseView>();
-        Assert.NotNull(completedOffboarding);
-        Assert.Equal("Open", completedOffboarding.Status);
-        var finalTask = completedOffboarding.Tasks.Single(task => task.Status == "Pending");
-        using var completeFinalTaskResponse = await SendWithCsrfAsync(client, HttpMethod.Post,
-            $"/api/v1/hr/offboarding/tasks/{finalTask.Id:D}/complete?legalEntityId={legalEntityId:D}", new CompleteOffboardingTaskRequest(finalTask.Version, "اكتملت المقابلة"));
-        Assert.Equal(HttpStatusCode.OK, completeFinalTaskResponse.StatusCode);
-        completedOffboarding = await completeFinalTaskResponse.Content.ReadFromJsonAsync<OffboardingCaseView>();
-        Assert.NotNull(completedOffboarding);
-        Assert.Equal("Completed", completedOffboarding.Status);
+        var completedOffboarding = offboardingCase;
+        while (completedOffboarding.Tasks.Any(task => task.Status == "Pending"))
+        {
+            var task = completedOffboarding.Tasks.First(item => item.Status == "Pending");
+            using var completeTaskResponse = await SendWithCsrfAsync(client, HttpMethod.Post,
+                $"/api/v1/hr/offboarding/tasks/{task.Id:D}/complete?legalEntityId={legalEntityId:D}", new CompleteOffboardingTaskRequest(task.Version, task.Code == "FIXED_ASSET_RETURN" ? "تم تسليم الأصول الثابتة" : "اكتملت المهمة"));
+            Assert.Equal(HttpStatusCode.OK, completeTaskResponse.StatusCode);
+            completedOffboarding = await completeTaskResponse.Content.ReadFromJsonAsync<OffboardingCaseView>() ?? throw new InvalidOperationException("Offboarding response was empty.");
+            Assert.Equal(completedOffboarding.Tasks.Any(item => item.Status == "Pending") ? "Open" : "Completed", completedOffboarding.Status);
+        }
         Assert.All(completedOffboarding.Tasks, task => Assert.Equal("Completed", task.Status));
         await using (var payrollDataSource = NpgsqlDataSource.Create(runtimeConnectionString))
         {
