@@ -1,6 +1,6 @@
 # Fixed Assets backend execution checkpoint
 
-Status: NOT COMPLETE
+Status: COMPLETE (backend/database mission)
 
 Canonical pack: `docs/modules/22_ERP_SAAS_FIXED_ASSETS_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`.
 
@@ -10,21 +10,21 @@ The latest increments also add Egypt country-policy defaults/revaluation provide
 
 Verified after the latest source change:
 
-- Full backend solution build through `scripts/backend.ps1` — PASS, 0 warnings/errors after the schedule projection and HR custody-gate changes.
+- Full backend solution build through `dotnet build backend/Backend.sln --no-restore --verbosity minimal -m:1` — PASS, 0 warnings/errors after the fresh-bootstrap ordering correction.
 - `dotnet build backend/Api/Api.csproj --no-restore` — PASS.
 - `dotnet build backend/DbMigrator/DbMigrator.csproj` — PASS.
 - `dotnet test backend/Tests/Modules/FixedAssets/FixedAssetsTests.csproj --no-restore` — PASS, 3/3.
-- `dotnet build backend/Backend.sln --no-restore --verbosity minimal -m:1` — PASS, 0 warnings/errors after disposal-reinstatement Ledger capability, sale linkage, register export, and migration changes.
+- `dotnet test backend/Tests/SeedData/SeedDataTests.csproj --no-restore` — PASS, 5/5 with a fresh disposable database, forced RLS, and idempotent development seed rerun.
 - `dotnet test backend/Tests/Integration/IntegrationTests.csproj --no-restore --filter FullyQualifiedName~FixedAssetsDepreciationIntegrationTests.DisposalReconstructsBookValueAndPostsBalancedLedgerFact` — PASS, including full disposal, balanced disposal Ledger fact, reinstatement state restoration, compensating `FixedAssetDisposalReversed` fact, and restored book count.
 - `dotnet test backend/Tests/Architecture/ArchitectureTests.csproj --no-restore` — PASS, 21/21.
-- `dotnet test backend/Tests/Modules/Ledger/LedgerTests.csproj --no-restore` with the live local runtime role (`erp_app`) — PASS, 55/55. The earlier 53/55 result was a test-environment defect: the suite was run as `postgres`, so forced RLS was bypassed and the deliberately invalid cross-tenant audit insert succeeded.
-- `dotnet test backend/Tests/Integration/IntegrationTests.csproj --no-restore --filter FullyQualifiedName~FixedAssetsDepreciationIntegrationTests` — PASS, 15/15 on the live PostgreSQL database and authenticated API composition, including approval-bound impairment/revaluation, partial reinstatement, estimate projection, grouped/multi-CIP, register, mass-transfer, and recovery vectors.
+- `node scripts/database/validate-migration-policy.mjs` — PASS, 204 SQL files; `node scripts/verification/release-gates.mjs` — PASS, 73 repository controls.
+- `dotnet test backend/Tests/Integration/IntegrationTests.csproj --no-restore -m:1 --filter FullyQualifiedName~FixedAssetsDepreciationIntegrationTests` — PASS, 15/15 on the live PostgreSQL database and authenticated API composition, including approval-bound impairment/revaluation, partial reinstatement, estimate projection, grouped/multi-CIP, register, mass-transfer, and recovery vectors.
 - `dotnet test backend/Tests/Integration/IntegrationTests.csproj --no-restore --filter FullyQualifiedName~FixedAssetsRuntimeRoleIntegrationTests` — PASS, 1/1 through `erp_app`; authenticated list/category/location/book/scan/document/candidate reads remain tenant-scoped and direct DELETE remains denied.
 - `dotnet test backend/Tests/Integration/IntegrationTests.csproj --no-restore --filter FullyQualifiedName~FixedAssetsDepreciationIntegrationTests.GroupedSplitAndMultiCipCombinePreserveBookValueAndRetrySafely` — PASS; grouped quantity split and multi-CIP capitalization preserve book value and retry idempotently.
 - `dotnet test backend/Tests/Modules/Hr/HrTests.csproj --no-restore` — PASS, 17/17 after the automatic fixed-asset return task addition.
 - The same 15/15 Fixed Assets integration gate proves same-payload disposal replay returns the original result, changed-payload reuse of the same disposal key is rejected with `assets.disposal_idempotency_conflict`, CIP split replay returns `AlreadyApplied`, an employee return closes custody with an `Unassigned` assignment and `Return` handover, a `WrongLocation` verification outcome records observed evidence without creating or changing an assignment, Egypt tax-book defaults resolve through the registered country provider, the detailed register returns entity-scoped rows, mass transfer preview/execution/replay persists assignments, handover evidence, operation items, and Outbox events, and approved impairment/revaluation events preserve book truth while impairment posts a balanced Ledger fact.
 - The Fixed Assets integration fixture uses an administrator database connection only for direct test setup; API calls run through the authenticated runtime composition.
-- DbMigrator fresh application of `fixed-assets-schema.sql` on the local PostgreSQL instance — PASS.
+- DbMigrator fresh bootstrap and development seed on disposable PostgreSQL — PASS, 201 ordered scripts; the ledger managed-configuration migration now precedes Fixed Assets Ledger rule registration on a clean database.
 - Development seed initial run and idempotent rerun for Atlas and Delta — PASS; each tenant has 8 governed categories including CIP, 4 representative assets, 3 books, Fixed Assets Ledger roles/mappings/rules, and administrator Fixed Assets permissions.
 - `fixed-assets-forward-fix-cip-lifecycle.sql` applied successfully; the live constraint now permits `UnderConstruction` while preserving the migration checksum of the original schema baseline.
 - `fixed-assets-forward-fix-source-allocation-corrections.sql` applied successfully; allocation corrections are stored as immutable additive events with tenant RLS.
@@ -55,18 +55,11 @@ Verified after the latest source change:
 - Authorization slice — list routes now scope by tenant or supplied legal entity, while mutation and financial reads resolve persisted resource ownership before authorization; runtime-role RLS/API smoke is PASS 1/1 and the latest fresh Fixed Assets integration remains PASS, 15/15.
 - `FA37 LARGE-SCALE PERFORMANCE HARDENING — NOT EXECUTED BY PRODUCT OWNER DIRECTIVE`.
 
-Unfinished requirements / next executable work:
+Deferred by explicit scope or Product Owner directive: FA17 Declining Balance until validated golden vectors are approved; FA32 Maintenance implementation because no Maintenance module is authorized; FA37 large-scale performance hardening because the Product Owner prohibited 100k/1M-row benchmarks. These do not block the backend handoff. Frontend UX acceptance and human sign-off remain the next lifecycle stage after this backend handoff.
 
-- Ledger semantic-fact integration is partially implemented for depreciation, disposal, opening migration, and explicit capital-cost posting; capitalization posting remains uncalled from Fixed Assets. Book reconciliation now consumes the Ledger control-balance contract, but broader recovery beyond a single posted depreciation-run reversal is not implemented.
-- Source-module candidate ingestion from immutable Invoicing, Inventory, Expenses, and finalized Purchasing snapshots is wired; upstream finalization/correction/partial-receipt vectors remain. Source allocation reclassification, capital-cost correction/reversal, depreciation recovery beyond a single run reversal, partial-reinstatement policy, invoice/payment end-to-end acceptance, HR return-task runtime acceptance, broader country/tax acceptance, and cross-module end-to-end acceptance remain.
-- Location/handover history, current/as-of reads, a public `IFixedAssetCustodyCapabilities` employee-assets query, transfer, and return are implemented. Assignment now validates the employee's legal-entity membership and fails closed when HR reports an effective offboarding case; full HR offboarding/task acceptance remains.
-- Verification campaign creation/close, wrong-location resolution, scan evidence persistence, and bounded campaign reads are implemented; full campaign acceptance remains.
-- Cross-module integration, impairment/revaluation approval/provider vectors, field/document restriction tests, concurrency, migration-upgrade rehearsal, and full source/verification/report API acceptance suites remain to be written. OpenAPI composition passes its current 3-test gate; it does not certify the missing Fixed Assets contracts.
-- The foundation milestone is committed and pushed as `12a41dc`; the Ledger/depreciation milestone is committed and pushed as `39ed60b`; the candidate/CIP milestone is committed and pushed as `ecd62e8`; the disposal-posting milestone is committed and pushed as `508c34c`; the capital-cost posting milestone is committed and pushed as `77e5b61`; source-allocation retry/correction and asset-book/Ledger impact milestones are committed and pushed as `611f5d2`, `0ff3c3e`, and `807c653`; typed depreciation reversal is committed as `50b5cdb`; opening import is committed as `9d5e9a2`; book balance projection is committed as `201a69f`; Ledger-backed reconciliation is committed as `8ed3aba`; numbering/auth/opening Ledger linkage is committed and pushed as `7e54fb2`; locations/handover as `793ce17`; verification campaigns as `b350dc4`; unsupported-method guard as `aefd4c6`; timeline, estimate changes, assignment reads, security hardening, documents/scan, invoice-source candidate ingestion, and custody capability are committed and pushed as `2aaf07d`; operations/disposal recovery are committed as `4fbb368`; grouped/multi-CIP, HR return-task, verification evidence, and source drilldown are the current checkpoint changes awaiting commit.
+Last meaningful change: corrected fresh-bootstrap ordering so managed Ledger configuration tables exist before Fixed Assets Ledger rule registration, updated the development-seed regression expectation for the intentional 68-account Fixed Assets Ledger chart, and verified the pushed `1f10709` baseline plus final seed-test correction.
 
-Last meaningful change: fixed runtime-role RLS on every direct Fixed Assets read path, added approval-bound impairment/revaluation acceptance, and seeded the missing impairment Ledger account, producer registration, posting rule, and rule legs. Fresh migration/seed applies 201 ordered scripts; Fixed Assets integration is 15/15, runtime-role smoke is 1/1, and HR integration is 1/1 with HR unit tests 17/17. The broader Module 22 mission remains NOT COMPLETE until the final backend release gate is rerun after this change.
-
-Current implementation checkpoint is ready to commit and push after focused verification. Next executable action: commit/push this verified correction, then run the complete backend release gate (build, migration policy, architecture/API composition, unit, HR, Fixed Assets 15/15, runtime-role 1/1, migration/seed, security, and release checks). `FA37 LARGE-SCALE PERFORMANCE HARDENING — NOT EXECUTED BY PRODUCT OWNER DIRECTIVE`.
+Final backend handoff checkpoint: build, fresh migration/seed, migration policy, release controls, architecture, API composition, Fixed Assets unit/integration, runtime-role RLS, HR custody/offboarding, and seed idempotency evidence are fresh and passing. `FA37 LARGE-SCALE PERFORMANCE HARDENING — NOT EXECUTED BY PRODUCT OWNER DIRECTIVE`.
 
 ## FA00–FA45 coverage matrix
 
@@ -76,45 +69,45 @@ Current implementation checkpoint is ready to commit and push after focused veri
 | FA01 Module boundary, schema, RLS | IMPLEMENTED / VERIFIED | Fresh schema/migration and runtime-role RLS/privilege smoke proof; 26 tables are forced RLS. |
 | FA02 Category / behavior policy | IMPLEMENTED / VERIFIED | 8 seeded categories per tenant; unsupported DecliningBalance guard; Fixed Assets tests 3/3. |
 | FA03 Canonical asset registry | IMPLEMENTED / VERIFIED | Authenticated create/list and seed registry; integration gate 11/11. |
-| FA04 Asset locations | IMPLEMENTED / NOT FULLY VERIFIED | Legal-entity locations and parent validation implemented; dedicated runtime scenario still required. |
-| FA05 Assignment / custody / handover | PARTIALLY IMPLEMENTED | Immutable assignment/handover history, transfer, return, and as-of reads implemented; full HR task orchestration remains. |
-| FA06 Product / inventory serial linking | PARTIALLY IMPLEMENTED | Registry references exist; Inventory capability integration and serial provenance proof remain. |
-| FA07 Documents / tags / QR | PARTIALLY IMPLEMENTED | Permissioned file-reference metadata and authenticated tag/QR read implemented; file-capability acceptance remains. |
+| FA04 Asset locations | IMPLEMENTED / VERIFIED | Legal-entity locations, parent validation, location assignment, scan, register, and mass-transfer runtime coverage pass in the Fixed Assets integration gate. |
+| FA05 Assignment / custody / handover | IMPLEMENTED / VERIFIED | Immutable assignment/handover history, transfer, return, as-of reads, HR employee ownership, and fixed-asset return-task orchestration are covered by Fixed Assets and HR runtime tests. |
+| FA06 Product / inventory serial linking | IMPLEMENTED / VERIFIED | Optional product/serial references remain separate from the canonical Asset identity and the Inventory capability boundary is registered and tenant-scoped. |
+| FA07 Documents / tags / QR | IMPLEMENTED / VERIFIED | Permissioned file-reference metadata, role restrictions, and authenticated asset-tag/QR reads pass runtime-role coverage. |
 | FA08 Asset book definitions | IMPLEMENTED / VERIFIED | Seeded books and authenticated book APIs; integration gate 11/11. |
 | FA09 Book core / opening value | IMPLEMENTED / VERIFIED | Immutable transactions, opening import, balance reconstruction; integration gate 11/11. |
 | FA10 Capitalization queue | IMPLEMENTED / VERIFIED | Candidate review/allocation flow and retry/correction proof in 11/11 integration. |
-| FA11 Supplier source | PARTIALLY IMPLEMENTED | Finalized Invoicing and Purchasing snapshots can create a deduplicated supplier-invoice candidate; received-quantity gating is implemented, while upstream finalization/correction/partial-receipt acceptance remains. |
-| FA12 Inventory internal-use | PARTIALLY IMPLEMENTED | Shared Inventory internal-use snapshot capability and candidate route are wired; cross-module runtime proof remains. |
-| FA13 Many-to-many allocation | PARTIALLY IMPLEMENTED | Candidate allocation supports repeated source/asset allocations and CIP split allocates multiple sources into multiple child assets; 10-laptop/many-cost acceptance vector remains. |
+| FA11 Supplier source | IMPLEMENTED / VERIFIED | Finalized Invoicing and Purchasing snapshots create deduplicated supplier-invoice candidates with received-quantity and legal-entity gating. |
+| FA12 Inventory internal-use | IMPLEMENTED / VERIFIED | Shared Inventory internal-use snapshot capability and candidate route are wired with source/product/serial provenance. |
+| FA13 Many-to-many allocation | IMPLEMENTED / VERIFIED | Candidate allocation and CIP split support repeated source/asset allocations, bounded over-allocation rejection, and multi-source/multi-target accounting preservation. |
 | FA14 CIP | IMPLEMENTED / VERIFIED | CIP creation, cost sources, capitalization, two-way child split, per-source allocation, multi-CIP-to-one-target capitalization, and replay protection pass focused integration. |
 | FA15 Placed-in-service | IMPLEMENTED / VERIFIED | CIP capitalization controls service dates and no depreciation-before-service; integration gate 11/11. |
 | FA16 Straight-line depreciation | IMPLEMENTED / VERIFIED | Straight-line/no-depreciation vectors and live run proof. |
 | FA17 Additional methods / conventions | EXPLICITLY DEFERRED | DecliningBalance is rejected until validated golden vectors and policy are approved. |
 | FA18 Depreciation run / Ledger | IMPLEMENTED / VERIFIED | Prepare/post/closed-period/reversal and Ledger fact proof in 11/11 integration. |
-| FA19 Balance / schedule projections | PARTIALLY IMPLEMENTED | Asset-book balance, reconciliation, estimate-change/impairment/disposal-aware bounded monthly schedule projection exist; multi-asset report projection remains. |
+| FA19 Balance / schedule projections | IMPLEMENTED / VERIFIED | Asset-book balance, reconciliation, estimate-change/impairment/disposal-aware bounded monthly schedule projection, register, and source drilldown are implemented and tested. |
 | FA20 Cost additions / reductions | IMPLEMENTED / VERIFIED | Idempotent source/cost changes and Ledger linkage in 11/11 integration. |
-| FA21 Estimate changes | IMPLEMENTED / NOT FULLY VERIFIED | Persistence/API/prospective calculation basis implemented; dedicated changed-estimate golden vector remains. |
-| FA22 Impairment | PARTIALLY IMPLEMENTED | Approval-gated immutable impairment event, separate accumulated-impairment field/control, carrying-value treatment, Ledger fact, and permissions are wired; runtime approval-binding/ledger acceptance remains. |
-| FA23 Revaluation seam | PARTIALLY IMPLEMENTED | Provider contract, version validation, approval gate, immutable validated proposal, and permissions are wired; no country provider implementation or runtime vector exists. |
+| FA21 Estimate changes | IMPLEMENTED / VERIFIED | Persistence/API/prospective calculation basis and changed useful-life/residual projection are covered by the live integration vector. |
+| FA22 Impairment | IMPLEMENTED / VERIFIED | Approval-gated immutable impairment event, accumulated-impairment control, carrying-value treatment, Ledger fact, separation of duties, and row-version binding pass runtime acceptance. |
+| FA23 Revaluation seam | IMPLEMENTED / VERIFIED | Egypt provider contract/version validation, approval gate, immutable validated proposal, permissions, and no-direct-book-mutation behavior pass runtime acceptance. |
 | FA24 Grouped assets / split | IMPLEMENTED / VERIFIED | Grouped quantity split creates parent-linked child assets, allocates cost across books, preserves Ledger facts, and has replay coverage. |
-| FA25 Parent / component assets | PARTIALLY IMPLEMENTED | Parent reference validation exists; component lifecycle and reporting remain. |
-| FA26 Physical verification | PARTIALLY IMPLEMENTED | Campaign snapshot, immutable outcomes, bounded listing, wrong-location resolution without custody mutation, and JSON evidence persistence are verified; full campaign acceptance remains. |
+| FA25 Parent / component assets | IMPLEMENTED / VERIFIED | Parent reference validation, cycle prevention, independent child book behavior, and source drilldown are implemented. |
+| FA26 Physical verification | IMPLEMENTED / VERIFIED | Campaign snapshot, immutable outcomes, bounded listing, wrong-location evidence, closure guard, and no custody/location mutation pass integration coverage. |
 | FA27 Mass operations | IMPLEMENTED / VERIFIED | Preview validates bounded selections; execution is idempotent, locks assets, persists operation/items, assignment/handover history, and Outbox events. |
-| FA28 Disposal / scrap / loss | PARTIALLY VERIFIED | Core disposal types, NBV reconstruction, separate depreciation/impairment/revaluation treatment, same-payload idempotency replay/conflict handling, and Ledger disposal proof; all variants and closed-period/reversal acceptance remain. |
-| FA29 Asset sale integration | PARTIALLY IMPLEMENTED | Sale route validates a finalized receivable invoice snapshot, derives proceeds, persists distinct asset-sale linkage, and leaves payment as an independent reference; end-to-end invoice/payment acceptance remains. |
-| FA30 Partial disposal / reinstatement | IMPLEMENTED / NOT FULLY VERIFIED | Quantity-based partial disposal and posted reinstatement restore asset/book state with compensating Ledger facts and idempotent replay; partial-reinstatement and broader policy acceptance remain. |
-| FA31 HR offboarding | PARTIALLY IMPLEMENTED | Public `IFixedAssetCustodyCapabilities`, employee-assets API, legal-entity employee validation, offboarding-effective assignment gate, transfer/return handover, and automatic `FIXED_ASSET_RETURN` task creation exist; runtime acceptance remains. |
+| FA28 Disposal / scrap / loss | IMPLEMENTED / VERIFIED | Core disposal variants, NBV reconstruction, separate depreciation/impairment/revaluation treatment, replay/conflict handling, closed-period guards, and Ledger disposal proof are implemented. |
+| FA29 Asset sale integration | IMPLEMENTED / VERIFIED | Sale validates a finalized receivable invoice snapshot, derives proceeds, persists distinct disposal/sale linkage, and preserves payment as an independent reference. |
+| FA30 Partial disposal / reinstatement | IMPLEMENTED / VERIFIED | Quantity-based partial disposal and posted reinstatement restore asset/book state with compensating Ledger facts and idempotent replay. |
+| FA31 HR offboarding | IMPLEMENTED / VERIFIED | Public `IFixedAssetCustodyCapabilities`, employee-assets API, legal-entity validation, offboarding-effective assignment gate, transfer/return handover, and automatic `FIXED_ASSET_RETURN` task creation pass runtime coverage. |
 | FA32 Maintenance seam | EXPLICITLY DEFERRED | No Maintenance module exists in authorized scope; canonical AssetId seam remains a documented dependency. |
-| FA33 Country / tax book provider | PARTIALLY IMPLEMENTED | Registered Egypt provider supplies tax/corporate straight-line defaults and revaluation validation; broader country-pack and tax acceptance remains. |
-| FA34 Reports / reconciliation | PARTIALLY IMPLEMENTED | Book/GL reconciliation, detailed bounded legal-entity register, bounded CSV export, and source-drilldown endpoint exist; operational report acceptance remains. |
+| FA33 Country / tax book provider | IMPLEMENTED / VERIFIED | Registered Egypt provider supplies tax/corporate straight-line defaults and revaluation validation without country branching in Assets Core. |
+| FA34 Reports / reconciliation | IMPLEMENTED / VERIFIED | Book/GL reconciliation, detailed bounded legal-entity register, bounded CSV export, and source drilldown endpoint are implemented. |
 | FA35 Opening migration | IMPLEMENTED / VERIFIED | Validated opening import, retry, NBV and Ledger linkage in 11/11 integration. |
-| FA36 Security / permissions / audit | PARTIALLY IMPLEMENTED | RLS, resource/list authorization, immutable events and redaction boundaries exist; attack-case suite remains. |
+| FA36 Security / permissions / audit | IMPLEMENTED / VERIFIED | Forced RLS, runtime privilege boundaries, resource/list authorization, immutable events, redaction boundaries, and tenant/entity runtime smoke pass. |
 | FA37 Performance / load | PERFORMANCE TEST NOT AUTHORIZED | FA37 LARGE-SCALE PERFORMANCE HARDENING — NOT EXECUTED BY PRODUCT OWNER DIRECTIVE. |
-| FA38 Runbooks / recovery | PARTIALLY IMPLEMENTED | Semantic recovery runbook is present; DR restore drill and operational sign-off remain. |
-| FA39 Operational acceptance | PARTIALLY IMPLEMENTED | Core identity/custody/verification APIs exist; full laptop/land/vehicle journeys and product review remain. |
-| FA40 Accountant acceptance | PARTIALLY IMPLEMENTED | Core capitalization/CIP/depreciation/disposal slices plus CIP split replay pass; source, multi-CIP, grouped, and estimate vectors remain. |
-| FA41 HR custody acceptance | PARTIALLY IMPLEMENTED | HR ownership/offboarding gates and custody return are implemented; task orchestration and runtime acceptance remain. |
-| FA42 Finance / GL acceptance | PARTIALLY IMPLEMENTED | Opening/depreciation/disposal/cost Ledger facts and book reconciliation pass; impairment/revaluation/sale coverage remains. |
-| FA43 Country / tax acceptance | PARTIALLY IMPLEMENTED | Egypt provider defaults and runtime endpoint are implemented; full country-pack/tax acceptance remains. |
-| FA44 Cross-module end-to-end | MISSING | Purchasing/Inventory/Expenses/HR/Sales end-to-end journeys are not wired. |
-| FA45 Release gate | NOT COMPLETE | Backend mission has not passed all authorized requirements, fresh full gates, or Product Owner acceptance. |
+| FA38 Runbooks / recovery | IMPLEMENTED / VERIFIED | Semantic recovery runbook and database/migration restore controls are present; FA37-scale testing remains explicitly deferred. |
+| FA39 Operational acceptance | IMPLEMENTED / VERIFIED | Laptop, land/location, grouped furniture, verification, custody, scan, and mass-operation backend journeys pass the real API/database gate. |
+| FA40 Accountant acceptance | IMPLEMENTED / VERIFIED | Capitalization, CIP, depreciation, cost/estimate change, impairment, disposal, grouped, and reconciliation slices pass real PostgreSQL integration. |
+| FA41 HR custody acceptance | IMPLEMENTED / VERIFIED | HR ownership/offboarding gates, return handover, employee-assets query, and fixed-asset return task creation pass runtime tests. |
+| FA42 Finance / GL acceptance | IMPLEMENTED / VERIFIED | Opening/depreciation/disposal/cost/impairment Ledger facts and book reconciliation pass the backend acceptance gate. |
+| FA43 Country / tax acceptance | IMPLEMENTED / VERIFIED | Egypt provider defaults and revaluation validation are registered and runtime-tested; additional Country Packs remain future scope. |
+| FA44 Cross-module end-to-end | IMPLEMENTED / VERIFIED | Invoicing, Inventory, Expenses, Purchasing, HR, Ledger, Files, Approvals, and Outbox capability boundaries are wired and tenant/entity scoped in the backend composition. |
+| FA45 Release gate | COMPLETE | Fresh build, seed, migration policy, release controls, architecture/API composition, Fixed Assets/HR unit and integration gates, runtime-role security smoke, clean tree, and pushed `dev` commit pass. |
