@@ -47,7 +47,7 @@ public sealed record CreateAssetLocationRequest(Guid LegalEntityId, Guid? Parent
 public sealed record CreateAssetHandoverRequest(Guid AssignmentId, string HandoverType, DateTimeOffset? AcknowledgedAt, string? Condition, JsonElement Evidence);
 public sealed record AddAssetDocumentRequest(Guid FileRef, string Role, string? Title);
 public sealed record CreateVerificationCampaignRequest(Guid LegalEntityId, string Name);
-public sealed record VerifyAssetRequest(string Result, Guid? ObservedLocationId, string? Notes);
+public sealed record VerifyAssetRequest(string Result, Guid? ObservedLocationId, string? Notes, JsonElement? Evidence = null);
 public sealed record MassTransferRequest(Guid LegalEntityId, IReadOnlyList<Guid> AssetIds, AssignAssetRequest Assignment, string IdempotencyKey, string Reason);
 
 public sealed record CreateBookRequest(
@@ -80,6 +80,9 @@ public sealed record AddCipCostSourceRequest(string SourceType, string SourceRef
 public sealed record CapitalizeCipRequest(Guid TargetCategoryId, string? Name, DateOnly CapitalizationDate, DateOnly? PlacedInServiceDate = null);
 public sealed record CipSplitTargetRequest(Guid TargetCategoryId, string Name, decimal Amount, decimal Quantity, DateOnly CapitalizationDate, DateOnly? PlacedInServiceDate = null);
 public sealed record SplitCipRequest(string IdempotencyKey, IReadOnlyList<CipSplitTargetRequest> Targets);
+public sealed record SplitGroupedAssetRequest(string IdempotencyKey, decimal Quantity, string Name, DateOnly EffectiveDate);
+public sealed record CombineCipSourceRequest(Guid AssetId, decimal Amount);
+public sealed record CombineCipRequest(Guid LegalEntityId, Guid TargetCategoryId, string Name, DateOnly CapitalizationDate, DateOnly? PlacedInServiceDate, string IdempotencyKey, IReadOnlyList<CombineCipSourceRequest> Sources);
 public sealed record ChangeAssetBookCostRequest(Guid LegalEntityId, Guid BookId, decimal Amount, DateOnly EffectiveDate, string Reason, string? IdempotencyKey);
 public sealed record CreateAssetBookEstimateChangeRequest(Guid LegalEntityId, DateOnly EffectiveFrom, int? UsefulLifeMonths, decimal? ResidualValue, string Reason, string? IdempotencyKey);
 public sealed record CreateAssetImpairmentRequest(Guid LegalEntityId, Guid BookId, decimal Amount, DateOnly EffectiveDate, string Reason, Guid ApprovalRequestId, Guid? EvidenceFileRef, string? IdempotencyKey);
@@ -109,6 +112,8 @@ public sealed record SourceAllocationCorrectionView(Guid Id, Guid AllocationId, 
 public sealed record CipAssetView(Guid AssetId, string AssetNumber, string Name, string LifecycleState, decimal TotalCost, int CostSourceCount, DateOnly? CapitalizationDate, DateOnly? PlacedInServiceDate);
 public sealed record CipSplitTargetView(Guid AssetId, string AssetNumber, string Name, decimal Amount, decimal Quantity, string LifecycleState);
 public sealed record CipSplitView(Guid CipAssetId, string Status, decimal OriginalCost, decimal AllocatedAmount, decimal RemainingCost, IReadOnlyList<CipSplitTargetView> Targets, bool AlreadyApplied = false);
+public sealed record GroupedAssetSplitView(Guid ParentAssetId, Guid ChildAssetId, string ChildAssetNumber, decimal ParentQuantityBefore, decimal ParentQuantityAfter, decimal ChildQuantity, decimal AllocatedCost, string Status, bool AlreadyApplied = false);
+public sealed record CombineCipView(Guid TargetAssetId, string TargetAssetNumber, decimal TotalAmount, IReadOnlyList<Guid> SourceAssetIds, string Status, bool AlreadyApplied = false);
 public sealed record AssetBookCostChangeView(Guid AssetId, Guid BookId, decimal Amount, string TransactionType, decimal PreviousCost, decimal NewCost, string? LedgerFactReference, bool AlreadyApplied);
 public sealed record AssetBookEstimateChangeView(Guid AssetId, Guid BookId, DateOnly EffectiveFrom, int? UsefulLifeMonths, decimal? ResidualValue, string Reason, string IdempotencyKey, DateTimeOffset CreatedAt, bool AlreadyApplied);
 public sealed record AssetDepreciationScheduleLineView(Guid AssetId, Guid BookId, DateOnly PeriodStart, DateOnly PeriodEnd, decimal DepreciationAmount, decimal CumulativeDepreciation, decimal ProjectedNetBookValue, string Method);
@@ -118,6 +123,7 @@ public sealed record OpeningImportView(Guid Id, Guid LegalEntityId, string Sourc
 public sealed record AssetBookBalanceView(Guid AssetId, Guid BookId, Guid LegalEntityId, decimal OriginalCost, decimal AccumulatedDepreciation, decimal NetBookValue, string LifecycleState, int TransactionCount, DateOnly? LastTransactionDate, decimal AccumulatedImpairment = 0m, decimal RevaluationEffects = 0m);
 public sealed record AssetGlReconciliationView(Guid LegalEntityId, Guid BookId, DateOnly AsOfDate, decimal AssetGrossCost, decimal LedgerGrossCost, decimal GrossCostDifference, decimal AssetAccumulatedDepreciation, decimal LedgerAccumulatedDepreciation, decimal AccumulatedDepreciationDifference, decimal AssetNetBookValue, string CurrencyCode, string Status, decimal AssetAccumulatedImpairment = 0m, decimal RevaluationEffects = 0m);
 public sealed record AssetRegisterRowView(Guid AssetId, Guid LegalEntityId, string AssetNumber, string Name, string LifecycleState, string AssetNature, string TrackingGranularity, string? AssetTag, string? ProductVariantRef, string? InventorySerialRef, decimal Quantity, Guid? BookId, string? BookCode, string? CurrencyCode, decimal GrossCost, decimal AccumulatedDepreciation, decimal AccumulatedImpairment, decimal RevaluationEffects, decimal NetBookValue, string? AssignmentType, Guid? EmployeeId, Guid? DepartmentId, string? CustodianName, Guid? LocationId);
+public sealed record AssetSourceDrilldownView(Guid AssetId, Guid BookId, string BookCode, string TransactionType, DateOnly TransactionDate, decimal Amount, decimal AccumulatedDepreciation, decimal AccumulatedImpairment, decimal RevaluationEffect, string? SourceReference, string? IdempotencyKey, string? LedgerFactReference);
 public sealed record MassTransferPreviewItemView(Guid AssetId, string? AssetNumber, string Status, string? Reason);
 public sealed record MassTransferPreviewView(Guid LegalEntityId, int RequestedCount, int EligibleCount, int RejectedCount, IReadOnlyList<MassTransferPreviewItemView> Items);
 public sealed record MassTransferView(Guid OperationId, string Status, int RequestedCount, int AppliedCount, IReadOnlyList<MassTransferPreviewItemView> Items, bool AlreadyApplied = false);

@@ -248,6 +248,19 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         return result;
     }
 
+    public async Task<IReadOnlyList<AssetSourceDrilldownView>> ListAssetSourceDrilldownAsync(TenantId tenant, Guid assetId, Guid? bookId, int limit, CancellationToken ct)
+    {
+        var bounded = Math.Clamp(limit, 1, 500);
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        await using var command = new NpgsqlCommand("select b.asset_id,t.asset_book_id,bd.code,t.transaction_type,t.transaction_date,t.amount,t.accumulated_depreciation,t.accumulated_impairment,t.revaluation_effect,t.source_reference,t.idempotency_key,t.ledger_fact_reference from business_assets.asset_book_transaction t join business_assets.asset_book b on b.tenant_id=t.tenant_id and b.id=t.asset_book_id join business_assets.asset_book_definition bd on bd.tenant_id=b.tenant_id and bd.id=b.book_definition_id where t.tenant_id=$1 and b.asset_id=$2 and ($3::uuid is null or t.asset_book_id=$3) order by t.transaction_date desc,t.id desc limit $4", connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(assetId); command.Parameters.AddWithValue((object?)bookId ?? DBNull.Value); command.Parameters.AddWithValue(bounded);
+        var rows = new List<AssetSourceDrilldownView>(); await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) rows.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetFieldValue<DateOnly>(4), reader.GetDecimal(5), reader.IsDBNull(6) ? 0m : reader.GetDecimal(6), reader.IsDBNull(7) ? 0m : reader.GetDecimal(7), reader.IsDBNull(8) ? 0m : reader.GetDecimal(8), reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11)));
+        await reader.CloseAsync(); await transaction.CommitAsync(ct); return rows;
+    }
+
     public async Task<IReadOnlyList<AssetTimelineEventView>> GetAssetTimelineAsync(TenantId tenant, Guid assetId, int limit, CancellationToken ct)
     {
         var bounded = Math.Clamp(limit, 1, 200);
@@ -542,8 +555,9 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
                 await using var location = new NpgsqlCommand("select 1 from business_assets.asset_location l join business_assets.asset_verification_campaign c on c.tenant_id=l.tenant_id and c.legal_entity_id=l.legal_entity_id where l.tenant_id=$1 and l.id=$2 and c.id=$3 and l.active", context.Connection, context.Transaction);
                 location.Parameters.AddWithValue(tenant.Value); location.Parameters.AddWithValue(locationId); location.Parameters.AddWithValue(campaignId); if (await location.ExecuteScalarAsync(token) is null) throw new FixedAssetException("assets.verification_location_invalid");
             }
-            await using var update = new NpgsqlCommand("update business_assets.asset_verification_line set observed_location_id=$1,result=$2,notes=$3,resolved_by=$4,resolved_at=now() where tenant_id=$5 and campaign_id=$6 and asset_id=$7 and exists(select 1 from business_assets.asset_verification_campaign c where c.tenant_id=$5 and c.id=$6 and c.status in ('Open','Review'))", context.Connection, context.Transaction);
-            update.Parameters.AddWithValue((object?)request.ObservedLocationId ?? DBNull.Value); update.Parameters.AddWithValue(request.Result); update.Parameters.AddWithValue((object?)request.Notes?.Trim() ?? DBNull.Value); update.Parameters.AddWithValue(actor); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(campaignId); update.Parameters.AddWithValue(assetId); if (await update.ExecuteNonQueryAsync(token) != 1) throw new FixedAssetException("assets.verification_line_not_found");
+            if (request.Evidence is { } evidence && evidence.ValueKind is not JsonValueKind.Object and not JsonValueKind.Array) throw new FixedAssetException("assets.verification_evidence_invalid");
+            await using var update = new NpgsqlCommand("update business_assets.asset_verification_line set observed_location_id=$1,result=$2,notes=$3,evidence=$4::jsonb,resolved_by=$5,resolved_at=now() where tenant_id=$6 and campaign_id=$7 and asset_id=$8 and exists(select 1 from business_assets.asset_verification_campaign c where c.tenant_id=$6 and c.id=$7 and c.status in ('Open','Review'))", context.Connection, context.Transaction);
+            update.Parameters.AddWithValue((object?)request.ObservedLocationId ?? DBNull.Value); update.Parameters.AddWithValue(request.Result); update.Parameters.AddWithValue((object?)request.Notes?.Trim() ?? DBNull.Value); update.Parameters.AddWithValue((object?)request.Evidence?.GetRawText() ?? DBNull.Value); update.Parameters.AddWithValue(actor); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(campaignId); update.Parameters.AddWithValue(assetId); if (await update.ExecuteNonQueryAsync(token) != 1) throw new FixedAssetException("assets.verification_line_not_found");
             await using var status = new NpgsqlCommand("update business_assets.asset_verification_campaign set status='Review' where tenant_id=$1 and id=$2 and status='Open'", context.Connection, context.Transaction); status.Parameters.AddWithValue(tenant.Value); status.Parameters.AddWithValue(campaignId); await status.ExecuteNonQueryAsync(token);
             return await LoadVerificationCampaignAsync(context, tenant, campaignId, token) ?? throw new FixedAssetException("assets.verification_not_found");
         }, ct);
@@ -1110,6 +1124,92 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         }, ct);
     }
 
+    public async Task<GroupedAssetSplitView> SplitGroupedAssetAsync(TenantId tenant, Guid actor, Guid assetId, SplitGroupedAssetRequest request, CancellationToken ct)
+    {
+        if (assetId == Guid.Empty || string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.Quantity <= 0m || string.IsNullOrWhiteSpace(request.Name) || request.EffectiveDate == default)
+            throw new FixedAssetException("assets.grouped_split_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            const string operation = "grouped-asset-split";
+            var key = request.IdempotencyKey.Trim();
+            var requestHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request))));
+            await using (var existing = new NpgsqlCommand("select request_hash,response::text from business_assets.asset_idempotency_key where tenant_id=$1 and operation=$2 and idempotency_key=$3 for update", context.Connection, context.Transaction))
+            {
+                existing.Parameters.AddWithValue(tenant.Value); existing.Parameters.AddWithValue(operation); existing.Parameters.AddWithValue(key);
+                await using var reader = await existing.ExecuteReaderAsync(token);
+                if (await reader.ReadAsync(token))
+                {
+                    var hash = reader.GetString(0); var response = reader.IsDBNull(1) ? null : reader.GetString(1); await reader.CloseAsync();
+                    if (!string.Equals(hash, requestHash, StringComparison.Ordinal)) throw new FixedAssetException("assets.grouped_split_conflict");
+                    if (string.IsNullOrWhiteSpace(response)) throw new FixedAssetException("assets.grouped_split_retry_incomplete");
+                    return (JsonSerializer.Deserialize<GroupedAssetSplitView>(response) ?? throw new FixedAssetException("assets.grouped_split_retry_incomplete")) with { AlreadyApplied = true };
+                }
+            }
+
+            await using var parent = new NpgsqlCommand("select legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,description,asset_tag,product_variant_ref,inventory_serial_ref,source_origin_type,acquisition_date,capitalization_date,placed_in_service_date,quantity from business_assets.fixed_asset where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction);
+            parent.Parameters.AddWithValue(tenant.Value); parent.Parameters.AddWithValue(assetId);
+            await using var parentReader = await parent.ExecuteReaderAsync(token);
+            if (!await parentReader.ReadAsync(token)) throw new FixedAssetException("assets.asset_not_found");
+            var legalEntityId = parentReader.GetGuid(0); var categoryId = parentReader.GetGuid(1); var parentNumber = parentReader.GetString(2); var lifecycle = parentReader.GetString(4); var nature = parentReader.GetString(5); var tracking = parentReader.GetString(6);
+            var description = parentReader.IsDBNull(7) ? null : parentReader.GetString(7); var tag = parentReader.IsDBNull(8) ? null : parentReader.GetString(8); var product = parentReader.IsDBNull(9) ? null : parentReader.GetString(9); var serial = parentReader.IsDBNull(10) ? null : parentReader.GetString(10); var source = parentReader.IsDBNull(11) ? null : parentReader.GetString(11); var acquisition = parentReader.IsDBNull(12) ? (DateOnly?)null : parentReader.GetFieldValue<DateOnly>(12); var capitalization = parentReader.IsDBNull(13) ? (DateOnly?)null : parentReader.GetFieldValue<DateOnly>(13); var serviceDate = parentReader.IsDBNull(14) ? (DateOnly?)null : parentReader.GetFieldValue<DateOnly>(14); var parentQuantity = parentReader.GetDecimal(15); await parentReader.CloseAsync();
+            if (nature == "CIP" || lifecycle is "Disposed" or "Archived" || parentQuantity <= request.Quantity || tracking is "Serial" or "Unique") throw new FixedAssetException("assets.grouped_split_not_allowed");
+
+            await using var history = new NpgsqlCommand("select exists(select 1 from business_assets.asset_book_transaction t join business_assets.asset_book b on b.tenant_id=t.tenant_id and b.id=t.asset_book_id where t.tenant_id=$1 and b.asset_id=$2 and t.transaction_type in ('Depreciation','Reversal','Impairment','Revaluation','Disposal'))", context.Connection, context.Transaction);
+            history.Parameters.AddWithValue(tenant.Value); history.Parameters.AddWithValue(assetId);
+            if ((bool)(await history.ExecuteScalarAsync(token) ?? false)) throw new FixedAssetException("assets.grouped_split_requires_unposted_history");
+
+            await using var books = new NpgsqlCommand("select b.id,b.book_definition_id,b.original_cost,b.residual_value,b.useful_life_months,b.depreciation_method,b.placed_in_service_date,bd.posts_to_ledger,bd.currency_code,c.code from business_assets.asset_book b join business_assets.asset_book_definition bd on bd.tenant_id=b.tenant_id and bd.id=b.book_definition_id join business_assets.asset_category c on c.tenant_id=b.tenant_id and c.id=$3 where b.tenant_id=$1 and b.asset_id=$2 order by b.id for update", context.Connection, context.Transaction);
+            books.Parameters.AddWithValue(tenant.Value); books.Parameters.AddWithValue(assetId); books.Parameters.AddWithValue(categoryId);
+            await using var bookReader = await books.ExecuteReaderAsync(token);
+            var bookRows = new List<(Guid Id, Guid DefinitionId, decimal Cost, decimal Residual, int? Life, string Method, DateOnly? ServiceDate, bool Posts, string Currency, string CategoryCode)>();
+            while (await bookReader.ReadAsync(token)) bookRows.Add((bookReader.GetGuid(0), bookReader.GetGuid(1), bookReader.GetDecimal(2), bookReader.GetDecimal(3), bookReader.IsDBNull(4) ? null : bookReader.GetInt32(4), bookReader.GetString(5), bookReader.IsDBNull(6) ? null : bookReader.GetFieldValue<DateOnly>(6), bookReader.GetBoolean(7), bookReader.GetString(8).Trim(), bookReader.GetString(9)));
+            await bookReader.CloseAsync();
+            if (bookRows.Count == 0) throw new FixedAssetException("assets.book_not_found");
+
+            var ratio = request.Quantity / parentQuantity;
+            var childId = Guid.CreateVersion7();
+            var childNumber = await sequences.AllocateAsync(context, new SequenceDefinition("fixed-assets.asset-number", tenant, legalEntityId, null, null, null, "FA-", 8, 1), token);
+            await using (var insert = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,description,asset_tag,lifecycle_state,asset_nature,tracking_granularity,product_variant_ref,inventory_serial_ref,source_origin_type,acquisition_date,capitalization_date,placed_in_service_date,parent_asset_id,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'GroupedSplit',$14,$15,$16,$17,$18,$19,now(),1)", context.Connection, context.Transaction))
+            {
+                insert.Parameters.AddWithValue(tenant.Value); insert.Parameters.AddWithValue(childId); insert.Parameters.AddWithValue(legalEntityId); insert.Parameters.AddWithValue(categoryId); insert.Parameters.AddWithValue(childNumber); insert.Parameters.AddWithValue(request.Name.Trim()); insert.Parameters.AddWithValue((object?)description ?? DBNull.Value); insert.Parameters.AddWithValue((object?)tag ?? DBNull.Value); insert.Parameters.AddWithValue(lifecycle); insert.Parameters.AddWithValue(nature); insert.Parameters.AddWithValue(tracking); insert.Parameters.AddWithValue((object?)product ?? DBNull.Value); insert.Parameters.AddWithValue((object?)serial ?? DBNull.Value); insert.Parameters.AddWithValue((object?)acquisition ?? DBNull.Value); insert.Parameters.AddWithValue((object?)capitalization ?? DBNull.Value); insert.Parameters.AddWithValue((object?)serviceDate ?? DBNull.Value); insert.Parameters.AddWithValue(assetId); insert.Parameters.AddWithValue(request.Quantity); insert.Parameters.AddWithValue(actor); await insert.ExecuteNonQueryAsync(token);
+            }
+            var allocatedCost = 0m;
+            foreach (var row in bookRows)
+            {
+                var childCost = Math.Round(row.Cost * ratio, 2, MidpointRounding.AwayFromZero); var childResidual = Math.Min(childCost, Math.Round(row.Residual * ratio, 2, MidpointRounding.AwayFromZero)); allocatedCost += childCost;
+                var childBookId = Guid.CreateVersion7();
+                await using (var childBook = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),1)", context.Connection, context.Transaction))
+                {
+                    childBook.Parameters.AddWithValue(tenant.Value); childBook.Parameters.AddWithValue(childBookId); childBook.Parameters.AddWithValue(childId); childBook.Parameters.AddWithValue(row.DefinitionId); childBook.Parameters.AddWithValue(childCost); childBook.Parameters.AddWithValue(childResidual); childBook.Parameters.AddWithValue((object?)row.Life ?? DBNull.Value); childBook.Parameters.AddWithValue(row.Method); childBook.Parameters.AddWithValue((object?)row.ServiceDate ?? DBNull.Value); await childBook.ExecuteNonQueryAsync(token);
+                }
+                Guid? childFact = null; Guid? parentFact = null;
+                if (row.Posts)
+                {
+                    var childPayload = new FixedAssetCostAdjustmentPostedPayload(childCost, row.Currency, $"{childNumber}/{childBookId:D}", childNumber, $"Grouped asset split from {parentNumber}");
+                    var childEnvelope = new AccountingFactEnvelope<IAccountingFactPayload>(StableGuid($"grouped-split:{key}:child:{childBookId:D}"), tenant, new(legalEntityId), AccountingFactTypes.FixedAssetCostAdded, 1, "fixed-assets", $"grouped-split:{key}:child:{childBookId:D}", $"fixed-assets:grouped-split:{key}:child:{childBookId:D}", request.EffectiveDate, request.EffectiveDate, childPayload, Guid.CreateVersion7(), actor);
+                    childFact = (await ledger.PostFixedAssetCostAddedAsync(context, childEnvelope, childPayload, token)).FactId;
+                    var parentPayload = new FixedAssetCostAdjustmentPostedPayload(childCost, row.Currency, $"{parentNumber}/{row.Id:D}", parentNumber, $"Grouped asset split to {childNumber}");
+                    var parentEnvelope = new AccountingFactEnvelope<IAccountingFactPayload>(StableGuid($"grouped-split:{key}:parent:{row.Id:D}"), tenant, new(legalEntityId), AccountingFactTypes.FixedAssetCostReduced, 1, "fixed-assets", $"grouped-split:{key}:parent:{row.Id:D}", $"fixed-assets:grouped-split:{key}:parent:{row.Id:D}", request.EffectiveDate, request.EffectiveDate, parentPayload, Guid.CreateVersion7(), actor);
+                    parentFact = (await ledger.PostFixedAssetCostReducedAsync(context, parentEnvelope, parentPayload, token)).FactId;
+                }
+                await using (var childTransaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'CapitalAddition',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction))
+                {
+                    childTransaction.Parameters.AddWithValue(tenant.Value); childTransaction.Parameters.AddWithValue(Guid.CreateVersion7()); childTransaction.Parameters.AddWithValue(childBookId); childTransaction.Parameters.AddWithValue(request.EffectiveDate); childTransaction.Parameters.AddWithValue(childCost); childTransaction.Parameters.AddWithValue($"grouped-split:{key}:parent:{assetId:D}"); childTransaction.Parameters.AddWithValue($"grouped-split:{key}:child:{childBookId:D}"); childTransaction.Parameters.AddWithValue((object?)childFact?.ToString("D") ?? DBNull.Value); childTransaction.Parameters.AddWithValue(actor); await childTransaction.ExecuteNonQueryAsync(token);
+                }
+                await using (var parentTransaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'CostReduction',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction))
+                {
+                    parentTransaction.Parameters.AddWithValue(tenant.Value); parentTransaction.Parameters.AddWithValue(Guid.CreateVersion7()); parentTransaction.Parameters.AddWithValue(row.Id); parentTransaction.Parameters.AddWithValue(request.EffectiveDate); parentTransaction.Parameters.AddWithValue(childCost); parentTransaction.Parameters.AddWithValue($"grouped-split:{key}:child:{childId:D}"); parentTransaction.Parameters.AddWithValue($"grouped-split:{key}:parent:{row.Id:D}"); parentTransaction.Parameters.AddWithValue((object?)parentFact?.ToString("D") ?? DBNull.Value); parentTransaction.Parameters.AddWithValue(actor); await parentTransaction.ExecuteNonQueryAsync(token);
+                }
+                await using var updateBook = new NpgsqlCommand("update business_assets.asset_book set original_cost=original_cost-$1,residual_value=greatest(0,residual_value-$2),row_version=row_version+1 where tenant_id=$3 and id=$4", context.Connection, context.Transaction); updateBook.Parameters.AddWithValue(childCost); updateBook.Parameters.AddWithValue(childResidual); updateBook.Parameters.AddWithValue(tenant.Value); updateBook.Parameters.AddWithValue(row.Id); await updateBook.ExecuteNonQueryAsync(token);
+            }
+            var parentAfter = parentQuantity - request.Quantity;
+            await using (var updateParent = new NpgsqlCommand("update business_assets.fixed_asset set quantity=$1,row_version=row_version+1,updated_by=$2,updated_at=now() where tenant_id=$3 and id=$4", context.Connection, context.Transaction)) { updateParent.Parameters.AddWithValue(parentAfter); updateParent.Parameters.AddWithValue(actor); updateParent.Parameters.AddWithValue(tenant.Value); updateParent.Parameters.AddWithValue(assetId); await updateParent.ExecuteNonQueryAsync(token); }
+            var result = new GroupedAssetSplitView(assetId, childId, childNumber, parentQuantity, parentAfter, request.Quantity, allocatedCost, "Completed");
+            await using var idempotency = new NpgsqlCommand("insert into business_assets.asset_idempotency_key(tenant_id,operation,idempotency_key,request_hash,response,created_at) values($1,$2,$3,$4,$5::jsonb,now())", context.Connection, context.Transaction); idempotency.Parameters.AddWithValue(tenant.Value); idempotency.Parameters.AddWithValue(operation); idempotency.Parameters.AddWithValue(key); idempotency.Parameters.AddWithValue(requestHash); idempotency.Parameters.AddWithValue(JsonSerializer.Serialize(result)); await idempotency.ExecuteNonQueryAsync(token);
+            return result;
+        }, ct);
+    }
+
     public async Task<AssetBookCostChangeView> ChangeAssetBookCostAsync(TenantId tenant, Guid actor, Guid assetId, ChangeAssetBookCostRequest request, CancellationToken ct)
     {
         if (request.LegalEntityId == Guid.Empty || request.BookId == Guid.Empty || request.Amount == 0m || string.IsNullOrWhiteSpace(request.Reason)) throw new FixedAssetException("assets.book_cost_change_invalid");
@@ -1146,6 +1246,76 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             await using var update = new NpgsqlCommand("update business_assets.asset_book set original_cost=$1,row_version=row_version+1 where tenant_id=$2 and id=$3", context.Connection, context.Transaction); update.Parameters.AddWithValue(newCost); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(request.BookId); await update.ExecuteNonQueryAsync(token);
             await using var transaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())", context.Connection, context.Transaction); transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue(Guid.CreateVersion7()); transaction.Parameters.AddWithValue(request.BookId); transaction.Parameters.AddWithValue(request.Amount > 0m ? "CapitalAddition" : "CostReduction"); transaction.Parameters.AddWithValue(request.EffectiveDate); transaction.Parameters.AddWithValue(Math.Abs(request.Amount)); transaction.Parameters.AddWithValue($"asset:{assetId:D}:book:{request.BookId:D}"); transaction.Parameters.AddWithValue(key); transaction.Parameters.AddWithValue((object?)ledgerFact?.ToString("D") ?? DBNull.Value); transaction.Parameters.AddWithValue(actor); await transaction.ExecuteNonQueryAsync(token);
             return new AssetBookCostChangeView(assetId, request.BookId, request.Amount, request.Amount > 0m ? "CapitalAddition" : "CostReduction", previousCostValue, newCost, ledgerFact?.ToString("D"), false);
+        }, ct);
+    }
+
+    public async Task<CombineCipView> CombineCipAsync(TenantId tenant, Guid actor, CombineCipRequest request, CancellationToken ct)
+    {
+        if (request.LegalEntityId == Guid.Empty || request.TargetCategoryId == Guid.Empty || string.IsNullOrWhiteSpace(request.Name) || request.CapitalizationDate == default || string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.Sources is null or { Count: < 2 or > 50 } || request.Sources.Any(source => source.AssetId == Guid.Empty || source.Amount <= 0m) || request.Sources.Select(source => source.AssetId).Distinct().Count() != request.Sources.Count)
+            throw new FixedAssetException("assets.cip_combine_invalid");
+        if (request.PlacedInServiceDate is { } serviceDate && serviceDate < request.CapitalizationDate) throw new FixedAssetException("assets.cip_capitalization_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            const string operation = "cip-combine";
+            var key = request.IdempotencyKey.Trim();
+            var requestHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request))));
+            await using (var existing = new NpgsqlCommand("select request_hash,response::text from business_assets.asset_idempotency_key where tenant_id=$1 and operation=$2 and idempotency_key=$3 for update", context.Connection, context.Transaction))
+            {
+                existing.Parameters.AddWithValue(tenant.Value); existing.Parameters.AddWithValue(operation); existing.Parameters.AddWithValue(key);
+                await using var reader = await existing.ExecuteReaderAsync(token);
+                if (await reader.ReadAsync(token))
+                {
+                    var hash = reader.GetString(0); var response = reader.IsDBNull(1) ? null : reader.GetString(1); await reader.CloseAsync();
+                    if (!string.Equals(hash, requestHash, StringComparison.Ordinal)) throw new FixedAssetException("assets.cip_combine_conflict");
+                    if (string.IsNullOrWhiteSpace(response)) throw new FixedAssetException("assets.cip_combine_retry_incomplete");
+                    return (JsonSerializer.Deserialize<CombineCipView>(response) ?? throw new FixedAssetException("assets.cip_combine_retry_incomplete")) with { AlreadyApplied = true };
+                }
+            }
+
+            await using var category = new NpgsqlCommand("select code,asset_nature,tracking_granularity,default_depreciation_method,default_useful_life_months,default_residual_value from business_assets.asset_category where tenant_id=$1 and id=$2 and active", context.Connection, context.Transaction);
+            category.Parameters.AddWithValue(tenant.Value); category.Parameters.AddWithValue(request.TargetCategoryId);
+            await using var categoryReader = await category.ExecuteReaderAsync(token);
+            if (!await categoryReader.ReadAsync(token)) throw new FixedAssetException("assets.category_not_found");
+            var categoryCode = categoryReader.GetString(0); var nature = categoryReader.GetString(1); var tracking = categoryReader.GetString(2); var method = categoryReader.GetString(3); var usefulLife = categoryReader.IsDBNull(4) ? (int?)null : categoryReader.GetInt32(4); var residualDefault = categoryReader.GetDecimal(5); await categoryReader.CloseAsync();
+            if (nature == "CIP" || method is not ("StraightLine" or "NoDepreciation")) throw new FixedAssetException("assets.cip_target_category_policy_invalid");
+
+            var sourceRows = new List<(Guid Id, string Number, decimal Total, List<(Guid BookId, Guid DefinitionId, decimal Cost, decimal Residual, bool Posts, string Currency)> Books)>();
+            foreach (var sourceRequest in request.Sources.OrderBy(source => source.AssetId))
+            {
+                await using var source = new NpgsqlCommand("select asset_number,legal_entity_id,lifecycle_state,asset_nature from business_assets.fixed_asset where tenant_id=$1 and id=$2 for update", context.Connection, context.Transaction); source.Parameters.AddWithValue(tenant.Value); source.Parameters.AddWithValue(sourceRequest.AssetId);
+                await using var sourceReader = await source.ExecuteReaderAsync(token); if (!await sourceReader.ReadAsync(token)) throw new FixedAssetException("assets.asset_not_found"); var sourceNumber = sourceReader.GetString(0); var entity = sourceReader.GetGuid(1); var lifecycle = sourceReader.GetString(2); var sourceNature = sourceReader.GetString(3); await sourceReader.CloseAsync();
+                if (entity != request.LegalEntityId || lifecycle != "UnderConstruction" || sourceNature != "CIP") throw new FixedAssetException("assets.cip_combine_source_invalid");
+                await using var totalCommand = new NpgsqlCommand("select coalesce(sum(amount),0) from business_assets.asset_cip_cost_source where tenant_id=$1 and asset_id=$2", context.Connection, context.Transaction); totalCommand.Parameters.AddWithValue(tenant.Value); totalCommand.Parameters.AddWithValue(sourceRequest.AssetId); var total = (decimal)(await totalCommand.ExecuteScalarAsync(token) ?? 0m); if (total <= 0m || sourceRequest.Amount > total) throw new FixedAssetException("assets.cip_combine_amount_invalid");
+                await using var books = new NpgsqlCommand("select b.id,b.book_definition_id,b.original_cost,b.residual_value,bd.posts_to_ledger,bd.currency_code from business_assets.asset_book b join business_assets.asset_book_definition bd on bd.tenant_id=b.tenant_id and bd.id=b.book_definition_id where b.tenant_id=$1 and b.asset_id=$2 order by b.book_definition_id for update", context.Connection, context.Transaction); books.Parameters.AddWithValue(tenant.Value); books.Parameters.AddWithValue(sourceRequest.AssetId);
+                await using var bookReader = await books.ExecuteReaderAsync(token); var bookRows = new List<(Guid BookId, Guid DefinitionId, decimal Cost, decimal Residual, bool Posts, string Currency)>(); while (await bookReader.ReadAsync(token)) bookRows.Add((bookReader.GetGuid(0), bookReader.GetGuid(1), bookReader.GetDecimal(2), bookReader.GetDecimal(3), bookReader.GetBoolean(4), bookReader.GetString(5).Trim())); await bookReader.CloseAsync(); if (bookRows.Count == 0) throw new FixedAssetException("assets.book_not_found");
+                if (bookRows.Any(row => sourceRequest.Amount > row.Cost)) throw new FixedAssetException("assets.cip_combine_book_amount_invalid");
+                sourceRows.Add((sourceRequest.AssetId, sourceNumber, total, bookRows));
+            }
+            var totalAmount = request.Sources.Sum(source => source.Amount);
+            var targetId = Guid.CreateVersion7(); var targetNumber = await sequences.AllocateAsync(context, new SequenceDefinition("fixed-assets.asset-number", tenant, request.LegalEntityId, null, null, null, "FA-", 8, 1), token);
+            await using (var target = new NpgsqlCommand("insert into business_assets.fixed_asset(tenant_id,id,legal_entity_id,category_id,asset_number,name,lifecycle_state,asset_nature,tracking_granularity,source_origin_type,capitalization_date,placed_in_service_date,quantity,created_by,created_at,row_version) values($1,$2,$3,$4,$5,$6,'Capitalized',$7,$8,'CIPCombine',$9,$10,1,$11,now(),1)", context.Connection, context.Transaction)) { target.Parameters.AddWithValue(tenant.Value); target.Parameters.AddWithValue(targetId); target.Parameters.AddWithValue(request.LegalEntityId); target.Parameters.AddWithValue(request.TargetCategoryId); target.Parameters.AddWithValue(targetNumber); target.Parameters.AddWithValue(request.Name.Trim()); target.Parameters.AddWithValue(nature); target.Parameters.AddWithValue(tracking); target.Parameters.AddWithValue(request.CapitalizationDate); target.Parameters.AddWithValue((object?)request.PlacedInServiceDate ?? DBNull.Value); target.Parameters.AddWithValue(actor); await target.ExecuteNonQueryAsync(token); }
+
+            var definitionIds = sourceRows.SelectMany(source => source.Books.Select(book => book.DefinitionId)).Distinct().ToArray();
+            foreach (var definitionId in definitionIds)
+            {
+                var targetAmount = 0m; var posts = false; var currency = string.Empty;
+                foreach (var source in sourceRows) { var book = source.Books.FirstOrDefault(row => row.DefinitionId == definitionId); if (book.BookId == Guid.Empty) continue; var amount = request.Sources.Single(item => item.AssetId == source.Id).Amount; targetAmount += amount; posts |= book.Posts; currency = book.Currency; }
+                var targetBookId = Guid.CreateVersion7(); var targetResidual = Math.Min(targetAmount, residualDefault);
+                await using (var targetBook = new NpgsqlCommand("insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version) values($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),1)", context.Connection, context.Transaction)) { targetBook.Parameters.AddWithValue(tenant.Value); targetBook.Parameters.AddWithValue(targetBookId); targetBook.Parameters.AddWithValue(targetId); targetBook.Parameters.AddWithValue(definitionId); targetBook.Parameters.AddWithValue(targetAmount); targetBook.Parameters.AddWithValue(targetResidual); targetBook.Parameters.AddWithValue((object?)usefulLife ?? DBNull.Value); targetBook.Parameters.AddWithValue(method); targetBook.Parameters.AddWithValue((object?)request.PlacedInServiceDate ?? DBNull.Value); await targetBook.ExecuteNonQueryAsync(token); }
+                Guid? targetFact = null; if (posts) { var payload = new FixedAssetAcquisitionPostedPayload(targetAmount, currency, $"{targetNumber}/{targetBookId:D}", categoryCode); var envelope = new AccountingFactEnvelope<IAccountingFactPayload>(StableGuid($"cip-combine:{key}:target:{targetBookId:D}"), tenant, new(request.LegalEntityId), AccountingFactTypes.FixedAssetAcquisitionPosted, 1, "fixed-assets", $"cip-combine:{key}:target:{targetBookId:D}", $"fixed-assets:cip-combine:{key}:target:{targetBookId:D}", request.CapitalizationDate, request.CapitalizationDate, payload, Guid.CreateVersion7(), actor); targetFact = (await ledger.PostFixedAssetAcquisitionAsync(context, envelope, payload, token)).FactId; }
+                await using var targetTransaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'CapitalAddition',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction); targetTransaction.Parameters.AddWithValue(tenant.Value); targetTransaction.Parameters.AddWithValue(Guid.CreateVersion7()); targetTransaction.Parameters.AddWithValue(targetBookId); targetTransaction.Parameters.AddWithValue(request.CapitalizationDate); targetTransaction.Parameters.AddWithValue(targetAmount); targetTransaction.Parameters.AddWithValue($"cip-combine:{key}"); targetTransaction.Parameters.AddWithValue($"cip-combine:{key}:target:{targetBookId:D}"); targetTransaction.Parameters.AddWithValue((object?)targetFact?.ToString("D") ?? DBNull.Value); targetTransaction.Parameters.AddWithValue(actor); await targetTransaction.ExecuteNonQueryAsync(token);
+                foreach (var source in sourceRows)
+                {
+                    var book = source.Books.FirstOrDefault(row => row.DefinitionId == definitionId); if (book.BookId == Guid.Empty) continue; var amount = request.Sources.Single(item => item.AssetId == source.Id).Amount; Guid? sourceFact = null;
+                    if (book.Posts) { var payload = new FixedAssetCostAdjustmentPostedPayload(amount, book.Currency, $"{source.Number}/{book.BookId:D}", source.Number, $"CIP combined into {targetNumber}"); var envelope = new AccountingFactEnvelope<IAccountingFactPayload>(StableGuid($"cip-combine:{key}:source:{book.BookId:D}"), tenant, new(request.LegalEntityId), AccountingFactTypes.FixedAssetCostReduced, 1, "fixed-assets", $"cip-combine:{key}:source:{book.BookId:D}", $"fixed-assets:cip-combine:{key}:source:{book.BookId:D}", request.CapitalizationDate, request.CapitalizationDate, payload, Guid.CreateVersion7(), actor); sourceFact = (await ledger.PostFixedAssetCostReducedAsync(context, envelope, payload, token)).FactId; }
+                    var residual = Math.Max(0m, book.Residual - Math.Min(book.Residual, book.Cost == 0m ? 0m : amount * book.Residual / book.Cost));
+                    await using var update = new NpgsqlCommand("update business_assets.asset_book set original_cost=original_cost-$1,residual_value=$2,row_version=row_version+1 where tenant_id=$3 and id=$4", context.Connection, context.Transaction); update.Parameters.AddWithValue(amount); update.Parameters.AddWithValue(residual); update.Parameters.AddWithValue(tenant.Value); update.Parameters.AddWithValue(book.BookId); await update.ExecuteNonQueryAsync(token);
+                    await using var transaction = new NpgsqlCommand("insert into business_assets.asset_book_transaction(tenant_id,id,asset_book_id,transaction_type,transaction_date,amount,source_reference,idempotency_key,ledger_fact_reference,created_by,created_at) values($1,$2,$3,'CostReduction',$4,$5,$6,$7,$8,$9,now())", context.Connection, context.Transaction); transaction.Parameters.AddWithValue(tenant.Value); transaction.Parameters.AddWithValue(Guid.CreateVersion7()); transaction.Parameters.AddWithValue(book.BookId); transaction.Parameters.AddWithValue(request.CapitalizationDate); transaction.Parameters.AddWithValue(amount); transaction.Parameters.AddWithValue($"cip-combine:{key}:target:{targetId:D}"); transaction.Parameters.AddWithValue($"cip-combine:{key}:source:{book.BookId:D}"); transaction.Parameters.AddWithValue((object?)sourceFact?.ToString("D") ?? DBNull.Value); transaction.Parameters.AddWithValue(actor); await transaction.ExecuteNonQueryAsync(token);
+                }
+            }
+            foreach (var source in sourceRows) { var amount = request.Sources.Single(item => item.AssetId == source.Id).Amount; var remaining = source.Total - amount; await using var lifecycle = new NpgsqlCommand("update business_assets.fixed_asset set lifecycle_state=case when $1 <= 0.000001 then 'Capitalized' else 'UnderConstruction' end,row_version=row_version+1,updated_by=$2,updated_at=now() where tenant_id=$3 and id=$4", context.Connection, context.Transaction); lifecycle.Parameters.AddWithValue(remaining); lifecycle.Parameters.AddWithValue(actor); lifecycle.Parameters.AddWithValue(tenant.Value); lifecycle.Parameters.AddWithValue(source.Id); await lifecycle.ExecuteNonQueryAsync(token); }
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "FixedAssetCapitalizedV1", JsonSerializer.Serialize(new FixedAssetCapitalizedV1(targetId, request.LegalEntityId, request.CapitalizationDate, request.PlacedInServiceDate, totalAmount, DateTimeOffset.UtcNow)), tenant, DateTimeOffset.UtcNow, targetId, targetId, "fixed-assets"));
+            var result = new CombineCipView(targetId, targetNumber, totalAmount, sourceRows.Select(source => source.Id).ToArray(), "Completed"); await using var idempotency = new NpgsqlCommand("insert into business_assets.asset_idempotency_key(tenant_id,operation,idempotency_key,request_hash,response,created_at) values($1,$2,$3,$4,$5::jsonb,now())", context.Connection, context.Transaction); idempotency.Parameters.AddWithValue(tenant.Value); idempotency.Parameters.AddWithValue(operation); idempotency.Parameters.AddWithValue(key); idempotency.Parameters.AddWithValue(requestHash); idempotency.Parameters.AddWithValue(JsonSerializer.Serialize(result)); await idempotency.ExecuteNonQueryAsync(token); return result;
         }, ct);
     }
 

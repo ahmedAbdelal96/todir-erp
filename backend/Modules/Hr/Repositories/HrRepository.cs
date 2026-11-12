@@ -782,6 +782,7 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
             }
             if (current.Version != request.ExpectedVersion) throw new HrException("hr.employment_concurrency_conflict");
             OffboardingPlanRequest? offboarding = request.NewStatus is EmploymentStatus.Terminated or EmploymentStatus.Ended ? request.Offboarding : null;
+            List<OffboardingTaskRequest> offboardingTasks = [];
             DateOnly? accessDeactivationOn = null;
             if (request.NewStatus is not (EmploymentStatus.Terminated or EmploymentStatus.Ended) && request.Offboarding is not null)
                 throw new HrException("hr.offboarding_details_not_allowed");
@@ -792,10 +793,12 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
                     || offboarding.LastWorkingDate < current.StartDate || offboarding.LastWorkingDate > request.EffectiveOn
                     || offboarding.NoticeDate is { } noticeDate && (noticeDate < current.StartDate || noticeDate > offboarding.LastWorkingDate))
                     throw new HrException("hr.offboarding_dates_or_reason_invalid");
-                var tasks = offboarding.Tasks ?? [];
-                if (tasks.Count > 32 || tasks.Any(task => string.IsNullOrWhiteSpace(task.Code) || task.Code.Length > 60 || !char.IsAsciiLetterUpper(task.Code[0]) || task.Code.Any(ch => !char.IsAsciiLetterUpper(ch) && !char.IsAsciiDigit(ch) && ch != '_')
+                offboardingTasks = (offboarding.Tasks ?? []).ToList();
+                if (offboardingTasks.All(task => !string.Equals(task.Code, "FIXED_ASSET_RETURN", StringComparison.Ordinal)))
+                    offboardingTasks.Add(new OffboardingTaskRequest("FIXED_ASSET_RETURN", "تسليم الأصول الثابتة", offboarding.LastWorkingDate, $"fixed-assets:employee:{employeeId:D}"));
+                if (offboardingTasks.Count > 32 || offboardingTasks.Any(task => string.IsNullOrWhiteSpace(task.Code) || task.Code.Length > 60 || !char.IsAsciiLetterUpper(task.Code[0]) || task.Code.Any(ch => !char.IsAsciiLetterUpper(ch) && !char.IsAsciiDigit(ch) && ch != '_')
                     || string.IsNullOrWhiteSpace(task.TitleAr) || task.TitleAr.Trim().Length > 160 || task.ExternalReference?.Length > 160)
-                    || tasks.Select(task => task.Code).Distinct(StringComparer.Ordinal).Count() != tasks.Count)
+                    || offboardingTasks.Select(task => task.Code).Distinct(StringComparer.Ordinal).Count() != offboardingTasks.Count)
                     throw new HrException("hr.offboarding_task_invalid");
                 accessDeactivationOn = offboarding.AccessDeactivationTiming switch
                 {
@@ -835,7 +838,7 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
             if (offboarding is not null)
             {
                 offboardingCaseId = Guid.CreateVersion7();
-                var tasks = offboarding.Tasks ?? [];
+                var tasks = offboardingTasks;
                 var caseStatus = tasks.Count == 0 ? "Completed" : "Open";
                 var caseCreatedAt = clock.GetUtcNow();
                 await using (var insertCase = new NpgsqlCommand("insert into business_hr.offboarding_case(id,tenant_id,legal_entity_id,employee_id,employment_id,reason_type,reason_code,notice_date,last_working_date,effective_end_date,access_deactivation_on,final_payroll_required,status,created_by,created_at,completed_at,version,target_status,termination_status,termination_applied_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,case when $13='Completed' then $15 else null end,1,$16,$17,$18)", context.Connection, context.Transaction))
