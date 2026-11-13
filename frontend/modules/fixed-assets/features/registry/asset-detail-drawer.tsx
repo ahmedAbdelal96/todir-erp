@@ -112,17 +112,17 @@ export function AssetDetailDrawer({
                 {asset.assetName}
               </div>
               <div style={{ fontSize: "0.8125rem", color: "#64748b", marginTop: "0.25rem" }}>
-                {asset.assetCode} | {asset.serialNumber ? `S/N: ${asset.serialNumber}` : ""}
+                {asset.assetCode} | {asset.serialNumber ? `${t("fields.serialNumberShort", "ر.ت:")} ${asset.serialNumber}` : ""}
               </div>
             </div>
 
             <div style={{ textAlign: "end", display: "flex", flexDirection: "column", justifyContent: "center" }}>
               <div style={{ fontSize: "0.8125rem", color: "#64748b" }}>{t("fields.netBookValue", "صافي القيمة الدفترية")}</div>
               <div style={{ fontSize: "1.375rem", fontWeight: 700, color: "#1e3a8a" }}>
-                {asset.netBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {asset.currency}
+                {(asset.netBookValue ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {asset.currency}
               </div>
               <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.15rem" }}>
-                {t("fields.acquisitionCost", "التكلفة التاريخية")}: {asset.acquisitionCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {asset.currency}
+                {t("fields.acquisitionCost", "التكلفة التاريخية")}: {(asset.acquisitionCost ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {asset.currency}
               </div>
             </div>
           </div>
@@ -252,25 +252,25 @@ export function AssetDetailDrawer({
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.usefulLifeMonths", "العمر الإنتاجي")}</div>
-                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>{asset.usefulLifeMonths} شهر</div>
+                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>{asset.usefulLifeMonths} {t("common.months", "شهر")}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.salvageValue", "قيمة الخردة")}</div>
-                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>{asset.salvageValue.toLocaleString("ar-EG")} {asset.currency}</div>
+                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>{(asset.salvageValue ?? 0).toLocaleString("ar-EG")} {asset.currency}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.accumulatedDepreciation", "مجمع الإهلاك")}</div>
-                      <div style={{ fontWeight: 600, color: "#dc2626", marginTop: "0.25rem" }}>{asset.accumulatedDepreciation.toLocaleString("ar-EG")} {asset.currency}</div>
+                      <div style={{ fontWeight: 600, color: "#dc2626", marginTop: "0.25rem" }}>{(asset.accumulatedDepreciation ?? 0).toLocaleString("ar-EG")} {asset.currency}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.netBookValue", "صافي القيمة الدفترية")}</div>
-                      <div style={{ fontWeight: 600, color: "#16a34a", marginTop: "0.25rem" }}>{asset.netBookValue.toLocaleString("ar-EG")} {asset.currency}</div>
+                      <div style={{ fontWeight: 600, color: "#16a34a", marginTop: "0.25rem" }}>{(asset.netBookValue ?? 0).toLocaleString("ar-EG")} {asset.currency}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.monthlyDepreciation", "القسط الشهري التقديري")}</div>
                       <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>
-                        {asset.usefulLifeMonths > 0
-                          ? ((asset.acquisitionCost - asset.salvageValue) / asset.usefulLifeMonths).toLocaleString("ar-EG", { minimumFractionDigits: 2 })
+                        {(asset.usefulLifeMonths ?? 0) > 0
+                          ? (((asset.acquisitionCost ?? 0) - (asset.salvageValue ?? 0)) / (asset.usefulLifeMonths ?? 1)).toLocaleString("ar-EG", { minimumFractionDigits: 2 })
                           : "0.00"} {asset.currency}
                       </div>
                     </div>
@@ -345,8 +345,8 @@ export function AssetDetailDrawer({
                           <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
                             <td style={{ padding: "0.5rem", fontWeight: 600 }}>{line.periodEnd}</td>
                             <td style={{ padding: "0.5rem" }}>{line.depreciationAmount.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</td>
-                            <td style={{ padding: "0.5rem", color: "#dc2626" }}>{line.closingAccumulatedDepreciation.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</td>
-                            <td style={{ padding: "0.5rem", color: "#16a34a" }}>{line.closingNetBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</td>
+                            <td style={{ padding: "0.5rem", color: "#dc2626" }}>{line.cumulativeDepreciation.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</td>
+                            <td style={{ padding: "0.5rem", color: "#16a34a" }}>{line.projectedNetBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -393,7 +393,7 @@ export function AssetDetailDrawer({
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                   <div style={{ padding: "0.75rem", backgroundColor: "#f8fafc", borderRadius: "0.375rem", borderInlineStart: "3px solid #1e3a8a" }}>
                     <div style={{ fontWeight: 600, fontSize: "0.8125rem" }}>{t("timeline.acquisitionCreated", "تسجيل وقيد الأصل الرأسمالي")}</div>
-                    <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{asset.acquisitionDate} - بواسطة النظام المالي</div>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{asset.acquisitionDate} {t("timeline.bySystem", "- بواسطة النظام المالي")}</div>
                   </div>
                   {asset.inServiceDate && (
                     <div style={{ padding: "0.75rem", backgroundColor: "#f8fafc", borderRadius: "0.375rem", borderInlineStart: "3px solid #16a34a" }}>
@@ -404,7 +404,7 @@ export function AssetDetailDrawer({
                   {asset.lifecycleState === "Disposed" && (
                     <div style={{ padding: "0.75rem", backgroundColor: "#fef2f2", borderRadius: "0.375rem", borderInlineStart: "3px solid #dc2626" }}>
                       <div style={{ fontWeight: 600, fontSize: "0.8125rem", color: "#991b1b" }}>{t("timeline.disposed", "استبعاد وتخريد الأصل")}</div>
-                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>تم إقفال حسابات الأصل ومجمع الإهلاك</div>
+                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("timeline.closedAccounts", "تم إقفال حسابات الأصل ومجمع الإهلاك")}</div>
                     </div>
                   )}
                 </div>
@@ -420,7 +420,7 @@ export function AssetDetailDrawer({
                   </div>
                   <p style={{ margin: 0, fontSize: "0.8125rem", lineHeight: 1.6, color: "#334155" }}>
                     {t("sources.explanation", "تمت رسملة هذا الأصل بتكلفة أولية قدرها ")}
-                    <strong>{asset.acquisitionCost.toLocaleString("ar-EG")} {asset.currency}</strong>
+                    <strong>{(asset.acquisitionCost ?? 0).toLocaleString("ar-EG")} {asset.currency}</strong>
                     {t("sources.explanationEnd", " مطابقة لقيود الشراء أو المشاريع الرأسمالية المرتبطة.")}
                   </p>
                 </div>
@@ -447,7 +447,7 @@ export function AssetDetailDrawer({
                   <CornerDownLeftIcon size={14} style={{ marginInlineEnd: "0.375rem" }} />
                   {t("custody.return", "إرجاع للمستودع")}
                 </Button>
-                <Button variant="destructive" size="compact" onClick={onDisposeClick} data-testid="drawer-dispose-btn">
+                <Button variant="danger" size="compact" onClick={onDisposeClick} data-testid="drawer-dispose-btn">
                   <TrashIcon size={14} style={{ marginInlineEnd: "0.375rem" }} />
                   {t("disposal.dispose", "استبعاد / بيع")}
                 </Button>

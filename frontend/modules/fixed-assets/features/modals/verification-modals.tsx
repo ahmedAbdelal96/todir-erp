@@ -27,28 +27,10 @@ export function NewVerificationCampaignModal({
   legalEntityId
 }: NewVerificationCampaignModalProps): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
-  const locationsQuery = useFixedAssetLocationsQuery(legalEntityId);
-  const createCampaignMutation = useCreateVerificationCampaignMutation(legalEntityId);
+  const createCampaignMutation = useCreateVerificationCampaignMutation();
 
   const [campaignName, setCampaignName] = useState("");
-  const [scope, setScope] = useState("FullAudit");
-  const [targetLocationId, setTargetLocationId] = useState("");
-  const [plannedStartDate, setPlannedStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [plannedEndDate, setPlannedEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
-
-  const locationOptions: SelectOption[] =
-    locationsQuery.data?.items?.map((loc) => ({
-      value: loc.id,
-      label: `${loc.locationName} (${loc.building ?? ""})`
-    })) ?? [];
-
-  const scopeOptions: SelectOption[] = [
-    { value: "FullAudit", label: t("custody.scopeFull", "جرد شامل لكافة الأصول") },
-    { value: "LocationSpecific", label: t("custody.scopeLocation", "جرد مخصص لموقع محدد") },
-    { value: "CategorySpecific", label: t("custody.scopeCategory", "جرد تصنيف محدد (مثال: أجهزة وحواسيب)") },
-    { value: "SampleAudit", label: t("custody.scopeSample", "جرد عشوائي للتحقق الدوري") }
-  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,11 +43,8 @@ export function NewVerificationCampaignModal({
 
     try {
       const payload: CreateVerificationCampaignRequest = {
-        campaignName: campaignName.trim(),
-        scope,
-        targetLocationId: targetLocationId || undefined,
-        plannedStartDate,
-        plannedEndDate
+        legalEntityId,
+        name: campaignName.trim()
       };
 
       await createCampaignMutation.mutateAsync(payload);
@@ -81,7 +60,7 @@ export function NewVerificationCampaignModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("custody.newCampaignModalTitle", "إنشاء حملة جرد فعلي وتدقيق ميداني")}
-      width="540px"
+      size="medium"
       data-testid="new-campaign-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -94,55 +73,11 @@ export function NewVerificationCampaignModal({
         <TextField
           label={t("fields.campaignName", "اسم الحملة")}
           value={campaignName}
-          onChange={(e) => setCampaignName(e.target.value)}
-          required
+          onChange={setCampaignName}
+          isRequired
           placeholder={t("fields.campaignNamePlaceholder", "جرد نهاية السنة المالية 2026 - المقر الرئيسي")}
           data-testid="campaign-name-input"
         />
-
-        <div>
-          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.25rem", color: "#334155" }}>
-            {t("fields.auditScope", "نطاق الجرد")}
-          </label>
-          <Select
-            options={scopeOptions}
-            value={scope}
-            onChange={(val) => setScope(val)}
-            data-testid="campaign-scope-select"
-          />
-        </div>
-
-        <div>
-          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.25rem", color: "#334155" }}>
-            {t("fields.targetLocation", "الموقع المستهدف للجرد (اختياري)")}
-          </label>
-          <Select
-            options={locationOptions}
-            value={targetLocationId}
-            onChange={(val) => setTargetLocationId(val)}
-            placeholder={t("fields.selectLocation", "كافة المواقع أو اختر موقع...")}
-            data-testid="campaign-location-select"
-          />
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-          <TextField
-            label={t("fields.plannedStartDate", "تاريخ البدء المخطط")}
-            type="date"
-            value={plannedStartDate}
-            onChange={(e) => setPlannedStartDate(e.target.value)}
-            required
-            data-testid="planned-start-date-input"
-          />
-          <TextField
-            label={t("fields.plannedEndDate", "تاريخ الانتهاء المخطط")}
-            type="date"
-            value={plannedEndDate}
-            onChange={(e) => setPlannedEndDate(e.target.value)}
-            required
-            data-testid="planned-end-date-input"
-          />
-        </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
           <Button variant="secondary" onClick={onClose} type="button">
@@ -162,7 +97,7 @@ export interface RecordAuditFindingModalProps {
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly campaignId: string;
-  readonly defaultAssetId?: string;
+  readonly defaultAssetId?: string | undefined;
 }
 
 export function RecordAuditFindingModal({
@@ -191,15 +126,15 @@ export function RecordAuditFindingModal({
 
   const locationOptions: SelectOption[] =
     locationsQuery.data?.items?.map((loc) => ({
-      value: loc.id,
-      label: `${loc.locationName} (${loc.building ?? ""})`
+      id: loc.id,
+      label: `${loc.locationName} (${loc.locationCode})`
     })) ?? [];
 
   const statusOptions: SelectOption[] = [
-    { value: "Found", label: t("custody.findingFound", "مطابق وموجود (Found)") },
-    { value: "WrongLocation", label: t("custody.findingWrongLocation", "موجود في موقع غير مطابق (Wrong Location)") },
-    { value: "Damaged", label: t("custody.findingDamaged", "تالف / بحاجة لصيانة (Damaged)") },
-    { value: "Missing", label: t("custody.findingMissing", "مفقود وغير موجود (Missing)") }
+    { id: "Found", label: t("custody.findingFound", "مطابق وموجود (Found)") },
+    { id: "WrongLocation", label: t("custody.findingWrongLocation", "موجود في موقع غير مطابق (Wrong Location)") },
+    { id: "Damaged", label: t("custody.findingDamaged", "تالف / بحاجة لصيانة (Damaged)") },
+    { id: "Missing", label: t("custody.findingMissing", "مفقود وغير موجود (Missing)") }
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -233,7 +168,7 @@ export function RecordAuditFindingModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("custody.recordFindingModalTitle", "تسجيل نتيجة فحص ميداني / مسح باركود")}
-      width="520px"
+      size="medium"
       data-testid="record-finding-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -247,15 +182,15 @@ export function RecordAuditFindingModal({
           <TextField
             label={t("fields.assetId", "معرّف أو كود الأصل")}
             value={assetId}
-            onChange={(e) => setAssetId(e.target.value)}
-            placeholder="UUID / FA-CODE"
+            onChange={setAssetId}
+            placeholder={t("fields.assetIdPlaceholder", "UUID / FA-CODE")}
             data-testid="finding-asset-id-input"
           />
           <TextField
             label={t("fields.barcodeOrTag", "الباركود المقروء (Scan Tag)")}
             value={barcodeOrTag}
-            onChange={(e) => setBarcodeOrTag(e.target.value)}
-            placeholder="TAG-98242"
+            onChange={setBarcodeOrTag}
+            placeholder={t("fields.barcodePlaceholder", "TAG-98242")}
             data-testid="finding-barcode-input"
           />
         </div>
@@ -266,8 +201,8 @@ export function RecordAuditFindingModal({
           </label>
           <Select
             options={statusOptions}
-            value={findingStatus}
-            onChange={(val) => setFindingStatus(val as AuditFindingStatus)}
+            selectedKey={findingStatus}
+            onSelectionChange={(k) => setFindingStatus(String(k ?? "Found") as AuditFindingStatus)}
             data-testid="finding-status-select"
           />
         </div>
@@ -278,8 +213,8 @@ export function RecordAuditFindingModal({
           </label>
           <Select
             options={locationOptions}
-            value={actualLocationId}
-            onChange={(val) => setActualLocationId(val)}
+            selectedKey={actualLocationId || null}
+            onSelectionChange={(k) => setActualLocationId(String(k ?? ""))}
             placeholder={t("fields.selectLocation", "اختر الموقع الفعلي...")}
             data-testid="actual-location-select"
           />
@@ -288,7 +223,7 @@ export function RecordAuditFindingModal({
         <TextField
           label={t("fields.auditNotes", "ملاحظات الفاحص الميداني")}
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={setNotes}
           placeholder={t("fields.auditNotesPlaceholder", "تم العثور على الجهاز بغرفة 102 بدون ملصق الباركود...")}
           data-testid="finding-notes-input"
         />

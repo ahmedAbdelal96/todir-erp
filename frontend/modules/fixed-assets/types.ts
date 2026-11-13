@@ -493,64 +493,76 @@ export interface CreateAssetCategoryRequest {
   readonly defaultResidualValue?: number;
 }
 
+export interface FixedAssetCustodyItemView {
+  readonly assetId: string;
+  readonly assetNumber: string;
+  readonly name: string;
+  readonly legalEntityId: string;
+  readonly assignmentId: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | null | undefined;
+  readonly locationId?: string | null | undefined;
+  readonly condition?: string | null | undefined;
+}
+
 export interface CreateAssetRequest {
   readonly legalEntityId: string;
   readonly categoryId: string;
   readonly name: string;
-  readonly description?: string | null;
-  readonly assetTag?: string | null;
-  readonly productVariantRef?: string | null;
-  readonly inventorySerialRef?: string | null;
-  readonly sourceOriginType?: string | null;
-  readonly acquisitionDate?: string | null;
-  readonly capitalizationDate?: string | null;
-  readonly placedInServiceDate?: string | null;
-  readonly parentAssetId?: string | null;
-  readonly quantity?: number | null;
+  readonly description?: string | null | undefined;
+  readonly assetTag?: string | null | undefined;
+  readonly productVariantRef?: string | null | undefined;
+  readonly inventorySerialRef?: string | null | undefined;
+  readonly sourceOriginType?: string | null | undefined;
+  readonly acquisitionDate?: string | null | undefined;
+  readonly capitalizationDate?: string | null | undefined;
+  readonly placedInServiceDate?: string | null | undefined;
+  readonly parentAssetId?: string | null | undefined;
+  readonly quantity?: number | null | undefined;
 }
 
 export interface AssignAssetRequest {
   readonly assignmentType: AssignmentType;
-  readonly employeeId?: string | null;
-  readonly departmentId?: string | null;
-  readonly custodianName?: string | null;
-  readonly locationId?: string | null;
+  readonly employeeId?: string | null | undefined;
+  readonly departmentId?: string | null | undefined;
+  readonly custodianName?: string | null | undefined;
+  readonly locationId?: string | null | undefined;
   readonly effectiveFrom: string;
-  readonly effectiveTo?: string | null;
-  readonly condition?: string | null;
-  readonly accessories?: string | null;
-  readonly acknowledgementReference?: string | null;
+  readonly effectiveTo?: string | null | undefined;
+  readonly condition?: string | null | undefined;
+  readonly accessories?: string | null | undefined;
+  readonly acknowledgementReference?: string | null | undefined;
 }
 
 export interface ReturnAssetRequest {
-  readonly effectiveFrom: string;
-  readonly locationId?: string | null;
-  readonly condition?: string | null;
-  readonly accessories?: string | null;
-  readonly acknowledgementReference?: string | null;
-  readonly evidence?: Record<string, unknown>;
+  readonly effectiveFrom?: string | undefined;
+  readonly locationId?: string | null | undefined;
+  readonly condition?: string | null | undefined;
+  readonly accessories?: string | null | undefined;
+  readonly acknowledgementReference?: string | null | undefined;
+  readonly evidence?: Record<string, unknown> | undefined;
 }
 
 export interface CreateAssetLocationRequest {
   readonly legalEntityId: string;
-  readonly parentLocationId?: string | null;
+  readonly parentLocationId?: string | null | undefined;
   readonly code: string;
   readonly name: string;
-  readonly locationType?: LocationType;
+  readonly locationType?: LocationType | undefined;
 }
 
 export interface CreateAssetHandoverRequest {
   readonly assignmentId: string;
   readonly handoverType: HandoverType;
-  readonly acknowledgedAt?: string | null;
-  readonly condition?: string | null;
-  readonly evidence?: Record<string, unknown>;
+  readonly acknowledgedAt?: string | null | undefined;
+  readonly condition?: string | null | undefined;
+  readonly evidence?: Record<string, unknown> | undefined;
 }
 
 export interface AddAssetDocumentRequest {
   readonly fileRef: string;
   readonly role: string;
-  readonly title?: string | null;
+  readonly title?: string | null | undefined;
 }
 
 export interface CreateVerificationCampaignRequest {
@@ -560,9 +572,9 @@ export interface CreateVerificationCampaignRequest {
 
 export interface VerifyAssetRequest {
   readonly result: VerificationResult;
-  readonly observedLocationId?: string | null;
-  readonly notes?: string | null;
-  readonly evidence?: Record<string, unknown> | null;
+  readonly observedLocationId?: string | null | undefined;
+  readonly notes?: string | null | undefined;
+  readonly evidence?: Record<string, unknown> | null | undefined;
 }
 
 export interface MassTransferRequest {
@@ -715,40 +727,40 @@ export interface CombineCipRequest {
 
 export interface ChangeAssetBookCostRequest {
   readonly legalEntityId: string;
-  readonly bookId?: string;
+  readonly bookId?: string | undefined;
   readonly amount: number;
   readonly effectiveDate: string;
   readonly reason: string;
-  readonly idempotencyKey?: string | null;
+  readonly idempotencyKey?: string | null | undefined;
 }
 
 export interface CreateAssetBookEstimateChangeRequest {
   readonly legalEntityId: string;
   readonly effectiveFrom: string;
-  readonly usefulLifeMonths?: number | null;
-  readonly residualValue?: number | null;
+  readonly usefulLifeMonths?: number | null | undefined;
+  readonly residualValue?: number | null | undefined;
   readonly reason: string;
-  readonly idempotencyKey?: string | null;
+  readonly idempotencyKey?: string | null | undefined;
 }
 
 export interface CreateAssetImpairmentRequest {
   readonly legalEntityId: string;
-  readonly bookId?: string;
+  readonly bookId?: string | undefined;
   readonly amount: number;
   readonly effectiveDate: string;
   readonly reason: string;
   readonly approvalRequestId: string;
-  readonly evidenceFileRef?: string | null;
-  readonly idempotencyKey?: string | null;
+  readonly evidenceFileRef?: string | null | undefined;
+  readonly idempotencyKey?: string | null | undefined;
 }
 
 export interface RequestAssetImpairmentApprovalRequest {
   readonly legalEntityId: string;
-  readonly bookId?: string;
+  readonly bookId?: string | undefined;
   readonly amount: number;
   readonly effectiveDate: string;
   readonly reason: string;
-  readonly policyVersionId?: string | null;
+  readonly policyVersionId?: string | null | undefined;
 }
 
 export interface CreateAssetRevaluationRequest {
@@ -837,6 +849,7 @@ export type CapitalizationCandidateDto = CapitalizationCandidateView & {
   readonly transactionDate?: string | undefined;
 };
 export type CipProjectDto = CipAssetView & {
+  readonly id?: string | undefined;
   readonly projectCode?: string | undefined;
   readonly projectName?: string | undefined;
   readonly description?: string | null | undefined;

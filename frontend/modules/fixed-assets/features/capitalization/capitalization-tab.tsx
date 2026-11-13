@@ -122,7 +122,7 @@ export function CapitalizationTab({
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>
                     <span style={{ fontWeight: 700, color: "#1e3a8a" }}>
-                      {(row.accumulatedCost ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {row.currency ?? "EGP"}
+                      {(row.accumulatedCost ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {row.currency ?? ""}
                     </span>
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>{row.estimatedCompletionDate ?? "-"}</td>
@@ -218,7 +218,7 @@ export function CapitalizationTab({
                 <option value="">{t("fields.selectCip", "اختر مشروع CIP...")}</option>
                 {cipProjects.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.projectName} ({(p.accumulatedCost ?? 0).toLocaleString("ar-EG")} {p.currency ?? "EGP"})
+                    {p.projectName} ({(p.accumulatedCost ?? 0).toLocaleString("ar-EG")} {p.currency ?? ""})
                   </option>
                 ))}
               </select>

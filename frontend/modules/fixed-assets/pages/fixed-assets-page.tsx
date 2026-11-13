@@ -25,7 +25,12 @@ import { NewVerificationCampaignModal, RecordAuditFindingModal } from "../featur
 import { EstimateChangeModal, CostAdditionModal, ImpairmentModal } from "../features/modals/financial-change-modals.tsx";
 import { MassTransferModal } from "../features/modals/mass-transfer-modal.tsx";
 import { NewLocationModal, NewCategoryModal, NewBookModal } from "../features/modals/new-config-modals.tsx";
-import { useFixedAssetsQuery, useCipProjectsQuery } from "../hooks/use-fixed-assets-queries.ts";
+import {
+  useFixedAssetsQuery,
+  useCipProjectsQuery,
+  useAssetBooksQuery,
+  useAssetGlReconciliationQuery
+} from "../hooks/use-fixed-assets-queries.ts";
 import type {
   FixedAssetDto,
   CipProjectDto,
@@ -63,18 +68,23 @@ export function FixedAssetsPage(): React.JSX.Element {
   const legalEntityName = runtimeContext?.name;
 
   // Authorization checks (Fail closed)
-  const canManage = Boolean(
+  const canRead = Boolean(
     permissions &&
-      (permissions.hasPermission("assets:view") ||
-        permissions.hasPermission("assets:create") ||
-        permissions.hasPermission("assets:depreciate") ||
+      (permissions.hasPermission("assets.read") ||
         permissions.hasPermission("admin") ||
         permissions.hasPermission("*"))
   );
 
   const canCreate = Boolean(
     permissions &&
-      (permissions.hasPermission("assets:create") ||
+      (permissions.hasPermission("assets.create") ||
+        permissions.hasPermission("admin") ||
+        permissions.hasPermission("*"))
+  );
+
+  const canFinancialRead = Boolean(
+    permissions &&
+      (permissions.hasPermission("assets.financial.read") ||
         permissions.hasPermission("admin") ||
         permissions.hasPermission("*"))
   );
@@ -82,12 +92,16 @@ export function FixedAssetsPage(): React.JSX.Element {
   // Queries for KPI metrics
   const assetsQuery = useFixedAssetsQuery(legalEntityId, { pageSize: 100 });
   const cipQuery = useCipProjectsQuery(legalEntityId);
+  const booksQuery = useAssetBooksQuery(legalEntityId);
+  const primaryBook = booksQuery.data?.[0];
+  const reconciliationQuery = useAssetGlReconciliationQuery(primaryBook?.id, legalEntityId);
 
   const allAssets = assetsQuery.data?.items ?? [];
   const totalAssetsCount = assetsQuery.data?.totalCount ?? allAssets.length;
-  const totalHistoricalCost = allAssets.reduce((sum: number, a: FixedAssetDto) => sum + (a.acquisitionCost ?? 0), 0);
-  const totalAccDep = allAssets.reduce((sum: number, a: FixedAssetDto) => sum + (a.accumulatedDepreciation ?? 0), 0);
-  const totalNetBookValue = allAssets.reduce((sum: number, a: FixedAssetDto) => sum + (a.netBookValue ?? 0), 0);
+  const totalHistoricalCost = reconciliationQuery.data?.assetGrossCost ?? 0;
+  const totalAccDep = reconciliationQuery.data?.assetAccumulatedDepreciation ?? 0;
+  const totalNetBookValue = reconciliationQuery.data?.assetNetBookValue ?? 0;
+  const currencyCode = reconciliationQuery.data?.currencyCode ?? primaryBook?.currencyCode ?? "SAR";
 
   // Modal / Drawer States
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -222,26 +236,30 @@ export function FixedAssetsPage(): React.JSX.Element {
           }}
         >
           <FixedAssetsKpiCard
+            testId="kpi-total-assets"
             title={t("kpi.totalAssets", "إجمالي الأصول المسجلة")}
             value={totalAssetsCount}
             subtitle={t("kpi.activeAndUnderConstruction", "نشط وقيد الإنشاء")}
             tone="default"
           />
           <FixedAssetsKpiCard
+            testId="kpi-gross-cost"
             title={t("kpi.historicalCost", "التكلفة التاريخية")}
-            value={`${totalHistoricalCost.toLocaleString("ar-EG")} EGP`}
+            value={`${totalHistoricalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyCode}`}
             subtitle={t("kpi.totalAcquisitionCost", "إجمالي تكلفة الاقتناء")}
             tone="default"
           />
           <FixedAssetsKpiCard
+            testId="kpi-accumulated-depreciation"
             title={t("kpi.accumulatedDepreciation", "مجمع الإهلاك")}
-            value={`${totalAccDep.toLocaleString("ar-EG")} EGP`}
+            value={`${totalAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyCode}`}
             subtitle={t("kpi.depreciatedPortion", "الأقساط المستهلكة حتى الآن")}
             tone="warning"
           />
           <FixedAssetsKpiCard
+            testId="kpi-nbv"
             title={t("kpi.netBookValue", "صافي القيمة الدفترية (NBV)")}
-            value={`${totalNetBookValue.toLocaleString("ar-EG")} EGP`}
+            value={`${totalNetBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyCode}`}
             subtitle={t("kpi.carryingAmount", "القيمة الدفترية في الميزانية")}
             tone="success"
           />
@@ -496,7 +514,7 @@ export function FixedAssetsPage(): React.JSX.Element {
         onClose={() => setIsReverseRunOpen(false)}
         legalEntityId={legalEntityId}
         runId={selectedRunForReversal?.id ?? null}
-        periodLabel={selectedRunForReversal ? `${selectedRunForReversal.periodYear}/${selectedRunForReversal.periodMonth}` : ""}
+        periodLabel={selectedRunForReversal ? `${selectedRunForReversal.periodYear}/${selectedRunForReversal.periodMonth}` : undefined}
       />
 
       <NewVerificationCampaignModal

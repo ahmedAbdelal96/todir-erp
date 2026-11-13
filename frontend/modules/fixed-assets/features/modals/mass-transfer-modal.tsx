@@ -37,8 +37,8 @@ export function MassTransferModal({
 
   const locationOptions: SelectOption[] =
     locationsQuery.data?.items?.map((loc) => ({
-      value: loc.id,
-      label: `${loc.locationName} (${loc.building ?? ""})`
+      id: loc.id,
+      label: `${loc.locationName} (${loc.locationCode})`
     })) ?? [];
 
   const selectedAssets = availableAssets.filter((a) => selectedAssetIds.includes(a.id));
@@ -78,7 +78,7 @@ export function MassTransferModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("custody.massTransferModalTitle", "نقل جماعي للعهدة والمواقع (Mass Transfer)")}
-      width="580px"
+      size="medium"
       data-testid="mass-transfer-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -106,14 +106,14 @@ export function MassTransferModal({
           <TextField
             label={t("fields.targetCustodian", "الموظف المستلم للعهدة")}
             value={targetCustodianId}
-            onChange={(e) => setTargetCustodianId(e.target.value)}
-            placeholder="EMP-1024"
+            onChange={setTargetCustodianId}
+            placeholder={t("fields.custodianPlaceholder", "EMP-1024")}
             data-testid="mass-target-custodian-input"
           />
           <TextField
             label={t("fields.targetDepartment", "القسم الجديد")}
             value={targetDepartment}
-            onChange={(e) => setTargetDepartment(e.target.value)}
+            onChange={setTargetDepartment}
             placeholder={t("fields.deptPlaceholder", "إدارة التسويق")}
             data-testid="mass-target-dept-input"
           />
@@ -125,8 +125,8 @@ export function MassTransferModal({
           </label>
           <Select
             options={locationOptions}
-            value={targetLocationId}
-            onChange={(val) => setTargetLocationId(val)}
+            selectedKey={targetLocationId || null}
+            onSelectionChange={(k) => setTargetLocationId(String(k ?? ""))}
             placeholder={t("fields.selectLocation", "اختر الموقع...")}
             data-testid="mass-target-location-select"
           />
@@ -135,7 +135,7 @@ export function MassTransferModal({
         <TextField
           label={t("fields.handoverNote", "ملاحظات إذن التسليم والتسلم الجماعي")}
           value={handoverNote}
-          onChange={(e) => setHandoverNote(e.target.value)}
+          onChange={setHandoverNote}
           placeholder={t("fields.massTransferNotePlaceholder", "نقل عهدة مكاتب الإدارة إلى المقر الفرعي الجديد...")}
           data-testid="mass-handover-note-input"
         />

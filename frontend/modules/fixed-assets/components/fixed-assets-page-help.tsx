@@ -48,19 +48,19 @@ export function FixedAssetsPageHelp({
           </h4>
           <ul style={{ margin: 0, paddingInlineStart: "1.25rem", display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.875rem", color: "#475569" }}>
             <li>
-              <strong style={{ color: "#0f172a" }}>مسودة (Draft):</strong> الأصل قيد الإدخال أو المراجعة ولم يتم تفعيله محاسبياً بعد.
+              <strong style={{ color: "#0f172a" }}>{t("help.lifecycleDraftTitle", "مسودة (Draft):")}</strong> {t("help.lifecycleDraftDesc", "الأصل قيد الإدخال أو المراجعة ولم يتم تفعيله محاسبياً بعد.")}
             </li>
             <li>
-              <strong style={{ color: "#0f172a" }}>قيد التنفيذ (Under Construction / CIP):</strong> أصل رأسمالي قيد الإنشاء تتراكم عليه التكاليف حتى تاريخ الجاهزية للتشغيل.
+              <strong style={{ color: "#0f172a" }}>{t("help.lifecycleCipTitle", "قيد التنفيذ (Under Construction / CIP):")}</strong> {t("help.lifecycleCipDesc", "أصل رأسمالي قيد الإنشاء تتراكم عليه التكاليف حتى تاريخ الجاهزية للتشغيل.")}
             </li>
             <li>
-              <strong style={{ color: "#0f172a" }}>نشط (Active):</strong> أصل في الخدمة يتم احتساب إهلاكه شهرياً وفق طريقة الإهلاك المحددة.
+              <strong style={{ color: "#0f172a" }}>{t("help.lifecycleActiveTitle", "نشط (Active):")}</strong> {t("help.lifecycleActiveDesc", "أصل في الخدمة يتم احتساب إهلاكه شهرياً وفق طريقة الإهلاك المحددة.")}
             </li>
             <li>
-              <strong style={{ color: "#0f172a" }}>مستهلك بالكامل (Fully Depreciated):</strong> وصل صافي القيمة الدفترية إلى قيمة الخردة ولا زال في الخدمة.
+              <strong style={{ color: "#0f172a" }}>{t("help.lifecycleFullyDepreciatedTitle", "مستهلك بالكامل (Fully Depreciated):")}</strong> {t("help.lifecycleFullyDepreciatedDesc", "وصل صافي القيمة الدفترية إلى قيمة الخردة ولا زال في الخدمة.")}
             </li>
             <li>
-              <strong style={{ color: "#0f172a" }}>مستبعد / تم التخريد (Disposed / Scrapped):</strong> تم بيع الأصل أو تخريده أو فقده مع تسجيل قيود الأرباح والخسائر الناتجة.
+              <strong style={{ color: "#0f172a" }}>{t("help.lifecycleDisposedTitle", "مستبعد / تم التخريد (Disposed / Scrapped):")}</strong> {t("help.lifecycleDisposedDesc", "تم بيع الأصل أو تخريده أو فقده مع تسجيل قيود الأرباح والخسائر الناتجة.")}
             </li>
           </ul>
         </section>
@@ -72,15 +72,15 @@ export function FixedAssetsPageHelp({
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.875rem", color: "#475569" }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
               <CheckCircle2Icon size={16} color="#16a34a" style={{ marginTop: "0.2rem", flexShrink: 0 }} />
-              <span><strong>القسط الثابت (Straight Line):</strong> يوزع مجمع التكلفة القابلة للإهلاك بالتساوي على أشهر العمر الإنتاجي.</span>
+              <span><strong>{t("help.straightLineTitle", "القسط الثابت (Straight Line):")}</strong> {t("help.straightLineDesc", "يوزع مجمع التكلفة القابلة للإهلاك بالتساوي على أشهر العمر الإنتاجي.")}</span>
             </div>
             <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
               <CheckCircle2Icon size={16} color="#16a34a" style={{ marginTop: "0.2rem", flexShrink: 0 }} />
-              <span><strong>الرصيد المتناقص (Declining Balance):</strong> يحتسب الإهلاك كنسبة مئوية من صافي القيمة الدفترية المتبقية.</span>
+              <span><strong>{t("help.decliningBalanceTitle", "الرصيد المتناقص (Declining Balance):")}</strong> {t("help.decliningBalanceDesc", "يحتسب الإهلاك كنسبة مئوية من صافي القيمة الدفترية المتبقية.")}</span>
             </div>
             <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
               <CheckCircle2Icon size={16} color="#16a34a" style={{ marginTop: "0.2rem", flexShrink: 0 }} />
-              <span><strong>الإهلاك غير الخطي للأراضي:</strong> الأراضي غير قابلة للإهلاك ولا يتم إنشاء مسيرات إهلاك لها.</span>
+              <span><strong>{t("help.landTitle", "الإهلاك غير الخطي للأراضي:")}</strong> {t("help.landDesc", "الأراضي غير قابلة للإهلاك ولا يتم إنشاء مسيرات إهلاك لها.")}</span>
             </div>
           </div>
         </section>

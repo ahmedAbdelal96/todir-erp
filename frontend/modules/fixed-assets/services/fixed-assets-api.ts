@@ -3,6 +3,7 @@ import type {
   AssetCategoryView,
   AssetView,
   AssetAssignmentView,
+  FixedAssetCustodyItemView,
   AssetLocationView,
   AssetHandoverView,
   AssetDocumentView,
@@ -93,11 +94,11 @@ export const fixedAssetsApi = {
 
   // Assets Register
   listAssets: (params: {
-    legalEntityId?: string;
-    state?: string;
-    search?: string;
-    limit?: number;
-    offset?: number;
+    legalEntityId?: string | undefined;
+    state?: string | undefined;
+    search?: string | undefined;
+    limit?: number | undefined;
+    offset?: number | undefined;
   }): Promise<readonly AssetView[]> => {
     const q = new URLSearchParams();
     if (params.legalEntityId) q.set("legalEntityId", params.legalEntityId);
@@ -162,10 +163,10 @@ export const fixedAssetsApi = {
     }),
 
   // Employee Self-Service & Custody Reads
-  listMyAssets: (legalEntityId: string, asOfDate?: string): Promise<readonly AssetAssignmentView[]> => {
+  listMyAssets: (legalEntityId: string, asOfDate?: string): Promise<readonly FixedAssetCustodyItemView[]> => {
     const q = new URLSearchParams({ legalEntityId });
     if (asOfDate) q.set("asOfDate", asOfDate);
-    return httpClient<readonly AssetAssignmentView[]>(`${BASE}/my-assets?${q.toString()}`);
+    return httpClient<readonly FixedAssetCustodyItemView[]>(`${BASE}/my-assets?${q.toString()}`);
   },
 
   listEmployeeAssets: (employeeId: string, legalEntityId: string, asOfDate?: string): Promise<readonly AssetAssignmentView[]> => {
@@ -248,6 +249,12 @@ export const fixedAssetsApi = {
     httpClient<readonly AssetDepreciationScheduleLineView[]>(`${BASE}/assets/${assetId}/books/${bookId}/schedule?legalEntityId=${encodeURIComponent(legalEntityId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
 
   // Depreciation Runs
+  listDepreciationRuns: (legalEntityId?: string, limit: number = 100): Promise<readonly DepreciationRunView[]> => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (legalEntityId) q.set("legalEntityId", legalEntityId);
+    return httpClient<readonly DepreciationRunView[]>(`${BASE}/depreciation-runs?${q.toString()}`);
+  },
+
   prepareDepreciationRun: (request: CreateDepreciationRunRequest): Promise<DepreciationRunView> =>
     httpClient<DepreciationRunView>(`${BASE}/depreciation-runs/prepare`, {
       method: "POST",
@@ -417,12 +424,12 @@ export const fixedAssetsApi = {
 
   listAssetRegisterReport: (params: {
     legalEntityId: string;
-    asOfDate?: string;
-    bookId?: string;
-    state?: string;
-    search?: string;
-    limit?: number;
-    offset?: number;
+    asOfDate?: string | undefined;
+    bookId?: string | undefined;
+    state?: string | undefined;
+    search?: string | undefined;
+    limit?: number | undefined;
+    offset?: number | undefined;
   }): Promise<{ readonly legalEntityId: string; readonly asOfDate: string; readonly items: readonly AssetRegisterRowView[] }> => {
     const q = new URLSearchParams({ legalEntityId: params.legalEntityId });
     if (params.asOfDate) q.set("asOfDate", params.asOfDate);

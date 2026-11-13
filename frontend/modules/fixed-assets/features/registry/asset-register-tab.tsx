@@ -73,29 +73,29 @@ export function AssetRegisterTab({
   });
 
   const stateOptions: SelectOption[] = [
-    { value: "all", label: t("filters.allStates", "كافة الحالات التشغيلية") },
-    { value: "Active", label: t("states.active", "نشط (Active)") },
-    { value: "UnderConstruction", label: t("states.underConstruction", "قيد التنفيذ (CIP)") },
-    { value: "Draft", label: t("states.draft", "مسودة (Draft)") },
-    { value: "FullyDepreciated", label: t("states.fullyDepreciated", "مستهلك بالكامل (Fully Depreciated)") },
-    { value: "Disposed", label: t("states.disposed", "مستبعد / تم التخريد (Disposed)") }
+    { id: "all", label: t("filters.allStates", "كافة الحالات التشغيلية") },
+    { id: "Active", label: t("states.active", "نشط (Active)") },
+    { id: "UnderConstruction", label: t("states.underConstruction", "قيد التنفيذ (CIP)") },
+    { id: "Draft", label: t("states.draft", "مسودة (Draft)") },
+    { id: "FullyDepreciated", label: t("states.fullyDepreciated", "مستهلك بالكامل (Fully Depreciated)") },
+    { id: "Disposed", label: t("states.disposed", "مستبعد / تم التخريد (Disposed)") }
   ];
 
   const natureOptions: SelectOption[] = [
-    { value: "all", label: t("filters.allNatures", "كافة الطبيعات") },
-    { value: "Equipment", label: t("nature.equipment", "آلات ومعدات") },
-    { value: "Vehicle", label: t("nature.vehicle", "مركبات وسيارات") },
-    { value: "Building", label: t("nature.building", "مباني ومنشآت") },
-    { value: "Land", label: t("nature.land", "أراضي") },
-    { value: "CIP", label: t("nature.cip", "مشروعات قيد التنفيذ") },
-    { value: "Grouped", label: t("nature.grouped", "أصول مجمعة") },
-    { value: "Intangible", label: t("nature.intangible", "أصول غير ملموسة") }
+    { id: "all", label: t("filters.allNatures", "كافة الطبيعات") },
+    { id: "Equipment", label: t("nature.equipment", "آلات ومعدات") },
+    { id: "Vehicle", label: t("nature.vehicle", "مركبات وسيارات") },
+    { id: "Building", label: t("nature.building", "مباني ومنشآت") },
+    { id: "Land", label: t("nature.land", "أراضي") },
+    { id: "CIP", label: t("nature.cip", "مشروعات قيد التنفيذ") },
+    { id: "Grouped", label: t("nature.grouped", "أصول مجمعة") },
+    { id: "Intangible", label: t("nature.intangible", "أصول غير ملموسة") }
   ];
 
   const locationOptions: SelectOption[] = useMemo(() => {
-    const list: SelectOption[] = [{ value: "all", label: t("filters.allLocations", "كافة المواقع") }];
+    const list: SelectOption[] = [{ id: "all", label: t("filters.allLocations", "كافة المواقع") }];
     locationsQuery.data?.items?.forEach((loc) => {
-      list.push({ value: loc.id, label: loc.locationName });
+      list.push({ id: loc.id, label: loc.locationName });
     });
     return list;
   }, [locationsQuery.data?.items, t]);
@@ -160,7 +160,7 @@ export function AssetRegisterTab({
           <div style={{ minWidth: "240px", flex: 1 }}>
             <TextField
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={setSearch}
               placeholder={t("register.searchPlaceholder", "بحث برقم الأصل، الاسم، السيريال، أو الباركود...")}
               data-testid="asset-search-input"
             />
@@ -171,7 +171,7 @@ export function AssetRegisterTab({
               options={stateOptions}
               value={selectedState}
               onChange={(val) => {
-                setSelectedState(val);
+                setSelectedState(val ? String(val) : "all");
                 setPage(1);
               }}
               data-testid="asset-state-filter"
@@ -183,7 +183,7 @@ export function AssetRegisterTab({
               options={natureOptions}
               value={selectedNature}
               onChange={(val) => {
-                setSelectedNature(val);
+                setSelectedNature(val ? String(val) : "all");
                 setPage(1);
               }}
               data-testid="asset-nature-filter"
@@ -195,7 +195,7 @@ export function AssetRegisterTab({
               options={locationOptions}
               value={selectedLocation}
               onChange={(val) => {
-                setSelectedLocation(val);
+                setSelectedLocation(val ? String(val) : "all");
                 setPage(1);
               }}
               data-testid="asset-location-filter"
@@ -255,7 +255,7 @@ export function AssetRegisterTab({
                   <td style={{ padding: "0.75rem 1rem" }}>
                     <div style={{ fontWeight: 600, color: "#0f172a" }}>{row.assetName}</div>
                     {row.serialNumber && (
-                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>S/N: {row.serialNumber}</div>
+                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.serialNumberShort", "ر.ت:")} {row.serialNumber}</div>
                     )}
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>{row.categoryName}</td>
@@ -264,12 +264,12 @@ export function AssetRegisterTab({
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>
                     <span style={{ fontWeight: 500 }}>
-                      {row.acquisitionCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {row.currency}
+                      {(row.acquisitionCost ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {row.currency}
                     </span>
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>
                     <span style={{ fontWeight: 600, color: "#16a34a" }}>
-                      {row.netBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {row.currency}
+                      {(row.netBookValue ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {row.currency}
                     </span>
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>{row.locationName ?? "-"}</td>
@@ -281,7 +281,7 @@ export function AssetRegisterTab({
                         size="compact"
                         onClick={() => onSelectAsset(row)}
                         data-testid={`view-asset-${row.id}`}
-                        title={t("drawer.viewDetails", "عرض الملف الشامل")}
+                        aria-label={t("drawer.viewDetails", "عرض الملف الشامل")}
                       >
                         <EyeIcon size={14} />
                       </Button>
@@ -291,7 +291,7 @@ export function AssetRegisterTab({
                           size="compact"
                           onClick={() => onReinstateAsset(row)}
                           data-testid={`reinstate-asset-${row.id}`}
-                          title={t("disposal.reinstate", "إعادة قيد")}
+                          aria-label={t("disposal.reinstate", "إعادة قيد")}
                         >
                           <RotateCcwIcon size={14} />
                         </Button>
@@ -302,7 +302,7 @@ export function AssetRegisterTab({
                             size="compact"
                             onClick={() => onTransferAsset(row)}
                             data-testid={`transfer-asset-${row.id}`}
-                            title={t("custody.transfer", "نقل العهدة")}
+                            aria-label={t("custody.transfer", "نقل العهدة")}
                           >
                             <ArrowRightLeftIcon size={14} />
                           </Button>
@@ -311,7 +311,7 @@ export function AssetRegisterTab({
                             size="compact"
                             onClick={() => onReturnAsset(row)}
                             data-testid={`return-asset-${row.id}`}
-                            title={t("custody.return", "إرجاع للمستودع")}
+                            aria-label={t("custody.return", "إرجاع للمستودع")}
                           >
                             <CornerDownLeftIcon size={14} />
                           </Button>
@@ -320,7 +320,7 @@ export function AssetRegisterTab({
                             size="compact"
                             onClick={() => onDisposeAsset(row)}
                             data-testid={`dispose-asset-${row.id}`}
-                            title={t("disposal.dispose", "استبعاد / بيع")}
+                            aria-label={t("disposal.dispose", "استبعاد / بيع")}
                           >
                             <TrashIcon size={14} />
                           </Button>
@@ -353,7 +353,7 @@ export function AssetRegisterTab({
               })}
             </div>
             <Pagination
-              currentPage={page}
+              page={page}
               totalPages={Math.ceil(totalCount / pageSize)}
               onPageChange={(p) => setPage(p)}
             />

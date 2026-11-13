@@ -12,10 +12,11 @@ import {
 import type {
   CreateAssetLocationRequest,
   CreateAssetCategoryRequest,
-  CreateAssetBookRequest,
+  CreateBookRequest,
   AssetNature,
   DepreciationMethod,
-  BookType
+  TrackingGranularity,
+  LocationType
 } from "../../types.ts";
 
 export interface NewLocationModalProps {
@@ -34,10 +35,17 @@ export function NewLocationModal({
 
   const [locationName, setLocationName] = useState("");
   const [locationCode, setLocationCode] = useState("");
-  const [building, setBuilding] = useState("");
-  const [floorNumber, setFloorNumber] = useState("");
-  const [roomNumber, setRoomNumber] = useState("");
+  const [locationType, setLocationType] = useState<LocationType>("Site");
   const [error, setError] = useState<string | null>(null);
+
+  const locationTypeOptions: SelectOption[] = [
+    { id: "Site", label: t("locations.typeSite", "موقع رئيسي / فرع (Site)") },
+    { id: "Building", label: t("locations.typeBuilding", "مبنى (Building)") },
+    { id: "Floor", label: t("locations.typeFloor", "طابق / دور (Floor)") },
+    { id: "Room", label: t("locations.typeRoom", "غرفة / مكتب (Room)") },
+    { id: "Vehicle", label: t("locations.typeVehicle", "مركبة / أصل متنقل (Vehicle)") },
+    { id: "Other", label: t("locations.typeOther", "موقع آخر (Other)") }
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,13 +57,12 @@ export function NewLocationModal({
     }
 
     try {
+      const code = locationCode.trim() || `LOC-${Date.now().toString(36).toUpperCase()}`;
       const payload: CreateAssetLocationRequest = {
         legalEntityId,
-        locationName: locationName.trim(),
-        locationCode: locationCode.trim() || undefined,
-        building: building.trim() || undefined,
-        floorNumber: floorNumber.trim() || undefined,
-        roomNumber: roomNumber.trim() || undefined
+        code,
+        name: locationName.trim(),
+        locationType
       };
 
       await createLocMutation.mutateAsync(payload);
@@ -71,7 +78,7 @@ export function NewLocationModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("custody.newLocationModalTitle", "إضافة موقع ومبنى جديد")}
-      width="500px"
+      size="medium"
       data-testid="new-location-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -84,8 +91,8 @@ export function NewLocationModal({
         <TextField
           label={t("fields.locationName", "اسم الموقع / المستودع")}
           value={locationName}
-          onChange={(e) => setLocationName(e.target.value)}
-          required
+          onChange={setLocationName}
+          isRequired
           placeholder={t("fields.locNamePlaceholder", "المبنى الإداري الرئيسي - التجمع")}
           data-testid="loc-name-input"
         />
@@ -94,34 +101,22 @@ export function NewLocationModal({
           <TextField
             label={t("fields.locationCode", "كود الموقع")}
             value={locationCode}
-            onChange={(e) => setLocationCode(e.target.value)}
-            placeholder="LOC-HQ-01"
+            onChange={setLocationCode}
+            placeholder={t("fields.locCodePlaceholder", "LOC-HQ-01")}
             data-testid="loc-code-input"
           />
-          <TextField
-            label={t("fields.building", "المبنى / الجناح")}
-            value={building}
-            onChange={(e) => setBuilding(e.target.value)}
-            placeholder="مبنى B"
-            data-testid="loc-building-input"
-          />
-        </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-          <TextField
-            label={t("fields.floorNumber", "الدور / الطابق")}
-            value={floorNumber}
-            onChange={(e) => setFloorNumber(e.target.value)}
-            placeholder="الطابق 3"
-            data-testid="loc-floor-input"
-          />
-          <TextField
-            label={t("fields.roomNumber", "رقم الغرفة")}
-            value={roomNumber}
-            onChange={(e) => setRoomNumber(e.target.value)}
-            placeholder="غرفة 304"
-            data-testid="loc-room-input"
-          />
+          <div>
+            <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.25rem", color: "#334155" }}>
+              {t("fields.locationType", "نوع الموقع")}
+            </label>
+            <Select
+              options={locationTypeOptions}
+              selectedKey={locationType}
+              onSelectionChange={(k) => setLocationType(String(k ?? "Site") as LocationType)}
+              data-testid="loc-type-select"
+            />
+          </div>
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
@@ -146,7 +141,7 @@ export interface NewCategoryModalProps {
 export function NewCategoryModal({
   isOpen,
   onClose,
-  legalEntityId
+  legalEntityId: _legalEntityId
 }: NewCategoryModalProps): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
   const createCatMutation = useCreateCategoryMutation();
@@ -154,27 +149,30 @@ export function NewCategoryModal({
   const [categoryName, setCategoryName] = useState("");
   const [categoryCode, setCategoryCode] = useState("");
   const [nature, setNature] = useState<AssetNature>("Equipment");
+  const [granularity, setGranularity] = useState<TrackingGranularity>("Individual");
   const [defaultMethod, setDefaultMethod] = useState<DepreciationMethod>("StraightLine");
   const [defaultUsefulLifeMonths, setDefaultUsefulLifeMonths] = useState("60");
-  const [assetGlAccountId, setAssetGlAccountId] = useState("");
-  const [accDepGlAccountId, setAccDepGlAccountId] = useState("");
-  const [depExpGlAccountId, setDepExpGlAccountId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const natureOptions: SelectOption[] = [
-    { value: "Equipment", label: t("nature.equipment", "آلات ومعدات وأجهزة (Equipment)") },
-    { value: "Vehicle", label: t("nature.vehicle", "مركبات وسيارات (Vehicle)") },
-    { value: "Building", label: t("nature.building", "مباني ومنشآت (Building)") },
-    { value: "Land", label: t("nature.land", "أراضي (Land - لا تهلك)") },
-    { value: "CIP", label: t("nature.cip", "مشروعات قيد التنفيذ (CIP)") },
-    { value: "Grouped", label: t("nature.grouped", "أصول مجمعة / أثاث (Grouped)") },
-    { value: "Intangible", label: t("nature.intangible", "أصول غير ملموسة / برمجيات (Intangible)") }
+    { id: "Equipment", label: t("nature.equipment", "آلات ومعدات وأجهزة (Equipment)") },
+    { id: "Vehicle", label: t("nature.vehicle", "مركبات وسيارات (Vehicle)") },
+    { id: "Building", label: t("nature.building", "مباني ومنشآت (Building)") },
+    { id: "Land", label: t("nature.land", "أراضي (Land - لا تهلك)") },
+    { id: "CIP", label: t("nature.cip", "مشروعات قيد التنفيذ (CIP)") },
+    { id: "Furniture", label: t("nature.furniture", "أثاث وتجهيزات مكتبية (Furniture)") },
+    { id: "Intangible", label: t("nature.intangible", "أصول غير ملموسة / برمجيات (Intangible)") }
+  ];
+
+  const granularityOptions: SelectOption[] = [
+    { id: "Individual", label: t("granularity.individual", "تتبع إفرادي مستقل (Individual)") },
+    { id: "Grouped", label: t("granularity.grouped", "أصول مجمعة بكمية (Grouped)") },
+    { id: "Bulk", label: t("granularity.bulk", "مجمّع كمي بدون ترقيم (Bulk)") }
   ];
 
   const methodOptions: SelectOption[] = [
-    { value: "StraightLine", label: t("depreciation.straightLine", "القسط الثابت (Straight Line)") },
-    { value: "ReducingBalance", label: t("depreciation.reducingBalance", "الرصيد المتناقص (Reducing Balance)") },
-    { value: "None", label: t("depreciation.none", "بدون إهلاك") }
+    { id: "StraightLine", label: t("depreciation.straightLine", "القسط الثابت (Straight Line)") },
+    { id: "NoDepreciation", label: t("depreciation.none", "بدون إهلاك (No Depreciation)") }
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -187,16 +185,18 @@ export function NewCategoryModal({
     }
 
     try {
+      const code = categoryCode.trim() || `CAT-${Date.now().toString(36).toUpperCase()}`;
       const payload: CreateAssetCategoryRequest = {
-        legalEntityId,
-        categoryName: categoryName.trim(),
-        categoryCode: categoryCode.trim() || undefined,
-        nature,
+        code,
+        name: categoryName.trim(),
+        assetNature: nature,
+        trackingGranularity: granularity,
+        requiresLocation: true,
+        requiresCustody: true,
+        requiresDepreciation: defaultMethod !== "NoDepreciation",
         defaultDepreciationMethod: defaultMethod,
-        defaultUsefulLifeMonths: parseInt(defaultUsefulLifeMonths, 10) || 60,
-        assetGlAccountId: assetGlAccountId.trim() || undefined,
-        accumulatedDepreciationGlAccountId: accDepGlAccountId.trim() || undefined,
-        depreciationExpenseGlAccountId: depExpGlAccountId.trim() || undefined
+        defaultUsefulLifeMonths: defaultMethod === "NoDepreciation" ? null : (parseInt(defaultUsefulLifeMonths, 10) || 60),
+        defaultResidualValue: 0
       };
 
       await createCatMutation.mutateAsync(payload);
@@ -212,7 +212,7 @@ export function NewCategoryModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("categories.newCategoryModalTitle", "إضافة تصنيف أصول جديد وشجرة الحسابات")}
-      width="580px"
+      size="medium"
       data-testid="new-category-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -226,16 +226,16 @@ export function NewCategoryModal({
           <TextField
             label={t("fields.categoryName", "اسم التصنيف")}
             value={categoryName}
-            onChange={(e) => setCategoryName(e.target.value)}
-            required
+            onChange={setCategoryName}
+            isRequired
             placeholder={t("fields.catNamePlaceholder", "أجهزة حاسب آلي ومحمول")}
             data-testid="cat-name-input"
           />
           <TextField
             label={t("fields.categoryCode", "كود التصنيف")}
             value={categoryCode}
-            onChange={(e) => setCategoryCode(e.target.value)}
-            placeholder="CAT-IT-01"
+            onChange={setCategoryCode}
+            placeholder={t("fields.catCodePlaceholder", "CAT-IT-01")}
             data-testid="cat-code-input"
           />
         </div>
@@ -247,59 +247,43 @@ export function NewCategoryModal({
             </label>
             <Select
               options={natureOptions}
-              value={nature}
-              onChange={(val) => setNature(val as AssetNature)}
+              selectedKey={nature}
+              onSelectionChange={(k) => setNature(String(k ?? "Equipment") as AssetNature)}
               data-testid="cat-nature-select"
             />
           </div>
+          <div>
+            <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.25rem", color: "#334155" }}>
+              {t("fields.granularity", "مستوى التتبع")} *
+            </label>
+            <Select
+              options={granularityOptions}
+              selectedKey={granularity}
+              onSelectionChange={(k) => setGranularity(String(k ?? "Individual") as TrackingGranularity)}
+              data-testid="cat-granularity-select"
+            />
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <div>
             <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.25rem", color: "#334155" }}>
               {t("fields.defaultMethod", "طريقة الإهلاك الافتراضية")}
             </label>
             <Select
               options={methodOptions}
-              value={defaultMethod}
-              onChange={(val) => setDefaultMethod(val as DepreciationMethod)}
+              selectedKey={defaultMethod}
+              onSelectionChange={(k) => setDefaultMethod(String(k ?? "StraightLine") as DepreciationMethod)}
               data-testid="cat-method-select"
             />
           </div>
-        </div>
 
-        <TextField
-          label={t("fields.defaultUsefulLifeMonths", "العمر الإنتاجي الافتراضي (أشهر)")}
-          type="number"
-          value={defaultUsefulLifeMonths}
-          onChange={(e) => setDefaultUsefulLifeMonths(e.target.value)}
-          data-testid="cat-life-input"
-        />
-
-        <div style={{ padding: "0.5rem 0", borderTop: "1px solid #e2e8f0" }}>
-          <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#475569" }}>
-            {t("categories.glAccountsHeading", "ربط الحسابات بدفتر الأستاذ العام (Chart of Accounts):")}
-          </span>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
           <TextField
-            label={t("fields.assetGlAccount", "حساب الأصل (150xxx)")}
-            value={assetGlAccountId}
-            onChange={(e) => setAssetGlAccountId(e.target.value)}
-            placeholder="150100"
-            data-testid="cat-asset-gl-input"
-          />
-          <TextField
-            label={t("fields.accDepGlAccount", "مجمع الإهلاك (159xxx)")}
-            value={accDepGlAccountId}
-            onChange={(e) => setAccDepGlAccountId(e.target.value)}
-            placeholder="159100"
-            data-testid="cat-accdep-gl-input"
-          />
-          <TextField
-            label={t("fields.depExpGlAccount", "مصروف الإهلاك (520xxx)")}
-            value={depExpGlAccountId}
-            onChange={(e) => setDepExpGlAccountId(e.target.value)}
-            placeholder="520100"
-            data-testid="cat-depexp-gl-input"
+            label={t("fields.defaultUsefulLifeMonths", "العمر الإنتاجي الافتراضي (أشهر)")}
+            type="number"
+            value={defaultUsefulLifeMonths}
+            onChange={setDefaultUsefulLifeMonths}
+            data-testid="cat-life-input"
           />
         </div>
 
@@ -332,14 +316,14 @@ export function NewBookModal({
 
   const [bookCode, setBookCode] = useState("");
   const [bookName, setBookName] = useState("");
-  const [bookType, setBookType] = useState<BookType>("Tax");
+  const [currencyCode, setCurrencyCode] = useState("SAR");
   const [postsToLedger, setPostsToLedger] = useState(false);
+  const [defaultMethod, setDefaultMethod] = useState<DepreciationMethod>("StraightLine");
   const [error, setError] = useState<string | null>(null);
 
-  const typeOptions: SelectOption[] = [
-    { value: "Corporate", label: t("books.typeCorporate", "دفتر مالي وشركات (Corporate / IFRS)") },
-    { value: "Tax", label: t("books.typeTax", "دفتر ضريبي (Tax Book)") },
-    { value: "Management", label: t("books.typeManagement", "دفتر إداري / تكاليف (Management)") }
+  const methodOptions: SelectOption[] = [
+    { id: "StraightLine", label: t("depreciation.straightLine", "القسط الثابت (Straight Line)") },
+    { id: "NoDepreciation", label: t("depreciation.none", "بدون إهلاك (No Depreciation)") }
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -352,13 +336,15 @@ export function NewBookModal({
     }
 
     try {
-      const payload: CreateAssetBookRequest = {
+      const payload: CreateBookRequest = {
         legalEntityId,
-        bookCode: bookCode.trim(),
-        bookName: bookName.trim(),
-        bookType,
-        currency: "EGP",
-        postsToLedger
+        code: bookCode.trim().toUpperCase(),
+        name: bookName.trim(),
+        postsToLedger,
+        currencyCode: currencyCode.trim().toUpperCase() || "SAR",
+        defaultDepreciationMethod: defaultMethod,
+        defaultConvention: "FullMonth",
+        defaultUsefulLifeMonths: 60
       };
 
       await createBookMutation.mutateAsync(payload);
@@ -374,7 +360,7 @@ export function NewBookModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("books.newBookModalTitle", "إضافة دفتر أصول إضافي (مالي / ضريبي)")}
-      width="500px"
+      size="medium"
       data-testid="new-book-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -388,31 +374,41 @@ export function NewBookModal({
           <TextField
             label={t("fields.bookCode", "كود الدفتر")}
             value={bookCode}
-            onChange={(e) => setBookCode(e.target.value)}
-            required
-            placeholder="TAX-EGY"
+            onChange={setBookCode}
+            isRequired
+            placeholder={t("fields.bookCodePlaceholder", "TAX-01")}
             data-testid="book-code-input"
           />
           <TextField
             label={t("fields.bookName", "اسم الدفتر")}
             value={bookName}
-            onChange={(e) => setBookName(e.target.value)}
-            required
-            placeholder={t("fields.bookNamePlaceholder", "الدفتر الضريبي - مصر")}
+            onChange={setBookName}
+            isRequired
+            placeholder={t("fields.bookNamePlaceholder", "الدفتر الضريبي")}
             data-testid="book-name-input"
           />
         </div>
 
-        <div>
-          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.25rem", color: "#334155" }}>
-            {t("fields.bookType", "نوع الدفتر")}
-          </label>
-          <Select
-            options={typeOptions}
-            value={bookType}
-            onChange={(val) => setBookType(val as BookType)}
-            data-testid="book-type-select"
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+          <TextField
+            label={t("fields.currency", "عملة الدفتر")}
+            value={currencyCode}
+            onChange={setCurrencyCode}
+            placeholder={t("fields.currencyPlaceholder", "SAR")}
+            data-testid="book-currency-input"
           />
+
+          <div>
+            <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.25rem", color: "#334155" }}>
+              {t("fields.defaultMethod", "طريقة الإهلاك")}
+            </label>
+            <Select
+              options={methodOptions}
+              selectedKey={defaultMethod}
+              onSelectionChange={(k) => setDefaultMethod(String(k ?? "StraightLine") as DepreciationMethod)}
+              data-testid="book-method-select"
+            />
+          </div>
         </div>
 
         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", cursor: "pointer" }}>

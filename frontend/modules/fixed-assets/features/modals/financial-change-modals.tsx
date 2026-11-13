@@ -19,7 +19,7 @@ export interface EstimateChangeModalProps {
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly assetId: string | null;
-  readonly assetName?: string | undefined;
+  readonly assetName?: string | null | undefined;
   readonly currentLifeMonths?: number | undefined;
   readonly currentSalvageValue?: number | undefined;
 }
@@ -83,7 +83,7 @@ export function EstimateChangeModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("books.estimateModalTitle", "تعديل التقدير المحاسبي (العمر الإنتاجي / الخردة)")}
-      width="540px"
+      size="medium"
       data-testid="estimate-change-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -104,16 +104,15 @@ export function EstimateChangeModal({
             label={t("fields.newRemainingLife", "العمر الإنتاجي المتبقي (أشهر)")}
             type="number"
             value={remainingLifeMonths}
-            onChange={(e) => setRemainingLifeMonths(e.target.value)}
-            required
+            onChange={setRemainingLifeMonths}
+            isRequired
             data-testid="remaining-life-input"
           />
           <TextField
             label={t("fields.newSalvageValue", "قيمة الخردة المقدرة الجديدة")}
             type="number"
-            step="0.01"
             value={salvageValue}
-            onChange={(e) => setSalvageValue(e.target.value)}
+            onChange={setSalvageValue}
             data-testid="salvage-value-input"
           />
         </div>
@@ -122,16 +121,16 @@ export function EstimateChangeModal({
           label={t("fields.effectiveDate", "تاريخ سريان التعديل")}
           type="date"
           value={effectiveDate}
-          onChange={(e) => setEffectiveDate(e.target.value)}
-          required
+          onChange={setEffectiveDate}
+          isRequired
           data-testid="effective-date-input"
         />
 
         <TextField
           label={t("fields.justification", "المبرر المحاسبي (وفق معيار المحاسبة الدولي IAS 8)")}
           value={justification}
-          onChange={(e) => setJustification(e.target.value)}
-          required
+          onChange={setJustification}
+          isRequired
           placeholder={t("fields.justificationPlaceholder", "تمديد العمر نتيجة إجراء عمرة وتحديث رئيسي...")}
           data-testid="justification-input"
         />
@@ -154,7 +153,7 @@ export interface CostAdditionModalProps {
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly assetId: string | null;
-  readonly assetName?: string;
+  readonly assetName?: string | null | undefined;
 }
 
 export function CostAdditionModal({
@@ -209,7 +208,7 @@ export function CostAdditionModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("books.addCostModalTitle", "إضافة تكلفة رأسمالية لاحقة (Capital Addition)")}
-      width="540px"
+      size="medium"
       data-testid="cost-addition-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -229,18 +228,17 @@ export function CostAdditionModal({
           <TextField
             label={t("fields.additionAmount", "مبلغ التكلفة المضافة")}
             type="number"
-            step="0.01"
             value={additionAmount}
-            onChange={(e) => setAdditionAmount(e.target.value)}
-            required
+            onChange={setAdditionAmount}
+            isRequired
             data-testid="addition-amount-input"
           />
           <TextField
             label={t("fields.additionDate", "تاريخ الإضافة")}
             type="date"
             value={additionDate}
-            onChange={(e) => setAdditionDate(e.target.value)}
-            required
+            onChange={setAdditionDate}
+            isRequired
             data-testid="addition-date-input"
           />
         </div>
@@ -248,8 +246,8 @@ export function CostAdditionModal({
         <TextField
           label={t("fields.additionDesc", "وصف الإضافة الرأسمالية")}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          required
+          onChange={setDescription}
+          isRequired
           placeholder={t("fields.additionDescPlaceholder", "إضافة وحدة تبريد إضافية / ترقية محرك...")}
           data-testid="addition-desc-input"
         />
@@ -257,8 +255,8 @@ export function CostAdditionModal({
         <TextField
           label={t("fields.sourceDocumentRef", "رقم مستند المصدر (فاتورة مورد / إذن صرف)")}
           value={sourceDocumentRef}
-          onChange={(e) => setSourceDocumentRef(e.target.value)}
-          placeholder="INV-2026-908"
+          onChange={setSourceDocumentRef}
+          placeholder={t("fields.sourceDocPlaceholder", "INV-2026-908")}
           data-testid="source-doc-input"
         />
 
@@ -280,7 +278,7 @@ export interface ImpairmentModalProps {
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly assetId: string | null;
-  readonly assetName?: string;
+  readonly assetName?: string | null | undefined;
   readonly carryingAmount?: number;
 }
 
@@ -342,7 +340,7 @@ export function ImpairmentModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("books.impairmentModalTitle", "تسجيل خسارة هبوط في القيمة (Impairment Loss)")}
-      width="540px"
+      size="medium"
       data-testid="impairment-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -365,18 +363,17 @@ export function ImpairmentModal({
           <TextField
             label={t("fields.recoverableAmount", "القيمة الاستردادية المقدرة (IAS 36)")}
             type="number"
-            step="0.01"
             value={recoverableAmount}
-            onChange={(e) => setRecoverableAmount(e.target.value)}
-            required
+            onChange={setRecoverableAmount}
+            isRequired
             data-testid="recoverable-amount-input"
           />
           <TextField
             label={t("fields.impairmentDate", "تاريخ اختبار الاضمحلال")}
             type="date"
             value={impairmentDate}
-            onChange={(e) => setImpairmentDate(e.target.value)}
-            required
+            onChange={setImpairmentDate}
+            isRequired
             data-testid="impairment-date-input"
           />
         </div>
@@ -392,8 +389,8 @@ export function ImpairmentModal({
         <TextField
           label={t("fields.impairmentReason", "سبب ودراسة اختبار الاضمحلال")}
           value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          required
+          onChange={setReason}
+          isRequired
           placeholder={t("fields.impairmentReasonPlaceholder", "تقادم تكنولوجي مفاجئ أدى لانخفاض الطاقة الإنتاجية...")}
           data-testid="impairment-reason-input"
         />

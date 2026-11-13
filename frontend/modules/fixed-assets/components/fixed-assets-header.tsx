@@ -11,8 +11,8 @@ import {
 export interface FixedAssetsHeaderProps {
   readonly onOpenNewAssetModal: () => void;
   readonly onOpenHelpDrawer: () => void;
-  readonly legalEntityName?: string;
-  readonly canCreate?: boolean;
+  readonly legalEntityName?: string | undefined;
+  readonly canCreate?: boolean | undefined;
 }
 
 export function FixedAssetsHeader({
@@ -41,7 +41,7 @@ export function FixedAssetsHeader({
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
           <BuildingIcon size={24} color="#60a5fa" />
-          <h1 style={{ margin: 0, fontSize: "1.5rem", fontWeight: 700, color: "#ffffff" }}>
+          <h1 data-testid="fixed-assets-title" style={{ margin: 0, fontSize: "1.5rem", fontWeight: 700, color: "#ffffff" }}>
             {t("title", "منظومة الأصول الثابتة (Fixed Assets)")}
           </h1>
           {legalEntityName && (

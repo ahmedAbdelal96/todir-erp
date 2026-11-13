@@ -728,6 +728,17 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         }, ct);
     }
 
+    public async Task<IReadOnlyList<DepreciationRunView>> ListDepreciationRunsAsync(TenantId tenant, Guid? legalEntityId, int limit, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await SetTenantAsync(connection, tenant, ct);
+        await using var command = new NpgsqlCommand("select r.id,r.legal_entity_id,r.book_definition_id,r.period_start,r.period_end,r.status,r.total_amount,(select count(*) from business_assets.asset_depreciation_run_line l where l.tenant_id=r.tenant_id and l.run_id=r.id),r.created_at from business_assets.asset_depreciation_run r where r.tenant_id=$1 and ($2::uuid is null or r.legal_entity_id=$2) order by r.created_at desc limit $3", connection);
+        command.Parameters.AddWithValue(tenant.Value);
+        command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value);
+        command.Parameters.AddWithValue(Math.Clamp(limit, 1, 500));
+        return await ReadAsync(command, reader => new DepreciationRunView(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetFieldValue<DateOnly>(4), reader.GetString(5), reader.GetDecimal(6), reader.GetInt32(7), reader.GetFieldValue<DateTimeOffset>(8)), ct);
+    }
+
     public async Task<IReadOnlyList<CapitalizationCandidateView>> ListCapitalizationCandidatesAsync(TenantId tenant, Guid? legalEntityId, string? status, int limit, CancellationToken ct)
     {
         limit = Math.Clamp(limit, 1, 200);

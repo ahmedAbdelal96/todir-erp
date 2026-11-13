@@ -33,14 +33,14 @@ export function DepreciationTab({
 
   const booksQuery = useAssetBooksQuery(legalEntityId);
   const runsQuery = useDepreciationRunsQuery(legalEntityId);
-  const postMutation = usePostDepreciationRunMutation(legalEntityId);
+  const postMutation = usePostDepreciationRunMutation();
 
   const books = booksQuery.data ?? [];
   const runs = runsQuery.data?.items ?? [];
 
   const handlePostRun = async (runId: string) => {
     try {
-      await postMutation.mutateAsync({ runId });
+      await postMutation.mutateAsync({ runId, legalEntityId });
     } catch {
       // handled by mutation
     }
@@ -90,7 +90,7 @@ export function DepreciationTab({
                 </span>
               </div>
               <div style={{ fontSize: "0.8125rem", color: "#64748b", marginTop: "0.5rem" }}>
-                {t("fields.bookType", "النوع")}: {b.postsToLedger ? "Corporate" : "Tax"}
+                {t("fields.bookType", "النوع")}: {b.postsToLedger ? t("books.corporate", "تجاري (Corporate)") : t("books.tax", "ضريبي (Tax)")}
               </div>
               <div style={{ fontSize: "0.75rem", color: b.postsToLedger ? "#16a34a" : "#64748b", marginTop: "0.25rem", fontWeight: 500 }}>
                 {b.postsToLedger ? t("books.postsToLedgerTrue", "✓ يرحل آلياً إلى دفتر الأستاذ (GL)") : t("books.postsToLedgerFalse", "دفتر موازي لا يرحل للأستاذ")}
@@ -166,7 +166,7 @@ export function DepreciationTab({
                   <td style={{ padding: "0.75rem 1rem" }}>{row.totalAssetsCount}</td>
                   <td style={{ padding: "0.75rem 1rem" }}>
                     <span style={{ fontWeight: 700, color: "#dc2626" }}>
-                      {(row.totalDepreciationAmount ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {row.currency ?? "EGP"}
+                      {(row.totalDepreciationAmount ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {row.currency ?? ""}
                     </span>
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>

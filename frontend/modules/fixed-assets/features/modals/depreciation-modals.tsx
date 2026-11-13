@@ -6,9 +6,9 @@ import { Select, type SelectOption } from "../../../../components/primitives/sel
 import { Button } from "../../../../components/primitives/button.tsx";
 import {
   usePrepareDepreciationRunMutation,
-  useReverseDepreciationRunMutation
+  useReverseDepreciationRunMutation,
+  useAssetBooksQuery
 } from "../../hooks/use-fixed-assets-queries.ts";
-import type { PrepareDepreciationRunRequest, ReverseDepreciationRunRequest } from "../../types.ts";
 
 export interface PrepareDepreciationRunModalProps {
   readonly isOpen: boolean;
@@ -22,7 +22,8 @@ export function PrepareDepreciationRunModal({
   legalEntityId
 }: PrepareDepreciationRunModalProps): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
-  const prepareMutation = usePrepareDepreciationRunMutation(legalEntityId);
+  const booksQuery = useAssetBooksQuery(legalEntityId);
+  const prepareMutation = usePrepareDepreciationRunMutation();
 
   const now = new Date();
   const [periodYear, setPeriodYear] = useState(String(now.getFullYear()));
@@ -32,8 +33,8 @@ export function PrepareDepreciationRunModal({
   const [error, setError] = useState<string | null>(null);
 
   const monthOptions: SelectOption[] = Array.from({ length: 12 }, (_, i) => ({
-    value: String(i + 1),
-    label: `${i + 1} - ${new Date(2026, i, 1).toLocaleDateString("ar-EG", { month: "long" })}`
+    id: String(i + 1),
+    label: t("depreciation.monthLabel", "{{num}} - شهر {{num}}", { num: i + 1 })
   }));
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,15 +48,26 @@ export function PrepareDepreciationRunModal({
       return;
     }
 
-    try {
-      const payload: PrepareDepreciationRunRequest = {
-        periodYear: year,
-        periodMonth: month,
-        cutoffDate,
-        description: description.trim() || undefined
-      };
+    const books = booksQuery.data ?? [];
+    const bookId = books[0]?.id;
+    if (!bookId) {
+      setError(t("validation.bookRequired", "لا يوجد دفتر أصول مهيأ للكيان القانوني"));
+      return;
+    }
 
-      await prepareMutation.mutateAsync(payload);
+    try {
+      const monthStr = month < 10 ? `0${month}` : `${month}`;
+      const periodStart = `${year}-${monthStr}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const periodEnd = cutoffDate || `${year}-${monthStr}-${lastDay}`;
+
+      await prepareMutation.mutateAsync({
+        legalEntityId,
+        bookId,
+        periodStart,
+        periodEnd,
+        idempotencyKey: `depr-${legalEntityId}-${year}-${monthStr}`
+      });
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t("common.unknownError", "فشل تجهيز مسير الإهلاك");
@@ -68,7 +80,7 @@ export function PrepareDepreciationRunModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("depreciation.prepareModalTitle", "تجهيز مسير إهلاك شهري جديد")}
-      width="520px"
+      size="medium"
       data-testid="prepare-depreciation-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -83,8 +95,8 @@ export function PrepareDepreciationRunModal({
             label={t("fields.periodYear", "السنة المالية")}
             type="number"
             value={periodYear}
-            onChange={(e) => setPeriodYear(e.target.value)}
-            required
+            onChange={setPeriodYear}
+            isRequired
             data-testid="period-year-input"
           />
           <div>
@@ -93,8 +105,8 @@ export function PrepareDepreciationRunModal({
             </label>
             <Select
               options={monthOptions}
-              value={periodMonth}
-              onChange={(val) => setPeriodMonth(val)}
+              selectedKey={periodMonth}
+              onSelectionChange={(k) => setPeriodMonth(String(k ?? "1"))}
               data-testid="period-month-select"
             />
           </div>
@@ -104,15 +116,15 @@ export function PrepareDepreciationRunModal({
           label={t("fields.cutoffDate", "تاريخ الإقفال / القيد")}
           type="date"
           value={cutoffDate}
-          onChange={(e) => setCutoffDate(e.target.value)}
-          required
+          onChange={setCutoffDate}
+          isRequired
           data-testid="cutoff-date-input"
         />
 
         <TextField
           label={t("fields.runDescription", "وصف المسير (اختياري)")}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           placeholder={t("fields.runDescPlaceholder", "مسير إهلاك شهر أكتوبر لكافة الأصول الثابتة...")}
           data-testid="description-input"
         />
@@ -139,7 +151,7 @@ export interface ReverseDepreciationRunModalProps {
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly runId: string | null;
-  readonly periodLabel?: string;
+  readonly periodLabel?: string | undefined;
 }
 
 export function ReverseDepreciationRunModal({
@@ -150,7 +162,7 @@ export function ReverseDepreciationRunModal({
   periodLabel
 }: ReverseDepreciationRunModalProps): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
-  const reverseMutation = useReverseDepreciationRunMutation(legalEntityId);
+  const reverseMutation = useReverseDepreciationRunMutation();
 
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -166,11 +178,15 @@ export function ReverseDepreciationRunModal({
     }
 
     try {
-      const payload: ReverseDepreciationRunRequest = {
-        reason: reason.trim()
-      };
-
-      await reverseMutation.mutateAsync({ runId, payload });
+      await reverseMutation.mutateAsync({
+        runId,
+        legalEntityId,
+        request: {
+          reversalDate: new Date().toISOString().slice(0, 10),
+          reason: reason.trim(),
+          idempotencyKey: `rev-${runId}-${Date.now()}`
+        }
+      });
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t("common.unknownError", "فشل عكس مسير الإهلاك");
@@ -183,7 +199,7 @@ export function ReverseDepreciationRunModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("depreciation.reverseModalTitle", "عكس مسير الإهلاك المرحل (Reversal)")}
-      width="520px"
+      size="medium"
       data-testid="reverse-depreciation-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -206,8 +222,8 @@ export function ReverseDepreciationRunModal({
         <TextField
           label={t("fields.reversalReason", "سبب ومبرر الإلغاء والعكس")}
           value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          required
+          onChange={setReason}
+          isRequired
           placeholder={t("fields.reversalReasonPlaceholder", "خطأ في تاريخ إدخال أصل رأسمالي يستلزم إعادة احتساب المسير...")}
           data-testid="reversal-reason-input"
         />

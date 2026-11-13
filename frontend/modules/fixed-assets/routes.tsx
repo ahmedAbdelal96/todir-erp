@@ -8,7 +8,7 @@ export const fixedAssetsRoutes: ModuleRouteRegistration = {
     moduleIds: ["fixed-assets"],
     path: "/fixed-assets",
     navigationKey: "fixedAssets",
-    permission: "assets:view",
+    permission: "assets.read",
     icon: "fixed-assets"
   },
   routes: [

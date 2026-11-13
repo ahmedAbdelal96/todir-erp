@@ -7,9 +7,11 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import {
   useFixedAssetCategoriesQuery,
   useFixedAssetLocationsQuery,
-  useCreateAssetMutation
+  useCreateAssetMutation,
+  useAssetBooksQuery
 } from "../../hooks/use-fixed-assets-queries.ts";
-import type { CreateFixedAssetRequest, AssetNature, DepreciationMethod } from "../../types.ts";
+import { fixedAssetsApi } from "../../services/fixed-assets-api.ts";
+import type { CreateAssetRequest, DepreciationMethod } from "../../types.ts";
 
 export interface NewAssetModalProps {
   readonly isOpen: boolean;
@@ -26,6 +28,7 @@ export function NewAssetModal({
 
   const categoriesQuery = useFixedAssetCategoriesQuery(legalEntityId);
   const locationsQuery = useFixedAssetLocationsQuery(legalEntityId);
+  const booksQuery = useAssetBooksQuery(legalEntityId);
   const createMutation = useCreateAssetMutation();
 
   const [assetName, setAssetName] = useState("");
@@ -34,20 +37,16 @@ export function NewAssetModal({
   const [acquisitionDate, setAcquisitionDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [inServiceDate, setInServiceDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [acquisitionCost, setAcquisitionCost] = useState("");
-  const [currency, setCurrency] = useState("EGP");
+  const [currency, setCurrency] = useState("SAR");
   const [salvageValue, setSalvageValue] = useState("0");
   const [usefulLifeMonths, setUsefulLifeMonths] = useState("60");
   const [depreciationMethod, setDepreciationMethod] = useState<DepreciationMethod>("StraightLine");
   const [serialNumber, setSerialNumber] = useState("");
   const [barcode, setBarcode] = useState("");
-  const [modelNumber, setModelNumber] = useState("");
-  const [manufacturer, setManufacturer] = useState("");
   const [locationId, setLocationId] = useState("");
   const [department, setDepartment] = useState("");
   const [custodianId, setCustodianId] = useState("");
   const [description, setDescription] = useState("");
-  const [deedNumber, setDeedNumber] = useState("");
-  const [plotNumber, setPlotNumber] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [error, setError] = useState<string | null>(null);
 
@@ -71,7 +70,7 @@ export function NewAssetModal({
   const categoryOptions: SelectOption[] = useMemo(() => {
     return (
       categoriesQuery.data?.items?.map((cat) => ({
-        value: cat.id,
+        id: cat.id,
         label: `${cat.categoryName} (${cat.nature})`
       })) ?? []
     );
@@ -80,18 +79,15 @@ export function NewAssetModal({
   const locationOptions: SelectOption[] = useMemo(() => {
     return (
       locationsQuery.data?.items?.map((loc) => ({
-        value: loc.id,
-        label: `${loc.locationName} - ${loc.building ?? ""} ${loc.floorNumber ? `(طابق ${loc.floorNumber})` : ""}`
+        id: loc.id,
+        label: `${loc.locationName} (${loc.locationCode})`
       })) ?? []
     );
   }, [locationsQuery.data?.items]);
 
   const methodOptions: SelectOption[] = [
-    { value: "StraightLine", label: t("depreciation.straightLine", "القسط الثابت (Straight Line)") },
-    { value: "ReducingBalance", label: t("depreciation.reducingBalance", "الرصيد المتناقص (Reducing Balance)") },
-    { value: "UnitsOfProduction", label: t("depreciation.unitsOfProduction", "وحدات الإنتاج (Units of Production)") },
-    { value: "SumOfYearsDigits", label: t("depreciation.sumOfYearsDigits", "مجموع أرقام السنوات (Sum of Years Digits)") },
-    { value: "None", label: t("depreciation.none", "بدون إهلاك (أراضي / CIP)") }
+    { id: "StraightLine", label: t("depreciation.straightLine", "القسط الثابت (Straight Line)") },
+    { id: "NoDepreciation", label: t("depreciation.none", "بدون إهلاك (أراضي / CIP)") }
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -113,42 +109,56 @@ export function NewAssetModal({
     }
 
     try {
-      const customAttributes: Record<string, unknown> = {};
-      if (selectedCategory?.nature === "Land" || selectedCategory?.nature === "Building") {
-        if (deedNumber) customAttributes.deedNumber = deedNumber;
-        if (plotNumber) customAttributes.plotNumber = plotNumber;
-      }
-      if (selectedCategory?.nature === "Grouped") {
-        customAttributes.quantity = parseInt(quantity, 10) || 1;
-      }
-
-      const payload: CreateFixedAssetRequest = {
+      const payload: CreateAssetRequest = {
         legalEntityId,
         categoryId,
         name: assetName.trim(),
-        assetName: assetName.trim(),
-        assetCode: assetCode.trim() || undefined,
-        assetTag: barcode.trim() || undefined,
         description: description.trim() || undefined,
-        acquisitionDate,
-        inServiceDate: inServiceDate || acquisitionDate,
-        placedInServiceDate: inServiceDate || acquisitionDate,
-        acquisitionCost: cost,
-        currency,
-        salvageValue: parseFloat(salvageValue) || 0,
-        usefulLifeMonths: parseInt(usefulLifeMonths, 10) || 0,
-        depreciationMethod,
-        serialNumber: serialNumber.trim() || undefined,
-        barcode: barcode.trim() || undefined,
-        modelNumber: modelNumber.trim() || undefined,
-        manufacturer: manufacturer.trim() || undefined,
-        locationId: locationId || undefined,
-        department: department.trim() || undefined,
-        custodianId: custodianId.trim() || undefined,
-        customAttributes: Object.keys(customAttributes).length > 0 ? customAttributes : undefined
+        assetTag: barcode.trim() || undefined,
+        productVariantRef: assetCode.trim() || undefined,
+        inventorySerialRef: serialNumber.trim() || undefined,
+        acquisitionDate: acquisitionDate || undefined,
+        capitalizationDate: inServiceDate || acquisitionDate || undefined,
+        placedInServiceDate: inServiceDate || acquisitionDate || undefined,
+        quantity: parseInt(quantity, 10) || 1
       };
 
-      await createMutation.mutateAsync(payload as any);
+      const asset = await createMutation.mutateAsync(payload);
+
+      // If initial cost is provided, attach to primary book
+      const books = booksQuery.data ?? [];
+      const primaryBook = books[0];
+      if (primaryBook && cost > 0) {
+        try {
+          await fixedAssetsApi.addAssetBook(asset.id, {
+            legalEntityId,
+            bookDefinitionId: primaryBook.id,
+            originalCost: cost,
+            residualValue: parseFloat(salvageValue) || 0,
+            usefulLifeMonths: parseInt(usefulLifeMonths, 10) || 60,
+            depreciationMethod: depreciationMethod,
+            placedInServiceDate: inServiceDate || acquisitionDate
+          });
+        } catch {
+          // Non-blocking if asset was created
+        }
+      }
+
+      // If custody assignment is selected
+      if (custodianId.trim() || locationId) {
+        try {
+          await fixedAssetsApi.assignAsset(asset.id, {
+            assignmentType: custodianId.trim() ? "Employee" : "Location",
+            employeeId: custodianId.trim() || undefined,
+            departmentId: department.trim() || undefined,
+            locationId: locationId || undefined,
+            effectiveFrom: acquisitionDate || new Date().toISOString().slice(0, 10)
+          });
+        } catch {
+          // Non-blocking
+        }
+      }
+
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t("common.unknownError", "فشل إنشاء الأصل");
@@ -161,7 +171,7 @@ export function NewAssetModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("register.newAssetModalTitle", "إضافة أصل رأسمالي جديد")}
-      width="680px"
+      size="large"
       data-testid="new-asset-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -185,15 +195,15 @@ export function NewAssetModal({
           <TextField
             label={t("fields.assetName", "اسم الأصل")}
             value={assetName}
-            onChange={(e) => setAssetName(e.target.value)}
-            required
+            onChange={setAssetName}
+            isRequired
             data-testid="asset-name-input"
             placeholder={t("fields.assetNamePlaceholder", "مثال: حاسب محمول Dell Latitude 5540")}
           />
           <TextField
             label={t("fields.assetCode", "كود الأصل (اختياري / آلي)")}
             value={assetCode}
-            onChange={(e) => setAssetCode(e.target.value)}
+            onChange={setAssetCode}
             data-testid="asset-code-input"
             placeholder={t("fields.assetCodePlaceholder", "FA-2026-0001")}
           />
@@ -206,8 +216,8 @@ export function NewAssetModal({
             </label>
             <Select
               options={categoryOptions}
-              value={categoryId}
-              onChange={(val) => setCategoryId(val)}
+              selectedKey={categoryId || null}
+              onSelectionChange={(k) => setCategoryId(String(k ?? ""))}
               placeholder={t("fields.selectCategory", "اختر التصنيف...")}
               data-testid="category-select"
             />
@@ -218,8 +228,8 @@ export function NewAssetModal({
             </label>
             <Select
               options={locationOptions}
-              value={locationId}
-              onChange={(val) => setLocationId(val)}
+              selectedKey={locationId || null}
+              onSelectionChange={(k) => setLocationId(String(k ?? ""))}
               placeholder={t("fields.selectLocation", "اختر الموقع...")}
               data-testid="location-select"
             />
@@ -230,25 +240,23 @@ export function NewAssetModal({
           <TextField
             label={t("fields.acquisitionCost", "تكلفة الاقتناء")}
             type="number"
-            step="0.01"
             value={acquisitionCost}
-            onChange={(e) => setAcquisitionCost(e.target.value)}
-            required
+            onChange={setAcquisitionCost}
+            isRequired
             data-testid="cost-input"
             placeholder="0.00"
           />
           <TextField
             label={t("fields.currency", "العملة")}
             value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
+            onChange={setCurrency}
             data-testid="currency-input"
           />
           <TextField
             label={t("fields.salvageValue", "قيمة الخردة المتبقية")}
             type="number"
-            step="0.01"
             value={salvageValue}
-            onChange={(e) => setSalvageValue(e.target.value)}
+            onChange={setSalvageValue}
             data-testid="salvage-value-input"
           />
         </div>
@@ -258,15 +266,15 @@ export function NewAssetModal({
             label={t("fields.acquisitionDate", "تاريخ الاقتناء")}
             type="date"
             value={acquisitionDate}
-            onChange={(e) => setAcquisitionDate(e.target.value)}
-            required
+            onChange={setAcquisitionDate}
+            isRequired
             data-testid="acquisition-date-input"
           />
           <TextField
             label={t("fields.inServiceDate", "تاريخ بدء التشغيل في الخدمة")}
             type="date"
             value={inServiceDate}
-            onChange={(e) => setInServiceDate(e.target.value)}
+            onChange={setInServiceDate}
             data-testid="in-service-date-input"
           />
         </div>
@@ -278,8 +286,8 @@ export function NewAssetModal({
             </label>
             <Select
               options={methodOptions}
-              value={depreciationMethod}
-              onChange={(val) => setDepreciationMethod(val as DepreciationMethod)}
+              selectedKey={depreciationMethod}
+              onSelectionChange={(k) => setDepreciationMethod(String(k ?? "StraightLine") as DepreciationMethod)}
               data-testid="depreciation-method-select"
             />
           </div>
@@ -287,53 +295,23 @@ export function NewAssetModal({
             label={t("fields.usefulLifeMonths", "العمر الإنتاجي (بالأشهر)")}
             type="number"
             value={usefulLifeMonths}
-            onChange={(e) => setUsefulLifeMonths(e.target.value)}
+            onChange={setUsefulLifeMonths}
             data-testid="useful-life-input"
           />
         </div>
-
-        {/* Nature specific fields */}
-        {(selectedCategory?.nature === "Land" || selectedCategory?.nature === "Building") && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", backgroundColor: "#f8fafc", padding: "0.75rem", borderRadius: "0.375rem" }}>
-            <TextField
-              label={t("fields.deedNumber", "رقم صك الملكية / الوثيقة")}
-              value={deedNumber}
-              onChange={(e) => setDeedNumber(e.target.value)}
-              data-testid="deed-number-input"
-            />
-            <TextField
-              label={t("fields.plotNumber", "رقم القطعة / المخطط")}
-              value={plotNumber}
-              onChange={(e) => setPlotNumber(e.target.value)}
-              data-testid="plot-number-input"
-            />
-          </div>
-        )}
-
-        {selectedCategory?.nature === "Grouped" && (
-          <div style={{ backgroundColor: "#f8fafc", padding: "0.75rem", borderRadius: "0.375rem" }}>
-            <TextField
-              label={t("fields.groupedQuantity", "الكمية المجمعة للأصل")}
-              type="number"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              data-testid="grouped-quantity-input"
-            />
-          </div>
-        )}
 
         {/* Tracking & Serial */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <TextField
             label={t("fields.serialNumber", "الرقم التسلسلي (Serial Number)")}
             value={serialNumber}
-            onChange={(e) => setSerialNumber(e.target.value)}
+            onChange={setSerialNumber}
             data-testid="serial-number-input"
           />
           <TextField
             label={t("fields.barcode", "الباركود / رمز التتبع (Tag / Barcode)")}
             value={barcode}
-            onChange={(e) => setBarcode(e.target.value)}
+            onChange={setBarcode}
             data-testid="barcode-input"
           />
         </div>
@@ -342,13 +320,13 @@ export function NewAssetModal({
           <TextField
             label={t("fields.department", "القسم / المركز المالي")}
             value={department}
-            onChange={(e) => setDepartment(e.target.value)}
+            onChange={setDepartment}
             data-testid="department-input"
           />
           <TextField
             label={t("fields.custodianId", "معرّف الموظف المسؤول (العهدة)")}
             value={custodianId}
-            onChange={(e) => setCustodianId(e.target.value)}
+            onChange={setCustodianId}
             data-testid="custodian-id-input"
           />
         </div>

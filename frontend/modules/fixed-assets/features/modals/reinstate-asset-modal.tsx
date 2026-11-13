@@ -11,7 +11,7 @@ export interface ReinstateAssetModalProps {
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly assetId: string | null;
-  readonly assetName?: string;
+  readonly assetName?: string | null | undefined;
 }
 
 export function ReinstateAssetModal({
@@ -22,7 +22,7 @@ export function ReinstateAssetModal({
   assetName
 }: ReinstateAssetModalProps): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
-  const reinstateMutation = useReinstateAssetMutation(legalEntityId);
+  const reinstateMutation = useReinstateAssetMutation();
 
   const [reinstatementDate, setReinstatementDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState("");
@@ -40,11 +40,14 @@ export function ReinstateAssetModal({
 
     try {
       const payload: ReinstateAssetRequest = {
+        legalEntityId,
+        disposalId: assetId,
         reinstatementDate,
-        reason: reason.trim()
+        reason: reason.trim(),
+        idempotencyKey: `reinst-${assetId}-${Date.now()}`
       };
 
-      await reinstateMutation.mutateAsync({ assetId, payload });
+      await reinstateMutation.mutateAsync({ assetId, request: payload });
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t("common.unknownError", "فشل إعادة قيد الأصل");
@@ -57,7 +60,7 @@ export function ReinstateAssetModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("disposal.reinstateModalTitle", "إعادة قيد الأصل واستئناف الخدمة")}
-      width="520px"
+      size="medium"
       data-testid="reinstate-asset-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -100,16 +103,16 @@ export function ReinstateAssetModal({
           label={t("fields.reinstatementDate", "تاريخ إعادة القيد")}
           type="date"
           value={reinstatementDate}
-          onChange={(e) => setReinstatementDate(e.target.value)}
-          required
+          onChange={setReinstatementDate}
+          isRequired
           data-testid="reinstatement-date-input"
         />
 
         <TextField
           label={t("fields.reinstatementReason", "مبرر ومستند إعادة القيد")}
           value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          required
+          onChange={setReason}
+          isRequired
           placeholder={t("fields.reinstatePlaceholder", "العثور على الأصل المفقود / التراجع عن قرار التخريد بموجب محضر...")}
           data-testid="reinstatement-reason-input"
         />

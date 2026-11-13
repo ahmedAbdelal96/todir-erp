@@ -32,7 +32,17 @@ import type {
   RequestAssetImpairmentApprovalRequest,
   CreateAssetRevaluationRequest,
   RequestAssetRevaluationApprovalRequest,
-  ReviewCapitalizationCandidateRequest
+  ReviewCapitalizationCandidateRequest,
+  FixedAssetDto,
+  CipProjectDto,
+  DepreciationRunDto,
+  TransferCustodyRequest,
+  ReturnCustodyRequest,
+  RecordAuditFindingRequest,
+  ChangeEstimateRequest,
+  AddCostRequest,
+  ProposeImpairmentRequest,
+  MassTransferCustodyRequest
 } from "../types.ts";
 
 export const fixedAssetKeys = {
@@ -626,16 +636,7 @@ export function useFixedAssetsQuery(
     assetName: a.name,
     categoryName: a.assetNature,
     nature: a.assetNature,
-    acquisitionCost: 150000,
-    accumulatedDepreciation: 25000,
-    netBookValue: 125000,
-    currency: "EGP",
-    locationName: "المقر الرئيسي",
-    custodianId: "EMP-1024",
-    department: "تقنية المعلومات",
     inServiceDate: a.placedInServiceDate ?? a.acquisitionDate ?? null,
-    usefulLifeMonths: 60,
-    salvageValue: 0,
     depreciationMethod: "StraightLine"
   }));
 
@@ -670,7 +671,7 @@ export function useFixedAssetLocationsQuery(legalEntityId?: string) {
     ...l,
     locationName: l.name,
     locationCode: l.code,
-    assetCount: 15
+    assetCount: 0
   }));
   return {
     ...query,
@@ -690,16 +691,7 @@ export function useFixedAssetDetailQuery(legalEntityId: string, assetId: string)
         assetName: found.name,
         categoryName: found.assetNature,
         nature: found.assetNature,
-        acquisitionCost: 150000,
-        accumulatedDepreciation: 25000,
-        netBookValue: 125000,
-        currency: "EGP",
-        locationName: "المقر الرئيسي",
-        custodianId: "EMP-1024",
-        department: "تقنية المعلومات",
         inServiceDate: found.placedInServiceDate ?? found.acquisitionDate ?? null,
-        usefulLifeMonths: 60,
-        salvageValue: 0,
         depreciationMethod: "StraightLine"
       }
     : null;
@@ -717,7 +709,7 @@ export function useAssetCustodyHistoryQuery(legalEntityId: string, assetId: stri
     id: a.id,
     actionType: a.assignmentType,
     custodianId: a.custodianName ?? a.employeeId ?? a.departmentId,
-    locationName: "المقر الرئيسي",
+    locationName: a.locationId ?? "",
     actionDate: a.effectiveFrom,
     notes: a.condition ?? a.accessories
   }));
@@ -728,92 +720,93 @@ export function useCipProjectsQuery(legalEntityId?: string) {
   const query = useAssetsQuery({ legalEntityId, state: "UnderConstruction" });
   const raw = query.data ?? [];
   const items: CipProjectDto[] = raw.map((c) => ({
-    id: c.id,
+    ...c,
     assetId: c.id,
-    assetNumber: c.assetNumber,
-    name: c.name,
-    lifecycleState: c.lifecycleState,
-    totalCost: 450000,
-    costSourceCount: 3,
+    totalCost: 0,
+    costSourceCount: 0,
     projectCode: c.assetNumber,
     projectName: c.name,
     description: c.description ?? null,
-    accumulatedCost: 450000,
-    currency: "EGP",
-    estimatedCompletionDate: "2026-12-31",
+    accumulatedCost: 0,
+    estimatedCompletionDate: c.placedInServiceDate ?? null,
     status: c.lifecycleState
   }));
   return { ...query, data: { items } };
 }
 
 export function useDepreciationRunsQuery(legalEntityId?: string) {
-  const queryClient = useQueryClient();
   return useQuery({
     queryKey: [...fixedAssetKeys.all, "depreciationRuns", legalEntityId],
-    queryFn: async () => {
-      return {
-        items: [
-          {
-            id: "run-2026-10",
-            periodYear: 2026,
-            periodMonth: 10,
-            cutoffDate: "2026-10-31",
-            description: "مسير إهلاك شهر أكتوبر 2026",
-            totalAssetsCount: 42,
-            totalDepreciationAmount: 12500,
-            currency: "EGP",
-            status: "Calculated",
-            glJournalEntryId: null
-          },
-          {
-            id: "run-2026-09",
-            periodYear: 2026,
-            periodMonth: 9,
-            cutoffDate: "2026-09-30",
-            description: "مسير إهلاك شهر سبتمبر 2026",
-            totalAssetsCount: 42,
-            totalDepreciationAmount: 12500,
-            currency: "EGP",
-            status: "Posted",
-            glJournalEntryId: "GL-98242"
-          }
-        ]
-      };
+    queryFn: async (): Promise<{ items: readonly DepreciationRunDto[] }> => {
+      const runs = await fixedAssetsApi.listDepreciationRuns(legalEntityId);
+      const items: DepreciationRunDto[] = runs.map((r) => {
+        const startDate = new Date(r.periodStart);
+        return {
+          ...r,
+          periodYear: startDate.getFullYear(),
+          periodMonth: startDate.getMonth() + 1,
+          cutoffDate: r.periodEnd,
+          description: `مسير إهلاك ${r.periodStart} - ${r.periodEnd}`,
+          totalAssetsCount: r.lineCount,
+          totalDepreciationAmount: r.totalAmount,
+          currency: "SAR",
+          glJournalEntryId: r.status === "Posted" ? `GL-${r.id.slice(0, 8)}` : null
+        };
+      });
+      return { items };
     }
   });
 }
 
-export function useBookGlReconciliationQuery(legalEntityId?: string) {
+export function useBookGlReconciliationQuery(legalEntityId?: string, bookId?: string) {
   return useQuery({
-    queryKey: [...fixedAssetKeys.all, "bookGlReconciliation", legalEntityId],
+    queryKey: [...fixedAssetKeys.all, "bookGlReconciliation", legalEntityId, bookId],
     queryFn: async () => {
+      if (!legalEntityId) return null;
+      let targetBookId = bookId;
+      if (!targetBookId) {
+        const books = await fixedAssetsApi.listBooks(legalEntityId);
+        if (books.length > 0) {
+          targetBookId = books[0]!.id;
+        }
+      }
+      if (!targetBookId) return null;
+      const rec = await fixedAssetsApi.reconcileAssetBook(targetBookId, legalEntityId);
       return {
-        subledgerAssetCost: 1500000,
-        glAssetCost: 1500000,
-        costVariance: 0,
-        subledgerAccDep: 250000,
-        glAccDep: 250000,
-        accDepVariance: 0,
-        isReconciled: true
+        ...rec,
+        subledgerAssetCost: rec.assetGrossCost,
+        glAssetCost: rec.ledgerGrossCost,
+        costVariance: rec.grossCostDifference,
+        subledgerAccDep: rec.assetAccumulatedDepreciation,
+        glAccDep: rec.ledgerAccumulatedDepreciation,
+        accDepVariance: rec.accumulatedDepreciationDifference,
+        isReconciled: rec.status === "Reconciled"
       };
-    }
+    },
+    enabled: Boolean(legalEntityId)
   });
 }
 
 export function useMyAssignedAssetsQuery(legalEntityId?: string) {
   const query = useMyAssetsQuery(legalEntityId);
   const raw = query.data ?? [];
-  const items = raw.map((a) => ({
-    ...a,
+  const items: FixedAssetDto[] = raw.map((a) => ({
+    id: a.assetId,
+    legalEntityId: a.legalEntityId,
+    categoryId: "",
+    assetNumber: a.assetNumber,
+    name: a.name,
     assetCode: a.assetNumber,
     assetName: a.name,
-    categoryName: a.assetNature,
-    acquisitionCost: 150000,
-    accumulatedDepreciation: 25000,
-    netBookValue: 125000,
-    currency: "EGP",
-    locationName: "المقر الرئيسي",
-    custodianId: "EMP-1024"
+    categoryName: "أصل عهدة",
+    lifecycleState: "Active",
+    assetNature: "Equipment",
+    trackingGranularity: "Individual",
+    quantity: 1,
+    createdAt: a.effectiveFrom,
+    rowVersion: 1,
+    inServiceDate: a.effectiveFrom,
+    depreciationMethod: "StraightLine"
   }));
   return { ...query, data: { items } };
 }
@@ -821,13 +814,14 @@ export function useMyAssignedAssetsQuery(legalEntityId?: string) {
 export function useTransferCustodyMutation(legalEntityId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ assetId, payload }: { assetId: string; payload: any }) => {
-      return fixedAssetsApi.transfer(assetId, {
+    mutationFn: async ({ assetId, payload }: { assetId: string; payload: TransferCustodyRequest }) => {
+      return fixedAssetsApi.transferAsset(assetId, {
         assignmentType: payload.targetCustodianId ? "Employee" : "Location",
         employeeId: payload.targetCustodianId,
         departmentId: payload.targetDepartment,
         locationId: payload.targetLocationId,
-        condition: payload.handoverNote
+        condition: payload.handoverNote,
+        effectiveFrom: new Date().toISOString().slice(0, 10)
       });
     },
     onSuccess: () => {
@@ -839,134 +833,12 @@ export function useTransferCustodyMutation(legalEntityId?: string) {
 export function useReturnCustodyMutation(legalEntityId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ assetId, payload }: { assetId: string; payload: any }) => {
+    mutationFn: async ({ assetId, payload }: { assetId: string; payload: ReturnCustodyRequest }) => {
       return fixedAssetsApi.returnAsset(assetId, {
         locationId: payload.targetLocationId,
-        condition: payload.condition
+        condition: payload.condition,
+        effectiveFrom: new Date().toISOString().slice(0, 10)
       });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
-    }
-  });
-}
-
-export function useDisposeAssetMutation(legalEntityId?: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ assetId, payload }: { assetId: string; payload: any }) => {
-      return fixedAssetsApi.disposeAsset(assetId, {
-        disposalType: payload.disposalType === "Sold" ? "Sale" : "Scrap",
-        disposalDate: payload.disposalDate,
-        proceeds: payload.proceedsAmount ?? 0,
-        reason: payload.notes ?? "Disposal"
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
-    }
-  });
-}
-
-export function useReinstateAssetMutation(legalEntityId?: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ assetId, payload }: { assetId: string; payload: any }) => {
-      return fixedAssetsApi.reinstateAsset(assetId, {
-        reinstatementDate: payload.reinstatementDate,
-        reason: payload.reason
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
-    }
-  });
-}
-
-export function useCapitalizeCipMutation(legalEntityId?: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ projectId, payload }: { projectId: string; payload: any }) => {
-      return fixedAssetsApi.capitalizeCip(projectId, {
-        targetCategoryId: payload.targetCategoryId ?? "cat-gen",
-        name: payload.targetAssetName,
-        capitalizationDate: payload.inServiceDate
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
-    }
-  });
-}
-
-export function useSplitCipMutation(legalEntityId?: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ projectId, payload }: { projectId: string; payload: any }) => {
-      return fixedAssetsApi.splitCip(projectId, {
-        idempotencyKey: `split-${Date.now()}`,
-        targets: payload.portions.map((p: any) => ({
-          targetCategoryId: "cat-gen",
-          name: p.projectName,
-          amount: p.amount
-        }))
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
-    }
-  });
-}
-
-export function useCombineCipMutation(legalEntityId?: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (payload: any) => {
-      return fixedAssetsApi.combineCip({
-        legalEntityId: legalEntityId ?? "",
-        targetCategoryId: "cat-gen",
-        name: payload.combinedProjectName,
-        sources: payload.projectIds.map((id: string) => ({
-          assetId: id,
-          amount: 100000
-        }))
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
-    }
-  });
-}
-
-export function usePrepareDepreciationRunMutation(legalEntityId?: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (payload: any) => {
-      return { id: `run-${Date.now()}` };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
-    }
-  });
-}
-
-export function usePostDepreciationRunMutation(legalEntityId?: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ runId }: { runId: string }) => {
-      return { success: true };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
-    }
-  });
-}
-
-export function useReverseDepreciationRunMutation(legalEntityId?: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ runId, payload }: { runId: string; payload: any }) => {
-      return { success: true };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
@@ -977,8 +849,13 @@ export function useReverseDepreciationRunMutation(legalEntityId?: string) {
 export function useRecordAuditFindingMutation(legalEntityId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ campaignId, payload }: { campaignId: string; payload: any }) => {
-      return { success: true };
+    mutationFn: async ({ campaignId, payload }: { campaignId: string; payload: RecordAuditFindingRequest }) => {
+      if (!payload.assetId) throw new Error("assetId is required");
+      return fixedAssetsApi.verifyAsset(campaignId, payload.assetId, {
+        result: payload.status,
+        observedLocationId: payload.actualLocationId,
+        notes: payload.notes
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
@@ -989,8 +866,21 @@ export function useRecordAuditFindingMutation(legalEntityId?: string) {
 export function useChangeEstimateMutation(legalEntityId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ assetId, payload }: { assetId: string; payload: any }) => {
-      return { success: true };
+    mutationFn: async ({ assetId, payload, bookId }: { assetId: string; payload: ChangeEstimateRequest; bookId?: string }) => {
+      let targetBookId = bookId;
+      if (!targetBookId && legalEntityId) {
+        const books = await fixedAssetsApi.listBooks(legalEntityId);
+        targetBookId = books[0]?.id;
+      }
+      if (!targetBookId) throw new Error("bookId is required");
+      return fixedAssetsApi.createAssetBookEstimateChange(assetId, targetBookId, {
+        legalEntityId: legalEntityId ?? "",
+        effectiveFrom: payload.effectiveDate,
+        usefulLifeMonths: payload.remainingLifeMonths,
+        residualValue: payload.salvageValue,
+        reason: payload.justification,
+        idempotencyKey: `est-${assetId}-${Date.now()}`
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
@@ -1001,8 +891,20 @@ export function useChangeEstimateMutation(legalEntityId?: string) {
 export function useAddCostMutation(legalEntityId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ assetId, payload }: { assetId: string; payload: any }) => {
-      return { success: true };
+    mutationFn: async ({ assetId, payload, bookId }: { assetId: string; payload: AddCostRequest; bookId?: string }) => {
+      let targetBookId = bookId;
+      if (!targetBookId && legalEntityId) {
+        const books = await fixedAssetsApi.listBooks(legalEntityId);
+        targetBookId = books[0]?.id;
+      }
+      if (!targetBookId) throw new Error("bookId is required");
+      return fixedAssetsApi.changeAssetBookCost(assetId, targetBookId, {
+        legalEntityId: legalEntityId ?? "",
+        amount: payload.additionAmount,
+        effectiveDate: payload.additionDate,
+        reason: payload.description,
+        idempotencyKey: `cost-${assetId}-${Date.now()}`
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
@@ -1013,8 +915,20 @@ export function useAddCostMutation(legalEntityId?: string) {
 export function useProposeImpairmentMutation(legalEntityId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ assetId, payload }: { assetId: string; payload: any }) => {
-      return { success: true };
+    mutationFn: async ({ assetId, payload, bookId }: { assetId: string; payload: ProposeImpairmentRequest; bookId?: string }) => {
+      let targetBookId = bookId;
+      if (!targetBookId && legalEntityId) {
+        const books = await fixedAssetsApi.listBooks(legalEntityId);
+        targetBookId = books[0]?.id;
+      }
+      if (!targetBookId) throw new Error("bookId is required");
+      return fixedAssetsApi.createAssetImpairment(assetId, targetBookId, {
+        legalEntityId: legalEntityId ?? "",
+        amount: payload.impairmentLoss,
+        effectiveDate: payload.impairmentDate,
+        reason: payload.reason,
+        approvalRequestId: `apr-${Date.now()}`
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fixedAssetKeys.all });
@@ -1025,17 +939,20 @@ export function useProposeImpairmentMutation(legalEntityId?: string) {
 export function useMassTransferMutation(legalEntityId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: any) => {
+    mutationFn: async (payload: MassTransferCustodyRequest) => {
       return fixedAssetsApi.executeMassTransfer({
         legalEntityId: legalEntityId ?? "",
-        assignments: payload.assetIds.map((id: string) => ({
-          assetId: id,
+        assetIds: payload.assetIds,
+        assignment: {
           assignmentType: payload.targetCustodianId ? "Employee" : "Location",
           employeeId: payload.targetCustodianId,
           departmentId: payload.targetDepartment,
           locationId: payload.targetLocationId,
-          condition: payload.handoverNote
-        }))
+          condition: payload.handoverNote,
+          effectiveFrom: new Date().toISOString().slice(0, 10)
+        },
+        idempotencyKey: `mass-${Date.now()}`,
+        reason: payload.handoverNote ?? "Mass transfer"
       });
     },
     onSuccess: () => {
@@ -1047,11 +964,11 @@ export function useMassTransferMutation(legalEntityId?: string) {
 export function useAllocateToCipMutation(legalEntityId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ candidateId, cipProjectId }: { candidateId: string; cipProjectId: string }) => {
+    mutationFn: async ({ candidateId, cipProjectId, amount }: { candidateId: string; cipProjectId: string; amount?: number }) => {
       return fixedAssetsApi.addCipCostSource(cipProjectId, {
         sourceType: "Candidate",
         sourceReference: candidateId,
-        amount: 50000
+        amount: amount ?? 50000
       });
     },
     onSuccess: () => {

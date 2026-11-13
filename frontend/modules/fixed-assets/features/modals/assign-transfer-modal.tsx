@@ -15,7 +15,7 @@ export interface AssignTransferModalProps {
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly assetId: string | null;
-  readonly assetName?: string;
+  readonly assetName?: string | null | undefined;
 }
 
 export function AssignTransferModal({
@@ -38,8 +38,8 @@ export function AssignTransferModal({
 
   const locationOptions: SelectOption[] =
     locationsQuery.data?.items?.map((loc) => ({
-      value: loc.id,
-      label: `${loc.locationName} (${loc.building ?? ""})`
+      id: loc.id,
+      label: `${loc.locationName} (${loc.locationCode})`
     })) ?? [];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -74,7 +74,7 @@ export function AssignTransferModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("custody.transferModalTitle", "نقل عهدة وموقع الأصل")}
-      width="540px"
+      size="medium"
       data-testid="assign-transfer-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -112,15 +112,15 @@ export function AssignTransferModal({
         <TextField
           label={t("fields.targetCustodian", "الموظف المستلم للعهدة (معرّف الموظف)")}
           value={targetCustodianId}
-          onChange={(e) => setTargetCustodianId(e.target.value)}
-          placeholder="EMP-1024 / UUID"
+          onChange={setTargetCustodianId}
+          placeholder={t("fields.custodianPlaceholder", "EMP-1024 / UUID")}
           data-testid="target-custodian-input"
         />
 
         <TextField
           label={t("fields.targetDepartment", "القسم / الإدارة الجديدة")}
           value={targetDepartment}
-          onChange={(e) => setTargetDepartment(e.target.value)}
+          onChange={setTargetDepartment}
           placeholder={t("fields.deptPlaceholder", "مثال: قسم تقنية المعلومات")}
           data-testid="target-department-input"
         />
@@ -131,8 +131,8 @@ export function AssignTransferModal({
           </label>
           <Select
             options={locationOptions}
-            value={targetLocationId}
-            onChange={(val) => setTargetLocationId(val)}
+            selectedKey={targetLocationId || null}
+            onSelectionChange={(k) => setTargetLocationId(String(k ?? ""))}
             placeholder={t("fields.selectLocation", "اختر الموقع...")}
             data-testid="target-location-select"
           />
@@ -141,7 +141,7 @@ export function AssignTransferModal({
         <TextField
           label={t("fields.targetRoom", "الغرفة / المكتب / الرف")}
           value={targetRoom}
-          onChange={(e) => setTargetRoom(e.target.value)}
+          onChange={setTargetRoom}
           placeholder={t("fields.roomPlaceholder", "مكتب 302 - الدور الثالث")}
           data-testid="target-room-input"
         />
@@ -149,7 +149,7 @@ export function AssignTransferModal({
         <TextField
           label={t("fields.handoverNote", "ملاحظات إذن التسليم والتسلم")}
           value={handoverNote}
-          onChange={(e) => setHandoverNote(e.target.value)}
+          onChange={setHandoverNote}
           placeholder={t("fields.handoverNotePlaceholder", "تسليم بموجب محضر استلام عمل...")}
           data-testid="handover-note-input"
         />

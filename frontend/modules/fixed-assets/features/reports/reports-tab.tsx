@@ -133,7 +133,7 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", borderTop: "1px solid #e2e8f0", paddingTop: "0.5rem", fontSize: "0.8125rem" }}>
                 <span>{t("reports.variance", "الفارق (Variance)")}:</span>
                 <strong style={{ color: recon.costVariance === 0 ? "#16a34a" : "#dc2626" }}>
-                  {recon.costVariance === 0 ? "0.00 (مطابق تماماً ✓)" : recon.costVariance.toLocaleString("ar-EG")}
+                  {recon.costVariance === 0 ? t("reports.fullyMatched", "0.00 (مطابق تماماً ✓)") : recon.costVariance.toLocaleString("ar-EG")}
                 </strong>
               </div>
             </div>
@@ -158,7 +158,7 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", borderTop: "1px solid #e2e8f0", paddingTop: "0.5rem", fontSize: "0.8125rem" }}>
                 <span>{t("reports.variance", "الفارق (Variance)")}:</span>
                 <strong style={{ color: recon.accDepVariance === 0 ? "#16a34a" : "#dc2626" }}>
-                  {recon.accDepVariance === 0 ? "0.00 (مطابق تماماً ✓)" : recon.accDepVariance.toLocaleString("ar-EG")}
+                  {recon.accDepVariance === 0 ? t("reports.fullyMatched", "0.00 (مطابق تماماً ✓)") : recon.accDepVariance.toLocaleString("ar-EG")}
                 </strong>
               </div>
             </div>

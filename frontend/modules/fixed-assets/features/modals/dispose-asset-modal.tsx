@@ -12,7 +12,7 @@ export interface DisposeAssetModalProps {
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly assetId: string | null;
-  readonly assetName?: string;
+  readonly assetName?: string | null | undefined;
   readonly currentNetBookValue?: number;
 }
 
@@ -25,19 +25,19 @@ export function DisposeAssetModal({
   currentNetBookValue = 0
 }: DisposeAssetModalProps): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
-  const disposeMutation = useDisposeAssetMutation(legalEntityId);
+  const disposeMutation = useDisposeAssetMutation();
 
-  const [disposalType, setDisposalType] = useState<DisposalType>("Scrapped");
+  const [disposalType, setDisposalType] = useState<DisposalType>("Scrap");
   const [disposalDate, setDisposalDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [proceedsAmount, setProceedsAmount] = useState("0");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const disposalOptions: SelectOption[] = [
-    { value: "Scrapped", label: t("disposal.typeScrapped", "تخريد واستبعاد (Scrapped)") },
-    { value: "Sold", label: t("disposal.typeSold", "بيع أصل رأسمالي (Sold)") },
-    { value: "Lost", label: t("disposal.typeLost", "فقدان أو هلاك كلي (Lost)") },
-    { value: "Donated", label: t("disposal.typeDonated", "هبة / تبرع (Donated)") }
+    { id: "Scrap", label: t("disposal.typeScrapped", "تخريد واستبعاد (Scrap)") },
+    { id: "Sale", label: t("disposal.typeSold", "بيع أصل رأسمالي (Sale)") },
+    { id: "Loss", label: t("disposal.typeLost", "فقدان أو هلاك كلي (Loss)") },
+    { id: "Donation", label: t("disposal.typeDonated", "هبة / تبرع (Donation)") }
   ];
 
   const numericProceeds = parseFloat(proceedsAmount) || 0;
@@ -52,13 +52,16 @@ export function DisposeAssetModal({
 
     try {
       const payload: DisposeAssetRequest = {
+        legalEntityId,
         disposalType,
         disposalDate,
-        proceedsAmount: numericProceeds,
-        notes: notes.trim() || undefined
+        proceeds: numericProceeds,
+        directCosts: 0,
+        reason: notes.trim() || "Disposal",
+        idempotencyKey: `disp-${assetId}-${Date.now()}`
       };
 
-      await disposeMutation.mutateAsync({ assetId, payload });
+      await disposeMutation.mutateAsync({ assetId, request: payload });
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t("common.unknownError", "فشل استبعاد الأصل");
@@ -71,7 +74,7 @@ export function DisposeAssetModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("disposal.modalTitle", "استبعاد أو بيع أصل رأسمالي")}
-      width="560px"
+      size="medium"
       data-testid="dispose-asset-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -115,8 +118,8 @@ export function DisposeAssetModal({
           </label>
           <Select
             options={disposalOptions}
-            value={disposalType}
-            onChange={(val) => setDisposalType(val as DisposalType)}
+            selectedKey={disposalType}
+            onSelectionChange={(k) => setDisposalType(String(k ?? "Scrap") as DisposalType)}
             data-testid="disposal-type-select"
           />
         </div>
@@ -125,17 +128,16 @@ export function DisposeAssetModal({
           label={t("fields.disposalDate", "تاريخ الاستبعاد المحاسبي")}
           type="date"
           value={disposalDate}
-          onChange={(e) => setDisposalDate(e.target.value)}
-          required
+          onChange={setDisposalDate}
+          isRequired
           data-testid="disposal-date-input"
         />
 
         <TextField
           label={t("fields.proceedsAmount", "قيمة المتحصلات أو سعر البيع (إن وجد)")}
           type="number"
-          step="0.01"
           value={proceedsAmount}
-          onChange={(e) => setProceedsAmount(e.target.value)}
+          onChange={setProceedsAmount}
           data-testid="proceeds-amount-input"
         />
 
@@ -164,7 +166,7 @@ export function DisposeAssetModal({
         <TextField
           label={t("fields.disposalNotes", "سبب الاستبعاد وملاحظات المحضر")}
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={setNotes}
           placeholder={t("fields.disposalNotesPlaceholder", "بناء على قرار اللجنة الفنية للتخريد رقم...")}
           data-testid="disposal-notes-input"
         />

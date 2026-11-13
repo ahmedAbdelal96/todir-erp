@@ -15,7 +15,7 @@ export interface ReturnAssetModalProps {
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly assetId: string | null;
-  readonly assetName?: string;
+  readonly assetName?: string | null | undefined;
 }
 
 export function ReturnAssetModal({
@@ -36,15 +36,15 @@ export function ReturnAssetModal({
 
   const locationOptions: SelectOption[] =
     locationsQuery.data?.items?.map((loc) => ({
-      value: loc.id,
-      label: `${loc.locationName} (${loc.building ?? ""})`
+      id: loc.id,
+      label: `${loc.locationName} (${loc.locationCode})`
     })) ?? [];
 
   const conditionOptions: SelectOption[] = [
-    { value: "Excellent", label: t("custody.conditionExcellent", "ممتازة (كالجديد)") },
-    { value: "Good", label: t("custody.conditionGood", "جيدة (صالح للاستخدام)") },
-    { value: "Fair", label: t("custody.conditionFair", "مقبولة (تظهر عليه علامات استهلاك)") },
-    { value: "Damaged", label: t("custody.conditionDamaged", "تالف / بحاجة لصيانة") }
+    { id: "Excellent", label: t("custody.conditionExcellent", "ممتازة (كالجديد)") },
+    { id: "Good", label: t("custody.conditionGood", "جيدة (صالح للاستخدام)") },
+    { id: "Fair", label: t("custody.conditionFair", "مقبولة (تظهر عليه علامات استهلاك)") },
+    { id: "Damaged", label: t("custody.conditionDamaged", "تالف / بحاجة لصيانة") }
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -72,7 +72,7 @@ export function ReturnAssetModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t("custody.returnModalTitle", "إرجاع الأصل إلى المستودع / إنهاء العهدة")}
-      width="540px"
+      size="medium"
       data-testid="return-asset-modal"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -113,8 +113,8 @@ export function ReturnAssetModal({
           </label>
           <Select
             options={locationOptions}
-            value={targetLocationId}
-            onChange={(val) => setTargetLocationId(val)}
+            selectedKey={targetLocationId || null}
+            onSelectionChange={(k) => setTargetLocationId(String(k ?? ""))}
             placeholder={t("fields.selectLocation", "اختر المستودع / الموقع...")}
             data-testid="return-location-select"
           />
@@ -126,8 +126,8 @@ export function ReturnAssetModal({
           </label>
           <Select
             options={conditionOptions}
-            value={condition}
-            onChange={(val) => setCondition(val)}
+            selectedKey={condition}
+            onSelectionChange={(k) => setCondition(String(k ?? "Good"))}
             data-testid="return-condition-select"
           />
         </div>
@@ -135,7 +135,7 @@ export function ReturnAssetModal({
         <TextField
           label={t("fields.handoverNote", "ملاحظات الفحص والاستلام")}
           value={handoverNote}
-          onChange={(e) => setHandoverNote(e.target.value)}
+          onChange={setHandoverNote}
           placeholder={t("fields.returnNotePlaceholder", "تم استلام الأصل والملحقات بحالة جيدة...")}
           data-testid="return-note-input"
         />

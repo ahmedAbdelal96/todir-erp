@@ -206,7 +206,7 @@ export function PhysicalCustodyTab({
             >
               <div style={{ fontWeight: 600, fontSize: "0.875rem", color: "#0f172a" }}>{loc.locationName}</div>
               <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.25rem" }}>
-                {loc.building ?? ""}{loc.floorNumber ? ` - طابق ${loc.floorNumber}` : ""}
+                {loc.code} ({loc.locationType})
               </div>
               <div style={{ fontSize: "0.75rem", color: "#1e3a8a", fontWeight: 500, marginTop: "0.5rem" }}>
                 {loc.assetCount ?? 0} {t("custody.assetsInLocation", "أصل مسجل بالموقع")}
@@ -254,7 +254,7 @@ export function PhysicalCustodyTab({
                   <td style={{ padding: "0.75rem 1rem" }}>
                     <span style={{ fontWeight: 600, color: "#1e3a8a" }}>{row.name}</span>
                   </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>{row.lineCount} أصل مستهدف</td>
+                  <td style={{ padding: "0.75rem 1rem" }}>{t("custody.targetAssetsCount", "{{count}} أصل مستهدف", { count: row.lineCount })}</td>
                   <td style={{ padding: "0.75rem 1rem" }}>
                     <span
                       style={{

@@ -90,7 +90,7 @@ export function MyAssetsTab({
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>
                     <div style={{ fontWeight: 600, color: "#0f172a" }}>{row.assetName}</div>
-                    {row.serialNumber && <div style={{ fontSize: "0.75rem", color: "#64748b" }}>S/N: {row.serialNumber}</div>}
+                    {row.serialNumber && <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.serialNumberShort", "ر.ت:")} {row.serialNumber}</div>}
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>{row.categoryName}</td>
                   <td style={{ padding: "0.75rem 1rem" }}>{row.locationName ?? "-"}</td>

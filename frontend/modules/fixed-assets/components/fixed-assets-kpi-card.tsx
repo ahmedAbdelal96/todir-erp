@@ -8,6 +8,7 @@ export interface FixedAssetsKpiCardProps {
   readonly tone?: "default" | "primary" | "success" | "warning" | "danger";
   readonly icon?: React.ReactNode;
   readonly onClick?: () => void;
+  readonly testId?: string;
 }
 
 export function FixedAssetsKpiCard({
@@ -16,7 +17,8 @@ export function FixedAssetsKpiCard({
   subtitle,
   tone = "default",
   icon,
-  onClick
+  onClick,
+  testId
 }: FixedAssetsKpiCardProps): React.JSX.Element {
   let borderColor = "var(--color-border-default, #cbd5e1)";
   let valueColor = "var(--color-content-primary, #0f172a)";
@@ -47,6 +49,7 @@ export function FixedAssetsKpiCard({
 
   return (
     <div
+      data-testid={testId}
       style={{
         flex: "1 1 200px",
         cursor: onClick ? "pointer" : "default"
