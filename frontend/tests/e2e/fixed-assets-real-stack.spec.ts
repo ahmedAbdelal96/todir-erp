@@ -1,7 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
 
 const ARTIFACTS_DIR = process.env.TEST_ARTIFACTS_DIR || path.resolve('artifacts/fixed-assets-acceptance/real-stack');
 const ATLAS_ENTITY_ID = 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
@@ -76,10 +75,19 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await expect(page.getByTestId('kpi-accumulated-depreciation')).toBeVisible();
     await expect(page.getByTestId('kpi-nbv')).toBeVisible();
 
-    // Verify seeded assets are visible in table
+    // Verify assets table is rendered with real records
     await expect(page.getByTestId('asset-register-table')).toBeVisible();
-    await expect(page.getByText('FA-SEED-LAPTOP')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('Finance Laptop')).toBeVisible();
+    // Search for seeded asset to test both table content and search filtering
+    const searchInput = page.getByPlaceholder(/البحث برقم الأصل/i);
+    await searchInput.fill('FA-SEED-CIP');
+    await page.waitForTimeout(600);
+
+    await expect(page.getByText('FA-SEED-CIP')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Warehouse Expansion')).toBeVisible();
+
+    // Clear search filter
+    await searchInput.clear();
+    await page.waitForTimeout(600);
 
     // 4. Test Page Help button opens help drawer
     const helpBtn = page.getByTestId('fixed-assets-help-btn');
@@ -139,8 +147,16 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await expect(modal).toBeHidden({ timeout: 15000 });
     await page.waitForTimeout(1000);
 
-    // Verify in table
+    // Verify in table via search filter to ensure deterministic pagination page 1 assertion
+    const searchInput = page.getByPlaceholder(/البحث برقم الأصل/i);
+    await searchInput.fill(newAssetName);
+    await page.waitForTimeout(600);
+
     await expect(page.getByText(newAssetName)).toBeVisible({ timeout: 10000 });
+
+    // Clear search filter
+    await searchInput.clear();
+    await page.waitForTimeout(600);
 
     // Capture Real Screenshot 02
     await page.screenshot({
@@ -157,16 +173,20 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await page.getByTestId('tab-register').click();
     await page.waitForLoadState('domcontentloaded');
 
-    // Click on FA-SEED-LAPTOP row to open Detail Drawer
-    const laptopRow = page.getByText('FA-SEED-LAPTOP').first();
-    await expect(laptopRow).toBeVisible({ timeout: 10000 });
-    await laptopRow.click();
+    // Filter by searching 'FA-SEED' or find the first asset row in table to open Detail Drawer
+    const assetRow = page.locator('table tbody tr').first();
+    await expect(assetRow).toBeVisible({ timeout: 10000 });
+    const assetCodeCell = assetRow.locator('td').first();
+    const assetCode = (await assetCodeCell.textContent())?.trim() ?? '';
+    expect(assetCode).toContain('FA-');
+
+    // Click on the asset row to open Detail Drawer
+    await assetRow.click();
 
     // Verify Detail Drawer opens
     const drawer = page.getByTestId('asset-detail-drawer');
     await expect(drawer).toBeVisible({ timeout: 5000 });
-    await expect(drawer).toContainText('FA-SEED-LAPTOP');
-    await expect(drawer).toContainText('Finance Laptop');
+    await expect(drawer).toContainText(assetCode);
 
     // Verify drawer tabs: books, custody, timeline
     await expect(page.getByTestId('drawer-tab-books')).toBeVisible();
@@ -384,26 +404,46 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await page.waitForTimeout(300);
 
     // 2. Real depreciation prepare, post, and reversal lifecycle execution
-    try {
-      execSync('docker exec todir-postgres-1 psql -U postgres -d todir -c "delete from business_assets.asset_depreciation_run_line where run_id in (select id from business_assets.asset_depreciation_run where legal_entity_id=\'aad8a34b-344c-9e5b-8d58-57f182fc6528\' and period_start=\'2026-11-01\'); delete from business_assets.asset_depreciation_run where legal_entity_id=\'aad8a34b-344c-9e5b-8d58-57f182fc6528\' and period_start=\'2026-11-01\';"');
-    } catch {
-      // ignore if docker is not in current context
-    }
-
+    // Find books for Atlas legal entity
     const booksRes = await page.request.get(`/api/v1/fixed-assets/books?legalEntityId=${ATLAS_ENTITY_ID}`);
     expect(booksRes.status()).toBe(200);
     const books = await booksRes.json();
     expect(books.length).toBeGreaterThan(0);
     const primaryBookId = books[0].id;
 
+    // Dynamically query existing depreciation runs to find the next available monthly period (no destructive SQL)
+    const existingRunsRes = await page.request.get(`/api/v1/fixed-assets/depreciation-runs?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(existingRunsRes.status()).toBe(200);
+    const existingRuns = await existingRunsRes.json();
+    
+    // Determine the next calendar month to run
+    let targetYear = 2026;
+    let targetMonth = 12; // Start after 2026-11
+    if (Array.isArray(existingRuns) && existingRuns.length > 0) {
+      for (const r of existingRuns) {
+        if (r.periodStart) {
+          const [y, m] = r.periodStart.split('-').map(Number);
+          if (y > targetYear || (y === targetYear && m >= targetMonth)) {
+            targetYear = m === 12 ? y + 1 : y;
+            targetMonth = m === 12 ? 1 : m + 1;
+          }
+        }
+      }
+    }
+
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const periodStart = `${targetYear}-${pad(targetMonth)}-01`;
+    const lastDay = new Date(targetYear, targetMonth, 0).getDate();
+    const periodEnd = `${targetYear}-${pad(targetMonth)}-${pad(lastDay)}`;
+
     const csrfToken = await getCsrfToken(page);
-    const runKey = `e2e-run-${Date.now()}`;
+    const runKey = `e2e-run-${targetYear}${pad(targetMonth)}-${Date.now()}`;
     const prepRes = await page.request.post('/api/v1/fixed-assets/depreciation-runs/prepare', {
       data: {
         legalEntityId: ATLAS_ENTITY_ID,
         bookId: primaryBookId,
-        periodStart: '2026-11-01',
-        periodEnd: '2026-11-30',
+        periodStart,
+        periodEnd,
         idempotencyKey: runKey
       },
       headers: { 'X-CSRF-TOKEN': csrfToken }
@@ -424,7 +464,7 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     // Reverse depreciation run
     const revRes = await page.request.post(`/api/v1/fixed-assets/depreciation-runs/${run.id}/reverse?legalEntityId=${ATLAS_ENTITY_ID}`, {
       data: {
-        reversalDate: '2026-11-30',
+        reversalDate: periodEnd,
         reason: 'Automated E2E real-stack reversal verification',
         idempotencyKey: `rev-${runKey}`
       },
@@ -474,7 +514,12 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     expect(accCreateRes.status()).toBe(403);
     await accContext.close();
 
-    // 1c. Legal Entity Isolation: Admin requesting unauthorized / non-existent legal entity fails closed (401/403)
+    // 1c. Legal Entity Isolation: Admin requesting unauthorized / foreign legal entity fails closed (401/403)
+    // Querying an existing legal entity belonging to another tenant (Delta HQ / 01a1265b-1d4b-7804-9031-8e17852004e4) or non-existent entity
+    const foreignEntityRes = await page.request.get('/api/v1/fixed-assets/reports/register?legalEntityId=01a1265b-1d4b-7804-9031-8e17852004e4');
+    expect([401, 403]).toContain(foreignEntityRes.status());
+    expect(foreignEntityRes.status()).toBe(403);
+
     const invalidEntityRes = await page.request.get('/api/v1/fixed-assets/reports/register?legalEntityId=00000000-0000-0000-0000-000000000999');
     expect([401, 403]).toContain(invalidEntityRes.status());
 
@@ -513,6 +558,15 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     expect(content).toContain('FA-ZZ-0001');
     expect(content).toContain('FA-ZZ-0200');
 
+    // 5. Test Multi-Batch Assembly via bounded batch size parameter (reproducible multi-batch paging proof)
+    const multiBatchRes = await page.request.get(`/api/v1/fixed-assets/reports/register/export?legalEntityId=${ATLAS_ENTITY_ID}&batchSize=5`);
+    expect(multiBatchRes.status()).toBe(200);
+    const multiBatchCsv = await multiBatchRes.text();
+    expect(multiBatchCsv).toContain('AssetNumber,Name,State,Nature,Quantity,BookCode');
+    expect(multiBatchCsv).toContain('FA-SEED-LAPTOP');
+    const multiBatchLines = multiBatchCsv.trim().split('\n');
+    expect(multiBatchLines.length).toBe(lines.length); // Must match full export count perfectly across 5-item batch iterations
+
     // Capture Real Screenshot 07
     await page.screenshot({
       path: path.join(ARTIFACTS_DIR, '07-real-gl-reconciliation-and-export.png'),
@@ -542,19 +596,12 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await loginAsAdmin(page);
 
     // Switch to English LTR using shell topbar toggle
-    const langBtn = page.getByRole('button', { name: /Switch to English|English|التبديل إلى الإنجليزية/i }).first();
-    if (await langBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await langBtn.click();
-      await page.waitForTimeout(1000);
-    } else {
-      await page.evaluate(() => {
-        document.documentElement.setAttribute('dir', 'ltr');
-        document.documentElement.setAttribute('lang', 'en');
-      });
-      await page.waitForTimeout(600);
-    }
+    const langBtn = page.locator('button.topbar-lang-btn').first();
+    await expect(langBtn).toBeVisible({ timeout: 5000 });
+    await langBtn.click();
+    await page.waitForTimeout(1000);
 
-    // Verify LTR direction
+    // Verify LTR direction in real DOM
     const dir = await page.locator('html').getAttribute('dir');
     expect(dir).toBe('ltr');
 
@@ -564,17 +611,15 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
       fullPage: true
     });
 
-    // Switch back to Arabic
-    const arBtn = page.getByRole('button', { name: /Switch to Arabic|العربية|التبديل إلى العربية/i }).first();
-    if (await arBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await arBtn.click();
-      await page.waitForTimeout(1000);
-    } else {
-      await page.evaluate(() => {
-        document.documentElement.setAttribute('dir', 'rtl');
-        document.documentElement.setAttribute('lang', 'ar');
-      });
-    }
+    // Switch back to Arabic using shell topbar toggle
+    const arBtn = page.locator('button.topbar-lang-btn').first();
+    await expect(arBtn).toBeVisible({ timeout: 5000 });
+    await arBtn.click();
+    await page.waitForTimeout(1000);
+
+    // Verify RTL direction restored
+    const dirRtl = await page.locator('html').getAttribute('dir');
+    expect(dirRtl).toBe('rtl');
   });
 
   test('10 — Responsive Viewport: 390px Mobile Breakthrough', async ({ page }) => {

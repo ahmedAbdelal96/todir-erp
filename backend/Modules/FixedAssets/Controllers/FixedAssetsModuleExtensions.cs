@@ -40,18 +40,18 @@ public static class FixedAssetsModuleExtensions
         group.MapPost("/verification/campaigns/{campaignId:guid}/close", async (Guid campaignId, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ResourceEntityAccessAsync(http, service, subjects, authorizer, "assets.verification.manage", "campaign", campaignId, ct), access => service.CloseVerificationCampaignAsync(access.Tenant, access.ActorId, campaignId, ct)));
         group.MapGet("/assets", async (Guid? legalEntityId, string? state, string? search, string? nature, Guid? locationId, int? limit, int? offset, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ListAccessAsync(http, service, subjects, authorizer, "assets.read", legalEntityId, ct), access => service.ListAssetsAsync(access.Tenant, legalEntityId, state, search, nature, locationId, limit ?? 50, offset ?? 0, ct)));
         group.MapGet("/reports/register", async (Guid legalEntityId, DateOnly? asOfDate, Guid? bookId, string? state, string? search, int? limit, int? offset, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await EntityAccessAsync(http, service, subjects, authorizer, "assets.financial.read", legalEntityId, ct), async access => new { LegalEntityId = legalEntityId, AsOfDate = asOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow), Items = await service.ListAssetRegisterAsync(access.Tenant, legalEntityId, asOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow), bookId, state, search, Math.Clamp(limit ?? 100, 1, 200), Math.Max(offset ?? 0, 0), ct) }));
-        group.MapGet("/reports/register/export", async (Guid legalEntityId, DateOnly? asOfDate, Guid? bookId, string? state, string? search, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        group.MapGet("/reports/register/export", async (Guid legalEntityId, DateOnly? asOfDate, Guid? bookId, string? state, string? search, int? batchSize, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
             var check = await EntityAccessAsync(http, service, subjects, authorizer, "assets.export", legalEntityId, ct);
             if (check.Outcome == AccessOutcome.Unauthorized) return Results.Unauthorized();
             if (check.Outcome == AccessOutcome.Forbidden) return Results.Forbid();
             var access = check.Access!;
             var asOf = asOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            const int batchSize = 200;
+            var effectiveBatchSize = Math.Clamp(batchSize ?? 200, 5, 500);
             var csv = new StringBuilder("AssetNumber,Name,State,Nature,Quantity,BookCode,GrossCost,AccumulatedDepreciation,AccumulatedImpairment,Revaluation,NetBookValue,Custodian\n");
-            for (var offset = 0; ; offset += batchSize)
+            for (var offset = 0; ; offset += effectiveBatchSize)
             {
-                var rows = await service.ListAssetRegisterAsync(access.Tenant, legalEntityId, asOf, bookId, state, search, batchSize, offset, ct);
+                var rows = await service.ListAssetRegisterAsync(access.Tenant, legalEntityId, asOf, bookId, state, search, effectiveBatchSize, offset, ct);
                 foreach (var row in rows)
                 {
                     csv.AppendLine(string.Join(",", new object?[] {
@@ -69,7 +69,7 @@ public static class FixedAssetsModuleExtensions
                         row.CustodianName ?? string.Empty
                     }.Select(EscapeCsv)));
                 }
-                if (rows.Count < batchSize) break;
+                if (rows.Count < effectiveBatchSize) break;
             }
             return Results.File(Encoding.UTF8.GetBytes(csv.ToString()), "text/csv; charset=utf-8", "fixed-asset-register.csv");
         });
