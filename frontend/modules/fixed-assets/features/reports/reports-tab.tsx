@@ -39,10 +39,13 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
   // Currency from authoritative reconciliation context or default empty
   const currency = recon?.currencyCode ?? "";
 
-  // Authoritative totals from reconciliation or page sum
-  const displayTotalCost = recon ? recon.subledgerAssetCost : reportItems.reduce((acc, curr) => acc + curr.grossCost, 0);
-  const displayTotalAccDep = recon ? recon.subledgerAccDep : reportItems.reduce((acc, curr) => acc + curr.accumulatedDepreciation, 0);
-  const displayTotalNbv = recon ? recon.subledgerAssetCost - recon.subledgerAccDep : reportItems.reduce((acc, curr) => acc + curr.netBookValue, 0);
+  // Authoritative totals from reconciliation or report items
+  const displayTotalCost = recon ? (recon.subledgerAssetCost ?? 0) : reportItems.reduce((acc, curr) => acc + curr.grossCost, 0);
+  const displayTotalAccDep = recon ? (recon.subledgerAccDep ?? 0) : reportItems.reduce((acc, curr) => acc + curr.accumulatedDepreciation, 0);
+  // Authoritative NBV accounts for impairment and revaluation effects
+  const displayTotalNbv = recon
+    ? (recon.assetNetBookValue ?? (displayTotalCost - displayTotalAccDep))
+    : reportItems.reduce((acc, curr) => acc + curr.netBookValue, 0);
 
   // Authoritative Backend CSV Export
   const handleExportCsv = async () => {
@@ -239,7 +242,7 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
                 }}
                 data-testid="recon-difference-explanation"
               >
-                {t("reports.differenceReasonNotice", "ملاحظة تدقيق: يرجع هذا التباين لوجود أصول مسجلة في الدفتر الفرعي بدون قيود أرصدة افتتاحية مرحلة لحسابات الأستاذ العام الرقابية (150000 / 159000).")}
+                {t("reports.differenceReasonNotice", "ملاحظة تدقيق مالي: يوجد تباين بين رصيد دفتر الأصول الثابتة الفرعي وحسابات الأستاذ العام الرقابية. يرجى مراجعة الحركات المالية غير المرحلة أو التسويات المعلقة عبر شاشات التدقيق والتفاصيل.")}
               </div>
             )}
           </div>

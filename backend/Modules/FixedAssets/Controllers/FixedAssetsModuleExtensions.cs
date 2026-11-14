@@ -44,10 +44,32 @@ public static class FixedAssetsModuleExtensions
         {
             var access = await EntityAccessAsync(http, subjects, authorizer, "assets.export", legalEntityId, ct);
             if (access is null) return Results.Unauthorized();
-            var rows = await service.ListAssetRegisterAsync(access.Tenant, legalEntityId, asOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow), bookId, state, search, 200, 0, ct);
+            var asOf = asOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            const int batchSize = 200;
             var csv = new StringBuilder("AssetNumber,Name,State,Nature,Quantity,BookCode,GrossCost,AccumulatedDepreciation,AccumulatedImpairment,Revaluation,NetBookValue,Custodian\n");
-            foreach (var row in rows) csv.AppendLine(string.Join(",", new object?[] { row.AssetNumber, row.Name, row.LifecycleState, row.AssetNature, row.Quantity.ToString(CultureInfo.InvariantCulture), row.BookCode ?? string.Empty, row.GrossCost.ToString(CultureInfo.InvariantCulture), row.AccumulatedDepreciation.ToString(CultureInfo.InvariantCulture), row.AccumulatedImpairment.ToString(CultureInfo.InvariantCulture), row.RevaluationEffects.ToString(CultureInfo.InvariantCulture), row.NetBookValue.ToString(CultureInfo.InvariantCulture), row.CustodianName ?? string.Empty }.Select(EscapeCsv)));
-            return Results.File(Encoding.UTF8.GetBytes(csv.ToString()), "text/csv", "fixed-asset-register.csv");
+            for (var offset = 0; ; offset += batchSize)
+            {
+                var rows = await service.ListAssetRegisterAsync(access.Tenant, legalEntityId, asOf, bookId, state, search, batchSize, offset, ct);
+                foreach (var row in rows)
+                {
+                    csv.AppendLine(string.Join(",", new object?[] {
+                        row.AssetNumber,
+                        row.Name,
+                        row.LifecycleState,
+                        row.AssetNature,
+                        row.Quantity.ToString(CultureInfo.InvariantCulture),
+                        row.BookCode ?? string.Empty,
+                        row.GrossCost.ToString(CultureInfo.InvariantCulture),
+                        row.AccumulatedDepreciation.ToString(CultureInfo.InvariantCulture),
+                        row.AccumulatedImpairment.ToString(CultureInfo.InvariantCulture),
+                        row.RevaluationEffects.ToString(CultureInfo.InvariantCulture),
+                        row.NetBookValue.ToString(CultureInfo.InvariantCulture),
+                        row.CustodianName ?? string.Empty
+                    }.Select(EscapeCsv)));
+                }
+                if (rows.Count < batchSize) break;
+            }
+            return Results.File(Encoding.UTF8.GetBytes(csv.ToString()), "text/csv; charset=utf-8", "fixed-asset-register.csv");
         });
         group.MapGet("/country-policy/book-defaults", async (Guid legalEntityId, string bookCode, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await EntityAccessAsync(http, subjects, authorizer, "assets.financial.read", legalEntityId, ct), access => service.GetCountryBookDefaultsAsync(access.Tenant, legalEntityId, bookCode, ct)));
         group.MapPost("/mass-transfers/preview", async (MassTransferRequest request, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await EntityAccessAsync(http, subjects, authorizer, "assets.assign", request.LegalEntityId, ct), access => service.PreviewMassTransferAsync(access.Tenant, request, ct)));
@@ -118,7 +140,7 @@ public static class FixedAssetsModuleExtensions
     {
         if (!TryIdentity(http, out var tenantId, out var membershipId, out var actorId)) return null;
         var tenant = new TenantId(tenantId); var subject = await subjects.LoadAsync(tenant, membershipId, ct);
-        return subject is not null && (subject.Roles.Any(r => r.Code is "administrator" or "admin") || authorizer.Authorize(subject, permission, PermissionScope.ForTenant(tenant))) ? new(tenant, actorId, membershipId) : null;
+        return subject is not null && authorizer.Authorize(subject, permission, PermissionScope.ForTenant(tenant)) ? new(tenant, actorId, membershipId) : null;
     }
 
     private static Task<Access?> ListAccessAsync(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid? legalEntityId, CancellationToken ct) =>
@@ -133,14 +155,14 @@ public static class FixedAssetsModuleExtensions
         var legalEntityId = await service.ResolveLegalEntityAsync(tenant, resourceType, resourceId, ct);
         if (legalEntityId is null) return null;
         var subject = await subjects.LoadAsync(tenant, membershipId, ct);
-        return subject is not null && (subject.Roles.Any(r => r.Code is "administrator" or "admin") || authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(legalEntityId.Value)))) ? new(tenant, actorId, membershipId) : null;
+        return subject is not null && authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(legalEntityId.Value))) ? new(tenant, actorId, membershipId) : null;
     }
 
     private static async Task<Access?> EntityAccessAsync(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid entityId, CancellationToken ct)
     {
         if (!TryIdentity(http, out var tenantId, out var membershipId, out var actorId)) return null;
         var tenant = new TenantId(tenantId); var subject = await subjects.LoadAsync(tenant, membershipId, ct);
-        return subject is not null && (subject.Roles.Any(r => r.Code is "administrator" or "admin") || authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(entityId)))) ? new(tenant, actorId, membershipId) : null;
+        return subject is not null && authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(entityId))) ? new(tenant, actorId, membershipId) : null;
     }
 
     private static bool TryIdentity(HttpContext http, out Guid tenantId, out Guid membershipId, out Guid actorId)

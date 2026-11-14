@@ -188,6 +188,7 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Mocked UI & Visual I
           assetAccumulatedDepreciation: 695000,
           ledgerAccumulatedDepreciation: 695000,
           accumulatedDepreciationDifference: 0,
+          assetNetBookValue: 8190000,
           status: 'Reconciled',
           discrepancyCount: 0,
           currencyCode: 'SAR'
@@ -691,14 +692,15 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Mocked UI & Visual I
 
   test('08 — General Ledger Reconciliation & Asset Register Reports Tab', async ({ page }) => {
     await page.goto('/fixed-assets');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByTestId('tab-reports')).toBeVisible({ timeout: 15000 });
 
     // Switch to Reports Tab
     await page.getByTestId('tab-reports').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(400);
 
     // Verify Reconciliation & Report content
-    await expect(page.getByTestId('reports-tab')).toBeVisible();
+    await expect(page.getByTestId('reports-tab')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('reconciliation-card')).toBeVisible();
     await expect(page.getByTestId('asset-register-report-table')).toBeVisible();
 

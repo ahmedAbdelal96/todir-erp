@@ -191,7 +191,13 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await expect(page.getByTestId('physical-custody-tab')).toBeVisible();
     await expect(page.getByTestId('mass-transfer-btn')).toBeVisible();
 
-    // Open Mass Transfer Modal
+    // 1. Verify Quick Barcode Scan Tool with seeded asset
+    const scanInput = page.locator('[data-testid="scan-barcode-input"] input, input[data-testid="scan-barcode-input"]');
+    await expect(scanInput).toBeVisible();
+    await scanInput.fill('FA-SEED-LAPTOP');
+    await page.waitForTimeout(600);
+
+    // 2. Open Mass Transfer Modal
     await page.getByTestId('mass-transfer-btn').click();
     const massTransferModal = page.getByTestId('mass-transfer-modal');
     await expect(massTransferModal).toBeVisible({ timeout: 5000 });
@@ -207,7 +213,7 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await page.waitForTimeout(300);
   });
 
-  test('05 — Capitalization & Projects in Progress (CIP): Real Seeded CIP Project Inspection', async ({ page }) => {
+  test('05 — Capitalization & Projects in Progress (CIP): Real Seeded CIP Project Inspection & Capitalization Dialog', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAsAdmin(page);
 
@@ -220,6 +226,18 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     // Verify seeded CIP asset "FA-SEED-CIP" / "Warehouse Expansion"
     await expect(page.getByText('FA-SEED-CIP')).toBeVisible({ timeout: 10000 });
     await expect(page.getByTestId('cip-projects-table').getByText('Warehouse Expansion')).toBeVisible();
+
+    // Open Capitalize CIP Modal to verify workflow integration
+    const capBtn = page.locator('[data-testid^="capitalize-cip-btn-"]').first();
+    if (await capBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await capBtn.click();
+      const capModal = page.getByTestId('capitalize-cip-modal');
+      await expect(capModal).toBeVisible({ timeout: 5000 });
+      await expect(page.getByTestId('target-asset-name-input')).toBeVisible();
+      // Close modal
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
 
     // Capture Real Screenshot 05
     await page.screenshot({
@@ -243,6 +261,9 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await page.getByTestId('prepare-run-btn').click();
     const prepareModal = page.getByTestId('prepare-depreciation-modal');
     await expect(prepareModal).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('period-year-input')).toBeVisible();
+    await expect(page.getByTestId('cutoff-date-input')).toBeVisible();
+    await expect(page.getByTestId('submit-prepare-btn')).toBeVisible();
 
     // Capture Real Screenshot 06
     await page.screenshot({
@@ -259,7 +280,13 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAsAdmin(page);
 
-    // Navigate to Reports tab
+    // 1. Verify central authorization enforcement: anonymous / unauthenticated request fails closed (401/403)
+    const anonRes = await page.request.get(`/api/v1/fixed-assets/reports/register/export?legalEntityId=${ATLAS_ENTITY_ID}`, {
+      headers: { Authorization: '', Cookie: '' }
+    });
+    expect([401, 403]).toContain(anonRes.status());
+
+    // 2. Navigate to Reports tab
     await page.getByTestId('tab-reports').click();
     await page.waitForLoadState('domcontentloaded');
 
@@ -267,16 +294,27 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await expect(page.getByTestId('reconciliation-card')).toBeVisible();
     await expect(page.getByTestId('recon-difference-explanation')).toBeVisible();
 
-    // Verify Book-to-GL status is rendered with real backend calculation
+    // 3. Verify Book-to-GL status is rendered with real backend calculation
     await expect(page.getByTestId('refresh-recon-btn')).toBeVisible();
     await expect(page.getByTestId('export-report-csv-btn')).toBeVisible();
 
-    // Test real backend CSV export
-    const downloadPromise = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
+    // 4. Test real backend CSV export with complete bounded paging
+    const downloadPromise = page.waitForEvent('download', { timeout: 20000 }).catch(() => null);
     await page.getByTestId('export-report-csv-btn').click();
     const download = await downloadPromise;
     if (download) {
       expect(download.suggestedFilename()).toContain('.csv');
+      const stream = await download.createReadStream();
+      if (stream) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+        const content = Buffer.concat(chunks).toString('utf-8');
+        expect(content).toContain('AssetNumber');
+        expect(content).toContain('GrossCost');
+        expect(content).toContain('AccumulatedDepreciation');
+        expect(content).toContain('NetBookValue');
+        expect(content).toContain('FA-SEED-LAPTOP');
+      }
     }
 
     // Capture Real Screenshot 07

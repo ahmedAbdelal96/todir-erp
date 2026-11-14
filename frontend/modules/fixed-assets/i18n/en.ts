@@ -340,7 +340,7 @@ export const en = {
     "totalAccumulatedDepreciation": "Total Accumulated Depreciation",
     "totalNetBookValue": "Total Net Book Value",
     "noAssetsInReport": "No assets found for the specified date",
-    "differenceReasonNotice": "Audit Note: Variance is due to subledger assets that have unposted opening balance entries in the General Ledger control account."
+    "differenceReasonNotice": "Financial Audit Note: A variance exists between the fixed assets subledger balance and the general ledger control accounts. Please inspect unposted transactions or pending reconciliations via source drilldown."
   },
   "myAssets": {
     "title": "My Assigned Equipment & Custody",
