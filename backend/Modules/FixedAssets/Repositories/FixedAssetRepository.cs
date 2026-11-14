@@ -104,17 +104,55 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         }, ct);
     }
 
-    public async Task<IReadOnlyList<AssetView>> ListAssetsAsync(TenantId tenant, Guid? legalEntityId, string? lifecycleState, string? search, int limit, int offset, CancellationToken ct)
+    public async Task<PagedAssetsView> ListAssetsAsync(TenantId tenant, Guid? legalEntityId, string? lifecycleState, string? search, string? nature, Guid? locationId, int limit, int offset, CancellationToken ct)
     {
         limit = Math.Clamp(limit, 1, 200); offset = Math.Max(offset, 0);
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await SetTenantAsync(connection, tenant, ct);
-        var command = new NpgsqlCommand("""
-            select id,legal_entity_id,category_id,asset_number,name,description,asset_tag,lifecycle_state,asset_nature,tracking_granularity,product_variant_ref,inventory_serial_ref,acquisition_date,capitalization_date,placed_in_service_date,quantity,created_at,row_version
-            from business_assets.fixed_asset where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) and ($3::text is null or lifecycle_state=$3) and ($4::text is null or asset_number ilike '%'||$4||'%' or name ilike '%'||$4||'%' or coalesce(asset_tag,'') ilike '%'||$4||'%') order by asset_number,id limit $5 offset $6
+
+        const string whereClause = """
+            from business_assets.fixed_asset a
+            where a.tenant_id = $1
+              and ($2::uuid is null or a.legal_entity_id = $2)
+              and ($3::text is null or a.lifecycle_state = $3)
+              and ($4::text is null or a.asset_number ilike '%' || $4 || '%' or a.name ilike '%' || $4 || '%' or coalesce(a.asset_tag, '') ilike '%' || $4 || '%')
+              and ($5::text is null or a.asset_nature = $5)
+              and ($6::uuid is null or exists(select 1 from business_assets.asset_assignment aa where aa.tenant_id = a.tenant_id and aa.asset_id = a.id and aa.location_id = $6 and aa.effective_from <= current_date and (aa.effective_to is null or aa.effective_to >= current_date)))
+            """;
+
+        await using var countCommand = new NpgsqlCommand($"select count(*) {whereClause}", connection);
+        countCommand.Parameters.AddWithValue(tenant.Value);
+        countCommand.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value);
+        countCommand.Parameters.AddWithValue((object?)lifecycleState ?? DBNull.Value);
+        countCommand.Parameters.AddWithValue((object?)search?.Trim() ?? DBNull.Value);
+        countCommand.Parameters.AddWithValue((object?)nature?.Trim() ?? DBNull.Value);
+        countCommand.Parameters.AddWithValue((object?)locationId ?? DBNull.Value);
+        var totalCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+
+        await using var command = new NpgsqlCommand($"""
+            select a.id,a.legal_entity_id,a.category_id,a.asset_number,a.name,a.description,a.asset_tag,a.lifecycle_state,a.asset_nature,a.tracking_granularity,a.product_variant_ref,a.inventory_serial_ref,a.acquisition_date,a.capitalization_date,a.placed_in_service_date,a.quantity,a.created_at,a.row_version
+            {whereClause}
+            order by a.asset_number, a.id
+            limit $7 offset $8
             """, connection);
-        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value); command.Parameters.AddWithValue((object?)lifecycleState ?? DBNull.Value); command.Parameters.AddWithValue((object?)search?.Trim() ?? DBNull.Value); command.Parameters.AddWithValue(limit); command.Parameters.AddWithValue(offset);
-        return await ReadAsync(command, reader => new AssetView(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetFieldValue<DateOnly>(12), reader.IsDBNull(13) ? null : reader.GetFieldValue<DateOnly>(13), reader.IsDBNull(14) ? null : reader.GetFieldValue<DateOnly>(14), reader.GetDecimal(15), reader.GetFieldValue<DateTimeOffset>(16), reader.GetInt64(17)), ct);
+        command.Parameters.AddWithValue(tenant.Value);
+        command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)lifecycleState ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)search?.Trim() ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)nature?.Trim() ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)locationId ?? DBNull.Value);
+        command.Parameters.AddWithValue(limit);
+        command.Parameters.AddWithValue(offset);
+
+        var items = await ReadAsync(command, reader => new AssetView(
+            reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3), reader.GetString(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6),
+            reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10),
+            reader.IsDBNull(11) ? null : reader.GetString(11), reader.IsDBNull(12) ? null : reader.GetFieldValue<DateOnly>(12),
+            reader.IsDBNull(13) ? null : reader.GetFieldValue<DateOnly>(13), reader.IsDBNull(14) ? null : reader.GetFieldValue<DateOnly>(14),
+            reader.GetDecimal(15), reader.GetFieldValue<DateTimeOffset>(16), reader.GetInt64(17)), ct);
+
+        return new PagedAssetsView(items, totalCount, limit, offset);
     }
 
     public Task<FixedAssetPolicyDefaults?> GetCountryBookDefaultsAsync(TenantId tenant, Guid legalEntityId, string bookCode, CancellationToken ct) => countryPolicy is null

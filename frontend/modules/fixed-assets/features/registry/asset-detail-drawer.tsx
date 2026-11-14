@@ -119,10 +119,15 @@ export function AssetDetailDrawer({
             <div style={{ textAlign: "end", display: "flex", flexDirection: "column", justifyContent: "center" }}>
               <div style={{ fontSize: "0.8125rem", color: "#64748b" }}>{t("fields.netBookValue", "صافي القيمة الدفترية")}</div>
               <div style={{ fontSize: "1.375rem", fontWeight: 700, color: "#1e3a8a" }}>
-                {(asset.netBookValue ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {asset.currency}
+                {asset.netBookValue !== undefined && asset.netBookValue !== null
+                  ? `${asset.netBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ${asset.currency ?? ""}`
+                  : "—"}
               </div>
               <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.15rem" }}>
-                {t("fields.acquisitionCost", "التكلفة التاريخية")}: {(asset.acquisitionCost ?? 0).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {asset.currency}
+                {t("fields.acquisitionCost", "التكلفة التاريخية")}:{" "}
+                {asset.acquisitionCost !== undefined && asset.acquisitionCost !== null
+                  ? `${asset.acquisitionCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ${asset.currency ?? ""}`
+                  : "—"}
               </div>
             </div>
           </div>
@@ -248,30 +253,44 @@ export function AssetDetailDrawer({
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem" }}>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.depreciationMethod", "طريقة الإهلاك")}</div>
-                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>{asset.depreciationMethod}</div>
+                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>{asset.depreciationMethod ?? "—"}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.usefulLifeMonths", "العمر الإنتاجي")}</div>
-                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>{asset.usefulLifeMonths} {t("common.months", "شهر")}</div>
+                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>
+                        {asset.usefulLifeMonths ? `${asset.usefulLifeMonths} ${t("common.months", "شهر")}` : "—"}
+                      </div>
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.salvageValue", "قيمة الخردة")}</div>
-                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>{(asset.salvageValue ?? 0).toLocaleString("ar-EG")} {asset.currency}</div>
+                      <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>
+                        {asset.salvageValue !== undefined && asset.salvageValue !== null
+                          ? `${asset.salvageValue.toLocaleString("ar-EG")} ${asset.currency ?? ""}`
+                          : "—"}
+                      </div>
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.accumulatedDepreciation", "مجمع الإهلاك")}</div>
-                      <div style={{ fontWeight: 600, color: "#dc2626", marginTop: "0.25rem" }}>{(asset.accumulatedDepreciation ?? 0).toLocaleString("ar-EG")} {asset.currency}</div>
+                      <div style={{ fontWeight: 600, color: "#dc2626", marginTop: "0.25rem" }}>
+                        {asset.accumulatedDepreciation !== undefined && asset.accumulatedDepreciation !== null
+                          ? `${asset.accumulatedDepreciation.toLocaleString("ar-EG")} ${asset.currency ?? ""}`
+                          : "—"}
+                      </div>
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.netBookValue", "صافي القيمة الدفترية")}</div>
-                      <div style={{ fontWeight: 600, color: "#16a34a", marginTop: "0.25rem" }}>{(asset.netBookValue ?? 0).toLocaleString("ar-EG")} {asset.currency}</div>
+                      <div style={{ fontWeight: 600, color: "#16a34a", marginTop: "0.25rem" }}>
+                        {asset.netBookValue !== undefined && asset.netBookValue !== null
+                          ? `${asset.netBookValue.toLocaleString("ar-EG")} ${asset.currency ?? ""}`
+                          : "—"}
+                      </div>
                     </div>
                     <div>
                       <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.monthlyDepreciation", "القسط الشهري التقديري")}</div>
                       <div style={{ fontWeight: 600, color: "#1e293b", marginTop: "0.25rem" }}>
-                        {(asset.usefulLifeMonths ?? 0) > 0
-                          ? (((asset.acquisitionCost ?? 0) - (asset.salvageValue ?? 0)) / (asset.usefulLifeMonths ?? 1)).toLocaleString("ar-EG", { minimumFractionDigits: 2 })
-                          : "0.00"} {asset.currency}
+                        {asset.usefulLifeMonths && asset.usefulLifeMonths > 0 && asset.acquisitionCost !== undefined && asset.acquisitionCost !== null
+                          ? `${(((asset.acquisitionCost) - (asset.salvageValue ?? 0)) / asset.usefulLifeMonths).toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ${asset.currency ?? ""}`
+                          : "—"}
                       </div>
                     </div>
                   </div>

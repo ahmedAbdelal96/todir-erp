@@ -2,6 +2,7 @@ import { httpClient } from "../../../core/api/http-client.ts";
 import type {
   AssetCategoryView,
   AssetView,
+  PagedAssetsView,
   AssetAssignmentView,
   FixedAssetCustodyItemView,
   AssetLocationView,
@@ -93,20 +94,33 @@ export const fixedAssetsApi = {
     }),
 
   // Assets Register
-  listAssets: (params: {
+  listAssets: async (params: {
     legalEntityId?: string | undefined;
     state?: string | undefined;
+    nature?: string | undefined;
+    locationId?: string | undefined;
     search?: string | undefined;
     limit?: number | undefined;
     offset?: number | undefined;
-  }): Promise<readonly AssetView[]> => {
+  }): Promise<PagedAssetsView> => {
     const q = new URLSearchParams();
     if (params.legalEntityId) q.set("legalEntityId", params.legalEntityId);
     if (params.state) q.set("state", params.state);
+    if (params.nature) q.set("nature", params.nature);
+    if (params.locationId) q.set("locationId", params.locationId);
     if (params.search) q.set("search", params.search);
     if (params.limit !== undefined) q.set("limit", String(params.limit));
     if (params.offset !== undefined) q.set("offset", String(params.offset));
-    return httpClient<readonly AssetView[]>(`${BASE}/assets?${q.toString()}`);
+    const res = await httpClient<PagedAssetsView | readonly AssetView[]>(`${BASE}/assets?${q.toString()}`);
+    if (Array.isArray(res)) {
+      return {
+        items: res,
+        totalCount: res.length,
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
+        ...(params.offset !== undefined ? { offset: params.offset } : {})
+      };
+    }
+    return res as PagedAssetsView;
   },
 
   createAsset: (request: CreateAssetRequest): Promise<AssetView> =>

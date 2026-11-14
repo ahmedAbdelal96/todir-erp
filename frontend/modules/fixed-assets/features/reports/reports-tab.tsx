@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Table } from "../../../../components/primitives/table.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { useIsMobile } from "../../hooks/use-is-mobile.ts";
 import {
   useBookGlReconciliationQuery,
   useAssetRegisterReportQuery
@@ -20,9 +21,11 @@ export interface ReportsTabProps {
 
 export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
+  const isMobile = useIsMobile(768);
 
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const reconQuery = useBookGlReconciliationQuery(legalEntityId);
   const reportQuery = useAssetRegisterReportQuery({
@@ -33,22 +36,19 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
   const recon = reconQuery.data;
   const reportItems = reportQuery.data?.items ?? [];
 
-  // Calculate totals
-  const totalCost = useMemo(() => {
-    return reportItems.reduce((acc, curr) => acc + curr.grossCost, 0);
-  }, [reportItems]);
+  // Currency from authoritative reconciliation context or default empty
+  const currency = recon?.currencyCode ?? "";
 
-  const totalAccDep = useMemo(() => {
-    return reportItems.reduce((acc, curr) => acc + curr.accumulatedDepreciation, 0);
-  }, [reportItems]);
+  // Authoritative totals from reconciliation or page sum
+  const displayTotalCost = recon ? recon.subledgerAssetCost : reportItems.reduce((acc, curr) => acc + curr.grossCost, 0);
+  const displayTotalAccDep = recon ? recon.subledgerAccDep : reportItems.reduce((acc, curr) => acc + curr.accumulatedDepreciation, 0);
+  const displayTotalNbv = recon ? recon.subledgerAssetCost - recon.subledgerAccDep : reportItems.reduce((acc, curr) => acc + curr.netBookValue, 0);
 
-  const totalNbv = useMemo(() => {
-    return reportItems.reduce((acc, curr) => acc + curr.netBookValue, 0);
-  }, [reportItems]);
-
+  // Authoritative Backend CSV Export
   const handleExportCsv = async () => {
     try {
       setExporting(true);
+      setExportError(null);
       const blob = await fixedAssetsApi.exportAssetRegister(legalEntityId, asOfDate);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -58,35 +58,8 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-    } catch {
-      if (reportItems.length === 0) return;
-      const headers = [
-        "Asset Code",
-        "Asset Name",
-        "Category",
-        "Status",
-        "Historical Cost",
-        "Accumulated Depreciation",
-        "Net Book Value",
-        "Custodian"
-      ];
-      const rows = reportItems.map((a) => [
-        `"${a.assetNumber}"`,
-        `"${a.name}"`,
-        `"${a.assetNature}"`,
-        `"${a.lifecycleState}"`,
-        a.grossCost,
-        a.accumulatedDepreciation,
-        a.netBookValue,
-        `"${a.custodianName ?? ""}"`
-      ]);
-      const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-      const link = document.createElement("a");
-      link.setAttribute("href", encodeURI(csvContent));
-      link.setAttribute("download", `Asset_Register_AsOf_${asOfDate}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    } catch (err: unknown) {
+      setExportError(err instanceof Error ? err.message : t("reports.exportFailed", "فشل تصدير التقرير"));
     } finally {
       setExporting(false);
     }
@@ -94,6 +67,22 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }} data-testid="reports-tab">
+      {exportError && (
+        <div
+          role="alert"
+          style={{
+            padding: "0.75rem 1rem",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #f87171",
+            borderRadius: "0.375rem",
+            color: "#991b1b",
+            fontSize: "0.875rem"
+          }}
+        >
+          {exportError}
+        </div>
+      )}
+
       {/* Book-to-GL Reconciliation Card */}
       <div
         style={{
@@ -104,7 +93,7 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
         }}
         data-testid="reconciliation-card"
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <CheckCircle2Icon size={22} color="#16a34a" />
             <div>
@@ -128,103 +117,131 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
             {t("common.loading", "جاري التحقق من المطابقة...")}
           </div>
         ) : recon ? (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem" }}>
-            <div
-              style={{
-                padding: "1rem",
-                backgroundColor: "#f8fafc",
-                border: "1px solid #cbd5e1",
-                borderRadius: "0.375rem"
-              }}
-            >
-              <div style={{ fontSize: "0.8125rem", color: "#64748b" }}>{t("reports.assetCostMatch", "تكلفة الأصول (ح/ 150000)")}</div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", fontSize: "0.875rem" }}>
-                <span>{t("reports.subledger", "دفتر الأصول")}:</span>
-                <strong style={{ color: "#0f172a" }}>{recon.subledgerAssetCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-                <span>{t("reports.generalLedger", "الأستاذ العام")}:</span>
-                <strong style={{ color: "#0f172a" }}>{recon.glAssetCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", borderTop: "1px solid #e2e8f0", paddingTop: "0.5rem", fontSize: "0.8125rem" }}>
-                <span>{t("reports.variance", "الفارق (Variance)")}:</span>
-                <strong style={{ color: recon.costVariance === 0 ? "#16a34a" : "#dc2626" }}>
-                  {recon.costVariance === 0 ? t("reports.fullyMatched", "0.00 (مطابق تماماً ✓)") : recon.costVariance.toLocaleString("ar-EG")}
-                </strong>
-              </div>
-            </div>
-
-            <div
-              style={{
-                padding: "1rem",
-                backgroundColor: "#f8fafc",
-                border: "1px solid #cbd5e1",
-                borderRadius: "0.375rem"
-              }}
-            >
-              <div style={{ fontSize: "0.8125rem", color: "#64748b" }}>{t("reports.accDepMatch", "مجمع الإهلاك (ح/ 159000)")}</div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", fontSize: "0.875rem" }}>
-                <span>{t("reports.subledger", "دفتر الأصول")}:</span>
-                <strong style={{ color: "#0f172a" }}>{recon.subledgerAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.25rem", fontSize: "0.875rem" }}>
-                <span>{t("reports.generalLedger", "الأستاذ العام")}:</span>
-                <strong style={{ color: "#0f172a" }}>{recon.glAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", borderTop: "1px solid #e2e8f0", paddingTop: "0.5rem", fontSize: "0.8125rem" }}>
-                <span>{t("reports.variance", "الفارق (Variance)")}:</span>
-                <strong style={{ color: recon.accDepVariance === 0 ? "#16a34a" : "#dc2626" }}>
-                  {recon.accDepVariance === 0 ? t("reports.fullyMatched", "0.00 (مطابق تماماً ✓)") : recon.accDepVariance.toLocaleString("ar-EG")}
-                </strong>
-              </div>
-            </div>
-
-            <div
-              style={{
-                padding: "1rem",
-                backgroundColor:
-                  recon.status === "Healthy"
-                    ? "#f0fdf4"
-                    : recon.status === "NotApplicable"
-                    ? "#f8fafc"
-                    : "#fef2f2",
-                border: `1px solid ${
-                  recon.status === "Healthy"
-                    ? "#86efac"
-                    : recon.status === "NotApplicable"
-                    ? "#cbd5e1"
-                    : "#fca5a5"
-                }`,
-                borderRadius: "0.375rem",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-                textAlign: "center"
-              }}
-            >
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: "1rem" }}>
               <div
                 style={{
-                  fontSize: "0.875rem",
-                  fontWeight: 700,
-                  color:
-                    recon.status === "Healthy"
-                      ? "#15803d"
-                      : recon.status === "NotApplicable"
-                      ? "#475569"
-                      : "#991b1b"
+                  padding: "1rem",
+                  backgroundColor: "#f8fafc",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "0.375rem"
                 }}
               >
-                {recon.status === "Healthy"
-                  ? t("reports.reconciledSuccess", "مطابق ومستقر (Healthy) — الحسابات متطابقة بنسبة 100% ولا توجد فروق")
-                  : recon.status === "NotApplicable"
-                  ? t("reports.statusNotApplicable", "دفتر غير مالي / لا يرحل إلى الأستاذ العام (Not Applicable)")
-                  : t("reports.discrepancyAlert", "يوجد تباين مالي يستوجب التحقق (Difference)")}
+                <div style={{ fontSize: "0.8125rem", color: "#64748b" }}>{t("reports.assetCostMatch", "تكلفة الأصول (ح/ 150000)")}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", fontSize: "0.875rem" }}>
+                  <span>{t("reports.subledger", "دفتر الأصول")}:</span>
+                  <strong style={{ color: "#0f172a" }}>
+                    {recon.subledgerAssetCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
+                  </strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.25rem", fontSize: "0.875rem" }}>
+                  <span>{t("reports.generalLedger", "الأستاذ العام")}:</span>
+                  <strong style={{ color: "#0f172a" }}>
+                    {recon.glAssetCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
+                  </strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", borderTop: "1px solid #e2e8f0", paddingTop: "0.5rem", fontSize: "0.8125rem" }}>
+                  <span>{t("reports.variance", "الفارق (Variance)")}:</span>
+                  <strong style={{ color: recon.costVariance === 0 ? "#16a34a" : "#dc2626" }}>
+                    {recon.costVariance === 0 ? t("reports.fullyMatched", "0.00 (مطابق تماماً ✓)") : `${recon.costVariance.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ${currency}`}
+                  </strong>
+                </div>
               </div>
-              <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.5rem" }}>
-                {t("reports.reconciliationAsOf", "آخر فحص ومطابقة في")}: {new Date().toLocaleTimeString("ar-EG")}
-                {recon.currencyCode && <span> ({recon.currencyCode})</span>}
+
+              <div
+                style={{
+                  padding: "1rem",
+                  backgroundColor: "#f8fafc",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "0.375rem"
+                }}
+              >
+                <div style={{ fontSize: "0.8125rem", color: "#64748b" }}>{t("reports.accDepMatch", "مجمع الإهلاك (ح/ 159000)")}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", fontSize: "0.875rem" }}>
+                  <span>{t("reports.subledger", "دفتر الأصول")}:</span>
+                  <strong style={{ color: "#0f172a" }}>
+                    {recon.subledgerAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
+                  </strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.25rem", fontSize: "0.875rem" }}>
+                  <span>{t("reports.generalLedger", "الأستاذ العام")}:</span>
+                  <strong style={{ color: "#0f172a" }}>
+                    {recon.glAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
+                  </strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", borderTop: "1px solid #e2e8f0", paddingTop: "0.5rem", fontSize: "0.8125rem" }}>
+                  <span>{t("reports.variance", "الفارق (Variance)")}:</span>
+                  <strong style={{ color: recon.accDepVariance === 0 ? "#16a34a" : "#dc2626" }}>
+                    {recon.accDepVariance === 0 ? t("reports.fullyMatched", "0.00 (مطابق تماماً ✓)") : `${recon.accDepVariance.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ${currency}`}
+                  </strong>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "1rem",
+                  backgroundColor:
+                    recon.status === "Healthy"
+                      ? "#f0fdf4"
+                      : recon.status === "NotApplicable"
+                      ? "#f8fafc"
+                      : "#fef2f2",
+                  border: `1px solid ${
+                    recon.status === "Healthy"
+                      ? "#86efac"
+                      : recon.status === "NotApplicable"
+                      ? "#cbd5e1"
+                      : "#fca5a5"
+                  }`,
+                  borderRadius: "0.375rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  textAlign: "center"
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.875rem",
+                    fontWeight: 700,
+                    color:
+                      recon.status === "Healthy"
+                        ? "#15803d"
+                        : recon.status === "NotApplicable"
+                        ? "#475569"
+                        : "#991b1b"
+                  }}
+                >
+                  {recon.status === "Healthy"
+                    ? t("reports.reconciledSuccess", "مطابق ومستقر (Healthy) — الحسابات متطابقة بنسبة 100% ولا توجد فروق")
+                    : recon.status === "NotApplicable"
+                    ? t("reports.statusNotApplicable", "دفتر غير مالي / لا يرحل إلى الأستاذ العام (Not Applicable)")
+                    : t("reports.discrepancyAlert", "يوجد تباين مالي يستوجب التحقق (Difference)")}
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.5rem" }}>
+                  {t("reports.reconciliationAsOf", "آخر فحص ومطابقة في")}: {new Date().toLocaleTimeString("ar-EG")}
+                  {currency && <span> ({currency})</span>}
+                </div>
               </div>
             </div>
+
+            {/* Explanatory Notice when Difference Exists */}
+            {recon.status === "Difference" && (
+              <div
+                style={{
+                  padding: "0.75rem 1rem",
+                  backgroundColor: "#fffbeb",
+                  border: "1px solid #fcd34d",
+                  borderRadius: "0.375rem",
+                  color: "#92400e",
+                  fontSize: "0.8125rem",
+                  lineHeight: 1.5
+                }}
+                data-testid="recon-difference-explanation"
+              >
+                {t("reports.differenceReasonNotice", "ملاحظة تدقيق: يرجع هذا التباين لوجود أصول مسجلة في الدفتر الفرعي بدون قيود أرصدة افتتاحية مرحلة لحسابات الأستاذ العام الرقابية (150000 / 159000).")}
+              </div>
+            )}
           </div>
         ) : null}
       </div>
@@ -261,7 +278,7 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{ fontSize: "0.8125rem", color: "#334155", fontWeight: 500 }}>
                 {t("reports.asOfDate", "حتى تاريخ:")}
@@ -280,9 +297,15 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
               />
             </div>
 
-            <Button variant="secondary" size="compact" onClick={handleExportCsv} data-testid="export-report-csv-btn">
+            <Button
+              variant="secondary"
+              size="compact"
+              onClick={handleExportCsv}
+              isDisabled={exporting}
+              data-testid="export-report-csv-btn"
+            >
               <DownloadIcon size={16} style={{ marginInlineEnd: "0.375rem" }} />
-              {t("register.exportCsv", "تصدير CSV")}
+              {exporting ? t("common.exporting", "جاري التصدير...") : t("register.exportCsv", "تصدير CSV")}
             </Button>
           </div>
         </div>
@@ -291,7 +314,7 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr",
             gap: "1rem",
             padding: "0.75rem 1rem",
             backgroundColor: "#f8fafc",
@@ -305,65 +328,67 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
           <div>
             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("reports.totalHistoricalCost", "إجمالي التكلفة التاريخية")}</div>
             <div style={{ fontWeight: 700, fontSize: "1.125rem", color: "#1e3a8a" }}>
-              {totalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} EGP
+              {displayTotalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
             </div>
           </div>
           <div>
             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("reports.totalAccumulatedDepreciation", "إجمالي مجمع الإهلاك")}</div>
             <div style={{ fontWeight: 700, fontSize: "1.125rem", color: "#dc2626" }}>
-              {totalAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} EGP
+              {displayTotalAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
             </div>
           </div>
           <div>
             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("reports.totalNetBookValue", "إجمالي صافي القيمة الدفترية")}</div>
             <div style={{ fontWeight: 700, fontSize: "1.125rem", color: "#16a34a" }}>
-              {totalNbv.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} EGP
+              {displayTotalNbv.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
             </div>
           </div>
         </div>
 
-        <Table isBordered={false} data-testid="asset-register-report-table">
-          <thead>
-            <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #cbd5e1", textAlign: "start" }}>
-              <th style={{ padding: "0.75rem 1rem" }}>{t("fields.assetCode", "كود الأصل")}</th>
-              <th style={{ padding: "0.75rem 1rem" }}>{t("fields.assetName", "اسم الأصل")}</th>
-              <th style={{ padding: "0.75rem 1rem" }}>{t("fields.category", "التصنيف")}</th>
-              <th style={{ padding: "0.75rem 1rem" }}>{t("fields.acquisitionCost", "التكلفة")}</th>
-              <th style={{ padding: "0.75rem 1rem" }}>{t("fields.accumulatedDepreciation", "مجمع الإهلاك")}</th>
-              <th style={{ padding: "0.75rem 1rem" }}>{t("fields.netBookValue", "صافي القيمة الدفترية")}</th>
-              <th style={{ padding: "0.75rem 1rem" }}>{t("fields.custodian", "العهدة")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reportItems.length === 0 ? (
-              <tr>
-                <td colSpan={7} style={{ textAlign: "center", padding: "2rem", color: "#64748b" }}>
-                  {t("reports.noAssetsInReport", "لا توجد أصول في التاريخ المحدد")}
-                </td>
+        <div style={{ width: "100%", overflowX: "auto" }}>
+          <Table isBordered={false} data-testid="asset-register-report-table">
+            <thead>
+              <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #cbd5e1", textAlign: "start" }}>
+                <th style={{ padding: "0.75rem 1rem", minWidth: "120px" }}>{t("fields.assetCode", "كود الأصل")}</th>
+                <th style={{ padding: "0.75rem 1rem", minWidth: "180px" }}>{t("fields.assetName", "اسم الأصل")}</th>
+                <th style={{ padding: "0.75rem 1rem", minWidth: "130px" }}>{t("fields.category", "التصنيف")}</th>
+                <th style={{ padding: "0.75rem 1rem", minWidth: "130px", textAlign: "end" }}>{t("fields.acquisitionCost", "التكلفة")}</th>
+                <th style={{ padding: "0.75rem 1rem", minWidth: "130px", textAlign: "end" }}>{t("fields.accumulatedDepreciation", "مجمع الإهلاك")}</th>
+                <th style={{ padding: "0.75rem 1rem", minWidth: "130px", textAlign: "end" }}>{t("fields.netBookValue", "صافي القيمة الدفترية")}</th>
+                <th style={{ padding: "0.75rem 1rem", minWidth: "110px" }}>{t("fields.custodian", "العهدة")}</th>
               </tr>
-            ) : (
-              reportItems.map((row) => (
-                <tr key={row.assetId} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                  <td style={{ padding: "0.75rem 1rem" }}>
-                    <span style={{ fontWeight: 600, color: "#1e3a8a" }}>{row.assetNumber}</span>
+            </thead>
+            <tbody>
+              {reportItems.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: "center", padding: "2rem", color: "#64748b" }}>
+                    {t("reports.noAssetsInReport", "لا توجد أصول في التاريخ المحدد")}
                   </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>{row.name}</td>
-                  <td style={{ padding: "0.75rem 1rem" }}>{row.assetNature}</td>
-                  <td style={{ padding: "0.75rem 1rem" }}>
-                    <span>{row.grossCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</span>
-                  </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>
-                    <span style={{ color: "#dc2626" }}>{row.accumulatedDepreciation.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</span>
-                  </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>
-                    <span style={{ color: "#16a34a", fontWeight: 700 }}>{row.netBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</span>
-                  </td>
-                  <td style={{ padding: "0.75rem 1rem" }}>{row.custodianName ?? "-"}</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </Table>
+              ) : (
+                reportItems.map((row) => (
+                  <tr key={row.assetId} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "0.75rem 1rem" }}>
+                      <span style={{ fontWeight: 600, color: "#1e3a8a" }}><bdi>{row.assetNumber}</bdi></span>
+                    </td>
+                    <td style={{ padding: "0.75rem 1rem" }}>{row.name}</td>
+                    <td style={{ padding: "0.75rem 1rem" }}>{row.assetNature}</td>
+                    <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
+                      <span>{row.grossCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}</span>
+                    </td>
+                    <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
+                      <span style={{ color: "#dc2626" }}>{row.accumulatedDepreciation.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}</span>
+                    </td>
+                    <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
+                      <span style={{ color: "#16a34a", fontWeight: 700 }}>{row.netBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}</span>
+                    </td>
+                    <td style={{ padding: "0.75rem 1rem" }}>{row.custodianName ?? "—"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </Table>
+        </div>
       </div>
     </div>
   );

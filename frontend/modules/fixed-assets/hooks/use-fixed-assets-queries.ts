@@ -88,6 +88,8 @@ export function useAssetLocationsQuery(legalEntityId?: string) {
 export function useAssetsQuery(params: {
   legalEntityId?: string | undefined;
   state?: string | undefined;
+  nature?: string | undefined;
+  locationId?: string | undefined;
   search?: string | undefined;
   limit?: number | undefined;
   offset?: number | undefined;
@@ -625,26 +627,35 @@ export function useFixedAssetsQuery(
     legalEntityId,
     search: options?.search,
     state: options?.state,
+    nature: options?.nature,
+    locationId: options?.locationId,
     limit: options?.pageSize ?? 50,
     offset: ((options?.pageNumber ?? 1) - 1) * (options?.pageSize ?? 50)
   });
 
-  const rawItems = query.data ?? [];
+  const categoriesQuery = useAssetCategoriesQuery(100);
+  const categoryMap = new Map((categoriesQuery.data ?? []).map((c) => [c.id, c.name]));
+
+  const rawItems = query.data?.items ?? (Array.isArray(query.data) ? query.data : []);
+  const totalCount = query.data?.totalCount ?? (Array.isArray(query.data) ? query.data.length : 0);
+
   const transformed: FixedAssetDto[] = rawItems.map((a) => ({
     ...a,
     assetCode: a.assetNumber,
     assetName: a.name,
-    categoryName: a.assetNature,
+    categoryName: categoryMap.get(a.categoryId) ?? undefined,
     nature: a.assetNature,
     inServiceDate: a.placedInServiceDate ?? a.acquisitionDate ?? null,
-    depreciationMethod: "StraightLine"
+    depreciationMethod: undefined,
+    acquisitionCost: undefined,
+    netBookValue: undefined
   }));
 
   return {
     ...query,
     data: {
       items: transformed,
-      totalCount: transformed.length
+      totalCount
     }
   };
 }
@@ -681,7 +692,10 @@ export function useFixedAssetLocationsQuery(legalEntityId?: string) {
 
 export function useFixedAssetDetailQuery(legalEntityId: string, assetId: string) {
   const query = useAssetsQuery({ legalEntityId });
-  const rawItems = query.data ?? [];
+  const categoriesQuery = useAssetCategoriesQuery(100);
+  const categoryMap = new Map((categoriesQuery.data ?? []).map((c) => [c.id, c.name]));
+
+  const rawItems = query.data?.items ?? (Array.isArray(query.data) ? query.data : []);
   const found = rawItems.find((a) => a.id === assetId);
 
   const asset: FixedAssetDto | null = found
@@ -689,10 +703,10 @@ export function useFixedAssetDetailQuery(legalEntityId: string, assetId: string)
         ...found,
         assetCode: found.assetNumber,
         assetName: found.name,
-        categoryName: found.assetNature,
+        categoryName: categoryMap.get(found.categoryId) ?? undefined,
         nature: found.assetNature,
         inServiceDate: found.placedInServiceDate ?? found.acquisitionDate ?? null,
-        depreciationMethod: "StraightLine"
+        depreciationMethod: undefined
       }
     : null;
 
@@ -718,16 +732,16 @@ export function useAssetCustodyHistoryQuery(legalEntityId: string, assetId: stri
 
 export function useCipProjectsQuery(legalEntityId?: string) {
   const query = useAssetsQuery({ legalEntityId, state: "UnderConstruction" });
-  const raw = query.data ?? [];
-  const items: CipProjectDto[] = raw.map((c) => ({
+  const rawItems = query.data?.items ?? (Array.isArray(query.data) ? query.data : []);
+  const items: CipProjectDto[] = rawItems.map((c) => ({
     ...c,
     assetId: c.id,
-    totalCost: 0,
-    costSourceCount: 0,
+    totalCost: undefined,
+    costSourceCount: undefined,
     projectCode: c.assetNumber,
     projectName: c.name,
     description: c.description ?? null,
-    accumulatedCost: 0,
+    accumulatedCost: undefined,
     estimatedCompletionDate: c.placedInServiceDate ?? null,
     status: c.lifecycleState
   }));
@@ -794,6 +808,9 @@ export function useBookGlReconciliationQuery(legalEntityId?: string, bookId?: st
 
 export function useMyAssignedAssetsQuery(legalEntityId?: string) {
   const query = useMyAssetsQuery(legalEntityId);
+  const locationsQuery = useAssetLocationsQuery(legalEntityId);
+  const locationMap = new Map((locationsQuery.data ?? []).map((l) => [l.id, l.name]));
+
   const raw = query.data ?? [];
   const items: FixedAssetDto[] = raw.map((a) => ({
     id: a.assetId,
@@ -803,15 +820,16 @@ export function useMyAssignedAssetsQuery(legalEntityId?: string) {
     name: a.name,
     assetCode: a.assetNumber,
     assetName: a.name,
-    categoryName: "أصل عهدة",
-    lifecycleState: "Active",
-    assetNature: "Equipment",
+    categoryName: undefined,
+    lifecycleState: "Operational",
+    assetNature: undefined as any,
     trackingGranularity: "Individual",
     quantity: 1,
     createdAt: a.effectiveFrom,
     rowVersion: 1,
     inServiceDate: a.effectiveFrom,
-    depreciationMethod: "StraightLine"
+    locationName: a.locationId ? locationMap.get(a.locationId) ?? a.locationId : undefined,
+    depreciationMethod: undefined
   }));
   return { ...query, data: { items } };
 }

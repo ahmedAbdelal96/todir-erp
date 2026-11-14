@@ -40,7 +40,7 @@ export function CapitalizeCipModal({
   // Update capitalization amount if project changes
   React.useEffect(() => {
     if (project) {
-      setCapitalizationAmount(String(project.totalCost));
+      setCapitalizationAmount(project.totalCost !== undefined && project.totalCost !== null ? String(project.totalCost) : "");
       setTargetAssetName(project.projectName ?? project.name);
     }
   }, [project]);
@@ -110,7 +110,7 @@ export function CapitalizeCipModal({
           >
             <div><strong>{t("cip.project", "المشروع الرأسمالي")}:</strong> {project.projectName ?? project.name} ({project.projectCode ?? project.assetNumber})</div>
             <div style={{ marginTop: "0.25rem", color: "#64748b" }}>
-              {t("cip.accumulatedCost", "إجمالي التكاليف المتراكمة")}: <strong>{project.totalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}</strong>
+              {t("cip.accumulatedCost", "إجمالي التكاليف المتراكمة")}: <strong>{project.totalCost !== undefined && project.totalCost !== null ? project.totalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 }) : "—"}</strong>
             </div>
           </div>
         )}
@@ -279,7 +279,7 @@ export function SplitCipModal({
         {project && (
           <div style={{ padding: "0.75rem", backgroundColor: "#f8fafc", borderRadius: "0.375rem" }}>
             <div><strong>{t("cip.sourceProject", "المشروع الأصلي")}:</strong> {project.projectName ?? project.name}</div>
-            <div>{t("cip.totalCost", "إجمالي التكلفة")}: {project.totalCost.toLocaleString("ar-EG")}</div>
+            <div>{t("cip.totalCost", "إجمالي التكلفة")}: {project.totalCost !== undefined && project.totalCost !== null ? project.totalCost.toLocaleString("ar-EG") : "—"}</div>
           </div>
         )}
 
@@ -433,7 +433,7 @@ export function CombineCipModal({
                   checked={selectedIds.includes(p.assetId)}
                   onChange={() => toggleSelect(p.assetId)}
                 />
-                <span>{p.projectName ?? p.name} ({p.totalCost.toLocaleString("ar-EG")})</span>
+                <span>{p.projectName ?? p.name} {p.totalCost !== undefined && p.totalCost !== null ? `(${p.totalCost.toLocaleString("ar-EG")})` : ""}</span>
               </label>
             ))}
           </div>

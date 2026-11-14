@@ -14,15 +14,18 @@ export function AssetLifecycleBadge({ state, size = "medium" }: AssetLifecycleBa
   let intent: StatusIntent = "neutral";
   switch (state) {
     case "Active":
+    case "Operational":
       intent = "success";
       break;
     case "UnderConstruction":
+    case "Capitalized":
       intent = "info";
       break;
     case "Draft":
       intent = "warning";
       break;
     case "FullyDepreciated":
+    case "Archived":
       intent = "neutral";
       break;
     case "Disposed":

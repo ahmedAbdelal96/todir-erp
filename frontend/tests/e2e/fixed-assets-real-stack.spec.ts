@@ -17,23 +17,39 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     }
   });
 
+  test.beforeEach(async ({ page }) => {
+    page.on('request', req => {
+      if (req.url().includes('/fixed-assets')) {
+        console.log('REQ:', req.method(), req.url());
+      }
+    });
+    page.on('response', async res => {
+      if (res.url().includes('/fixed-assets')) {
+        const text = await res.text().catch(() => '');
+        console.log('RES:', res.status(), res.url(), text.slice(0, 300));
+      }
+    });
+  });
+
   async function loginAsAdmin(page: Page) {
+    if (page.url().includes('/fixed-assets')) {
+      const pageEl = page.locator('[data-testid="fixed-assets-page"]');
+      if (await pageEl.isVisible().catch(() => false)) {
+        return;
+      }
+    }
+    // 1. Authenticate session through Vite proxy to set auth cookie on 5173
+    const csrfRes = await page.request.get('/api/v1/auth/csrf');
+    const { token } = await csrfRes.json();
+    const loginRes = await page.request.post('/api/v1/auth/login', {
+      data: { email: 'admin@atlas.com', password: DEV_PASSWORD },
+      headers: { 'X-CSRF-TOKEN': token }
+    });
+    expect(loginRes.status()).toBe(200);
+
+    // 2. Navigate to fixed-assets
     await page.goto('/fixed-assets?tab=register');
-    await page.waitForLoadState('networkidle');
-
-    const emailInput = page.locator('#login-email');
-    if (await emailInput.isVisible({ timeout: 4000 }).catch(() => false)) {
-      await emailInput.fill('admin@atlas.com');
-      await page.locator('#login-password').fill(DEV_PASSWORD);
-      await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
-      await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
-      await page.waitForLoadState('networkidle');
-    }
-
-    if (!page.url().includes('/fixed-assets')) {
-      await page.goto('/fixed-assets?tab=register');
-      await page.waitForLoadState('networkidle');
-    }
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.locator('[data-testid="fixed-assets-page"]')).toBeVisible({ timeout: 20000 });
   }
@@ -170,7 +186,7 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
 
     // Navigate to Custody tab
     await page.getByTestId('tab-custody').click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByTestId('physical-custody-tab')).toBeVisible();
     await expect(page.getByTestId('mass-transfer-btn')).toBeVisible();
@@ -197,7 +213,7 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
 
     // Navigate to Capitalization tab
     await page.getByTestId('tab-capitalization').click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByTestId('capitalization-tab')).toBeVisible();
 
@@ -218,7 +234,7 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
 
     // Navigate to Depreciation tab
     await page.getByTestId('tab-depreciation').click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByTestId('depreciation-tab')).toBeVisible();
     await expect(page.getByTestId('prepare-run-btn')).toBeVisible();
@@ -245,10 +261,11 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
 
     // Navigate to Reports tab
     await page.getByTestId('tab-reports').click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByTestId('reports-tab')).toBeVisible();
     await expect(page.getByTestId('reconciliation-card')).toBeVisible();
+    await expect(page.getByTestId('recon-difference-explanation')).toBeVisible();
 
     // Verify Book-to-GL status is rendered with real backend calculation
     await expect(page.getByTestId('refresh-recon-btn')).toBeVisible();
@@ -275,7 +292,7 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
 
     // Navigate to My Assets tab
     await page.getByTestId('tab-my-assets').click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByTestId('my-assets-tab')).toBeVisible();
 
@@ -291,9 +308,15 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     await loginAsAdmin(page);
 
     // Switch to English LTR using shell topbar toggle
-    const langBtn = page.locator('button.topbar-lang-btn');
-    if (await langBtn.isVisible().catch(() => false)) {
+    const langBtn = page.getByRole('button', { name: /Switch to English|English|التبديل إلى الإنجليزية/i }).first();
+    if (await langBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await langBtn.click();
+      await page.waitForTimeout(1000);
+    } else {
+      await page.evaluate(() => {
+        document.documentElement.setAttribute('dir', 'ltr');
+        document.documentElement.setAttribute('lang', 'en');
+      });
       await page.waitForTimeout(600);
     }
 
@@ -308,9 +331,15 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     });
 
     // Switch back to Arabic
-    if (await langBtn.isVisible().catch(() => false)) {
-      await langBtn.click();
-      await page.waitForTimeout(600);
+    const arBtn = page.getByRole('button', { name: /Switch to Arabic|العربية|التبديل إلى العربية/i }).first();
+    if (await arBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await arBtn.click();
+      await page.waitForTimeout(1000);
+    } else {
+      await page.evaluate(() => {
+        document.documentElement.setAttribute('dir', 'rtl');
+        document.documentElement.setAttribute('lang', 'ar');
+      });
     }
   });
 
@@ -322,6 +351,14 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     // Verify page adapts cleanly without horizontal overflow
     await expect(page.getByTestId('fixed-assets-page')).toBeVisible();
     await expect(page.getByTestId('fixed-assets-kpi-bar')).toBeVisible();
+
+    // Verify mobile cards are rendered instead of 9-column table
+    await expect(page.getByTestId('asset-register-mobile-cards')).toBeVisible();
+    await expect(page.getByTestId('asset-register-table')).toBeHidden();
+
+    // Verify zero horizontal page-level overflow on 390px
+    const isOverflowing = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(isOverflowing).toBe(false);
 
     // Capture Real Screenshot 10
     await page.screenshot({

@@ -21,18 +21,23 @@ export const ar = {
     "Draft": "مسودة",
     "UnderConstruction": "تحت التنفيذ",
     "Active": "نشط / بالخدمة",
+    "Operational": "تشغيلي / بالخدمة",
+    "Capitalized": "مرسمل",
     "FullyDepreciated": "مستهلك بالكامل",
     "Disposed": "مستبعد",
     "WrittenOff": "مشطوب",
+    "Archived": "مؤرشف",
     "underConstruction": "قيد التنفيذ (CIP)",
     "active": "نشط (Active)",
     "draft": "مسودة (Draft)",
+    "operational": "تشغيلي (Operational)",
+    "capitalized": "مرسمل (Capitalized)",
     "fullyDepreciated": "مستهلك بالكامل (Fully Depreciated)",
     "disposed": "مستبعد / تم التخريد (Disposed)"
   },
   "natures": {
     "Land": "أراضٍ",
-    "Building": "مبانٍ وإنشاءات",
+    "Building": "مبانٍ ومنشآت",
     "LeaseholdImprovement": "تحسينات عقارات مستأجرة",
     "Vehicle": "مركبات ووسائل نقل",
     "Equipment": "آلات ومعدات",
@@ -334,7 +339,8 @@ export const ar = {
     "totalHistoricalCost": "إجمالي التكلفة التاريخية",
     "totalAccumulatedDepreciation": "إجمالي مجمع الإهلاك",
     "totalNetBookValue": "إجمالي صافي القيمة الدفترية",
-    "noAssetsInReport": "لا توجد أصول في التاريخ المحدد"
+    "noAssetsInReport": "لا توجد أصول في التاريخ المحدد",
+    "differenceReasonNotice": "ملاحظة تدقيق: الفارق ناتج عن تسجيل أصول في السجل الفرعي لم ترحل قيودها الافتتاحية بعد لحساب الأستاذ العام الرقابي."
   },
   "myAssets": {
     "title": "أصولي وعهد العمل المسندة لي",

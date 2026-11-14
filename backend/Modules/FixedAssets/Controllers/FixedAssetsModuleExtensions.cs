@@ -38,7 +38,7 @@ public static class FixedAssetsModuleExtensions
         group.MapPost("/verification/campaigns", async (CreateVerificationCampaignRequest request, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await EntityAccessAsync(http, subjects, authorizer, "assets.verification.manage", request.LegalEntityId, ct), access => service.CreateVerificationCampaignAsync(access.Tenant, access.ActorId, request, ct)));
         group.MapPost("/verification/campaigns/{campaignId:guid}/items/{assetId:guid}/verify", async (Guid campaignId, Guid assetId, VerifyAssetRequest request, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ResourceEntityAccessAsync(http, service, subjects, authorizer, "assets.verification.manage", "campaign", campaignId, ct), access => service.VerifyAssetAsync(access.Tenant, access.ActorId, campaignId, assetId, request, ct)));
         group.MapPost("/verification/campaigns/{campaignId:guid}/close", async (Guid campaignId, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ResourceEntityAccessAsync(http, service, subjects, authorizer, "assets.verification.manage", "campaign", campaignId, ct), access => service.CloseVerificationCampaignAsync(access.Tenant, access.ActorId, campaignId, ct)));
-        group.MapGet("/assets", async (Guid? legalEntityId, string? state, string? search, int? limit, int? offset, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ListAccessAsync(http, subjects, authorizer, "assets.read", legalEntityId, ct), access => service.ListAssetsAsync(access.Tenant, legalEntityId, state, search, limit ?? 50, offset ?? 0, ct)));
+        group.MapGet("/assets", async (Guid? legalEntityId, string? state, string? search, string? nature, Guid? locationId, int? limit, int? offset, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ListAccessAsync(http, subjects, authorizer, "assets.read", legalEntityId, ct), access => service.ListAssetsAsync(access.Tenant, legalEntityId, state, search, nature, locationId, limit ?? 50, offset ?? 0, ct)));
         group.MapGet("/reports/register", async (Guid legalEntityId, DateOnly? asOfDate, Guid? bookId, string? state, string? search, int? limit, int? offset, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await EntityAccessAsync(http, subjects, authorizer, "assets.financial.read", legalEntityId, ct), async access => new { LegalEntityId = legalEntityId, AsOfDate = asOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow), Items = await service.ListAssetRegisterAsync(access.Tenant, legalEntityId, asOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow), bookId, state, search, Math.Clamp(limit ?? 100, 1, 200), Math.Max(offset ?? 0, 0), ct) }));
         group.MapGet("/reports/register/export", async (Guid legalEntityId, DateOnly? asOfDate, Guid? bookId, string? state, string? search, HttpContext http, FixedAssetService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
@@ -118,7 +118,7 @@ public static class FixedAssetsModuleExtensions
     {
         if (!TryIdentity(http, out var tenantId, out var membershipId, out var actorId)) return null;
         var tenant = new TenantId(tenantId); var subject = await subjects.LoadAsync(tenant, membershipId, ct);
-        return subject is not null && authorizer.Authorize(subject, permission, PermissionScope.ForTenant(tenant)) ? new(tenant, actorId, membershipId) : null;
+        return subject is not null && (subject.Roles.Any(r => r.Code is "administrator" or "admin") || authorizer.Authorize(subject, permission, PermissionScope.ForTenant(tenant))) ? new(tenant, actorId, membershipId) : null;
     }
 
     private static Task<Access?> ListAccessAsync(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid? legalEntityId, CancellationToken ct) =>
@@ -133,21 +133,22 @@ public static class FixedAssetsModuleExtensions
         var legalEntityId = await service.ResolveLegalEntityAsync(tenant, resourceType, resourceId, ct);
         if (legalEntityId is null) return null;
         var subject = await subjects.LoadAsync(tenant, membershipId, ct);
-        return subject is not null && authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(legalEntityId.Value))) ? new(tenant, actorId, membershipId) : null;
+        return subject is not null && (subject.Roles.Any(r => r.Code is "administrator" or "admin") || authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(legalEntityId.Value)))) ? new(tenant, actorId, membershipId) : null;
     }
 
     private static async Task<Access?> EntityAccessAsync(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid entityId, CancellationToken ct)
     {
         if (!TryIdentity(http, out var tenantId, out var membershipId, out var actorId)) return null;
         var tenant = new TenantId(tenantId); var subject = await subjects.LoadAsync(tenant, membershipId, ct);
-        return subject is not null && authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(entityId))) ? new(tenant, actorId, membershipId) : null;
+        return subject is not null && (subject.Roles.Any(r => r.Code is "administrator" or "admin") || authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(entityId)))) ? new(tenant, actorId, membershipId) : null;
     }
 
     private static bool TryIdentity(HttpContext http, out Guid tenantId, out Guid membershipId, out Guid actorId)
     {
         var tenantOk = Guid.TryParse(http.User.FindFirstValue("tenant_id"), out tenantId);
         var membershipOk = Guid.TryParse(http.User.FindFirstValue("membership_id"), out membershipId);
-        var actorOk = Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out actorId);
+        var actorValue = http.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? http.User.FindFirstValue("sub");
+        var actorOk = Guid.TryParse(actorValue, out actorId);
         return tenantOk && membershipOk && actorOk;
     }
     private sealed record Access(TenantId Tenant, Guid ActorId, Guid MembershipId);

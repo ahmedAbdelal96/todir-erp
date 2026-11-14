@@ -1,9 +1,12 @@
 export type AssetLifecycleState =
   | "Draft"
   | "UnderConstruction"
+  | "Operational"
+  | "Capitalized"
   | "Active"
   | "FullyDepreciated"
   | "Disposed"
+  | "Archived"
   | "WrittenOff";
 
 export type AssetNature =
@@ -81,6 +84,13 @@ export interface AssetView {
   readonly quantity: number;
   readonly createdAt: string;
   readonly rowVersion: number;
+}
+
+export interface PagedAssetsView {
+  readonly items: readonly AssetView[];
+  readonly totalCount: number;
+  readonly limit?: number | undefined;
+  readonly offset?: number | undefined;
 }
 
 export interface AssetAssignmentView {
