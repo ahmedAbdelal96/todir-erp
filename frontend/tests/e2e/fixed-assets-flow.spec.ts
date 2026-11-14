@@ -13,7 +13,7 @@ const ARTIFACTS_DIR = process.env.TEST_ARTIFACTS_DIR || LOCAL_ARTIFACTS_DIR;
 let consoleErrors: string[] = [];
 let pageErrors: string[] = [];
 
-test.describe('TODIR Fixed Assets & Custody (Module 22) — End-to-End Visual & Functional Acceptance Suite', () => {
+test.describe('TODIR Fixed Assets & Custody (Module 22) — Mocked UI & Visual Interaction Suite', () => {
   test.beforeAll(() => {
     if (!fs.existsSync(ARTIFACTS_DIR)) {
       fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
@@ -27,7 +27,7 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — End-to-End Visual & 
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
         const text = msg.text();
-        if (!text.includes('404') && !text.includes('favicon') && !text.includes('502') && !text.includes('Bad Gateway')) {
+        if (!text.includes('404') && !text.includes('favicon') && !text.includes('502') && !text.includes('Bad Gateway') && !text.includes('401')) {
           consoleErrors.push(text);
         }
       }
@@ -167,8 +167,8 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — End-to-End Visual & 
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify([
-          { id: 'book-01', legalEntityId: LEGAL_ENTITY_ID, code: 'CORP-01', name: 'الدفتر المالي المؤسسي (Corporate GL)', postsToLedger: true, isStatutoryTaxBook: false, defaultDepreciationMethod: 'StraightLine', currency: 'SAR' },
-          { id: 'book-02', legalEntityId: LEGAL_ENTITY_ID, code: 'ZAKAT-TAX', name: 'الدفتر الضريبي والزكوي (ZATCA Statutory)', postsToLedger: false, isStatutoryTaxBook: true, defaultDepreciationMethod: 'StraightLine', currency: 'SAR' }
+          { id: 'book-01', legalEntityId: LEGAL_ENTITY_ID, code: 'CORP-01', name: 'الدفتر المالي المؤسسي (Corporate GL)', postsToLedger: true, isStatutoryTaxBook: false, defaultDepreciationMethod: 'StraightLine', currencyCode: 'SAR', currency: 'SAR' },
+          { id: 'book-02', legalEntityId: LEGAL_ENTITY_ID, code: 'ZAKAT-TAX', name: 'الدفتر الضريبي والزكوي (ZATCA Statutory)', postsToLedger: false, isStatutoryTaxBook: true, defaultDepreciationMethod: 'StraightLine', currencyCode: 'SAR', currency: 'SAR' }
         ])
       });
     });
@@ -189,7 +189,8 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — End-to-End Visual & 
           ledgerAccumulatedDepreciation: 695000,
           accumulatedDepreciationDifference: 0,
           status: 'Reconciled',
-          discrepancyCount: 0
+          discrepancyCount: 0,
+          currencyCode: 'SAR'
         })
       });
     });

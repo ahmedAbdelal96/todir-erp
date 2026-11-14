@@ -322,6 +322,9 @@ export const ar = {
     "fullyMatched": "0.00 (مطابق تماماً ✓)",
     "accDepMatch": "مجمع الإهلاك (ح/ 159000)",
     "reconciledSuccess": "الحسابات متطابقة بنسبة 100% ولا توجد فروق",
+    "statusHealthy": "مطابق ومستقر (Healthy) — الحسابات متطابقة بنسبة 100% ولا توجد فروق",
+    "statusNotApplicable": "دفتر غير مالي / لا يرحل إلى الأستاذ العام (Not Applicable)",
+    "statusDifference": "يوجد تباين مالي يستوجب التحقق (Difference)",
     "discrepancyAlert": "يوجد تباين مالي يستوجب التحقق",
     "reconciliationAsOf": "آخر فحص ومطابقة في",
     "registerReportHeading": "تقرير سجل الأصول الثابتة المالي (Asset Register Report)",
@@ -443,7 +446,8 @@ export const ar = {
     "showingRecords": "عرض {{from}} إلى {{to}} من إجمالي {{total}} أصل",
     "refresh": "تحديث المطابقة",
     "noLegalEntitySelected": "يرجى اختيار الكيان القانوني أولاً",
-    "selectLegalEntityDesc": "تتطلب عمليات الأصول الثابتة وحسابات الإهلاك تحديد كيان قانوني مسجل."
+    "selectLegalEntityDesc": "تتطلب عمليات الأصول الثابتة وحسابات الإهلاك تحديد كيان قانوني مسجل.",
+    "restricted": "صلاحية مالية مقيدة"
   },
   "help": {
     "title": "دليل دورة حياة الأصول الثابتة",
@@ -656,7 +660,11 @@ export const ar = {
     "bookCodeAndNameRequired": "كود واسم الدفتر مطلوبان",
     "reinstateReasonRequired": "يجب كتابة مبرر إعادة قيد الأصل للخدمة",
     "campaignNameRequired": "اسم حملة الجرد مطلوب",
-    "assetOrBarcodeRequired": "يجب إدخال معرّف الأصل أو مسح الباركود"
+    "assetOrBarcodeRequired": "يجب إدخال معرّف الأصل أو مسح الباركود",
+    "bookAddFailed": "فشل ربط الأصل بالدفتر المالي",
+    "custodyAssignFailed": "فشل تسجيل العهدة",
+    "assetCreatedBookFailed": "تم تسجيل الأصل ولكن تعذر ربطه بالدفتر المالي",
+    "assetCreatedCustodyFailed": "تم تسجيل الأصل والدفتر ولكن تعذر حفظ بيانات العهدة"
   },
   "disposal": {
     "typeScrapped": "تخريد واستبعاد (Scrap)",

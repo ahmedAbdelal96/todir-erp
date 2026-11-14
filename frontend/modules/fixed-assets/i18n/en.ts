@@ -322,6 +322,9 @@ export const en = {
     "fullyMatched": "0.00 (Fully Matched ✓)",
     "accDepMatch": "Accumulated Depreciation (Acct 159000)",
     "reconciledSuccess": "Subledger and General Ledger match 100% with zero variance.",
+    "statusHealthy": "Healthy — Subledger and General Ledger match 100% with zero variance.",
+    "statusNotApplicable": "Not Applicable — Book does not post to General Ledger.",
+    "statusDifference": "Variance Detected — Subledger and General Ledger discrepancy requires review.",
     "discrepancyAlert": "يوجد تباين مالي يستوجب التحقق",
     "reconciliationAsOf": "Last reconciliation check on",
     "registerReportHeading": "Asset Register Financial Report",
@@ -443,7 +446,8 @@ export const en = {
     "showingRecords": "Showing {{from}} to {{to}} of {{total}} assets",
     "refresh": "Refresh Reconciliation",
     "noLegalEntitySelected": "Please select a legal entity first",
-    "selectLegalEntityDesc": "Fixed asset operations require an active legal entity context."
+    "selectLegalEntityDesc": "Fixed asset operations require an active legal entity context.",
+    "restricted": "Restricted Financial Access"
   },
   "help": {
     "title": "دليل دورة حياة الأصول الثابتة",
@@ -656,7 +660,11 @@ export const en = {
     "bookCodeAndNameRequired": "كود واسم الدفتر مطلوبان",
     "reinstateReasonRequired": "يجب كتابة مبرر إعادة قيد الأصل للخدمة",
     "campaignNameRequired": "اسم حملة الجرد مطلوب",
-    "assetOrBarcodeRequired": "يجب إدخال معرّف الأصل أو مسح الباركود"
+    "assetOrBarcodeRequired": "يجب إدخال معرّف الأصل أو مسح الباركود",
+    "bookAddFailed": "Failed to attach financial book to asset",
+    "custodyAssignFailed": "Failed to record asset custody assignment",
+    "assetCreatedBookFailed": "Asset created but financial book setup failed",
+    "assetCreatedCustodyFailed": "Asset created and book setup succeeded, but custody assignment failed"
   },
   "disposal": {
     "typeScrapped": "تخريد واستبعاد (Scrap)",

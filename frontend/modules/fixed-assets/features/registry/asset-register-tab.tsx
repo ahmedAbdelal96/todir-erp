@@ -248,7 +248,12 @@ export function AssetRegisterTab({
               </tr>
             ) : (
               items.map((row) => (
-                <tr key={row.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <tr
+                  key={row.id}
+                  style={{ borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
+                  onClick={() => onSelectAsset(row)}
+                  data-testid={`asset-row-${row.id}`}
+                >
                   <td style={{ padding: "0.75rem 1rem" }}>
                     <span style={{ fontWeight: 600, color: "#1e3a8a" }}>{row.assetCode}</span>
                   </td>

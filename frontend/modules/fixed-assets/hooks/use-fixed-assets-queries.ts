@@ -738,9 +738,14 @@ export function useDepreciationRunsQuery(legalEntityId?: string) {
   return useQuery({
     queryKey: [...fixedAssetKeys.all, "depreciationRuns", legalEntityId],
     queryFn: async (): Promise<{ items: readonly DepreciationRunDto[] }> => {
-      const runs = await fixedAssetsApi.listDepreciationRuns(legalEntityId);
+      const [runs, books] = await Promise.all([
+        fixedAssetsApi.listDepreciationRuns(legalEntityId),
+        legalEntityId ? fixedAssetsApi.listBooks(legalEntityId) : Promise.resolve([])
+      ]);
+      const bookMap = new Map(books.map((b) => [b.id, b]));
       const items: DepreciationRunDto[] = runs.map((r) => {
         const startDate = new Date(r.periodStart);
+        const book = bookMap.get(r.bookId);
         return {
           ...r,
           periodYear: startDate.getFullYear(),
@@ -749,8 +754,8 @@ export function useDepreciationRunsQuery(legalEntityId?: string) {
           description: `مسير إهلاك ${r.periodStart} - ${r.periodEnd}`,
           totalAssetsCount: r.lineCount,
           totalDepreciationAmount: r.totalAmount,
-          currency: "SAR",
-          glJournalEntryId: r.status === "Posted" ? `GL-${r.id.slice(0, 8)}` : null
+          currency: book?.currencyCode ?? "",
+          glJournalEntryId: null
         };
       });
       return { items };
@@ -780,7 +785,7 @@ export function useBookGlReconciliationQuery(legalEntityId?: string, bookId?: st
         subledgerAccDep: rec.assetAccumulatedDepreciation,
         glAccDep: rec.ledgerAccumulatedDepreciation,
         accDepVariance: rec.accumulatedDepreciationDifference,
-        isReconciled: rec.status === "Reconciled"
+        isReconciled: rec.status === "Healthy"
       };
     },
     enabled: Boolean(legalEntityId)
@@ -922,12 +927,12 @@ export function useProposeImpairmentMutation(legalEntityId?: string) {
         targetBookId = books[0]?.id;
       }
       if (!targetBookId) throw new Error("bookId is required");
-      return fixedAssetsApi.createAssetImpairment(assetId, targetBookId, {
+      return fixedAssetsApi.requestAssetImpairmentApproval(assetId, targetBookId, {
         legalEntityId: legalEntityId ?? "",
+        bookId: targetBookId,
         amount: payload.impairmentLoss,
         effectiveDate: payload.impairmentDate,
-        reason: payload.reason,
-        approvalRequestId: `apr-${Date.now()}`
+        reason: payload.reason
       });
     },
     onSuccess: () => {

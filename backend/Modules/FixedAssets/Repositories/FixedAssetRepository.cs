@@ -608,10 +608,13 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             var bookId = Guid.CreateVersion7();
             await using var command = new NpgsqlCommand("""
                 insert into business_assets.asset_book(tenant_id,id,asset_id,book_definition_id,original_cost,residual_value,useful_life_months,depreciation_method,placed_in_service_date,created_at,row_version)
-                select $1,$2,a.id,$3,$4,$5,$6,$7,$8,now(),1 from business_assets.fixed_asset a where a.tenant_id=$1 and a.id=$9 and a.legal_entity_id=$10 and a.lifecycle_state in ('Operational','Capitalized')
+                select $1,$2,a.id,$3,$4,$5,$6,$7,$8,now(),1 from business_assets.fixed_asset a where a.tenant_id=$1 and a.id=$9 and a.legal_entity_id=$10 and a.lifecycle_state in ('Operational','Capitalized','Draft')
                 """, context.Connection, context.Transaction);
             command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(bookId); command.Parameters.AddWithValue(request.BookDefinitionId); command.Parameters.AddWithValue(request.OriginalCost); command.Parameters.AddWithValue(request.ResidualValue); command.Parameters.AddWithValue(request.UsefulLifeMonths); command.Parameters.AddWithValue(request.DepreciationMethod); command.Parameters.AddWithValue(request.PlacedInServiceDate); command.Parameters.AddWithValue(assetId); command.Parameters.AddWithValue(request.LegalEntityId);
             if (await command.ExecuteNonQueryAsync(token) != 1) throw new FixedAssetException("assets.book_asset_not_found");
+            await using var updateState = new NpgsqlCommand("update business_assets.fixed_asset set lifecycle_state='Operational',row_version=row_version+1 where tenant_id=$1 and id=$2 and lifecycle_state='Draft'", context.Connection, context.Transaction);
+            updateState.Parameters.AddWithValue(tenant.Value); updateState.Parameters.AddWithValue(assetId);
+            await updateState.ExecuteNonQueryAsync(token);
             return bookId;
         }, ct);
     }

@@ -17,12 +17,14 @@ export interface NewAssetModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly legalEntityId: string;
+  readonly defaultCurrency?: string;
 }
 
 export function NewAssetModal({
   isOpen,
   onClose,
-  legalEntityId
+  legalEntityId,
+  defaultCurrency
 }: NewAssetModalProps): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
 
@@ -31,13 +33,16 @@ export function NewAssetModal({
   const booksQuery = useAssetBooksQuery(legalEntityId);
   const createMutation = useCreateAssetMutation();
 
+  const primaryBook = booksQuery.data?.[0];
+  const initialCurrency = defaultCurrency ?? primaryBook?.currencyCode ?? "";
+
   const [assetName, setAssetName] = useState("");
   const [assetCode, setAssetCode] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [acquisitionDate, setAcquisitionDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [inServiceDate, setInServiceDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [acquisitionCost, setAcquisitionCost] = useState("");
-  const [currency, setCurrency] = useState("SAR");
+  const [currency, setCurrency] = useState(initialCurrency);
   const [salvageValue, setSalvageValue] = useState("0");
   const [usefulLifeMonths, setUsefulLifeMonths] = useState("60");
   const [depreciationMethod, setDepreciationMethod] = useState<DepreciationMethod>("StraightLine");
@@ -49,6 +54,12 @@ export function NewAssetModal({
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currency && initialCurrency) {
+      setCurrency(initialCurrency);
+    }
+  }, [currency, initialCurrency]);
 
   // Selected category data
   const selectedCategory = useMemo(() => {
@@ -139,8 +150,10 @@ export function NewAssetModal({
             depreciationMethod: depreciationMethod,
             placedInServiceDate: inServiceDate || acquisitionDate
           });
-        } catch {
-          // Non-blocking if asset was created
+        } catch (bookErr: unknown) {
+          const bookErrMsg = bookErr instanceof Error ? bookErr.message : t("validation.bookAddFailed", "فشل ربط الأصل بالدفتر المالي");
+          setError(`${t("validation.assetCreatedBookFailed", "تم تسجيل الأصل ولكن تعذر ربطه بالدفتر المالي")}: ${bookErrMsg}`);
+          return;
         }
       }
 
@@ -154,8 +167,10 @@ export function NewAssetModal({
             locationId: locationId || undefined,
             effectiveFrom: acquisitionDate || new Date().toISOString().slice(0, 10)
           });
-        } catch {
-          // Non-blocking
+        } catch (custodyErr: unknown) {
+          const custodyErrMsg = custodyErr instanceof Error ? custodyErr.message : t("validation.custodyAssignFailed", "فشل تسجيل العهدة");
+          setError(`${t("validation.assetCreatedCustodyFailed", "تم تسجيل الأصل والدفتر ولكن تعذر حفظ بيانات العهدة")}: ${custodyErrMsg}`);
+          return;
         }
       }
 
@@ -210,7 +225,7 @@ export function NewAssetModal({
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-          <div>
+          <div data-testid="category-select-wrapper">
             <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.25rem", color: "#334155" }}>
               {t("fields.category", "التصنيف المحاسبي وطبيعة الأصل")} *
             </label>

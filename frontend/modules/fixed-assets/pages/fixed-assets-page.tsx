@@ -94,14 +94,22 @@ export function FixedAssetsPage(): React.JSX.Element {
   const cipQuery = useCipProjectsQuery(legalEntityId);
   const booksQuery = useAssetBooksQuery(legalEntityId);
   const primaryBook = booksQuery.data?.[0];
-  const reconciliationQuery = useAssetGlReconciliationQuery(primaryBook?.id, legalEntityId);
+  const reconciliationQuery = useAssetGlReconciliationQuery(
+    canFinancialRead ? primaryBook?.id : undefined,
+    canFinancialRead ? legalEntityId : undefined
+  );
 
   const allAssets = assetsQuery.data?.items ?? [];
   const totalAssetsCount = assetsQuery.data?.totalCount ?? allAssets.length;
   const totalHistoricalCost = reconciliationQuery.data?.assetGrossCost ?? 0;
   const totalAccDep = reconciliationQuery.data?.assetAccumulatedDepreciation ?? 0;
   const totalNetBookValue = reconciliationQuery.data?.assetNetBookValue ?? 0;
-  const currencyCode = reconciliationQuery.data?.currencyCode ?? primaryBook?.currencyCode ?? "SAR";
+  const currencyCode =
+    reconciliationQuery.data?.currencyCode ??
+    primaryBook?.currencyCode ??
+    (primaryBook as unknown as { currency?: string })?.currency ??
+    runtimeContext?.baseCurrencyCode ??
+    "";
 
   // Modal / Drawer States
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -150,15 +158,16 @@ export function FixedAssetsPage(): React.JSX.Element {
     id: FixedAssetsTabId;
     label: string;
     icon: React.ReactNode;
-    requiresElevated?: boolean;
+    requiresElevated?: boolean | undefined;
+    hidden?: boolean | undefined;
   }[] = [
-    { id: "register", label: t("tabs.register", "سجل الأصول (Register)"), icon: <BuildingIcon size={16} /> },
-    { id: "custody", label: t("tabs.custody", "العمليات الميدانية والعهد"), icon: <ShieldCheckIcon size={16} /> },
-    { id: "capitalization", label: t("tabs.capitalization", "الرسملة والمشاريع الرأسمالية (CIP)"), icon: <LayersIcon size={16} /> },
-    { id: "depreciation", label: t("tabs.depreciation", "الدفاتر والاستهلاك"), icon: <CalculatorIcon size={16} />, requiresElevated: true },
-    { id: "reports", label: t("tabs.reports", "المطابقة والتقارير"), icon: <FileSpreadsheetIcon size={16} /> },
-    { id: "my-assets", label: t("tabs.myAssets", "أصولي وعهد العمل"), icon: <UserIcon size={16} /> }
-  ];
+    { id: "register" as FixedAssetsTabId, label: t("tabs.register", "سجل الأصول (Register)"), icon: <BuildingIcon size={16} /> },
+    { id: "custody" as FixedAssetsTabId, label: t("tabs.custody", "العمليات الميدانية والعهد"), icon: <ShieldCheckIcon size={16} /> },
+    { id: "capitalization" as FixedAssetsTabId, label: t("tabs.capitalization", "الرسملة والمشاريع الرأسمالية (CIP)"), icon: <LayersIcon size={16} /> },
+    { id: "depreciation" as FixedAssetsTabId, label: t("tabs.depreciation", "الدفاتر والاستهلاك"), icon: <CalculatorIcon size={16} />, requiresElevated: true, hidden: !canFinancialRead },
+    { id: "reports" as FixedAssetsTabId, label: t("tabs.reports", "المطابقة والتقارير"), icon: <FileSpreadsheetIcon size={16} />, requiresElevated: true, hidden: !canFinancialRead },
+    { id: "my-assets" as FixedAssetsTabId, label: t("tabs.myAssets", "أصولي وعهد العمل"), icon: <UserIcon size={16} /> }
+  ].filter((tab) => !tab.hidden);
 
   if (!legalEntityId) {
     return (
@@ -219,7 +228,7 @@ export function FixedAssetsPage(): React.JSX.Element {
       {/* 1. Dark Oxford Navy Header */}
       <FixedAssetsHeader
         onOpenNewAssetModal={() => setIsNewAssetOpen(true)}
-        onOpenHelpDrawer={() => setIsHelpOpen(false)}
+        onOpenHelpDrawer={() => setIsHelpOpen(true)}
         legalEntityName={legalEntityName}
         canCreate={canCreate}
       />
@@ -245,22 +254,22 @@ export function FixedAssetsPage(): React.JSX.Element {
           <FixedAssetsKpiCard
             testId="kpi-gross-cost"
             title={t("kpi.historicalCost", "التكلفة التاريخية")}
-            value={`${totalHistoricalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyCode}`}
-            subtitle={t("kpi.totalAcquisitionCost", "إجمالي تكلفة الاقتناء")}
+            value={canFinancialRead ? (currencyCode ? `${totalHistoricalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyCode}` : totalHistoricalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : "—"}
+            subtitle={canFinancialRead ? t("kpi.totalAcquisitionCost", "إجمالي تكلفة الاقتناء") : t("common.restricted", "صلاحية مالية مقيدة")}
             tone="default"
           />
           <FixedAssetsKpiCard
             testId="kpi-accumulated-depreciation"
             title={t("kpi.accumulatedDepreciation", "مجمع الإهلاك")}
-            value={`${totalAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyCode}`}
-            subtitle={t("kpi.depreciatedPortion", "الأقساط المستهلكة حتى الآن")}
+            value={canFinancialRead ? (currencyCode ? `${totalAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyCode}` : totalAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : "—"}
+            subtitle={canFinancialRead ? t("kpi.depreciatedPortion", "الأقساط المستهلكة حتى الآن") : t("common.restricted", "صلاحية مالية مقيدة")}
             tone="warning"
           />
           <FixedAssetsKpiCard
             testId="kpi-nbv"
             title={t("kpi.netBookValue", "صافي القيمة الدفترية (NBV)")}
-            value={`${totalNetBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyCode}`}
-            subtitle={t("kpi.carryingAmount", "القيمة الدفترية في الميزانية")}
+            value={canFinancialRead ? (currencyCode ? `${totalNetBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currencyCode}` : totalNetBookValue.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : "—"}
+            subtitle={canFinancialRead ? t("kpi.carryingAmount", "القيمة الدفترية في الميزانية") : t("common.restricted", "صلاحية مالية مقيدة")}
             tone="success"
           />
         </div>
@@ -412,6 +421,7 @@ export function FixedAssetsPage(): React.JSX.Element {
         isOpen={isNewAssetOpen}
         onClose={() => setIsNewAssetOpen(false)}
         legalEntityId={legalEntityId}
+        defaultCurrency={currencyCode}
       />
 
       <AssetDetailDrawer

@@ -379,8 +379,8 @@ export const fixedAssetsApi = {
       body: JSON.stringify(request)
     }),
 
-  requestAssetImpairmentApproval: (assetId: string, bookId: string, request: RequestAssetImpairmentApprovalRequest): Promise<{ readonly requestId: string }> =>
-    httpClient<{ readonly requestId: string }>(`${BASE}/assets/${assetId}/books/${bookId}/impairment-approval-requests`, {
+  requestAssetImpairmentApproval: (assetId: string, bookId: string, request: RequestAssetImpairmentApprovalRequest): Promise<{ readonly id: string; readonly state: string }> =>
+    httpClient<{ readonly id: string; readonly state: string }>(`${BASE}/assets/${assetId}/books/${bookId}/impairment-approval-requests`, {
       method: "POST",
       body: JSON.stringify(request)
     }),
@@ -391,8 +391,8 @@ export const fixedAssetsApi = {
       body: JSON.stringify(request)
     }),
 
-  requestAssetRevaluationApproval: (assetId: string, bookId: string, request: RequestAssetRevaluationApprovalRequest): Promise<{ readonly requestId: string }> =>
-    httpClient<{ readonly requestId: string }>(`${BASE}/assets/${assetId}/books/${bookId}/revaluation-approval-requests`, {
+  requestAssetRevaluationApproval: (assetId: string, bookId: string, request: RequestAssetRevaluationApprovalRequest): Promise<{ readonly id: string; readonly state: string }> =>
+    httpClient<{ readonly id: string; readonly state: string }>(`${BASE}/assets/${assetId}/books/${bookId}/revaluation-approval-requests`, {
       method: "POST",
       body: JSON.stringify(request)
     }),
@@ -420,6 +420,20 @@ export const fixedAssetsApi = {
   reconcileAssetBook: (bookId: string, legalEntityId: string, asOfDate?: string): Promise<AssetGlReconciliationView> => {
     const q = asOfDate ? `&asOfDate=${encodeURIComponent(asOfDate)}` : "";
     return httpClient<AssetGlReconciliationView>(`${BASE}/books/${bookId}/reconciliation?legalEntityId=${encodeURIComponent(legalEntityId)}${q}`);
+  },
+
+  exportAssetRegister: async (legalEntityId: string, asOfDate?: string, bookId?: string): Promise<Blob> => {
+    const q = new URLSearchParams({ legalEntityId });
+    if (asOfDate) q.set("asOfDate", asOfDate);
+    if (bookId) q.set("bookId", bookId);
+    const res = await fetch(`${BASE}/reports/register/export?${q.toString()}`, {
+      method: "GET",
+      credentials: "include"
+    });
+    if (!res.ok) {
+      throw new Error(`Export failed with status ${res.status}`);
+    }
+    return await res.blob();
   },
 
   listAssetRegisterReport: (params: {

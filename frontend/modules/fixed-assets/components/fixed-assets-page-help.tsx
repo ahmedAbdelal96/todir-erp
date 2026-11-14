@@ -22,7 +22,7 @@ export function FixedAssetsPageHelp({
       title={t("help.title", "دليل دورة حياة الأصول الثابتة")}
       width="560px"
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }} data-testid="fixed-assets-help-drawer">
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }} data-testid="fixed-assets-page-help">
         <div
           style={{
             padding: "1rem",
@@ -30,6 +30,7 @@ export function FixedAssetsPageHelp({
             borderRadius: "0.5rem",
             border: "1px solid #cbd5e1"
           }}
+          data-testid="fixed-assets-help-drawer"
         >
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
             <BookOpenIcon size={20} color="#102a43" />
@@ -95,7 +96,7 @@ export function FixedAssetsPageHelp({
         </section>
 
         <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "1rem", borderTop: "1px solid #cbd5e1" }}>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} data-testid="close-help-drawer-btn">
             {t("common.close", "إغلاق")}
           </Button>
         </div>

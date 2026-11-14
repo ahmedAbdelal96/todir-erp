@@ -454,7 +454,7 @@ export function AssetDetailDrawer({
               </>
             )}
           </div>
-          <Button variant="secondary" size="compact" onClick={onClose}>
+          <Button variant="secondary" size="compact" onClick={onClose} data-testid="close-detail-drawer-btn">
             {t("common.close", "إغلاق")}
           </Button>
         </div>

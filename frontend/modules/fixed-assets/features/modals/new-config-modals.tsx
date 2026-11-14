@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Select, type SelectOption } from "../../../../components/primitives/select.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { useOptionalLegalEntityContext } from "../../../../core/runtime/runtime-provider.tsx";
 import {
   useCreateLocationMutation,
   useCreateCategoryMutation,
@@ -312,14 +313,21 @@ export function NewBookModal({
   legalEntityId
 }: NewBookModalProps): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
+  const legalEntity = useOptionalLegalEntityContext();
   const createBookMutation = useCreateBookMutation();
 
   const [bookCode, setBookCode] = useState("");
   const [bookName, setBookName] = useState("");
-  const [currencyCode, setCurrencyCode] = useState("SAR");
+  const [currencyCode, setCurrencyCode] = useState(legalEntity?.baseCurrencyCode ?? "");
   const [postsToLedger, setPostsToLedger] = useState(false);
   const [defaultMethod, setDefaultMethod] = useState<DepreciationMethod>("StraightLine");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currencyCode && legalEntity?.baseCurrencyCode) {
+      setCurrencyCode(legalEntity.baseCurrencyCode);
+    }
+  }, [currencyCode, legalEntity?.baseCurrencyCode]);
 
   const methodOptions: SelectOption[] = [
     { id: "StraightLine", label: t("depreciation.straightLine", "القسط الثابت (Straight Line)") },
@@ -341,7 +349,7 @@ export function NewBookModal({
         code: bookCode.trim().toUpperCase(),
         name: bookName.trim(),
         postsToLedger,
-        currencyCode: currencyCode.trim().toUpperCase() || "SAR",
+        currencyCode: currencyCode.trim().toUpperCase() || legalEntity?.baseCurrencyCode || "",
         defaultDepreciationMethod: defaultMethod,
         defaultConvention: "FullMonth",
         defaultUsefulLifeMonths: 60

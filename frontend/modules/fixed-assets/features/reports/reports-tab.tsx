@@ -6,6 +6,7 @@ import {
   useBookGlReconciliationQuery,
   useAssetRegisterReportQuery
 } from "../../hooks/use-fixed-assets-queries.ts";
+import { fixedAssetsApi } from "../../services/fixed-assets-api.ts";
 import {
   CheckCircle2Icon,
   DownloadIcon,
@@ -21,6 +22,7 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
   const { t } = useTranslation("fixedAssets");
 
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [exporting, setExporting] = useState(false);
 
   const reconQuery = useBookGlReconciliationQuery(legalEntityId);
   const reportQuery = useAssetRegisterReportQuery({
@@ -44,36 +46,50 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
     return reportItems.reduce((acc, curr) => acc + curr.netBookValue, 0);
   }, [reportItems]);
 
-  const handleExportCsv = () => {
-    if (reportItems.length === 0) return;
-    const headers = [
-      "Asset Code",
-      "Asset Name",
-      "Category",
-      "Status",
-      "Historical Cost",
-      "Accumulated Depreciation",
-      "Net Book Value",
-      "Custodian"
-    ];
-    const rows = reportItems.map((a) => [
-      `"${a.assetNumber}"`,
-      `"${a.name}"`,
-      `"${a.assetNature}"`,
-      `"${a.lifecycleState}"`,
-      a.grossCost,
-      a.accumulatedDepreciation,
-      a.netBookValue,
-      `"${a.custodianName ?? ""}"`
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Asset_Register_AsOf_${asOfDate}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleExportCsv = async () => {
+    try {
+      setExporting(true);
+      const blob = await fixedAssetsApi.exportAssetRegister(legalEntityId, asOfDate);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `fixed-asset-register-${asOfDate}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch {
+      if (reportItems.length === 0) return;
+      const headers = [
+        "Asset Code",
+        "Asset Name",
+        "Category",
+        "Status",
+        "Historical Cost",
+        "Accumulated Depreciation",
+        "Net Book Value",
+        "Custodian"
+      ];
+      const rows = reportItems.map((a) => [
+        `"${a.assetNumber}"`,
+        `"${a.name}"`,
+        `"${a.assetNature}"`,
+        `"${a.lifecycleState}"`,
+        a.grossCost,
+        a.accumulatedDepreciation,
+        a.netBookValue,
+        `"${a.custodianName ?? ""}"`
+      ]);
+      const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+      const link = document.createElement("a");
+      link.setAttribute("href", encodeURI(csvContent));
+      link.setAttribute("download", `Asset_Register_AsOf_${asOfDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -166,8 +182,19 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
             <div
               style={{
                 padding: "1rem",
-                backgroundColor: recon.isReconciled ? "#f0fdf4" : "#fef2f2",
-                border: `1px solid ${recon.isReconciled ? "#86efac" : "#fca5a5"}`,
+                backgroundColor:
+                  recon.status === "Healthy"
+                    ? "#f0fdf4"
+                    : recon.status === "NotApplicable"
+                    ? "#f8fafc"
+                    : "#fef2f2",
+                border: `1px solid ${
+                  recon.status === "Healthy"
+                    ? "#86efac"
+                    : recon.status === "NotApplicable"
+                    ? "#cbd5e1"
+                    : "#fca5a5"
+                }`,
                 borderRadius: "0.375rem",
                 display: "flex",
                 flexDirection: "column",
@@ -175,13 +202,27 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
                 textAlign: "center"
               }}
             >
-              <div style={{ fontSize: "0.875rem", fontWeight: 700, color: recon.isReconciled ? "#15803d" : "#991b1b" }}>
-                {recon.isReconciled
-                  ? t("reports.reconciledSuccess", "الحسابات متطابقة بنسبة 100% ولا توجد فروق")
-                  : t("reports.discrepancyAlert", "يوجد تباين مالي يستوجب التحقق")}
+              <div
+                style={{
+                  fontSize: "0.875rem",
+                  fontWeight: 700,
+                  color:
+                    recon.status === "Healthy"
+                      ? "#15803d"
+                      : recon.status === "NotApplicable"
+                      ? "#475569"
+                      : "#991b1b"
+                }}
+              >
+                {recon.status === "Healthy"
+                  ? t("reports.reconciledSuccess", "مطابق ومستقر (Healthy) — الحسابات متطابقة بنسبة 100% ولا توجد فروق")
+                  : recon.status === "NotApplicable"
+                  ? t("reports.statusNotApplicable", "دفتر غير مالي / لا يرحل إلى الأستاذ العام (Not Applicable)")
+                  : t("reports.discrepancyAlert", "يوجد تباين مالي يستوجب التحقق (Difference)")}
               </div>
               <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.5rem" }}>
                 {t("reports.reconciliationAsOf", "آخر فحص ومطابقة في")}: {new Date().toLocaleTimeString("ar-EG")}
+                {recon.currencyCode && <span> ({recon.currencyCode})</span>}
               </div>
             </div>
           </div>
