@@ -43,6 +43,19 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
         return value is Guid entityId ? entityId : null;
     }
 
+    public async Task<bool> LegalEntityExistsAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        await using var command = new NpgsqlCommand("select exists(select 1 from platform.legal_entity where tenant_id = $1 and id = $2 and status = 'Active')", connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value);
+        command.Parameters.AddWithValue(legalEntityId);
+        var result = await command.ExecuteScalarAsync(ct);
+        await transaction.CommitAsync(ct);
+        return result is true;
+    }
+
     public async Task<AssetCategoryView> CreateCategoryAsync(TenantId tenant, Guid actor, CreateAssetCategoryRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name)) throw new FixedAssetException("assets.category_required");

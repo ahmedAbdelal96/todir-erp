@@ -301,7 +301,7 @@ export function AssetRegisterTab({
                   </div>
                   {row.categoryName && (
                     <div style={{ fontSize: "0.8125rem", color: "#475569", marginTop: "0.125rem" }}>
-                      {row.categoryName}
+                      {row.nature ? t(`natures.${row.nature}`, row.categoryName || row.nature) : (row.categoryName ? t(`natures.${row.categoryName}`, row.categoryName) : "")}
                     </div>
                   )}
                   {row.serialNumber && (
@@ -429,18 +429,18 @@ export function AssetRegisterTab({
           }}
         >
           <div style={{ width: "100%", overflowX: "auto" }}>
-            <Table isBordered={false} data-testid="asset-register-table">
+            <Table isBordered={false} style={{ minWidth: "1200px", tableLayout: "auto" }} data-testid="asset-register-table">
               <thead>
                 <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #cbd5e1", textAlign: "start" }}>
-                  <th style={{ padding: "0.75rem 1rem", minWidth: "120px" }}>{t("fields.assetCode", "كود الأصل")}</th>
-                  <th style={{ padding: "0.75rem 1rem", minWidth: "180px" }}>{t("fields.assetName", "اسم الأصل")}</th>
-                  <th style={{ padding: "0.75rem 1rem", minWidth: "130px" }}>{t("fields.category", "التصنيف")}</th>
-                  <th style={{ padding: "0.75rem 1rem", minWidth: "110px" }}>{t("fields.status", "الحالة")}</th>
-                  <th style={{ padding: "0.75rem 1rem", minWidth: "130px", textAlign: "end" }}>{t("fields.acquisitionCost", "التكلفة التاريخية")}</th>
-                  <th style={{ padding: "0.75rem 1rem", minWidth: "130px", textAlign: "end" }}>{t("fields.netBookValue", "صافي القيمة الدفترية")}</th>
-                  <th style={{ padding: "0.75rem 1rem", minWidth: "110px" }}>{t("fields.location", "الموقع")}</th>
-                  <th style={{ padding: "0.75rem 1rem", minWidth: "110px" }}>{t("fields.custodian", "العهدة")}</th>
-                  <th style={{ padding: "0.75rem 1rem", minWidth: "140px" }}>{t("common.actions", "الإجراءات")}</th>
+                  <th style={{ padding: "0.75rem 1rem", minWidth: "130px", whiteSpace: "nowrap" }}>{t("fields.assetCode", "كود الأصل")}</th>
+                  <th style={{ padding: "0.75rem 1rem", minWidth: "300px" }}>{t("fields.assetName", "اسم الأصل")}</th>
+                  <th style={{ padding: "0.75rem 1rem", minWidth: "140px", whiteSpace: "nowrap" }}>{t("fields.category", "التصنيف")}</th>
+                  <th style={{ padding: "0.75rem 1rem", minWidth: "120px", whiteSpace: "nowrap" }}>{t("fields.status", "الحالة")}</th>
+                  <th style={{ padding: "0.75rem 1rem", minWidth: "130px", textAlign: "end", whiteSpace: "nowrap" }}>{t("fields.acquisitionCost", "التكلفة التاريخية")}</th>
+                  <th style={{ padding: "0.75rem 1rem", minWidth: "130px", textAlign: "end", whiteSpace: "nowrap" }}>{t("fields.netBookValue", "صافي القيمة الدفترية")}</th>
+                  <th style={{ padding: "0.75rem 1rem", minWidth: "120px", whiteSpace: "nowrap" }}>{t("fields.location", "الموقع")}</th>
+                  <th style={{ padding: "0.75rem 1rem", minWidth: "120px", whiteSpace: "nowrap" }}>{t("fields.custodian", "العهدة")}</th>
+                  <th style={{ padding: "0.75rem 1rem", minWidth: "140px", whiteSpace: "nowrap" }}>{t("common.actions", "الإجراءات")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -458,16 +458,16 @@ export function AssetRegisterTab({
                       onClick={() => onSelectAsset(row)}
                       data-testid={`asset-row-${row.id}`}
                     >
-                      <td style={{ padding: "0.75rem 1rem" }}>
+                      <td style={{ padding: "0.75rem 1rem", whiteSpace: "nowrap" }}>
                         <span style={{ fontWeight: 600, color: "#1e3a8a" }}><bdi>{row.assetCode}</bdi></span>
                       </td>
-                      <td style={{ padding: "0.75rem 1rem" }}>
-                        <div style={{ fontWeight: 600, color: "#0f172a" }}>{row.assetName}</div>
+                      <td style={{ padding: "0.75rem 1rem", minWidth: "300px" }}>
+                        <div style={{ fontWeight: 600, color: "#0f172a", whiteSpace: "normal", wordBreak: "normal", lineHeight: 1.45 }}>{row.assetName}</div>
                         {row.serialNumber && (
-                          <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("fields.serialNumberShort", "ر.ت:")} {row.serialNumber}</div>
+                          <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.125rem" }}>{t("fields.serialNumberShort", "ر.ت:")} {row.serialNumber}</div>
                         )}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem" }}>{row.categoryName ?? "—"}</td>
+                      <td style={{ padding: "0.75rem 1rem", whiteSpace: "nowrap" }}>{row.nature ? t(`natures.${row.nature}`, row.categoryName || row.nature) : (row.categoryName ? t(`natures.${row.categoryName}`, row.categoryName) : "—")}</td>
                       <td style={{ padding: "0.75rem 1rem" }}>
                         <AssetLifecycleBadge state={row.lifecycleState} />
                       </td>

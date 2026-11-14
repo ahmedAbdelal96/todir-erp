@@ -39,13 +39,11 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
   // Currency from authoritative reconciliation context or default empty
   const currency = recon?.currencyCode ?? "";
 
-  // Authoritative totals from reconciliation or report items
-  const displayTotalCost = recon ? (recon.subledgerAssetCost ?? 0) : reportItems.reduce((acc, curr) => acc + curr.grossCost, 0);
-  const displayTotalAccDep = recon ? (recon.subledgerAccDep ?? 0) : reportItems.reduce((acc, curr) => acc + curr.accumulatedDepreciation, 0);
-  // Authoritative NBV accounts for impairment and revaluation effects
-  const displayTotalNbv = recon
-    ? (recon.assetNetBookValue ?? (displayTotalCost - displayTotalAccDep))
-    : reportItems.reduce((acc, curr) => acc + curr.netBookValue, 0);
+  // Authoritative totals from reconciliation: no incomplete-page aggregation or fabricated zeros
+  const displayTotalCost = recon?.subledgerAssetCost ?? null;
+  const displayTotalAccDep = recon?.subledgerAccDep ?? null;
+  // Authoritative NBV accounts for depreciation, impairment, and revaluation effects
+  const displayTotalNbv = recon?.assetNetBookValue ?? null;
 
   // Authoritative Backend CSV Export
   const handleExportCsv = async () => {
@@ -326,24 +324,32 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
         >
           <div>
             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("reports.totalAssets", "إجمالي عدد الأصول")}</div>
-            <div style={{ fontWeight: 700, fontSize: "1.125rem", color: "#0f172a" }}>{reportItems.length}</div>
+            <div style={{ fontWeight: 700, fontSize: "1.125rem", color: "#0f172a" }}>
+              {reportQuery.isLoading ? "—" : reportItems.length}
+            </div>
           </div>
           <div>
             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("reports.totalHistoricalCost", "إجمالي التكلفة التاريخية")}</div>
             <div style={{ fontWeight: 700, fontSize: "1.125rem", color: "#1e3a8a" }}>
-              {displayTotalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
+              {displayTotalCost !== null
+                ? `${displayTotalCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ${currency}`
+                : "—"}
             </div>
           </div>
           <div>
             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("reports.totalAccumulatedDepreciation", "إجمالي مجمع الإهلاك")}</div>
             <div style={{ fontWeight: 700, fontSize: "1.125rem", color: "#dc2626" }}>
-              {displayTotalAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
+              {displayTotalAccDep !== null
+                ? `${displayTotalAccDep.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ${currency}`
+                : "—"}
             </div>
           </div>
           <div>
             <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("reports.totalNetBookValue", "إجمالي صافي القيمة الدفترية")}</div>
             <div style={{ fontWeight: 700, fontSize: "1.125rem", color: "#16a34a" }}>
-              {displayTotalNbv.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}
+              {displayTotalNbv !== null
+                ? `${displayTotalNbv.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} ${currency}`
+                : "—"}
             </div>
           </div>
         </div>
@@ -375,7 +381,7 @@ export function ReportsTab({ legalEntityId }: ReportsTabProps): React.JSX.Elemen
                       <span style={{ fontWeight: 600, color: "#1e3a8a" }}><bdi>{row.assetNumber}</bdi></span>
                     </td>
                     <td style={{ padding: "0.75rem 1rem" }}>{row.name}</td>
-                    <td style={{ padding: "0.75rem 1rem" }}>{row.assetNature}</td>
+                    <td style={{ padding: "0.75rem 1rem" }}>{row.assetNature ? t(`natures.${row.assetNature}`, row.assetNature) : "—"}</td>
                     <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
                       <span>{row.grossCost.toLocaleString("ar-EG", { minimumFractionDigits: 2 })} {currency}</span>
                     </td>

@@ -44,7 +44,9 @@ export const en = {
     "Furniture": "Office Furniture & Fixtures",
     "Tool": "Tools & Instruments",
     "CIP": "Construction in Progress",
-    "Intangible": "Intangible Asset / Software"
+    "Intangible": "Intangible Asset / Software",
+    "Laptop": "Computers & IT Equipment",
+    "Construction in progress": "Construction in Progress"
   },
   "tracking": {
     "Individual": "Individually Serialized",

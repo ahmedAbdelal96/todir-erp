@@ -106,7 +106,7 @@ export function AssetDetailDrawer({
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.375rem" }}>
                 <AssetLifecycleBadge state={asset.lifecycleState} />
-                <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>{asset.categoryName}</span>
+                <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>{asset.nature ? t(`natures.${asset.nature}`, asset.categoryName || asset.nature) : (asset.categoryName ? t(`natures.${asset.categoryName}`, asset.categoryName) : "")}</span>
               </div>
               <div style={{ fontSize: "1.125rem", fontWeight: 700, color: "#0f172a" }}>
                 {asset.assetName}

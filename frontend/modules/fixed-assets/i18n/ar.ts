@@ -44,7 +44,9 @@ export const ar = {
     "Furniture": "أثاث وتجهيزات مكتبية",
     "Tool": "عدد وأدوات",
     "CIP": "مشروع تحت التنفيذ",
-    "Intangible": "أصول غير ملموسة / برمجيات"
+    "Intangible": "أصول غير ملموسة / برمجيات",
+    "Laptop": "أجهزة حاسوب ومعدات تقنية",
+    "Construction in progress": "مشروع تحت التنفيذ"
   },
   "tracking": {
     "Individual": "أصل فردي برقم مميز",
