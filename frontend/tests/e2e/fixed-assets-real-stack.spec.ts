@@ -411,26 +411,22 @@ test.describe('TODIR Fixed Assets & Custody (Module 22) — Real-Stack End-to-En
     expect(books.length).toBeGreaterThan(0);
     const primaryBookId = books[0].id;
 
-    // Dynamically query existing depreciation runs to find the next available monthly period (no destructive SQL)
+    // Dynamically select an open 2026 accounting period with assets in service that has not yet been posted
     const existingRunsRes = await page.request.get(`/api/v1/fixed-assets/depreciation-runs?legalEntityId=${ATLAS_ENTITY_ID}`);
     expect(existingRunsRes.status()).toBe(200);
     const existingRuns = await existingRunsRes.json();
-    
-    // Determine the next calendar month to run
-    let targetYear = 2026;
-    let targetMonth = 12; // Start after 2026-11
-    if (Array.isArray(existingRuns) && existingRuns.length > 0) {
-      for (const r of existingRuns) {
-        if (r.periodStart) {
-          const [y, m] = r.periodStart.split('-').map(Number);
-          if (y > targetYear || (y === targetYear && m >= targetMonth)) {
-            targetYear = m === 12 ? y + 1 : y;
-            targetMonth = m === 12 ? 1 : m + 1;
-          }
-        }
-      }
+    const usedPeriods = new Set(
+      Array.isArray(existingRuns) ? existingRuns.filter(r => r.status === 'Posted' || r.status === 'Reversed').map(r => r.periodStart) : []
+    );
+
+    // Candidates within the open 2026 fiscal year with placed-in-service assets (e.g. 2026-10, 2026-11, 2026-12)
+    const candidates = ['2026-10-01', '2026-11-01', '2026-12-01'];
+    let selectedPeriodStart = candidates.find(p => !usedPeriods.has(p));
+    if (!selectedPeriodStart) {
+      selectedPeriodStart = '2026-10-01'; // Fallback to 2026-10
     }
 
+    const [targetYear, targetMonth] = selectedPeriodStart.split('-').map(Number);
     const pad = (n: number) => n.toString().padStart(2, '0');
     const periodStart = `${targetYear}-${pad(targetMonth)}-01`;
     const lastDay = new Date(targetYear, targetMonth, 0).getDate();
