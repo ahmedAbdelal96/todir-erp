@@ -9,6 +9,7 @@ using Modules.Projects.DTOs;
 using Modules.Projects.Entities;
 using Shared.Contracts.Projects;
 using Shared.Primitives.Identifiers;
+using Todir.Sales.Contracts;
 
 namespace Modules.Projects.Repositories;
 
@@ -43,6 +44,58 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
         }
         await AuditAsync(context, tenant, id, actor, "project_created", null, new { number, request.Name, request.ProjectType }, token);
         context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProjectCreatedV1", JsonSerializer.Serialize(new { projectId = id, legalEntityId = request.LegalEntityId, projectNumber = number, projectType = request.ProjectType }), tenant, DateTimeOffset.UtcNow, correlationId, id, "projects"));
+        return await GetDetailAsync(context, tenant, id, token) ?? throw new ProjectException("projects.project_not_found");
+    }, ct);
+
+    public Task<ProjectDetail> CreateFromSalesSourceAsync(TenantId tenant, Guid actor, Guid membership, CreateProjectFromSalesSourceRequest request, SalesAcceptedQuotationContract source, Guid correlationId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        if (request.LegalEntityId != source.LegalEntityId) throw new ProjectException("projects.sales_source_entity_mismatch");
+        if (!string.Equals(request.ProjectType, ProjectTypes.Customer, StringComparison.Ordinal)) throw new ProjectException("projects.sales_source_customer_project_required");
+        var currency = NormalizeCurrency(source.CurrencyCode) ?? throw new ProjectException("projects.currency_required");
+        if (request.BillingModel == "NonBillable") throw new ProjectException("projects.sales_source_billing_model_required");
+        var startDate = request.StartDate ?? source.QuoteDate;
+        var targetEndDate = request.TargetEndDate;
+        ProjectRules.ValidateCreate(request.ProjectType, source.PartyId, request.BillingModel, request.InitialBudget, startDate, targetEndDate);
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 200) throw new ProjectException("projects.name_invalid");
+
+        var sourceId = source.QuotationId.ToString("D");
+        var purpose = $"AcceptedRevision:{source.RevisionNumber}";
+        var requestHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { request.LegalEntityId, request.QuotationId, request.AcceptedRevision, request.Name, request.ProjectType, request.ProjectManagerEmployeeId, startDate, targetEndDate, request.BillingModel, request.InitialBudget, request.TemplateVersionId, request.Description }))).ToLowerInvariant();
+        await ExecuteAsync(context, "select pg_advisory_xact_lock(hashtextextended($1,0))", token, $"{tenant.Value:D}:SalesQuotation:{sourceId}:{purpose}");
+        var priorRequest = await ReadProjectIdempotencyAsync(context, tenant.Value, "CreateFromSalesQuotation", request.IdempotencyKey, token);
+        if (priorRequest is not null)
+        {
+            if (!string.Equals(priorRequest.Value.RequestHash, requestHash, StringComparison.Ordinal)) throw new ProjectException("projects.idempotency_conflict");
+            return await GetDetailAsync(context, tenant, priorRequest.Value.ProjectId, token) ?? throw new ProjectException("projects.project_not_found");
+        }
+        var existingSource = await ScalarAsync<Guid?>(context, "select project_id from business_projects.project_external_reference where tenant_id=$1 and source_type='SalesQuotation' and source_id=$2 and purpose=$3", token, tenant.Value, sourceId, purpose);
+        if (existingSource is { } existingProjectId)
+        {
+            await ExecuteAsync(context, "insert into business_projects.project_idempotency(tenant_id,id,operation,idempotency_key,request_hash,response_json) values($1,$2,$3,$4,$5,$6::jsonb) on conflict do nothing", token, tenant.Value, Guid.CreateVersion7(), "CreateFromSalesQuotation", request.IdempotencyKey, requestHash, JsonSerializer.Serialize(new { projectId = existingProjectId }));
+            return await GetDetailAsync(context, tenant, existingProjectId, token) ?? throw new ProjectException("projects.project_not_found");
+        }
+        if (request.TemplateVersionId is { } templateVersionId)
+        {
+            var templateType = await ScalarAsync<string>(context, "select t.project_type from business_projects.project_template_version v join business_projects.project_template t on t.tenant_id=v.tenant_id and t.id=v.template_id where v.tenant_id=$1 and v.id=$2 and t.status='Active' and (t.legal_entity_id is null or t.legal_entity_id=$3)", token, tenant.Value, templateVersionId, request.LegalEntityId);
+            if (templateType is null || !string.Equals(templateType, request.ProjectType, StringComparison.Ordinal)) throw new ProjectException("projects.template_version_not_found");
+        }
+        var id = Guid.CreateVersion7();
+        await ExecuteAsync(context, "insert into platform.sequence_definition(id,tenant_id,sequence_key,legal_entity_id,branch_id,scope_key,period_key,prefix_template,padding,mode,next_value,version) values($1,$2,'projects.project-number',$3,null,null,null,'PRJ-',7,'Standard',1,1) on conflict do nothing", token, Guid.CreateVersion7(), tenant.Value, request.LegalEntityId);
+        await ExecuteAsync(context, "update platform.sequence_definition set next_value=greatest(next_value,coalesce((select max((substring(project_number from 5))::bigint)+1 from business_projects.project where tenant_id=$1 and legal_entity_id=$2 and project_number ~ '^PRJ-[0-9]+$'),1)) where tenant_id=$1 and sequence_key='projects.project-number' and legal_entity_id=$2 and branch_id is null and scope_key is null and period_key is null", token, tenant.Value, request.LegalEntityId);
+        var number = await sequences.AllocateAsync(context, new SequenceDefinition("projects.project-number", tenant, request.LegalEntityId, null, null, null, "PRJ-", 7, 1), token);
+        await ExecuteAsync(context, "insert into business_projects.project(tenant_id,id,legal_entity_id,project_number,name,description,project_type,customer_party_id,manager_employee_id,start_date,target_end_date,billing_model,currency_code,source_type,source_ref,template_version_id,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'SalesQuotation',$14,$15,$16)", token,
+            tenant.Value, id, request.LegalEntityId, number, request.Name.Trim(), Db(request.Description), request.ProjectType, source.PartyId, Db(request.ProjectManagerEmployeeId), startDate, Db(targetEndDate), request.BillingModel, currency, $"{sourceId}:Revision:{source.RevisionNumber}", Db(request.TemplateVersionId), actor);
+        if (request.InitialBudget is { } budget)
+        {
+            var budgetId = Guid.CreateVersion7(); var versionId = Guid.CreateVersion7();
+            await ExecuteAsync(context, "insert into business_projects.project_budget(tenant_id,id,project_id,name,currency_code,control_mode) values($1,$2,$3,'Initial budget',$4,'Warn')", token, tenant.Value, budgetId, id, currency);
+            await ExecuteAsync(context, "insert into business_projects.project_budget_version(tenant_id,id,budget_id,version_no,state,original_amount,current_amount,approved_by,approved_at,created_by) values($1,$2,$3,1,'Approved',$4,$4,$5,now(),$5)", token, tenant.Value, versionId, budgetId, budget, actor);
+        }
+        await ExecuteAsync(context, "insert into business_projects.project_billing_rule(tenant_id,id,project_id,version_no,model,status,contract_value,currency_code,effective_from) values($1,$2,$3,1,$4,'Active',$5,$6,$7)", token, tenant.Value, Guid.CreateVersion7(), id, request.BillingModel, source.AgreedValue, currency, source.QuoteDate);
+        await ExecuteAsync(context, "insert into business_projects.project_external_reference(tenant_id,id,project_id,source_type,source_id,purpose,snapshot) values($1,$2,$3,'SalesQuotation',$4,$5,$6::jsonb)", token, tenant.Value, Guid.CreateVersion7(), id, sourceId, purpose, JsonSerializer.Serialize(new { source.QuotationId, source.RevisionNumber, source.Number, source.PartyId, source.AgreedValue, source.CurrencyCode, source.QuoteDate, source.CustomerReference }));
+        await ExecuteAsync(context, "insert into business_projects.project_idempotency(tenant_id,id,operation,idempotency_key,request_hash,response_json) values($1,$2,$3,$4,$5,$6::jsonb)", token, tenant.Value, Guid.CreateVersion7(), "CreateFromSalesQuotation", request.IdempotencyKey, requestHash, JsonSerializer.Serialize(new { projectId = id }));
+        await AuditAsync(context, tenant, id, actor, "project_created_from_sales_quotation", null, new { source.QuotationId, source.RevisionNumber, source.Number, source.AgreedValue, source.CurrencyCode }, token);
+        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProjectCreatedFromSalesQuotationV1", JsonSerializer.Serialize(new { projectId = id, legalEntityId = request.LegalEntityId, projectNumber = number, quotationId = source.QuotationId, revisionNumber = source.RevisionNumber, contractValue = source.AgreedValue, currencyCode = currency }), tenant, DateTimeOffset.UtcNow, correlationId, id, "projects"));
         return await GetDetailAsync(context, tenant, id, token) ?? throw new ProjectException("projects.project_not_found");
     }, ct);
 
@@ -496,7 +549,49 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
 
     public Task<ChangeRequestView> CreateChangeAsync(TenantId tenant, Guid actor, Guid projectId, CreateChangeRequest request, CancellationToken ct) => coordinator.ExecuteAsync<ChangeRequestView>(tenant, async (context, token) => { ProjectRules.EnsureMutable(await StateAsync(context, tenant.Value, projectId, token)); var legalEntityId = await ScalarAsync<Guid>(context, "select legal_entity_id from business_projects.project where tenant_id=$1 and id=$2", token, tenant.Value, projectId); var id = Guid.CreateVersion7(); var number = await sequences.AllocateAsync(context, new SequenceDefinition("projects.change-request", tenant, legalEntityId, null, null, null, "CR-", 7, 1), token); await ExecuteAsync(context, "insert into business_projects.project_change_request(tenant_id,id,project_id,request_number,title,reason,contract_delta,budget_delta,schedule_delta_days,requested_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", token, tenant.Value, id, projectId, number, request.Title.Trim(), Db(request.Reason), request.ContractDelta, request.BudgetDelta, request.ScheduleDeltaDays, actor); return new(id, projectId, number, request.Title.Trim(), "Draft", request.ContractDelta, request.BudgetDelta, request.ScheduleDeltaDays); }, ct);
 
-    public Task<ChangeRequestView> DecideChangeAsync(TenantId tenant, Guid actor, Guid projectId, Guid changeId, ChangeDecisionRequest request, CancellationToken ct) => coordinator.ExecuteAsync<ChangeRequestView>(tenant, async (context, token) => { if (request.Decision is not ("approve" or "reject")) throw new ProjectException("projects.change_decision_invalid"); var status = request.Decision == "approve" ? "Approved" : "Rejected"; var row = await ReadChangeAsync(context, tenant.Value, changeId, token) ?? throw new ProjectException("projects.change_not_found"); await ExecuteAsync(context, "update business_projects.project_change_request set status=$3 where tenant_id=$1 and id=$2 and status in ('Draft','Submitted')", token, tenant.Value, changeId, status); if (status == "Approved") { var legalEntityId = await ScalarAsync<Guid>(context, "select legal_entity_id from business_projects.project where tenant_id=$1 and id=$2", token, tenant.Value, projectId); var orderNumber = await sequences.AllocateAsync(context, new SequenceDefinition("projects.change-order", tenant, legalEntityId, null, null, null, "CO-", 7, 1), token); await ExecuteAsync(context, "insert into business_projects.project_change_order(tenant_id,id,project_id,change_request_id,order_number,contract_delta,budget_delta,schedule_delta_days,approved_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9)", token, tenant.Value, Guid.CreateVersion7(), projectId, changeId, orderNumber, row.ContractDelta, row.BudgetDelta, row.ScheduleDeltaDays, actor); } return row with { Status = status }; }, ct);
+    public Task<ChangeRequestView> DecideChangeAsync(TenantId tenant, Guid actor, Guid projectId, Guid changeId, ChangeDecisionRequest request, CancellationToken ct) => coordinator.ExecuteAsync<ChangeRequestView>(tenant, async (context, token) =>
+    {
+        if (request.Decision is not ("approve" or "reject")) throw new ProjectException("projects.change_decision_invalid");
+        var row = await ReadChangeAsync(context, tenant.Value, changeId, token) ?? throw new ProjectException("projects.change_not_found");
+        if (row.ProjectId != projectId) throw new ProjectException("projects.change_not_found");
+        if (row.Status is "Approved" or "Rejected" or "Cancelled") return row;
+        var status = request.Decision == "approve" ? "Approved" : "Rejected";
+        if (await ExecuteAsync(context, "update business_projects.project_change_request set status=$3 where tenant_id=$1 and id=$2 and status in ('Draft','Submitted')", token, tenant.Value, changeId, status) != 1)
+            return await ReadChangeAsync(context, tenant.Value, changeId, token) ?? throw new ProjectException("projects.change_not_found");
+        if (status == "Rejected")
+        {
+            await AuditAsync(context, tenant, projectId, actor, "change_request_rejected", row, request, token);
+            return row with { Status = status };
+        }
+
+        var legalEntityId = await ScalarAsync<Guid>(context, "select legal_entity_id from business_projects.project where tenant_id=$1 and id=$2", token, tenant.Value, projectId);
+        var orderNumber = await sequences.AllocateAsync(context, new SequenceDefinition("projects.change-order", tenant, legalEntityId, null, null, null, "CO-", 7, 1), token);
+        await ExecuteAsync(context, "insert into business_projects.project_change_order(tenant_id,id,project_id,change_request_id,order_number,contract_delta,budget_delta,schedule_delta_days,approved_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9)", token, tenant.Value, Guid.CreateVersion7(), projectId, changeId, orderNumber, row.ContractDelta, row.BudgetDelta, row.ScheduleDeltaDays, actor);
+
+        if (row.ContractDelta != 0m)
+        {
+            var billing = await ReadActiveBillingRuleAsync(context, tenant.Value, projectId, token);
+            if (billing is null || billing.Value.ContractValue is null || billing.Value.ContractValue.Value + row.ContractDelta < 0m)
+                throw new ProjectException("projects.change_contract_baseline_invalid");
+            await ExecuteAsync(context, "update business_projects.project_billing_rule set status='Retired',effective_to=current_date where tenant_id=$1 and id=$2 and status='Active'", token, tenant.Value, billing.Value.Id);
+            await ExecuteAsync(context, "insert into business_projects.project_billing_rule(tenant_id,id,project_id,version_no,model,status,contract_value,currency_code,markup_percent,billing_cap,effective_from) values($1,$2,$3,$4,$5,'Active',$6,$7,$8,$9,current_date)", token, tenant.Value, Guid.CreateVersion7(), projectId, billing.Value.VersionNo + 1, billing.Value.Model, billing.Value.ContractValue.Value + row.ContractDelta, billing.Value.CurrencyCode is null ? DBNull.Value : billing.Value.CurrencyCode, billing.Value.MarkupPercent, Db(billing.Value.BillingCap));
+        }
+        if (row.BudgetDelta != 0m)
+        {
+            var budget = await ReadApprovedBudgetAsync(context, tenant.Value, projectId, token);
+            if (budget is null || budget.Value.CurrentAmount + row.BudgetDelta < 0m) throw new ProjectException("projects.change_budget_baseline_invalid");
+            await ExecuteAsync(context, "update business_projects.project_budget_version set state='Superseded' where tenant_id=$1 and id=$2 and state='Approved'", token, tenant.Value, budget.Value.VersionId);
+            await ExecuteAsync(context, "insert into business_projects.project_budget_version(tenant_id,id,budget_id,version_no,state,original_amount,current_amount,approved_by,approved_at,created_by) values($1,$2,$3,$4,'Approved',$5,$6,$7,now(),$7)", token, tenant.Value, Guid.CreateVersion7(), budget.Value.BudgetId, budget.Value.VersionNo + 1, budget.Value.OriginalAmount, budget.Value.CurrentAmount + row.BudgetDelta, actor);
+        }
+        if (row.ScheduleDeltaDays != 0)
+        {
+            if ((bool?)await ScalarAsync(context, "select target_end_date is not null from business_projects.project where tenant_id=$1 and id=$2", token, tenant.Value, projectId) != true)
+                throw new ProjectException("projects.change_schedule_baseline_missing");
+            await ExecuteAsync(context, "update business_projects.project set target_end_date=target_end_date+$3, row_version=row_version+1, updated_at=now() where tenant_id=$1 and id=$2", token, tenant.Value, projectId, row.ScheduleDeltaDays);
+        }
+        await AuditAsync(context, tenant, projectId, actor, "change_order_applied", row, new { request.Decision, row.ContractDelta, row.BudgetDelta, row.ScheduleDeltaDays, orderNumber }, token);
+        return row with { Status = status };
+    }, ct);
 
     public Task<CloseView> CloseReadinessAsync(TenantId tenant, Guid projectId, CancellationToken ct) => coordinator.ExecuteAsync<CloseView>(tenant, async (context, token) => { await StateAsync(context, tenant.Value, projectId, token); var blockers = await CloseBlockersAsync(context, tenant.Value, projectId, token); var state = await ScalarAsync<string>(context, "select state from business_projects.project_close where tenant_id=$1 and project_id=$2", token, tenant.Value, projectId) ?? "Open"; return new(projectId, state, blockers); }, ct);
     public Task<CloseView> CloseAsync(TenantId tenant, Guid actor, Guid projectId, CancellationToken ct) => coordinator.ExecuteAsync<CloseView>(tenant, async (context, token) => { var current = await StateAsync(context, tenant.Value, projectId, token); new ProjectAggregate(projectId, current).TransitionTo(ProjectStates.Closed); var blockers = await CloseBlockersAsync(context, tenant.Value, projectId, token); if (blockers.Count > 0) throw new ProjectException("projects.close_blocked"); await ExecuteAsync(context, "insert into business_projects.project_close(tenant_id,id,project_id,state,requested_by,requested_at,closed_by,closed_at) values($1,$2,$3,'Closed',$4,now(),$4,now()) on conflict (tenant_id,project_id) do update set state='Closed',closed_by=$4,closed_at=now()", token, tenant.Value, Guid.CreateVersion7(), projectId, actor); var updated = await ExecuteAsync(context, "update business_projects.project set lifecycle_state='Closed',row_version=row_version+1,updated_at=now() where tenant_id=$1 and id=$2 and lifecycle_state='FinancialClosing'", token, tenant.Value, projectId); if (updated == 0) throw new ProjectException("projects.concurrency_conflict"); return new(projectId, "Closed", Array.Empty<string>()); }, ct);
@@ -619,7 +714,18 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
     public Task<ProjectCloseExceptionView> AddCloseExceptionAsync(TenantId tenant, Guid actor, Guid projectId, CreateCloseExceptionRequest request, CancellationToken ct) => coordinator.ExecuteAsync<ProjectCloseExceptionView>(tenant, async (context, token) =>
     {
         if (string.IsNullOrWhiteSpace(request.ExceptionType) || string.IsNullOrWhiteSpace(request.Message)) throw new ProjectException("projects.close_exception_invalid"); var closeId = await ScalarAsync<Guid?>(context, "select id from business_projects.project_close where tenant_id=$1 and project_id=$2", token, tenant.Value, projectId); if (closeId is null) { closeId = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_projects.project_close(tenant_id,id,project_id,requested_by) values($1,$2,$3,$4)", token, tenant.Value, closeId.Value, projectId, actor); }
-        var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_projects.project_close_exception(tenant_id,id,project_close_id,exception_type,reference_id,message) values($1,$2,$3,$4,$5,$6)", token, tenant.Value, id, closeId.Value, request.ExceptionType.Trim(), Db(request.ReferenceId), request.Message.Trim()); await AuditAsync(context, tenant, projectId, actor, "close_exception_created", null, request, token); return await ReadCloseExceptionAsync(context, tenant.Value, id, token) ?? throw new ProjectException("projects.close_exception_not_found");
+        var managerUserId = await ScalarAsync<Guid?>(context, "select coalesce(p.manager_user_id,(select tm.user_id from business_projects.project_team_member tm where tm.tenant_id=p.tenant_id and tm.project_id=p.id and tm.is_manager and tm.user_id is not null and (tm.active_to is null or tm.active_to >= current_date) order by tm.id limit 1)) from business_projects.project p where p.tenant_id=$1 and p.id=$2", token, tenant.Value, projectId);
+        var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_projects.project_close_exception(tenant_id,id,project_close_id,exception_type,reference_id,message) values($1,$2,$3,$4,$5,$6)", token, tenant.Value, id, closeId.Value, request.ExceptionType.Trim(), Db(request.ReferenceId), request.Message.Trim()); await AuditAsync(context, tenant, projectId, actor, "close_exception_created", null, request, token);
+        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProjectCloseExceptionCreatedV1", JsonSerializer.Serialize(new
+        {
+            projectId,
+            exceptionId = id,
+            exceptionType = request.ExceptionType.Trim(),
+            referenceId = request.ReferenceId,
+            message = request.Message.Trim(),
+            managerUserId
+        }), tenant, DateTimeOffset.UtcNow, projectId, id, "projects"));
+        return await ReadCloseExceptionAsync(context, tenant.Value, id, token) ?? throw new ProjectException("projects.close_exception_not_found");
     }, ct);
 
     public Task<PagedResult<ProjectCloseExceptionView>> ListCloseExceptionsAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync<PagedResult<ProjectCloseExceptionView>>(tenant, async (context, token) =>
@@ -653,8 +759,8 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
 
     private static async Task<ProjectDetail?> GetDetailAsync(ITransactionContext context, TenantId tenant, Guid id, CancellationToken ct)
     {
-        const string sql = "select p.id,p.legal_entity_id,p.project_number,p.name,p.description,p.project_type,p.customer_party_id,p.manager_employee_id,p.start_date,p.target_end_date,p.actual_end_date,p.lifecycle_state,p.execution_health,p.billing_model,p.currency_code,p.row_version,coalesce((select sum(v.current_amount) from business_projects.project_budget_version v join business_projects.project_budget b on b.tenant_id=v.tenant_id and b.id=v.budget_id where v.tenant_id=p.tenant_id and b.project_id=p.id and v.state='Approved'),0),coalesce((select sum(base_amount) from business_projects.project_cost_fact where tenant_id=p.tenant_id and project_id=p.id and state='Finalized'),0),coalesce((select sum(open_amount) from business_projects.project_commitment where tenant_id=p.tenant_id and project_id=p.id and state in ('Open','PartiallyActualized')),0),coalesce((select etc_amount from business_projects.project_forecast where tenant_id=p.tenant_id and project_id=p.id order by version_no desc limit 1),0),coalesce((select eac_amount from business_projects.project_forecast where tenant_id=p.tenant_id and project_id=p.id order by version_no desc limit 1),0),coalesce((select sum(greatest(billable_amount-invoiced_amount,0)) from business_projects.project_billable_charge where tenant_id=p.tenant_id and project_id=p.id and state in ('Eligible','Requested','PartiallyInvoiced')),0),coalesce((select sum(allocated_amount) from business_projects.project_invoice_allocation a join business_projects.project_invoice_request r on r.tenant_id=a.tenant_id and r.id=a.invoice_request_id where r.tenant_id=p.tenant_id and r.project_id=p.id),0) from business_projects.project p where p.tenant_id=$1 and p.id=$2";
-        await using var command = Command(context, sql, tenant.Value, id); await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) return null; var budget = reader.GetDecimal(16); var actual = reader.GetDecimal(17); var commitment = reader.GetDecimal(18); var etc = reader.GetDecimal(19); var eac = reader.GetDecimal(20); var eligible = reader.GetDecimal(21); var invoiced = reader.GetDecimal(22); return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetGuid(6), reader.IsDBNull(7) ? null : reader.GetGuid(7), reader.GetFieldValue<DateOnly>(8), reader.IsDBNull(9) ? null : reader.GetFieldValue<DateOnly>(9), reader.IsDBNull(10) ? null : reader.GetFieldValue<DateOnly>(10), reader.GetString(11), reader.GetString(12), reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14), reader.GetInt64(15), budget, actual, commitment, etc, eac, eligible, invoiced, 0, invoiced);
+        const string sql = "select p.id,p.legal_entity_id,p.project_number,p.name,p.description,p.project_type,p.customer_party_id,p.manager_employee_id,p.start_date,p.target_end_date,p.actual_end_date,p.lifecycle_state,p.execution_health,p.billing_model,p.currency_code,p.row_version,coalesce((select sum(v.current_amount) from business_projects.project_budget_version v join business_projects.project_budget b on b.tenant_id=v.tenant_id and b.id=v.budget_id where v.tenant_id=p.tenant_id and b.project_id=p.id and v.state='Approved'),0),coalesce((select sum(base_amount) from business_projects.project_cost_fact where tenant_id=p.tenant_id and project_id=p.id and state='Finalized'),0),coalesce((select sum(open_amount) from business_projects.project_commitment where tenant_id=p.tenant_id and project_id=p.id and state in ('Open','PartiallyActualized')),0),coalesce((select etc_amount from business_projects.project_forecast where tenant_id=p.tenant_id and project_id=p.id order by version_no desc limit 1),0),coalesce((select eac_amount from business_projects.project_forecast where tenant_id=p.tenant_id and project_id=p.id order by version_no desc limit 1),0),coalesce((select sum(greatest(billable_amount-invoiced_amount,0)) from business_projects.project_billable_charge where tenant_id=p.tenant_id and project_id=p.id and state in ('Eligible','Requested','PartiallyInvoiced')),0),coalesce((select sum(allocated_amount) from business_projects.project_invoice_allocation a join business_projects.project_invoice_request r on r.tenant_id=a.tenant_id and r.id=a.invoice_request_id where r.tenant_id=p.tenant_id and r.project_id=p.id),0),p.source_type,p.source_ref from business_projects.project p where p.tenant_id=$1 and p.id=$2";
+        await using var command = Command(context, sql, tenant.Value, id); await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) return null; var budget = reader.GetDecimal(16); var actual = reader.GetDecimal(17); var commitment = reader.GetDecimal(18); var etc = reader.GetDecimal(19); var eac = reader.GetDecimal(20); var eligible = reader.GetDecimal(21); var invoiced = reader.GetDecimal(22); return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetGuid(6), reader.IsDBNull(7) ? null : reader.GetGuid(7), reader.GetFieldValue<DateOnly>(8), reader.IsDBNull(9) ? null : reader.GetFieldValue<DateOnly>(9), reader.IsDBNull(10) ? null : reader.GetFieldValue<DateOnly>(10), reader.GetString(11), reader.GetString(12), reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14), reader.GetInt64(15), budget, actual, commitment, etc, eac, eligible, invoiced, 0, invoiced, reader.IsDBNull(23) ? null : reader.GetString(23), reader.IsDBNull(24) ? null : reader.GetString(24));
     }
     private static async Task<string> StateAsync(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) => (string?)await ScalarAsync(c, "select lifecycle_state from business_projects.project where tenant_id=$1 and id=$2", ct, tenant, id) ?? throw new ProjectException("projects.project_not_found");
     private static async Task EnsureCloseReadyAsync(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { var blockers = await CloseBlockersAsync(c, tenant, id, ct); if (blockers.Count > 0) throw new ProjectException("projects.close_blocked"); }
@@ -713,6 +819,22 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
         await using var reader = await command.ExecuteReaderAsync(ct);
         return await reader.ReadAsync(ct) ? new BillingBasis(reader.IsDBNull(0) ? null : reader.GetDecimal(0), reader.IsDBNull(1) ? null : reader.GetString(1)) : new BillingBasis(null, null);
     }
+    private readonly record struct ActiveBillingRule(Guid Id, int VersionNo, string Model, decimal? ContractValue, string? CurrencyCode, decimal MarkupPercent, decimal? BillingCap);
+    private static async Task<ActiveBillingRule?> ReadActiveBillingRuleAsync(ITransactionContext c, Guid tenant, Guid projectId, CancellationToken ct)
+    {
+        await using var command = Command(c, "select id,version_no,model,contract_value,trim(currency_code),markup_percent,billing_cap from business_projects.project_billing_rule where tenant_id=$1 and project_id=$2 and status='Active' order by version_no desc limit 1", tenant, projectId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct)
+            ? new ActiveBillingRule(reader.GetGuid(0), reader.GetInt32(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetDecimal(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6))
+            : null;
+    }
+    private readonly record struct ApprovedBudget(Guid BudgetId, Guid VersionId, int VersionNo, decimal OriginalAmount, decimal CurrentAmount);
+    private static async Task<ApprovedBudget?> ReadApprovedBudgetAsync(ITransactionContext c, Guid tenant, Guid projectId, CancellationToken ct)
+    {
+        await using var command = Command(c, "select b.id,v.id,v.version_no,v.original_amount,v.current_amount from business_projects.project_budget b join business_projects.project_budget_version v on v.tenant_id=b.tenant_id and v.budget_id=b.id and v.state='Approved' where b.tenant_id=$1 and b.project_id=$2 order by v.version_no desc limit 1", tenant, projectId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct) ? new ApprovedBudget(reader.GetGuid(0), reader.GetGuid(1), reader.GetInt32(2), reader.GetDecimal(3), reader.GetDecimal(4)) : null;
+    }
     private static BillableChargeView ReadCharge(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetDecimal(4), r.GetDecimal(5), r.GetString(6).Trim(), r.GetString(7), r.IsDBNull(8) ? null : r.GetGuid(8));
     private static async Task<BillableChargeView?> ReadChargeAsync(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,project_id,source_type,source_id,cost_amount,billable_amount,currency_code,state,invoice_request_id from business_projects.project_billable_charge where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? ReadCharge(r) : null; }
     private static async Task<BillableChargeView?> ReadChargeByKeyAsync(ITransactionContext c, Guid tenant, string key, CancellationToken ct) { var id = await ScalarAsync(c, "select id from business_projects.project_billable_charge where tenant_id=$1 and idempotency_key=$2", ct, tenant, key); return id is Guid value ? await ReadChargeAsync(c, tenant, value, ct) : null; }
@@ -721,6 +843,13 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
     private static async Task<ChangeRequestView?> ReadChangeAsync(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,project_id,request_number,title,status,contract_delta,budget_delta,schedule_delta_days from business_projects.project_change_request where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetDecimal(5), r.GetDecimal(6), r.GetInt32(7)) : null; }
     private static async Task<CapitalHandoffView?> ReadHandoffAsync(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,project_id,source_cost_fact_id,amount,currency_code,state,external_reference from business_projects.project_capital_handoff where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetDecimal(3), r.GetString(4).Trim(), r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6)) : null; }
     private static async Task<CapitalHandoffView?> ReadHandoffByKeyAsync(ITransactionContext c, Guid tenant, string key, CancellationToken ct) { var id = await ScalarAsync(c, "select id from business_projects.project_capital_handoff where tenant_id=$1 and idempotency_key=$2", ct, tenant, key); return id is Guid value ? await ReadHandoffAsync(c, tenant, value, ct) : null; }
+    private static async Task<(string RequestHash, Guid ProjectId)?> ReadProjectIdempotencyAsync(ITransactionContext c, Guid tenant, string operation, string key, CancellationToken ct)
+    {
+        await using var command = Command(c, "select request_hash,response_json->>'projectId' from business_projects.project_idempotency where tenant_id=$1 and operation=$2 and idempotency_key=$3 for update", tenant, operation, key);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct) || reader.IsDBNull(0) || reader.IsDBNull(1) || !Guid.TryParse(reader.GetString(1), out var projectId)) return null;
+        return (reader.GetString(0), projectId);
+    }
     private static void ValidateJsonObject(string value, string code) { try { using var document = JsonDocument.Parse(value); if (document.RootElement.ValueKind != JsonValueKind.Object) throw new ProjectException(code); } catch (JsonException) { throw new ProjectException(code); } }
     private static ProjectResourceRequirementView ReadResourceRequirement(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetDecimal(3), r.IsDBNull(4) ? null : r.GetFieldValue<DateOnly>(4), r.IsDBNull(5) ? null : r.GetFieldValue<DateOnly>(5), r.GetString(6));
     private static async Task<ProjectResourceRequirementView?> ReadResourceRequirementAsync(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,project_id,role_code,quantity,required_from,required_to,status from business_projects.project_resource_requirement where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? ReadResourceRequirement(r) : null; }

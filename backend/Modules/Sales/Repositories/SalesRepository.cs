@@ -6,6 +6,7 @@ using Modules.Sales.Entities;
 using Npgsql;
 using NpgsqlTypes;
 using Shared.Primitives.Identifiers;
+using Todir.Sales.Contracts;
 
 namespace Modules.Sales.Repositories;
 
@@ -45,6 +46,19 @@ public sealed partial class SalesRepository(NpgsqlDataSource dataSource, ITransa
         var history = await ReadHistoryAsync(connection, tenant.Value, legalEntityId, id, ct);
         return new(id, legalEntityId, branch, number, party, quoteDate, valid, state, current, version, currency, customerReference, requested,
             revision.net, revision.discount, revision.gross, lines, accepts, history);
+    }
+
+    public async Task<SalesAcceptedQuotationContract?> GetAcceptedQuotationAsync(TenantId tenant, Guid legalEntityId, Guid id, int acceptedRevision, CancellationToken ct)
+    {
+        if (acceptedRevision <= 0) return null;
+        var quote = await GetQuotationAsync(tenant, legalEntityId, id, ct);
+        if (quote is null || quote.State is not ("Accepted" or "Converted") || quote.CurrentRevisionNumber != acceptedRevision)
+            return null;
+        if (quote.Acceptances.All(item => item.RevisionNumber != acceptedRevision)) return null;
+        return new(id, legalEntityId, quote.PartyId, acceptedRevision, quote.Number, quote.QuoteDate, quote.ValidUntil,
+            quote.CurrencyCode, quote.CustomerReference, quote.GrossTotal,
+            quote.Lines.Select(line => new SalesCommercialLine(line.ProductVariantId, line.UnitOfMeasureId, line.Description,
+                line.Quantity, line.UnitPrice, line.DiscountAmount, line.UomCode)).ToArray());
     }
 
     public async Task<SalesPage<QuotationListItem>> ListQuotationsAsync(TenantId tenant, Guid legalEntityId, string? state, Guid? partyId, int page, int pageSize, CancellationToken ct, string? search = null)

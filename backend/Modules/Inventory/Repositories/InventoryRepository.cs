@@ -1399,8 +1399,9 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
             {
                 Add(command, tenant.Value, movementId, entity, operationId, sequence, request.ProductVariantId, request.WarehouseId, effectiveLocation, request.Status.ToString(), request.LotId ?? (object)DBNull.Value, request.SerialId ?? (object)DBNull.Value, request.EnteredQuantity, request.EnteredUomId, draft.ConversionFactorSnapshot, draft.BaseQuantity, signedQuantity, sourceModule, request.SourceDocumentId ?? (object)DBNull.Value, request.OperationalDate, request.PostingDate, now, kind.ToString(), actor); await command.ExecuteNonQueryAsync(token);
             }
+            ValuationResult? valuationResult = null;
             if (storedProfile.Valuation == ValuationMode.Perpetual)
-                await ApplyValuationAsync(context, tenant, actor, entity, operationId, movementId, storedProfile, draft, request.CurrencyCode, kind, correlationId, now, token, signedAdjustmentQuantity);
+                valuationResult = await ApplyValuationAsync(context, tenant, actor, entity, operationId, movementId, storedProfile, draft, request.CurrencyCode, kind, correlationId, now, token, signedAdjustmentQuantity);
             if (consumedReservation is not null)
             {
                 var remainingReserved = consumedReservation.Quantity - draft.BaseQuantity;
@@ -1430,7 +1431,22 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
                 await ReconcileNegativeStockConditionAsync(context, position, movementId, token);
             await AuditAsync(context, tenant.Value, entity, actor, negativeStockConditionTriggered ? "stock.issue_negative_condition_raised" : $"stock.{kind.ToString().ToLowerInvariant()}_confirmed", "InventoryOperation", operationId, correlationId, now, token);
             var eventType = kind == MovementKind.Adjustment ? "StockAdjustedV1" : kind == MovementKind.Issue ? "StockIssuedV1" : kind == MovementKind.Opening ? "StockOpeningPostedV1" : "StockReceivedV1";
-            var payload = JsonSerializer.Serialize(new { operationId, movementId, productVariantId = request.ProductVariantId, warehouseId = request.WarehouseId, locationId = effectiveLocation, quantity = draft.BaseQuantity, costAmount = request.UnitCost is { } unitCost ? Math.Abs(unitCost * draft.BaseQuantity) : 0m, currencyCode = request.CurrencyCode, projectId = request.ProjectId, taskId = request.TaskId, costCategory = request.CostCategory, sourceModule, reasonCode });
+            var payload = JsonSerializer.Serialize(new
+            {
+                operationId,
+                movementId,
+                productVariantId = request.ProductVariantId,
+                warehouseId = request.WarehouseId,
+                locationId = effectiveLocation,
+                quantity = draft.BaseQuantity,
+                costAmount = valuationResult?.CostAmount ?? (request.UnitCost is { } unitCost ? Math.Abs(unitCost * draft.BaseQuantity) : 0m),
+                currencyCode = valuationResult?.CurrencyCode ?? request.CurrencyCode,
+                projectId = request.ProjectId,
+                taskId = request.TaskId,
+                costCategory = request.CostCategory,
+                sourceModule,
+                reasonCode
+            });
             context.AddOutbox(new(Guid.CreateVersion7(), eventType, payload, tenant, now, correlationId, operationId, "inventory", traceParent));
             return new InventoryOperationResult(operationId, operationNumber, "Confirmed", [movementId], false);
         }, ct);
@@ -1848,7 +1864,9 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
     // UUIDv7 prefixes are time ordered, so suffixes must use the random portion to avoid same-millisecond collisions.
     private static string OperationNumber(DateTimeOffset now, Guid id) => $"INV-{now:yyyyMMdd}-{id.ToString("N")[16..].ToUpperInvariant()}";
 
-    private async Task ApplyValuationAsync(ITransactionContext context, TenantId tenant, Guid actor, Guid entity,
+    private sealed record ValuationResult(decimal CostAmount, string CurrencyCode);
+
+    private async Task<ValuationResult> ApplyValuationAsync(ITransactionContext context, TenantId tenant, Guid actor, Guid entity,
         Guid operationId, Guid movementId, InventoryProfile profile, MovementDraft movement, string? currencyCode,
         MovementKind kind, Guid correlationId, DateTimeOffset now, CancellationToken ct, decimal? signedAdjustmentQuantity = null)
     {
@@ -1975,6 +1993,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
         {
             Add(update, tenant.Value, entity, profile.ProductVariantId, quantity, carryingValue, average, currency, now); await update.ExecuteNonQueryAsync(ct);
         }
+        return new(value, currency);
     }
 
     private static async Task AuditAsync(ITransactionContext context, Guid tenant, Guid entity, Guid actor, string action, string entityType, Guid entityId, Guid correlation, DateTimeOffset now, CancellationToken ct)

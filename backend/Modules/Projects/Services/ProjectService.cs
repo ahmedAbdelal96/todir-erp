@@ -6,12 +6,20 @@ using Shared.Contracts.Projects;
 using Shared.Contracts.Invoicing;
 using Shared.Contracts.Subledger;
 using System.Globalization;
+using Todir.Sales.Contracts;
 
 namespace Modules.Projects.Services;
 
-public sealed class ProjectService(ProjectsRepository repository, IInvoicingSourceCapabilities invoicing, ISubledgerCapabilities? subledger = null) : IProjectCapitalizationCapability, IProjectCostFactReader, IProjectCostFactWriter, IProjectSourceIntegrationCapabilities
+public sealed class ProjectService(ProjectsRepository repository, IInvoicingSourceCapabilities invoicing, ISalesQuotationCapabilities sales, ISubledgerCapabilities? subledger = null) : IProjectCapitalizationCapability, IProjectCostFactReader, IProjectCostFactWriter, IProjectSourceIntegrationCapabilities
 {
     public Task<ProjectDetail> CreateAsync(TenantId tenant, Guid actor, Guid membership, CreateProjectRequest request, Guid correlationId, CancellationToken ct) => repository.CreateAsync(tenant, actor, membership, request, correlationId, ct);
+    public async Task<ProjectDetail> CreateFromSalesSourceAsync(TenantId tenant, Guid actor, Guid membership, CreateProjectFromSalesSourceRequest request, Guid correlationId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 200) throw new ProjectException("projects.idempotency_key_invalid");
+        var source = await sales.GetAcceptedQuotationAsync(tenant, request.LegalEntityId, request.QuotationId, request.AcceptedRevision, ct)
+            ?? throw new ProjectException("projects.sales_source_not_accepted");
+        return await repository.CreateFromSalesSourceAsync(tenant, actor, membership, request, source, correlationId, ct);
+    }
     public Task<PagedResult<ProjectListItem>> ListAsync(TenantId tenant, Guid legalEntityId, string? search, string? state, int page, int pageSize, CancellationToken ct) => repository.ListAsync(tenant, legalEntityId, search, state, page, pageSize, ct);
     public Task<ProjectDetail?> GetAsync(TenantId tenant, Guid projectId, CancellationToken ct) => repository.GetAsync(tenant, projectId, ct);
     public Task<ProjectDetail> UpdateAsync(TenantId tenant, Guid actor, Guid projectId, UpdateProjectRequest request, CancellationToken ct) => repository.UpdateAsync(tenant, actor, projectId, request, ct);

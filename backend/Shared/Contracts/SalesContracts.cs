@@ -7,7 +7,9 @@ public sealed record SalesCommercialLine(Guid? ProductVariantId, Guid? UnitOfMea
 public sealed record SalesConversionRequest(Guid QuotationId, int AcceptedRevision, string ConversionMode, bool DeliverNow, Guid? WarehouseId, string IdempotencyKey);
 public sealed record SalesCreditDecision(string Decision, string PolicyCode, string? AvailableCredit, string? ProposedExposure, long ExposureVersion, string? Reason);
 public sealed record SalesQuotationSourceContract(Guid LegalEntityId, Guid PartyId, string CurrencyCode, DateOnly QuoteDate, DateOnly? ValidUntil, IReadOnlyList<SalesCommercialLine> Lines, string? CustomerReference, string IdempotencyKey);
+public sealed record SalesAcceptedQuotationContract(Guid QuotationId, Guid LegalEntityId, Guid PartyId, int RevisionNumber, string Number, DateOnly QuoteDate, DateOnly? ValidUntil, string CurrencyCode, string? CustomerReference, decimal AgreedValue, IReadOnlyList<SalesCommercialLine> Lines);
 public interface ISalesQuotationCapabilities
 {
     Task<Guid> CreateDraftQuotationAsync(TenantId tenantId, Guid actorId, SalesQuotationSourceContract request, CancellationToken cancellationToken = default);
+    Task<SalesAcceptedQuotationContract?> GetAcceptedQuotationAsync(TenantId tenantId, Guid legalEntityId, Guid quotationId, int acceptedRevision, CancellationToken cancellationToken = default);
 }

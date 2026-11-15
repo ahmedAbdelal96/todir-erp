@@ -3,24 +3,38 @@ extern alias WorkerAssembly;
 using System.Text.Json;
 using Core.Messaging;
 using Core.Services;
+using Core.Transactions;
 using MassTransit;
 using MassTransit.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Modules.FixedAssets.Services;
+using Modules.Expenses.DTOs;
+using Modules.Expenses.Repositories;
+using Modules.Expenses.Services;
 using Modules.Invoicing.Services;
+using Modules.Inventory.DTOs;
+using Modules.Inventory.Entities;
+using Modules.Inventory.Services;
+using Modules.CRM.DTOs;
+using Modules.CRM.Services;
 using Modules.Payments.DTOs;
 using Modules.Payments.Entities;
 using Modules.Payments.Services;
 using Modules.Purchasing.DTOs;
 using Modules.Purchasing.Services;
 using Modules.Projects.DTOs;
+using Modules.Projects.Entities;
 using Modules.Projects.Repositories;
 using Modules.Projects.Services;
+using Modules.Sales.DTOs;
+using Modules.Sales.Services;
 using Npgsql;
 using Shared.Contracts.Projects;
 using Shared.Contracts.Invoicing;
+using Shared.Contracts.FinanceBase;
+using Shared.Contracts.Platform;
 using Shared.Contracts.Subledger;
 using Shared.Primitives.Identifiers;
 using WorkerAssembly::Worker;
@@ -32,6 +46,245 @@ public sealed class ProjectsCrossModuleAcceptanceTests
 {
     private static readonly TenantId AtlasTenant = new(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
     private static readonly Guid AtlasEntity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+
+    [Fact(DisplayName = "PJ46 real accepted Sales quotation creates one linked Customer Project and preserves commercial baseline")]
+    public async Task RealAcceptedSalesQuotationCreatesOneLinkedProject()
+    {
+        var connectionString = RequireConnection();
+        using var factory = CreateFactory(connectionString);
+        var sales = factory.Services.GetRequiredService<SalesService>();
+        var crm = factory.Services.GetRequiredService<CrmService>();
+        var projects = factory.Services.GetRequiredService<ProjectService>();
+        var actor = Guid.CreateVersion7();
+        var customer = await FindPartyAsync(connectionString, AtlasTenant);
+        var pipeline = (await crm.ListPipelinesAsync(AtlasTenant, AtlasEntity, CancellationToken.None)).First(item => item.Stages.Count > 0);
+        var opportunity = await crm.CreateOpportunityAsync(AtlasTenant, actor,
+            new(AtlasEntity, customer, null, pipeline.Id, pipeline.Stages[0].Id, "PJ46 accepted opportunity", 2500m, "EGP", new(2026, 4, 1)), true, CancellationToken.None);
+        var quotationId = await crm.CreateQuotationAsync(AtlasTenant, actor, AtlasEntity, opportunity.Id,
+            new($"pj46-sales-quote:{opportunity.Id:D}", new(2026, 3, 1), new(2026, 4, 1), "EGP",
+                [new(null, null, "Accepted implementation scope", 1m, 2500m, 0m, "EA")], "PJ46-SALES-SOURCE"), true, CancellationToken.None);
+        var draft = await sales.GetQuotationAsync(AtlasTenant, AtlasEntity, quotationId, CancellationToken.None);
+        Assert.NotNull(draft);
+        await sales.OpenQuotationAsync(AtlasTenant, actor, AtlasEntity, quotationId, new(draft!.Version), CancellationToken.None);
+        await sales.AcceptQuotationAsync(AtlasTenant, actor, AtlasEntity, quotationId,
+            new(1, "CustomerApproval", "PJ46-ACCEPTED", "Accepted for delivery", $"pj46-sales-accept:{quotationId:D}"), CancellationToken.None);
+
+        var request = new CreateProjectFromSalesSourceRequest(
+            AtlasEntity,
+            quotationId,
+            1,
+            "PJ46 accepted commercial delivery",
+            "CustomerProject",
+            null,
+            new(2026, 3, 1),
+            new(2026, 6, 30),
+            "FixedPrice",
+            2500m,
+            null,
+            "Created from accepted Sales quotation",
+            $"pj46-sales-project:{quotationId:D}:1");
+        var concurrent = await Task.WhenAll(
+            projects.CreateFromSalesSourceAsync(AtlasTenant, actor, actor, request, Guid.CreateVersion7(), CancellationToken.None),
+            projects.CreateFromSalesSourceAsync(AtlasTenant, actor, actor, request, Guid.CreateVersion7(), CancellationToken.None));
+        var first = concurrent[0];
+        var retry = concurrent[1];
+
+        Assert.Equal(first.Id, retry.Id);
+        Assert.Equal(customer, first.CustomerPartyId);
+        Assert.Equal("CustomerProject", first.ProjectType);
+        Assert.Equal("FixedPrice", first.BillingModel);
+        Assert.Equal("EGP", first.CurrencyCode);
+        Assert.Equal("SalesQuotation", first.SourceType);
+        Assert.Equal($"{quotationId:D}:Revision:1", first.SourceRef);
+        Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(connectionString, "select count(*) from business_projects.project_external_reference where tenant_id=$1 and project_id=$2 and source_type='SalesQuotation' and source_id=$3 and purpose='AcceptedRevision:1'", AtlasTenant.Value, first.Id, quotationId.ToString("D")), System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(2500m, Convert.ToDecimal(await ScalarAsync(connectionString, "select contract_value from business_projects.project_billing_rule where tenant_id=$1 and project_id=$2 and status='Active'", AtlasTenant.Value, first.Id), System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal("EGP", await ScalarAsync(connectionString, "select currency_code from business_projects.project_billing_rule where tenant_id=$1 and project_id=$2 and status='Active'", AtlasTenant.Value, first.Id));
+
+        var acceptedBeforeRevision = await sales.GetQuotationAsync(AtlasTenant, AtlasEntity, quotationId, CancellationToken.None);
+        await sales.ReviseQuotationAsync(AtlasTenant, actor, AtlasEntity, quotationId, acceptedBeforeRevision!.Version,
+            [new(null, null, "Approved change-order candidate", 1m, 3000m, 0m, "EA")], CancellationToken.None);
+        var preserved = await projects.GetAsync(AtlasTenant, first.Id, CancellationToken.None);
+        Assert.Equal($"{quotationId:D}:Revision:1", preserved!.SourceRef);
+        await Assert.ThrowsAsync<ProjectException>(() => projects.CreateFromSalesSourceAsync(AtlasTenant, actor, actor, request,
+            Guid.CreateVersion7(), CancellationToken.None));
+
+        var draftQuotationId = await sales.CreateQuotationAsync(AtlasTenant, actor,
+            new(AtlasEntity, null, customer, "EGP", new(2026, 3, 2), null,
+                [new(null, null, "Draft scope", 1m, 100m, 0m, "EA")], "PJ46-DRAFT-SOURCE"), CancellationToken.None);
+        await Assert.ThrowsAsync<ProjectException>(() => projects.CreateFromSalesSourceAsync(AtlasTenant, actor, actor,
+            request with { QuotationId = draftQuotationId, IdempotencyKey = $"pj46-sales-project:{draftQuotationId:D}:1" }, Guid.CreateVersion7(), CancellationToken.None));
+        await Assert.ThrowsAsync<ProjectException>(() => projects.CreateFromSalesSourceAsync(AtlasTenant, actor, actor,
+            request with { AcceptedRevision = 2, IdempotencyKey = $"pj46-sales-project:{quotationId:D}:2" }, Guid.CreateVersion7(), CancellationToken.None));
+        await Assert.ThrowsAsync<ProjectException>(() => projects.CreateFromSalesSourceAsync(AtlasTenant, actor, actor,
+            request with { LegalEntityId = Guid.CreateVersion7(), IdempotencyKey = $"pj46-sales-project:{quotationId:D}:wrong-entity" }, Guid.CreateVersion7(), CancellationToken.None));
+        await Assert.ThrowsAsync<ProjectException>(() => projects.CreateFromSalesSourceAsync(new TenantId(Guid.CreateVersion7()), actor, actor,
+            request with { IdempotencyKey = $"pj46-sales-project:{quotationId:D}:wrong-tenant" }, Guid.CreateVersion7(), CancellationToken.None));
+    }
+
+    [Fact(DisplayName = "PJ45 real finalized Expense allocation reconciles one Project expense fact")]
+    public async Task RealExpenseFinalizationReconcilesProjectExpenseCost()
+    {
+        var connectionString = RequireConnection();
+        using var factory = CreateFactory(connectionString);
+        var projects = factory.Services.GetRequiredService<ProjectService>();
+        await using var expenseDataSource = NpgsqlDataSource.Create(connectionString);
+        var expenses = new ExpenseRepository(expenseDataSource,
+            factory.Services.GetRequiredService<ITransactionCoordinator>(),
+            factory.Services.GetRequiredService<ITransactionalLedgerPostingCapability>(),
+            approvals: factory.Services.GetRequiredService<IPlatformApprovalCapability>(),
+            financeBase: factory.Services.GetService<IFinanceBaseCapabilities>());
+        var actorMembership = await FindAdminActorMembershipAsync(connectionString, AtlasTenant);
+        var approverMembership = await FindApprovalActorMembershipAsync(connectionString, AtlasTenant, actorMembership.ActorId);
+        var project = await projects.CreateAsync(AtlasTenant, actorMembership.ActorId, actorMembership.MembershipId,
+            new(AtlasEntity, $"PJ45-EXPENSE-{Guid.NewGuid():N}", "InternalProject", null, null, DateOnly.FromDateTime(DateTime.UtcNow.Date), null), Guid.CreateVersion7(), CancellationToken.None);
+        var categoryVersion = (Guid)(await ScalarAsync(connectionString,
+            "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1",
+            AtlasTenant.Value, AtlasEntity))!;
+        var expense = await expenses.CreateAsync(AtlasTenant,
+            new CreateExpenseRequest(AtlasEntity, null, "Project delivery expense", DateOnly.FromDateTime(DateTime.UtcNow.Date), 125m,
+                "EGP", "CompanyPaid", categoryVersion, "Project delivery", ProjectId: project.Id, CostCategory: "Expense"), CancellationToken.None);
+        await expenses.AddEvidenceAsync(AtlasTenant, AtlasEntity, expense.Id, new("Receipt", $"file://projects/{expense.Id:D}"), CancellationToken.None);
+        var submitted = await expenses.TransitionAsync(AtlasTenant, AtlasEntity, expense.Id, new(expense.Version), "submit", CancellationToken.None);
+        await expenses.EvaluatePolicyAsync(AtlasTenant, AtlasEntity, expense.Id, CancellationToken.None);
+        var approval = await expenses.RequestApprovalAsync(AtlasTenant, actorMembership.ActorId, actorMembership.MembershipId, AtlasEntity, expense.Id, "PJ45 acceptance", CancellationToken.None);
+        var decided = await expenses.DecideApprovalAsync(AtlasTenant, approverMembership.ActorId, approverMembership.MembershipId, AtlasEntity, expense.Id,
+            new(approval.RequestId, "Approved", "PJ45 approved"), CancellationToken.None);
+        var finalized = await expenses.TransitionAsync(AtlasTenant, AtlasEntity, expense.Id, new(decided.ResourceVersion + 1), "finalize", CancellationToken.None);
+        Assert.Equal("Finalized", finalized.ExpenseState);
+        var message = await ReadOutboxAsync(connectionString, AtlasTenant, "ExpenseFinalizedV1", expense.Id);
+
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var inbox = new NpgsqlInboxStore(dataSource);
+        var evidence = new ProjectsIntegrationRepository(dataSource);
+        await using var provider = new ServiceCollection()
+            .AddSingleton<IProjectSourceIntegrationCapabilities>(projects)
+            .AddSingleton(evidence)
+            .AddSingleton<IInboxStore>(inbox)
+            .AddMassTransitTestHarness(config => config.AddConsumer<ProjectsSourceEventConsumer>())
+            .BuildServiceProvider(true);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+        try
+        {
+            await harness.Bus.Publish(message);
+            await harness.Bus.Publish(message);
+            Assert.True(await EventuallyAsync(async () => Convert.ToInt64(await ScalarAsync(connectionString,
+                "select count(*) from business_projects.project_cost_fact where tenant_id=$1 and project_id=$2 and source_module='expenses' and source_id=$3",
+                AtlasTenant.Value, project.Id, expense.Id.ToString("D")), System.Globalization.CultureInfo.InvariantCulture) == 1));
+            Assert.Equal(125m, Convert.ToDecimal(await ScalarAsync(connectionString,
+                "select base_amount from business_projects.project_cost_fact where tenant_id=$1 and project_id=$2 and source_module='expenses' and source_id=$3",
+                AtlasTenant.Value, project.Id, expense.Id.ToString("D")), System.Globalization.CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await harness.Stop();
+        }
+    }
+
+    [Fact(DisplayName = "PJ45 real Inventory valuation issue and reversal reconcile one Project material fact")]
+    public async Task RealInventoryIssueAndReversalReconcileProjectMaterialCost()
+    {
+        var connectionString = RequireConnection();
+        using var factory = CreateFactory(connectionString);
+        var projects = factory.Services.GetRequiredService<ProjectService>();
+        var inventory = factory.Services.GetRequiredService<InventoryService>();
+        var actor = Guid.CreateVersion7();
+        var project = await projects.CreateAsync(AtlasTenant, actor, actor,
+            new(AtlasEntity, $"PJ45-INVENTORY-{Guid.NewGuid():N}", "InternalProject", null, null, new(2026, 3, 1), null), Guid.CreateVersion7(), CancellationToken.None);
+        var variantId = (Guid)(await ScalarAsync(connectionString, "select p.id from business_inventory.product_inventory_profile i join foundation_catalog.product_variant p on p.tenant_id=i.tenant_id and p.id=i.product_variant_id join foundation_catalog.product_uom u on u.tenant_id=p.tenant_id and u.variant_id=p.id and u.is_base and u.status='Active' and u.effective_from<=now() and (u.effective_to is null or u.effective_to>now()) where i.tenant_id=$1 and i.legal_entity_id=$2 and i.status='Active' and i.valuation_mode='Perpetual' and p.status='Active' and exists(select 1 from foundation_catalog.product_visibility v where v.tenant_id=p.tenant_id and v.template_id=p.product_template_id and (v.scope_type='TenantWide' or (v.scope_type='LegalEntity' and v.legal_entity_id=$2))) order by p.id limit 1", AtlasTenant.Value, AtlasEntity))!;
+        var warehouse = await ReadInventoryWarehouseAsync(connectionString, AtlasTenant, AtlasEntity);
+        var unitId = (Guid)(await ScalarAsync(connectionString, "select uom_id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and is_base and status='Active' order by effective_from desc limit 1", AtlasTenant.Value, variantId))!;
+        var date = DateOnly.FromDateTime(DateTime.UtcNow);
+        await inventory.ReceiveAsync(AtlasTenant, actor, AtlasEntity,
+            new ConfirmStockMovementRequest(variantId, warehouse.WarehouseId, warehouse.LocationId, unitId, 2m, date, date,
+                $"pj45-inventory-receipt:{Guid.NewGuid():N}", "inventory", null, UnitCost: 100m, CurrencyCode: "EGP"),
+            Guid.CreateVersion7(), null, CancellationToken.None);
+        var issue = await inventory.IssueAsync(AtlasTenant, actor, AtlasEntity,
+            new ConfirmStockMovementRequest(variantId, warehouse.WarehouseId, warehouse.LocationId, unitId, 1m, date, date,
+                $"pj45-inventory-issue:{project.Id:D}:{Guid.NewGuid():N}", "projects", project.Id, ProjectId: project.Id, CostCategory: "Material"),
+            Guid.CreateVersion7(), null, CancellationToken.None);
+        var issuedMessage = await ReadOutboxAsync(connectionString, AtlasTenant, "StockIssuedV1", issue.OperationId);
+        using var issuedPayload = JsonDocument.Parse(issuedMessage.Payload);
+        var issuedCost = issuedPayload.RootElement.GetProperty("costAmount").GetDecimal();
+        Assert.Equal(100m, issuedCost);
+
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var inbox = new NpgsqlInboxStore(dataSource);
+        var evidence = new ProjectsIntegrationRepository(dataSource);
+        await using var provider = new ServiceCollection()
+            .AddSingleton<IProjectSourceIntegrationCapabilities>(projects)
+            .AddSingleton(evidence)
+            .AddSingleton<IInboxStore>(inbox)
+            .AddMassTransitTestHarness(config => config.AddConsumer<ProjectsSourceEventConsumer>())
+            .BuildServiceProvider(true);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+        try
+        {
+            await harness.Bus.Publish(issuedMessage);
+            await harness.Bus.Publish(issuedMessage);
+            Assert.True(await EventuallyAsync(async () => Convert.ToInt64(await ScalarAsync(connectionString,
+                "select count(*) from business_projects.project_cost_fact where tenant_id=$1 and project_id=$2 and source_module='inventory' and source_id=$3",
+                AtlasTenant.Value, project.Id, issue.OperationId.ToString("D")), System.Globalization.CultureInfo.InvariantCulture) == 1));
+            Assert.Equal(issuedCost, Convert.ToDecimal(await ScalarAsync(connectionString,
+                "select base_amount from business_projects.project_cost_fact where tenant_id=$1 and project_id=$2 and source_module='inventory' and source_id=$3",
+                AtlasTenant.Value, project.Id, issue.OperationId.ToString("D")), System.Globalization.CultureInfo.InvariantCulture));
+
+            var reversal = await inventory.ReverseOperationAsync(AtlasTenant.Value, actor, AtlasEntity, issue.OperationId, date, date,
+                $"pj45-inventory-reversal:{issue.OperationId:D}", CancellationToken.None);
+            var reversedMessage = await ReadOutboxAsync(connectionString, AtlasTenant, "StockReversedV1", reversal);
+            await harness.Bus.Publish(reversedMessage);
+            Assert.True(await EventuallyAsync(async () => Convert.ToInt64(await ScalarAsync(connectionString,
+                "select count(*) from business_projects.project_cost_fact where tenant_id=$1 and project_id=$2 and source_module='inventory' and source_id=$3 and state='Corrected'",
+                AtlasTenant.Value, project.Id, issue.OperationId.ToString("D")), System.Globalization.CultureInfo.InvariantCulture) == 1));
+            Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(connectionString,
+                "select count(*) from business_projects.project_integration_event where tenant_id=$1 and message_id=$2",
+                AtlasTenant.Value, reversedMessage.MessageId), System.Globalization.CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await harness.Stop();
+        }
+    }
+
+    [Fact(DisplayName = "PJ35 real close exception outbox reaches the platform notification store")]
+    public async Task RealCloseExceptionEnqueuesManagerNotification()
+    {
+        var connectionString = RequireConnection();
+        using var factory = CreateFactory(connectionString);
+        var projects = factory.Services.GetRequiredService<ProjectService>();
+        var actor = Guid.CreateVersion7();
+        var project = await projects.CreateAsync(AtlasTenant, actor, actor,
+            new(AtlasEntity, $"PJ35-NOTIFICATION-{Guid.NewGuid():N}", "InternalProject", null, null, new(2026, 3, 1), null), Guid.CreateVersion7(), CancellationToken.None);
+        await projects.AddTeamMemberAsync(AtlasTenant, actor, project.Id, new(null, actor, "ProjectManager", IsManager: true), CancellationToken.None);
+        var exception = await projects.AddCloseExceptionAsync(AtlasTenant, actor, project.Id,
+            new("external_dependency", "dependency-35", "Awaiting external handoff"), CancellationToken.None);
+        var message = await ReadOutboxAsync(connectionString, AtlasTenant, "ProjectCloseExceptionCreatedV1", exception.Id);
+
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var inbox = new NpgsqlInboxStore(dataSource);
+        await using var provider = new ServiceCollection()
+            .AddSingleton<INotificationStore>(new NpgsqlNotificationStore(dataSource))
+            .AddSingleton<IInboxStore>(inbox)
+            .AddMassTransitTestHarness(config => config.AddConsumer<ProjectsNotificationConsumer>())
+            .BuildServiceProvider(true);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+        try
+        {
+            await harness.Bus.Publish(message);
+            Assert.True(await EventuallyAsync(async () => Convert.ToInt64(await ScalarAsync(connectionString,
+                "select count(*) from platform.notification where tenant_id=$1 and template_key='projects.close_exception_created' and payload->>'exceptionId'=$2",
+                AtlasTenant.Value, exception.Id.ToString("D")), System.Globalization.CultureInfo.InvariantCulture) == 1));
+            Assert.Equal($"user:{actor:D}", await ScalarAsync(connectionString,
+                "select recipient_ref from platform.notification where tenant_id=$1 and template_key='projects.close_exception_created' and payload->>'exceptionId'=$2",
+                AtlasTenant.Value, exception.Id.ToString("D")));
+        }
+        finally
+        {
+            await harness.Stop();
+        }
+    }
 
     [Fact(DisplayName = "PJ43 real Projects to Fixed Assets handoff delivers accept and reject results idempotently")]
     public async Task RealCapitalHandoffCreatesFixedAssetCandidate()
@@ -358,6 +611,15 @@ public sealed class ProjectsCrossModuleAcceptanceTests
         await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); await SetTenantAsync(connection, tenant); return (Guid)(await ScalarAsync(connection, "select p.id from foundation_directory.party p join foundation_directory.party_role r on r.tenant_id=p.tenant_id and r.party_id=p.id where p.tenant_id=$1 and p.status='Active' and r.role_code=$2 and r.status='Active' order by p.id limit 1", tenant.Value, roleCode))!;
     }
 
+    private static async Task<(Guid WarehouseId, Guid LocationId)> ReadInventoryWarehouseAsync(string connectionString, TenantId tenant, Guid entity)
+    {
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); await SetTenantAsync(connection, tenant);
+        await using var command = new NpgsqlCommand("select id,default_location_id from business_inventory.warehouse where tenant_id=$1 and legal_entity_id=$2 and status='Active' order by id limit 1", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(entity);
+        await using var reader = await command.ExecuteReaderAsync(); Assert.True(await reader.ReadAsync(), "A seeded active Inventory warehouse is required.");
+        return (reader.GetGuid(0), reader.GetGuid(1));
+    }
+
     private static async Task<(Guid ActorId, Guid MembershipId)> FindAdminActorMembershipAsync(string connectionString, TenantId tenant)
     {
         await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); await SetTenantAsync(connection, tenant);
@@ -365,6 +627,16 @@ public sealed class ProjectsCrossModuleAcceptanceTests
         command.Parameters.AddWithValue(tenant.Value);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync(), "The Atlas administrator membership is required for payment acceptance.");
+        return (reader.GetGuid(0), reader.GetGuid(1));
+    }
+
+    private static async Task<(Guid ActorId, Guid MembershipId)> FindApprovalActorMembershipAsync(string connectionString, TenantId tenant, Guid excludedActor)
+    {
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); await SetTenantAsync(connection, tenant);
+        await using var command = new NpgsqlCommand("select i.id,m.id from platform.identity i join platform.membership m on m.tenant_id=i.tenant_id and m.identity_id=i.id join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id join platform.role r on r.tenant_id=a.tenant_id and r.id=a.role_id join platform.role_permission p on p.tenant_id=r.tenant_id and p.role_id=r.id where i.tenant_id=$1 and i.id<>$2 and i.status='Active' and m.status='Active' and p.permission_code='expenses.approve' order by i.email limit 1", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(excludedActor);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync(), "A second seeded Expenses approver is required for separation of duties.");
         return (reader.GetGuid(0), reader.GetGuid(1));
     }
 

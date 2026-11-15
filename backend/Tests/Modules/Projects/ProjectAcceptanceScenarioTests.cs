@@ -11,6 +11,7 @@ using Npgsql;
 using Shared.Contracts.Invoicing;
 using Shared.Contracts.Projects;
 using Shared.Primitives.Identifiers;
+using Todir.Sales.Contracts;
 using Worker;
 using Xunit;
 
@@ -147,6 +148,33 @@ public sealed class ProjectAcceptanceScenarioTests
         Assert.Equal(550m, summary.ExpectedMargin);
     }
 
+    [Fact(DisplayName = "PJ46 approved change order revises current contract budget and schedule without rewriting history")]
+    public async Task Pj46ApprovedChangeOrderUpdatesCurrentPlan()
+    {
+        await using var database = OpenDatabase();
+        var service = CreateService(database);
+        var actor = Guid.CreateVersion7();
+        var customer = await FindPartyAsync(database, AtlasTenant);
+        var originalEnd = new DateOnly(2026, 6, 30);
+        var project = await service.CreateAsync(AtlasTenant, actor, actor,
+            new(AtlasEntity, $"PJ46-CHANGE-{Guid.NewGuid():N}", "CustomerProject", customer, null, new(2026, 1, 1), originalEnd,
+                BillingModel: "FixedPrice", CurrencyCode: "EGP"), Guid.CreateVersion7(), CancellationToken.None);
+        var budget = await service.CreateBudgetAsync(AtlasTenant, actor, project.Id, new("Approved delivery budget", "EGP", 1000m), CancellationToken.None);
+        var billing = await service.CreateBillingRuleAsync(AtlasTenant, actor, project.Id, new("FixedPrice", "EGP", 1200m, EffectiveFrom: new(2026, 1, 1)), CancellationToken.None);
+        var request = await service.CreateChangeAsync(AtlasTenant, actor, project.Id,
+            new("Additional integration scope", "Customer-approved extension", 200m, 300m, 14), CancellationToken.None);
+        var approved = await service.DecideChangeAsync(AtlasTenant, actor, project.Id, request.Id, new("approve", "Approved by customer"), CancellationToken.None);
+        var current = await service.GetAsync(AtlasTenant, project.Id, CancellationToken.None);
+
+        Assert.Equal("Approved", approved.Status);
+        Assert.Equal(originalEnd.AddDays(14), current!.TargetEndDate);
+        Assert.Equal(1400m, await ScalarAsync(database, "select contract_value from business_projects.project_billing_rule where tenant_id=$1 and project_id=$2 and status='Active'", AtlasTenant.Value, project.Id));
+        Assert.Equal(1L, await ScalarAsync(database, "select count(*) from business_projects.project_billing_rule where tenant_id=$1 and project_id=$2 and version_no=$3 and status='Retired' and contract_value=1200", AtlasTenant.Value, project.Id, billing.VersionNo));
+        Assert.Equal(1300m, await ScalarAsync(database, "select current_amount from business_projects.project_budget_version where tenant_id=$1 and budget_id=$2 and state='Approved'", AtlasTenant.Value, budget.Id));
+        Assert.Equal(1L, await ScalarAsync(database, "select count(*) from business_projects.project_budget_version where tenant_id=$1 and budget_id=$2 and version_no=1 and state='Superseded'", AtlasTenant.Value, budget.Id));
+        Assert.Equal(1L, await ScalarAsync(database, "select count(*) from business_projects.project_change_order where tenant_id=$1 and project_id=$2 and change_request_id=$3 and status='Approved'", AtlasTenant.Value, project.Id, request.Id));
+    }
+
     [Fact(DisplayName = "PJ46 cross-tenant project execution is isolated in PostgreSQL")]
     public async Task Pj46CrossModuleAllocation()
     {
@@ -267,7 +295,7 @@ public sealed class ProjectAcceptanceScenarioTests
     }
 
     private static ProjectService CreateService(NpgsqlDataSource database, IInvoicingSourceCapabilities? invoicing = null)
-        => new(new ProjectsRepository(new NpgsqlTransactionCoordinator(database), new NpgsqlSequenceAllocator(database)), invoicing ?? new StubInvoicingCapability());
+        => new(new ProjectsRepository(new NpgsqlTransactionCoordinator(database), new NpgsqlSequenceAllocator(database)), invoicing ?? new StubInvoicingCapability(), new StubSalesQuotationCapabilities());
 
     private static async Task<Guid> FindPartyAsync(NpgsqlDataSource database, TenantId tenant)
     {
@@ -305,5 +333,14 @@ public sealed class ProjectAcceptanceScenarioTests
     {
         public Task<Guid> CreateDraftFromSourceAsync(TenantId tenantId, Guid actorId, Guid membershipId, InvoiceSourceDocumentContract request, Guid correlationId, CancellationToken cancellationToken = default)
             => Task.FromResult(Guid.CreateVersion7());
+    }
+
+    private sealed class StubSalesQuotationCapabilities : ISalesQuotationCapabilities
+    {
+        public Task<Guid> CreateDraftQuotationAsync(TenantId tenantId, Guid actorId, SalesQuotationSourceContract request, CancellationToken cancellationToken = default)
+            => Task.FromResult(Guid.CreateVersion7());
+
+        public Task<SalesAcceptedQuotationContract?> GetAcceptedQuotationAsync(TenantId tenantId, Guid legalEntityId, Guid quotationId, int acceptedRevision, CancellationToken cancellationToken = default)
+            => Task.FromResult<SalesAcceptedQuotationContract?>(null);
     }
 }

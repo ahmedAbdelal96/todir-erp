@@ -45,6 +45,7 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<CrmExternalEventConsumer, CrmExternalEventConsumerDefinition>();
     bus.AddConsumer<ExpensesOcrConsumer, ExpensesOcrConsumerDefinition>();
     bus.AddConsumer<ExpensesNotificationConsumer, ExpensesNotificationConsumerDefinition>();
+    bus.AddConsumer<ProjectsNotificationConsumer, ProjectsNotificationConsumerDefinition>();
     bus.AddConsumer<ProjectsSourceEventConsumer, ProjectsSourceEventConsumerDefinition>();
     bus.AddConsumer<ProjectCapitalHandoffConsumer, ProjectCapitalHandoffConsumerDefinition>();
 });

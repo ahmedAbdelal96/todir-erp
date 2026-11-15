@@ -46,6 +46,7 @@ public sealed partial class SalesService(
     }
 
     public Task<QuotationDetail?> GetQuotationAsync(TenantId tenant, Guid entity, Guid id, CancellationToken ct) => repository.GetQuotationAsync(tenant, entity, id, ct);
+    public Task<SalesAcceptedQuotationContract?> GetAcceptedQuotationAsync(TenantId tenant, Guid entity, Guid id, int acceptedRevision, CancellationToken ct) => repository.GetAcceptedQuotationAsync(tenant, entity, id, acceptedRevision, ct);
     public Task<SalesPage<QuotationListItem>> ListQuotationsAsync(TenantId tenant, Guid entity, string? state, Guid? party, int page, int pageSize, CancellationToken ct, string? search = null) => repository.ListQuotationsAsync(tenant, entity, state, party, page, pageSize, ct, search);
     public Task<int> OpenQuotationAsync(TenantId tenant, Guid actor, Guid entity, Guid id, TransitionQuotationRequest request, CancellationToken ct) => repository.OpenQuotationAsync(tenant, actor, entity, id, request, ct);
     public Task<int> DeclineQuotationAsync(TenantId tenant, Guid actor, Guid entity, Guid id, TransitionQuotationRequest request, CancellationToken ct) => repository.DeclineQuotationAsync(tenant, actor, entity, id, request, ct);
