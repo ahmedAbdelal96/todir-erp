@@ -107,6 +107,9 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
     public Task ApplySupplierInvoiceActualAsync(TenantId tenant, Guid actorId, Guid projectId, string purchaseOrderId, string invoiceId, decimal amount,
         string currencyCode, DateOnly factDate, Guid? legalEntityId, Guid correlationId, CancellationToken cancellationToken = default)
         => repository.ApplySupplierInvoiceActualAsync(tenant, actorId, projectId, purchaseOrderId, invoiceId, amount, currencyCode, factDate, legalEntityId, correlationId, cancellationToken);
+    public Task ApplySupplierInvoiceCorrectionAsync(TenantId tenant, Guid actorId, Guid projectId, string purchaseOrderId, string correctionInvoiceId,
+        string originalInvoiceId, decimal amount, string currencyCode, DateOnly factDate, Guid? legalEntityId, Guid correlationId, CancellationToken cancellationToken = default)
+        => repository.ApplySupplierInvoiceCorrectionAsync(tenant, actorId, projectId, purchaseOrderId, correctionInvoiceId, originalInvoiceId, amount, currencyCode, factDate, legalEntityId, correlationId, cancellationToken);
 
     public async Task<ProjectCostFactContract?> RecordReversalAsync(TenantId tenant, Guid actor, Guid projectId, string sourceModule, string sourceId, decimal originalCurrencyAmount, string currencyCode, DateOnly factDate, string idempotencyKey, Guid correlationId, CancellationToken cancellationToken = default)
     {

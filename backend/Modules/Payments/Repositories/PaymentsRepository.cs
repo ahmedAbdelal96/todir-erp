@@ -588,7 +588,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             var polarity = reversesIncoming ? SubledgerPolarityContract.Debit : SubledgerPolarityContract.Credit;
             var openItem = new OpenItemSnapshotContract(reversalId.ToString("D"), null, reversalNumber, request.PaymentDate, request.PostingDate, request.PostingDate,
                 original.CurrencyCode, original.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), financialContext.BaseCurrencyCode,
-                baseAmount.ToString(System.Globalization.CultureInfo.InvariantCulture), settlementRole, $"role:{settlementRole}", $"configuration:{configId:D}",
+                baseAmount.ToString(System.Globalization.CultureInfo.InvariantCulture), settlementRole, settlementRole, $"configuration:{configId:D}",
                 snapshot is null ? null : JsonSerializer.Serialize(snapshot, JsonOptions), 1);
             var itemId = await subledger.CreatePaymentOpenItemAsync(context, tenant, new(new(request.LegalEntityId), partyId, [openItem], actor, correlationId), partyDirection, polarity, token);
             var factType = reversesIncoming ? AccountingFactTypes.RefundPaid : AccountingFactTypes.PaymentReceived;
@@ -1345,7 +1345,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             var snapshotJson = snapshot is null ? null : JsonSerializer.Serialize(snapshot, JsonOptions);
             var openItem = new OpenItemSnapshotContract(payment.Id.ToString("D"), null, payment.Number, payment.PaymentDate, payment.PostingDate,
                 payment.PostingDate, payment.CurrencyCode, payment.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), financialContext.BaseCurrencyCode,
-                baseAmount.ToString(System.Globalization.CultureInfo.InvariantCulture), settlementRole, $"role:{settlementRole}", $"configuration:{configurationId:D}", snapshotJson, 1);
+                baseAmount.ToString(System.Globalization.CultureInfo.InvariantCulture), settlementRole, settlementRole, $"configuration:{configurationId:D}", snapshotJson, 1);
             Guid? itemId = null;
             if (!isPayrollSettlement && !isExpenseSettlement && !isAdvanceSettlement && !isEmployeeRepayment && !isAnonymousPosCash)
             {

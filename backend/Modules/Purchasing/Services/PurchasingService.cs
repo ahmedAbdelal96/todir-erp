@@ -255,7 +255,7 @@ public sealed class PurchasingService(
                 unitPrice = resolved.Price; evidence = resolved.Evidence;
             }
             else throw new PurchasingException("purchasing.buy_price_required");
-            taxContexts.Add(new(tenant, new(request.LegalEntityId), "Payable", "PurchaseOrder", "Purchase", request.OrderDate, request.OrderDate, null, request.OrderDate, request.SupplierPartyId, "EG", "EG", null, line.ProductTemplateId, line.ProductVariantId, line.Quantity, line.UnitOfMeasureId, "Exclusive", (line.Quantity * unitPrice).ToString(CultureInfo.InvariantCulture), "0", "0", request.CurrencyCode.Trim().ToUpperInvariant(), request.CurrencyCode.Trim().ToUpperInvariant(), null, DocumentSemantics: "PurchaseOrder"));
+            taxContexts.Add(new(tenant, new(request.LegalEntityId), "Purchase", "PurchaseOrder", "Purchase", request.OrderDate, request.OrderDate, null, request.OrderDate, request.SupplierPartyId, "EG", "EG", null, line.ProductTemplateId, line.ProductVariantId, line.Quantity, line.UnitOfMeasureId, "TaxExclusive", (line.Quantity * unitPrice).ToString(CultureInfo.InvariantCulture), "0", "0", request.CurrencyCode.Trim().ToUpperInvariant(), request.CurrencyCode.Trim().ToUpperInvariant(), null, DocumentSemantics: "PurchaseOrder"));
             result.Add(new(line.ProductVariantId, line.UnitOfMeasureId, line.UnitCode, line.Description.Trim(), line.Quantity, unitPrice, evidence, line.PriceOverrideReason));
         }
         if (taxContexts.Count > 0)

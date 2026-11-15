@@ -223,7 +223,7 @@ public static class LedgerSeed
             await AddSimpleRuleAsync(context, entityId, suffix, 28, "FixedAssetDepreciationPosted", "FIXED_ASSET_DEPRECIATION_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 32, "FixedAssetDepreciationReversed", "FIXED_ASSET_DEPRECIATION_REVERSED_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 29, "FixedAssetDisposalPosted", "FIXED_ASSET_DISPOSAL_V1", cancellationToken);
-             await AddSimpleRuleAsync(context, entityId, suffix, 33, "FixedAssetDisposalReversed", "FIXED_ASSET_DISPOSAL_REVERSED_V1", cancellationToken);
+            await AddSimpleRuleAsync(context, entityId, suffix, 33, "FixedAssetDisposalReversed", "FIXED_ASSET_DISPOSAL_REVERSED_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 30, "FixedAssetCostAdded", "FIXED_ASSET_COST_ADDED_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 31, "FixedAssetCostReduced", "FIXED_ASSET_COST_REDUCED_V1", cancellationToken);
             await AddSimpleRuleAsync(context, entityId, suffix, 34, "FixedAssetImpairmentPosted", "FIXED_ASSET_IMPAIRMENT_V1", cancellationToken);
@@ -250,7 +250,7 @@ public static class LedgerSeed
             "FixedAssetDepreciationPosted" => new[] { (1, "FixedAssetDepreciationExpense", "BaseAmount", "Debit"), (2, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Credit") },
             "FixedAssetDepreciationReversed" => new[] { (1, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Debit"), (2, "FixedAssetDepreciationExpense", "BaseAmount", "Credit") },
             "FixedAssetDisposalPosted" => new[] { (1, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Debit"), (2, "FixedAssetAccumulatedImpairment", "BaseAmount", "Debit"), (3, "FixedAssetCost", "GrossCost", "Credit"), (4, "Cash", "Proceeds", "Debit"), (5, "Cash", "DirectCosts", "Credit"), (6, "FixedAssetDisposalGain", "GainLoss", "Credit"), (7, "FixedAssetDisposalLoss", "GainLoss", "Debit") },
-             "FixedAssetDisposalReversed" => new[] { (1, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Credit"), (2, "FixedAssetAccumulatedImpairment", "BaseAmount", "Credit"), (3, "FixedAssetCost", "GrossCost", "Debit"), (4, "Cash", "Proceeds", "Credit"), (5, "Cash", "DirectCosts", "Debit"), (6, "FixedAssetDisposalGain", "GainLoss", "Debit"), (7, "FixedAssetDisposalLoss", "GainLoss", "Credit") },
+            "FixedAssetDisposalReversed" => new[] { (1, "FixedAssetAccumulatedDepreciation", "BaseAmount", "Credit"), (2, "FixedAssetAccumulatedImpairment", "BaseAmount", "Credit"), (3, "FixedAssetCost", "GrossCost", "Debit"), (4, "Cash", "Proceeds", "Credit"), (5, "Cash", "DirectCosts", "Debit"), (6, "FixedAssetDisposalGain", "GainLoss", "Debit"), (7, "FixedAssetDisposalLoss", "GainLoss", "Credit") },
             "FixedAssetCostAdded" => new[] { (1, "FixedAssetCost", "BaseAmount", "Debit"), (2, "FixedAssetCapitalizationOffset", "BaseAmount", "Credit") },
             "FixedAssetCostReduced" => new[] { (1, "FixedAssetCapitalizationOffset", "BaseAmount", "Debit"), (2, "FixedAssetCost", "BaseAmount", "Credit") },
             "FixedAssetImpairmentPosted" => new[] { (1, "FixedAssetImpairment", "BaseAmount", "Debit"), (2, "FixedAssetAccumulatedImpairment", "BaseAmount", "Credit") },

@@ -205,7 +205,10 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
         var relationshipType = documentType == "CreditNote" ? "Credits" : "Debits";
         return transactions.ExecuteAsync(tenant, async (context, token) =>
         {
-            await using (var original = new NpgsqlCommand("select lifecycle_state,document_type,direction,party_id,currency_code from business_invoicing.invoice where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction))
+            string? sourceModule = null;
+            Guid? sourceDocumentId = null;
+            string? sourcePurpose = null;
+            await using (var original = new NpgsqlCommand("select lifecycle_state,document_type,direction,party_id,currency_code,source_module,source_document_id,source_purpose from business_invoicing.invoice where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction))
             {
                 Add(original, tenant.Value, request.LegalEntityId, originalInvoiceId);
                 await using var reader = await original.ExecuteReaderAsync(token);
@@ -213,6 +216,17 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
                 if (reader.GetString(0) != "Finalized" || reader.GetString(1) == "CreditNote" || reader.GetString(2) != direction
                     || reader.GetGuid(3) != request.PartyId || !reader.GetString(4).Trim().Equals(request.CurrencyCode, StringComparison.OrdinalIgnoreCase))
                     throw new InvoiceException("invoicing.correction_not_allowed", "A correction must reference a finalized document for the same party, direction, legal entity, and currency.");
+                sourceModule = reader.IsDBNull(5) ? null : reader.GetString(5);
+                sourceDocumentId = reader.IsDBNull(6) ? null : reader.GetGuid(6);
+                sourcePurpose = reader.IsDBNull(7) ? null : reader.GetString(7);
+            }
+            if (sourceModule == "purchasing" && sourceDocumentId is not null && sourcePurpose?.StartsWith("SupplierInvoice:Project:", StringComparison.Ordinal) == true)
+                sourcePurpose = "SupplierInvoiceCorrection:Project:" + sourcePurpose["SupplierInvoice:Project:".Length..];
+            else
+            {
+                sourceModule = null;
+                sourceDocumentId = null;
+                sourcePurpose = null;
             }
             await using (var existing = new NpgsqlCommand("select invoice_id,payload_hash from business_invoicing.invoice_relationship where tenant_id=$1 and legal_entity_id=$2 and related_invoice_id=$3 and relationship_type=$4 and idempotency_key=$5", context.Connection, context.Transaction))
             {
@@ -227,11 +241,12 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
                 }
             }
             var now = clock.GetUtcNow();
-            await using (var insert = new NpgsqlCommand("insert into business_invoicing.invoice(tenant_id,legal_entity_id,id,branch_id,direction,document_type,lifecycle_state,party_id,address_id,document_date,posting_date,tax_date,supply_date,currency_code,price_mode,payment_term_id,document_discount_amount,row_version,created_at,updated_at) values($1,$2,$3,$4,$5,$6,'Draft',$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,1,$17,$17)", context.Connection, context.Transaction))
+            await using (var insert = new NpgsqlCommand("insert into business_invoicing.invoice(tenant_id,legal_entity_id,id,branch_id,direction,document_type,lifecycle_state,party_id,address_id,document_date,posting_date,tax_date,supply_date,currency_code,price_mode,payment_term_id,document_discount_amount,source_module,source_document_id,source_purpose,source_idempotency_key,source_payload_hash,row_version,created_at,updated_at) values($1,$2,$3,$4,$5,$6,'Draft',$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,1,$22,$22)", context.Connection, context.Transaction))
             {
                 Add(insert, tenant.Value, request.LegalEntityId, invoiceId, Db(request.BranchId), direction, documentType, request.PartyId, Db(request.AddressId),
                     request.DocumentDate, request.PostingDate, request.TaxDate, Db(request.SupplyDate), NormalizeCurrency(request.CurrencyCode), request.PriceMode,
-                    Db(request.PaymentTermId), ParseOptional(request.DocumentDiscountAmount) ?? 0m, now);
+                    Db(request.PaymentTermId), ParseOptional(request.DocumentDiscountAmount) ?? 0m, Db(sourceModule), Db(sourceDocumentId), Db(sourcePurpose),
+                    Db(idempotencyKey), payloadHash, now);
                 await insert.ExecuteNonQueryAsync(token);
             }
             await InsertLinesAsync(context.Connection, context.Transaction, tenant, request.LegalEntityId, invoiceId, lines, token);

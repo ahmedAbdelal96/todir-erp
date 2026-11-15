@@ -240,7 +240,8 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             {
                 await using var current = new NpgsqlCommand("select id,effective_from from business_assets.asset_assignment where tenant_id=$1 and asset_id=$2 and effective_from <= $3 and (effective_to is null or effective_to >= $3) order by effective_from desc,id desc limit 1 for update", context.Connection, context.Transaction);
                 current.Parameters.AddWithValue(tenant.Value); current.Parameters.AddWithValue(row.Id); current.Parameters.AddWithValue(request.Assignment.EffectiveFrom);
-                await using var currentReader = await current.ExecuteReaderAsync(token); Guid? currentId = null; DateOnly? currentFrom = null; if (await currentReader.ReadAsync(token)) { currentId = currentReader.GetGuid(0); currentFrom = currentReader.GetFieldValue<DateOnly>(1); } await currentReader.CloseAsync();
+                await using var currentReader = await current.ExecuteReaderAsync(token); Guid? currentId = null; DateOnly? currentFrom = null; if (await currentReader.ReadAsync(token)) { currentId = currentReader.GetGuid(0); currentFrom = currentReader.GetFieldValue<DateOnly>(1); }
+                await currentReader.CloseAsync();
                 if (currentFrom >= request.Assignment.EffectiveFrom) throw new FixedAssetException("assets.transfer_date_invalid");
                 if (currentId is { } previousId)
                 {
@@ -1137,7 +1138,8 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             await using var sources = new NpgsqlCommand("select s.id,s.amount,coalesce((select sum(r.amount) from business_assets.asset_cip_cost_source r where r.tenant_id=s.tenant_id and r.reversal_of_id=s.id),0),coalesce((select sum(a.amount) from business_assets.asset_cip_split_allocation a where a.tenant_id=s.tenant_id and a.cost_source_id=s.id),0) from business_assets.asset_cip_cost_source s where s.tenant_id=$1 and s.asset_id=$2 and s.amount > 0 order by s.created_at,s.id", context.Connection, context.Transaction);
             sources.Parameters.AddWithValue(tenant.Value); sources.Parameters.AddWithValue(assetId);
             await using var sourceReader = await sources.ExecuteReaderAsync(token);
-            var sourceRows = new List<(Guid Id, decimal Available)>(); while (await sourceReader.ReadAsync(token)) { var available = sourceReader.GetDecimal(1) + sourceReader.GetDecimal(2) - sourceReader.GetDecimal(3); if (available > 0m) sourceRows.Add((sourceReader.GetGuid(0), available)); } await sourceReader.CloseAsync();
+            var sourceRows = new List<(Guid Id, decimal Available)>(); while (await sourceReader.ReadAsync(token)) { var available = sourceReader.GetDecimal(1) + sourceReader.GetDecimal(2) - sourceReader.GetDecimal(3); if (available > 0m) sourceRows.Add((sourceReader.GetGuid(0), available)); }
+            await sourceReader.CloseAsync();
             var eligibleCost = sourceRows.Sum(row => row.Available);
             var requestedCost = request.Targets.Sum(target => target.Amount);
             if (eligibleCost <= 0m || requestedCost > eligibleCost || requestedCost > cipOriginalCost) throw new FixedAssetException("assets.cip_split_amount_invalid");
@@ -1955,7 +1957,7 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
     private static Guid DeterministicGuid(Guid first, Guid second) => new(SHA256.HashData(Encoding.UTF8.GetBytes($"fixed-assets:{first:D}:{second:D}"))[..16]);
     private static Guid StableGuid(string value) => new(SHA256.HashData(Encoding.UTF8.GetBytes($"fixed-assets:key:{value}"))[..16]);
     private static JsonElement ReadJsonElement(NpgsqlDataReader reader, int ordinal) => JsonDocument.Parse(reader.GetString(ordinal)).RootElement.Clone();
-    private static async Task<IReadOnlyList<T>> ReadAsync<T>(NpgsqlCommand command, Func<NpgsqlDataReader,T> map, CancellationToken ct) { var list = new List<T>(); await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct); while (await reader.ReadAsync(ct)) list.Add(map(reader)); return list; }
+    private static async Task<IReadOnlyList<T>> ReadAsync<T>(NpgsqlCommand command, Func<NpgsqlDataReader, T> map, CancellationToken ct) { var list = new List<T>(); await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct); while (await reader.ReadAsync(ct)) list.Add(map(reader)); return list; }
 }
 
 public sealed class FixedAssetException(string code) : Exception(code) { public string Code { get; } = code; }

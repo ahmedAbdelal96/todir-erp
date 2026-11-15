@@ -204,7 +204,10 @@ public sealed class FixedAssetsDepreciationIntegrationTests
         {
             Content = JsonContent.Create(new
             {
-                legalEntityId = Guid.Parse(LegalEntityId), sourceSystem = "Legacy ERP", batchReference = $"opening-{legacy}", openingDate = "2026-01-01",
+                legalEntityId = Guid.Parse(LegalEntityId),
+                sourceSystem = "Legacy ERP",
+                batchReference = $"opening-{legacy}",
+                openingDate = "2026-01-01",
                 lines = new[] { new { legacyAssetNumber = legacy, categoryId, name = "Legacy laptop", bookDefinitionId, acquisitionDate = "2025-01-01", placedInServiceDate = "2025-01-01", originalCost = 1000m, accumulatedDepreciation = 400m, netBookValue = 600m, residualValue = 0m, usefulLifeMonths = 36, depreciationMethod = "StraightLine" } }
             })
         };
@@ -609,7 +612,7 @@ public sealed class FixedAssetsDepreciationIntegrationTests
                 proceeds = 10000m,
                 directCosts = 100m,
                 reason = "Integration disposal verification",
-                 idempotencyKey = disposalKey
+                idempotencyKey = disposalKey
             })
         };
         disposal.Headers.Add("X-CSRF-TOKEN", disposalCsrf.Token);

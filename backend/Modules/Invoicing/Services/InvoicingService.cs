@@ -347,7 +347,7 @@ public sealed class InvoicingService(
                             calculation.Financial?.RoundingPolicy.ContextRules.FirstOrDefault(rule => rule.Context == FinancialRoundingContext.FxBaseAmount)?.Mode ?? FinancialRoundingMode.HalfEven);
                         return new OpenItemSnapshotContract(invoiceId.ToString("D"), line.Sequence.ToString(CultureInfo.InvariantCulture), documentNumber, draft.DocumentDate,
                             draft.PostingDate, line.DueDate, draft.CurrencyCode, line.Amount, baseCurrency, D(baseAmount), draft.Direction == InvoiceDirection.Receivable ? "Receivable" : "Payable",
-                            draft.Direction == InvoiceDirection.Receivable ? "Receivable" : "Payable", configurationId.ToString("D"), historicFx, draft.Version,
+                            draft.Direction == InvoiceDirection.Receivable ? "Receivable" : "Payable", $"configuration:{configurationId:D}", historicFx, draft.Version,
                             data.PaymentTermEvidenceJson);
                     }).ToArray();
                     var direction = draft.Direction == InvoiceDirection.Receivable ? SubledgerDirectionContract.Receivable : SubledgerDirectionContract.Payable;
