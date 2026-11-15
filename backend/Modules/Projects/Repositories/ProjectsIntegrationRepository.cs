@@ -10,14 +10,16 @@ public sealed class ProjectsIntegrationRepository(NpgsqlDataSource dataSource)
     public async Task<bool> ProjectExistsAsync(TenantId tenant, Guid projectId, Guid? legalEntityId = null, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand("select set_config('app.tenant_id',$1,true); select exists(select 1 from business_projects.project where tenant_id=$1 and id=$2 and ($3::uuid is null or legal_entity_id=$3) and lifecycle_state not in ('Closed','Cancelled'))", connection);
-        command.Parameters.AddWithValue(tenant.Value.ToString("D"));
+        await using (var tenantCommand = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection))
+        {
+            tenantCommand.Parameters.AddWithValue(tenant.Value.ToString("D"));
+            await tenantCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using var command = new NpgsqlCommand("select exists(select 1 from business_projects.project where tenant_id=$1 and id=$2 and ($3::uuid is null or legal_entity_id=$3) and lifecycle_state not in ('Closed','Cancelled'))", connection);
+        command.Parameters.AddWithValue(tenant.Value);
         command.Parameters.AddWithValue(projectId);
         command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        await reader.ReadAsync(cancellationToken);
-        await reader.NextResultAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) && reader.GetBoolean(0);
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public async Task RecordAsync(TenantId tenant, Guid messageId, string sourceModule, string messageType, Guid? projectId,
@@ -42,5 +44,21 @@ public sealed class ProjectsIntegrationRepository(NpgsqlDataSource dataSource)
         command.Parameters.AddWithValue(occurredAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<bool> IsStaleAsync(TenantId tenant, string sourceModule, string sourceId, DateTimeOffset occurredAt, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using (var tenantCommand = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection))
+        {
+            tenantCommand.Parameters.AddWithValue(tenant.Value.ToString("D"));
+            await tenantCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using var command = new NpgsqlCommand("select exists(select 1 from business_projects.project_integration_event where tenant_id=$1 and source_module=$2 and occurred_at > $3 and coalesce(payload->>'expenseId',payload->>'purchaseOrderId',payload->>'reversalOfOperationId',payload->>'operationId',payload->>'invoiceId',payload->>'paymentId')=$4 and status='Applied')", connection);
+        command.Parameters.AddWithValue(tenant.Value);
+        command.Parameters.AddWithValue(sourceModule);
+        command.Parameters.AddWithValue(occurredAt);
+        command.Parameters.AddWithValue(sourceId);
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
     }
 }

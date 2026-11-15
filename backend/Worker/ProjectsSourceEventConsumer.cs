@@ -32,6 +32,9 @@ public sealed class ProjectsSourceEventConsumer(
             using var document = JsonDocument.Parse(message.Payload);
             var root = document.RootElement;
             var projectId = GuidValue(root, "projectId");
+            if (projectId is null && StringValue(root, "sourceModule") == "projects") projectId = GuidValue(root, "sourceDocumentId");
+            if (projectId is null && string.Equals(StringValue(root, "sourceType"), "Projects", StringComparison.OrdinalIgnoreCase))
+                projectId = GuidValue(root, "sourceReference");
             if (projectId is null)
             {
                 await evidence.RecordAsync(message.TenantId, message.MessageId, message.SourceModule, message.MessageType, null,
@@ -48,10 +51,22 @@ public sealed class ProjectsSourceEventConsumer(
                 return;
             }
 
-            var sourceId = (message.MessageType == "StockReversedV1" ? StringValue(root, "reversalOfOperationId") : null)
-                ?? StringValue(root, "expenseId") ?? StringValue(root, "purchaseOrderId") ?? StringValue(root, "operationId")
-                ?? StringValue(root, "invoiceId") ?? StringValue(root, "paymentId") ?? message.CausationId.ToString("D");
-            var currency = (StringValue(root, "currencyCode") ?? "EGP").ToUpperInvariant();
+            var sourceId = SourceId(root, message.MessageType);
+            if (string.IsNullOrWhiteSpace(sourceId))
+            {
+                await evidence.RecordAsync(message.TenantId, message.MessageId, message.SourceModule, message.MessageType, projectId,
+                    "Ignored", "source_event_missing_source_id", message.Payload, message.OccurredAt, context.CancellationToken);
+                await inboxStore.MarkProcessedAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken);
+                return;
+            }
+            if (await evidence.IsStaleAsync(message.TenantId, message.SourceModule, sourceId, message.OccurredAt, context.CancellationToken))
+            {
+                await evidence.RecordAsync(message.TenantId, message.MessageId, message.SourceModule, message.MessageType, projectId,
+                    "Ignored", "source_event_out_of_order", message.Payload, message.OccurredAt, context.CancellationToken);
+                await inboxStore.MarkProcessedAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken);
+                return;
+            }
+            var currency = StringValue(root, "currencyCode")?.Trim().ToUpperInvariant();
             var evidenceStatus = "Applied";
             string? evidenceReason = null;
             if (message.MessageType == "PurchaseOrderCancelledV1")
@@ -60,22 +75,35 @@ public sealed class ProjectsSourceEventConsumer(
             }
             else if (message.MessageType.StartsWith("PurchaseOrder", StringComparison.Ordinal))
             {
-                var committed = DecimalValue(root, "committedAmount") ?? DecimalValue(root, "netTotal") ?? 0m;
-                var actualized = DecimalValue(root, "actualizedAmount") ?? 0m;
+                var committed = DecimalValue(root, "committedAmount") ?? DecimalValue(root, "netTotal");
+                var actualized = DecimalValue(root, "actualizedAmount");
+                if (currency is null || committed is null || actualized is null)
+                {
+                    evidenceStatus = "Ignored"; evidenceReason = currency is null ? "source_event_missing_currency" : "source_event_missing_amount";
+                }
+                else
+                {
                 await projects.RecordCommitmentAsync(new ProjectCommitmentIngress(message.TenantId, projectId.Value, "purchasing", sourceId,
-                    DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), currency, committed, actualized,
+                    DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), currency, committed.Value, actualized.Value,
                     $"projects:purchasing:{sourceId}:{message.MessageType}", legalEntityId), context.CancellationToken);
+                }
             }
             else if (message.MessageType is "ExpenseFinalizedV1" or "ExpenseReversedV1" or "StockIssuedV1" or "StockReversedV1")
             {
-                var amount = DecimalValue(root, "baseAmount") ?? DecimalValue(root, "costAmount") ?? DecimalValue(root, "amount") ?? 0m;
+                var amount = DecimalValue(root, "baseAmount") ?? DecimalValue(root, "costAmount") ?? DecimalValue(root, "amount");
+                if (currency is null || amount is null)
+                {
+                    evidenceStatus = "Ignored"; evidenceReason = currency is null ? "source_event_missing_currency" : "source_event_missing_amount";
+                }
+                else
+                {
                 // Cost facts are immutable positive facts. Reversals must arrive with a correction reference and are not guessed here.
                 if (message.MessageType is "ExpenseReversedV1" or "StockReversedV1")
                 {
                     var correctionOf = GuidValue(root, "correctionOfFactId");
                     if (correctionOf is null)
                     {
-                        var reversal = await projects.RecordReversalAsync(message.TenantId, message.CausationId, projectId.Value, message.SourceModule, sourceId, Math.Abs(amount), currency, DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", message.CorrelationId, context.CancellationToken);
+                        var reversal = await projects.RecordReversalAsync(message.TenantId, message.CausationId, projectId.Value, message.SourceModule, sourceId, Math.Abs(amount.Value), currency, DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", message.CorrelationId, context.CancellationToken);
                         if (reversal is null)
                         {
                             evidenceStatus = "Ignored";
@@ -86,13 +114,13 @@ public sealed class ProjectsSourceEventConsumer(
                     {
                         await projects.RecordCostAsync(new ProjectCostFactIngress(message.TenantId, message.CausationId, projectId.Value, null,
                             message.SourceModule, message.MessageType, sourceId, null,
-                            message.SourceModule == "inventory" ? "Material" : "Expense", currency, Math.Abs(amount), currency, Math.Abs(amount), null,
+                            message.SourceModule == "inventory" ? "Material" : "Expense", currency, Math.Abs(amount.Value), currency, Math.Abs(amount.Value), null,
                             DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", correctionOf, legalEntityId), message.CorrelationId, context.CancellationToken);
                     }
                 }
                 else
                 {
-                    var signedAmount = Math.Abs(amount);
+                    var signedAmount = Math.Abs(amount.Value);
                     if (signedAmount == 0m && message.MessageType == "StockIssuedV1")
                     {
                         evidenceStatus = "Ignored";
@@ -103,6 +131,30 @@ public sealed class ProjectsSourceEventConsumer(
                         message.SourceModule == "inventory" ? "Material" : "Expense", currency, signedAmount, currency, signedAmount, null,
                         DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", null, legalEntityId), message.CorrelationId, context.CancellationToken);
                 }
+                }
+            }
+            else if (message.MessageType == "InvoiceFinalizedV1")
+            {
+                var requestId = ProjectInvoiceRequestId(StringValue(root, "sourcePurpose"));
+                var amount = DecimalValue(root, "amount");
+                if (currency is null || amount is null) { evidenceStatus = "Ignored"; evidenceReason = currency is null ? "source_event_missing_currency" : "source_event_missing_amount"; }
+                else if (requestId is null) { evidenceStatus = "Ignored"; evidenceReason = "invoice_request_reference_missing"; }
+                else if (!Guid.TryParse(sourceId, out var invoiceId)) { evidenceStatus = "Ignored"; evidenceReason = "invoice_id_invalid"; }
+                else await projects.CompleteInvoiceAsync(message.TenantId, projectId.Value, requestId.Value, invoiceId, amount.Value, currency, context.CancellationToken);
+            }
+            else if (message.MessageType == "InvoiceCorrectedV1")
+            {
+                var originalInvoiceId = GuidValue(root, "originalInvoiceId");
+                var correctionInvoiceId = GuidValue(root, "invoiceId");
+                var amount = DecimalValue(root, "amount");
+                if (currency is null || amount is null) { evidenceStatus = "Ignored"; evidenceReason = currency is null ? "source_event_missing_currency" : "source_event_missing_amount"; }
+                else if (originalInvoiceId is null || correctionInvoiceId is null) { evidenceStatus = "Ignored"; evidenceReason = "invoice_correction_reference_missing"; }
+                else if (!await projects.ApplyInvoiceCorrectionAsync(message.TenantId, projectId.Value, correctionInvoiceId.Value, originalInvoiceId.Value, amount.Value, currency, context.CancellationToken)) { evidenceStatus = "Ignored"; evidenceReason = "invoice_correction_allocation_not_found"; }
+            }
+            else if (message.MessageType is "PaymentCompletedV1" or "PaymentReversedV1")
+            {
+                if (currency is null || DecimalValue(root, "amount") is null) { evidenceStatus = "Ignored"; evidenceReason = currency is null ? "source_event_missing_currency" : "source_event_missing_amount"; }
+                else evidenceReason = "settlement_projection_authoritative_in_subledger";
             }
             else if (message.MessageType is "FixedAssetCapitalizationAcceptedV1" or "FixedAssetCapitalizationRejectedV1")
             {
@@ -137,6 +189,19 @@ public sealed class ProjectsSourceEventConsumer(
 
     private static Guid? GuidValue(JsonElement root, string name) => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && Guid.TryParse(value.GetString(), out var result) ? result : null;
     private static string? StringValue(JsonElement root, string name) => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    private static string? SourceId(JsonElement root, string messageType) => messageType switch
+    {
+        "ExpenseFinalizedV1" or "ExpenseReversedV1" => StringValue(root, "expenseId"),
+        "PurchaseOrderApprovedV1" or "PurchaseOrderAmendedV1" or "PurchaseOrderCancelledV1" or "PurchaseOrderClosedV1" => StringValue(root, "purchaseOrderId"),
+        "StockIssuedV1" => StringValue(root, "operationId"),
+        "StockReversedV1" => StringValue(root, "reversalOfOperationId") ?? StringValue(root, "operationId"),
+        "InvoiceFinalizedV1" or "InvoiceCorrectedV1" => StringValue(root, "invoiceId"),
+        "PaymentCompletedV1" or "PaymentReversedV1" => StringValue(root, "paymentId"),
+        "FixedAssetCapitalizationAcceptedV1" or "FixedAssetCapitalizationRejectedV1" => StringValue(root, "candidateId"),
+        _ => null
+    };
+    private static Guid? ProjectInvoiceRequestId(string? purpose)
+        => purpose is not null && purpose.StartsWith("ProjectBilling:", StringComparison.Ordinal) && Guid.TryParse(purpose["ProjectBilling:".Length..], out var id) ? id : null;
     private static decimal? DecimalValue(JsonElement root, string name)
     {
         if (!root.TryGetProperty(name, out var value)) return null;

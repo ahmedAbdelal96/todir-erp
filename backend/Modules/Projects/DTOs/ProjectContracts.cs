@@ -42,7 +42,8 @@ public sealed record CreateChangeRequest(string Title, string? Reason, decimal C
 public sealed record ChangeRequestView(Guid Id, Guid ProjectId, string RequestNumber, string Title, string Status, decimal ContractDelta, decimal BudgetDelta, int ScheduleDeltaDays);
 public sealed record ChangeDecisionRequest(string Decision, string? Reason);
 public sealed record CloseView(Guid ProjectId, string State, IReadOnlyList<string> Blockers);
-public sealed record FinancialSummary(decimal Budget, decimal ActualCost, decimal OpenCommitment, decimal Etc, decimal Eac, decimal BillingEligible, decimal Invoiced, decimal Collected, decimal Outstanding, decimal ExpectedMargin);
+public sealed record FinancialSummary(decimal Budget, decimal ActualCost, decimal OpenCommitment, decimal Etc, decimal Eac, decimal BillingEligible, decimal Invoiced, decimal Collected, decimal Outstanding, decimal ExpectedMargin,
+    string RevenueBasis = "Unknown", decimal RevenueBasisAmount = 0m, string? CurrencyCode = null);
 public sealed record CapitalHandoffRequest(Guid CostFactId, decimal Amount, string CurrencyCode, string IdempotencyKey);
 public sealed record CapitalHandoffView(Guid Id, Guid ProjectId, Guid CostFactId, decimal Amount, string CurrencyCode, string State, string? ExternalReference);
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, bool HasNext);

@@ -727,7 +727,20 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
         { Add(record, tenant.Value, legalEntityId, invoiceId, request.IdempotencyKey, payloadHash, documentNumber, journalEntryId, openItemIds.ToArray(), actorId, now); await record.ExecuteNonQueryAsync(ct); }
         var nextDue = data.Schedule.OrderBy(item => item.DueDate).Select(item => (DateOnly?)item.DueDate).FirstOrDefault();
         await UpsertProjectionAsync(context.Connection, context.Transaction, tenant, legalEntityId, invoiceId, data.PartyDisplayName, nextDue, openItemIds.Count == 0 ? "Settled" : "Open", data.RegulatorySummary, ct);
-        context.AddOutbox(new(Guid.CreateVersion7(), "InvoiceFinalizedV1", JsonSerializer.Serialize(new { invoiceId, legalEntityId, direction, documentType, documentNumber, journalEntryId, openItemIds }, JsonOptions), tenant, now, correlationId, invoiceId, "invoicing"));
+        string? sourceModule = null; Guid? sourceDocumentId = null; string? sourcePurpose = null;
+        await using (var source = new NpgsqlCommand("select source_module,source_document_id,source_purpose from business_invoicing.invoice where tenant_id=$1 and legal_entity_id=$2 and id=$3", context.Connection, context.Transaction))
+        {
+            Add(source, tenant.Value, legalEntityId, invoiceId);
+            await using var sourceReader = await source.ExecuteReaderAsync(ct);
+            if (await sourceReader.ReadAsync(ct))
+            {
+                sourceModule = sourceReader.IsDBNull(0) ? null : sourceReader.GetString(0);
+                sourceDocumentId = sourceReader.IsDBNull(1) ? null : sourceReader.GetGuid(1);
+                sourcePurpose = sourceReader.IsDBNull(2) ? null : sourceReader.GetString(2);
+            }
+        }
+        var sourcePayload = new { invoiceId, legalEntityId, direction, documentType, documentNumber, journalEntryId, openItemIds, sourceModule, sourceDocumentId, sourcePurpose, amount = ParseRequired(data.Totals.GrossAmount), currencyCode = data.Totals.CurrencyCode };
+        context.AddOutbox(new(Guid.CreateVersion7(), "InvoiceFinalizedV1", JsonSerializer.Serialize(sourcePayload, JsonOptions), tenant, now, correlationId, invoiceId, "invoicing"));
         if (documentType is "CreditNote" or "DebitNote")
         {
             var relationshipType = documentType == "CreditNote" ? "Credits" : "Debits";
@@ -739,7 +752,7 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
             }
             if (originalInvoiceId is null) throw new InvoiceException("invoicing.correction_link_missing", "The original document relationship is unavailable.");
             context.AddOutbox(new(Guid.CreateVersion7(), "InvoiceCorrectedV1", JsonSerializer.Serialize(new
-            { invoiceId, originalInvoiceId, legalEntityId, direction, documentType, documentNumber, amount = data.Totals.GrossAmount }, JsonOptions),
+            { invoiceId, originalInvoiceId, legalEntityId, direction, documentType, documentNumber, amount = ParseRequired(data.Totals.GrossAmount), currencyCode = data.Totals.CurrencyCode, sourceModule, sourceDocumentId, sourcePurpose }, JsonOptions),
                 tenant, now, correlationId, invoiceId, "invoicing"));
         }
         var complianceSnapshot = await BuildComplianceSnapshotAsync(context, tenant, legalEntityId, invoiceId, direction, documentType, documentNumber, data, ct);

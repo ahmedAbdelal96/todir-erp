@@ -17,16 +17,16 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
     public Task<ProjectDetail> UpdateAsync(TenantId tenant, Guid actor, Guid projectId, UpdateProjectRequest request, CancellationToken ct) => repository.UpdateAsync(tenant, actor, projectId, request, ct);
     public Task<ProjectDetail> TransitionAsync(TenantId tenant, Guid actor, Guid projectId, string state, long version, CancellationToken ct) => repository.TransitionAsync(tenant, actor, projectId, state, version, ct);
     public Task<ProjectTaskView> AddTaskAsync(TenantId tenant, Guid actor, Guid projectId, CreateProjectTaskRequest request, CancellationToken ct) => repository.AddTaskAsync(tenant, actor, projectId, request, ct);
-    public Task<IReadOnlyList<ProjectTaskView>> ListTasksAsync(TenantId tenant, Guid projectId, CancellationToken ct) => repository.ListTasksAsync(tenant, projectId, ct);
+    public Task<PagedResult<ProjectTaskView>> ListTasksAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => repository.ListTasksAsync(tenant, projectId, page, pageSize, ct);
     public Task<TaskDependencyView> AddDependencyAsync(TenantId tenant, Guid actor, Guid projectId, CreateTaskDependencyRequest request, CancellationToken ct) => repository.AddDependencyAsync(tenant, actor, projectId, request, ct);
     public Task<MilestoneView> AddMilestoneAsync(TenantId tenant, Guid actor, Guid projectId, CreateMilestoneRequest request, CancellationToken ct) => repository.AddMilestoneAsync(tenant, actor, projectId, request, ct);
-    public Task<IReadOnlyList<MilestoneView>> ListMilestonesAsync(TenantId tenant, Guid projectId, CancellationToken ct) => repository.ListMilestonesAsync(tenant, projectId, ct);
+    public Task<PagedResult<MilestoneView>> ListMilestonesAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => repository.ListMilestonesAsync(tenant, projectId, page, pageSize, ct);
     public Task<MilestoneView> MilestoneActionAsync(TenantId tenant, Guid actor, Guid milestoneId, string action, MilestoneActionRequest request, CancellationToken ct) => repository.MilestoneActionAsync(tenant, actor, milestoneId, action, request, ct);
     public Task<ProjectTeamMemberView> AddTeamMemberAsync(TenantId tenant, Guid actor, Guid projectId, AddProjectTeamMemberRequest request, CancellationToken ct) => repository.AddTeamMemberAsync(tenant, actor, projectId, request, ct);
-    public Task<IReadOnlyList<ProjectTeamMemberView>> ListTeamAsync(TenantId tenant, Guid projectId, CancellationToken ct) => repository.ListTeamAsync(tenant, projectId, ct);
+    public Task<PagedResult<ProjectTeamMemberView>> ListTeamAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => repository.ListTeamAsync(tenant, projectId, page, pageSize, ct);
     public Task<TimeEntryView> CreateTimeAsync(TenantId tenant, Guid actor, CreateTimeEntryRequest request, CancellationToken ct) => repository.CreateTimeAsync(tenant, actor, request, ct);
     public Task<TimeEntryView> TimeActionAsync(TenantId tenant, Guid actor, Guid timeId, string action, TimeActionRequest request, CancellationToken ct) => repository.TimeActionAsync(tenant, actor, timeId, action, request.Version, request.Reason, ct);
-    public Task<IReadOnlyList<TimeEntryView>> ListTimeAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => repository.ListTimeAsync(tenant, projectId, page, pageSize, ct);
+    public Task<PagedResult<TimeEntryView>> ListTimeAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => repository.ListTimeAsync(tenant, projectId, page, pageSize, ct);
     public Task<RateCardView> CreateRateCardAsync(TenantId tenant, Guid actor, CreateRateCardRequest request, CancellationToken ct) => repository.CreateRateCardAsync(tenant, actor, request, ct);
     public Task<BudgetView> CreateBudgetAsync(TenantId tenant, Guid actor, Guid projectId, CreateBudgetRequest request, CancellationToken ct) => repository.CreateBudgetAsync(tenant, actor, projectId, request, ct);
     public Task<BudgetVersionView> CreateBudgetRevisionAsync(TenantId tenant, Guid actor, Guid projectId, Guid budgetId, CreateBudgetRevisionRequest request, CancellationToken ct) => repository.CreateBudgetRevisionAsync(tenant, actor, projectId, budgetId, request, ct);
@@ -40,17 +40,25 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
         if (subledger is null) return summary;
         var collected = 0m;
         var outstanding = 0m;
+        var settlementCurrency = summary.CurrencyCode;
         foreach (var (invoiceId, legalEntityId) in await repository.ListInvoiceSourcesAsync(tenant, projectId, ct))
         {
             var settlement = await subledger.GetSourceSettlementSummaryAsync(tenant, new(legalEntityId), "Invoice", invoiceId, ct);
             if (settlement is null) continue;
-            collected += ParseMoney(settlement.SettledAmount);
-            outstanding += ParseMoney(settlement.OpenAmount);
+            if (string.IsNullOrWhiteSpace(settlement.TransactionCurrency)) throw new ProjectException("projects.settlement_currency_missing");
+            settlementCurrency ??= settlement.TransactionCurrency.Trim().ToUpperInvariant();
+            if (!string.Equals(settlementCurrency, settlement.TransactionCurrency.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new ProjectException("projects.settlement_currency_mismatch");
+            collected += ParseMoney(settlement.SettledAmount, "settled");
+            outstanding += ParseMoney(settlement.OpenAmount, "open");
         }
-        return summary with { Collected = collected, Outstanding = outstanding, ExpectedMargin = summary.BillingEligible - summary.ActualCost };
+        return summary with { Collected = collected, Outstanding = outstanding, CurrencyCode = settlementCurrency };
     }
 
-    private static decimal ParseMoney(string value) => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0m;
+    private static decimal ParseMoney(string value, string field)
+        => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0m
+            ? parsed
+            : throw new ProjectException($"projects.settlement_{field}_amount_invalid");
     public Task<BillingRuleView> CreateBillingRuleAsync(TenantId tenant, Guid actor, Guid projectId, CreateBillingRuleRequest request, CancellationToken ct) => repository.CreateBillingRuleAsync(tenant, actor, projectId, request, ct);
     public Task<BillableChargeView> CreateChargeAsync(TenantId tenant, Guid actor, CreateBillableChargeRequest request, CancellationToken ct) => repository.CreateChargeAsync(tenant, actor, request, ct);
     public async Task<InvoiceRequestView> RequestInvoiceAsync(TenantId tenant, Guid actor, Guid membership, RequestInvoiceRequest request, Guid correlationId, CancellationToken ct)
@@ -60,7 +68,7 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
         var invoiceRequest = await repository.RequestInvoiceAsync(tenant, actor, request, correlationId, ct);
         if (invoiceRequest.State is "Accepted" or "Completed" or "Rejected" or "Cancelled") return invoiceRequest;
         var charges = await repository.ListInvoiceChargeSourcesAsync(tenant, request.ProjectId, request.ChargeIds, ct);
-        var source = new InvoiceSourceDocumentContract("projects", request.ProjectId, "ProjectBilling", request.IdempotencyKey, "Receivable", project.LegalEntityId, null,
+        var source = new InvoiceSourceDocumentContract("projects", request.ProjectId, $"ProjectBilling:{invoiceRequest.Id:D}", request.IdempotencyKey, "Receivable", project.LegalEntityId, null,
             project.CustomerPartyId.Value, null, DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), null,
             request.CurrencyCode.ToUpperInvariant(), "Exclusive", null, null, null, charges.Select(charge => new InvoiceSourceLineContract(null, null, null, charge.Description, "1", charge.BillableAmount.ToString(System.Globalization.CultureInfo.InvariantCulture), null, "ProjectBilling", charge.Id.ToString("D"))).ToArray());
         var invoiceId = await invoicing.CreateDraftFromSourceAsync(tenant, actor, membership, source, correlationId, ct);
@@ -111,5 +119,7 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
     }
 
     public Task CancelCommitmentAsync(TenantId tenant, Guid projectId, string sourceModule, string sourceId, CancellationToken cancellationToken = default) => repository.CancelCommitmentAsync(tenant, projectId, sourceModule, sourceId, cancellationToken);
+    public Task CompleteInvoiceAsync(TenantId tenant, Guid projectId, Guid invoiceRequestId, Guid invoiceId, decimal invoicedAmount, string currencyCode, CancellationToken cancellationToken = default) => repository.CompleteInvoiceAsync(tenant, projectId, invoiceRequestId, invoiceId, invoicedAmount, currencyCode, cancellationToken);
+    public Task<bool> ApplyInvoiceCorrectionAsync(TenantId tenant, Guid projectId, Guid correctionInvoiceId, Guid originalInvoiceId, decimal amount, string currencyCode, CancellationToken cancellationToken = default) => repository.ApplyInvoiceCorrectionAsync(tenant, projectId, correctionInvoiceId, originalInvoiceId, amount, currencyCode, cancellationToken);
     public Task ApplyCapitalHandoffResultAsync(TenantId tenant, Guid handoffId, string state, string? externalReference, CancellationToken cancellationToken = default) => repository.ApplyCapitalHandoffResultAsync(tenant, handoffId, state, externalReference, cancellationToken);
 }

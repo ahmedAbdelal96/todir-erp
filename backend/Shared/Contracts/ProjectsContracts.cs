@@ -31,5 +31,7 @@ public interface IProjectSourceIntegrationCapabilities
     Task<ProjectCostFactContract?> RecordReversalAsync(TenantId tenant, Guid actor, Guid projectId, string sourceModule, string sourceId, decimal originalCurrencyAmount, string currencyCode, DateOnly factDate, string idempotencyKey, Guid correlationId, CancellationToken cancellationToken = default);
     Task RecordCommitmentAsync(ProjectCommitmentIngress request, CancellationToken cancellationToken = default);
     Task CancelCommitmentAsync(TenantId tenant, Guid projectId, string sourceModule, string sourceId, CancellationToken cancellationToken = default);
+    Task CompleteInvoiceAsync(TenantId tenant, Guid projectId, Guid invoiceRequestId, Guid invoiceId, decimal invoicedAmount, string currencyCode, CancellationToken cancellationToken = default);
+    Task<bool> ApplyInvoiceCorrectionAsync(TenantId tenant, Guid projectId, Guid correctionInvoiceId, Guid originalInvoiceId, decimal amount, string currencyCode, CancellationToken cancellationToken = default);
     Task ApplyCapitalHandoffResultAsync(TenantId tenant, Guid handoffId, string state, string? externalReference, CancellationToken cancellationToken = default);
 }
