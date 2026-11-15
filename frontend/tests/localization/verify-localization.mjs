@@ -10,7 +10,7 @@ const resourcePairs = [
   ["core/i18n/resources/ar/navigation.ts", "core/i18n/resources/en/navigation.ts"],
   ["core/i18n/resources/ar/validation.ts", "core/i18n/resources/en/validation.ts"],
   ["core/i18n/resources/ar/workspace.ts", "core/i18n/resources/en/workspace.ts"],
-  ...["accounting", "catalog", "directory", "finbase", "identity", "invoicing", "migration", "payments", "pricing", "tax", "subledger", "inventory", "sales", "purchasing", "hr", "payroll", "crm", "pos", "expenses"]
+  ...["accounting", "catalog", "directory", "finbase", "identity", "invoicing", "migration", "payments", "pricing", "tax", "subledger", "inventory", "sales", "purchasing", "hr", "payroll", "crm", "pos", "expenses", "fixed-assets", "projects"]
     .map((module) => [`modules/${module}/i18n/ar.ts`, `modules/${module}/i18n/en.ts`])
 ];
 const excludedCopyPaths = /(?:\.test\.|\.stories\.|\.story\.|\/tests\/|\/stories\/|\/__fixtures__\/|\/i18n\/|\/utils\/diagnostic-translations\.ts$)/;
