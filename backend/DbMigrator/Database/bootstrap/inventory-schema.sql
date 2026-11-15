@@ -70,6 +70,7 @@ CREATE TABLE business_inventory.inventory_operation (
   source_module varchar(40) NOT NULL, source_document_id uuid, idempotency_key varchar(200) NOT NULL,
   idempotency_hash char(64) NOT NULL, operational_date date NOT NULL, posting_date date NOT NULL,
   reason_code varchar(32), reason text, actor_id uuid NOT NULL, correlation_id uuid NOT NULL,
+  project_id uuid, task_id uuid, cost_category text,
   created_at timestamptz NOT NULL, confirmed_at timestamptz, reversal_of_id uuid,
   PRIMARY KEY (tenant_id,id), UNIQUE (tenant_id,legal_entity_id,id), UNIQUE (tenant_id,legal_entity_id,operation_number),
   UNIQUE (tenant_id,legal_entity_id,source_module,idempotency_key),

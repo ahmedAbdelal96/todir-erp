@@ -3,8 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Modules.Purchasing.DTOs;
 
 public sealed record PurchaseOrderLineRequest(Guid? ProductVariantId, Guid? UnitOfMeasureId, string? UnitCode, string Description, decimal Quantity, decimal? UnitPrice = null, string? PriceOverrideReason = null, Guid? ProductTemplateId = null);
-public sealed record CreatePurchaseOrderRequest(Guid LegalEntityId, Guid? BranchId, Guid SupplierPartyId, string CurrencyCode, DateOnly OrderDate, Guid? PriceListId, bool? ApprovalRequired, IReadOnlyList<PurchaseOrderLineRequest> Lines);
-public sealed record UpdatePurchaseOrderRequest(long Version, Guid SupplierPartyId, string CurrencyCode, DateOnly OrderDate, IReadOnlyList<PurchaseOrderLineRequest> Lines);
+public sealed record CreatePurchaseOrderRequest(Guid LegalEntityId, Guid? BranchId, Guid SupplierPartyId, string CurrencyCode, DateOnly OrderDate, Guid? PriceListId, bool? ApprovalRequired, IReadOnlyList<PurchaseOrderLineRequest> Lines, Guid? ProjectId = null, Guid? TaskId = null, string? CostCategory = null);
+public sealed record UpdatePurchaseOrderRequest(long Version, Guid SupplierPartyId, string CurrencyCode, DateOnly OrderDate, IReadOnlyList<PurchaseOrderLineRequest> Lines, Guid? ProjectId = null, Guid? TaskId = null, string? CostCategory = null);
 public sealed record PurchaseOrderCommandRequest(long Version, string IdempotencyKey, string? Reason = null);
 public sealed record PurchaseInvoiceLineRequest(Guid PurchaseOrderLineId, decimal Quantity);
 public sealed record CreateSupplierInvoiceRequest(long Version, string IdempotencyKey, DateOnly DocumentDate, DateOnly PostingDate, DateOnly TaxDate, string? SupplierInvoiceNumber, IReadOnlyList<PurchaseInvoiceLineRequest>? Lines = null);
@@ -21,7 +21,7 @@ public sealed record CreateSupplierReturnRequest(long Version, string Resolution
 public sealed record SupplierReturnLineRequest(Guid PurchaseOrderLineId, decimal Quantity, Guid? ProductVariantId, Guid? UnitOfMeasureId, Guid? WarehouseId, Guid? LocationId, Guid? LotId = null, Guid? SerialId = null);
 public sealed record SupplierReturnView(Guid Id, Guid PurchaseOrderId, Guid SupplierPartyId, string State, string Resolution, string Reason, long Version, Guid? CreditNoteId);
 public sealed record PurchaseOrderLineView(Guid Id, int Sequence, Guid? ProductVariantId, Guid? UnitOfMeasureId, string? UnitCode, string Description, decimal OrderedQuantity, decimal UnitPrice, decimal InvoicedQuantity, decimal CancelledQuantity, string? PriceEvidence, decimal ReceivedQuantity = 0, decimal ClosedShortQuantity = 0);
-public sealed record PurchaseOrderView(Guid Id, Guid LegalEntityId, Guid? BranchId, Guid SupplierPartyId, string CurrencyCode, DateOnly OrderDate, string State, string ApprovalState, string ReceiptState, string InvoicingState, long Version, decimal NetTotal, IReadOnlyList<PurchaseOrderLineView> Lines, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record PurchaseOrderView(Guid Id, Guid LegalEntityId, Guid? BranchId, Guid SupplierPartyId, string CurrencyCode, DateOnly OrderDate, string State, string ApprovalState, string ReceiptState, string InvoicingState, long Version, decimal NetTotal, IReadOnlyList<PurchaseOrderLineView> Lines, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, Guid? ProjectId = null, Guid? TaskId = null, string? CostCategory = null);
 public sealed record PurchaseOrderListItem(Guid Id, Guid SupplierPartyId, DateOnly OrderDate, string State, string CurrencyCode, decimal NetTotal, long Version, DateTimeOffset UpdatedAt);
 public sealed record PurchaseOrderPage(IReadOnlyList<PurchaseOrderListItem> Items, int Page, int PageSize, bool HasMore, int TotalCount = 0);
 public sealed record PurchaseInvoiceLinkView(Guid InvoiceId, string Purpose, string IdempotencyKey, DateTimeOffset CreatedAt);

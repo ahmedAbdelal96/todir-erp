@@ -19,6 +19,9 @@ using Modules.Payroll;
 using Modules.CRM;
 using Modules.Expenses;
 using Modules.POS;
+using Modules.Projects;
+using Modules.FixedAssets;
+using Modules.FixedAssets.Controllers;
 using Quartz;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -42,6 +45,8 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<CrmExternalEventConsumer, CrmExternalEventConsumerDefinition>();
     bus.AddConsumer<ExpensesOcrConsumer, ExpensesOcrConsumerDefinition>();
     bus.AddConsumer<ExpensesNotificationConsumer, ExpensesNotificationConsumerDefinition>();
+    bus.AddConsumer<ProjectsSourceEventConsumer, ProjectsSourceEventConsumerDefinition>();
+    bus.AddConsumer<ProjectCapitalHandoffConsumer, ProjectCapitalHandoffConsumerDefinition>();
 });
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();
@@ -60,6 +65,8 @@ builder.Services.AddPayrollModule();
 builder.Services.AddCrmModule();
 builder.Services.AddExpensesModule();
 builder.Services.AddPosModule();
+builder.Services.AddProjectsModule();
+builder.Services.AddFixedAssetsModule();
 builder.Services.AddScheduling(builder.Configuration, options =>
 {
     options.AddJob<HrExpiryReminderJob>(job => job

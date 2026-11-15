@@ -1,0 +1,30 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "projects",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L4",
+  "type": "business-module",
+  "purchasable": true,
+  "scope": "tenant",
+  "dependencies": {
+    "hard": ["platform-kernel"],
+    "optionalCapabilities": ["directory.party", "sales.quotations", "hr.core", "expenses.claims", "purchasing.commitments", "invoicing.source-draft", "inventory.history", "fixed-assets.capitalization", "platform.outbox"]
+  },
+  "owns": {
+    "schema": "business_projects",
+    "entities": ["project", "project_template", "project_template_version", "project_work_node", "project_task", "project_dependency", "project_milestone", "project_deliverable", "project_team_member", "project_resource_requirement", "project_resource_allocation", "project_time_entry", "project_time_approval", "project_rate_card", "project_rate_card_line", "project_budget", "project_budget_version", "project_budget_line", "project_cost_fact", "project_commitment", "project_forecast", "project_billing_rule", "project_billing_plan_line", "project_billable_charge", "project_invoice_request", "project_invoice_allocation", "project_change_request", "project_change_order", "project_baseline", "project_document", "project_external_reference", "project_close", "project_close_exception", "project_capital_handoff", "project_audit_event", "project_idempotency", "project_integration_event"]
+  },
+  "permissions": [
+    "projects.read", "projects.create", "projects.edit", "projects.manage_team", "projects.manage_tasks", "projects.time.read", "projects.time.create", "projects.time.approve", "projects.budget.read", "projects.budget.manage", "projects.forecast.read", "projects.forecast.manage", "projects.cost.read", "projects.cost.manage", "projects.billing.read", "projects.billing.manage", "projects.billing.writeoff", "projects.change.manage", "projects.close.manage", "projects.capital.manage", "projects.audit.read", "projects.export"
+  ],
+  "capabilities": {
+    "provides": ["projects.execution", "projects.time", "projects.costing", "projects.forecasting", "projects.billing", "projects.capital-handoff", "projects.source-integration"],
+    "consumes": ["directory.party", "sales.quotations", "hr.core", "expenses.claims", "purchasing.commitments", "invoicing.source-draft", "inventory.history", "fixed-assets.capitalization", "platform.numbering", "platform.outbox"]
+  },
+  "messaging": {
+    "publishes": ["ProjectCreatedV1", "ProjectTimeFinalizedV1", "ProjectCostFactRecordedV1", "ProjectInvoiceRequestedV1", "ProjectCapitalHandoffRequestedV1", "ProjectClosedV1"],
+    "consumes": ["QuotationAcceptedV1", "ExpenseFinalizedV1", "ExpenseReversedV1", "PurchaseOrderApprovedV1", "PurchaseOrderAmendedV1", "PurchaseOrderCancelledV1", "PurchaseOrderClosedV1", "InvoiceFinalizedV1", "InvoiceCorrectedV1", "StockIssuedV1", "StockReversedV1", "PaymentCompletedV1", "PaymentReversedV1", "FixedAssetCapitalizationAcceptedV1", "FixedAssetCapitalizationRejectedV1"]
+  },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}

@@ -303,12 +303,12 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
                 }
             }
 
-            string originalType; string originalStatus;
-            await using (var original = new NpgsqlCommand("select operation_type,status from business_inventory.inventory_operation where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction))
+            string originalType; string originalStatus; Guid? originalProjectId; Guid? originalTaskId; string? originalCostCategory;
+            await using (var original = new NpgsqlCommand("select operation_type,status,project_id,task_id,cost_category from business_inventory.inventory_operation where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction))
             {
                 Add(original, tenant.Value, entity, request.OperationId); await using var reader = await original.ExecuteReaderAsync(token);
                 if (!await reader.ReadAsync(token)) throw new InventoryException("inventory.operation_not_found");
-                originalType = reader.GetString(0); originalStatus = reader.GetString(1);
+                originalType = reader.GetString(0); originalStatus = reader.GetString(1); originalProjectId = reader.IsDBNull(2) ? null : reader.GetGuid(2); originalTaskId = reader.IsDBNull(3) ? null : reader.GetGuid(3); originalCostCategory = reader.IsDBNull(4) ? null : reader.GetString(4);
             }
             if (originalStatus != "Confirmed" || originalType is not ("Receipt" or "Issue" or "Adjustment"))
                 throw new InventoryException("inventory.operation_not_reversible");
@@ -345,6 +345,8 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
                 Add(insert, tenant.Value, reversalId, entity, number, request.OperationId, idempotencyKey, hash, request.OperationalDate, request.PostingDate, actor, correlationId, now);
                 await insert.ExecuteNonQueryAsync(token);
             }
+            await using (var allocation = new NpgsqlCommand("update business_inventory.inventory_operation set project_id=$3,task_id=$4,cost_category=$5 where tenant_id=$1 and id=$2", context.Connection, context.Transaction))
+            { Add(allocation, tenant.Value, reversalId, originalProjectId ?? (object)DBNull.Value, originalTaskId ?? (object)DBNull.Value, originalCostCategory ?? (object)DBNull.Value); await allocation.ExecuteNonQueryAsync(token); }
 
             var reversedMovementIds = new List<Guid>(movements.Count);
             foreach (var movement in movements)
@@ -378,7 +380,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
             await using (var mark = new NpgsqlCommand("update business_inventory.inventory_operation set status='Reversed' where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Confirmed'", context.Connection, context.Transaction))
             { Add(mark, tenant.Value, entity, request.OperationId); if (await mark.ExecuteNonQueryAsync(token) != 1) throw new InventoryException("inventory.operation_not_reversible"); }
             await AuditAsync(context, tenant.Value, entity, actor, "inventory_operation.reversed", "InventoryOperation", request.OperationId, correlationId, now, token);
-            context.AddOutbox(new(Guid.CreateVersion7(), "StockReversedV1", JsonSerializer.Serialize(new { operationId = reversalId, reversalOfOperationId = request.OperationId, movementIds = reversedMovementIds }), tenant, now, correlationId, reversalId, "inventory", traceParent));
+            context.AddOutbox(new(Guid.CreateVersion7(), "StockReversedV1", JsonSerializer.Serialize(new { operationId = reversalId, reversalOfOperationId = request.OperationId, movementIds = reversedMovementIds, projectId = originalProjectId, taskId = originalTaskId, costCategory = originalCostCategory, costAmount = Math.Abs(movements.Sum(x => x.OriginalValueDelta ?? 0m)), currencyCode = movements.FirstOrDefault(x => x.CurrencyCode is not null)?.CurrencyCode }), tenant, now, correlationId, reversalId, "inventory", traceParent));
             return new InventoryOperationResult(reversalId, number, "Confirmed", reversedMovementIds, false);
         }, ct);
     }
@@ -1379,9 +1381,9 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
             var operationId = Guid.CreateVersion7();
             var operationNumber = OperationNumber(now, operationId);
             await EnsurePostingDateOpenAsync(context, tenant, entity, request.PostingDate, token);
-            await using (var command = new NpgsqlCommand("insert into business_inventory.inventory_operation(tenant_id,id,legal_entity_id,operation_number,operation_type,status,source_module,source_document_id,idempotency_key,idempotency_hash,operational_date,posting_date,reason_code,actor_id,correlation_id,created_at,confirmed_at) values($1,$2,$3,$4,$5,'Confirmed',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)", context.Connection, context.Transaction))
+            await using (var command = new NpgsqlCommand("insert into business_inventory.inventory_operation(tenant_id,id,legal_entity_id,operation_number,operation_type,status,source_module,source_document_id,idempotency_key,idempotency_hash,operational_date,posting_date,reason_code,actor_id,correlation_id,project_id,task_id,cost_category,created_at,confirmed_at) values($1,$2,$3,$4,$5,'Confirmed',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18)", context.Connection, context.Transaction))
             {
-                Add(command, tenant.Value, operationId, entity, operationNumber, kind.ToString(), sourceModule, request.SourceDocumentId ?? (object)DBNull.Value, request.IdempotencyKey, hash, request.OperationalDate, request.PostingDate, reasonCode ?? (object)DBNull.Value, actor, correlationId, now); await command.ExecuteNonQueryAsync(token);
+                Add(command, tenant.Value, operationId, entity, operationNumber, kind.ToString(), sourceModule, request.SourceDocumentId ?? (object)DBNull.Value, request.IdempotencyKey, hash, request.OperationalDate, request.PostingDate, reasonCode ?? (object)DBNull.Value, actor, correlationId, request.ProjectId ?? (object)DBNull.Value, request.TaskId ?? (object)DBNull.Value, request.CostCategory ?? (object)DBNull.Value, now); await command.ExecuteNonQueryAsync(token);
             }
             if (adjustmentRequestId is { } postedRequestId)
             {
@@ -1428,7 +1430,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
                 await ReconcileNegativeStockConditionAsync(context, position, movementId, token);
             await AuditAsync(context, tenant.Value, entity, actor, negativeStockConditionTriggered ? "stock.issue_negative_condition_raised" : $"stock.{kind.ToString().ToLowerInvariant()}_confirmed", "InventoryOperation", operationId, correlationId, now, token);
             var eventType = kind == MovementKind.Adjustment ? "StockAdjustedV1" : kind == MovementKind.Issue ? "StockIssuedV1" : kind == MovementKind.Opening ? "StockOpeningPostedV1" : "StockReceivedV1";
-            var payload = JsonSerializer.Serialize(new { operationId, movementId, productVariantId = request.ProductVariantId, warehouseId = request.WarehouseId, locationId = effectiveLocation, quantity = draft.BaseQuantity, sourceModule, reasonCode });
+            var payload = JsonSerializer.Serialize(new { operationId, movementId, productVariantId = request.ProductVariantId, warehouseId = request.WarehouseId, locationId = effectiveLocation, quantity = draft.BaseQuantity, costAmount = request.UnitCost is { } unitCost ? Math.Abs(unitCost * draft.BaseQuantity) : 0m, currencyCode = request.CurrencyCode, projectId = request.ProjectId, taskId = request.TaskId, costCategory = request.CostCategory, sourceModule, reasonCode });
             context.AddOutbox(new(Guid.CreateVersion7(), eventType, payload, tenant, now, correlationId, operationId, "inventory", traceParent));
             return new InventoryOperationResult(operationId, operationNumber, "Confirmed", [movementId], false);
         }, ct);

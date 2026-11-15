@@ -24,9 +24,9 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
         var approval = approvalRequired ? "Pending" : "NotRequired";
         var total = lines.Sum(x => x.Quantity * x.UnitPrice);
         await ExecuteAsync(connection, transaction, """
-            insert into business_purchasing.purchase_order(tenant_id,legal_entity_id,id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,matching_state,price_list_id,net_total,gross_total,created_by,created_at,updated_at)
-            values($1,$2,$3,$4,$5,$6,$7,$8,$9,'NotReceived','NotInvoiced','NotRequired',$10,$11,$11,$12,$13,$13)
-            """, ct, tenant.Value, request.LegalEntityId, id, request.BranchId, request.SupplierPartyId, request.CurrencyCode, request.OrderDate, state, approval, request.PriceListId, total, actor, now);
+            insert into business_purchasing.purchase_order(tenant_id,legal_entity_id,id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,matching_state,price_list_id,project_id,task_id,cost_category,net_total,gross_total,created_by,created_at,updated_at)
+            values($1,$2,$3,$4,$5,$6,$7,$8,$9,'NotReceived','NotInvoiced','NotRequired',$10,$11,$12,$13,$14,$14,$15,$16,$16)
+            """, ct, tenant.Value, request.LegalEntityId, id, request.BranchId, request.SupplierPartyId, request.CurrencyCode, request.OrderDate, state, approval, request.PriceListId, request.ProjectId, request.TaskId, request.CostCategory, total, actor, now);
         await InsertLinesAsync(connection, transaction, tenant, request.LegalEntityId, id, lines, now, ct);
         await AddHistoryAsync(connection, transaction, tenant, request.LegalEntityId, id, null, state, "Created", actor, correlation, now, ct);
         await transaction.CommitAsync(ct);
@@ -51,9 +51,9 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
         var nextState = amendment ? PurchaseOrderStates.PendingApproval : current.Value.State;
         var nextApproval = amendment ? "Pending" : current.Value.Approval;
         await ExecuteAsync(connection, transaction, """
-            update business_purchasing.purchase_order set supplier_party_id=$5,currency_code=$6,order_date=$7,state=$8,approval_state=$9,approved_by=case when $9='Approved' then approved_by else null end,approved_at=case when $9='Approved' then approved_at else null end,net_total=$10,gross_total=$10,row_version=row_version+1,updated_at=$11
+            update business_purchasing.purchase_order set supplier_party_id=$5,currency_code=$6,order_date=$7,project_id=$12,task_id=$13,cost_category=$14,state=$8,approval_state=$9,approved_by=case when $9='Approved' then approved_by else null end,approved_at=case when $9='Approved' then approved_at else null end,net_total=$10,gross_total=$10,row_version=row_version+1,updated_at=$11
             where tenant_id=$1 and legal_entity_id=$2 and id=$3 and row_version=$4
-            """, ct, tenant.Value, current.Value.EntityId, id, request.Version, request.SupplierPartyId, request.CurrencyCode, request.OrderDate, nextState, nextApproval, total, now);
+            """, ct, tenant.Value, current.Value.EntityId, id, request.Version, request.SupplierPartyId, request.CurrencyCode, request.OrderDate, nextState, nextApproval, total, now, request.ProjectId, request.TaskId, request.CostCategory);
         await ExecuteAsync(connection, transaction, "delete from business_purchasing.purchase_order_line where tenant_id=$1 and legal_entity_id=$2 and purchase_order_id=$3", ct, tenant.Value, current.Value.EntityId, id);
         await InsertLinesAsync(connection, transaction, tenant, current.Value.EntityId, id, lines, now, ct);
         if (amendment)
@@ -72,14 +72,14 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await SetTenantAsync(connection, null, tenant, ct);
-        await using var command = new NpgsqlCommand("select id,legal_entity_id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,row_version,net_total,created_at,updated_at from business_purchasing.purchase_order where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection);
+        await using var command = new NpgsqlCommand("select id,legal_entity_id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,row_version,net_total,created_at,updated_at,project_id,task_id,cost_category from business_purchasing.purchase_order where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection);
         command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(id);
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) return null;
-        var header = new Header(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetGuid(3), reader.GetString(4), reader.GetFieldValue<DateOnly>(5), reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.GetInt64(10), reader.GetDecimal(11), reader.GetFieldValue<DateTimeOffset>(12), reader.GetFieldValue<DateTimeOffset>(13));
+        var header = new Header(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetGuid(3), reader.GetString(4), reader.GetFieldValue<DateOnly>(5), reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.GetInt64(10), reader.GetDecimal(11), reader.GetFieldValue<DateTimeOffset>(12), reader.GetFieldValue<DateTimeOffset>(13), reader.IsDBNull(14) ? null : reader.GetGuid(14), reader.IsDBNull(15) ? null : reader.GetGuid(15), reader.IsDBNull(16) ? null : reader.GetString(16));
         await reader.CloseAsync();
         var lines = await ReadLinesAsync(connection, tenant, legalEntityId, id, includePrice, ct);
-        return new(header.Id, header.EntityId, header.BranchId, header.SupplierPartyId, header.Currency, header.OrderDate, header.State, header.Approval, header.Receipt, header.Invoicing, header.Version, header.Total, lines, header.CreatedAt, header.UpdatedAt);
+        return new(header.Id, header.EntityId, header.BranchId, header.SupplierPartyId, header.Currency, header.OrderDate, header.State, header.Approval, header.Receipt, header.Invoicing, header.Version, header.Total, lines, header.CreatedAt, header.UpdatedAt, header.ProjectId, header.TaskId, header.CostCategory);
     }
 
     public async Task<PurchaseOrderPage> ListAsync(TenantId tenant, Guid legalEntityId, string? state, string? search, int page, int pageSize, CancellationToken ct)
@@ -367,17 +367,17 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
         if (approve || nextState == "Draft") await ExecuteAsync(connection, transaction, "insert into business_purchasing.purchase_order_approval(tenant_id,legal_entity_id,purchase_order_id,id,decision,actor_id,reason,idempotency_key,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict do nothing", ct, tenant.Value, current.EntityId, id, Uuid7.NewGuid(), approve ? "Approved" : "Rejected", actor, request.Reason, request.IdempotencyKey, clock.GetUtcNow());
         await AddHistoryAsync(connection, transaction, tenant, current.EntityId, id, current.State, nextState, history + (request.Reason is null ? "" : ":" + request.Reason), actor, correlation, clock.GetUtcNow(), ct);
         var eventType = nextState switch { "Approved" => "PurchaseOrderApprovedV1", "Cancelled" => "PurchaseOrderCancelledV1", "Closed" => "PurchaseOrderClosedV1", _ => "PurchaseOrderAmendedV1" };
-        await AddOutboxAsync(connection, transaction, tenant, eventType, new { purchaseOrderId = id, fromState = current.State, toState = nextState, actorId = actor }, correlation, ct);
+        await AddOutboxAsync(connection, transaction, tenant, eventType, new { purchaseOrderId = id, legalEntityId = current.EntityId, fromState = current.State, toState = nextState, actorId = actor, projectId = current.ProjectId, taskId = current.TaskId, costCategory = current.CostCategory, committedAmount = current.Total, currencyCode = current.Currency }, correlation, ct);
         await transaction.CommitAsync(ct); return request.Version + 1;
     }
 
-    private static async Task<Header?> ReadHeaderAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid entity, Guid id, CancellationToken ct) => await ReadHeaderCoreAsync(connection, transaction, "select id,legal_entity_id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,row_version,net_total,created_at,updated_at from business_purchasing.purchase_order where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", tenant, entity, id, ct);
-    private static async Task<Header?> ReadHeaderByIdAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid id, CancellationToken ct) => await ReadHeaderCoreAsync(connection, transaction, "select id,legal_entity_id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,row_version,net_total,created_at,updated_at from business_purchasing.purchase_order where tenant_id=$1 and id=$2 for update", tenant, null, id, ct);
+    private static async Task<Header?> ReadHeaderAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid entity, Guid id, CancellationToken ct) => await ReadHeaderCoreAsync(connection, transaction, "select id,legal_entity_id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,row_version,net_total,created_at,updated_at,project_id,task_id,cost_category from business_purchasing.purchase_order where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", tenant, entity, id, ct);
+    private static async Task<Header?> ReadHeaderByIdAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid id, CancellationToken ct) => await ReadHeaderCoreAsync(connection, transaction, "select id,legal_entity_id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,row_version,net_total,created_at,updated_at,project_id,task_id,cost_category from business_purchasing.purchase_order where tenant_id=$1 and id=$2 for update", tenant, null, id, ct);
     private static async Task<Header?> ReadHeaderCoreAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, string sql, TenantId tenant, Guid? entity, Guid id, CancellationToken ct)
     {
         await using var command = new NpgsqlCommand(sql, connection, transaction); command.Parameters.AddWithValue(tenant.Value); if (entity is { } e) command.Parameters.AddWithValue(e); command.Parameters.AddWithValue(id);
         await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) return null;
-        return new(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetGuid(3), reader.GetString(4), reader.GetFieldValue<DateOnly>(5), reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.GetInt64(10), reader.GetDecimal(11), reader.GetFieldValue<DateTimeOffset>(12), reader.GetFieldValue<DateTimeOffset>(13));
+        return new(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetGuid(3), reader.GetString(4), reader.GetFieldValue<DateOnly>(5), reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetString(9), reader.GetInt64(10), reader.GetDecimal(11), reader.GetFieldValue<DateTimeOffset>(12), reader.GetFieldValue<DateTimeOffset>(13), reader.IsDBNull(14) ? null : reader.GetGuid(14), reader.IsDBNull(15) ? null : reader.GetGuid(15), reader.IsDBNull(16) ? null : reader.GetString(16));
     }
 
     private async Task<bool> StateAsync(TenantId tenant, Guid entity, Guid id, string expected, CancellationToken ct)
@@ -399,7 +399,7 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
     { await using var command = new NpgsqlCommand("select coalesce(over_receipt_policy,'Disallow'),coalesce(over_receipt_tolerance,0) from business_purchasing.purchase_settings where tenant_id=$1 and legal_entity_id=$2", connection, transaction); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(entity); await using var reader = await command.ExecuteReaderAsync(ct); return await reader.ReadAsync(ct) ? (reader.GetString(0), reader.GetDecimal(1)) : ("Disallow", 0m); }
     private static async Task AddOutboxAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, string messageType, object payload, Guid correlation, CancellationToken ct)
     { await ExecuteAsync(connection, transaction, "insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,trace_parent,status,next_attempt_at) values($1,$2,$3::jsonb,$4,$5,$6,$6,'purchasing',null,'Pending',$5)", ct, Guid.CreateVersion7(), messageType, JsonSerializer.Serialize(payload, Json), tenant.Value, DateTimeOffset.UtcNow, correlation); }
-    private readonly record struct Header(Guid Id, Guid EntityId, Guid? BranchId, Guid SupplierPartyId, string Currency, DateOnly OrderDate, string State, string Approval, string Receipt, string Invoicing, long Version, decimal Total, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    private readonly record struct Header(Guid Id, Guid EntityId, Guid? BranchId, Guid SupplierPartyId, string Currency, DateOnly OrderDate, string State, string Approval, string Receipt, string Invoicing, long Version, decimal Total, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, Guid? ProjectId, Guid? TaskId, string? CostCategory);
     public sealed record PurchaseWorkflowView(string PayloadHash, string State, string ReceiptPayload, string InvoicePayload, Guid? InvoiceId, string? LastError);
     public sealed record ResolvedLine(Guid? ProductVariantId, Guid? UnitOfMeasureId, string? UnitCode, string Description, decimal Quantity, decimal UnitPrice, string? Evidence, string? OverrideReason, string? TaxEvidence = null);
 }

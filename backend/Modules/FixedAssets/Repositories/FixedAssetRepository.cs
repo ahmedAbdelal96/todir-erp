@@ -886,7 +886,20 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             command.Parameters.AddWithValue(decision == "Approve" ? "Approved" : "Rejected"); command.Parameters.AddWithValue((object?)(string.IsNullOrWhiteSpace(request.Reason) ? decision : request.Reason.Trim()) ?? DBNull.Value); command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(candidateId);
             await using var reader = await command.ExecuteReaderAsync(token);
             if (!await reader.ReadAsync(token)) throw new FixedAssetException("assets.capitalization_candidate_not_reviewable");
-            return new CapitalizationCandidateView(candidateId, reader.GetGuid(0), reader.GetString(1), reader.GetString(2), ReadJsonElement(reader, 3), reader.GetDecimal(4), reader.GetDecimal(5), reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
+            var result = new CapitalizationCandidateView(candidateId, reader.GetGuid(0), reader.GetString(1), reader.GetString(2), ReadJsonElement(reader, 3), reader.GetDecimal(4), reader.GetDecimal(5), reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
+            await reader.CloseAsync();
+            var messageType = decision == "Approve" ? "FixedAssetCapitalizationAcceptedV1" : "FixedAssetCapitalizationRejectedV1";
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), messageType, JsonSerializer.Serialize(new
+            {
+                candidateId,
+                legalEntityId = result.LegalEntityId,
+                sourceType = result.SourceType,
+                sourceReference = result.SourceReference,
+                eligibleAmount = result.EligibleAmount,
+                sourceSnapshot = result.SourceSnapshot,
+                decision = result.Status
+            }), tenant, DateTimeOffset.UtcNow, candidateId, candidateId, "fixed-assets"));
+            return result;
         }, ct);
     }
 
