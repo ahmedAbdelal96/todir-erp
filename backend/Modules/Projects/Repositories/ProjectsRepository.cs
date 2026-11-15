@@ -267,7 +267,9 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
     {
         ProjectRules.EnsureMutable(await StateAsync(context, tenant.Value, projectId, token));
         if (request.CurrentAmount < 0) throw new ProjectException("projects.budget_invalid");
-        var budgetProject = await ScalarAsync(context, "select project_id from business_projects.project_budget where tenant_id=$1 and id=$2", token, tenant.Value, budgetId); if (budgetProject is not Guid linkedProject || linkedProject != projectId) throw new ProjectException("projects.budget_not_found");
+        var resolvedBudgetId = await ScalarAsync(context, "select id from business_projects.project_budget where tenant_id=$1 and (id=$2 or project_id=$3) order by (id=$2) desc limit 1", token, tenant.Value, budgetId, projectId);
+        if (resolvedBudgetId is not Guid validBudgetId) throw new ProjectException("projects.budget_not_found");
+        budgetId = validBudgetId;
         var version = Convert.ToInt32(await ScalarAsync(context, "select coalesce(max(version_no),0)+1 from business_projects.project_budget_version where tenant_id=$1 and budget_id=$2", token, tenant.Value, budgetId), CultureInfo.InvariantCulture); var id = Guid.CreateVersion7();
         var original = await DecimalAsync(context, "select original_amount from business_projects.project_budget_version where tenant_id=$1 and budget_id=$2 and state='Approved' order by version_no desc limit 1", token, tenant.Value, budgetId);
         await ExecuteAsync(context, "insert into business_projects.project_budget_version(tenant_id,id,budget_id,version_no,state,original_amount,current_amount,created_by) values($1,$2,$3,$4,'Draft',$5,$6,$7)", token, tenant.Value, id, budgetId, version, original, request.CurrentAmount, actor);

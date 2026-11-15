@@ -313,7 +313,7 @@ export function NewBudgetRevisionModal({
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={reviseMutation.isPending}>
+          <Button variant="primary" type="submit" isDisabled={reviseMutation.isPending} data-testid="btn-submit-budget-rev">
             {t("actions.save")}
           </Button>
         </div>

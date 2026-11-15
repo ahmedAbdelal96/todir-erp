@@ -492,25 +492,23 @@ export function AllocateResourceModal({ isOpen, onClose, projectId }: AllocateRe
   const [allocationPercent, setAllocationPercent] = useState(100);
   const [allocatedFrom, setAllocatedFrom] = useState(new Date().toISOString().slice(0, 10));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resourceRef.trim()) return;
 
-    allocateMutation.mutate(
-      {
+    try {
+      await allocateMutation.mutateAsync({
         projectId,
         request: {
           resourceRef: resourceRef.trim(),
           allocationPercent: Number(allocationPercent),
           allocatedFrom
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled by mutation
+    }
   };
 
   return (

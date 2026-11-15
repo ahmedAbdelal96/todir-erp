@@ -69,6 +69,8 @@ export const projectKeys = {
   portfolio: (legalEntityId: string, params?: { page?: number; pageSize?: number }) =>
     ["projects", "portfolio", legalEntityId, params] as const,
   resourceLoad: (legalEntityId: string) => ["projects", "resource-load", legalEntityId] as const,
+  changes: (projectId: string, params?: { page?: number; pageSize?: number }) =>
+    ["projects", "changes", projectId, params] as const,
   templates: (legalEntityId?: string, params?: { page?: number; pageSize?: number }) =>
     ["projects", "templates", legalEntityId, params] as const
 };
@@ -596,7 +598,7 @@ export function useRequestInvoice() {
 
 export function useProjectChanges(projectId: string, params?: { page?: number; pageSize?: number }) {
   return useQuery({
-    queryKey: [...projectKeys.detail(projectId), "changes", params],
+    queryKey: projectKeys.changes(projectId, params),
     queryFn: () => projectsApi.listChanges(projectId, params),
     enabled: Boolean(projectId)
   });
@@ -609,7 +611,7 @@ export function useCreateChange() {
       projectsApi.createChange(projectId, request),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: projectKeys.detail(vars.projectId) });
-      qc.invalidateQueries({ queryKey: [...projectKeys.detail(vars.projectId), "changes"] });
+      qc.invalidateQueries({ queryKey: ["projects", "changes", vars.projectId] });
     }
   });
 }
@@ -629,7 +631,7 @@ export function useDecideChange() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: projectKeys.detail(vars.projectId) });
       qc.invalidateQueries({ queryKey: projectKeys.financialSummary(vars.projectId) });
-      qc.invalidateQueries({ queryKey: [...projectKeys.detail(vars.projectId), "changes"] });
+      qc.invalidateQueries({ queryKey: ["projects", "changes", vars.projectId] });
     }
   });
 }

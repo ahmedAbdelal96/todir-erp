@@ -88,7 +88,10 @@ export const ar = {
     allProjectsStable: "كافة المشاريع مستقرة",
     actualSpentWithCurrency: "المنفق: {{amount}} {{currency}}",
     displayedProjects: "المشاريع المعروضة",
+    activeOnPage: "نشطة (الصفحة الحالية)",
+    atRiskOnPage: "معرضة للمخاطر (الصفحة الحالية)",
     portfolioBudget: "ميزانية المحفظة",
+    portfolioScopeNotice: "إجمالي المحفظة الكلي غير متاح على مستوى الصفحة",
     portfolioWideTotalsUnavailable: "غير متاح إجمالياً (راجع كل مشروع)",
     notCalculated: "غير محدد",
     quickOverview: "ملخص المشروع",
@@ -141,9 +144,11 @@ export const ar = {
   },
   milestoneStatuses: {
     Planned: "مخطط",
+    Open: "مفتوح",
     Reached: "تم الإنجاز",
     Accepted: "معتمد من العميل",
-    Rejected: "مرفوض"
+    Rejected: "مرفوض",
+    Cancelled: "ملغى"
   },
   timeStates: {
     Draft: "مسودة",

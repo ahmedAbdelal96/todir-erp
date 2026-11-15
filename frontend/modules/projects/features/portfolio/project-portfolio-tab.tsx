@@ -90,7 +90,7 @@ export function ProjectPortfolioTab({
           data-testid="kpi-total-projects"
         />
         <ProjectsKpiCard
-          title={t("states.Active")}
+          title={t("kpis.activeOnPage")}
           value={activeProjects}
           subtitle={`${onTrackProjects} ${t("health.OnTrack")}`}
           tone="success"
@@ -98,7 +98,7 @@ export function ProjectPortfolioTab({
           data-testid="kpi-active-projects"
         />
         <ProjectsKpiCard
-          title={t("health.AtRisk")}
+          title={t("kpis.atRiskOnPage")}
           value={atRiskProjects}
           subtitle={atRiskProjects > 0 ? t("kpis.operationalFollowupRequired") : t("kpis.allProjectsStable")}
           tone={atRiskProjects > 0 ? "warning" : "default"}
@@ -108,7 +108,7 @@ export function ProjectPortfolioTab({
         <ProjectsKpiCard
           title={t("kpis.portfolioBudget")}
           value="—"
-          subtitle={t("kpis.portfolioWideTotalsUnavailable")}
+          subtitle={t("kpis.portfolioScopeNotice")}
           tone="default"
           icon={<CalculatorBudgetIcon size={20} />}
           data-testid="kpi-portfolio-budget"

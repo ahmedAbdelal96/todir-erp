@@ -7,7 +7,8 @@
       "applicationUrl": "http://127.0.0.1:5080",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "TODIR_POS_OFFLINE_SIGNING_SECRET": "pos-offline-development-signing-key-2026"
+        "TODIR_POS_OFFLINE_SIGNING_SECRET": "pos-offline-development-signing-key-2026",
+        "TODIR_RATE_LIMIT_API_PERMITS": "5000"
       }
     }
   }

@@ -7,7 +7,14 @@ const AGENT_BRAIN_DIR = 'C:/Users/IT/.gemini/antigravity/brain/2b36897c-7b21-48b
 const ARTIFACTS_DIR = process.env.TEST_ARTIFACTS_DIR || LOCAL_ARTIFACTS_DIR;
 
 const ATLAS_ENTITY_ID = 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
-const DEV_PASSWORD = process.env.ERP_DEV_PASSWORD ?? 'TodirDev2026!';
+
+function requireTestDevPassword(): string {
+  const pwd = process.env.ERP_DEV_PASSWORD || process.env.SEED_DEFAULT_PASSWORD;
+  if (!pwd) {
+    throw new Error('ERP_DEV_PASSWORD or SEED_DEFAULT_PASSWORD must be set for the real-stack acceptance suite.');
+  }
+  return pwd;
+}
 
 // Live seeded project IDs from PostgreSQL
 const SEEDED_CUSTOMER_PROJECT_ID = '01a1df8f-bcc4-725e-88d0-be0c51fff528'; // PRJ-0000122
@@ -39,7 +46,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
   async function loginAsAdmin(page: Page) {
     const token = await getCsrfToken(page);
     const loginRes = await page.request.post('/api/v1/auth/login', {
-      data: { email: 'admin@atlas.com', password: DEV_PASSWORD },
+      data: { email: 'admin@atlas.com', password: requireTestDevPassword() },
       headers: { 'X-CSRF-TOKEN': token }
     });
     expect(loginRes.status()).toBe(200);

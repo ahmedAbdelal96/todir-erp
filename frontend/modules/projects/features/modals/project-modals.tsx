@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
@@ -28,6 +28,22 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
   const [initialBudget, setInitialBudget] = useState("");
   const [description, setDescription] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setName("");
+      setProjectType("CustomerProject");
+      setCustomerPartyId(null);
+      setProjectManagerEmployeeId(null);
+      setBillingModel("TimeAndMaterials");
+      setStartDate(new Date().toISOString().slice(0, 10));
+      setTargetEndDate("");
+      setCurrencyCode("EGP");
+      setInitialBudget("");
+      setDescription("");
+      setValidationError(null);
+    }
+  }, [isOpen]);
 
   const handleProjectTypeChange = (newType: ProjectType) => {
     setProjectType(newType);
@@ -97,8 +113,7 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
           </Button>
           <Button
             variant="primary"
-            type="submit"
-            form="new-project-form"
+            type="button"
             onClick={() => (document.getElementById("new-project-form") as HTMLFormElement)?.requestSubmit()}
             isDisabled={createMutation.isPending}
             data-testid="btn-save-project"

@@ -78,6 +78,9 @@ export function TasksMilestonesTab({
         return "success";
       case "Rejected":
         return "danger";
+      case "Open":
+      case "Planned":
+        return "info";
       default:
         return "neutral";
     }
@@ -293,17 +296,17 @@ export function TasksMilestonesTab({
                       </td>
                       <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
                         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-                          {m.status === "Planned" && (
-                            <Button variant="secondary" size="compact" onClick={() => onMilestoneAction(m.id, "reach")}>
+                          {(m.status === "Planned" || m.status === "Open") && (
+                            <Button variant="secondary" size="compact" onClick={() => onMilestoneAction(m.id, "reach")} data-testid="btn-reach-milestone">
                               {t("actions.reach")}
                             </Button>
                           )}
                           {m.status === "Reached" && (
                             <>
-                              <Button variant="primary" size="compact" onClick={() => onMilestoneAction(m.id, "accept")}>
+                              <Button variant="primary" size="compact" onClick={() => onMilestoneAction(m.id, "accept")} data-testid="btn-accept-milestone">
                                 {t("actions.approve")}
                               </Button>
-                              <Button variant="secondary" size="compact" onClick={() => onMilestoneAction(m.id, "reject")}>
+                              <Button variant="secondary" size="compact" onClick={() => onMilestoneAction(m.id, "reject")} data-testid="btn-reject-milestone">
                                 {t("actions.reject")}
                               </Button>
                             </>
@@ -352,16 +355,16 @@ export function TasksMilestonesTab({
                       <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
                         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
                           {d.status === "Draft" && (
-                            <Button variant="secondary" size="compact" onClick={() => onDeliverableAction(d.id, "submit")}>
+                            <Button variant="secondary" size="compact" onClick={() => onDeliverableAction(d.id, "submit")} data-testid="btn-submit-deliverable-action">
                               {t("actions.submit")}
                             </Button>
                           )}
                           {d.status === "Submitted" && (
                             <>
-                              <Button variant="primary" size="compact" onClick={() => onDeliverableAction(d.id, "accept")}>
+                              <Button variant="primary" size="compact" onClick={() => onDeliverableAction(d.id, "accept")} data-testid="btn-accept-deliverable-action">
                                 {t("actions.approve")}
                               </Button>
-                              <Button variant="secondary" size="compact" onClick={() => onDeliverableAction(d.id, "reject")}>
+                              <Button variant="secondary" size="compact" onClick={() => onDeliverableAction(d.id, "reject")} data-testid="btn-reject-deliverable-action">
                                 {t("actions.reject")}
                               </Button>
                             </>

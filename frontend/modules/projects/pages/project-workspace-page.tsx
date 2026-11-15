@@ -428,7 +428,7 @@ export function ProjectWorkspacePage({
               projectId,
               milestoneId,
               action,
-              request: {}
+              request: action === "accept" ? { acceptanceReference: `REF-MS-${Date.now().toString().slice(-4)}` } : {}
             })
           }
           onDeliverableAction={(deliverableId, action) =>
@@ -436,7 +436,7 @@ export function ProjectWorkspacePage({
               projectId,
               deliverableId,
               action,
-              request: {}
+              request: action === "accept" ? { acceptanceReference: `REF-DLV-${Date.now().toString().slice(-4)}` } : {}
             })
           }
         />

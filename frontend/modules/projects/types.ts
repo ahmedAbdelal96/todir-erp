@@ -19,7 +19,7 @@ export type ProjectBillingModel =
 
 export type ProjectTaskStatus = "Planned" | "InProgress" | "Blocked" | "Completed" | "Cancelled";
 export type ProjectTaskPriority = "Low" | "Normal" | "High" | "Urgent";
-export type MilestoneStatus = "Planned" | "Reached" | "Accepted" | "Rejected";
+export type MilestoneStatus = "Planned" | "Open" | "Reached" | "Accepted" | "Rejected" | "Cancelled";
 export type DeliverableStatus = "Draft" | "Submitted" | "Accepted" | "Rejected";
 export type TimeEntryState = "Draft" | "Submitted" | "Approved" | "Finalized" | "Rejected" | "Corrected";
 export type ChargeState = "Eligible" | "Requested" | "PartiallyInvoiced" | "Invoiced" | "WrittenOff";

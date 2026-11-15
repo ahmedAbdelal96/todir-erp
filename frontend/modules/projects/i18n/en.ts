@@ -88,7 +88,10 @@ export const en = {
     allProjectsStable: "All Projects Stable",
     actualSpentWithCurrency: "Spent: {{amount}} {{currency}}",
     displayedProjects: "Displayed Projects",
+    activeOnPage: "Active (Current Page)",
+    atRiskOnPage: "At Risk (Current Page)",
     portfolioBudget: "Portfolio Budget",
+    portfolioScopeNotice: "Portfolio-wide totals unavailable at page scope",
     portfolioWideTotalsUnavailable: "Unavailable across portfolio (see individual projects)",
     notCalculated: "Not Determined",
     quickOverview: "Project Overview",
@@ -141,9 +144,11 @@ export const en = {
   },
   milestoneStatuses: {
     Planned: "Planned",
+    Open: "Open",
     Reached: "Reached",
     Accepted: "Accepted",
-    Rejected: "Rejected"
+    Rejected: "Rejected",
+    Cancelled: "Cancelled"
   },
   timeStates: {
     Draft: "Draft",
