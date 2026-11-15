@@ -1,5 +1,6 @@
 extern alias WorkerAssembly;
 
+using System.Diagnostics;
 using System.Text.Json;
 using Core.Messaging;
 using Core.Services;
@@ -31,6 +32,7 @@ using Modules.Projects.Services;
 using Modules.Sales.DTOs;
 using Modules.Sales.Services;
 using Npgsql;
+using RabbitMQ.Client;
 using Shared.Contracts.Projects;
 using Shared.Contracts.Invoicing;
 using Shared.Contracts.FinanceBase;
@@ -178,6 +180,121 @@ public sealed class ProjectsCrossModuleAcceptanceTests
         finally
         {
             await harness.Stop();
+        }
+    }
+
+    [Fact(DisplayName = "PJ45 real Projects source event flows through local RabbitMQ Worker and Inbox exactly once")]
+    public async Task RealProjectsSourceEventFlowsThroughLocalWorkerAndInboxExactlyOnce()
+    {
+        var connectionString = RequireConnection();
+        using var factory = CreateFactory(connectionString);
+        var projects = factory.Services.GetRequiredService<ProjectService>();
+        await using var expenseDataSource = NpgsqlDataSource.Create(connectionString);
+        var expenses = new ExpenseRepository(expenseDataSource,
+            factory.Services.GetRequiredService<ITransactionCoordinator>(),
+            factory.Services.GetRequiredService<ITransactionalLedgerPostingCapability>(),
+            approvals: factory.Services.GetRequiredService<IPlatformApprovalCapability>(),
+            financeBase: factory.Services.GetService<IFinanceBaseCapabilities>());
+        var actorMembership = await FindAdminActorMembershipAsync(connectionString, AtlasTenant);
+        var approverMembership = await FindApprovalActorMembershipAsync(connectionString, AtlasTenant, actorMembership.ActorId);
+        var project = await projects.CreateAsync(AtlasTenant, actorMembership.ActorId, actorMembership.MembershipId,
+            new(AtlasEntity, $"PJ45-WORKER-{Guid.NewGuid():N}", "InternalProject", null, null, DateOnly.FromDateTime(DateTime.UtcNow.Date), null), Guid.CreateVersion7(), CancellationToken.None);
+        var categoryVersion = (Guid)(await ScalarAsync(connectionString,
+            "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1",
+            AtlasTenant.Value, AtlasEntity))!;
+        var expense = await expenses.CreateAsync(AtlasTenant,
+            new CreateExpenseRequest(AtlasEntity, null, "Local Worker project expense", DateOnly.FromDateTime(DateTime.UtcNow.Date), 137m,
+                "EGP", "CompanyPaid", categoryVersion, "Local Worker acceptance", ProjectId: project.Id, CostCategory: "Expense"), CancellationToken.None);
+        await expenses.AddEvidenceAsync(AtlasTenant, AtlasEntity, expense.Id, new("Receipt", $"file://projects/{expense.Id:D}"), CancellationToken.None);
+        var submitted = await expenses.TransitionAsync(AtlasTenant, AtlasEntity, expense.Id, new(expense.Version), "submit", CancellationToken.None);
+        await expenses.EvaluatePolicyAsync(AtlasTenant, AtlasEntity, expense.Id, CancellationToken.None);
+        var approval = await expenses.RequestApprovalAsync(AtlasTenant, actorMembership.ActorId, actorMembership.MembershipId, AtlasEntity, expense.Id, "PJ45 Worker acceptance", CancellationToken.None);
+        var decided = await expenses.DecideApprovalAsync(AtlasTenant, approverMembership.ActorId, approverMembership.MembershipId, AtlasEntity, expense.Id,
+            new(approval.RequestId, "Approved", "PJ45 Worker approved"), CancellationToken.None);
+        var finalized = await expenses.TransitionAsync(AtlasTenant, AtlasEntity, expense.Id, new(decided.ResourceVersion + 1), "finalize", CancellationToken.None);
+        Assert.Equal("Finalized", finalized.ExpenseState);
+        var message = await ReadOutboxAsync(connectionString, AtlasTenant, "ExpenseFinalizedV1", expense.Id);
+
+        var rabbitHost = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_HOST") ?? "localhost";
+        var rabbitPort = int.TryParse(Environment.GetEnvironmentVariable("TODIR_RABBITMQ_PORT"), out var port) ? port : 5672;
+        var rabbitUser = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_USER") ?? "todir";
+        var rabbitPassword = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_PASSWORD") ?? "todir-dev-only";
+        var rabbitVHost = Environment.GetEnvironmentVariable("TODIR_RABBITMQ_VHOST") ?? "/erp-dev";
+        using var worker = StartProjectsWorker(connectionString, rabbitHost, rabbitPort, rabbitUser, rabbitPassword, rabbitVHost);
+        IBusControl? bus = null;
+        try
+        {
+            var rabbitFactory = new ConnectionFactory
+            {
+                HostName = rabbitHost,
+                Port = rabbitPort,
+                VirtualHost = rabbitVHost,
+                UserName = rabbitUser,
+                Password = rabbitPassword
+            };
+            await using (var rabbitConnection = await rabbitFactory.CreateConnectionAsync())
+            {
+                var declared = false;
+                for (var attempt = 0; attempt < 40; attempt++)
+                {
+                    try
+                    {
+                        await using var channel = await rabbitConnection.CreateChannelAsync();
+                        await channel.QueueDeclarePassiveAsync(ProjectsSourceEventConsumer.EndpointName);
+                        declared = true;
+                        break;
+                    }
+                    catch
+                    {
+                        await Task.Delay(500);
+                    }
+                }
+                Assert.True(declared, "The Projects Worker did not declare its RabbitMQ source-integration queue within 20 seconds.");
+            }
+
+            var hostUri = new UriBuilder("rabbitmq", rabbitHost)
+            {
+                Port = rabbitPort,
+                Path = $"/{Uri.EscapeDataString(rabbitVHost.StartsWith('/') ? rabbitVHost : "/" + rabbitVHost)}"
+            }.Uri;
+            bus = Bus.Factory.CreateUsingRabbitMq(config =>
+            {
+                config.Host(hostUri, host =>
+                {
+                    host.Username(rabbitUser);
+                    host.Password(rabbitPassword);
+                });
+            });
+            await bus.StartAsync();
+            await bus.Publish(message);
+
+            Assert.True(await EventuallyAsync(async () =>
+                Convert.ToInt64(await ScalarAsync(connectionString,
+                    "select count(*) from business_projects.project_cost_fact where tenant_id=$1 and project_id=$2 and source_module='expenses' and source_id=$3",
+                    AtlasTenant.Value, project.Id, expense.Id.ToString("D")), System.Globalization.CultureInfo.InvariantCulture) == 1));
+            Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(connectionString,
+                "select count(*) from business_projects.project_integration_event where tenant_id=$1 and message_id=$2 and status='Applied'",
+                AtlasTenant.Value, message.MessageId), System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(connectionString,
+                "select count(*) from platform.inbox_message where tenant_id=$1 and consumer_endpoint=$2 and message_id=$3 and processed_at is not null",
+                AtlasTenant.Value, ProjectsSourceEventConsumer.EndpointName, message.MessageId), System.Globalization.CultureInfo.InvariantCulture));
+
+            await bus.Publish(message);
+            await Task.Delay(1500);
+            Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(connectionString,
+                "select count(*) from business_projects.project_cost_fact where tenant_id=$1 and project_id=$2 and source_module='expenses' and source_id=$3",
+                AtlasTenant.Value, project.Id, expense.Id.ToString("D")), System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(connectionString,
+                "select count(*) from business_projects.project_integration_event where tenant_id=$1 and message_id=$2",
+                AtlasTenant.Value, message.MessageId), System.Globalization.CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            if (bus is not null)
+            {
+                await bus.StopAsync();
+            }
+            await StopProjectsWorkerAsync(worker);
         }
     }
 
@@ -598,6 +715,48 @@ public sealed class ProjectsCrossModuleAcceptanceTests
         .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
 
     private static string RequireConnection() => Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION") ?? Environment.GetEnvironmentVariable("TODIR_PROJECTS_TEST_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION or TODIR_PROJECTS_TEST_CONNECTION.");
+
+    private static Process StartProjectsWorker(string connectionString, string rabbitHost, int rabbitPort, string rabbitUser, string rabbitPassword, string rabbitVHost)
+    {
+        var repository = new DirectoryInfo(Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT") ?? AppContext.BaseDirectory);
+        while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "backend", "DbMigrator", "DbMigrator.csproj"))) repository = repository.Parent;
+        if (repository is null) throw new InvalidOperationException("The repository root could not be located for the Projects Worker process.");
+        var worker = new Process
+        {
+            StartInfo = new ProcessStartInfo("dotnet", "run --project backend/Worker/Worker.csproj --no-build --no-restore --no-launch-profile")
+            {
+                WorkingDirectory = repository.FullName,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+        worker.StartInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
+        worker.StartInfo.Environment["TODIR_DATABASE_CONNECTION"] = connectionString;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_HOST"] = rabbitHost;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_PORT"] = rabbitPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        worker.StartInfo.Environment["TODIR_RABBITMQ_USER"] = rabbitUser;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_PASSWORD"] = rabbitPassword;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_VHOST"] = rabbitVHost;
+        worker.StartInfo.Environment["TODIR_RABBITMQ_CONSUMER"] = "true";
+        worker.OutputDataReceived += (_, args) => { if (args.Data is not null) Console.WriteLine($"[projects-worker] {args.Data}"); };
+        worker.ErrorDataReceived += (_, args) => { if (args.Data is not null) Console.Error.WriteLine($"[projects-worker] {args.Data}"); };
+        worker.Start();
+        worker.BeginOutputReadLine();
+        worker.BeginErrorReadLine();
+        return worker;
+    }
+
+    private static async Task StopProjectsWorkerAsync(Process worker)
+    {
+        if (!worker.HasExited)
+        {
+            try { worker.Kill(true); } catch { }
+            await worker.WaitForExitAsync();
+        }
+        worker.Dispose();
+    }
 
     private static async Task<OutboxPublishedMessage> ReadOutboxAsync(string connectionString, TenantId tenant, string messageType, Guid causationId)
     {

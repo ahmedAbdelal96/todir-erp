@@ -2,7 +2,7 @@
 
 Canonical pack: `docs/modules/23_ERP_SAAS_PROJECTS_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`
 
-Backend scope is implemented for the Projects module and its accepted Sales source, source-owned cost projections, billing, settlement, capital handoff, change order, close exception, and platform notification seams. The delivery status remains `NOT COMPLETE` until the external GitHub Actions result is authenticated and the final release gate is rerun after this last documentation/source change.
+Backend scope is complete for the Projects module and its accepted Sales source, source-owned cost projections, billing, settlement, capital handoff, change order, close exception, and platform notification seams. Delivery status: `MODULE 23 BACKEND COMPLETE + DEVELOPMENT SEED READY — FRONTEND HANDOFF`.
 
 ## Primary APIs
 
@@ -32,6 +32,8 @@ Projects consumes typed source events for Expenses, Purchasing, Invoicing, Inven
 
 Sales exposes `ISalesQuotationCapabilities.GetAcceptedQuotationAsync`. Projects accepts only the current accepted revision and stores the stable source reference `QuotationId:Revision:N`; later quotation revisions require the approved Change Order workflow.
 
+The local runtime path was verified with a real finalized Expenses outbox message delivered through RabbitMQ to `projects-source-integration`, processed by the Worker, committed through the Projects Inbox and PostgreSQL projection, then replayed without a duplicate cost fact or integration event.
+
 ## Frontend readiness notes
 
 - Keep list pages read-only; creation/editing is a dialog or dedicated route.
@@ -43,7 +45,8 @@ Sales exposes `ISalesQuotationCapabilities.GetAcceptedQuotationAsync`. Projects 
 ## Evidence
 
 - `ProjectsTests`: 16/16 persisted acceptance scenarios.
-- `ProjectsCrossModuleAcceptanceTests`: 8/8 real PostgreSQL owning-module slices.
+- `ProjectsCrossModuleAcceptanceTests`: 9/9 real PostgreSQL owning-module slices, including the local Outbox → RabbitMQ → Worker → Inbox → PostgreSQL path.
 - `BrokerIntegrationTests`: 2/2 against local RabbitMQ.
-- Prior valid regressions: Invoicing 17/17, Payments 23/23, architecture 21/21.
-- PJ38 heavyweight load certification is explicitly deferred. Projects cross-module tests use MassTransit TestHarness; this handoff does not claim a Project-specific real-broker Worker journey.
+- Prior valid regressions: Invoicing 17/17, Payments 23/23, architecture 21/21, Release build, formatter, and OpenAPI contract.
+- DbMigrator applied/verified 206 scripts; Development Seed completed for Atlas and Delta.
+- PJ38 heavyweight load certification is explicitly deferred. Frontend/browser acceptance is a separate mission.
