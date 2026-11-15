@@ -70,7 +70,7 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
         var charges = await repository.ListInvoiceChargeSourcesAsync(tenant, request.ProjectId, request.ChargeIds, ct);
         var source = new InvoiceSourceDocumentContract("projects", request.ProjectId, $"ProjectBilling:{invoiceRequest.Id:D}", request.IdempotencyKey, "Receivable", project.LegalEntityId, null,
             project.CustomerPartyId.Value, null, DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), null,
-            request.CurrencyCode.ToUpperInvariant(), "Exclusive", null, null, null, charges.Select(charge => new InvoiceSourceLineContract(null, null, null, charge.Description, "1", charge.BillableAmount.ToString(System.Globalization.CultureInfo.InvariantCulture), null, "ProjectBilling", charge.Id.ToString("D"))).ToArray());
+            request.CurrencyCode.ToUpperInvariant(), "Exclusive", null, null, null, charges.Select(charge => new InvoiceSourceLineContract(null, null, "EA", charge.Description, "1", charge.BillableAmount.ToString(System.Globalization.CultureInfo.InvariantCulture), null, "ProjectBilling", charge.Id.ToString("D"))).ToArray());
         var invoiceId = await invoicing.CreateDraftFromSourceAsync(tenant, actor, membership, source, correlationId, ct);
         return await repository.ApplyInvoiceResultAsync(tenant, actor, invoiceRequest.Id, new ApplyInvoiceResultRequest("Accepted", invoiceId), ct);
     }
@@ -104,6 +104,9 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
     }
 
     public Task<ProjectCostFactContract> RecordCostAsync(ProjectCostFactIngress request, Guid correlationId, CancellationToken cancellationToken = default) => RecordAsync(request, correlationId, cancellationToken);
+    public Task ApplySupplierInvoiceActualAsync(TenantId tenant, Guid actorId, Guid projectId, string purchaseOrderId, string invoiceId, decimal amount,
+        string currencyCode, DateOnly factDate, Guid? legalEntityId, Guid correlationId, CancellationToken cancellationToken = default)
+        => repository.ApplySupplierInvoiceActualAsync(tenant, actorId, projectId, purchaseOrderId, invoiceId, amount, currencyCode, factDate, legalEntityId, correlationId, cancellationToken);
 
     public async Task<ProjectCostFactContract?> RecordReversalAsync(TenantId tenant, Guid actor, Guid projectId, string sourceModule, string sourceId, decimal originalCurrencyAmount, string currencyCode, DateOnly factDate, string idempotencyKey, Guid correlationId, CancellationToken cancellationToken = default)
     {

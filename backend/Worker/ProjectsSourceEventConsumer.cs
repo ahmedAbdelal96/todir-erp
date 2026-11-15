@@ -33,6 +33,8 @@ public sealed class ProjectsSourceEventConsumer(
             var root = document.RootElement;
             var projectId = GuidValue(root, "projectId");
             if (projectId is null && StringValue(root, "sourceModule") == "projects") projectId = GuidValue(root, "sourceDocumentId");
+            if (projectId is null && message.MessageType == "InvoiceFinalizedV1" && StringValue(root, "sourceModule") == "purchasing")
+                projectId = SupplierInvoiceProjectId(StringValue(root, "sourcePurpose"));
             if (projectId is null && string.Equals(StringValue(root, "sourceType"), "Projects", StringComparison.OrdinalIgnoreCase))
                 projectId = GuidValue(root, "sourceReference");
             if (projectId is null)
@@ -138,8 +140,15 @@ public sealed class ProjectsSourceEventConsumer(
                 var requestId = ProjectInvoiceRequestId(StringValue(root, "sourcePurpose"));
                 var amount = DecimalValue(root, "amount");
                 if (currency is null || amount is null) { evidenceStatus = "Ignored"; evidenceReason = currency is null ? "source_event_missing_currency" : "source_event_missing_amount"; }
-                else if (requestId is null) { evidenceStatus = "Ignored"; evidenceReason = "invoice_request_reference_missing"; }
                 else if (!Guid.TryParse(sourceId, out var invoiceId)) { evidenceStatus = "Ignored"; evidenceReason = "invoice_id_invalid"; }
+                else if (string.Equals(StringValue(root, "sourceModule"), "purchasing", StringComparison.Ordinal))
+                {
+                    var purchaseOrderId = GuidValue(root, "sourceDocumentId");
+                    if (purchaseOrderId is null) { evidenceStatus = "Ignored"; evidenceReason = "supplier_invoice_purchase_order_missing"; }
+                    else await projects.ApplySupplierInvoiceActualAsync(message.TenantId, message.CausationId, projectId.Value, purchaseOrderId.Value.ToString("D"), invoiceId.ToString("D"), amount.Value, currency,
+                        DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), legalEntityId, message.CorrelationId, context.CancellationToken);
+                }
+                else if (requestId is null) { evidenceStatus = "Ignored"; evidenceReason = "invoice_request_reference_missing"; }
                 else await projects.CompleteInvoiceAsync(message.TenantId, projectId.Value, requestId.Value, invoiceId, amount.Value, currency, context.CancellationToken);
             }
             else if (message.MessageType == "InvoiceCorrectedV1")
@@ -202,6 +211,8 @@ public sealed class ProjectsSourceEventConsumer(
     };
     private static Guid? ProjectInvoiceRequestId(string? purpose)
         => purpose is not null && purpose.StartsWith("ProjectBilling:", StringComparison.Ordinal) && Guid.TryParse(purpose["ProjectBilling:".Length..], out var id) ? id : null;
+    private static Guid? SupplierInvoiceProjectId(string? purpose)
+        => purpose is not null && purpose.StartsWith("SupplierInvoice:Project:", StringComparison.Ordinal) && Guid.TryParse(purpose["SupplierInvoice:Project:".Length..], out var id) ? id : null;
     private static decimal? DecimalValue(JsonElement root, string name)
     {
         if (!root.TryGetProperty(name, out var value)) return null;

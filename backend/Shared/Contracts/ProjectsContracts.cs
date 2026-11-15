@@ -28,6 +28,8 @@ public sealed record ProjectCommitmentIngress(TenantId TenantId, Guid ProjectId,
 public interface IProjectSourceIntegrationCapabilities
 {
     Task<ProjectCostFactContract> RecordCostAsync(ProjectCostFactIngress request, Guid correlationId, CancellationToken cancellationToken = default);
+    Task ApplySupplierInvoiceActualAsync(TenantId tenant, Guid actorId, Guid projectId, string purchaseOrderId, string invoiceId, decimal amount,
+        string currencyCode, DateOnly factDate, Guid? legalEntityId, Guid correlationId, CancellationToken cancellationToken = default);
     Task<ProjectCostFactContract?> RecordReversalAsync(TenantId tenant, Guid actor, Guid projectId, string sourceModule, string sourceId, decimal originalCurrencyAmount, string currencyCode, DateOnly factDate, string idempotencyKey, Guid correlationId, CancellationToken cancellationToken = default);
     Task RecordCommitmentAsync(ProjectCommitmentIngress request, CancellationToken cancellationToken = default);
     Task CancelCommitmentAsync(TenantId tenant, Guid projectId, string sourceModule, string sourceId, CancellationToken cancellationToken = default);

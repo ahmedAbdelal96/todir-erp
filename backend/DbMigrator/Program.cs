@@ -600,6 +600,9 @@ static int MigrationPriority(string fileName) => fileName switch
     _ when fileName.Equals("pos-forward-fix-exchanges.sql", StringComparison.Ordinal) => 4,
     _ when fileName.Equals("pos-forward-fix-exchanges-permissions.sql", StringComparison.Ordinal) => 5,
     _ when fileName.Equals("pos-forward-fix-exchanges-role-permissions.sql", StringComparison.Ordinal) => 6,
+    // The constraint cleanup must run after the project-source fix has created
+    // the replacement constraint on a fresh database.
+    _ when fileName.Equals("invoicing-forward-fix-project-source-constraint.sql", StringComparison.Ordinal) => 6,
     _ => 5
 };
 

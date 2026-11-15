@@ -259,6 +259,38 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
         return await ReadCommitmentAsync(context, tenant.Value, id, token) ?? throw new ProjectException("projects.commitment_not_found");
     }, ct);
 
+    public Task ApplySupplierInvoiceActualAsync(TenantId tenant, Guid actorId, Guid projectId, string purchaseOrderId, string invoiceId, decimal amount,
+        string currencyCode, DateOnly factDate, Guid? legalEntityId, Guid correlationId, CancellationToken ct) => coordinator.ExecuteAsync<object?>(tenant, async (context, token) =>
+    {
+        if (string.IsNullOrWhiteSpace(purchaseOrderId) || string.IsNullOrWhiteSpace(invoiceId) || amount <= 0m || string.IsNullOrWhiteSpace(currencyCode))
+            throw new ProjectException("projects.supplier_invoice_actual_invalid");
+        await EnsureProjectLegalEntityAsync(context, tenant.Value, projectId, legalEntityId, token);
+        if (await ReadCostBySourceAsync(context, tenant.Value, projectId, "invoicing", invoiceId, token) is not null) return null;
+        await using var commitment = Command(context, "select id,currency_code,committed_amount,actualized_amount,open_amount from business_projects.project_commitment where tenant_id=$1 and project_id=$2 and source_module='purchasing' and source_id=$3 for update", tenant.Value, projectId, purchaseOrderId.Trim());
+        await using var commitmentReader = await commitment.ExecuteReaderAsync(token);
+        if (!await commitmentReader.ReadAsync(token)) throw new ProjectException("projects.supplier_invoice_commitment_not_found");
+        var commitmentId = commitmentReader.GetGuid(0);
+        var commitmentCurrency = commitmentReader.GetString(1).Trim();
+        var committedAmount = commitmentReader.GetDecimal(2);
+        var actualizedAmount = commitmentReader.GetDecimal(3);
+        var openAmount = commitmentReader.GetDecimal(4);
+        await commitmentReader.CloseAsync();
+        var normalizedCurrency = currencyCode.Trim().ToUpperInvariant();
+        if (!string.Equals(commitmentCurrency, normalizedCurrency, StringComparison.OrdinalIgnoreCase)) throw new ProjectException("projects.supplier_invoice_currency_mismatch");
+        if (amount > openAmount) throw new ProjectException("projects.supplier_invoice_actual_exceeds_commitment");
+        var nextActualized = actualizedAmount + amount;
+        var nextOpen = committedAmount - nextActualized;
+        var nextState = nextOpen == 0m ? "Actualized" : "PartiallyActualized";
+        var factId = Guid.CreateVersion7();
+        await ExecuteAsync(context, "insert into business_projects.project_cost_fact(tenant_id,id,project_id,task_id,source_module,source_type,source_id,source_line_ref,cost_category,original_currency,original_amount,base_currency,base_amount,exchange_rate,fact_date,correction_of_id,idempotency_key) values($1,$2,$3,null,'invoicing','SupplierInvoice',$4,$5,'Supplier', $6,$7,$6,$7,1,$8,null,$9)", token,
+            tenant.Value, factId, projectId, invoiceId.Trim(), purchaseOrderId.Trim(), normalizedCurrency, amount, factDate, $"supplier-invoice:{invoiceId.Trim()}");
+        await ExecuteAsync(context, "update business_projects.project_commitment set actualized_amount=$3,open_amount=$4,state=$5,updated_at=now() where tenant_id=$1 and id=$2", token,
+            tenant.Value, commitmentId, nextActualized, nextOpen, nextState);
+        await AuditAsync(context, tenant, projectId, actorId, "supplier_invoice_actual_applied", null, new { invoiceId, purchaseOrderId, amount, currencyCode = normalizedCurrency }, token);
+        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProjectCostFactRecordedV1", JsonSerializer.Serialize(new { projectId, costFactId = factId, sourceModule = "invoicing", sourceType = "SupplierInvoice", sourceId = invoiceId }), tenant, DateTimeOffset.UtcNow, correlationId, projectId, "projects"));
+        return null;
+    }, ct);
+
     public Task<CostFactView?> RecordReversalAsync(TenantId tenant, Guid actor, Guid projectId, string sourceModule, string sourceId, decimal amount, string currencyCode, DateOnly factDate, string idempotencyKey, Guid correlationId, CancellationToken ct) => coordinator.ExecuteAsync<CostFactView?>(tenant, async (context, token) =>
     {
         var original = await ReadCostBySourceAsync(context, tenant.Value, projectId, sourceModule, sourceId, token);
