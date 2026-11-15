@@ -36,18 +36,18 @@ export function FinancialsSummaryTab({
   const { t } = useTranslation("projects");
   const isMobile = useIsMobile();
 
-  const currency = summary?.currencyCode || project.currencyCode || "EGP";
+  const currency = summary?.currencyCode || project.currencyCode || undefined;
   const budget = summary?.budget ?? project.budget;
   const actualCost = summary?.actualCost ?? project.actualCost;
   const openCommitment = summary?.openCommitment ?? project.openCommitment;
   const etc = summary?.etc ?? project.etc;
   const eac = summary?.eac ?? project.eac;
-  const expectedMargin = summary?.expectedMargin ?? 0;
-  const revenueBasis = summary?.revenueBasis ?? project.billingModel;
+  const expectedMargin = summary?.expectedMargin ?? null;
+  const revenueBasis = summary?.revenueBasis && summary.revenueBasis !== "Unknown" ? summary.revenueBasis : null;
   const revenueBasisAmount = summary?.revenueBasisAmount ?? 0;
 
   // Margin tone
-  const marginTone = expectedMargin > 0 ? "success" : expectedMargin < 0 ? "danger" : "default";
+  const marginTone = expectedMargin !== null && expectedMargin > 0 ? "success" : expectedMargin !== null && expectedMargin < 0 ? "danger" : "default";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -150,8 +150,8 @@ export function FinancialsSummaryTab({
         />
         <ProjectsKpiCard
           title={t("kpis.expectedMargin")}
-          value={<ProjectMoney amount={expectedMargin} currency={currency} />}
-          subtitle={`${revenueBasis} · ${revenueBasisAmount.toLocaleString()} ${currency}`}
+          value={<ProjectMoney amount={expectedMargin} currency={currency} coloredSign />}
+          subtitle={revenueBasis ? `${revenueBasis}: ${revenueBasisAmount.toLocaleString()}` : t("kpis.revenueBasisUnknown")}
           tone={marginTone}
           icon={<ReceiptBillingIcon size={20} />}
           data-testid="kpi-expected-margin"

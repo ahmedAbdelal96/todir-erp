@@ -8,6 +8,9 @@ import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { ProjectsHeader } from "../components/projects-header.tsx";
 import { ProjectMoney } from "../components/project-money.tsx";
+import { ProjectTypeBadge } from "../components/project-type-badge.tsx";
+import { ProjectStatusBadge } from "../components/project-status-badge.tsx";
+import { ProjectHealthBadge } from "../components/project-health-badge.tsx";
 import {
   useProjectDetail,
   useFinancialSummary,
@@ -266,68 +269,71 @@ export function ProjectWorkspacePage({
         }
       />
 
-      {/* Executive Overview & Quick Metrics Strip */}
-      <Surface
-        variant="card"
-        style={{
-          padding: "1rem 1.25rem",
-          background: "var(--color-surface-card, #ffffff)",
-          border: "1px solid var(--color-border-default, #cbd5e1)",
-          borderRadius: "var(--radius-lg, 12px)",
-          display: "grid",
-          gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)",
-          gap: "1rem"
-        }}
-      >
-        <div>
-          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
-            {t("kpis.totalBudget")}
-          </span>
-          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
-            <ProjectMoney amount={summaryQuery.data?.budget ?? project.budget} currency={project.currencyCode || "EGP"} />
-          </span>
-        </div>
+      {/* Compact Executive Overview & Context Strip */}
+      <div data-testid="project-overview-strip">
+        <Surface
+          variant="card"
+          style={{
+            padding: "0.875rem 1.25rem",
+            background: "var(--color-surface-card, #ffffff)",
+            border: "1px solid var(--color-border-default, #cbd5e1)",
+            borderRadius: "var(--radius-lg, 12px)",
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)",
+            gap: "1rem",
+            alignItems: "center"
+          }}
+        >
+          <div>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+              {t("kpis.projectTypeAndModel")}
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+              <ProjectTypeBadge type={project.projectType} size="small" />
+              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-secondary, #475569)", fontWeight: 500 }}>
+                {t(`billingModels.${project.billingModel}` as const)}
+              </span>
+            </div>
+          </div>
 
-        <div>
-          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
-            {t("kpis.actualCost")}
-          </span>
-          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-brand-primary, #102a43)" }}>
-            <ProjectMoney amount={summaryQuery.data?.actualCost ?? project.actualCost} currency={project.currencyCode || "EGP"} />
-          </span>
-        </div>
+          <div>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+              {t("fields.executionHealth")}
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <ProjectHealthBadge health={project.executionHealth} size="small" />
+              <ProjectStatusBadge state={project.lifecycleState} size="small" />
+            </div>
+          </div>
 
-        <div>
-          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
-            {t("kpis.openCommitments")}
-          </span>
-          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-status-warning, #d97706)" }}>
-            <ProjectMoney amount={summaryQuery.data?.openCommitment ?? project.openCommitment} currency={project.currencyCode || "EGP"} />
-          </span>
-        </div>
+          <div>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+              {t("kpis.timelineSchedule")}
+            </span>
+            <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-primary, #0f172a)", fontFamily: "var(--font-mono, monospace)" }}>
+              {project.startDate}{project.targetEndDate ? ` — ${project.targetEndDate}` : ""}
+            </span>
+          </div>
 
-        <div>
-          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
-            {t("kpis.eac")}
-          </span>
-          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
-            <ProjectMoney amount={summaryQuery.data?.eac ?? project.eac} currency={project.currencyCode || "EGP"} />
-          </span>
-        </div>
+          <div>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+              {t("fields.manager")}
+            </span>
+            <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--color-content-secondary, #475569)" }}>
+              {project.projectManagerEmployeeId ? t("kpis.managerAssigned") : t("kpis.managerUnassigned")}
+            </span>
+          </div>
 
-        <div>
-          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
-            {project.projectType === "CustomerProject" ? t("kpis.invoiced") : t("fields.executionHealth")}
-          </span>
-          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-status-success, #059669)" }}>
-            {project.projectType === "CustomerProject" ? (
-              <ProjectMoney amount={summaryQuery.data?.invoiced ?? project.invoiced} currency={project.currencyCode || "EGP"} />
-            ) : (
-              t(`health.${project.executionHealth}` as const)
-            )}
-          </span>
-        </div>
-      </Surface>
+          <div>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+              {t("kpis.totalBudget")}
+            </span>
+            <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+              <ProjectMoney amount={summaryQuery.data?.budget ?? project.budget} currency={project.currencyCode || undefined} />
+            </span>
+          </div>
+        </Surface>
+      </div>
 
       {/* Tabs Bar */}
       <Surface

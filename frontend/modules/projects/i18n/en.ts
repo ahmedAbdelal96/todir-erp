@@ -86,7 +86,17 @@ export const en = {
     budgetOverrun: "Projected Budget Overrun",
     operationalFollowupRequired: "Operational Follow-up Required",
     allProjectsStable: "All Projects Stable",
-    actualSpentWithCurrency: "Spent: {{amount}} {{currency}}"
+    actualSpentWithCurrency: "Spent: {{amount}} {{currency}}",
+    displayedProjects: "Displayed Projects",
+    portfolioBudget: "Portfolio Budget",
+    portfolioWideTotalsUnavailable: "Unavailable across portfolio (see individual projects)",
+    notCalculated: "Not Determined",
+    quickOverview: "Project Overview",
+    timelineSchedule: "Timeline",
+    projectTypeAndModel: "Type & Billing",
+    revenueBasisUnknown: "Revenue basis not yet determined",
+    managerAssigned: "Assigned",
+    managerUnassigned: "Unassigned"
   },
   types: {
     CustomerProject: "Customer Project",

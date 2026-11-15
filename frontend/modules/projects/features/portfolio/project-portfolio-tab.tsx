@@ -55,12 +55,6 @@ export function ProjectPortfolioTab({
   const activeProjects = projects.filter((p) => p.lifecycleState === "Active").length;
   const onTrackProjects = projects.filter((p) => p.executionHealth === "OnTrack").length;
   const atRiskProjects = projects.filter((p) => p.executionHealth === "AtRisk" || p.executionHealth === "OffTrack").length;
-  const totalBudget = portfolioItems && portfolioItems.length > 0
-    ? portfolioItems.reduce((acc, p) => acc + p.budget, 0)
-    : 0;
-  const totalActualCost = portfolioItems && portfolioItems.length > 0
-    ? portfolioItems.reduce((acc, p) => acc + p.actualCost, 0)
-    : 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -73,7 +67,7 @@ export function ProjectPortfolioTab({
         }}
       >
         <ProjectsKpiCard
-          title={t("title")}
+          title={t("kpis.displayedProjects")}
           value={totalProjects}
           subtitle={`${activeProjects} ${t("states.Active")}`}
           tone="primary"
@@ -97,10 +91,10 @@ export function ProjectPortfolioTab({
           data-testid="kpi-atrisk-projects"
         />
         <ProjectsKpiCard
-          title={t("kpis.totalBudget")}
-          value={totalBudget > 0 ? <ProjectMoney amount={totalBudget} currency="EGP" /> : totalProjects}
-          subtitle={totalActualCost > 0 ? t("kpis.actualSpentWithCurrency", { amount: totalActualCost.toLocaleString(), currency: "EGP" }) : `${onTrackProjects} ${t("health.OnTrack")}`}
-          tone={totalBudget > 0 ? "primary" : "success"}
+          title={t("kpis.portfolioBudget")}
+          value="—"
+          subtitle={t("kpis.portfolioWideTotalsUnavailable")}
+          tone="default"
           icon={<CalculatorBudgetIcon size={20} />}
           data-testid="kpi-portfolio-budget"
         />
@@ -222,9 +216,21 @@ export function ProjectPortfolioTab({
                 <div style={{ fontWeight: 600, fontSize: "1rem", color: "var(--color-content-primary, #0f172a)" }}>
                   {p.name}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
+                  {p.startDate}{p.targetEndDate ? ` — ${p.targetEndDate}` : ""}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.25rem" }}>
                   <ProjectTypeBadge type={p.projectType} size="small" />
-                  <span>{p.startDate}{p.targetEndDate ? ` — ${p.targetEndDate}` : ""}</span>
+                  <Button
+                    variant="secondary"
+                    size="compact"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectProject(p.id);
+                    }}
+                  >
+                    {t("actions.details")}
+                  </Button>
                 </div>
               </div>
             ))}

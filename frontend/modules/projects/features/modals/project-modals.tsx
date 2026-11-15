@@ -90,8 +90,18 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
       onClose={onClose}
       title={t("dialogs.newProjectTitle")}
       size="medium"
+      footer={
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", width: "100%" }}>
+          <Button variant="secondary" onClick={onClose} type="button" data-testid="btn-cancel-project">
+            {t("actions.cancel")}
+          </Button>
+          <Button variant="primary" type="submit" form="new-project-form" isDisabled={createMutation.isPending} data-testid="btn-save-project">
+            {t("actions.save")}
+          </Button>
+        </div>
+      }
     >
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="new-project-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {(validationError || createMutation.isError) && (
           <div
             role="alert"
@@ -174,7 +184,7 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
         {projectType === "CustomerProject" && (
           <div>
             <PartyPicker
-              label={`${t("fields.customer")} *`}
+              label={t("fields.customer")}
               value={customerPartyId ?? undefined}
               onChange={(partyId) => {
                 setCustomerPartyId(partyId || null);
@@ -271,15 +281,6 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
             style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
           />
         </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-          <Button variant="secondary" onClick={onClose} type="button">
-            {t("actions.cancel")}
-          </Button>
-          <Button variant="primary" type="submit" isDisabled={createMutation.isPending}>
-            {t("actions.save")}
-          </Button>
-        </div>
       </form>
     </Dialog>
   );
@@ -333,8 +334,18 @@ export function FromSalesSourceModal({ isOpen, onClose, legalEntityId }: FromSal
       onClose={onClose}
       title={t("dialogs.fromSalesSourceTitle")}
       size="medium"
+      footer={
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", width: "100%" }}>
+          <Button variant="secondary" onClick={onClose} type="button" data-testid="btn-cancel-from-sales">
+            {t("actions.cancel")}
+          </Button>
+          <Button variant="primary" type="submit" form="from-sales-form" isDisabled={createMutation.isPending} data-testid="btn-save-from-sales">
+            {t("actions.save")}
+          </Button>
+        </div>
+      }
     >
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="from-sales-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.name")} *
@@ -428,15 +439,6 @@ export function FromSalesSourceModal({ isOpen, onClose, legalEntityId }: FromSal
             style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
           />
         </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-          <Button variant="secondary" onClick={onClose} type="button">
-            {t("actions.cancel")}
-          </Button>
-          <Button variant="primary" type="submit" isDisabled={createMutation.isPending}>
-            {t("actions.save")}
-          </Button>
-        </div>
       </form>
     </Dialog>
   );
@@ -486,8 +488,18 @@ export function EditProjectModal({ isOpen, onClose, project }: EditProjectModalP
       onClose={onClose}
       title={t("dialogs.editProjectTitle")}
       size="medium"
+      footer={
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", width: "100%" }}>
+          <Button variant="secondary" onClick={onClose} type="button" data-testid="btn-cancel-edit-project">
+            {t("actions.cancel")}
+          </Button>
+          <Button variant="primary" type="submit" form="edit-project-form" isDisabled={updateMutation.isPending} data-testid="btn-save-edit-project">
+            {t("actions.save")}
+          </Button>
+        </div>
+      }
     >
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="edit-project-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.name")} *
@@ -541,15 +553,6 @@ export function EditProjectModal({ isOpen, onClose, project }: EditProjectModalP
             onChange={(e) => setDescription(e.target.value)}
             style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
           />
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>
-          <Button variant="secondary" onClick={onClose} type="button">
-            {t("actions.cancel")}
-          </Button>
-          <Button variant="primary" type="submit" isDisabled={updateMutation.isPending}>
-            {t("actions.save")}
-          </Button>
         </div>
       </form>
     </Dialog>

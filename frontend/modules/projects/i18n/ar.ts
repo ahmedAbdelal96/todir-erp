@@ -86,7 +86,17 @@ export const ar = {
     budgetOverrun: "تجاوز متوقع للميزانية",
     operationalFollowupRequired: "يتطلب متابعة تشغيلية",
     allProjectsStable: "كافة المشاريع مستقرة",
-    actualSpentWithCurrency: "المنفق: {{amount}} {{currency}}"
+    actualSpentWithCurrency: "المنفق: {{amount}} {{currency}}",
+    displayedProjects: "المشاريع المعروضة",
+    portfolioBudget: "ميزانية المحفظة",
+    portfolioWideTotalsUnavailable: "غير متاح إجمالياً (راجع كل مشروع)",
+    notCalculated: "غير محدد",
+    quickOverview: "ملخص المشروع",
+    timelineSchedule: "الجدول الزمني",
+    projectTypeAndModel: "النوع والفوترة",
+    revenueBasisUnknown: "أساس الإيراد غير محدد بعد",
+    managerAssigned: "معين",
+    managerUnassigned: "غير محدد"
   },
   types: {
     CustomerProject: "مشروع عميل",

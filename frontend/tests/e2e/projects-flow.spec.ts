@@ -552,8 +552,10 @@ test.describe('TODIR Projects & Operations (Module 23) — Mocked UI & Visual In
               durationMinutes: 480,
               billable: true,
               state: 'Approved',
+              costAmount: null,
+              billingAmount: null,
               hourlyRate: 250,
-              totalCharge: 2000,
+              totalCharge: null,
               notes: 'إشراف مباشر على صب سقف الطابق الأول وفحص العينات',
               version: 1
             },
@@ -565,7 +567,9 @@ test.describe('TODIR Projects & Operations (Module 23) — Mocked UI & Visual In
               workDate: '2026-03-11',
               durationMinutes: 480,
               billable: true,
-              state: 'Submitted',
+              state: 'Finalized',
+              costAmount: 1200,
+              billingAmount: 2000,
               hourlyRate: 250,
               totalCharge: 2000,
               notes: 'فحص حديد التسليح واستلام الاستشاري للأعمدة',
@@ -767,7 +771,8 @@ test.describe('TODIR Projects & Operations (Module 23) — Mocked UI & Visual In
 
   const saveArtifact = async (page: any, filename: string) => {
     const localPath = path.join(LOCAL_ARTIFACTS_DIR, filename);
-    await page.screenshot({ path: localPath, fullPage: true });
+    // Use viewport capture to eliminate sticky topbar duplication artifacts
+    await page.screenshot({ path: localPath, fullPage: false });
 
     try {
       const brainPath = path.join(AGENT_BRAIN_DIR, filename);
@@ -833,7 +838,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Mocked UI & Visual In
     // Header & Badges
     await expect(page.getByText('برج الأمل السكني والتجاري')).toBeVisible();
     await expect(page.getByText('PRJ-2026-001')).toBeVisible();
-    await expect(page.getByText('نشط وقيد التنفيذ')).toBeVisible();
+    await expect(page.getByText('نشط وقيد التنفيذ').first()).toBeVisible();
 
     // Financial KPI Cards
     await expect(page.locator('[data-testid="kpi-budget"]')).toBeVisible();

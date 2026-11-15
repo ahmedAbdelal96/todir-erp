@@ -10,22 +10,48 @@ export interface ProjectMoneyProps {
 
 export function ProjectMoney({
   amount,
-  currency = "EGP",
+  currency,
   coloredSign = false,
   size = "medium"
 }: ProjectMoneyProps): React.JSX.Element {
-  let decimalAmount = "0.00";
+  if (amount === null || amount === undefined) {
+    return <span style={{ color: "var(--color-content-muted, #64748b)" }}>—</span>;
+  }
+
+  let decimalAmount = "";
   if (typeof amount === "number") {
-    decimalAmount = Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+    if (!Number.isFinite(amount)) {
+      return <span style={{ color: "var(--color-content-muted, #64748b)" }}>—</span>;
+    }
+    decimalAmount = amount.toFixed(2);
   } else if (typeof amount === "string" && amount.trim() !== "") {
-    decimalAmount = amount;
+    decimalAmount = amount.trim();
+  } else {
+    return <span style={{ color: "var(--color-content-muted, #64748b)" }}>—</span>;
+  }
+
+  const cleanCurrency = currency?.trim();
+  if (!cleanCurrency) {
+    return (
+      <span
+        style={{
+          fontFamily: "var(--font-mono, monospace)",
+          fontWeight: 600,
+          color: coloredSign && decimalAmount.startsWith("-")
+            ? "var(--color-status-danger, #ef4444)"
+            : "inherit"
+        }}
+      >
+        {decimalAmount}
+      </span>
+    );
   }
 
   return (
     <MoneyDisplay
       value={{
         amount: decimalAmount,
-        currency: currency || "EGP"
+        currency: cleanCurrency
       }}
       displayCurrencyCode
       coloredSign={coloredSign}
