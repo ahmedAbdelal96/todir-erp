@@ -889,9 +889,13 @@ public sealed class FixedAssetRepository(NpgsqlDataSource dataSource, ITransacti
             var result = new CapitalizationCandidateView(candidateId, reader.GetGuid(0), reader.GetString(1), reader.GetString(2), ReadJsonElement(reader, 3), reader.GetDecimal(4), reader.GetDecimal(5), reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
             await reader.CloseAsync();
             var messageType = decision == "Approve" ? "FixedAssetCapitalizationAcceptedV1" : "FixedAssetCapitalizationRejectedV1";
+            var projectId = result.SourceSnapshot.TryGetProperty("projectId", out var projectProperty) && projectProperty.ValueKind == JsonValueKind.String && Guid.TryParse(projectProperty.GetString(), out var parsedProjectId) ? parsedProjectId : (Guid?)null;
+            var handoffId = result.SourceSnapshot.TryGetProperty("handoffId", out var handoffProperty) && handoffProperty.ValueKind == JsonValueKind.String && Guid.TryParse(handoffProperty.GetString(), out var parsedHandoffId) ? parsedHandoffId : (Guid?)null;
             context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), messageType, JsonSerializer.Serialize(new
             {
                 candidateId,
+                projectId,
+                handoffId,
                 legalEntityId = result.LegalEntityId,
                 sourceType = result.SourceType,
                 sourceReference = result.SourceReference,
