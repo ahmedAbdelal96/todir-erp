@@ -83,9 +83,9 @@ public sealed class ProjectsSourceEventConsumer(
                 }
                 else
                 {
-                await projects.RecordCommitmentAsync(new ProjectCommitmentIngress(message.TenantId, projectId.Value, "purchasing", sourceId,
-                    DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), currency, committed.Value, actualized.Value,
-                    $"projects:purchasing:{sourceId}:{message.MessageType}", legalEntityId), context.CancellationToken);
+                    await projects.RecordCommitmentAsync(new ProjectCommitmentIngress(message.TenantId, projectId.Value, "purchasing", sourceId,
+                        DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), currency, committed.Value, actualized.Value,
+                        $"projects:purchasing:{sourceId}:{message.MessageType}", legalEntityId), context.CancellationToken);
                 }
             }
             else if (message.MessageType is "ExpenseFinalizedV1" or "ExpenseReversedV1" or "StockIssuedV1" or "StockReversedV1")
@@ -97,40 +97,40 @@ public sealed class ProjectsSourceEventConsumer(
                 }
                 else
                 {
-                // Cost facts are immutable positive facts. Reversals must arrive with a correction reference and are not guessed here.
-                if (message.MessageType is "ExpenseReversedV1" or "StockReversedV1")
-                {
-                    var correctionOf = GuidValue(root, "correctionOfFactId");
-                    if (correctionOf is null)
+                    // Cost facts are immutable positive facts. Reversals must arrive with a correction reference and are not guessed here.
+                    if (message.MessageType is "ExpenseReversedV1" or "StockReversedV1")
                     {
-                        var reversal = await projects.RecordReversalAsync(message.TenantId, message.CausationId, projectId.Value, message.SourceModule, sourceId, Math.Abs(amount.Value), currency, DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", message.CorrelationId, context.CancellationToken);
-                        if (reversal is null)
+                        var correctionOf = GuidValue(root, "correctionOfFactId");
+                        if (correctionOf is null)
                         {
-                            evidenceStatus = "Ignored";
-                            evidenceReason = "reversal_source_fact_not_found";
+                            var reversal = await projects.RecordReversalAsync(message.TenantId, message.CausationId, projectId.Value, message.SourceModule, sourceId, Math.Abs(amount.Value), currency, DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", message.CorrelationId, context.CancellationToken);
+                            if (reversal is null)
+                            {
+                                evidenceStatus = "Ignored";
+                                evidenceReason = "reversal_source_fact_not_found";
+                            }
+                        }
+                        else
+                        {
+                            await projects.RecordCostAsync(new ProjectCostFactIngress(message.TenantId, message.CausationId, projectId.Value, null,
+                                message.SourceModule, message.MessageType, sourceId, null,
+                                message.SourceModule == "inventory" ? "Material" : "Expense", currency, Math.Abs(amount.Value), currency, Math.Abs(amount.Value), null,
+                                DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", correctionOf, legalEntityId), message.CorrelationId, context.CancellationToken);
                         }
                     }
                     else
                     {
-                        await projects.RecordCostAsync(new ProjectCostFactIngress(message.TenantId, message.CausationId, projectId.Value, null,
+                        var signedAmount = Math.Abs(amount.Value);
+                        if (signedAmount == 0m && message.MessageType == "StockIssuedV1")
+                        {
+                            evidenceStatus = "Ignored";
+                            evidenceReason = "inventory_valuation_missing";
+                        }
+                        else await projects.RecordCostAsync(new ProjectCostFactIngress(message.TenantId, message.CausationId, projectId.Value, null,
                             message.SourceModule, message.MessageType, sourceId, null,
-                            message.SourceModule == "inventory" ? "Material" : "Expense", currency, Math.Abs(amount.Value), currency, Math.Abs(amount.Value), null,
-                            DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", correctionOf, legalEntityId), message.CorrelationId, context.CancellationToken);
+                            message.SourceModule == "inventory" ? "Material" : "Expense", currency, signedAmount, currency, signedAmount, null,
+                            DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", null, legalEntityId), message.CorrelationId, context.CancellationToken);
                     }
-                }
-                else
-                {
-                    var signedAmount = Math.Abs(amount.Value);
-                    if (signedAmount == 0m && message.MessageType == "StockIssuedV1")
-                    {
-                        evidenceStatus = "Ignored";
-                        evidenceReason = "inventory_valuation_missing";
-                    }
-                    else await projects.RecordCostAsync(new ProjectCostFactIngress(message.TenantId, message.CausationId, projectId.Value, null,
-                        message.SourceModule, message.MessageType, sourceId, null,
-                        message.SourceModule == "inventory" ? "Material" : "Expense", currency, signedAmount, currency, signedAmount, null,
-                        DateOnly.FromDateTime(message.OccurredAt.UtcDateTime), $"projects:{message.MessageType}:{sourceId}", null, legalEntityId), message.CorrelationId, context.CancellationToken);
-                }
                 }
             }
             else if (message.MessageType == "InvoiceFinalizedV1")

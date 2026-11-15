@@ -1,0 +1,22 @@
+# Projects Backend Coverage Matrix
+
+Canonical pack: `docs/modules/23_ERP_SAAS_PROJECTS_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`
+
+| Requirement | Business rule | Persistence | Backend/API | Seed | Automated test | Runtime evidence | Status |
+|---|---|---|---|---|---|---|---|
+| PJ03 Templates | Versioned reusable project definition; historical versions remain readable | `project_template`, `project_template_version` | Create/list workflow and project version linkage | PJ39 seed | PJ39 | Isolated DB | PASS (backend) |
+| PJ07 Resources | Generic demand is not an employee; allocations are date/effective-state controlled | `project_resource_requirement`, `project_resource_allocation`, team tables | Requirement/allocation lifecycle, fulfillment, bounded load view | PJ39 seed | PJ39 | Isolated DB | PASS (backend) |
+| PJ15 Supplier actuals | Supplier invoice remains Invoicing-owned; Projects stores source-derived cost projection | `project_cost_fact` and source event consumer | Event path exists; no dedicated acceptance | Partial | No | No | PARTIAL |
+| PJ21-PJ25 Billing | Plan/rule creates reviewable charges; invoices remain Invoicing-owned | Rules, charges, invoice request/allocation | Rule, plan-line, milestone eligibility, idempotent charge generation, invoice and correction APIs | PJ39 seed | PJ39 + existing | Isolated DB | PASS (backend) |
+| PJ29-PJ30 Changes/baselines | Approved changes affect current plan only; originals are immutable | Change request/order/baseline tables | Change order and append-only baseline APIs | PJ39 seed | PJ39 + existing | Isolated DB | PASS (backend) |
+| PJ33 Portfolio/resources | Read-only bounded operational views; no duplicate ownership | Project-owned aggregate queries | Legal-entity portfolio and resource-load reads | PJ39 seed | PJ39 | Isolated DB | PASS (backend) |
+| PJ34 Documents/timeline | Project documents and business timeline are auditable and scoped | Documents/audit tables | Document links and audit-backed timeline API | PJ39 seed | PJ39 | Isolated DB | PASS (backend) |
+| PJ35 Notifications/exceptions | Operational exceptions are actionable and traceable | Close exceptions only; platform owns notification delivery | Close-exception create/list/resolve and close blocker | PJ39 seed | PJ39 | Isolated DB | PASS (exception flow; notification delivery deferred) |
+| PJ39 Recovery | Retry/idempotency/reconciliation without manual SQL | Inbox, integration evidence, idempotency, close state | Source-event recovery, exception-aware close, reopen | PJ39 seed | PJ39 + PJ47 partial | Isolated DB | PASS (backend) |
+| PJ40-PJ42 | Core execution, time, cost, budget, forecast and reconciliation | Existing Projects tables | Existing API | Seeded tenant/entity | 14/14 current suite | Isolated DB | PASS with expanded coverage needed |
+| PJ43 | Capitalizable cost reaches Fixed Assets and recovers accepted/rejected outcome | Handoff + Fixed Assets-owned candidate | Handoff/event contracts exist | Partial | Stub-only current path | No real owning-module proof | FAIL |
+| PJ44 | Real Invoicing issuance/partial/correction and collection composition | Invoicing/Subledger-owned records + Projects projections | Source contract exists | Partial | Stub-only current path | No real owning-module proof | FAIL |
+| PJ45-PJ46 | Authoritative cross-module amounts reconcile with zero unexplained differences | Source projections and read contracts | Partial | Partial | Partial | No complete E2E | FAIL |
+| PJ47 | Release gates and security evidence are current after last change | RLS, CI configuration, tests | Partial | Isolated DB | Build/architecture/projects pass | CI failure unresolved | FAIL |
+
+Explicit deferral: PJ38 heavyweight load certification and frontend/browser acceptance are outside this backend mission. Normal bounded queries, indexes, authorization, and correctness remain in scope.

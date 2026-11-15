@@ -211,6 +211,54 @@ public sealed class ProjectAcceptanceScenarioTests
         }
     }
 
+    [Fact(DisplayName = "PJ39-PJ35 project operations persist templates resources deliverables documents baselines billing plan and close recovery")]
+    public async Task Pj39OperationalRecoveryAndViews()
+    {
+        await using var database = OpenDatabase();
+        var service = CreateService(database);
+        var actor = Guid.CreateVersion7();
+        var template = await service.CreateTemplateAsync(AtlasTenant, actor, new(AtlasEntity, $"TPL-{Guid.NewGuid():N}", "Delivery template", "InternalProject", "{\"defaultRole\":\"Consultant\"}"), CancellationToken.None);
+        var project = await service.CreateAsync(AtlasTenant, actor, actor, new(AtlasEntity, $"PJ39-{Guid.NewGuid():N}", "InternalProject", null, null, new(2026, 1, 1), null, TemplateVersionId: GetTemplateVersionId(database, AtlasTenant, template.Id)), Guid.CreateVersion7(), CancellationToken.None);
+        var requirement = await service.AddResourceRequirementAsync(AtlasTenant, actor, project.Id, new("Consultant", 1), CancellationToken.None);
+        var allocation = await service.AllocateResourceAsync(AtlasTenant, actor, project.Id, new(requirement.Id, actor, null, new(2026, 1, 1), null, 100m, "Confirmed"), CancellationToken.None);
+        var deliverable = await service.AddDeliverableAsync(AtlasTenant, actor, project.Id, new("Signed delivery", "Acceptance pack"), CancellationToken.None);
+        deliverable = await service.DeliverableActionAsync(AtlasTenant, actor, deliverable.Id, "submit", new(), CancellationToken.None);
+        deliverable = await service.DeliverableActionAsync(AtlasTenant, actor, deliverable.Id, "accept", new("customer-acceptance"), CancellationToken.None);
+        var document = await service.AddDocumentAsync(AtlasTenant, actor, project.Id, new("doc-39", "AcceptancePack", "Acceptance pack"), CancellationToken.None);
+        var timeline = await service.ListTimelineAsync(AtlasTenant, project.Id, 1, 100, CancellationToken.None);
+        var baseline = await service.CreateBaselineAsync(AtlasTenant, actor, project.Id, new("Scope", "{\"deliverable\":\"Signed delivery\"}"), CancellationToken.None);
+        var rule = await service.CreateBillingRuleAsync(AtlasTenant, actor, project.Id, new("FixedPrice", "EGP", 1000m), CancellationToken.None);
+        var plan = await service.AddBillingPlanLineAsync(AtlasTenant, actor, project.Id, new(rule.Id, null, new(2026, 2, 1), 1000m), CancellationToken.None);
+        var generated = await service.GenerateBillingChargesAsync(AtlasTenant, actor, project.Id, rule.Id, CancellationToken.None);
+        var exception = await service.AddCloseExceptionAsync(AtlasTenant, actor, project.Id, new("external_dependency", "dep-39", "Awaiting handoff"), CancellationToken.None);
+        var readiness = await service.GetCloseReadinessAsync(AtlasTenant, project.Id, CancellationToken.None);
+        var unresolved = await service.ListCloseExceptionsAsync(AtlasTenant, project.Id, 1, 20, CancellationToken.None);
+        var resolved = await service.ResolveCloseExceptionAsync(AtlasTenant, actor, exception.Id, CancellationToken.None);
+        var portfolio = await service.ListPortfolioAsync(AtlasTenant, AtlasEntity, 1, 50, CancellationToken.None);
+        var resourceLoad = await service.ListResourceLoadAsync(AtlasTenant, AtlasEntity, CancellationToken.None);
+
+        Assert.Equal(template.Id, await ScalarAsync(database, "select template_id from business_projects.project_template_version where tenant_id=$1 and id=$2", AtlasTenant.Value, template.Version == 1 ? GetTemplateVersionId(database, AtlasTenant, template.Id) : Guid.Empty));
+        Assert.Equal("Fulfilled", await ScalarAsync(database, "select status from business_projects.project_resource_requirement where tenant_id=$1 and id=$2", AtlasTenant.Value, requirement.Id));
+        Assert.Equal("Confirmed", allocation.Status);
+        Assert.Equal("Accepted", deliverable.Status);
+        Assert.Contains(timeline.Items, x => x.Action == "document_attached");
+        Assert.Equal(1, baseline.VersionNo);
+        Assert.Equal("Planned", plan.Status);
+        Assert.Equal("Eligible", await ScalarAsync(database, "select status from business_projects.project_billing_plan_line where tenant_id=$1 and id=$2", AtlasTenant.Value, plan.Id));
+        Assert.Single(generated);
+        Assert.Single(unresolved.Items);
+        Assert.Contains("unresolved_close_exception", readiness.Blockers);
+        Assert.NotNull(resolved.ResolvedAt);
+        Assert.Contains(portfolio.Items, x => x.Id == project.Id);
+        Assert.Contains(resourceLoad, x => x.ResourceKey == actor.ToString());
+    }
+
+    private static Guid GetTemplateVersionId(NpgsqlDataSource database, TenantId tenant, Guid templateId)
+    {
+        using var connection = database.OpenConnection(); SetTenantAsync(connection, tenant).GetAwaiter().GetResult();
+        return (Guid)ScalarAsync(connection, "select id from business_projects.project_template_version where tenant_id=$1 and template_id=$2", tenant.Value, templateId).GetAwaiter().GetResult()!;
+    }
+
     private static NpgsqlDataSource OpenDatabase()
     {
         var value = Environment.GetEnvironmentVariable("TODIR_PROJECTS_TEST_CONNECTION") ?? Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION");

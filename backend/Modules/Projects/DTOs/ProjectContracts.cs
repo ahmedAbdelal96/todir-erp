@@ -1,6 +1,6 @@
 namespace Modules.Projects.DTOs;
 
-public sealed record CreateProjectRequest(Guid LegalEntityId, string Name, string ProjectType, Guid? CustomerPartyId, Guid? ProjectManagerEmployeeId, DateOnly StartDate, DateOnly? TargetEndDate, string BillingModel = "NonBillable", string? CurrencyCode = null, string? Description = null, string? SourceType = null, string? SourceRef = null, decimal? InitialBudget = null);
+public sealed record CreateProjectRequest(Guid LegalEntityId, string Name, string ProjectType, Guid? CustomerPartyId, Guid? ProjectManagerEmployeeId, DateOnly StartDate, DateOnly? TargetEndDate, string BillingModel = "NonBillable", string? CurrencyCode = null, string? Description = null, string? SourceType = null, string? SourceRef = null, decimal? InitialBudget = null, Guid? TemplateVersionId = null);
 public sealed record UpdateProjectRequest(string Name, string? Description, DateOnly? TargetEndDate, string? ExecutionHealth, long Version);
 public sealed record ProjectListItem(Guid Id, Guid LegalEntityId, string ProjectNumber, string Name, string ProjectType, Guid? CustomerPartyId, string LifecycleState, string ExecutionHealth, string BillingModel, DateOnly StartDate, DateOnly? TargetEndDate, long Version);
 public sealed record ProjectDetail(Guid Id, Guid LegalEntityId, string ProjectNumber, string Name, string? Description, string ProjectType, Guid? CustomerPartyId, Guid? ProjectManagerEmployeeId, DateOnly StartDate, DateOnly? TargetEndDate, DateOnly? ActualEndDate, string LifecycleState, string ExecutionHealth, string BillingModel, string? CurrencyCode, long Version, decimal Budget, decimal ActualCost, decimal OpenCommitment, decimal Etc, decimal Eac, decimal BillingEligible, decimal Invoiced, decimal Collected, decimal Outstanding);
@@ -46,4 +46,24 @@ public sealed record FinancialSummary(decimal Budget, decimal ActualCost, decima
     string RevenueBasis = "Unknown", decimal RevenueBasisAmount = 0m, string? CurrencyCode = null);
 public sealed record CapitalHandoffRequest(Guid CostFactId, decimal Amount, string CurrencyCode, string IdempotencyKey);
 public sealed record CapitalHandoffView(Guid Id, Guid ProjectId, Guid CostFactId, decimal Amount, string CurrencyCode, string State, string? ExternalReference);
+public sealed record CreateProjectTemplateRequest(Guid? LegalEntityId, string Code, string Name, string ProjectType, string DefinitionJson = "{}");
+public sealed record ProjectTemplateView(Guid Id, Guid? LegalEntityId, string Code, string Name, string ProjectType, string Status, int Version, DateOnly EffectiveFrom, DateOnly? EffectiveTo, string DefinitionJson);
+public sealed record CreateResourceRequirementRequest(string RoleCode, decimal Quantity = 1, DateOnly? RequiredFrom = null, DateOnly? RequiredTo = null);
+public sealed record AllocateProjectResourceRequest(Guid? RequirementId, Guid? EmployeeId, string? ResourceRef, DateOnly AllocatedFrom, DateOnly? AllocatedTo, decimal AllocationPercent, string Status = "Planned");
+public sealed record ProjectResourceRequirementView(Guid Id, Guid ProjectId, string RoleCode, decimal Quantity, DateOnly? RequiredFrom, DateOnly? RequiredTo, string Status);
+public sealed record ProjectResourceAllocationView(Guid Id, Guid ProjectId, Guid? RequirementId, Guid? EmployeeId, string? ResourceRef, DateOnly AllocatedFrom, DateOnly? AllocatedTo, decimal AllocationPercent, string Status);
+public sealed record CreateProjectDeliverableRequest(string Name, string? Description = null, Guid? TaskId = null, Guid? MilestoneId = null);
+public sealed record ProjectDeliverableView(Guid Id, Guid ProjectId, Guid? TaskId, Guid? MilestoneId, string Name, string? Description, string Status, DateTimeOffset? SubmittedAt, DateTimeOffset? AcceptedAt, string? AcceptanceReference);
+public sealed record DeliverableActionRequest(string? AcceptanceReference = null, string? Reason = null);
+public sealed record CreateProjectDocumentRequest(string DocumentRef, string DocumentType, string? Title = null, string Sensitivity = "Normal");
+public sealed record ProjectDocumentView(Guid Id, Guid ProjectId, string DocumentRef, string DocumentType, string Sensitivity, string? Title, Guid CreatedBy, DateTimeOffset CreatedAt);
+public sealed record ProjectTimelineEventView(Guid Id, Guid ProjectId, string Action, Guid? ActorId, DateTimeOffset OccurredAt, string? BeforeJson, string? AfterJson);
+public sealed record CreateBillingPlanLineRequest(Guid BillingRuleId, Guid? MilestoneId, DateOnly? DueDate, decimal Amount);
+public sealed record BillingPlanLineView(Guid Id, Guid BillingRuleId, Guid? MilestoneId, DateOnly? DueDate, decimal Amount, string Status);
+public sealed record CreateProjectBaselineRequest(string BaselineType, string SnapshotJson = "{}");
+public sealed record ProjectBaselineView(Guid Id, Guid ProjectId, string BaselineType, int VersionNo, string SnapshotJson, Guid CreatedBy, DateTimeOffset CreatedAt);
+public sealed record CreateCloseExceptionRequest(string ExceptionType, string? ReferenceId, string Message);
+public sealed record ProjectCloseExceptionView(Guid Id, Guid ProjectId, Guid ProjectCloseId, string ExceptionType, string? ReferenceId, string Message, DateTimeOffset? ResolvedAt);
+public sealed record ProjectPortfolioItem(Guid Id, Guid LegalEntityId, string ProjectNumber, string Name, string LifecycleState, string ExecutionHealth, decimal Budget, decimal ActualCost, decimal OpenCommitment, decimal Eac, decimal BillingEligible, decimal Outstanding);
+public sealed record ProjectResourceLoadView(string ResourceKey, decimal AllocationPercent, int ProjectCount);
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, bool HasNext);
