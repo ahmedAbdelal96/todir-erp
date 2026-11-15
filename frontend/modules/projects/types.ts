@@ -34,6 +34,7 @@ export interface PagedResult<T> {
   readonly page: number;
   readonly pageSize: number;
   readonly hasNext: boolean;
+  readonly totalCount?: number;
 }
 
 export interface ProjectListItem {

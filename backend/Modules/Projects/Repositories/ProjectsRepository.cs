@@ -99,15 +99,17 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
         return await GetDetailAsync(context, tenant, id, token) ?? throw new ProjectException("projects.project_not_found");
     }, ct);
 
-    public Task<PagedResult<ProjectListItem>> ListAsync(TenantId tenant, Guid legalEntityId, string? search, string? state, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync<PagedResult<ProjectListItem>>(tenant, async (context, token) =>
+    public Task<PagedResult<ProjectListItem>> ListAsync(TenantId tenant, Guid legalEntityId, string? search, string? state, string? projectType, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync<PagedResult<ProjectListItem>>(tenant, async (context, token) =>
     {
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200); var offset = (page - 1) * pageSize;
-        const string sql = "select id,legal_entity_id,project_number,name,project_type,customer_party_id,lifecycle_state,execution_health,billing_model,start_date,target_end_date,row_version from business_projects.project where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or name ilike '%'||$3||'%' or project_number ilike '%'||$3||'%') and ($4::text is null or lifecycle_state=$4) order by updated_at desc,id desc limit $5 offset $6";
+        const string countSql = "select count(*) from business_projects.project where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or name ilike '%'||$3||'%' or project_number ilike '%'||$3||'%') and ($4::text is null or lifecycle_state=$4) and ($5::text is null or project_type=$5)";
+        var totalCount = Convert.ToInt32(await ScalarAsync(context, countSql, token, tenant.Value, legalEntityId, Db(search), Db(state), Db(projectType)), CultureInfo.InvariantCulture);
+        const string sql = "select id,legal_entity_id,project_number,name,project_type,customer_party_id,lifecycle_state,execution_health,billing_model,start_date,target_end_date,row_version from business_projects.project where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or name ilike '%'||$3||'%' or project_number ilike '%'||$3||'%') and ($4::text is null or lifecycle_state=$4) and ($5::text is null or project_type=$5) order by updated_at desc,id desc limit $6 offset $7";
         var items = new List<ProjectListItem>();
-        await using var command = Command(context, sql, tenant.Value, legalEntityId, Db(search), Db(state), pageSize + 1, offset);
+        await using var command = Command(context, sql, tenant.Value, legalEntityId, Db(search), Db(state), Db(projectType), pageSize + 1, offset);
         await using var reader = await command.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token)) items.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetFieldValue<DateOnly>(9), reader.IsDBNull(10) ? null : reader.GetFieldValue<DateOnly>(10), reader.GetInt64(11)));
-        var hasNext = items.Count > pageSize; if (hasNext) items.RemoveAt(items.Count - 1); return new(items, page, pageSize, hasNext);
+        var hasNext = items.Count > pageSize; if (hasNext) items.RemoveAt(items.Count - 1); return new(items, page, pageSize, hasNext, totalCount);
     }, ct);
 
     public Task<ProjectDetail?> GetAsync(TenantId tenant, Guid projectId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => GetDetailAsync(context, tenant, projectId, token), ct);
@@ -548,6 +550,19 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
     }, ct);
 
     public Task<ChangeRequestView> CreateChangeAsync(TenantId tenant, Guid actor, Guid projectId, CreateChangeRequest request, CancellationToken ct) => coordinator.ExecuteAsync<ChangeRequestView>(tenant, async (context, token) => { ProjectRules.EnsureMutable(await StateAsync(context, tenant.Value, projectId, token)); var legalEntityId = await ScalarAsync<Guid>(context, "select legal_entity_id from business_projects.project where tenant_id=$1 and id=$2", token, tenant.Value, projectId); var id = Guid.CreateVersion7(); var number = await sequences.AllocateAsync(context, new SequenceDefinition("projects.change-request", tenant, legalEntityId, null, null, null, "CR-", 7, 1), token); await ExecuteAsync(context, "insert into business_projects.project_change_request(tenant_id,id,project_id,request_number,title,reason,contract_delta,budget_delta,schedule_delta_days,requested_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", token, tenant.Value, id, projectId, number, request.Title.Trim(), Db(request.Reason), request.ContractDelta, request.BudgetDelta, request.ScheduleDeltaDays, actor); return new(id, projectId, number, request.Title.Trim(), "Draft", request.ContractDelta, request.BudgetDelta, request.ScheduleDeltaDays); }, ct);
+
+    public Task<PagedResult<ChangeRequestView>> ListChangesAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync<PagedResult<ChangeRequestView>>(tenant, async (context, token) =>
+    {
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
+        var items = new List<ChangeRequestView>();
+        await using var command = Command(context, "select id,project_id,request_number,title,status,contract_delta,budget_delta,schedule_delta_days from business_projects.project_change_request where tenant_id=$1 and project_id=$2 order by created_at desc,id desc limit $3 offset $4", tenant.Value, projectId, pageSize + 1, (page - 1) * pageSize);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
+            items.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetDecimal(5), reader.GetDecimal(6), reader.GetInt32(7)));
+        var hasNext = items.Count > pageSize;
+        if (hasNext) items.RemoveAt(pageSize);
+        return new(items, page, pageSize, hasNext);
+    }, ct);
 
     public Task<ChangeRequestView> DecideChangeAsync(TenantId tenant, Guid actor, Guid projectId, Guid changeId, ChangeDecisionRequest request, CancellationToken ct) => coordinator.ExecuteAsync<ChangeRequestView>(tenant, async (context, token) =>
     {

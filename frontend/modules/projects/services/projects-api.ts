@@ -80,11 +80,12 @@ export const projectsApi = {
   // 1. Projects Register / Listing
   listProjects: (
     legalEntityId: string,
-    params?: { search?: string; state?: string; page?: number; pageSize?: number }
+    params?: { search?: string; state?: string; projectType?: string; page?: number; pageSize?: number }
   ): Promise<PagedResult<ProjectListItem>> => {
     const q = buildQuery({
       search: params?.search,
       state: params?.state,
+      projectType: params?.projectType,
       page: params?.page ?? 1,
       pageSize: params?.pageSize ?? 50
     });
@@ -347,6 +348,14 @@ export const projectsApi = {
     }),
 
   // 16. Change Requests & Decisions
+  listChanges: (projectId: string, params?: { page?: number; pageSize?: number }): Promise<PagedResult<ChangeRequestView>> => {
+    const q = new URLSearchParams();
+    if (params?.page) q.set("page", String(params.page));
+    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
+    const qs = q.toString();
+    return httpClient<PagedResult<ChangeRequestView>>(`${BASE}/${encodeURIComponent(projectId)}/changes${qs ? `?${qs}` : ""}`);
+  },
+
   createChange: (projectId: string, request: CreateChangeRequest): Promise<ChangeRequestView> =>
     httpClient<ChangeRequestView>(`${BASE}/${encodeURIComponent(projectId)}/changes`, {
       method: "POST",

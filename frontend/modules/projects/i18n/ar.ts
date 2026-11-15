@@ -215,6 +215,8 @@ export const ar = {
     priority: "الأولوية",
     status: "الحالة",
     assignedEmployee: "الموظف المكلف",
+    employee: "الموظف",
+    chargeId: "معرف بند التكلفة",
     plannedStart: "تاريخ البدء المخطط",
     plannedEnd: "تاريخ الانتهاء المخطط",
     progressPercent: "نسبة الإنجاز %",

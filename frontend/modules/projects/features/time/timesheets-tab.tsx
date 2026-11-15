@@ -174,22 +174,22 @@ export function TimesheetsTab({
                       <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
                         <div style={{ display: "flex", gap: "0.35rem", justifyContent: "flex-end" }}>
                           {entry.state === "Draft" && (
-                            <Button variant="secondary" size="compact" onClick={() => onTimeAction(entry.id, "submit", entry.version)}>
+                            <Button variant="secondary" size="compact" onClick={() => onTimeAction(entry.id, "submit", entry.version)} data-testid="btn-time-submit">
                               {t("actions.submit")}
                             </Button>
                           )}
                           {entry.state === "Submitted" && (
                             <>
-                              <Button variant="primary" size="compact" onClick={() => onTimeAction(entry.id, "approve", entry.version)}>
+                              <Button variant="primary" size="compact" onClick={() => onTimeAction(entry.id, "approve", entry.version)} data-testid="btn-time-approve">
                                 {t("actions.approve")}
                               </Button>
-                              <Button variant="secondary" size="compact" onClick={() => onTimeAction(entry.id, "reject", entry.version)}>
+                              <Button variant="secondary" size="compact" onClick={() => onTimeAction(entry.id, "reject", entry.version)} data-testid="btn-time-reject">
                                 {t("actions.reject")}
                               </Button>
                             </>
                           )}
                           {entry.state === "Approved" && (
-                            <Button variant="primary" size="compact" onClick={() => onTimeAction(entry.id, "finalize", entry.version)}>
+                            <Button variant="primary" size="compact" onClick={() => onTimeAction(entry.id, "finalize", entry.version)} data-testid="btn-time-finalize">
                               {t("actions.finalize")}
                             </Button>
                           )}

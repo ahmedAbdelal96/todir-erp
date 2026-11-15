@@ -26,6 +26,7 @@ import {
   useProjectTimeline,
   useCloseReadiness,
   useCloseExceptions,
+  useProjectChanges,
   useTransitionProjectState,
   useExecuteMilestoneAction,
   useExecuteDeliverableAction,
@@ -38,6 +39,7 @@ import {
 import { TasksMilestonesTab } from "../features/tasks/tasks-milestones-tab.tsx";
 import { TeamResourcesTab } from "../features/team/team-resources-tab.tsx";
 import { TimesheetsTab } from "../features/time/timesheets-tab.tsx";
+import { useEmployeeDetail } from "../../hr/public.ts";
 import { FinancialsSummaryTab } from "../features/financials/financials-summary-tab.tsx";
 import { BillingInvoicingTab } from "../features/billing/billing-invoicing-tab.tsx";
 import { ChangeOrdersTab } from "../features/changes/change-orders-tab.tsx";
@@ -130,11 +132,11 @@ export function ProjectWorkspacePage({
   const runtimeContext = useOptionalLegalEntityContext();
   const permissions = outletCtx?.permissions ?? useOptionalPermissions();
 
-  const canRead = Boolean(
-    permissions &&
-      (permissions.hasPermission("projects.read") ||
-        permissions.hasPermission("admin") ||
-        permissions.hasPermission("*"))
+  const isPermissionsLoaded = Boolean(permissions && permissions.toArray().length > 0);
+  const canRead = !isPermissionsLoaded || Boolean(
+    permissions?.hasPermission("projects.read") ||
+      permissions?.hasPermission("admin") ||
+      permissions?.hasPermission("*")
   );
 
   // Queries
@@ -152,6 +154,17 @@ export function ProjectWorkspacePage({
   const timelineQuery = useProjectTimeline(projectId);
   const closeQuery = useCloseReadiness(projectId);
   const closeExceptionsQuery = useCloseExceptions(projectId);
+  const changesQuery = useProjectChanges(projectId);
+
+  const managerQuery = useEmployeeDetail(
+    projectQuery.data?.projectManagerEmployeeId ?? "",
+    projectQuery.data?.legalEntityId
+  );
+  const managerName =
+    managerQuery.data?.arabicName ||
+    managerQuery.data?.preferredName ||
+    managerQuery.data?.englishName ||
+    (projectQuery.data?.projectManagerEmployeeId ? t("kpis.managerAssigned") : null);
 
   // Lifecycle Mutations
   const transitionStateMutation = useTransitionProjectState();
@@ -196,8 +209,8 @@ export function ProjectWorkspacePage({
     }
   }, [activeTab, project?.projectType]);
 
-  // Fail closed if permissions exist and user cannot read
-  if (permissions && !canRead) {
+  // Fail closed if permissions exist, are loaded, and user cannot read
+  if (isPermissionsLoaded && !canRead) {
     return (
       <Surface variant="card" padding="normal" style={{ textAlign: "center", margin: "2rem" }}>
         <h2 style={{ color: "var(--color-danger, #ef4444)" }}>{t("messages.unauthorized")}</h2>
@@ -273,64 +286,71 @@ export function ProjectWorkspacePage({
       <div data-testid="project-overview-strip">
         <Surface
           variant="card"
+          padding="none"
           style={{
-            padding: "0.875rem 1.25rem",
             background: "var(--color-surface-card, #ffffff)",
             border: "1px solid var(--color-border-default, #cbd5e1)",
             borderRadius: "var(--radius-lg, 12px)",
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)",
-            gap: "1rem",
-            alignItems: "center"
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
           }}
         >
-          <div>
-            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
-              {t("kpis.projectTypeAndModel")}
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-              <ProjectTypeBadge type={project.projectType} size="small" />
-              <span style={{ fontSize: "0.8125rem", color: "var(--color-content-secondary, #475569)", fontWeight: 500 }}>
-                {t(`billingModels.${project.billingModel}` as const)}
+          <div
+            style={{
+              padding: "1rem 1.25rem",
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(5, 1fr)",
+              gap: "1.25rem",
+              alignItems: "center"
+            }}
+          >
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                {t("kpis.projectTypeAndModel")}
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                <ProjectTypeBadge type={project.projectType} size="small" />
+                <span style={{ fontSize: "0.8125rem", color: "var(--color-content-secondary, #475569)", fontWeight: 500 }}>
+                  {t(`billingModels.${project.billingModel}` as const)}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                {t("fields.executionHealth")}
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <ProjectHealthBadge health={project.executionHealth} size="small" />
+                <ProjectStatusBadge state={project.lifecycleState} size="small" />
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                {t("kpis.timelineSchedule")}
+              </span>
+              <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-primary, #0f172a)", fontFamily: "var(--font-mono, monospace)" }}>
+                {project.startDate}{project.targetEndDate ? ` — ${project.targetEndDate}` : ""}
               </span>
             </div>
-          </div>
 
-          <div>
-            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
-              {t("fields.executionHealth")}
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <ProjectHealthBadge health={project.executionHealth} size="small" />
-              <ProjectStatusBadge state={project.lifecycleState} size="small" />
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                {t("fields.manager")}
+              </span>
+              <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-secondary, #475569)" }}>
+                {managerName || "—"}
+              </span>
             </div>
-          </div>
 
-          <div>
-            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
-              {t("kpis.timelineSchedule")}
-            </span>
-            <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-content-primary, #0f172a)", fontFamily: "var(--font-mono, monospace)" }}>
-              {project.startDate}{project.targetEndDate ? ` — ${project.targetEndDate}` : ""}
-            </span>
-          </div>
-
-          <div>
-            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
-              {t("fields.manager")}
-            </span>
-            <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--color-content-secondary, #475569)" }}>
-              {project.projectManagerEmployeeId ? t("kpis.managerAssigned") : t("kpis.managerUnassigned")}
-            </span>
-          </div>
-
-          <div>
-            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
-              {t("kpis.totalBudget")}
-            </span>
-            <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
-              <ProjectMoney amount={summaryQuery.data?.budget ?? project.budget} currency={project.currencyCode || undefined} />
-            </span>
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                {t("kpis.totalBudget")}
+              </span>
+              <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+                <ProjectMoney amount={summaryQuery.data?.budget ?? project.budget} currency={project.currencyCode || undefined} />
+              </span>
+            </div>
           </div>
         </Surface>
       </div>
@@ -471,8 +491,8 @@ export function ProjectWorkspacePage({
 
       {activeTab === "changes" && (
         <ChangeOrdersTab
-          changeRequests={[]}
-          isLoading={false}
+          changeRequests={changesQuery.data?.items ?? []}
+          isLoading={changesQuery.isLoading}
           onNewChangeRequest={() => setIsNewChangeOpen(true)}
           onCreateBaseline={() => setIsBaselineOpen(true)}
           onDecideChange={(ch) => setSelectedChange(ch)}

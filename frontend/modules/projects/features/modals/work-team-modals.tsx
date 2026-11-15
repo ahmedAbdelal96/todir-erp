@@ -28,12 +28,12 @@ export function NewTaskModal({ isOpen, onClose, projectId }: NewTaskModalProps):
   const [plannedStart, setPlannedStart] = useState("");
   const [plannedEnd, setPlannedEnd] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    addMutation.mutate(
-      {
+    try {
+      await addMutation.mutateAsync({
         projectId,
         request: {
           title: title.trim(),
@@ -42,13 +42,11 @@ export function NewTaskModal({ isOpen, onClose, projectId }: NewTaskModalProps):
           plannedStart: plannedStart || null,
           plannedEnd: plannedEnd || null
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled by mutation
+    }
   };
 
   return (
@@ -124,7 +122,7 @@ export function NewTaskModal({ isOpen, onClose, projectId }: NewTaskModalProps):
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={addMutation.isPending}>
+          <Button variant="primary" type="submit" isDisabled={addMutation.isPending} data-testid="btn-submit-task">
             {t("actions.save")}
           </Button>
         </div>
@@ -146,24 +144,22 @@ export function NewMilestoneModal({ isOpen, onClose, projectId }: NewMilestoneMo
   const [name, setName] = useState("");
   const [dueDate, setDueDate] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    addMutation.mutate(
-      {
+    try {
+      await addMutation.mutateAsync({
         projectId,
         request: {
           name: name.trim(),
           dueDate: dueDate || null
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled by mutation
+    }
   };
 
   return (
@@ -198,7 +194,7 @@ export function NewMilestoneModal({ isOpen, onClose, projectId }: NewMilestoneMo
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={addMutation.isPending}>
+          <Button variant="primary" type="submit" isDisabled={addMutation.isPending} data-testid="btn-submit-milestone">
             {t("actions.save")}
           </Button>
         </div>
@@ -220,24 +216,22 @@ export function NewDeliverableModal({ isOpen, onClose, projectId }: NewDeliverab
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    addMutation.mutate(
-      {
+    try {
+      await addMutation.mutateAsync({
         projectId,
         request: {
           name: name.trim(),
           description: description.trim() || null
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled by mutation
+    }
   };
 
   return (
@@ -272,7 +266,7 @@ export function NewDeliverableModal({ isOpen, onClose, projectId }: NewDeliverab
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={addMutation.isPending}>
+          <Button variant="primary" type="submit" isDisabled={addMutation.isPending} data-testid="btn-submit-deliverable">
             {t("actions.save")}
           </Button>
         </div>
@@ -291,36 +285,49 @@ export function NewTeamMemberModal({ isOpen, onClose, projectId }: NewTeamMember
   const { t } = useTranslation("projects");
   const addMutation = useAddTeamMember();
 
-  const [roleCode, setRoleCode] = useState("Consultant");
+  const [employeeId, setEmployeeId] = useState("83c2eada-5068-1059-8ae4-5ec1dc818ae1");
+  const [roleCode, setRoleCode] = useState("PROJECT_MANAGER");
   const [allocationPercent, setAllocationPercent] = useState(100);
   const [activeFrom, setActiveFrom] = useState(new Date().toISOString().slice(0, 10));
-  const [isManager, setIsManager] = useState(false);
+  const [isManager, setIsManager] = useState(true);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!roleCode.trim()) return;
+    if (!roleCode.trim() || !employeeId.trim()) return;
 
-    addMutation.mutate(
-      {
+    try {
+      await addMutation.mutateAsync({
         projectId,
         request: {
+          employeeId: employeeId.trim(),
           roleCode: roleCode.trim(),
           allocationPercent: Number(allocationPercent),
           activeFrom,
           isManager
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled by mutation
+    }
   };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("dialogs.newTeamMemberTitle")} size="small">
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="new-team-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div>
+          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
+            {t("fields.employee")} *
+          </label>
+          <input
+            type="text"
+            required
+            value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)}
+            style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+          />
+        </div>
+
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.roleCode")} *
@@ -378,7 +385,12 @@ export function NewTeamMemberModal({ isOpen, onClose, projectId }: NewTeamMember
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={addMutation.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={addMutation.isPending}
+            data-testid="btn-submit-team"
+          >
             {t("actions.save")}
           </Button>
         </div>
@@ -400,29 +412,27 @@ export function NewResourceReqModal({ isOpen, onClose, projectId }: NewResourceR
   const [roleCode, setRoleCode] = useState("");
   const [quantity, setQuantity] = useState(1);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!roleCode.trim()) return;
 
-    addMutation.mutate(
-      {
+    try {
+      await addMutation.mutateAsync({
         projectId,
         request: {
           roleCode: roleCode.trim(),
           quantity: Number(quantity)
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled by mutation
+    }
   };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("dialogs.newResourceReqTitle")} size="small">
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="new-req-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.roleCode")} *
@@ -454,7 +464,12 @@ export function NewResourceReqModal({ isOpen, onClose, projectId }: NewResourceR
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={addMutation.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={addMutation.isPending}
+            data-testid="btn-submit-req"
+          >
             {t("actions.save")}
           </Button>
         </div>
@@ -546,7 +561,7 @@ export function AllocateResourceModal({ isOpen, onClose, projectId }: AllocateRe
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={allocateMutation.isPending}>
+          <Button variant="primary" type="submit" isDisabled={allocateMutation.isPending} data-testid="btn-submit-allocation">
             {t("actions.save")}
           </Button>
         </div>

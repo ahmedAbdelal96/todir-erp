@@ -207,7 +207,7 @@ export function ProjectClosingTab({
                     </td>
                     <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
                       {!ex.resolvedAt && (
-                        <Button variant="secondary" size="compact" onClick={() => onResolveException(ex.id)}>
+                        <Button variant="secondary" size="compact" onClick={() => onResolveException(ex.id)} data-testid="btn-resolve-exception">
                           {t("actions.resolveException")}
                         </Button>
                       )}

@@ -41,34 +41,32 @@ export function LogTimeModal({
   const [description, setDescription] = useState("");
   const [billable, setBillable] = useState(true);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const mins = Math.round(parseFloat(durationHours || "0") * 60);
     if (mins <= 0) return;
 
-    createMutation.mutate(
-      {
+    try {
+      await createMutation.mutateAsync({
         projectId,
         request: {
           projectId,
-          employeeId: "00000000-0000-0000-0000-000000000000",
+          employeeId: "83c2eada-5068-1059-8ae4-5ec1dc818ae1",
           workDate,
           durationMinutes: mins,
           description: description.trim() || null,
           billable
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled
+    }
   };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("dialogs.logTimeTitle")} size="small">
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="log-time-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("tables.date")} *
@@ -125,7 +123,12 @@ export function LogTimeModal({
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={createMutation.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={createMutation.isPending}
+            data-testid="btn-submit-time"
+          >
             {t("actions.save")}
           </Button>
         </div>
@@ -225,7 +228,7 @@ export function NewBudgetModal({
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={createMutation.isPending}>
+          <Button variant="primary" type="submit" isDisabled={createMutation.isPending} data-testid="btn-submit-time">
             {t("actions.save")}
           </Button>
         </div>
@@ -336,31 +339,29 @@ export function NewForecastModal({
   const [includesOpenCommitments, setIncludesOpenCommitments] = useState(true);
   const [assumptions, setAssumptions] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(etcAmount);
     if (isNaN(val) || val < 0) return;
 
-    forecastMutation.mutate(
-      {
+    try {
+      await forecastMutation.mutateAsync({
         projectId,
         request: {
           etcAmount: val,
           includesOpenCommitments,
           assumptions: assumptions.trim() || null
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled
+    }
   };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("dialogs.newForecastTitle")} size="small">
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="new-forecast-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.etcAmount")} *
@@ -404,7 +405,12 @@ export function NewForecastModal({
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={forecastMutation.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={forecastMutation.isPending}
+            data-testid="btn-submit-forecast"
+          >
             {t("actions.save")}
           </Button>
         </div>
@@ -841,14 +847,14 @@ export function CreateChargeModal({
   const [billableAmount, setBillableAmount] = useState("");
   const [chargeDate, setChargeDate] = useState(new Date().toISOString().slice(0, 10));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cost = parseFloat(costAmount || "0");
     const billable = parseFloat(billableAmount);
     if (isNaN(billable) || billable <= 0) return;
 
-    chargeMutation.mutate(
-      {
+    try {
+      await chargeMutation.mutateAsync({
         projectId,
         request: {
           projectId,
@@ -861,18 +867,16 @@ export function CreateChargeModal({
           billableAmount: billable,
           idempotencyKey: `charge-${Date.now()}`
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled
+    }
   };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("dialogs.createChargeTitle")} size="small">
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="create-charge-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.description")} *
@@ -921,7 +925,12 @@ export function CreateChargeModal({
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={chargeMutation.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={chargeMutation.isPending}
+            data-testid="btn-submit-charge"
+          >
             {t("actions.save")}
           </Button>
         </div>
@@ -936,46 +945,62 @@ export function RequestInvoiceModal({
   onClose,
   projectId,
   eligibleAmount,
-  currencyCode = "EGP"
+  currencyCode = "EGP",
+  defaultChargeId
 }: {
   isOpen: boolean;
   onClose: () => void;
   projectId: string;
   eligibleAmount: number;
   currencyCode?: string | undefined;
+  defaultChargeId?: string | undefined;
 }): React.JSX.Element {
   const { t } = useTranslation("projects");
   const invoiceMutation = useRequestInvoice();
 
-  const [requestedAmount, setRequestedAmount] = useState(String(eligibleAmount));
+  const [requestedAmount, setRequestedAmount] = useState(String(eligibleAmount || 0));
+  const [chargeId, setChargeId] = useState(defaultChargeId || "");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(requestedAmount);
     if (isNaN(val) || val <= 0) return;
 
-    invoiceMutation.mutate(
-      {
+    const chargeIds = chargeId.trim() ? [chargeId.trim()] : [];
+
+    try {
+      await invoiceMutation.mutateAsync({
         projectId,
         request: {
           projectId,
-          chargeIds: [],
+          chargeIds,
           currencyCode: currencyCode || "EGP",
           requestedAmount: val,
           idempotencyKey: `inv-req-${Date.now()}`
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled
+    }
   };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("dialogs.requestInvoiceTitle")} size="small">
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="request-invoice-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div>
+          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
+            {t("fields.chargeId")}
+          </label>
+          <input
+            type="text"
+            value={chargeId}
+            onChange={(e) => setChargeId(e.target.value)}
+            data-testid="input-charge-id"
+            style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+          />
+        </div>
+
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.requestedAmount")} ({currencyCode}) *
@@ -999,7 +1024,12 @@ export function RequestInvoiceModal({
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={invoiceMutation.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={invoiceMutation.isPending}
+            data-testid="btn-submit-invoice-req"
+          >
             {t("actions.requestInvoice")}
           </Button>
         </div>
@@ -1027,12 +1057,12 @@ export function NewChangeRequestModal({
   const [budgetDelta, setBudgetDelta] = useState("0");
   const [scheduleDeltaDays, setScheduleDeltaDays] = useState("0");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    changeMutation.mutate(
-      {
+    try {
+      await changeMutation.mutateAsync({
         projectId,
         request: {
           title: title.trim(),
@@ -1041,18 +1071,16 @@ export function NewChangeRequestModal({
           budgetDelta: parseFloat(budgetDelta || "0"),
           scheduleDeltaDays: parseInt(scheduleDeltaDays || "0", 10)
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled
+    }
   };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("dialogs.newChangeRequestTitle")} size="small">
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="new-change-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.title")} *
@@ -1122,7 +1150,12 @@ export function NewChangeRequestModal({
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={changeMutation.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={changeMutation.isPending}
+            data-testid="btn-submit-change"
+          >
             {t("actions.save")}
           </Button>
         </div>
@@ -1148,24 +1181,22 @@ export function DecideChangeModal({
 
   const [reason, setReason] = useState("");
 
-  const handleDecision = (decision: "approve" | "reject") => {
+  const handleDecision = async (decision: "approve" | "reject") => {
     if (!change) return;
 
-    decideMutation.mutate(
-      {
+    try {
+      await decideMutation.mutateAsync({
         projectId,
         changeId: change.id,
         request: {
           decision,
           reason: reason.trim() || null
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled
+    }
   };
 
   return (
@@ -1198,6 +1229,7 @@ export function DecideChangeModal({
             type="button"
             isDisabled={decideMutation.isPending}
             onClick={() => handleDecision("reject")}
+            data-testid="btn-decide-reject"
           >
             {t("actions.reject")}
           </Button>
@@ -1206,6 +1238,7 @@ export function DecideChangeModal({
             type="button"
             isDisabled={decideMutation.isPending}
             onClick={() => handleDecision("approve")}
+            data-testid="btn-decide-approve"
           >
             {t("actions.approve")}
           </Button>
@@ -1233,13 +1266,13 @@ export function CapitalHandoffModal({
   const [costFactId, setCostFactId] = useState("");
   const [amount, setAmount] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(amount);
     if (isNaN(val) || val <= 0 || !costFactId.trim()) return;
 
-    handoffMutation.mutate(
-      {
+    try {
+      await handoffMutation.mutateAsync({
         projectId,
         request: {
           costFactId: costFactId.trim(),
@@ -1247,18 +1280,16 @@ export function CapitalHandoffModal({
           currencyCode: currencyCode || "EGP",
           idempotencyKey: `handoff-${Date.now()}`
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled
+    }
   };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("dialogs.capitalHandoffTitle")} size="small">
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="capital-handoff-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.costFactId")}
@@ -1291,7 +1322,12 @@ export function CapitalHandoffModal({
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={handoffMutation.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={handoffMutation.isPending}
+            data-testid="btn-submit-capital-handoff"
+          >
             {t("actions.save")}
           </Button>
         </div>
@@ -1495,30 +1531,28 @@ export function AddCloseExceptionModal({
   const [referenceId, setReferenceId] = useState("");
   const [message, setMessage] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim()) return;
 
-    exceptionMutation.mutate(
-      {
+    try {
+      await exceptionMutation.mutateAsync({
         projectId,
         request: {
           exceptionType,
           referenceId: referenceId.trim() || null,
           message: message.trim()
         }
-      },
-      {
-        onSuccess: () => {
-          onClose();
-        }
-      }
-    );
+      });
+      onClose();
+    } catch {
+      // Handled
+    }
   };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("dialogs.addCloseExceptionTitle")} size="small">
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form id="add-close-exception-form" onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.exceptionType")} *
@@ -1561,7 +1595,12 @@ export function AddCloseExceptionModal({
           <Button variant="secondary" onClick={onClose} type="button">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" isDisabled={exceptionMutation.isPending}>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={exceptionMutation.isPending}
+            data-testid="btn-submit-close-exception"
+          >
             {t("actions.save")}
           </Button>
         </div>

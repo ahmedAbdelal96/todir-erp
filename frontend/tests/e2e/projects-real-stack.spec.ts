@@ -76,6 +76,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
     await expect(page.locator('[data-testid="kpi-portfolio-budget"]')).toBeVisible();
 
     // 3. Verify Live PostgreSQL Seeded Projects in the Register Table
+    await page.locator('[data-testid="input-search-projects"]').fill('PRJ-0000122');
     await expect(page.getByText('PRJ-0000122')).toBeVisible({ timeout: 15000 });
 
     // Capture Real Screenshot 01
@@ -114,7 +115,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
 
     // Navigate to live seeded project's financials tab
     await page.goto(`/projects/${SEEDED_CUSTOMER_PROJECT_ID}?tab=financials`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Verify Title & Number from Live Database
     await expect(page.getByText('PRJ-0000122')).toBeVisible({ timeout: 15000 });
@@ -143,7 +144,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
     await loginAsAdmin(page);
 
     await page.goto(`/projects/${SEEDED_CUSTOMER_PROJECT_ID}?tab=tasks`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Verify Tasks Subtab & Add Task Button
     await expect(page.locator('[data-testid="btn-add-task"]')).toBeVisible({ timeout: 15000 });
@@ -165,7 +166,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
     await loginAsAdmin(page);
 
     await page.goto(`/projects/${SEEDED_CUSTOMER_PROJECT_ID}?tab=team`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Verify Team Subtab & Add Team Member Button
     await expect(page.locator('[data-testid="btn-add-team"]')).toBeVisible({ timeout: 15000 });
@@ -187,7 +188,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
     await loginAsAdmin(page);
 
     await page.goto(`/projects/${SEEDED_CUSTOMER_PROJECT_ID}?tab=time`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Verify Log Time Action Button
     await expect(page.locator('[data-testid="btn-log-time"]')).toBeVisible({ timeout: 15000 });
@@ -201,7 +202,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
     await loginAsAdmin(page);
 
     await page.goto(`/projects/${SEEDED_CUSTOMER_PROJECT_ID}?tab=billing`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Verify Billing KPIs
     await expect(page.locator('[data-testid="kpi-billing-eligible"]')).toBeVisible({ timeout: 15000 });
@@ -226,13 +227,13 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
 
     // 1. On Customer Project: verify Capital Handoff tab is NOT visible
     await page.goto(`/projects/${SEEDED_CUSTOMER_PROJECT_ID}?tab=changes`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await expect(page.locator('[data-testid="btn-new-change"]')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('[data-testid="tab-capital"]')).not.toBeVisible();
 
     // 2. On Real Capital Project: verify Capital Handoff tab IS visible and accessible
     await page.goto(`/projects/${SEEDED_CAPITAL_PROJECT_ID}?tab=capital`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await expect(page.locator('[data-testid="tab-capital"]')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('[data-testid="btn-capital-handoff"]')).toBeVisible();
 
@@ -245,7 +246,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
     await loginAsAdmin(page);
 
     await page.goto(`/projects/${SEEDED_CUSTOMER_PROJECT_ID}?tab=closing`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Verify Close Action Buttons & Readiness State
     await expect(page.locator('[data-testid="btn-add-exception"]')).toBeVisible({ timeout: 15000 });
@@ -283,7 +284,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
     // 1. Test English LTR Mode using shell topbar toggle
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`/projects/${SEEDED_CUSTOMER_PROJECT_ID}?tab=financials`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const langBtn = page.locator('button.topbar-lang-btn').first();
     await expect(langBtn).toBeVisible({ timeout: 5000 });
@@ -301,7 +302,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack End-to-End
     // 2. Test Mobile 390px Viewport
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.locator('[data-testid="project-overview-strip"]')).toBeVisible();
     await saveArtifact(page, '11-real-projects-mobile-390px.png');

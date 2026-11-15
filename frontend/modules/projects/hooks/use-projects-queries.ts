@@ -39,7 +39,7 @@ import type {
 
 export const projectKeys = {
   all: ["projects"] as const,
-  list: (legalEntityId: string, params?: { search?: string; state?: string; page?: number; pageSize?: number }) =>
+  list: (legalEntityId: string, params?: { search?: string; state?: string; projectType?: string; page?: number; pageSize?: number }) =>
     ["projects", "list", legalEntityId, params] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
   financialSummary: (projectId: string) => ["projects", "financial-summary", projectId] as const,
@@ -75,7 +75,7 @@ export const projectKeys = {
 
 export function useProjectsList(
   legalEntityId: string | undefined,
-  params?: { search?: string; state?: string; page?: number; pageSize?: number }
+  params?: { search?: string; state?: string; projectType?: string; page?: number; pageSize?: number }
 ) {
   return useQuery({
     queryKey: projectKeys.list(legalEntityId || "", params),
@@ -594,6 +594,14 @@ export function useRequestInvoice() {
   });
 }
 
+export function useProjectChanges(projectId: string, params?: { page?: number; pageSize?: number }) {
+  return useQuery({
+    queryKey: [...projectKeys.detail(projectId), "changes", params],
+    queryFn: () => projectsApi.listChanges(projectId, params),
+    enabled: Boolean(projectId)
+  });
+}
+
 export function useCreateChange() {
   const qc = useQueryClient();
   return useMutation({
@@ -601,6 +609,7 @@ export function useCreateChange() {
       projectsApi.createChange(projectId, request),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: projectKeys.detail(vars.projectId) });
+      qc.invalidateQueries({ queryKey: [...projectKeys.detail(vars.projectId), "changes"] });
     }
   });
 }
@@ -620,6 +629,7 @@ export function useDecideChange() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: projectKeys.detail(vars.projectId) });
       qc.invalidateQueries({ queryKey: projectKeys.financialSummary(vars.projectId) });
+      qc.invalidateQueries({ queryKey: [...projectKeys.detail(vars.projectId), "changes"] });
     }
   });
 }

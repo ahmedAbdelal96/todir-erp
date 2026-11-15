@@ -95,7 +95,14 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
           <Button variant="secondary" onClick={onClose} type="button" data-testid="btn-cancel-project">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" form="new-project-form" isDisabled={createMutation.isPending} data-testid="btn-save-project">
+          <Button
+            variant="primary"
+            type="submit"
+            form="new-project-form"
+            onClick={() => (document.getElementById("new-project-form") as HTMLFormElement)?.requestSubmit()}
+            isDisabled={createMutation.isPending}
+            data-testid="btn-save-project"
+          >
             {t("actions.save")}
           </Button>
         </div>
@@ -339,7 +346,14 @@ export function FromSalesSourceModal({ isOpen, onClose, legalEntityId }: FromSal
           <Button variant="secondary" onClick={onClose} type="button" data-testid="btn-cancel-from-sales">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" form="from-sales-form" isDisabled={createMutation.isPending} data-testid="btn-save-from-sales">
+          <Button
+            variant="primary"
+            type="submit"
+            form="from-sales-form"
+            onClick={() => (document.getElementById("from-sales-form") as HTMLFormElement)?.requestSubmit()}
+            isDisabled={createMutation.isPending}
+            data-testid="btn-save-from-sales"
+          >
             {t("actions.save")}
           </Button>
         </div>
@@ -493,7 +507,14 @@ export function EditProjectModal({ isOpen, onClose, project }: EditProjectModalP
           <Button variant="secondary" onClick={onClose} type="button" data-testid="btn-cancel-edit-project">
             {t("actions.cancel")}
           </Button>
-          <Button variant="primary" type="submit" form="edit-project-form" isDisabled={updateMutation.isPending} data-testid="btn-save-edit-project">
+          <Button
+            variant="primary"
+            type="submit"
+            form="edit-project-form"
+            onClick={() => (document.getElementById("edit-project-form") as HTMLFormElement)?.requestSubmit()}
+            isDisabled={updateMutation.isPending}
+            data-testid="btn-save-edit-project"
+          >
             {t("actions.save")}
           </Button>
         </div>

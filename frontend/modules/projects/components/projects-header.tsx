@@ -73,7 +73,7 @@ export function ProjectsHeader({
       }}
     >
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", minWidth: 0, flex: 1 }}>
           {onBack && (
             <button
               type="button"
@@ -96,7 +96,7 @@ export function ProjectsHeader({
             </button>
           )}
 
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", minWidth: 0 }}>
             <span
               style={{
                 fontFamily: "monospace",
@@ -111,7 +111,17 @@ export function ProjectsHeader({
             >
               {project.projectNumber}
             </span>
-            <h1 style={{ margin: 0, fontSize: "1.375rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "1.375rem",
+                fontWeight: 700,
+                color: "var(--color-content-primary, #0f172a)",
+                wordBreak: "break-word",
+                overflowWrap: "anywhere",
+                maxWidth: "100%"
+              }}
+            >
               {project.name}
             </h1>
             <ProjectTypeBadge type={project.projectType} />

@@ -67,4 +67,4 @@ public sealed record CreateCloseExceptionRequest(string ExceptionType, string? R
 public sealed record ProjectCloseExceptionView(Guid Id, Guid ProjectId, Guid ProjectCloseId, string ExceptionType, string? ReferenceId, string Message, DateTimeOffset? ResolvedAt);
 public sealed record ProjectPortfolioItem(Guid Id, Guid LegalEntityId, string ProjectNumber, string Name, string LifecycleState, string ExecutionHealth, decimal Budget, decimal ActualCost, decimal OpenCommitment, decimal Eac, decimal BillingEligible, decimal Outstanding);
 public sealed record ProjectResourceLoadView(string ResourceKey, decimal AllocationPercent, int ProjectCount);
-public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, bool HasNext);
+public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, bool HasNext, int? TotalCount = null);

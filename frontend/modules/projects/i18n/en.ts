@@ -215,6 +215,8 @@ export const en = {
     priority: "Priority",
     status: "Status",
     assignedEmployee: "Assigned Employee",
+    employee: "Employee",
+    chargeId: "Charge ID",
     plannedStart: "Planned Start Date",
     plannedEnd: "Planned End Date",
     progressPercent: "Progress %",

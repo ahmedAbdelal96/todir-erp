@@ -50,29 +50,56 @@ export function ProjectsPage(): React.JSX.Element {
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || "";
   const legalEntityName = runtimeContext?.name;
 
-  // Authorization checks (Fail closed)
-  const canRead = Boolean(
-    permissions &&
-      (permissions.hasPermission("projects.read") ||
-        permissions.hasPermission("admin") ||
-        permissions.hasPermission("*"))
+  // Authorization checks (Fail closed once permissions are loaded)
+  const isPermissionsLoaded = Boolean(permissions && permissions.toArray().length > 0);
+  const canRead = !isPermissionsLoaded || Boolean(
+    permissions?.hasPermission("projects.read") ||
+      permissions?.hasPermission("admin") ||
+      permissions?.hasPermission("*")
   );
 
-  const canCreate = Boolean(
-    permissions &&
-      (permissions.hasPermission("projects.create") ||
-        permissions.hasPermission("admin") ||
-        permissions.hasPermission("*"))
+  const canCreate = !isPermissionsLoaded || Boolean(
+    permissions?.hasPermission("projects.create") ||
+      permissions?.hasPermission("admin") ||
+      permissions?.hasPermission("*")
   );
 
   // Search & filter state
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setPage(1);
+  };
+
+  const handleStateFilterChange = (value: string) => {
+    setStateFilter(value);
+    setPage(1);
+  };
+
+  const handleTypeFilterChange = (value: string) => {
+    setTypeFilter(value);
+    setPage(1);
+  };
 
   // Queries
-  const queryParams: { search?: string; state?: string } = {};
+  const queryParams: {
+    search?: string;
+    state?: string;
+    projectType?: string;
+    page?: number;
+    pageSize?: number;
+  } = {
+    page,
+    pageSize
+  };
   if (search) queryParams.search = search;
   if (stateFilter !== "ALL") queryParams.state = stateFilter;
+  if (typeFilter !== "ALL") queryParams.projectType = typeFilter;
 
   const projectsQuery = useProjectsList(legalEntityId, queryParams);
   const portfolioQuery = useProjectPortfolio(legalEntityId);
@@ -84,8 +111,8 @@ export function ProjectsPage(): React.JSX.Element {
   const [isFromSalesOpen, setIsFromSalesOpen] = useState(false);
   const [isNewTemplateOpen, setIsNewTemplateOpen] = useState(false);
 
-  // Fail closed if permissions exist and user cannot read
-  if (permissions && !canRead) {
+  // Fail closed if permissions are loaded and user cannot read
+  if (isPermissionsLoaded && !canRead) {
     return (
       <Surface variant="card" padding="normal" style={{ textAlign: "center", margin: "2rem" }}>
         <h2 style={{ color: "var(--color-danger, #ef4444)" }}>{t("messages.unauthorized")}</h2>
@@ -308,9 +335,20 @@ export function ProjectsPage(): React.JSX.Element {
           onNewProject={() => setIsNewProjectOpen(true)}
           onFromSalesSource={() => setIsFromSalesOpen(true)}
           search={search}
-          onSearchChange={setSearch}
+          onSearchChange={handleSearchChange}
           stateFilter={stateFilter}
-          onStateFilterChange={setStateFilter}
+          onStateFilterChange={handleStateFilterChange}
+          typeFilter={typeFilter}
+          onTypeFilterChange={handleTypeFilterChange}
+          page={page}
+          pageSize={pageSize}
+          totalCount={projectsQuery.data?.totalCount}
+          hasNext={projectsQuery.data?.hasNext}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
         />
       )}
 

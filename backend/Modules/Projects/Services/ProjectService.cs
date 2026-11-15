@@ -20,7 +20,7 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
             ?? throw new ProjectException("projects.sales_source_not_accepted");
         return await repository.CreateFromSalesSourceAsync(tenant, actor, membership, request, source, correlationId, ct);
     }
-    public Task<PagedResult<ProjectListItem>> ListAsync(TenantId tenant, Guid legalEntityId, string? search, string? state, int page, int pageSize, CancellationToken ct) => repository.ListAsync(tenant, legalEntityId, search, state, page, pageSize, ct);
+    public Task<PagedResult<ProjectListItem>> ListAsync(TenantId tenant, Guid legalEntityId, string? search, string? state, string? projectType, int page, int pageSize, CancellationToken ct) => repository.ListAsync(tenant, legalEntityId, search, state, projectType, page, pageSize, ct);
     public Task<ProjectDetail?> GetAsync(TenantId tenant, Guid projectId, CancellationToken ct) => repository.GetAsync(tenant, projectId, ct);
     public Task<ProjectDetail> UpdateAsync(TenantId tenant, Guid actor, Guid projectId, UpdateProjectRequest request, CancellationToken ct) => repository.UpdateAsync(tenant, actor, projectId, request, ct);
     public Task<ProjectDetail> TransitionAsync(TenantId tenant, Guid actor, Guid projectId, string state, long version, CancellationToken ct) => repository.TransitionAsync(tenant, actor, projectId, state, version, ct);
@@ -83,6 +83,7 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
         return await repository.ApplyInvoiceResultAsync(tenant, actor, invoiceRequest.Id, new ApplyInvoiceResultRequest("Accepted", invoiceId), ct);
     }
     public Task<InvoiceRequestView> ApplyInvoiceResultAsync(TenantId tenant, Guid actor, Guid invoiceRequestId, ApplyInvoiceResultRequest request, CancellationToken ct) => repository.ApplyInvoiceResultAsync(tenant, actor, invoiceRequestId, request, ct);
+    public Task<PagedResult<ChangeRequestView>> ListChangesAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => repository.ListChangesAsync(tenant, projectId, page, pageSize, ct);
     public Task<ChangeRequestView> CreateChangeAsync(TenantId tenant, Guid actor, Guid projectId, CreateChangeRequest request, CancellationToken ct) => repository.CreateChangeAsync(tenant, actor, projectId, request, ct);
     public Task<ChangeRequestView> DecideChangeAsync(TenantId tenant, Guid actor, Guid projectId, Guid changeId, ChangeDecisionRequest request, CancellationToken ct) => repository.DecideChangeAsync(tenant, actor, projectId, changeId, request, ct);
     public Task<CloseView> GetCloseReadinessAsync(TenantId tenant, Guid projectId, CancellationToken ct) => repository.CloseReadinessAsync(tenant, projectId, ct);

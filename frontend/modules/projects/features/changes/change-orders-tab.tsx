@@ -128,7 +128,12 @@ export function ChangeOrdersTab({
                     </td>
                     <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
                       {change.status !== "Approved" && change.status !== "Rejected" && (
-                        <Button variant="secondary" size="compact" onClick={() => onDecideChange(change)}>
+                        <Button
+                          variant="secondary"
+                          size="compact"
+                          onClick={() => onDecideChange(change)}
+                          data-testid="btn-open-decide-change"
+                        >
                           {t("actions.decideChange")}
                         </Button>
                       )}

@@ -2,6 +2,7 @@
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { Pagination } from "../../../../components/primitives/pagination.tsx";
 import { ProjectMoney } from "../../components/project-money.tsx";
 import { ProjectsKpiCard } from "../../components/projects-kpi-card.tsx";
 import { ProjectStatusBadge } from "../../components/project-status-badge.tsx";
@@ -28,6 +29,14 @@ export interface ProjectPortfolioTabProps {
   readonly onSearchChange: (search: string) => void;
   readonly stateFilter: string;
   readonly onStateFilterChange: (state: string) => void;
+  readonly typeFilter: string;
+  readonly onTypeFilterChange: (type: string) => void;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly totalCount?: number | undefined;
+  readonly hasNext?: boolean | undefined;
+  readonly onPageChange: (page: number) => void;
+  readonly onPageSizeChange?: ((pageSize: number) => void) | undefined;
 }
 
 export function ProjectPortfolioTab({
@@ -40,16 +49,18 @@ export function ProjectPortfolioTab({
   search,
   onSearchChange,
   stateFilter,
-  onStateFilterChange
+  onStateFilterChange,
+  typeFilter,
+  onTypeFilterChange,
+  page,
+  pageSize,
+  totalCount,
+  hasNext,
+  onPageChange,
+  onPageSizeChange
 }: ProjectPortfolioTabProps): React.JSX.Element {
   const { t } = useTranslation("projects");
   const isMobile = useIsMobile();
-  const [typeFilter, setTypeFilter] = useState<string>("ALL");
-
-  const filteredProjects = projects.filter((p) => {
-    if (typeFilter !== "ALL" && p.projectType !== typeFilter) return false;
-    return true;
-  });
 
   const totalProjects = projects.length;
   const activeProjects = projects.filter((p) => p.lifecycleState === "Active").length;
@@ -69,7 +80,11 @@ export function ProjectPortfolioTab({
         <ProjectsKpiCard
           title={t("kpis.displayedProjects")}
           value={totalProjects}
-          subtitle={`${activeProjects} ${t("states.Active")}`}
+          subtitle={
+            totalCount !== undefined
+              ? `${t("pagination.total", { defaultValue: "الإجمالي" })}: ${totalCount}`
+              : `${activeProjects} ${t("states.Active")}`
+          }
           tone="primary"
           icon={<ProjectBriefcaseIcon size={20} />}
           data-testid="kpi-total-projects"
@@ -121,6 +136,7 @@ export function ProjectPortfolioTab({
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={t("actions.search")}
+            data-testid="input-search-projects"
             style={{
               padding: "0.5rem 0.75rem",
               borderRadius: "var(--radius-md, 8px)",
@@ -152,7 +168,7 @@ export function ProjectPortfolioTab({
 
           <select
             value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
+            onChange={(e) => onTypeFilterChange(e.target.value)}
             style={{
               padding: "0.5rem 0.75rem",
               borderRadius: "var(--radius-md, 8px)",
@@ -184,14 +200,14 @@ export function ProjectPortfolioTab({
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
             {t("actions.refresh")}...
           </div>
-        ) : filteredProjects.length === 0 ? (
+        ) : projects.length === 0 ? (
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
             {t("messages.noProjectsFound")}
           </div>
         ) : isMobile ? (
           /* Mobile Card View */
           <div style={{ display: "flex", flexDirection: "column" }}>
-            {filteredProjects.map((p) => (
+            {projects.map((p) => (
               <div
                 key={p.id}
                 onClick={() => onSelectProject(p.id)}
@@ -252,7 +268,7 @@ export function ProjectPortfolioTab({
                 </tr>
               </thead>
               <tbody>
-                {filteredProjects.map((p) => (
+                {projects.map((p) => (
                   <tr
                     key={p.id}
                     onClick={() => onSelectProject(p.id)}
@@ -301,6 +317,37 @@ export function ProjectPortfolioTab({
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Server-Side Pagination Footer */}
+        {!isLoading && projects.length > 0 && (
+          <div
+            style={{
+              padding: "0.75rem 1.25rem",
+              borderTop: "1px solid var(--color-border-subtle, #e2e8f0)",
+              background: "var(--color-surface-subtle, #f8fafc)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "0.75rem"
+            }}
+          >
+            <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }}>
+              {totalCount !== undefined
+                ? `${t("pagination.total", { defaultValue: "إجمالي السجلات" })}: ${totalCount}`
+                : `${projects.length} ${t("kpis.displayedProjects")}`}
+            </div>
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              totalItems={totalCount}
+              totalPages={totalCount !== undefined ? Math.max(1, Math.ceil(totalCount / pageSize)) : (hasNext ? page + 1 : page)}
+              onPageChange={onPageChange}
+              onPageSizeChange={onPageSizeChange}
+              size="compact"
+            />
           </div>
         )}
       </Surface>
