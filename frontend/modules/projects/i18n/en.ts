@@ -79,7 +79,14 @@ export const en = {
     collected: "Actual Collected",
     outstanding: "Outstanding Receivables",
     expectedMargin: "Expected Profit Margin",
-    revenueBasis: "Revenue Basis"
+    revenueBasis: "Revenue Basis",
+    percentOfBudget: "{{percent}}% of Budget",
+    percentCommitments: "{{percent}}% Open Commitments",
+    withinBudget: "Within Budget Limits",
+    budgetOverrun: "Projected Budget Overrun",
+    operationalFollowupRequired: "Operational Follow-up Required",
+    allProjectsStable: "All Projects Stable",
+    actualSpentWithCurrency: "Spent: {{amount}} {{currency}}"
   },
   types: {
     CustomerProject: "Customer Project",
@@ -149,6 +156,32 @@ export const en = {
     Approved: "Approved",
     Rejected: "Rejected",
     Cancelled: "Cancelled"
+  },
+  allocationStatuses: {
+    Planned: "Planned",
+    Confirmed: "Confirmed",
+    Released: "Released",
+    Cancelled: "Cancelled"
+  },
+  requirementStatuses: {
+    Open: "Open & Pending Allocation",
+    Fulfilled: "Fully Fulfilled",
+    Cancelled: "Cancelled"
+  },
+  deliverableStatuses: {
+    Draft: "Draft",
+    Submitted: "Submitted for Acceptance",
+    Accepted: "Accepted by Customer",
+    Rejected: "Rejected"
+  },
+  closeExceptionTypes: {
+    TOLERANCE_OVERRUN: "Cost Tolerance Overrun",
+    UNAPPROVED_TIME: "Unapproved Timesheets",
+    OPEN_COMMITMENT: "Open Purchase Commitments",
+    PENDING_DELIVERABLE: "Pending Deliverables",
+    UNBILLED_CHARGE: "Unbilled Eligible Charges",
+    OUTSTANDING_AR: "Outstanding Receivables",
+    MANUAL_OVERRIDE: "Manual Exception Override"
   },
   fields: {
     projectNumber: "Project Number",
@@ -292,7 +325,9 @@ export const en = {
     noExceptions: "No project close exceptions recorded.",
     noTemplates: "No project templates recorded.",
     closeReady: "Project meets all financial and operational conditions and is ready for final closing.",
+    closeReadyDesc: "All billing, timesheets, and purchase commitments have been audited; no open closing blockers exist.",
     closeBlocked: "Cannot close project due to open financial and operational blockers that must be resolved first.",
+    closeBlockedDesc: "Open blockers, unbilled charges, or pending timesheets must be settled before final closing.",
     confirmClose: "Are you sure you want to close this project financially? No further costs will be allowed.",
     confirmReopen: "Do you want to reopen this project to resume operations?",
     confirmTransition: "Confirm changing project state to:",
@@ -336,6 +371,18 @@ export const en = {
     billingHelp: "Manage billing rules, milestone schedules, eligible charges, and generate official invoice requests for customer billing.",
     changesHelp: "Manage Change Orders while preserving the original commercial contract baseline without revision rewrite.",
     capitalHelp: "For capital construction projects: identify capitalizable costs and hand them off directly to Fixed Assets as construction-in-progress (CIP).",
-    closingHelp: "Financial pre-closing audit to prevent revenue leakage, unapproved timesheets, or open purchase commitments."
+    closingHelp: "Financial pre-closing audit to prevent revenue leakage, unapproved timesheets, or open purchase commitments.",
+    timesheetPolicy: "Project operations timesheets track delivery hours and cost allocation evaluated against rate cards upon finalization, distinct from general employee attendance.",
+    capitalBillingNotice: "Capital projects are strictly non-billable; costs accumulate as capital assets in progress (CIP)"
+  },
+  errors: {
+    customerRequired: "Customer is required for customer projects.",
+    dateRangeInvalid: "Target end date must be on or after start date."
+  },
+  status: {
+    pendingCalculation: "Pending Rate Finalization"
+  },
+  tooltips: {
+    rateCardPending: "Cost and billing amounts are evaluated against the rate card upon finalization"
   }
 } as const;

@@ -2,6 +2,8 @@
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { PartyPicker } from "../../../directory/public.ts";
+import { HrEmployeePicker } from "../../../hr/public.ts";
 import { useCreateProject, useCreateProjectFromSalesSource, useUpdateProject } from "../../hooks/use-projects-queries.ts";
 import type { ProjectDetail, ProjectType, ProjectBillingModel, ProjectExecutionHealth } from "../../types.ts";
 
@@ -17,23 +19,57 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
 
   const [name, setName] = useState("");
   const [projectType, setProjectType] = useState<ProjectType>("CustomerProject");
+  const [customerPartyId, setCustomerPartyId] = useState<string | null>(null);
+  const [projectManagerEmployeeId, setProjectManagerEmployeeId] = useState<string | null>(null);
   const [billingModel, setBillingModel] = useState<ProjectBillingModel>("TimeAndMaterials");
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [targetEndDate, setTargetEndDate] = useState("");
   const [currencyCode, setCurrencyCode] = useState("EGP");
   const [initialBudget, setInitialBudget] = useState("");
   const [description, setDescription] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const handleProjectTypeChange = (newType: ProjectType) => {
+    setProjectType(newType);
+    setValidationError(null);
+    if (newType === "CapitalProject") {
+      setBillingModel("NonBillable");
+      setCustomerPartyId(null);
+    } else if (newType === "InternalProject") {
+      setCustomerPartyId(null);
+      if (billingModel !== "TimeAndMaterials" && billingModel !== "NonBillable") {
+        setBillingModel("NonBillable");
+      }
+    } else if (newType === "CustomerProject") {
+      if (billingModel === "NonBillable") {
+        setBillingModel("TimeAndMaterials");
+      }
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError(null);
     if (!name.trim()) return;
+
+    if (projectType === "CustomerProject" && !customerPartyId) {
+      setValidationError(t("errors.customerRequired"));
+      return;
+    }
+
+    if (targetEndDate && targetEndDate < startDate) {
+      setValidationError(t("errors.dateRangeInvalid"));
+      return;
+    }
 
     createMutation.mutate(
       {
         legalEntityId,
         name: name.trim(),
         projectType,
-        billingModel,
+        customerPartyId: projectType === "CustomerProject" ? customerPartyId : null,
+        projectManagerEmployeeId: projectManagerEmployeeId || null,
+        billingModel: projectType === "CapitalProject" ? "NonBillable" : billingModel,
         startDate,
         targetEndDate: targetEndDate ? targetEndDate : null,
         currencyCode: currencyCode ? currencyCode.toUpperCase() : "EGP",
@@ -56,6 +92,23 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
       size="medium"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        {(validationError || createMutation.isError) && (
+          <div
+            role="alert"
+            style={{
+              padding: "0.75rem 1rem",
+              borderRadius: "6px",
+              background: "#fef2f2",
+              border: "1px solid #fca5a5",
+              color: "#991b1b",
+              fontSize: "0.875rem",
+              fontWeight: 600
+            }}
+          >
+            {validationError || t("messages.operationFailed")}
+          </div>
+        )}
+
         <div>
           <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
             {t("fields.name")} *
@@ -76,7 +129,7 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
             </label>
             <select
               value={projectType}
-              onChange={(e) => setProjectType(e.target.value as ProjectType)}
+              onChange={(e) => handleProjectTypeChange(e.target.value as ProjectType)}
               style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", background: "#ffffff", boxSizing: "border-box" }}
             >
               <option value="CustomerProject">{t("types.CustomerProject")}</option>
@@ -89,18 +142,58 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
             <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
               {t("fields.billingModel")}
             </label>
-            <select
-              value={billingModel}
-              onChange={(e) => setBillingModel(e.target.value as ProjectBillingModel)}
-              style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", background: "#ffffff", boxSizing: "border-box" }}
-            >
-              <option value="TimeAndMaterials">{t("billingModels.TimeAndMaterials")}</option>
-              <option value="FixedPrice">{t("billingModels.FixedPrice")}</option>
-              <option value="Milestone">{t("billingModels.Milestone")}</option>
-              <option value="CostPlus">{t("billingModels.CostPlus")}</option>
-              <option value="NonBillable">{t("billingModels.NonBillable")}</option>
-            </select>
+            {projectType === "CapitalProject" ? (
+              <div>
+                <select
+                  disabled
+                  value="NonBillable"
+                  style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", background: "#f1f5f9", color: "#64748b", boxSizing: "border-box" }}
+                >
+                  <option value="NonBillable">{t("billingModels.NonBillable")}</option>
+                </select>
+                <span style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.25rem", display: "block" }}>
+                  {t("help.capitalBillingNotice")}
+                </span>
+              </div>
+            ) : (
+              <select
+                value={billingModel}
+                onChange={(e) => setBillingModel(e.target.value as ProjectBillingModel)}
+                style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", background: "#ffffff", boxSizing: "border-box" }}
+              >
+                <option value="TimeAndMaterials">{t("billingModels.TimeAndMaterials")}</option>
+                <option value="FixedPrice">{t("billingModels.FixedPrice")}</option>
+                <option value="Milestone">{t("billingModels.Milestone")}</option>
+                <option value="CostPlus">{t("billingModels.CostPlus")}</option>
+                <option value="NonBillable">{t("billingModels.NonBillable")}</option>
+              </select>
+            )}
           </div>
+        </div>
+
+        {projectType === "CustomerProject" && (
+          <div>
+            <PartyPicker
+              label={`${t("fields.customer")} *`}
+              value={customerPartyId ?? undefined}
+              onChange={(partyId) => {
+                setCustomerPartyId(partyId || null);
+                setValidationError(null);
+              }}
+              roleFilter="Customer"
+              isRequired
+              enableQuickCreate={true}
+            />
+          </div>
+        )}
+
+        <div>
+          <HrEmployeePicker
+            label={t("fields.manager")}
+            value={projectManagerEmployeeId}
+            onChange={(empId) => setProjectManagerEmployeeId(empId || null)}
+            legalEntityId={legalEntityId}
+          />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
@@ -112,8 +205,12 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
               type="date"
               required
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setValidationError(null);
+              }}
+              dir="ltr"
+              style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box", textAlign: "start" }}
             />
           </div>
 
@@ -124,8 +221,12 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
             <input
               type="date"
               value={targetEndDate}
-              onChange={(e) => setTargetEndDate(e.target.value)}
-              style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
+              onChange={(e) => {
+                setTargetEndDate(e.target.value);
+                setValidationError(null);
+              }}
+              dir="ltr"
+              style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box", textAlign: "start" }}
             />
           </div>
         </div>
@@ -197,6 +298,7 @@ export function FromSalesSourceModal({ isOpen, onClose, legalEntityId }: FromSal
   const [name, setName] = useState("");
   const [quotationId, setQuotationId] = useState("");
   const [acceptedRevision, setAcceptedRevision] = useState(1);
+  const [projectManagerEmployeeId, setProjectManagerEmployeeId] = useState<string | null>(null);
   const [billingModel, setBillingModel] = useState<ProjectBillingModel>("FixedPrice");
   const [initialBudget, setInitialBudget] = useState("");
   const [description, setDescription] = useState("");
@@ -211,6 +313,7 @@ export function FromSalesSourceModal({ isOpen, onClose, legalEntityId }: FromSal
         quotationId: quotationId.trim(),
         acceptedRevision: Number(acceptedRevision),
         name: name.trim(),
+        projectManagerEmployeeId: projectManagerEmployeeId || null,
         billingModel,
         initialBudget: initialBudget ? parseFloat(initialBudget) : null,
         description: description.trim() ? description.trim() : null,
@@ -272,6 +375,15 @@ export function FromSalesSourceModal({ isOpen, onClose, legalEntityId }: FromSal
               style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
             />
           </div>
+        </div>
+
+        <div>
+          <HrEmployeePicker
+            label={t("fields.manager")}
+            value={projectManagerEmployeeId}
+            onChange={(empId) => setProjectManagerEmployeeId(empId || null)}
+            legalEntityId={legalEntityId}
+          />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>

@@ -2,6 +2,7 @@
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
 import { CloseShieldIcon, AlertTriangleIcon, CheckCircleIcon, PlusCircleIcon } from "../../components/projects-icons.tsx";
 import type { CloseView, ProjectCloseExceptionView, ProjectDetail } from "../../types.ts";
 
@@ -27,6 +28,27 @@ export function ProjectClosingTab({
   onReopenProject
 }: ProjectClosingTabProps): React.JSX.Element {
   const { t } = useTranslation("projects");
+
+  const getExceptionLabel = (exceptionType: string): string => {
+    switch (exceptionType) {
+      case "TOLERANCE_OVERRUN":
+        return t("closeExceptionTypes.TOLERANCE_OVERRUN");
+      case "UNAPPROVED_TIME":
+        return t("closeExceptionTypes.UNAPPROVED_TIME");
+      case "OPEN_COMMITMENT":
+        return t("closeExceptionTypes.OPEN_COMMITMENT");
+      case "PENDING_DELIVERABLE":
+        return t("closeExceptionTypes.PENDING_DELIVERABLE");
+      case "UNBILLED_CHARGE":
+        return t("closeExceptionTypes.UNBILLED_CHARGE");
+      case "OUTSTANDING_AR":
+        return t("closeExceptionTypes.OUTSTANDING_AR");
+      case "MANUAL_OVERRIDE":
+        return t("closeExceptionTypes.MANUAL_OVERRIDE");
+      default:
+        return exceptionType;
+    }
+  };
 
   const blockers = closeReadiness?.blockers ?? [];
   const isReady = blockers.length === 0 && project.lifecycleState === "ExecutionCompleted";
@@ -106,7 +128,11 @@ export function ProjectClosingTab({
               {isClosed ? t("states.Closed") : isReady ? t("messages.closeReady") : t("messages.closeBlocked")}
             </h3>
             <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: isReady ? "#047857" : blockers.length > 0 ? "#b91c1c" : "#64748b" }}>
-              {isReady ? t("messages.closeReady") : t("messages.closeBlocked")}
+              {isClosed
+                ? t("messages.operationSuccess")
+                : isReady
+                ? t("messages.closeReadyDesc")
+                : t("messages.closeBlockedDesc")}
             </p>
           </div>
         </div>
@@ -164,7 +190,13 @@ export function ProjectClosingTab({
               <tbody>
                 {closeExceptions.map((ex) => (
                   <tr key={ex.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
-                    <td style={{ padding: "0.75rem 1rem", fontWeight: 600 }}>{ex.exceptionType}</td>
+                    <td style={{ padding: "0.75rem 1rem", fontWeight: 600 }}>
+                      <StatusBadge
+                        intent="neutral"
+                        label={getExceptionLabel(ex.exceptionType)}
+                        size="small"
+                      />
+                    </td>
                     <td style={{ padding: "0.75rem 1rem", color: "var(--color-content-muted, #64748b)" }}>{ex.message}</td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       {ex.resolvedAt ? (

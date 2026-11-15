@@ -2,6 +2,7 @@
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
+import { StatusBadge, type StatusIntent } from "../../../../components/fields/status-badge.tsx";
 import { TeamUsersIcon, PlusCircleIcon } from "../../components/projects-icons.tsx";
 import type {
   ProjectTeamMemberView,
@@ -30,6 +31,62 @@ export function TeamResourcesTab({
 }: TeamResourcesTabProps): React.JSX.Element {
   const { t } = useTranslation("projects");
   const [subTab, setSubTab] = useState<"team" | "requirements" | "allocations">("team");
+
+  const requirementIntent = (status: string): StatusIntent => {
+    switch (status) {
+      case "Fulfilled":
+        return "success";
+      case "Open":
+        return "warning";
+      case "Cancelled":
+        return "danger";
+      default:
+        return "neutral";
+    }
+  };
+
+  const getRequirementStatusLabel = (status: string): string => {
+    switch (status) {
+      case "Open":
+        return t("requirementStatuses.Open");
+      case "Fulfilled":
+        return t("requirementStatuses.Fulfilled");
+      case "Cancelled":
+        return t("requirementStatuses.Cancelled");
+      default:
+        return status;
+    }
+  };
+
+  const allocationIntent = (status: string): StatusIntent => {
+    switch (status) {
+      case "Confirmed":
+        return "success";
+      case "Planned":
+        return "info";
+      case "Released":
+        return "warning";
+      case "Cancelled":
+        return "danger";
+      default:
+        return "neutral";
+    }
+  };
+
+  const getAllocationStatusLabel = (status: string): string => {
+    switch (status) {
+      case "Planned":
+        return t("allocationStatuses.Planned");
+      case "Confirmed":
+        return t("allocationStatuses.Confirmed");
+      case "Released":
+        return t("allocationStatuses.Released");
+      case "Cancelled":
+        return t("allocationStatuses.Cancelled");
+      default:
+        return status;
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -209,7 +266,13 @@ export function TeamResourcesTab({
                       <td style={{ padding: "0.75rem 1rem", color: "var(--color-content-muted, #64748b)" }}>
                         {req.requiredFrom || "—"}{req.requiredTo ? ` — ${req.requiredTo}` : ""}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem" }}>{req.status}</td>
+                      <td style={{ padding: "0.75rem 1rem" }}>
+                        <StatusBadge
+                          intent={requirementIntent(req.status)}
+                          label={getRequirementStatusLabel(req.status)}
+                          size="small"
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -242,7 +305,13 @@ export function TeamResourcesTab({
                       <td style={{ padding: "0.75rem 1rem", color: "var(--color-content-muted, #64748b)" }}>
                         {alloc.allocatedFrom}{alloc.allocatedTo ? ` — ${alloc.allocatedTo}` : ""}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem" }}>{alloc.status}</td>
+                      <td style={{ padding: "0.75rem 1rem" }}>
+                        <StatusBadge
+                          intent={allocationIntent(alloc.status)}
+                          label={getAllocationStatusLabel(alloc.status)}
+                          size="small"
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -76,6 +76,25 @@ export function TimesheetsTab({
         </Button>
       </Surface>
 
+      {/* Informative Timesheet Policy Callout */}
+      <Surface
+        variant="card"
+        style={{
+          padding: "0.875rem 1.25rem",
+          background: "var(--color-surface-subtle, #f8fafc)",
+          border: "1px solid var(--color-border-subtle, #e2e8f0)",
+          borderRadius: "var(--radius-md, 8px)",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "0.75rem"
+        }}
+      >
+        <ClockTimeIcon size={18} color="var(--color-brand-primary, #102a43)" style={{ marginTop: "0.125rem", flexShrink: 0 }} />
+        <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--color-content-secondary, #475569)", lineHeight: 1.5 }}>
+          {t("help.timesheetPolicy")}
+        </p>
+      </Surface>
+
       {/* Table */}
       <Surface
         variant="card"
@@ -138,14 +157,18 @@ export function TimesheetsTab({
                         {entry.costAmount !== null ? (
                           <ProjectMoney amount={entry.costAmount} currency={currency} />
                         ) : (
-                          <span style={{ color: "var(--color-content-subtle, #94a3b8)" }}>—</span>
+                          <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }} title={t("tooltips.rateCardPending")}>
+                            — ({t("status.pendingCalculation")})
+                          </span>
                         )}
                       </td>
                       <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>
                         {entry.billingAmount !== null ? (
                           <ProjectMoney amount={entry.billingAmount} currency={currency} />
                         ) : (
-                          <span style={{ color: "var(--color-content-subtle, #94a3b8)" }}>—</span>
+                          <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted, #64748b)" }} title={t("tooltips.rateCardPending")}>
+                            — ({t("status.pendingCalculation")})
+                          </span>
                         )}
                       </td>
                       <td style={{ padding: "0.75rem 1rem", textAlign: "end" }}>

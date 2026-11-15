@@ -181,7 +181,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Mocked UI & Visual In
         actualEndDate: null,
         lifecycleState: 'Active',
         executionHealth: 'OnTrack',
-        billingModel: 'CostPlus',
+        billingModel: 'NonBillable',
         currencyCode: 'EGP',
         version: 1,
         budget: 3200000,
@@ -228,6 +228,90 @@ test.describe('TODIR Projects & Operations (Module 23) — Mocked UI & Visual In
           body: JSON.stringify(mockProjects[0])
         });
       }
+    });
+
+    // Mock Capital Project Detail Route
+    await page.route(`**/api/v1/projects/${TEST_CAPITAL_PROJECT_ID}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockProjects[1])
+      });
+    });
+
+    await page.route(`**/api/v1/projects/${TEST_CAPITAL_PROJECT_ID}/financial-summary`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          budget: 3200000,
+          actualCost: 1100000,
+          openCommitment: 250000,
+          etc: 1850000,
+          eac: 3200000,
+          billingEligible: 0,
+          invoiced: 0,
+          collected: 0,
+          outstanding: 0,
+          expectedMargin: 0,
+          revenueBasis: 'NonBillable',
+          revenueBasisAmount: 0,
+          currencyCode: 'EGP'
+        })
+      });
+    });
+
+    await page.route(`**/api/v1/projects/${TEST_CAPITAL_PROJECT_ID}/**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], page: 1, pageSize: 20, hasNext: false })
+      });
+    });
+
+    // Mock Directory Parties (Customer Party Picker)
+    await page.route('**/api/v1/parties**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            {
+              id: 'pty-00000000-0001',
+              displayName: 'شركة الأفق للمقاولات والتطوير',
+              legalName: 'شركة الأفق للمقاولات والتطوير ش.م.م',
+              roles: [{ code: 'Customer', status: 'Active' }],
+              identifiers: [{ isPrimary: true, value: 'CR-104928' }],
+              addresses: [{ isDefault: true, city: 'القاهرة' }]
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          totalCount: 1,
+          hasNext: false
+        })
+      });
+    });
+
+    // Mock HR Employees (Project Manager Picker)
+    await page.route('**/api/v1/hr/employees**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            {
+              id: 'emp-00000000-0001',
+              displayName: 'م. أحمد الشناوي',
+              employmentNumber: 'EMP-001'
+            }
+          ],
+          page: 1,
+          pageSize: 100,
+          totalCount: 1,
+          hasNext: false
+        })
+      });
     });
 
     // Mock Financial Summary
@@ -606,24 +690,59 @@ test.describe('TODIR Projects & Operations (Module 23) — Mocked UI & Visual In
       });
     });
 
+    // Mock Portfolio
+    await page.route(`**/api/v1/projects/legal-entities/*/portfolio**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: mockProjects,
+          page: 1,
+          pageSize: 20,
+          totalCount: mockProjects.length,
+          hasNext: false
+        })
+      });
+    });
+
     // Mock Resource Load & Templates
-    await page.route(`**/api/v1/projects/resource-load**`, async (route) => {
+    await page.route(`**/api/v1/projects/legal-entities/*/resource-load**`, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify([
           {
-            resourceRef: 'م. أحمد الشريف',
-            totalAllocationPercent: 100,
-            projectAllocations: [
-              { projectNumber: 'PRJ-2026-001', allocationPercent: 100 }
-            ]
+            resourceKey: 'emp-00000000-0001',
+            allocationPercent: 100,
+            projectCount: 2
           }
         ])
       });
     });
 
     await page.route(`**/api/v1/projects/templates**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            {
+              id: 'tpl-001',
+              code: 'TPL-CONSTRUCTION',
+              name: 'نموذج مشاريع التشييد والإنشاءات الكبرى',
+              projectType: 'CustomerProject',
+              version: 1,
+              status: 'Active'
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          hasNext: false
+        })
+      });
+    });
+
+    await page.route(`**/api/v1/projects/legal-entities/*/templates**`, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -672,8 +791,8 @@ test.describe('TODIR Projects & Operations (Module 23) — Mocked UI & Visual In
     // Verify KPI Cards
     await expect(page.locator('[data-testid="kpi-total-projects"]')).toBeVisible();
     await expect(page.locator('[data-testid="kpi-active-projects"]')).toBeVisible();
-    await expect(page.locator('[data-testid="kpi-customer-projects"]')).toBeVisible();
-    await expect(page.locator('[data-testid="kpi-ontrack-projects"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kpi-atrisk-projects"]')).toBeVisible();
+    await expect(page.locator('[data-testid="kpi-portfolio-budget"]')).toBeVisible();
 
     // Verify Project Rows in Table
     await expect(page.getByText('PRJ-2026-001')).toBeVisible();
@@ -826,15 +945,19 @@ test.describe('TODIR Projects & Operations (Module 23) — Mocked UI & Visual In
   });
 
   test('08 — Change Orders & CIP Capital Handoff', async ({ page }) => {
+    // 1. Verify Change Orders on Customer Project, and ensure Capital tab is strictly hidden
     await page.goto(`/projects/${TEST_PROJECT_ID}?tab=changes`);
     await page.waitForLoadState('networkidle');
 
-    // Change Orders Tab
     await expect(page.locator('[data-testid="btn-new-change"]')).toBeVisible();
     await expect(page.locator('[data-testid="btn-create-baseline"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tab-capital"]')).not.toBeVisible();
 
-    // Capital Handoff Tab
-    await page.locator('[data-testid="tab-capital"]').click();
+    // 2. On Capital Project: Verify Capital Handoff tab is visible & accessible
+    await page.goto(`/projects/${TEST_CAPITAL_PROJECT_ID}?tab=capital`);
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.locator('[data-testid="tab-capital"]')).toBeVisible();
     await expect(page.locator('[data-testid="btn-capital-handoff"]')).toBeVisible();
 
     // Capture Changes & Capital

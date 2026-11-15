@@ -8,6 +8,7 @@ import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import {
   useProjectsList,
+  useProjectPortfolio,
   useResourceLoad,
   useProjectTemplates
 } from "../hooks/use-projects-queries.ts";
@@ -74,6 +75,7 @@ export function ProjectsPage(): React.JSX.Element {
   if (stateFilter !== "ALL") queryParams.state = stateFilter;
 
   const projectsQuery = useProjectsList(legalEntityId, queryParams);
+  const portfolioQuery = useProjectPortfolio(legalEntityId);
   const resourceLoadQuery = useResourceLoad(legalEntityId);
   const templatesQuery = useProjectTemplates(legalEntityId);
 
@@ -173,6 +175,7 @@ export function ProjectsPage(): React.JSX.Element {
             size="compact"
             onClick={() => {
               projectsQuery.refetch();
+              portfolioQuery.refetch();
               resourceLoadQuery.refetch();
               templatesQuery.refetch();
             }}
@@ -188,7 +191,7 @@ export function ProjectsPage(): React.JSX.Element {
                 variant="secondary"
                 size="compact"
                 onClick={() => setIsFromSalesOpen(true)}
-                data-testid="btn-header-from-sales"
+                data-testid="btn-from-sales"
               >
                 <PlusCircleIcon size={14} />
                 {t("actions.fromSalesSource")}
@@ -198,7 +201,7 @@ export function ProjectsPage(): React.JSX.Element {
                 variant="primary"
                 size="compact"
                 onClick={() => setIsNewProjectOpen(true)}
-                data-testid="btn-header-new-project"
+                data-testid="btn-new-project"
               >
                 <PlusCircleIcon size={14} />
                 {t("actions.newProject")}
@@ -299,7 +302,8 @@ export function ProjectsPage(): React.JSX.Element {
       {activeTab === "portfolio" && (
         <ProjectPortfolioTab
           projects={projects}
-          isLoading={projectsQuery.isLoading}
+          portfolioItems={portfolioQuery.data?.items}
+          isLoading={projectsQuery.isLoading || portfolioQuery.isLoading}
           onSelectProject={(projectId) => navigate(`/projects/${projectId}`)}
           onNewProject={() => setIsNewProjectOpen(true)}
           onFromSalesSource={() => setIsFromSalesOpen(true)}
@@ -312,7 +316,7 @@ export function ProjectsPage(): React.JSX.Element {
 
       {activeTab === "resourceLoad" && (
         <ResourceLoadTab
-          resourceLoad={resourceLoadQuery.data ?? []}
+          resourceLoad={Array.isArray(resourceLoadQuery.data) ? resourceLoadQuery.data : []}
           isLoading={resourceLoadQuery.isLoading}
         />
       )}

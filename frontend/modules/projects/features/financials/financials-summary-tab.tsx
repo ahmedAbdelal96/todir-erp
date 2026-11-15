@@ -117,7 +117,7 @@ export function FinancialsSummaryTab({
         <ProjectsKpiCard
           title={t("kpis.actualCost")}
           value={<ProjectMoney amount={actualCost} currency={currency} />}
-          subtitle={t("help.financialsHelp")}
+          subtitle={budget > 0 ? t("kpis.percentOfBudget", { percent: ((actualCost / budget) * 100).toFixed(0) }) : t("kpis.actualCost")}
           tone={actualCost > budget && budget > 0 ? "danger" : "default"}
           icon={<CalculatorBudgetIcon size={20} />}
           data-testid="kpi-actual-cost"
@@ -125,7 +125,7 @@ export function FinancialsSummaryTab({
         <ProjectsKpiCard
           title={t("kpis.openCommitments")}
           value={<ProjectMoney amount={openCommitment} currency={currency} />}
-          subtitle={t("help.financialsHelp")}
+          subtitle={budget > 0 ? t("kpis.percentCommitments", { percent: ((openCommitment / budget) * 100).toFixed(0) }) : t("kpis.openCommitments")}
           tone="warning"
           icon={<CalculatorBudgetIcon size={20} />}
           data-testid="kpi-open-commitments"
@@ -143,7 +143,7 @@ export function FinancialsSummaryTab({
         <ProjectsKpiCard
           title={t("kpis.eac")}
           value={<ProjectMoney amount={eac} currency={currency} />}
-          subtitle={t("fields.eacAmount")}
+          subtitle={budget > 0 ? (eac <= budget ? t("kpis.withinBudget") : t("kpis.budgetOverrun")) : t("fields.eacAmount")}
           tone={eac > budget && budget > 0 ? "danger" : "success"}
           icon={<CalculatorBudgetIcon size={20} />}
           data-testid="kpi-eac"
@@ -151,7 +151,7 @@ export function FinancialsSummaryTab({
         <ProjectsKpiCard
           title={t("kpis.expectedMargin")}
           value={<ProjectMoney amount={expectedMargin} currency={currency} />}
-          subtitle={t("kpis.revenueBasis")}
+          subtitle={`${revenueBasis} · ${revenueBasisAmount.toLocaleString()} ${currency}`}
           tone={marginTone}
           icon={<ReceiptBillingIcon size={20} />}
           data-testid="kpi-expected-margin"

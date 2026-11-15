@@ -345,7 +345,7 @@ export function TasksMilestonesTab({
                       <td style={{ padding: "0.75rem 1rem" }}>
                         <StatusBadge
                           intent={d.status === "Accepted" ? "success" : d.status === "Submitted" ? "info" : "neutral"}
-                          label={d.status}
+                          label={t(`deliverableStatuses.${d.status}` as const) || d.status}
                           size="small"
                         />
                       </td>

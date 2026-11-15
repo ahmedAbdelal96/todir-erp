@@ -19,7 +19,7 @@ import type { ProjectListItem, ProjectPortfolioItem } from "../../types.ts";
 
 export interface ProjectPortfolioTabProps {
   readonly projects: readonly ProjectListItem[];
-  readonly portfolioItems?: readonly ProjectPortfolioItem[];
+  readonly portfolioItems?: readonly ProjectPortfolioItem[] | undefined;
   readonly isLoading: boolean;
   readonly onSelectProject: (projectId: string) => void;
   readonly onNewProject: () => void;
@@ -32,6 +32,7 @@ export interface ProjectPortfolioTabProps {
 
 export function ProjectPortfolioTab({
   projects,
+  portfolioItems,
   isLoading,
   onSelectProject,
   onNewProject,
@@ -53,7 +54,13 @@ export function ProjectPortfolioTab({
   const totalProjects = projects.length;
   const activeProjects = projects.filter((p) => p.lifecycleState === "Active").length;
   const onTrackProjects = projects.filter((p) => p.executionHealth === "OnTrack").length;
-  const customerProjects = projects.filter((p) => p.projectType === "CustomerProject").length;
+  const atRiskProjects = projects.filter((p) => p.executionHealth === "AtRisk" || p.executionHealth === "OffTrack").length;
+  const totalBudget = portfolioItems && portfolioItems.length > 0
+    ? portfolioItems.reduce((acc, p) => acc + p.budget, 0)
+    : 0;
+  const totalActualCost = portfolioItems && portfolioItems.length > 0
+    ? portfolioItems.reduce((acc, p) => acc + p.actualCost, 0)
+    : 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -82,24 +89,24 @@ export function ProjectPortfolioTab({
           data-testid="kpi-active-projects"
         />
         <ProjectsKpiCard
-          title={t("types.CustomerProject")}
-          value={customerProjects}
-          subtitle={t("billingModels.TimeAndMaterials")}
-          tone="default"
+          title={t("health.AtRisk")}
+          value={atRiskProjects}
+          subtitle={atRiskProjects > 0 ? t("kpis.operationalFollowupRequired") : t("kpis.allProjectsStable")}
+          tone={atRiskProjects > 0 ? "warning" : "default"}
           icon={<ReceiptBillingIcon size={20} />}
-          data-testid="kpi-customer-projects"
+          data-testid="kpi-atrisk-projects"
         />
         <ProjectsKpiCard
-          title={t("health.OnTrack")}
-          value={onTrackProjects}
-          subtitle={t("health.OnTrack")}
-          tone="success"
+          title={t("kpis.totalBudget")}
+          value={totalBudget > 0 ? <ProjectMoney amount={totalBudget} currency="EGP" /> : totalProjects}
+          subtitle={totalActualCost > 0 ? t("kpis.actualSpentWithCurrency", { amount: totalActualCost.toLocaleString(), currency: "EGP" }) : `${onTrackProjects} ${t("health.OnTrack")}`}
+          tone={totalBudget > 0 ? "primary" : "success"}
           icon={<CalculatorBudgetIcon size={20} />}
-          data-testid="kpi-ontrack-projects"
+          data-testid="kpi-portfolio-budget"
         />
       </div>
 
-      {/* Filter & Action Bar */}
+      {/* Filter Bar */}
       <Surface
         variant="card"
         style={{
@@ -165,17 +172,6 @@ export function ProjectPortfolioTab({
             <option value="InternalProject">{t("types.InternalProject")}</option>
             <option value="CapitalProject">{t("types.CapitalProject")}</option>
           </select>
-        </div>
-
-        {/* Primary Action Buttons */}
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          <Button variant="secondary" size="compact" onClick={onFromSalesSource} data-testid="btn-from-sales">
-            {t("actions.fromSalesSource")}
-          </Button>
-          <Button variant="primary" size="compact" onClick={onNewProject} data-testid="btn-new-project">
-            <PlusCircleIcon size={16} style={{ marginInlineEnd: "0.25rem" }} />
-            {t("actions.newProject")}
-          </Button>
         </div>
       </Surface>
 

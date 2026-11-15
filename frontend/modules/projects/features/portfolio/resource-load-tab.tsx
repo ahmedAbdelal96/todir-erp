@@ -10,6 +10,7 @@ export interface ResourceLoadTabProps {
 
 export function ResourceLoadTab({ resourceLoad, isLoading }: ResourceLoadTabProps): React.JSX.Element {
   const { t } = useTranslation("projects");
+  const loadList = Array.isArray(resourceLoad) ? resourceLoad : [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -32,7 +33,7 @@ export function ResourceLoadTab({ resourceLoad, isLoading }: ResourceLoadTabProp
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
             {t("actions.refresh")}...
           </div>
-        ) : resourceLoad.length === 0 ? (
+        ) : loadList.length === 0 ? (
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted, #64748b)" }}>
             {t("messages.noTeam")}
           </div>
@@ -47,7 +48,7 @@ export function ResourceLoadTab({ resourceLoad, isLoading }: ResourceLoadTabProp
                 </tr>
               </thead>
               <tbody>
-                {resourceLoad.map((item) => {
+                {loadList.map((item) => {
                   const percent = Math.min(100, Math.max(0, item.allocationPercent));
                   const isOverallocated = item.allocationPercent > 100;
                   return (

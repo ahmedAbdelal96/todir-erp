@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useNavigate, useSearchParams, useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
@@ -7,6 +7,7 @@ import { useIsMobile } from "../hooks/use-is-mobile.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { ProjectsHeader } from "../components/projects-header.tsx";
+import { ProjectMoney } from "../components/project-money.tsx";
 import {
   useProjectDetail,
   useFinancialSummary,
@@ -184,6 +185,14 @@ export function ProjectWorkspacePage({
   const [isAddDocOpen, setIsAddDocOpen] = useState(false);
   const [isAddExceptionOpen, setIsAddExceptionOpen] = useState(false);
 
+  const project = projectQuery.data;
+
+  useEffect(() => {
+    if (activeTab === "capital" && project && project.projectType !== "CapitalProject") {
+      handleTabChange("financials");
+    }
+  }, [activeTab, project?.projectType]);
+
   // Fail closed if permissions exist and user cannot read
   if (permissions && !canRead) {
     return (
@@ -192,8 +201,6 @@ export function ProjectWorkspacePage({
       </Surface>
     );
   }
-
-  const project = projectQuery.data;
 
   if (projectQuery.isLoading) {
     return (
@@ -214,7 +221,7 @@ export function ProjectWorkspacePage({
     );
   }
 
-  const tabs: readonly { id: WorkspaceTabId; label: string; icon: React.ReactNode }[] = [
+  const allTabs: readonly { id: WorkspaceTabId; label: string; icon: React.ReactNode }[] = [
     { id: "financials", label: t("tabs.financials"), icon: <CalculatorBudgetIcon size={16} /> },
     { id: "tasks", label: t("tabs.tasks"), icon: <TasksKanbanIcon size={16} /> },
     { id: "team", label: t("tabs.team"), icon: <TeamUsersIcon size={16} /> },
@@ -225,6 +232,11 @@ export function ProjectWorkspacePage({
     { id: "documents", label: t("tabs.documents"), icon: <DocumentFolderIcon size={16} /> },
     { id: "closing", label: t("tabs.closing"), icon: <CloseShieldIcon size={16} /> }
   ];
+
+  // Restrict capital tab strictly to CapitalProject
+  const tabs = allTabs.filter(
+    (tab) => tab.id !== "capital" || project.projectType === "CapitalProject"
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", padding: isMobile ? "0.75rem" : "1.5rem" }}>
@@ -253,6 +265,69 @@ export function ProjectWorkspacePage({
           reopenProjectMutation.isPending
         }
       />
+
+      {/* Executive Overview & Quick Metrics Strip */}
+      <Surface
+        variant="card"
+        style={{
+          padding: "1rem 1.25rem",
+          background: "var(--color-surface-card, #ffffff)",
+          border: "1px solid var(--color-border-default, #cbd5e1)",
+          borderRadius: "var(--radius-lg, 12px)",
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)",
+          gap: "1rem"
+        }}
+      >
+        <div>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
+            {t("kpis.totalBudget")}
+          </span>
+          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+            <ProjectMoney amount={summaryQuery.data?.budget ?? project.budget} currency={project.currencyCode || "EGP"} />
+          </span>
+        </div>
+
+        <div>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
+            {t("kpis.actualCost")}
+          </span>
+          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-brand-primary, #102a43)" }}>
+            <ProjectMoney amount={summaryQuery.data?.actualCost ?? project.actualCost} currency={project.currencyCode || "EGP"} />
+          </span>
+        </div>
+
+        <div>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
+            {t("kpis.openCommitments")}
+          </span>
+          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-status-warning, #d97706)" }}>
+            <ProjectMoney amount={summaryQuery.data?.openCommitment ?? project.openCommitment} currency={project.currencyCode || "EGP"} />
+          </span>
+        </div>
+
+        <div>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
+            {t("kpis.eac")}
+          </span>
+          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-content-primary, #0f172a)" }}>
+            <ProjectMoney amount={summaryQuery.data?.eac ?? project.eac} currency={project.currencyCode || "EGP"} />
+          </span>
+        </div>
+
+        <div>
+          <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", fontWeight: 600, display: "block" }}>
+            {project.projectType === "CustomerProject" ? t("kpis.invoiced") : t("fields.executionHealth")}
+          </span>
+          <span style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-status-success, #059669)" }}>
+            {project.projectType === "CustomerProject" ? (
+              <ProjectMoney amount={summaryQuery.data?.invoiced ?? project.invoiced} currency={project.currencyCode || "EGP"} />
+            ) : (
+              t(`health.${project.executionHealth}` as const)
+            )}
+          </span>
+        </div>
+      </Surface>
 
       {/* Tabs Bar */}
       <Surface
