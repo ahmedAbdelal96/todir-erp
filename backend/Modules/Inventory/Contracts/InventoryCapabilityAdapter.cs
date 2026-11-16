@@ -13,6 +13,10 @@ public sealed class InventoryCapabilityAdapter(InventoryService service) : Share
     public Task<Guid> ReceiveReturnAsync(Guid tenantId, Guid actorId, Shared.Contracts.Inventory.InventoryReturnRequest request, CancellationToken cancellationToken = default) =>
         service.ReceiveReturnAsync(tenantId, actorId, new Todir.Inventory.Contracts.InventoryReturnRequest(request.ProductVariantId, request.LegalEntityId, request.WarehouseId, request.LocationId, request.EnteredUomId, request.Quantity, request.SourceModule, request.SourceDocumentId, request.SourceLineId, request.IdempotencyKey, request.OperationalDate, request.PostingDate, request.StockStatus, request.LotId, request.SerialId, request.UnitCost, request.CurrencyCode), cancellationToken);
 
+    public Task<Guid> ReverseOperationAsync(Guid tenantId, Guid actorId, Guid legalEntityId, Guid operationId,
+        DateOnly operationalDate, DateOnly postingDate, string idempotencyKey, CancellationToken cancellationToken = default) =>
+        service.ReverseOperationAsync(tenantId, actorId, legalEntityId, operationId, operationalDate, postingDate, idempotencyKey, cancellationToken);
+
     public async Task<IReadOnlyList<Shared.Contracts.Inventory.InventoryMovementHistoryItem>> GetMovementHistoryAsync(Guid tenantId,
         Shared.Contracts.Inventory.InventoryMovementHistoryRequest request, CancellationToken cancellationToken = default)
     {

@@ -31,4 +31,12 @@ public sealed class ServiceRulesTests
         Assert.Equal(1m, result.Returned);
         Assert.Throws<InvalidOperationException>(() => ServiceRules.ApplyPartMovement("issue", 6m, 10m, 0m, 5m, 0m, 0m));
     }
+
+    [Fact]
+    public void PartIssueCanBeReversedOnlyBeforeConsumption()
+    {
+        var result = ServiceRules.ApplyPartMovement("reverse", 2m, 10m, 0m, 5m, 0m, 0m);
+        Assert.Equal(3m, result.Issued);
+        Assert.Throws<InvalidOperationException>(() => ServiceRules.ApplyPartMovement("reverse", 5m, 10m, 0m, 5m, 1m, 0m));
+    }
 }

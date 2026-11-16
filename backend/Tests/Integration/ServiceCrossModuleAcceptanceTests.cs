@@ -61,6 +61,20 @@ public sealed class ServiceCrossModuleAcceptanceTests
         Assert.True(await ScalarAsync<long>(connectionString, AtlasTenant,
             "select count(*) from business_inventory.inventory_operation where tenant_id=$1 and source_module='service' and source_document_id=$2 and status='Confirmed'", work.Id) >= 1);
 
+        var reversiblePart = await service.AddPartAsync(AtlasTenant, actor.ActorId, work.Id,
+            new CreatePartRequirementRequest(product, 1m, "PACK", "Reversal proof", entity, warehouse, location, uom), CancellationToken.None);
+        await service.ApplyPartActionAsync(AtlasTenant, actor.ActorId, reversiblePart.Id, "reserve",
+            new PartActionRequest(1m, IdempotencyKey: $"sv50-reserve-reverse:{work.Id:D}"), CancellationToken.None);
+        await service.ApplyPartActionAsync(AtlasTenant, actor.ActorId, reversiblePart.Id, "issue",
+            new PartActionRequest(1m, IdempotencyKey: $"sv50-issue-reverse:{work.Id:D}"), CancellationToken.None);
+        var issueOperation = await ScalarAsync<Guid>(connectionString, AtlasTenant,
+            "select inventory_operation_id from business_service.work_part_movement where tenant_id=$1 and part_requirement_id=$2 and action='issue' and state='Processed'", reversiblePart.Id);
+        var reversedPart = await service.ApplyPartActionAsync(AtlasTenant, actor.ActorId, reversiblePart.Id, "reverse",
+            new PartActionRequest(1m, IdempotencyKey: $"sv50-reverse:{work.Id:D}", InventoryOperationId: issueOperation), CancellationToken.None);
+        Assert.Equal(0m, reversedPart.IssuedQuantity);
+        Assert.Equal(1L, await ScalarAsync<long>(connectionString, AtlasTenant,
+            "select count(*) from business_service.work_part_movement where tenant_id=$1 and part_requirement_id=$2 and state='Reversed'", reversiblePart.Id));
+
         var charge = await service.CreateChargeAsync(AtlasTenant, actor.ActorId, work.Id,
             new CreateChargeRequest("Travel", "SV50 customer travel", 20m, 75m), CancellationToken.None);
         var requested = await service.RequestInvoiceAsync(AtlasTenant, actor.ActorId, actor.MembershipId,
@@ -71,6 +85,11 @@ public sealed class ServiceCrossModuleAcceptanceTests
         Assert.Equal("Invoiced", invoiced.State);
         Assert.Equal(1L, await ScalarAsync<long>(connectionString, AtlasTenant,
             "select count(*) from business_service.service_invoice_allocation where tenant_id=$1 and charge_id=$2 and invoice_id=$3", charge.Id, requested.InvoiceId.Value));
+        var correction = await service.CreateChargeAsync(AtlasTenant, actor.ActorId, work.Id,
+            new CreateChargeRequest("Travel", "SV50 corrected travel", 25m, 25m, SourceType: "ManualApprovedAdjustment", SourceId: Guid.CreateVersion7(), CorrectionOfId: charge.Id), CancellationToken.None);
+        Assert.Equal(charge.Id, correction.CorrectionOfId);
+        Assert.Equal(1L, await ScalarAsync<long>(connectionString, AtlasTenant,
+            "select count(*) from business_service.service_charge where tenant_id=$1 and id=$2 and correction_of_id=$3", correction.Id, charge.Id));
 
         var project = await ScalarAsync<Guid>(connectionString, AtlasTenant,
             "select id from business_projects.project where tenant_id=$1 and lifecycle_state='Active' order by id limit 1");

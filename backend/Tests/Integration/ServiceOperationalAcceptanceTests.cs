@@ -68,9 +68,43 @@ public sealed class ServiceOperationalAcceptanceTests
         var labor = await service.RecordLaborAsync(AtlasTenant, actor, new RecordLaborRequest(visit.Id, null, now.AddMinutes(-45), now.AddMinutes(-15), "Travel", 100m, IdempotencyKey: $"sv-op-labor:{work.Id:D}"), CancellationToken.None);
         Assert.Equal(50m, labor.CostAmount);
         Assert.Equal(1L, await ScalarAsync<long>(connectionString, "select count(*) from business_service.service_cost_fact where tenant_id=$1 and work_order_id=$2 and source_type='Labor' and amount=50", AtlasTenant.Value, work.Id));
-        var report = await service.SaveReportAsync(AtlasTenant, actor, work.Id, new CreateReportRequest("{\"result\":\"pass\"}"), CancellationToken.None);
+        var signedFileId = Guid.CreateVersion7();
+        var report = await service.SaveReportAsync(AtlasTenant, actor, work.Id, new CreateReportRequest("{\"result\":\"pass\"}", signedFileId), CancellationToken.None);
+        Assert.Equal(signedFileId, report.SignedFileId);
         var acceptedReport = await service.AcceptReportAsync(AtlasTenant, actor, report.Id, report.Version, CancellationToken.None);
         Assert.Equal("Accepted", acceptedReport.State);
+        await Assert.ThrowsAsync<ServiceException>(() => service.SaveReportAsync(AtlasTenant, actor, work.Id, new CreateReportRequest("{\"result\":\"tampered\"}"), CancellationToken.None));
+
+        var template = await service.CreateTemplateAsync(AtlasTenant, actor,
+            new CreateTemplateRequest(entity, $"SV-TEMPLATE-{Guid.CreateVersion7():N}", "Acceptance checklist", 1, 1.5m,
+                "{\"questions\":[{\"key\":\"pressure\",\"type\":\"Measurement\",\"uom\":\"bar\"}]}"), CancellationToken.None);
+        _ = await service.CreateTemplateAsync(AtlasTenant, actor,
+            new CreateTemplateRequest(entity, template.Code, "Acceptance checklist v2", 2, 2m, "{\"questions\":[]}"), CancellationToken.None);
+        var checklistWork = await service.CreateWorkOrderAsync(AtlasTenant, actor, Guid.CreateVersion7(),
+            new CreateWorkOrderRequest(entity, "CustomerFieldService", "SV checklist validation", "Required-answer and template snapshot proof", customer, installedBase, null, null, null,
+                BillingOwner: "Service", TemplateId: template.Id, TemplateVersion: 1), CancellationToken.None);
+        Assert.Equal(template.Id, checklistWork.TemplateId);
+        Assert.Equal(1, checklistWork.TemplateVersion);
+        var checklistReady = await service.TransitionWorkOrderAsync(AtlasTenant, actor, checklistWork.Id, "ready", new TransitionRequest(checklistWork.Version), CancellationToken.None);
+        var checklistStarted = await service.TransitionWorkOrderAsync(AtlasTenant, actor, checklistWork.Id, "start", new TransitionRequest(checklistReady.Version), CancellationToken.None);
+        await Assert.ThrowsAsync<ServiceException>(() => service.SaveChecklistAnswerAsync(AtlasTenant, actor,
+            new ChecklistAnswerRequest(checklistWork.Id, "pressure", "Measurement", "{\"value\":12}", true), CancellationToken.None));
+        await Assert.ThrowsAsync<ServiceException>(() => service.SaveChecklistAnswerAsync(AtlasTenant, actor,
+            new ChecklistAnswerRequest(checklistWork.Id, "pressure", "Measurement", "{\"value\":12,\"uom\":\"\"}", true), CancellationToken.None));
+        _ = await service.SaveChecklistAnswerAsync(AtlasTenant, actor,
+            new ChecklistAnswerRequest(checklistWork.Id, "pressure", "Measurement", "{\"value\":12,\"uom\":\"bar\"}", true), CancellationToken.None);
+        var checklistTechnical = await service.TransitionWorkOrderAsync(AtlasTenant, actor, checklistWork.Id, "technical-complete", new TransitionRequest(checklistStarted.Version), CancellationToken.None);
+        Assert.Equal("TechnicalCompleted", checklistTechnical.State);
+
+        var oldComponent = await service.CreateInstalledBaseAsync(AtlasTenant, actor,
+            new CreateInstalledBaseRequest(entity, "Acceptance old component", $"OLD-{Guid.CreateVersion7():N}", null, null, customer, null, installedBase, "Plant"), CancellationToken.None);
+        var newComponent = await service.CreateInstalledBaseAsync(AtlasTenant, actor,
+            new CreateInstalledBaseRequest(entity, "Acceptance replacement component", $"NEW-{Guid.CreateVersion7():N}", null, null, customer, null, null, "Plant"), CancellationToken.None);
+        _ = await service.RecordComponentEventAsync(AtlasTenant, actor,
+            new ComponentEventRequest(installedBase, newComponent.Id, "Replaced", now, oldComponent.Id, checklistWork.Id, "SV component replacement"), CancellationToken.None);
+        var installedBaseRows = (await service.ListInstalledBaseAsync(AtlasTenant, customer, null, 1, 200, CancellationToken.None)).Items;
+        Assert.Equal(installedBase, installedBaseRows.Single(item => item.Id == newComponent.Id).ParentId);
+        Assert.Null(installedBaseRows.Single(item => item.Id == oldComponent.Id).ParentId);
         var downtime = await service.StartDowntimeAsync(AtlasTenant, actor, new DowntimeRequest(installedBase, work.Id, "Unplanned", now.AddHours(-3), "Acceptance outage"), CancellationToken.None);
         var endedDowntime = await service.EndDowntimeAsync(AtlasTenant, actor, downtime.Id, now.AddHours(-2), CancellationToken.None);
         Assert.NotNull(endedDowntime.EndedAt);
@@ -88,6 +122,11 @@ public sealed class ServiceOperationalAcceptanceTests
         Assert.Equal("Draft", recovery.State);
         var recovered = await service.TransitionSupplierRecoveryAsync(AtlasTenant, actor, recovery.Id, "Recovered", CancellationToken.None);
         Assert.Equal("Recovered", recovered.State);
+        await Assert.ThrowsAsync<ServiceException>(() => service.CreateWarrantyAsync(AtlasTenant, actor,
+            new CreateWarrantyRequest(entity, "Supplier", null, null, installedBase, new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 1)), CancellationToken.None));
+        var supplierWarranty = await service.CreateWarrantyAsync(AtlasTenant, actor,
+            new CreateWarrantyRequest(entity, "Supplier", customer, null, installedBase, new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 1)), CancellationToken.None);
+        Assert.Equal("Supplier", supplierWarranty.WarrantyType);
 
         var fixedAsset = await ScalarAsync<Guid>(connectionString, "select id from business_assets.fixed_asset where tenant_id=$1 and legal_entity_id=$2 order by id limit 1", AtlasTenant.Value, entity);
         var internalWork = await service.CreateWorkOrderAsync(AtlasTenant, actor, Guid.CreateVersion7(),
@@ -134,11 +173,11 @@ public sealed class ServiceOperationalAcceptanceTests
         Assert.Equal("Running", resumed.State);
         Assert.True(resumed.PausedMinutes >= 9);
 
-        var contract = await service.CreateContractAsync(AtlasTenant, actor, new CreateContractRequest(entity, customer, customer, new DateOnly(2026, 1, 1), new DateOnly(2027, 12, 31), ScopeJson: "{\"coveredCategories\":[\"Labor\"],\"includedLaborAmount\":100}"), CancellationToken.None);
+        var contract = await service.CreateContractAsync(AtlasTenant, actor, new CreateContractRequest(entity, customer, customer, new DateOnly(2026, 1, 1), new DateOnly(2099, 12, 31), ScopeJson: "{\"coveredCategories\":[\"Labor\"],\"includedLaborAmount\":100}"), CancellationToken.None);
         await service.ActivateContractAsync(AtlasTenant, actor, contract.Id, CancellationToken.None);
         var usage = await service.RecordContractUsageAsync(AtlasTenant, actor, contract.Id, new ContractUsageRequest(work.Id, "Visits", 1m, $"sv-op-usage:{work.Id:D}"), CancellationToken.None);
         _ = await service.RecordContractUsageAsync(AtlasTenant, actor, contract.Id, new ContractUsageRequest(work.Id, "Visits", 1m, $"sv-op-usage:{work.Id:D}"), CancellationToken.None);
-        var entitlement = await service.ResolveEntitlementAsync(AtlasTenant, actor, new EntitlementRequest(entity, customer, installedBase, work.Id, new DateOnly(2026, 11, 16), [new EntitlementLineRequest("Labor", 150m)]), CancellationToken.None);
+        var entitlement = await service.ResolveEntitlementAsync(AtlasTenant, actor, new EntitlementRequest(entity, customer, null, work.Id, new DateOnly(2026, 11, 16), [new EntitlementLineRequest("Labor", 150m)]), CancellationToken.None);
         Assert.Equal(100m, entitlement.Lines.Single().CoveredAmount);
         Assert.Equal(50m, entitlement.Lines.Single().CustomerAmount);
 
@@ -158,6 +197,9 @@ public sealed class ServiceOperationalAcceptanceTests
         var worker = new ServiceMaintenanceWorker(factory.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, loggerFactory.CreateLogger<ServiceMaintenanceWorker>());
         await worker.RunCycleAsync(factory.Services, CancellationToken.None);
         Assert.True(await ScalarAsync<long>(connectionString, "select count(*) from business_service.sla_clock where tenant_id=$1 and state='Breached'", AtlasTenant.Value) >= 1);
+        var kpi = await service.GetKpiAsync(AtlasTenant, CancellationToken.None);
+        Assert.True(kpi.FailureCount >= 1);
+        Assert.True(kpi.MtbfHours >= 0m && kpi.MttrHours >= 0m && kpi.AvailabilityPercent is >= 0m and <= 100m);
     }
 
     private static async Task<Guid> FindActorAsync(string connectionString)

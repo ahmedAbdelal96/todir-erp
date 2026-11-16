@@ -1,40 +1,40 @@
 # Module 24 Backend → Frontend Handoff
 
-This is a contract handoff, not a `MODULE COMPLETE` claim. Backend status is `NOT VERIFIED` until the SV00–SV51 real-stack acceptance register is fresh after the corrective changes.
+Backend status: `BACKEND COMPLETE`. Canonical pack: `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_FIELD_SERVICE_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`.
+
+This handoff covers backend/database/seed/API readiness only. Frontend implementation, RTL/product UX acceptance, browser proof, and human Product Owner sign-off remain the frontend mission.
 
 ## API root and operation groups
 
 Base path: `/api/v1/service`.
 
-Requests: `GET /requests`, `POST /requests`, and `POST /requests/{id}/triage|resolve|close|cancel`.
+Requests and work: request list/create/triage/resolve/close/cancel; Work Order list/create/read and lifecycle actions; visits, assignments, dispatch resource requirements, crews, skills and territories.
 
-Work: `GET|POST /work-orders`, `GET /work-orders/{id}`, lifecycle actions `ready|schedule|start|waiting|technical-complete|accept|close|cancel|reopen`, visits under work orders, `GET /visits`, visit actions `dispatch|travel|arrive|start|complete|no-access|cancel`, and assignments.
+Installed Base and execution: installed-base hierarchy/events, template versions, Work Order template snapshots, typed checklist answers, diagnosis, labor, downtime, reports with optional Platform `signedFileId`, immutable report acceptance, fixed-asset service history, and KPI including downtime, failure count, MTBF, MTTR and availability.
 
-Installed base and execution records: installed-base list/create, templates list/create, checklist answers, diagnoses, component events, labor, downtime start/end, reports save/accept, and KPI.
+Maintenance and coverage: preventive plans, bounded due generation/conversion/state, maintenance rounds and subjects, typed meters with reset/rollover guard, SLA profiles/clocks/pause/resume/monitor, contracts/usage caps, warranties, entitlement resolution and supplier recovery.
 
-Maintenance: maintenance-plan list/create, `POST /maintenance-due/generate` with a bounded date horizon, due list, manual due creation, due state (`Due|Postponed|Skipped`) with `expectedVersion`, and conversion to a work order.
+Commercial and stock: charges, corrective charge links, project billing ownership, Invoicing draft request and allocation with optional invoice-line reference, and Inventory-backed part reserve/issue/consume/return/reverse.
 
-Meters/SLA: meter readings; SLA profiles with business weekdays/time window/time zone; clocks; pause/resume; bounded breach monitor.
-
-Commercial: contracts/activation/usage, warranties, `POST /entitlements/resolve` with line-level `chargeCategory`, `amount`, `quantity`, and `description`; charges; invoice request; invoice allocation; parts reserve/issue/consume/return.
-
-Mobile/offline: `GET /mobile/my-day`, `POST /mobile/commands`. Supported typed command names are `visit.arrive`, `visit.start`, `visit.complete`, `visit.no-access`, `work.start`, `work.technical-complete`, `checklist.answer`, `meter.record`, and `part.consume`.
+Mobile/offline: `GET /mobile/my-day`, `POST /mobile/commands`; typed command states are idempotent and conflict-aware. Supported command names include visit transitions, Work Order start/technical completion, checklist answer, meter record and part consume.
 
 ## Contract rules the UI must preserve
 
-- Send `rowVersion` on lifecycle mutations. A `409` with `service.concurrent_change` or a related code requires refresh and a user-visible conflict path.
-- `CustomerFieldService` requires both `customerPartyId` and `installedBaseId`; internal maintenance requires a subject as defined by the request contract.
-- Parts require `legalEntityId`, `warehouseId`, `locationId`, and `unitOfMeasureId` for Inventory execution. Service counters change only after an owning Inventory result. Show `Pending`, `Retryable`, and `Processed` integration states distinctly.
-- `BillingOwner=Projects` requires `projectId`; Project-owned charges are sent to Projects cost facts and cannot request a Service invoice. Service-owned invoice requests return a real Invoicing draft id only after source identity, legal entity, party, direction and currency are verified.
-- Entitlement responses are line-level. Never infer coverage from a zero amount; use `covered`, `coveredAmount`, `customerAmount`, `coverageSource`, and `explanation`.
-- Offline replay is idempotent by `clientCommandId`. `Pending`, `Processed`, `Rejected`, `Retryable`, and `Conflict` are business states, not HTTP success substitutes. Never display `{"accepted":true}` as proof of execution.
-- Tenant and legal-entity authorization is backend-enforced. Do not use hidden identifiers or a frontend-only legal-entity filter as a security boundary.
-- Backend status values are API language. Use the governed Arabic ERP glossary, RTL layouts, and the separate frontend mission rules for user-facing copy.
+- Send `rowVersion` on lifecycle mutations. A `409` requires refresh and an explicit conflict path.
+- Customer Field Service requires both `customerPartyId` and `installedBaseId`; Internal Maintenance uses Fixed Asset or the approved Service subject boundary.
+- Parts require legal entity, warehouse, location and UOM context for Inventory execution. Service counters change only after an owning Inventory result; reversal requires the original Inventory operation id.
+- `BillingOwner=Projects` requires `projectId`; Project-owned work cannot request a Service invoice. Service invoice requests are accepted only after source identity, party, legal entity, direction and currency validation.
+- Entitlement is line-level. Render `covered`, `coveredAmount`, `customerAmount`, `coverageSource` and `explanation`; do not infer coverage from a zero amount.
+- Accepted reports are immutable. A signed file is a Platform reference, not a Service-owned file blob.
+- Offline replay is idempotent by `clientCommandId`; `Pending`, `Processed`, `Rejected`, `Retryable` and `Conflict` are business states, not proof of success by themselves.
+- Backend authorization and tenant/legal-entity isolation are authoritative. Do not use frontend filters or hidden identifiers as a security boundary.
 
-## Seed scenarios available for frontend development
+## Canonical development seed
 
-For each of Atlas Trading and Delta Supplies: one installed base, one customer request, one customer work order, one internal work order, one completed visit/assignment, one consumed part tied to a real catalog variant and Inventory warehouse/location/UOM, labor, cost, downtime, active contract/usage, fixed-asset maintenance plan/due, meter reading, checklist, diagnosis and accepted report. Seed is deterministic and rerunnable.
+Atlas Trading and Delta Supplies contain installed base, requests, customer/internal Work Orders, visits/assignments, real Catalog and Inventory part references, labor/cost/downtime, active contract/usage, Fixed Asset maintenance plan/due, meter, checklist, diagnosis and accepted report data. The seed is deterministic and rerunnable.
 
-## Acceptance still required before frontend handoff is final
+## Acceptance evidence
 
-Wait for fresh backend evidence covering real Inventory movement history, real Invoicing draft/allocation, Projects cost-fact ownership, offline replay/conflict, preventive/meter/SLA workflows, tenant/legal-entity authorization, and the SV00–SV51 release gate. No frontend code is included in this backend mission.
+Fresh disposable acceptance after the final relevant source change: Service integration 4/4, Service unit 5/5, Architecture 21/21, SeedData 5/5, 215 migration scripts applied/verified, forced-RLS and tenant-isolation checks passed, and cross-module Inventory/Invoicing/Projects/Fixed Assets ownership checks passed.
+
+Deferred scope remains exactly the canonical pack's advanced route optimization, continuous GPS, IoT predictive maintenance, advanced spare-parts optimization, depot-repair logistics, full supplier claims, advanced EHS/fleet, autonomous AI, complex global revenue recognition, customer portal and remote AR/IoT.

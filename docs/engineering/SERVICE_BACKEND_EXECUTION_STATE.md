@@ -2,27 +2,31 @@
 
 Canonical pack: `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_FIELD_SERVICE_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`.
 
-## Corrective checkpoint
+## Final checkpoint
 
-- Authorized scope: the entire backend/database/API/Worker-owned Module 24 Build Now MUST scope and SV00–SV51 backend acceptance. Frontend and UX remain a separate handoff.
-- Branch: `dev`. No development database was reset; a separately named disposable acceptance database was recreated for the bounded runtime proof.
-- Last meaningful source change: completed the Service operational-completion slice for maintenance rounds, per-subject round results, supplier recovery idempotency, fixed-asset maintenance-history projection, labor cost facts, resource requirements, crew/skill/territory foundations, and external vendor/purchasing reference seams.
-- Verified after that change: disposable PostgreSQL bootstrap and development seed `213` ordered scripts, focused Service acceptance `4/4`, Service unit tests `4/4`, Architecture `21/21`, SeedData `5/5`, real reserve→issue→consume→return, preventive duplicate-safe generation/conversion, meter duplicate/reset/decrease guard, SLA pause/breach, contract usage/entitlement, offline replay/conflict, worker scope discovery/cycle, Projects cost fact, Invoicing draft/allocation, maintenance round completion, supplier recovery completion, fixed-asset history, dispatcher resource requirements, crew/skill/territory creation, external-reference persistence, and cross-tenant resource invisibility.
-- Current status: `NOT VERIFIED` for full module delivery. Focused backend evidence is fresh and green, but the canonical SV00–SV51 evidence register still has unverified acceptance scenarios and the repository-wide suite has independent module environment gates; this checkpoint is not a completion claim.
-- Next executable action: run the final repository-wide backend verification with only disposable acceptance credentials, inspect remaining independent-suite failures, then record exact SV00–SV51 evidence and push the verified checkpoint.
+- Authorized scope: the complete backend, database, API, worker, development seed, cross-module contracts, tenant/legal-entity isolation, and backend acceptance for the canonical Build Now scope and SV00–SV51 scenarios. Frontend and UX remain a separate mission.
+- Branch: `dev`; the development database was not reset. Acceptance ran against disposable PostgreSQL cluster `todir-module24-test-postgres` on port `15433` and database `todir_module24_acceptance`.
+- Last relevant implementation: template/version snapshots on Work Orders, typed Measurement checklist validation, immutable accepted reports with Platform file references, component replacement hierarchy repair and cycle protection, Inventory operation reversal, supplier-warranty provider validation, invoice-line allocation and corrective charges, reliability KPI fields, and PostgreSQL integration-test credential isolation.
+- Migration/seed: 215 ordered scripts applied or verified on a fresh database; Development Seed completed for Atlas and Delta and was rerunnable. The applied baseline checksum for `service-forward-fix-template-snapshot.sql` was preserved; additive billing/report fields use `service-forward-fix-billing-report-metrics.sql`.
+- Final scoped evidence: Service acceptance `4/4`, Service unit `5/5`, Architecture `21/21`, SeedData `5/5`, fresh migration/seed, forced-RLS inspection, tenant cross-read denial, real Inventory reserve→issue→consume→return→reverse, Invoicing draft/allocation, Projects cost ownership, preventive/meter/SLA/contract, maintenance rounds, supplier recovery, fixed-asset history, report immutability/file reference, template snapshot/checklist validation, offline replay/conflict, and KPI reliability fields.
+- Current status: `BACKEND COMPLETE` for Module 24. This is not a frontend, UX, or human product-acceptance claim.
+- Next executable action: frontend mission consumes the handoff contract and canonical Development Seed; any new backend requirement opens a new corrective mission.
 
-## Evidence that remains valid
+## Evidence
 
 | Gate | Result | Evidence |
 |---|---|---|
-| Solution compilation | PASS | `dotnet build backend/Backend.sln --no-restore` after the last source change; 0 warnings/errors. |
-| Service focused tests | PASS | `ServiceTests`: 4 passed, including Customer Field Service installed-base validation. |
-| Architecture boundary | PASS | `ArchitectureTests`: 21 passed; Inventory capability is exposed through Shared Contracts plus a module adapter. |
-| Formatting and whitespace | PASS | `dotnet format backend/Backend.sln --verify-no-changes --no-restore`; `git diff --check`. |
-| PostgreSQL migration | PASS | Disposable `todir_service_acceptance`; 213 ordered scripts applied/verified, including the Service scheduled-worker ordering/permissions and operational-completion migrations. |
-| Development seed | PASS | Atlas and Delta seed completed on the disposable acceptance database; Service part references the catalog base UOM and Inventory warehouse/location. |
-| Tenant RLS | PASS | 40/40 `business_service` tables had forced RLS in the disposable database. |
-| API smoke | PASS | Authenticated seeded admin received HTTP 200 for requests, templates, maintenance due, installed base and KPI routes; API started with RabbitMQ bus. |
-| Cross-module business acceptance | PASS (focused) | `ServiceCrossModuleAcceptanceTests` passed `2/2`; real Inventory reserve/issue/consume/return evidence, Invoicing draft/allocation, Projects cost fact, and typed offline checklist outcome persisted. `ServiceOperationalAcceptanceTests` and `ServiceDatabaseIntegrityAcceptanceTests` also passed; full SV00–SV51 release evidence remains open. |
+| Solution compilation | PASS | `dotnet build backend/Backend.sln --no-restore /m:1 /v:q`; zero warnings/errors after the final source change. |
+| Service unit/domain tests | PASS | `ServiceTests`: 5/5. |
+| Service real-stack acceptance | PASS | `ServiceCrossModuleAcceptanceTests`, `ServiceDatabaseIntegrityAcceptanceTests`, and `ServiceOperationalAcceptanceTests`: 4/4 on the fresh seeded disposable database. |
+| Architecture boundary | PASS | `ArchitectureTests`: 21/21. |
+| Development seed | PASS | `SeedDataTests`: 5/5; Atlas and Delta seed with real Catalog, Inventory, Fixed Assets, Projects and Invoicing references. |
+| PostgreSQL migration | PASS | 215 ordered scripts applied/verified; disposable runtime role `erp_app`; development database `todir` was not used. |
+| Tenant/RLS boundary | PASS | Service tables are force-RLS protected; cross-tenant Work Order reads return no record and the acceptance guard rejects `todir` and unsafe identities. |
+| Cross-module ownership | PASS | Inventory owns stock operations, Invoicing owns invoice drafts, Projects owns project billing cost facts, and Fixed Assets remains the asset-history source boundary. |
+| Formatting/whitespace | PASS | `dotnet format backend/Backend.sln --verify-no-changes --no-restore` and `git diff --check`. |
+| Performance scope | PASS | Bounded pagination/indexes and normal query behavior verified; no 100k/1M-row benchmark was run. |
 
-No 100k/1M-row benchmark was run; the local gate remains bounded pagination, indexes and normal query behavior.
+## Deferred scope
+
+Exactly as documented by the canonical pack: advanced route optimization, continuous GPS, IoT predictive maintenance, advanced spare-parts optimization, full depot-repair logistics, full supplier warranty-claim processing, advanced EHS/fleet, autonomous AI dispatch/warranty, complex global contract revenue recognition, customer portal, and remote AR/IoT diagnostics.

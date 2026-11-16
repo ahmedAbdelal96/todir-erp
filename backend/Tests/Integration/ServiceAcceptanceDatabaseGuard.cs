@@ -36,9 +36,8 @@ internal static class ServiceAcceptanceDatabaseGuard
         var actualUser = reader.GetString(1);
         if (!string.Equals(actualDatabase, database, StringComparison.Ordinal) ||
             string.Equals(actualDatabase, "todir", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(actualUser, "postgres", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(actualUser, "erp_owner", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Service acceptance identity is unsafe: database '{actualDatabase}', user '{actualUser}'.");
+            !string.Equals(actualUser, "erp_app", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Service acceptance identity is unsafe: database '{actualDatabase}', user '{actualUser}'. Use the disposable runtime role erp_app.");
     }
 
     private static async Task<NpgsqlConnection> OpenAsync(string connectionString)
