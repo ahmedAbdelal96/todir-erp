@@ -459,26 +459,32 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
         return new(budget, actual, commitment, etc, eac, eligible, invoiced, 0m, invoiced, revenueBasis - eac, basisName, revenueBasis, billing.CurrencyCode, activeBudgetId);
     }, ct);
 
-    public Task<IReadOnlyList<BudgetView>> ListBudgetsAsync(TenantId tenant, Guid projectId, CancellationToken ct) => coordinator.ExecuteAsync<IReadOnlyList<BudgetView>>(tenant, async (context, token) =>
+    public Task<PagedResult<BudgetView>> ListBudgetsAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync<PagedResult<BudgetView>>(tenant, async (context, token) =>
     {
         await StateAsync(context, tenant.Value, projectId, token);
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
         var list = new List<BudgetView>();
-        const string sql = "select b.id, b.project_id, b.name, b.currency_code, b.control_mode, coalesce(v.original_amount,0), coalesce(v.current_amount,0), coalesce(v.state,'Approved'), coalesce(v.version_no,1) from business_projects.project_budget b left join lateral (select version_no, state, original_amount, current_amount from business_projects.project_budget_version where tenant_id=b.tenant_id and budget_id=b.id order by version_no desc limit 1) v on true where b.tenant_id=$1 and b.project_id=$2 order by b.id";
-        await using var command = Command(context, sql, tenant.Value, projectId);
+        const string sql = "select b.id, b.project_id, b.name, b.currency_code, b.control_mode, coalesce(v.original_amount,0), coalesce(v.current_amount,0), coalesce(v.state,'Approved'), coalesce(v.version_no,1) from business_projects.project_budget b left join lateral (select version_no, state, original_amount, current_amount from business_projects.project_budget_version where tenant_id=b.tenant_id and budget_id=b.id order by version_no desc limit 1) v on true where b.tenant_id=$1 and b.project_id=$2 order by b.id limit $3 offset $4";
+        await using var command = Command(context, sql, tenant.Value, projectId, pageSize + 1, (page - 1) * pageSize);
         await using var reader = await command.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token))
             list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3).Trim(), reader.GetString(4), reader.GetDecimal(5), reader.GetDecimal(6), reader.GetString(7), reader.GetInt32(8)));
-        return list;
+        var hasNext = list.Count > pageSize;
+        if (hasNext) list.RemoveAt(pageSize);
+        return new(list, page, pageSize, hasNext);
     }, ct);
 
-    public Task<IReadOnlyList<BillableChargeView>> ListChargesAsync(TenantId tenant, Guid projectId, CancellationToken ct) => coordinator.ExecuteAsync<IReadOnlyList<BillableChargeView>>(tenant, async (context, token) =>
+    public Task<PagedResult<BillableChargeView>> ListChargesAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync<PagedResult<BillableChargeView>>(tenant, async (context, token) =>
     {
         await StateAsync(context, tenant.Value, projectId, token);
+        page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
         var list = new List<BillableChargeView>();
-        await using var cmd = Command(context, "select id,project_id,source_type,source_id,cost_amount,billable_amount,currency_code,state,invoice_request_id from business_projects.project_billable_charge where tenant_id=$1 and project_id=$2 order by charge_date desc, id desc", tenant.Value, projectId);
+        await using var cmd = Command(context, "select id,project_id,source_type,source_id,cost_amount,billable_amount,currency_code,state,invoice_request_id from business_projects.project_billable_charge where tenant_id=$1 and project_id=$2 order by charge_date desc, id desc limit $3 offset $4", tenant.Value, projectId, pageSize + 1, (page - 1) * pageSize);
         await using var r = await cmd.ExecuteReaderAsync(token);
         while (await r.ReadAsync(token)) list.Add(ReadCharge(r));
-        return list;
+        var hasNext = list.Count > pageSize;
+        if (hasNext) list.RemoveAt(pageSize);
+        return new(list, page, pageSize, hasNext);
     }, ct);
 
     public Task<IReadOnlyList<(Guid InvoiceId, Guid LegalEntityId)>> ListInvoiceSourcesAsync(TenantId tenant, Guid projectId, CancellationToken ct) => coordinator.ExecuteAsync<IReadOnlyList<(Guid InvoiceId, Guid LegalEntityId)>>(tenant, async (context, token) =>

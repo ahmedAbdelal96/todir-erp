@@ -592,7 +592,7 @@ export function ProjectWorkspacePage({
       <NewBudgetRevisionModal
         isOpen={isNewBudgetRevOpen}
         projectId={projectId}
-        budgetId={summaryQuery.data?.activeBudgetId ?? budgetsQuery.data?.[0]?.id ?? ""}
+        budgetId={summaryQuery.data?.activeBudgetId ?? budgetsQuery.data?.items?.[0]?.id ?? ""}
         currentAmount={project.budget}
         onClose={() => setIsNewBudgetRevOpen(false)}
       />

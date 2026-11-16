@@ -458,10 +458,10 @@ export function useExecuteTimeAction() {
   });
 }
 
-export function useProjectBudgets(projectId: string) {
+export function useProjectBudgets(projectId: string, params?: { page?: number; pageSize?: number }) {
   return useQuery({
-    queryKey: [...projectKeys.detail(projectId), "budgets"],
-    queryFn: () => projectsApi.getBudgets(projectId),
+    queryKey: [...projectKeys.detail(projectId), "budgets", params],
+    queryFn: () => projectsApi.getBudgets(projectId, params),
     enabled: Boolean(projectId)
   });
 }
@@ -580,10 +580,10 @@ export function useGenerateBillingCharges() {
   });
 }
 
-export function useProjectCharges(projectId: string) {
+export function useProjectCharges(projectId: string, params?: { page?: number; pageSize?: number }) {
   return useQuery({
-    queryKey: [...projectKeys.detail(projectId), "charges"],
-    queryFn: () => projectsApi.getCharges(projectId),
+    queryKey: [...projectKeys.detail(projectId), "charges", params],
+    queryFn: () => projectsApi.getCharges(projectId, params),
     enabled: Boolean(projectId)
   });
 }

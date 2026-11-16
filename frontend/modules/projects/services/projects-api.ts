@@ -280,8 +280,13 @@ export const projectsApi = {
     }),
 
   // 14. Budgets & Forecasts
-  getBudgets: (projectId: string): Promise<readonly BudgetView[]> =>
-    httpClient<readonly BudgetView[]>(`${BASE}/${encodeURIComponent(projectId)}/budgets`),
+  getBudgets: (projectId: string, params?: { page?: number; pageSize?: number }): Promise<PagedResult<BudgetView>> => {
+    const q = new URLSearchParams();
+    if (params?.page) q.set("page", String(params.page));
+    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
+    const qs = q.toString();
+    return httpClient<PagedResult<BudgetView>>(`${BASE}/${encodeURIComponent(projectId)}/budgets${qs ? `?${qs}` : ""}`);
+  },
 
   createBudget: (projectId: string, request: CreateBudgetRequest): Promise<BudgetView> =>
     httpClient<BudgetView>(`${BASE}/${encodeURIComponent(projectId)}/budgets`, {
@@ -338,8 +343,13 @@ export const projectsApi = {
       body: JSON.stringify({})
     }),
 
-  getCharges: (projectId: string): Promise<readonly BillableChargeView[]> =>
-    httpClient<readonly BillableChargeView[]>(`${BASE}/${encodeURIComponent(projectId)}/charges`),
+  getCharges: (projectId: string, params?: { page?: number; pageSize?: number }): Promise<PagedResult<BillableChargeView>> => {
+    const q = new URLSearchParams();
+    if (params?.page) q.set("page", String(params.page));
+    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
+    const qs = q.toString();
+    return httpClient<PagedResult<BillableChargeView>>(`${BASE}/${encodeURIComponent(projectId)}/charges${qs ? `?${qs}` : ""}`);
+  },
 
   createCharge: (projectId: string, request: CreateBillableChargeRequest): Promise<BillableChargeView> =>
     httpClient<BillableChargeView>(`${BASE}/${encodeURIComponent(projectId)}/charges`, {

@@ -282,7 +282,7 @@ public sealed class ProjectAcceptanceScenarioTests
         Assert.Contains(resourceLoad, x => x.ResourceKey == actor.ToString());
     }
 
-    [Fact(DisplayName = "PJ48 budget revision enforces ownership, preserves history, rejects cross-project, unknown, cross-tenant, and cross-entity access")]
+    [Fact(DisplayName = "PJ48 budget revision enforces ownership, preserves history, and rejects cross-project, unknown, and cross-tenant access")]
     public async Task Pj48BudgetRevisionIntegrity()
     {
         await using var database = OpenDatabase();
@@ -328,14 +328,20 @@ public sealed class ProjectAcceptanceScenarioTests
         var crossTenantEx = await Assert.ThrowsAsync<ProjectException>(() => service.CreateBudgetRevisionAsync(DeltaTenant, actor, projectA.Id, budgetAId, new(800000m), CancellationToken.None));
         Assert.True(crossTenantEx.Code is "projects.budget_not_found" or "projects.project_not_found");
 
-        // 7. Verify ListBudgetsAsync lists all budgets and charges for project
-        var budgetsList = await service.ListBudgetsAsync(AtlasTenant, projectA.Id, CancellationToken.None);
-        Assert.Single(budgetsList);
-        Assert.Equal(budgetAId, budgetsList[0].Id);
-        Assert.Equal(500000m, budgetsList[0].OriginalAmount);
+        // 7. Verify paginated ListBudgetsAsync and ListChargesAsync
+        var budgetsList = await service.ListBudgetsAsync(AtlasTenant, projectA.Id, 1, 50, CancellationToken.None);
+        Assert.Single(budgetsList.Items);
+        Assert.Equal(budgetAId, budgetsList.Items[0].Id);
+        Assert.Equal(500000m, budgetsList.Items[0].OriginalAmount);
+        Assert.Equal(1, budgetsList.Page);
+        Assert.Equal(50, budgetsList.PageSize);
+        Assert.False(budgetsList.HasNext);
 
-        var chargesList = await service.ListChargesAsync(AtlasTenant, projectA.Id, CancellationToken.None);
-        Assert.Empty(chargesList);
+        var chargesList = await service.ListChargesAsync(AtlasTenant, projectA.Id, 1, 50, CancellationToken.None);
+        Assert.Empty(chargesList.Items);
+        Assert.Equal(1, chargesList.Page);
+        Assert.Equal(50, chargesList.PageSize);
+        Assert.False(chargesList.HasNext);
     }
 
     private static Guid GetTemplateVersionId(NpgsqlDataSource database, TenantId tenant, Guid templateId)
@@ -346,9 +352,18 @@ public sealed class ProjectAcceptanceScenarioTests
 
     private static NpgsqlDataSource OpenDatabase()
     {
-        var value = Environment.GetEnvironmentVariable("TODIR_PROJECTS_TEST_CONNECTION") ?? Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION");
-        Assert.False(string.IsNullOrWhiteSpace(value), "TODIR_PROJECTS_TEST_CONNECTION or TODIR_DATABASE_CONNECTION is required.");
-        return NpgsqlDataSource.Create(value!);
+        var value = Environment.GetEnvironmentVariable("TODIR_PROJECTS_TEST_CONNECTION");
+        Assert.False(string.IsNullOrWhiteSpace(value), "TODIR_PROJECTS_TEST_CONNECTION is required for PostgreSQL-backed Projects acceptance tests. Fallback to populated development database is prohibited.");
+
+        var builder = new NpgsqlConnectionStringBuilder(value);
+        if (string.Equals(builder.Database, "todir", StringComparison.OrdinalIgnoreCase) &&
+            Environment.GetEnvironmentVariable("TODIR_PROJECTS_ALLOW_DEV_DB") != "1")
+        {
+            throw new InvalidOperationException(
+                $"TODIR_PROJECTS_TEST_CONNECTION must target an explicitly isolated test database (e.g. todir_test_projects), not the populated development database '{builder.Database}'.");
+        }
+
+        return NpgsqlDataSource.Create(value);
     }
 
     private static ProjectService CreateService(NpgsqlDataSource database, IInvoicingSourceCapabilities? invoicing = null)

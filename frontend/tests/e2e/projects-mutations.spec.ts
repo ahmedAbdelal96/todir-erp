@@ -29,6 +29,18 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
   test.setTimeout(240_000);
 
   test.beforeAll(() => {
+    const isExplicitlyIsolated =
+      process.env.TODIR_MUTATION_TEST_TARGET === 'isolated' ||
+      process.env.TODIR_DISPOSABLE_TEST_ENV === 'true' ||
+      process.env.TODIR_PROJECTS_MUTATION_ISOLATED === 'true';
+
+    if (!isExplicitlyIsolated) {
+      throw new Error(
+        'FAIL CLOSED: projects-mutations.spec.ts creates live financial records and mutations and is prohibited from executing against the populated development database (todir). ' +
+        'To run this mutation suite, you must explicitly target a dedicated disposable local test database/API environment and set TODIR_MUTATION_TEST_TARGET=isolated (or TODIR_DISPOSABLE_TEST_ENV=true).'
+      );
+    }
+
     [LOCAL_ARTIFACTS_DIR, AGENT_BRAIN_DIR].forEach((dir) => {
       try {
         if (!fs.existsSync(dir)) {
@@ -592,7 +604,8 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
       const chargesRes = await page.request.get(`/api/v1/projects/${createdProjectId}/charges`);
       if (chargesRes.ok()) {
         const charges = await chargesRes.json();
-        const eligibleCharges = Array.isArray(charges) ? charges.filter((c: any) => c.state === 'Eligible') : [];
+        const items = Array.isArray(charges) ? charges : (Array.isArray(charges.items) ? charges.items : []);
+        const eligibleCharges = items.filter((c: any) => c.state === 'Eligible');
 
         for (const ch of eligibleCharges) {
           const invReq = await page.request.post(`/api/v1/projects/${createdProjectId}/invoice-requests`, {
