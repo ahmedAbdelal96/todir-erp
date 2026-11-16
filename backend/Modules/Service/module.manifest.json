@@ -13,7 +13,7 @@
   },
   "owns": {
     "schema": "business_service",
-    "entities": ["service_request", "work_order", "service_visit", "work_assignment", "installed_base_item", "service_work_template", "work_checklist_answer", "work_diagnosis", "maintenance_plan", "maintenance_due", "meter_definition", "meter_reading", "asset_downtime", "work_part_requirement", "service_labor_entry", "service_cost_fact", "warranty", "service_contract", "coverage_decision", "sla_profile", "sla_clock", "service_charge", "service_invoice_allocation", "service_report", "service_report_version", "service_external_reference", "offline_command", "service_audit_event", "service_crew", "service_skill", "service_territory"]
+    "entities": ["service_request", "work_order", "service_visit", "work_assignment", "installed_base_item", "service_work_template", "work_checklist_answer", "work_diagnosis", "maintenance_plan", "maintenance_due", "maintenance_round", "maintenance_round_subject", "meter_definition", "meter_reading", "asset_downtime", "work_part_requirement", "service_labor_entry", "service_cost_fact", "warranty", "service_contract", "coverage_decision", "sla_profile", "sla_clock", "service_charge", "service_invoice_allocation", "service_report", "service_report_version", "service_supplier_recovery", "service_fixed_asset_history", "service_external_reference", "offline_command", "service_audit_event", "service_crew", "service_skill", "service_territory"]
   },
   "permissions": [
     "service.request.read", "service.request.create", "service.request.triage", "service.request.resolve",

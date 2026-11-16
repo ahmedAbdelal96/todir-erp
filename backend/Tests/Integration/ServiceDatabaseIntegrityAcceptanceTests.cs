@@ -8,8 +8,8 @@ public sealed class ServiceDatabaseIntegrityAcceptanceTests
     [Fact]
     public async Task ServiceSeedHasRealCrossModuleReferencesAndTypedOutcomes()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_SERVICE_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = ServiceAcceptanceDatabaseGuard.RequireConfiguredConnection();
+        await ServiceAcceptanceDatabaseGuard.VerifyAsync(connectionString);
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         await using var connection = await dataSource.OpenConnectionAsync();
         var forcedRls = await ScalarAsync<long>(connection, "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='business_service' and c.relkind='r' and c.relrowsecurity and c.relforcerowsecurity");

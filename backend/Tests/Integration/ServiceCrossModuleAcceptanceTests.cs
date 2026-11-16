@@ -16,9 +16,8 @@ public sealed class ServiceCrossModuleAcceptanceTests
     [Fact(DisplayName = "SV50 Service real part, invoice, project and offline outcomes reconcile")]
     public async Task RealServiceOutcomesReconcileAcrossOwnedModules()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_SERVICE_TEST_CONNECTION")
-            ?? Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = ServiceAcceptanceDatabaseGuard.RequireConfiguredConnection();
+        await ServiceAcceptanceDatabaseGuard.VerifyAsync(connectionString);
 
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
             .UseEnvironment("Development")
@@ -90,6 +89,14 @@ public sealed class ServiceCrossModuleAcceptanceTests
                 Json("{\"workOrderId\":\"" + work.Id + "\",\"questionKey\":\"sv50-safety\",\"questionType\":\"Boolean\",\"answerJson\":\"true\",\"required\":true}")), CancellationToken.None);
         Assert.Equal("Processed", offline.State);
         Assert.DoesNotContain("accepted", offline.ResultJson ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact(DisplayName = "SV50 service acceptance rejects the populated development database before mutation")]
+    public async Task RejectsPopulatedDevelopmentDatabaseBeforeMutation()
+    {
+        var configured = ServiceAcceptanceDatabaseGuard.RequireConfiguredConnection();
+        var wrongDatabase = new NpgsqlConnectionStringBuilder(configured) { Database = "todir" }.ConnectionString;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ServiceAcceptanceDatabaseGuard.VerifyAsync(wrongDatabase));
     }
 
     private static string Json(string value) => value;

@@ -412,6 +412,8 @@ await using (var reservationExpiryScopeOwnership = new NpgsqlCommand("alter func
     await reservationExpiryScopeOwnership.ExecuteNonQueryAsync();
 await using (var hrReminderScopeOwnership = new NpgsqlCommand("alter function business_hr.list_hr_reminder_scopes() owner to erp_dispatcher", connection))
     await hrReminderScopeOwnership.ExecuteNonQueryAsync();
+await using (var serviceScheduledScopeOwnership = new NpgsqlCommand("alter function business_service.list_scheduled_scopes() owner to erp_dispatcher", connection))
+    await serviceScheduledScopeOwnership.ExecuteNonQueryAsync();
 
 await using (var dispatcherOwnership = new NpgsqlCommand("alter function platform.claim_pending_outbox(integer) owner to erp_dispatcher", connection))
     await dispatcherOwnership.ExecuteNonQueryAsync();
@@ -603,6 +605,10 @@ static int MigrationPriority(string fileName) => fileName switch
     // The constraint cleanup must run after the project-source fix has created
     // the replacement constraint on a fresh database.
     _ when fileName.Equals("invoicing-forward-fix-project-source-constraint.sql", StringComparison.Ordinal) => 6,
+    // The scheduled worker grants reference the function created by this script.
+    // Keep its definition ahead of the capability and permission forward-fixes on
+    // a fresh bootstrap, while the migration identity remains forward-only.
+    _ when fileName.Equals("service-forward-fix-scheduled-worker.sql", StringComparison.Ordinal) => 4,
     _ => 5
 };
 

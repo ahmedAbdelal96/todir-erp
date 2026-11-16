@@ -10,6 +10,16 @@ public sealed record CreateVisitRequest(DateTimeOffset PlannedStart, DateTimeOff
 public sealed record VisitView(Guid Id, Guid WorkOrderId, DateTimeOffset PlannedStart, DateTimeOffset PlannedEnd, string LocationType, string State, string? SiteInstructions, DateTimeOffset? ActualStart, DateTimeOffset? ActualEnd, long Version);
 public sealed record CreateAssignmentRequest(Guid? EmployeeId, Guid? UserId, string ResourceType = "Technician", string? DisplayName = null);
 public sealed record AssignmentView(Guid Id, Guid VisitId, Guid? EmployeeId, Guid? UserId, string ResourceType, string? DisplayName, string State);
+public sealed record CreateResourceRequirementRequest(string? SkillCode, decimal Quantity = 1m, DateTimeOffset? RequiredFrom = null, DateTimeOffset? RequiredTo = null);
+public sealed record ResourceRequirementView(Guid Id, Guid WorkOrderId, string? SkillCode, decimal Quantity, DateTimeOffset? RequiredFrom, DateTimeOffset? RequiredTo, string State);
+public sealed record CreateCrewRequest(Guid LegalEntityId, string Code, string Name);
+public sealed record CrewView(Guid Id, Guid LegalEntityId, string Code, string Name, bool Active);
+public sealed record CreateSkillRequest(string Code, string Name);
+public sealed record SkillView(Guid Id, string Code, string Name, bool Active);
+public sealed record CreateTerritoryRequest(string Code, string Name);
+public sealed record TerritoryView(Guid Id, string Code, string Name, bool Active);
+public sealed record CreateExternalReferenceRequest(Guid EntityId, string EntityType, string SourceModule, string SourceType, string SourceId, string? SnapshotJson = null);
+public sealed record ExternalReferenceView(Guid Id, Guid EntityId, string EntityType, string SourceModule, string SourceType, string SourceId, string? SnapshotJson);
 public sealed record CreateInstalledBaseRequest(Guid LegalEntityId, string Name, string? SerialNumber, string? ModelNumber, Guid? ProductId, Guid? CustomerPartyId, Guid? OwnerPartyId, Guid? ParentId, string? SiteName, DateOnly? InstalledDate = null);
 public sealed record InstalledBaseView(Guid Id, Guid LegalEntityId, string Name, string? SerialNumber, string? ModelNumber, Guid? ProductId, Guid? CustomerPartyId, Guid? OwnerPartyId, Guid? ParentId, string State, string? SiteName, DateOnly? InstalledDate, long Version);
 public sealed record CreateTemplateRequest(Guid LegalEntityId, string Code, string Name, int Version, decimal? ExpectedDurationHours, string DefinitionJson = "{}");
@@ -65,6 +75,14 @@ public sealed record CreateReportRequest(string ContentJson);
 public sealed record ServiceKpiView(int OpenRequests, int OpenWorkOrders, int VisitsToday, decimal OpenCharges, decimal DowntimeHours);
 public sealed record DowntimeRequest(Guid SubjectId, Guid? WorkOrderId, string DowntimeType, DateTimeOffset StartedAt, string? Reason);
 public sealed record DowntimeView(Guid Id, Guid SubjectId, Guid? WorkOrderId, string DowntimeType, DateTimeOffset StartedAt, DateTimeOffset? EndedAt, string? Reason);
+public sealed record CreateMaintenanceRoundRequest(Guid LegalEntityId, string Code, string Name, DateOnly ScheduledDate);
+public sealed record MaintenanceRoundView(Guid Id, Guid LegalEntityId, string Code, string Name, DateOnly ScheduledDate, string State, long Version, int SubjectCount);
+public sealed record AddRoundSubjectRequest(string SubjectType, Guid SubjectId, int SequenceNo);
+public sealed record RoundSubjectView(Guid Id, Guid RoundId, string SubjectType, Guid SubjectId, int SequenceNo, string State, string? Result, string MeasurementsJson, string? Exceptions, string? FollowUp);
+public sealed record RecordRoundSubjectRequest(string State, string? Result, string MeasurementsJson = "{}", string? Exceptions = null, string? FollowUp = null, long ExpectedRoundVersion = 1);
+public sealed record CreateSupplierRecoveryRequest(Guid WorkOrderId, Guid SupplierPartyId, string SourceReference, decimal Amount, string CurrencyCode = "EGP", string? Reason = null, string? IdempotencyKey = null);
+public sealed record SupplierRecoveryView(Guid Id, Guid WorkOrderId, Guid SupplierPartyId, string SourceReference, decimal Amount, string CurrencyCode, string State, string? Reason);
+public sealed record FixedAssetServiceHistoryView(Guid Id, Guid FixedAssetId, Guid WorkOrderId, string EventType, decimal CostAmount, string CurrencyCode, string SnapshotJson, DateTimeOffset OccurredAt);
 public sealed class ServiceException(string code) : Exception(code)
 {
     public string Code { get; } = code;

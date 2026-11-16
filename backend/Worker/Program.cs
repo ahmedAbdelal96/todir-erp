@@ -97,4 +97,5 @@ builder.Services.AddHostedService<OutboxDispatchWorker>();
 builder.Services.AddHostedService<FinanceBaseRateSyncWorker>();
 builder.Services.AddHostedService<PricingScheduledActivationWorker>();
 builder.Services.AddHostedService<InventoryReservationExpiryWorker>();
+builder.Services.AddHostedService<ServiceMaintenanceWorker>();
 await builder.Build().RunAsync();
