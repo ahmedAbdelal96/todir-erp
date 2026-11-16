@@ -49,10 +49,10 @@ public sealed class ServiceOperationalAcceptanceTests
         Assert.Equal(territoryCode, (await service.CreateTerritoryAsync(AtlasTenant, actor, new CreateTerritoryRequest(territoryCode, "Maintenance territory"), CancellationToken.None)).Code);
         Assert.Equal(crewCode, (await service.CreateCrewAsync(AtlasTenant, actor, new CreateCrewRequest(entity, crewCode, "Field Crew"), CancellationToken.None)).Code);
         var externalReference = await service.CreateExternalReferenceAsync(AtlasTenant, actor, new CreateExternalReferenceRequest(work.Id, "WorkOrder", "purchasing", "PurchaseOrder", $"PO-{work.Id:D}", "{\"purpose\":\"external vendor repair\"}"), CancellationToken.None);
-        Assert.Single(await service.ListExternalReferencesAsync(AtlasTenant, work.Id, CancellationToken.None));
+        Assert.Single(await service.ListExternalReferencesAsync(AtlasTenant, work.Id, "WorkOrder", CancellationToken.None));
         Assert.Equal("purchasing", externalReference.SourceModule);
         var visit = await service.CreateVisitAsync(AtlasTenant, actor, work.Id, new CreateVisitRequest(now.AddHours(1), now.AddHours(2)), CancellationToken.None);
-        _ = await service.AssignAsync(AtlasTenant, actor, visit.Id, new CreateAssignmentRequest(null, null, DisplayName: "Acceptance Technician"), CancellationToken.None);
+        _ = await service.AssignAsync(AtlasTenant, actor, visit.Id, new CreateAssignmentRequest(null, actor, DisplayName: "Acceptance Technician"), CancellationToken.None);
         var dispatched = await service.TransitionVisitAsync(AtlasTenant, actor, visit.Id, "dispatch", new TransitionRequest(visit.Version), CancellationToken.None);
         var traveling = await service.TransitionVisitAsync(AtlasTenant, actor, visit.Id, "travel", new TransitionRequest(dispatched.Version), CancellationToken.None);
         var arrived = await service.TransitionVisitAsync(AtlasTenant, actor, visit.Id, "arrive", new TransitionRequest(traveling.Version), CancellationToken.None);
@@ -68,7 +68,7 @@ public sealed class ServiceOperationalAcceptanceTests
         var labor = await service.RecordLaborAsync(AtlasTenant, actor, new RecordLaborRequest(visit.Id, null, now.AddMinutes(-45), now.AddMinutes(-15), "Travel", 100m, IdempotencyKey: $"sv-op-labor:{work.Id:D}"), CancellationToken.None);
         Assert.Equal(50m, labor.CostAmount);
         Assert.Equal(1L, await ScalarAsync<long>(connectionString, "select count(*) from business_service.service_cost_fact where tenant_id=$1 and work_order_id=$2 and source_type='Labor' and amount=50", AtlasTenant.Value, work.Id));
-        var signedFileId = Guid.CreateVersion7();
+        var signedFileId = await CreateReadyServiceFileAsync(connectionString, work.Id, "internal");
         var report = await service.SaveReportAsync(AtlasTenant, actor, work.Id, new CreateReportRequest("{\"result\":\"pass\"}", signedFileId), CancellationToken.None);
         Assert.Equal(signedFileId, report.SignedFileId);
         var acceptedReport = await service.AcceptReportAsync(AtlasTenant, actor, report.Id, report.Version, CancellationToken.None);
@@ -102,7 +102,7 @@ public sealed class ServiceOperationalAcceptanceTests
             new CreateInstalledBaseRequest(entity, "Acceptance replacement component", $"NEW-{Guid.CreateVersion7():N}", null, null, customer, null, null, "Plant"), CancellationToken.None);
         _ = await service.RecordComponentEventAsync(AtlasTenant, actor,
             new ComponentEventRequest(installedBase, newComponent.Id, "Replaced", now, oldComponent.Id, checklistWork.Id, "SV component replacement"), CancellationToken.None);
-        var installedBaseRows = (await service.ListInstalledBaseAsync(AtlasTenant, customer, null, 1, 200, CancellationToken.None)).Items;
+        var installedBaseRows = (await service.ListInstalledBaseAsync(AtlasTenant, entity, customer, null, 1, 200, CancellationToken.None)).Items;
         Assert.Equal(installedBase, installedBaseRows.Single(item => item.Id == newComponent.Id).ParentId);
         Assert.Null(installedBaseRows.Single(item => item.Id == oldComponent.Id).ParentId);
         var downtime = await service.StartDowntimeAsync(AtlasTenant, actor, new DowntimeRequest(installedBase, work.Id, "Unplanned", now.AddHours(-3), "Acceptance outage"), CancellationToken.None);
@@ -142,7 +142,7 @@ public sealed class ServiceOperationalAcceptanceTests
         Assert.True(generated.CreatedDueItems > 0);
         var replayedGeneration = await service.GenerateDueAsync(AtlasTenant, actor, new GenerateDueRequest(new DateOnly(2026, 11, 1), new DateOnly(2027, 1, 1)), CancellationToken.None);
         Assert.Equal(0, replayedGeneration.CreatedDueItems);
-        var due = (await service.ListDueAsync(AtlasTenant, "Due", new DateOnly(2026, 11, 1), new DateOnly(2027, 1, 1), 1, 100, CancellationToken.None)).Items.First(item => item.PlanId == plan.Id);
+        var due = (await service.ListDueAsync(AtlasTenant, entity, "Due", new DateOnly(2026, 11, 1), new DateOnly(2027, 1, 1), 1, 100, CancellationToken.None)).Items.First(item => item.PlanId == plan.Id);
         var postponed = await service.UpdateDueAsync(AtlasTenant, actor, due.Id, new MaintenanceDueUpdateRequest("Postponed", "Capacity", due.Version), CancellationToken.None);
         await Assert.ThrowsAsync<ServiceException>(() => service.UpdateDueAsync(AtlasTenant, actor, due.Id, new MaintenanceDueUpdateRequest("Skipped", "stale", due.Version), CancellationToken.None));
         var converted = await service.ConvertDueAsync(AtlasTenant, actor, due.Id, new ConvertDueRequest(entity, "CustomerFieldService", "SV preventive work", "Generated from plan", customer, null), CancellationToken.None);
@@ -239,5 +239,23 @@ public sealed class ServiceOperationalAcceptanceTests
         await using var command = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection);
         command.Parameters.AddWithValue(tenant.ToString("D"));
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<Guid> CreateReadyServiceFileAsync(string connectionString, Guid workOrderId, string classification)
+    {
+        var fileId = Guid.CreateVersion7();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await SetTenantAsync(connection, AtlasTenant.Value);
+        await using var command = new NpgsqlCommand("insert into platform.file_record(id,tenant_id,owner_module,owner_entity_type,owner_entity_id,object_key,original_name,content_type,size,sha256,status,classification,created_by,created_at) values($1,$2,'service','work_order',$3,$4,'signed-report.pdf','application/pdf',5,$5,'Ready',$6,$7,now())", connection);
+        command.Parameters.AddWithValue(fileId);
+        command.Parameters.AddWithValue(AtlasTenant.Value);
+        command.Parameters.AddWithValue(workOrderId);
+        command.Parameters.AddWithValue($"tenant/{AtlasTenant.Value:D}/service/work_order/{workOrderId:D}/{fileId:D}");
+        command.Parameters.AddWithValue(new string('a', 64));
+        command.Parameters.AddWithValue(classification);
+        command.Parameters.AddWithValue(await FindActorAsync(connectionString));
+        await command.ExecuteNonQueryAsync();
+        return fileId;
     }
 }

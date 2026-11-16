@@ -43,6 +43,10 @@ public sealed class ServiceCrossModuleAcceptanceTests
         var work = await service.CreateWorkOrderAsync(AtlasTenant, actor.ActorId, Guid.CreateVersion7(),
             new CreateWorkOrderRequest(entity, "CustomerFieldService", "SV50 customer repair", "Acceptance repair",
                 customer, installedBase, null, null, null, BillingOwner: "Service"), CancellationToken.None);
+        var visit = await service.CreateVisitAsync(AtlasTenant, actor.ActorId, work.Id,
+            new CreateVisitRequest(DateTimeOffset.UtcNow.AddMinutes(10), DateTimeOffset.UtcNow.AddHours(1)), CancellationToken.None);
+        _ = await service.AssignAsync(AtlasTenant, actor.ActorId, visit.Id,
+            new CreateAssignmentRequest(null, actor.ActorId, DisplayName: "SV50 technician"), CancellationToken.None);
         var part = await service.AddPartAsync(AtlasTenant, actor.ActorId, work.Id,
             new CreatePartRequirementRequest(product, 2m, "PACK", "Acceptance part", entity, warehouse, location, uom), CancellationToken.None);
 
