@@ -37,6 +37,8 @@ public sealed class ProjectService(ProjectsRepository repository, IInvoicingSour
     public Task<PagedResult<TimeEntryView>> ListTimeAsync(TenantId tenant, Guid projectId, int page, int pageSize, CancellationToken ct) => repository.ListTimeAsync(tenant, projectId, page, pageSize, ct);
     public Task<RateCardView> CreateRateCardAsync(TenantId tenant, Guid actor, CreateRateCardRequest request, CancellationToken ct) => repository.CreateRateCardAsync(tenant, actor, request, ct);
     public Task<BudgetView> CreateBudgetAsync(TenantId tenant, Guid actor, Guid projectId, CreateBudgetRequest request, CancellationToken ct) => repository.CreateBudgetAsync(tenant, actor, projectId, request, ct);
+    public Task<IReadOnlyList<BudgetView>> ListBudgetsAsync(TenantId tenant, Guid projectId, CancellationToken ct) => repository.ListBudgetsAsync(tenant, projectId, ct);
+    public Task<IReadOnlyList<BillableChargeView>> ListChargesAsync(TenantId tenant, Guid projectId, CancellationToken ct) => repository.ListChargesAsync(tenant, projectId, ct);
     public Task<BudgetVersionView> CreateBudgetRevisionAsync(TenantId tenant, Guid actor, Guid projectId, Guid budgetId, CreateBudgetRevisionRequest request, CancellationToken ct) => repository.CreateBudgetRevisionAsync(tenant, actor, projectId, budgetId, request, ct);
     public Task<BudgetVersionView> ApproveBudgetVersionAsync(TenantId tenant, Guid actor, Guid budgetVersionId, CancellationToken ct) => repository.ApproveBudgetVersionAsync(tenant, actor, budgetVersionId, ct);
     public Task<ForecastView> CreateForecastAsync(TenantId tenant, Guid actor, Guid projectId, CreateForecastRequest request, CancellationToken ct) => repository.CreateForecastAsync(tenant, actor, projectId, request, ct);

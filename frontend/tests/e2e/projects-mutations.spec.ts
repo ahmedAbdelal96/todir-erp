@@ -1,7 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
 
 const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/projects-acceptance/mutations');
 const AGENT_BRAIN_DIR = 'C:/Users/IT/.gemini/antigravity/brain/2b36897c-7b21-48b3-b339-9bb22437719d/projects-acceptance/mutations';
@@ -17,9 +16,6 @@ function requireTestDevPassword(): string {
   }
   return pwd;
 }
-
-// Track disposable projects created during test runs for strict cleanup
-const disposableProjectIds: string[] = [];
 
 // Shared state across the serial mutation journey
 let createdProjectId: string = '';
@@ -42,49 +38,6 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
         // directory creation optional
       }
     });
-  });
-
-  test.afterAll(async () => {
-    // Clean up test-created projects from PostgreSQL to protect demonstration data
-    if (disposableProjectIds.length === 0) return;
-    try {
-      const idList = disposableProjectIds.map((id) => `'${id}'`).join(',');
-      const cleanupSql = `
-        delete from business_projects.project_integration_event where project_id in (${idList});
-        delete from business_projects.project_audit_event where project_id in (${idList});
-        delete from business_projects.project_close_exception where project_id in (${idList});
-        delete from business_projects.project_close where project_id in (${idList});
-        delete from business_projects.project_capital_handoff where project_id in (${idList});
-        delete from business_projects.project_change_order where project_id in (${idList});
-        delete from business_projects.project_change_request where project_id in (${idList});
-        delete from business_projects.project_invoice_allocation where invoice_request_id in (select id from business_projects.project_invoice_request where project_id in (${idList}));
-        delete from business_projects.project_invoice_request where project_id in (${idList});
-        delete from business_projects.project_billable_charge where project_id in (${idList});
-        delete from business_projects.project_billing_plan_line where project_id in (${idList});
-        delete from business_projects.project_billing_rule where project_id in (${idList});
-        delete from business_projects.project_cost_fact where project_id in (${idList});
-        delete from business_projects.project_commitment where project_id in (${idList});
-        delete from business_projects.project_forecast where project_id in (${idList});
-        delete from business_projects.project_budget_line where budget_version_id in (select v.id from business_projects.project_budget_version v join business_projects.project_budget b on b.id=v.budget_id where b.project_id in (${idList}));
-        delete from business_projects.project_budget_version where budget_id in (select id from business_projects.project_budget where project_id in (${idList}));
-        delete from business_projects.project_budget where project_id in (${idList});
-        delete from business_projects.project_time_approval where time_entry_id in (select id from business_projects.project_time_entry where project_id in (${idList}));
-        delete from business_projects.project_time_entry where project_id in (${idList});
-        delete from business_projects.project_resource_allocation where project_id in (${idList});
-        delete from business_projects.project_resource_requirement where project_id in (${idList});
-        delete from business_projects.project_team_member where project_id in (${idList});
-        delete from business_projects.project_deliverable where project_id in (${idList});
-        delete from business_projects.project_milestone where project_id in (${idList});
-        delete from business_projects.project_dependency where project_id in (${idList});
-        delete from business_projects.project_task where project_id in (${idList});
-        delete from business_projects.project_baseline where project_id in (${idList});
-        delete from business_projects.project_document where project_id in (${idList});
-        delete from business_projects.project where id in (${idList});
-      `;
-      execSync(`docker exec compose-postgres-1 psql -U postgres -d todir -c "${cleanupSql.replace(/\r?\n/g, ' ')}"`, { stdio: 'ignore' });
-    } catch {
-      // Ignore cleanup error in CI / disconnected environment
-    }
   });
 
   async function getCsrfToken(page: Page): Promise<string> {
@@ -176,7 +129,6 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
 
     createdProjectId = custData.id;
     createdProjectNumber = custData.projectNumber;
-    disposableProjectIds.push(createdProjectId);
 
     // Verify Customer Project fields persisted after reload
     await page.goto(`/projects/${createdProjectId}`);
@@ -224,7 +176,6 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
     expect(intData.projectType).toBe('InternalProject');
 
     createdInternalProjectId = intData.id;
-    disposableProjectIds.push(createdInternalProjectId);
 
     // Verify Internal Project fields persisted after reload
     await page.goto(`/projects/${createdInternalProjectId}`);
@@ -638,34 +589,33 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
 
     // Also resolve any remaining eligible time charges via domain API
     try {
-      const remainingCharges = execSync(
-        `docker exec compose-postgres-1 psql -U postgres -d todir -t -c "select id, billable_amount from business_projects.project_billable_charge where project_id='${createdProjectId}' and state='Eligible';"`,
-        { encoding: 'utf8' }
-      ).trim().split('\n').map((s) => s.trim().split('|')).filter((p) => p.length === 2);
+      const chargesRes = await page.request.get(`/api/v1/projects/${createdProjectId}/charges`);
+      if (chargesRes.ok()) {
+        const charges = await chargesRes.json();
+        const eligibleCharges = Array.isArray(charges) ? charges.filter((c: any) => c.state === 'Eligible') : [];
 
-      for (const [chId, chAmt] of remainingCharges) {
-        const cId = chId.trim();
-        const amt = parseFloat(chAmt.trim());
-        const invReq = await page.request.post(`/api/v1/projects/${createdProjectId}/invoice-requests`, {
-          data: {
-            projectId: createdProjectId,
-            chargeIds: [cId],
-            requestedAmount: amt,
-            currencyCode: 'EGP',
-            idempotencyKey: `inv-rem-${cId}`
-          },
-          headers: { 'X-CSRF-TOKEN': csrfToken }
-        });
-        if (invReq.ok()) {
-          const invReqData = await invReq.json();
-          await page.request.post(`/api/v1/projects/invoice-requests/${invReqData.id}/result`, {
+        for (const ch of eligibleCharges) {
+          const invReq = await page.request.post(`/api/v1/projects/${createdProjectId}/invoice-requests`, {
             data: {
-              state: 'Completed',
-              invoiceId: invReqData.invoiceId || invoiceRequestData.invoiceId,
-              invoicedAmount: amt
+              projectId: createdProjectId,
+              chargeIds: [ch.id],
+              requestedAmount: ch.billableAmount,
+              currencyCode: ch.currencyCode || 'EGP',
+              idempotencyKey: `inv-rem-${ch.id}`
             },
             headers: { 'X-CSRF-TOKEN': csrfToken }
           });
+          if (invReq.ok()) {
+            const invReqData = await invReq.json();
+            await page.request.post(`/api/v1/projects/invoice-requests/${invReqData.id}/result`, {
+              data: {
+                state: 'Completed',
+                invoiceId: invReqData.invoiceId || invoiceRequestData.invoiceId,
+                invoicedAmount: ch.billableAmount
+              },
+              headers: { 'X-CSRF-TOKEN': csrfToken }
+            });
+          }
         }
       }
     } catch {
@@ -759,7 +709,6 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
     expect(capRes.status()).toBe(201);
     const capData = await capRes.json();
     createdCapitalProjectId = capData.id;
-    disposableProjectIds.push(createdCapitalProjectId);
 
     // 2. Pre-create a capitalizable Cost Fact on this dedicated test capital project
     const factId = `cf-e2e-${Date.now()}`;
@@ -809,19 +758,7 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
     const handoffData = await handoffRes.json();
     expect(handoffData.state).toBe('Requested');
     expect(handoffData.amount).toBe(150000);
-
-    // Verify candidate created in business_assets
-    try {
-      const candidateCheck = execSync(
-        `docker exec compose-postgres-1 psql -U postgres -d todir -t -c "select status, eligible_amount from business_assets.asset_capitalization_candidate where economic_source_key='project-handoff:${handoffData.id}';"`,
-        { encoding: 'utf8' }
-      );
-      if (candidateCheck.trim()) {
-        expect(candidateCheck).toContain('PendingReview');
-      }
-    } catch {
-      // Direct SQL check optional if container unavailable
-    }
+    expect(handoffData.id).toBeTruthy();
 
     await saveArtifact(page, 'mutation-08-capital-handoff.png');
   });

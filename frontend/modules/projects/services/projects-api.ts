@@ -280,6 +280,9 @@ export const projectsApi = {
     }),
 
   // 14. Budgets & Forecasts
+  getBudgets: (projectId: string): Promise<readonly BudgetView[]> =>
+    httpClient<readonly BudgetView[]>(`${BASE}/${encodeURIComponent(projectId)}/budgets`),
+
   createBudget: (projectId: string, request: CreateBudgetRequest): Promise<BudgetView> =>
     httpClient<BudgetView>(`${BASE}/${encodeURIComponent(projectId)}/budgets`, {
       method: "POST",
@@ -334,6 +337,9 @@ export const projectsApi = {
       method: "POST",
       body: JSON.stringify({})
     }),
+
+  getCharges: (projectId: string): Promise<readonly BillableChargeView[]> =>
+    httpClient<readonly BillableChargeView[]>(`${BASE}/${encodeURIComponent(projectId)}/charges`),
 
   createCharge: (projectId: string, request: CreateBillableChargeRequest): Promise<BillableChargeView> =>
     httpClient<BillableChargeView>(`${BASE}/${encodeURIComponent(projectId)}/charges`, {

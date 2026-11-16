@@ -45,6 +45,18 @@ public sealed class ProjectDomainTests
         ProjectRules.ValidateCreate(ProjectTypes.Internal, null, "NonBillable", null, new DateOnly(2026, 1, 1), null);
     }
 
+    [Theory]
+    [InlineData("FixedPrice")]
+    [InlineData("TimeAndMaterials")]
+    [InlineData("Milestone")]
+    [InlineData("CostPlus")]
+    [InlineData("Mixed")]
+    public void InternalProjectCannotUseCustomerBilling(string billingModel)
+    {
+        var ex = Assert.Throws<ProjectException>(() => ProjectRules.ValidateCreate(ProjectTypes.Internal, null, billingModel, null, new DateOnly(2026, 1, 1), null));
+        Assert.Equal("projects.internal_billing_invalid", ex.Code);
+    }
+
     [Fact]
     public void ProjectDatesCannotRunBackwards()
     {

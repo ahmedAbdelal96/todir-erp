@@ -458,6 +458,14 @@ export function useExecuteTimeAction() {
   });
 }
 
+export function useProjectBudgets(projectId: string) {
+  return useQuery({
+    queryKey: [...projectKeys.detail(projectId), "budgets"],
+    queryFn: () => projectsApi.getBudgets(projectId),
+    enabled: Boolean(projectId)
+  });
+}
+
 export function useCreateBudget() {
   const qc = useQueryClient();
   return useMutation({
@@ -569,6 +577,14 @@ export function useGenerateBillingCharges() {
       qc.invalidateQueries({ queryKey: projectKeys.detail(vars.projectId) });
       qc.invalidateQueries({ queryKey: projectKeys.financialSummary(vars.projectId) });
     }
+  });
+}
+
+export function useProjectCharges(projectId: string) {
+  return useQuery({
+    queryKey: [...projectKeys.detail(projectId), "charges"],
+    queryFn: () => projectsApi.getCharges(projectId),
+    enabled: Boolean(projectId)
   });
 }
 

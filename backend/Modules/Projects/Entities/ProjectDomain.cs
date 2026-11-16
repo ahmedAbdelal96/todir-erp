@@ -56,6 +56,7 @@ public static class ProjectRules
         if (projectType == ProjectTypes.Customer && customerPartyId is null) throw new ProjectException("projects.customer_required");
         if (projectType != ProjectTypes.Customer && customerPartyId is not null) throw new ProjectException("projects.customer_not_allowed");
         if (projectType == ProjectTypes.Capital && billingModel != "NonBillable") throw new ProjectException("projects.capital_billing_invalid");
+        if (projectType == ProjectTypes.Internal && billingModel != "NonBillable") throw new ProjectException("projects.internal_billing_invalid");
         if (billingModel is not ("NonBillable" or "FixedPrice" or "Milestone" or "TimeAndMaterials" or "CostPlus" or "Mixed")) throw new ProjectException("projects.billing_model_invalid");
         if (budgetAmount is < 0) throw new ProjectException("projects.budget_invalid");
         if (targetEndDate is not null && targetEndDate < startDate) throw new ProjectException("projects.date_range_invalid");

@@ -267,9 +267,8 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
     {
         ProjectRules.EnsureMutable(await StateAsync(context, tenant.Value, projectId, token));
         if (request.CurrentAmount < 0) throw new ProjectException("projects.budget_invalid");
-        var resolvedBudgetId = await ScalarAsync(context, "select id from business_projects.project_budget where tenant_id=$1 and (id=$2 or project_id=$3) order by (id=$2) desc limit 1", token, tenant.Value, budgetId, projectId);
-        if (resolvedBudgetId is not Guid validBudgetId) throw new ProjectException("projects.budget_not_found");
-        budgetId = validBudgetId;
+        var budgetProject = await ScalarAsync(context, "select project_id from business_projects.project_budget where tenant_id=$1 and id=$2", token, tenant.Value, budgetId);
+        if (budgetProject is not Guid linkedProject || linkedProject != projectId) throw new ProjectException("projects.budget_not_found");
         var version = Convert.ToInt32(await ScalarAsync(context, "select coalesce(max(version_no),0)+1 from business_projects.project_budget_version where tenant_id=$1 and budget_id=$2", token, tenant.Value, budgetId), CultureInfo.InvariantCulture); var id = Guid.CreateVersion7();
         var original = await DecimalAsync(context, "select original_amount from business_projects.project_budget_version where tenant_id=$1 and budget_id=$2 and state='Approved' order by version_no desc limit 1", token, tenant.Value, budgetId);
         await ExecuteAsync(context, "insert into business_projects.project_budget_version(tenant_id,id,budget_id,version_no,state,original_amount,current_amount,created_by) values($1,$2,$3,$4,'Draft',$5,$6,$7)", token, tenant.Value, id, budgetId, version, original, request.CurrentAmount, actor);
@@ -455,7 +454,31 @@ public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITra
         var invoiced = await DecimalAsync(context, "select coalesce(sum(a.allocated_amount),0) - coalesce((select sum(c.amount) from business_projects.project_invoice_correction c where c.tenant_id=$1 and c.project_id=$2 and c.state='Applied'),0) from business_projects.project_invoice_allocation a join business_projects.project_invoice_request r on r.tenant_id=a.tenant_id and r.id=a.invoice_request_id where r.tenant_id=$1 and r.project_id=$2", token, tenant.Value, projectId);
         var billing = await ReadBillingBasisAsync(context, tenant.Value, projectId, token);
         var revenueBasis = billing.ContractValue ?? eligible + invoiced; var basisName = billing.ContractValue is not null ? "ContractValue" : "BillingEligiblePlusInvoiced";
-        return new(budget, actual, commitment, etc, eac, eligible, invoiced, 0m, invoiced, revenueBasis - eac, basisName, revenueBasis, billing.CurrencyCode);
+        var activeBudgetId = await ScalarAsync<Guid?>(context, "select b.id from business_projects.project_budget b join business_projects.project_budget_version v on v.tenant_id=b.tenant_id and v.budget_id=b.id and v.state='Approved' where b.tenant_id=$1 and b.project_id=$2 order by v.version_no desc limit 1", token, tenant.Value, projectId)
+            ?? await ScalarAsync<Guid?>(context, "select b.id from business_projects.project_budget b where b.tenant_id=$1 and b.project_id=$2 order by b.id limit 1", token, tenant.Value, projectId);
+        return new(budget, actual, commitment, etc, eac, eligible, invoiced, 0m, invoiced, revenueBasis - eac, basisName, revenueBasis, billing.CurrencyCode, activeBudgetId);
+    }, ct);
+
+    public Task<IReadOnlyList<BudgetView>> ListBudgetsAsync(TenantId tenant, Guid projectId, CancellationToken ct) => coordinator.ExecuteAsync<IReadOnlyList<BudgetView>>(tenant, async (context, token) =>
+    {
+        await StateAsync(context, tenant.Value, projectId, token);
+        var list = new List<BudgetView>();
+        const string sql = "select b.id, b.project_id, b.name, b.currency_code, b.control_mode, coalesce(v.original_amount,0), coalesce(v.current_amount,0), coalesce(v.state,'Approved'), coalesce(v.version_no,1) from business_projects.project_budget b left join lateral (select version_no, state, original_amount, current_amount from business_projects.project_budget_version where tenant_id=b.tenant_id and budget_id=b.id order by version_no desc limit 1) v on true where b.tenant_id=$1 and b.project_id=$2 order by b.id";
+        await using var command = Command(context, sql, tenant.Value, projectId);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3).Trim(), reader.GetString(4), reader.GetDecimal(5), reader.GetDecimal(6), reader.GetString(7), reader.GetInt32(8)));
+        return list;
+    }, ct);
+
+    public Task<IReadOnlyList<BillableChargeView>> ListChargesAsync(TenantId tenant, Guid projectId, CancellationToken ct) => coordinator.ExecuteAsync<IReadOnlyList<BillableChargeView>>(tenant, async (context, token) =>
+    {
+        await StateAsync(context, tenant.Value, projectId, token);
+        var list = new List<BillableChargeView>();
+        await using var cmd = Command(context, "select id,project_id,source_type,source_id,cost_amount,billable_amount,currency_code,state,invoice_request_id from business_projects.project_billable_charge where tenant_id=$1 and project_id=$2 order by charge_date desc, id desc", tenant.Value, projectId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) list.Add(ReadCharge(r));
+        return list;
     }, ct);
 
     public Task<IReadOnlyList<(Guid InvoiceId, Guid LegalEntityId)>> ListInvoiceSourcesAsync(TenantId tenant, Guid projectId, CancellationToken ct) => coordinator.ExecuteAsync<IReadOnlyList<(Guid InvoiceId, Guid LegalEntityId)>>(tenant, async (context, token) =>

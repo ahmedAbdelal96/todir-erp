@@ -14,6 +14,7 @@ import { ProjectHealthBadge } from "../components/project-health-badge.tsx";
 import {
   useProjectDetail,
   useFinancialSummary,
+  useProjectBudgets,
   useProjectTasks,
   useProjectMilestones,
   useProjectDeliverables,
@@ -142,6 +143,7 @@ export function ProjectWorkspacePage({
   // Queries
   const projectQuery = useProjectDetail(projectId);
   const summaryQuery = useFinancialSummary(projectId);
+  const budgetsQuery = useProjectBudgets(projectId);
   const tasksQuery = useProjectTasks(projectId);
   const milestonesQuery = useProjectMilestones(projectId);
   const deliverablesQuery = useProjectDeliverables(projectId);
@@ -590,7 +592,7 @@ export function ProjectWorkspacePage({
       <NewBudgetRevisionModal
         isOpen={isNewBudgetRevOpen}
         projectId={projectId}
-        budgetId={projectId}
+        budgetId={summaryQuery.data?.activeBudgetId ?? budgetsQuery.data?.[0]?.id ?? ""}
         currentAmount={project.budget}
         onClose={() => setIsNewBudgetRevOpen(false)}
       />

@@ -196,7 +196,8 @@ export const en = {
     PENDING_DELIVERABLE: "Pending Deliverables",
     UNBILLED_CHARGE: "Unbilled Eligible Charges",
     OUTSTANDING_AR: "Outstanding Receivables",
-    MANUAL_OVERRIDE: "Manual Exception Override"
+    MANUAL_OVERRIDE: "Manual Exception Override",
+    Operational: "Operational Exception"
   },
   fields: {
     projectNumber: "Project Number",
@@ -390,7 +391,8 @@ export const en = {
     capitalHelp: "For capital construction projects: identify capitalizable costs and hand them off directly to Fixed Assets as construction-in-progress (CIP).",
     closingHelp: "Financial pre-closing audit to prevent revenue leakage, unapproved timesheets, or open purchase commitments.",
     timesheetPolicy: "Project operations timesheets track delivery hours and cost allocation evaluated against rate cards upon finalization, distinct from general employee attendance.",
-    capitalBillingNotice: "Capital projects are strictly non-billable; costs accumulate as capital assets in progress (CIP)"
+    capitalBillingNotice: "Capital projects are strictly non-billable; costs accumulate as capital assets in progress (CIP)",
+    internalBillingNotice: "Internal projects are strictly non-billable; they do not involve external customer billing"
   },
   errors: {
     customerRequired: "Customer is required for customer projects.",

@@ -5,6 +5,7 @@ using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Modules.Projects.DTOs;
+using Modules.Projects.Entities;
 using Modules.Projects.Repositories;
 using Modules.Projects.Services;
 using Npgsql;
@@ -279,6 +280,62 @@ public sealed class ProjectAcceptanceScenarioTests
         Assert.NotNull(resolved.ResolvedAt);
         Assert.Contains(portfolio.Items, x => x.Id == project.Id);
         Assert.Contains(resourceLoad, x => x.ResourceKey == actor.ToString());
+    }
+
+    [Fact(DisplayName = "PJ48 budget revision enforces ownership, preserves history, rejects cross-project, unknown, cross-tenant, and cross-entity access")]
+    public async Task Pj48BudgetRevisionIntegrity()
+    {
+        await using var database = OpenDatabase();
+        var service = CreateService(database);
+        var actor = Guid.CreateVersion7();
+
+        // 1. Create Project A with initial budget 500,000 EGP
+        var projectA = await service.CreateAsync(AtlasTenant, actor, actor, new(AtlasEntity, $"PJ48-A-{Guid.NewGuid():N}", "InternalProject", null, null, new(2026, 1, 1), null, CurrencyCode: "EGP", InitialBudget: 500000m), Guid.CreateVersion7(), CancellationToken.None);
+        var summaryA = await service.GetSummaryAsync(AtlasTenant, projectA.Id, CancellationToken.None);
+        Assert.NotNull(summaryA.ActiveBudgetId);
+        var budgetAId = summaryA.ActiveBudgetId!.Value;
+
+        // 2. Valid budget revision succeeds and updates to version 2 (Draft), preserving approved version 1
+        var revA = await service.CreateBudgetRevisionAsync(AtlasTenant, actor, projectA.Id, budgetAId, new(600000m, [new("DEV", 600000m, "Scope expansion")], "Approved scope expansion"), CancellationToken.None);
+        Assert.Equal(budgetAId, revA.BudgetId);
+        Assert.Equal(2, revA.VersionNo);
+        Assert.Equal("Draft", revA.State);
+        Assert.Equal(500000m, revA.OriginalAmount);
+        Assert.Equal(600000m, revA.CurrentAmount);
+
+        // Verify version 1 remains intact in 'Approved' state with 500k
+        var v1State = (string)(await ScalarAsync(database, "select state from business_projects.project_budget_version where tenant_id=$1 and budget_id=$2 and version_no=1", AtlasTenant.Value, budgetAId))!;
+        var v1Amount = (decimal)(await ScalarAsync(database, "select current_amount from business_projects.project_budget_version where tenant_id=$1 and budget_id=$2 and version_no=1", AtlasTenant.Value, budgetAId))!;
+        Assert.Equal("Approved", v1State);
+        Assert.Equal(500000m, v1Amount);
+
+        // 3. Create Project B with its own budget
+        var projectB = await service.CreateAsync(AtlasTenant, actor, actor, new(AtlasEntity, $"PJ48-B-{Guid.NewGuid():N}", "InternalProject", null, null, new(2026, 1, 1), null, CurrencyCode: "EGP", InitialBudget: 200000m), Guid.CreateVersion7(), CancellationToken.None);
+        var summaryB = await service.GetSummaryAsync(AtlasTenant, projectB.Id, CancellationToken.None);
+        Assert.NotNull(summaryB.ActiveBudgetId);
+        var budgetBId = summaryB.ActiveBudgetId!.Value;
+
+        // 4. Reject revising Budget B through Project A (cross-project attack)
+        var crossProjEx = await Assert.ThrowsAsync<ProjectException>(() => service.CreateBudgetRevisionAsync(AtlasTenant, actor, projectA.Id, budgetBId, new(700000m), CancellationToken.None));
+        Assert.Equal("projects.budget_not_found", crossProjEx.Code);
+
+        // 5. Reject unknown budget ID
+        var unknownBudgetId = Guid.CreateVersion7();
+        var unknownEx = await Assert.ThrowsAsync<ProjectException>(() => service.CreateBudgetRevisionAsync(AtlasTenant, actor, projectA.Id, unknownBudgetId, new(700000m), CancellationToken.None));
+        Assert.Equal("projects.budget_not_found", unknownEx.Code);
+
+        // 6. Reject cross-tenant budget access
+        var crossTenantEx = await Assert.ThrowsAsync<ProjectException>(() => service.CreateBudgetRevisionAsync(DeltaTenant, actor, projectA.Id, budgetAId, new(800000m), CancellationToken.None));
+        Assert.True(crossTenantEx.Code is "projects.budget_not_found" or "projects.project_not_found");
+
+        // 7. Verify ListBudgetsAsync lists all budgets and charges for project
+        var budgetsList = await service.ListBudgetsAsync(AtlasTenant, projectA.Id, CancellationToken.None);
+        Assert.Single(budgetsList);
+        Assert.Equal(budgetAId, budgetsList[0].Id);
+        Assert.Equal(500000m, budgetsList[0].OriginalAmount);
+
+        var chargesList = await service.ListChargesAsync(AtlasTenant, projectA.Id, CancellationToken.None);
+        Assert.Empty(chargesList);
     }
 
     private static Guid GetTemplateVersionId(NpgsqlDataSource database, TenantId tenant, Guid templateId)

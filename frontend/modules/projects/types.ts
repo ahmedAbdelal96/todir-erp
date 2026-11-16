@@ -96,6 +96,7 @@ export interface FinancialSummary {
   readonly revenueBasis: string;
   readonly revenueBasisAmount: number;
   readonly currencyCode: string | null;
+  readonly activeBudgetId?: string | null;
 }
 
 export interface ProjectTaskView {

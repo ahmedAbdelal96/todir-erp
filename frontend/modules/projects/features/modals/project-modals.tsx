@@ -48,14 +48,9 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
   const handleProjectTypeChange = (newType: ProjectType) => {
     setProjectType(newType);
     setValidationError(null);
-    if (newType === "CapitalProject") {
+    if (newType === "CapitalProject" || newType === "InternalProject") {
       setBillingModel("NonBillable");
       setCustomerPartyId(null);
-    } else if (newType === "InternalProject") {
-      setCustomerPartyId(null);
-      if (billingModel !== "TimeAndMaterials" && billingModel !== "NonBillable") {
-        setBillingModel("NonBillable");
-      }
     } else if (newType === "CustomerProject") {
       if (billingModel === "NonBillable") {
         setBillingModel("TimeAndMaterials");
@@ -85,7 +80,7 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
         projectType,
         customerPartyId: projectType === "CustomerProject" ? customerPartyId : null,
         projectManagerEmployeeId: projectManagerEmployeeId || null,
-        billingModel: projectType === "CapitalProject" ? "NonBillable" : billingModel,
+        billingModel: projectType === "CapitalProject" || projectType === "InternalProject" ? "NonBillable" : billingModel,
         startDate,
         targetEndDate: targetEndDate ? targetEndDate : null,
         currencyCode: currencyCode ? currencyCode.toUpperCase() : "EGP",
@@ -174,7 +169,7 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
             <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.25rem" }}>
               {t("fields.billingModel")}
             </label>
-            {projectType === "CapitalProject" ? (
+            {projectType === "CapitalProject" || projectType === "InternalProject" ? (
               <div>
                 <select
                   disabled
@@ -184,7 +179,7 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
                   <option value="NonBillable">{t("billingModels.NonBillable")}</option>
                 </select>
                 <span style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.25rem", display: "block" }}>
-                  {t("help.capitalBillingNotice")}
+                  {projectType === "CapitalProject" ? t("help.capitalBillingNotice") : t("help.internalBillingNotice")}
                 </span>
               </div>
             ) : (

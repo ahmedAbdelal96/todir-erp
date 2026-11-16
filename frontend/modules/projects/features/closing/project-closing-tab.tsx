@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
+import { DateTimeDisplay } from "../../../../components/fields/date-time-display.tsx";
 import { CloseShieldIcon, AlertTriangleIcon, CheckCircleIcon, PlusCircleIcon } from "../../components/projects-icons.tsx";
 import type { CloseView, ProjectCloseExceptionView, ProjectDetail } from "../../types.ts";
 
@@ -45,6 +46,8 @@ export function ProjectClosingTab({
         return t("closeExceptionTypes.OUTSTANDING_AR");
       case "MANUAL_OVERRIDE":
         return t("closeExceptionTypes.MANUAL_OVERRIDE");
+      case "Operational":
+        return t("closeExceptionTypes.Operational");
       default:
         return exceptionType;
     }
@@ -200,7 +203,7 @@ export function ProjectClosingTab({
                     <td style={{ padding: "0.75rem 1rem", color: "var(--color-content-muted, #64748b)" }}>{ex.message}</td>
                     <td style={{ padding: "0.75rem 1rem" }}>
                       {ex.resolvedAt ? (
-                        <span style={{ color: "var(--color-status-success, #059669)", fontWeight: 600 }}>{ex.resolvedAt}</span>
+                        <DateTimeDisplay value={ex.resolvedAt} type="datetime" />
                       ) : (
                         <span style={{ color: "var(--color-status-danger, #dc2626)", fontWeight: 600 }}>{t("states.open")}</span>
                       )}
