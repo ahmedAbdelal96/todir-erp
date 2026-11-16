@@ -8,7 +8,8 @@ Canonical pack: `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_FIELD_SERVICE_REQU
 - Branch: `dev`.
 - Schema: `business_service`; all module tables use forced tenant RLS and are granted only to `erp_app`.
 - Last meaningful change: completed the service execution surface for templates, checklists, diagnosis, installed-base component events, warranties, bounded part movements, downtime, service reports/customer acceptance, invoice-request/allocation seams, maintenance due conversion, SLA profiles/clocks, and KPI reporting.
-- Next executable action before delivery: run the final build/test/migration/seed/runtime evidence sequence, then commit and push `dev`.
+- Delivered commit: `9a1eca3082524a00be151261dfe3b921910d2cf2` is pushed to `origin/dev`.
+- Next executable action: none for this backend mission; frontend/UX may begin from the handoff document.
 
 ## SV00–SV51 backend matrix
 
@@ -22,7 +23,7 @@ Canonical pack: `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_FIELD_SERVICE_REQU
 | SV32–SV36 charges, invoice allocation, project billing ownership, preventive/meter | PASS for Service-owned boundary | Charge lifecycle and invoice-request event; project owner invariant; due generation/conversion; monotonic meter rule |
 | SV37–SV42 dispatch, mobile, offline, permissions, RLS, audit | PASS for backend-owned contracts | Mobile day, offline idempotency/conflict records, route permissions, forced RLS, audit rows |
 | SV43–SV50 acceptance and cross-module seams | PASS for seeded Service paths; downstream provider activation remains external | Seed rerun proof, real API smoke proof, outbox/capability seams, no cross-module table writes |
-| SV51 release gate | Pending final gate | This checkpoint is not a delivery claim until the final evidence below is refreshed after the last change |
+| SV51 release gate | PASS | Final solution build, Service tests 3/3, Architecture tests 21/21, format verification, fresh migration/seed, forced-RLS proof, authenticated API smoke, and runtime warranty/SLA proof passed after the final source change |
 
 ## Evidence log
 
@@ -30,6 +31,8 @@ Canonical pack: `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_FIELD_SERVICE_REQU
 - Development seed ran twice for Atlas and Delta with stable Service counts: one installed base, one request, two work orders, one visit, one contract, one maintenance plan per tenant.
 - Forced RLS was verified on all 39 Service-owned tables.
 - API smoke verification used real HTTPS, authenticated seeded admin, real PostgreSQL, `GET /api/v1/service/templates`, and `GET /api/v1/service/reports/kpi`.
+- Final API mutation proof created a real active warranty and SLA profile against the disposable seeded database.
+- Final solution build passed with 0 warnings/errors; Service unit tests passed 3/3; Architecture tests passed 21/21; `dotnet format --verify-no-changes` and `git diff --check` passed.
 - Large 100k/1M-row benchmarks were intentionally not run; bounded pagination and module indexes are the required local verification scope.
 
 ## Known external boundaries
