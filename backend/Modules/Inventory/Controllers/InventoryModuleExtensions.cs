@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Modules.Inventory.DTOs;
 using Modules.Inventory.Repositories;
 using Modules.Inventory.Services;
+using Modules.Inventory.Contracts;
 using Todir.Inventory.Contracts;
 using Todir.Sales.Contracts;
 using Shared.Contracts.Accounting;
@@ -21,6 +22,7 @@ public static class InventoryModuleExtensions
         services.AddSingleton<IModuleManifestProvider, InventoryModuleManifestProvider>();
         services.AddSingleton<InventoryRepository>();
         services.AddSingleton<InventoryService>();
+        services.AddSingleton<Shared.Contracts.Inventory.IInventoryCapabilities, InventoryCapabilityAdapter>();
         services.AddSingleton<IInventoryCapabilities>(provider => provider.GetRequiredService<InventoryService>());
         services.AddSingleton<Shared.Contracts.Inventory.IInventoryPurchasingCapabilities>(provider => provider.GetRequiredService<InventoryService>());
         services.AddSingleton<Shared.Contracts.Inventory.IInventoryFixedAssetCapabilities>(provider => provider.GetRequiredService<InventoryService>());

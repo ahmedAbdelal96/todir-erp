@@ -107,6 +107,14 @@ public sealed class InvoiceAggregateTests
         Assert.Equal(module is "sales" or "purchasing" ? "invoicing.source_direction_invalid" : "invoicing.source_reference_invalid", error.Code);
     }
 
+    [Fact]
+    public void ServiceSourceCreatesReceivableDraftContract()
+    {
+        var mapped = InvoiceSourceRequestMapper.Map(Source("service", "Receivable"));
+        Assert.Equal(InvoiceDirection.Receivable, mapped.Direction);
+        Assert.Equal("service", mapped.Reference.SourceModule);
+    }
+
     [Theory]
     [InlineData(InvoiceDirection.Receivable, InvoiceDocumentType.Invoice, "CustomerInvoicePosted")]
     [InlineData(InvoiceDirection.Receivable, InvoiceDocumentType.CreditNote, "CustomerCreditNotePosted")]

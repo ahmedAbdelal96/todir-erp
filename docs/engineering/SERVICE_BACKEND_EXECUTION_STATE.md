@@ -2,39 +2,27 @@
 
 Canonical pack: `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_FIELD_SERVICE_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`.
 
-## Current checkpoint
+## Corrective checkpoint
 
-- Authorized scope: backend, PostgreSQL, API, Worker composition, tenant security, Development Seed, and backend-owned acceptance for SV00–SV51. Frontend and UX remain a separate handoff.
-- Branch: `dev`.
-- Schema: `business_service`; all module tables use forced tenant RLS and are granted only to `erp_app`.
-- Last meaningful change: completed the service execution surface for templates, checklists, diagnosis, installed-base component events, warranties, bounded part movements, downtime, service reports/customer acceptance, invoice-request/allocation seams, maintenance due conversion, SLA profiles/clocks, and KPI reporting.
-- Delivered commit: `9a1eca3082524a00be151261dfe3b921910d2cf2` is pushed to `origin/dev`.
-- Next executable action: none for this backend mission; frontend/UX may begin from the handoff document.
+- Authorized scope: the entire backend/database/API/Worker-owned Module 24 Build Now MUST scope and SV00–SV51 backend acceptance. Frontend and UX remain a separate handoff.
+- Branch: `dev`. No reset or destructive database action was used.
+- Last meaningful source change: authoritative Inventory/Invoicing/Projects capability seams, part movement ledger, typed offline command execution, line-level entitlement persistence, calendar-aware SLA clocks, due generation/state transitions, legal-entity resource authorization, and deterministic seed references.
+- Verified after that change: Service build, solution build (0 warnings/errors), Service tests `4/4`, Architecture tests `21/21`, formatter verification, disposable PostgreSQL bootstrap `208` ordered scripts, seed twice, forced RLS `40/40`, authenticated API GET smoke, and RabbitMQ-backed API startup/shutdown.
+- Current status: `NOT VERIFIED` for full module delivery. The complete SV00–SV51 real-stack acceptance and several workflow proofs remain executable work; this checkpoint is not a completion claim.
+- Next executable action: add/run the real PostgreSQL + RabbitMQ acceptance harness for reserve→issue→return, Service→Invoicing draft/allocation, Projects cost ownership, typed offline replay/conflict, preventive generation/conversion, meter rollover, SLA pause/breach, and two-tenant/legal-entity authorization; then refresh this checkpoint after the last change.
 
-## SV00–SV51 backend matrix
+## Evidence that remains valid
 
-| Area | Status | Evidence |
+| Gate | Result | Evidence |
 |---|---|---|
-| SV00–SV04 discovery, module registration, schema ownership | PASS | Service manifest, project references, `service-schema.sql`, fresh migrator bootstrap |
-| SV05–SV12 requests, work orders, lifecycle, visits, assignments | PASS | Authenticated API routes, optimistic versions, persisted audit/outbox, seeded customer and internal flows |
-| SV13–SV18 installed base, hierarchy, components, templates, checklists, diagnosis | PASS | Forced-RLS tables, API write/read contracts, bounded template list, focused Service rules tests |
-| SV19–SV24 parts, labor, costs, downtime, reports | PASS for Service-owned facts | Part state/quantity guards, idempotent labor, downtime close, report versioning and acceptance routes |
-| SV25–SV31 warranty, contracts, entitlement, SLA | PASS for foundation | Warranty/contract persistence and entitlement resolver; SLA profile/clock persistence and API |
-| SV32–SV36 charges, invoice allocation, project billing ownership, preventive/meter | PASS for Service-owned boundary | Charge lifecycle and invoice-request event; project owner invariant; due generation/conversion; monotonic meter rule |
-| SV37–SV42 dispatch, mobile, offline, permissions, RLS, audit | PASS for backend-owned contracts | Mobile day, offline idempotency/conflict records, route permissions, forced RLS, audit rows |
-| SV43–SV50 acceptance and cross-module seams | PASS for seeded Service paths; downstream provider activation remains external | Seed rerun proof, real API smoke proof, outbox/capability seams, no cross-module table writes |
-| SV51 release gate | PASS | Final solution build, Service tests 3/3, Architecture tests 21/21, format verification, fresh migration/seed, forced-RLS proof, authenticated API smoke, and runtime warranty/SLA proof passed after the final source change |
+| Solution compilation | PASS | `dotnet build backend/Backend.sln --no-restore` after the last source change; 0 warnings/errors. |
+| Service focused tests | PASS | `ServiceTests`: 4 passed, including Customer Field Service installed-base validation. |
+| Architecture boundary | PASS | `ArchitectureTests`: 21 passed; Inventory capability is exposed through Shared Contracts plus a module adapter. |
+| Formatting and whitespace | PASS | `dotnet format backend/Backend.sln --verify-no-changes --no-restore`; `git diff --check`. |
+| PostgreSQL migration | PASS | Disposable `todir_service_corrective_20261116`; 208 ordered scripts applied/verified. |
+| Development seed | PASS | Atlas and Delta seed completed twice; Service counts remained deterministic; real catalog variant/inventory warehouse/location/UOM references are used. |
+| Tenant RLS | PASS | 40/40 `business_service` tables had forced RLS in the disposable database. |
+| API smoke | PASS | Authenticated seeded admin received HTTP 200 for requests, templates, maintenance due, installed base and KPI routes; API started with RabbitMQ bus. |
+| Cross-module business acceptance | NOT VERIFIED | No final post-change proof yet records owning Inventory movements, an Invoicing draft/allocation, a Projects cost fact, or Worker-delivered Service outcome. |
 
-## Evidence log
-
-- Fresh disposable PostgreSQL bootstrap applied 207 ordered platform scripts including `service-schema.sql` and RLS finalization.
-- Development seed ran twice for Atlas and Delta with stable Service counts: one installed base, one request, two work orders, one visit, one contract, one maintenance plan per tenant.
-- Forced RLS was verified on all 39 Service-owned tables.
-- API smoke verification used real HTTPS, authenticated seeded admin, real PostgreSQL, `GET /api/v1/service/templates`, and `GET /api/v1/service/reports/kpi`.
-- Final API mutation proof created a real active warranty and SLA profile against the disposable seeded database.
-- Final solution build passed with 0 warnings/errors; Service unit tests passed 3/3; Architecture tests passed 21/21; `dotnet format --verify-no-changes` and `git diff --check` passed.
-- Large 100k/1M-row benchmarks were intentionally not run; bounded pagination and module indexes are the required local verification scope.
-
-## Known external boundaries
-
-Inventory, Invoicing, Projects, Expenses, Fixed Assets, Payments, file storage, and country-provider activation remain owned by their modules. Service emits capability/outbox events and stores external references; it does not query or write another module's tables. Advanced route optimization, continuous GPS, IoT predictive maintenance, full depot logistics, supplier warranty claims, portal, AR/IoT, and autonomous AI dispatch remain deferred by the canonical pack.
+No 100k/1M-row benchmark was run; the local gate remains bounded pagination, indexes and normal query behavior.

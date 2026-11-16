@@ -22,32 +22,43 @@ public sealed record ComponentEventRequest(Guid ItemId, Guid ComponentItemId, st
 public sealed record ComponentEventView(Guid Id, Guid ItemId, Guid ComponentItemId, string EventType, DateTimeOffset OccurredAt, Guid? ReplacedComponentId, Guid? WorkOrderId, string? Notes);
 public sealed record CreateMaintenancePlanRequest(Guid LegalEntityId, string Name, string SubjectType, Guid SubjectId, string TriggerType, DateOnly? StartDate, int? IntervalDays, decimal? MeterThreshold, string? MeterCode);
 public sealed record MaintenancePlanView(Guid Id, Guid LegalEntityId, string Name, string SubjectType, Guid SubjectId, string TriggerType, DateOnly? StartDate, int? IntervalDays, decimal? MeterThreshold, string? MeterCode, string State);
-public sealed record MaintenanceDueView(Guid Id, Guid PlanId, Guid SubjectId, DateOnly DueDate, string State, Guid? WorkOrderId, string? Reason);
+public sealed record MaintenanceDueView(Guid Id, Guid PlanId, Guid SubjectId, DateOnly DueDate, string State, Guid? WorkOrderId, string? Reason, long Version = 1);
+public sealed record GenerateDueRequest(DateOnly FromDate, DateOnly ToDate, int Limit = 500);
+public sealed record MaintenanceDueUpdateRequest(string State, string? Reason, long ExpectedVersion = 1);
+public sealed record DueGenerationView(int InspectedPlans, int CreatedDueItems);
 public sealed record ConvertDueRequest(Guid LegalEntityId, string Context, string Title, string? Description, Guid? CustomerPartyId, Guid? ProjectId, string BillingOwner = "None", string WorkType = "Preventive", string Priority = "Normal");
 public sealed record MaintenanceConversionView(MaintenanceDueView Due, WorkOrderView WorkOrder);
-public sealed record CreateSlaProfileRequest(Guid LegalEntityId, string Code, int ResponseMinutes, int? ArrivalMinutes, int ResolutionMinutes);
-public sealed record SlaProfileView(Guid Id, Guid LegalEntityId, string Code, int ResponseMinutes, int? ArrivalMinutes, int ResolutionMinutes, string State);
+public sealed record CreateSlaProfileRequest(Guid LegalEntityId, string Code, int ResponseMinutes, int? ArrivalMinutes, int ResolutionMinutes, short WorkingWeekdays = 127, string WorkingStart = "08:00", string WorkingEnd = "17:00", string TimeZoneId = "Africa/Cairo");
+public sealed record SlaProfileView(Guid Id, Guid LegalEntityId, string Code, int ResponseMinutes, int? ArrivalMinutes, int ResolutionMinutes, string State, short WorkingWeekdays = 127, string WorkingStart = "08:00", string WorkingEnd = "17:00", string TimeZoneId = "Africa/Cairo");
 public sealed record StartSlaClockRequest(Guid WorkOrderId, Guid ProfileId, string ClockType, DateTimeOffset StartedAt);
 public sealed record SlaClockView(Guid Id, Guid WorkOrderId, string ClockType, DateTimeOffset StartedAt, DateTimeOffset DueAt, string State, int PausedMinutes);
+public sealed record SlaClockActionRequest(string? Reason = null, DateTimeOffset? OccurredAt = null);
+public sealed record SlaMonitorView(int BreachedClocks);
 public sealed record RecordMeterReadingRequest(Guid LegalEntityId, Guid SubjectId, string MeterCode, decimal Value, string Uom, DateTimeOffset ReadingAt, string Source = "Manual", bool IsReset = false);
 public sealed record MeterReadingView(Guid Id, Guid SubjectId, string MeterCode, decimal Value, string Uom, DateTimeOffset ReadingAt, string Source, bool IsReset);
 public sealed record CreateContractRequest(Guid LegalEntityId, Guid ContractHolderPartyId, Guid BillToPartyId, DateOnly StartDate, DateOnly EndDate, string ContractType = "Annual", string CurrencyCode = "EGP", decimal? Value = null, string? ScopeJson = null);
 public sealed record ServiceContractView(Guid Id, Guid LegalEntityId, Guid ContractHolderPartyId, Guid BillToPartyId, DateOnly StartDate, DateOnly EndDate, string ContractType, string CurrencyCode, decimal? Value, string State, string? ScopeJson);
 public sealed record CreateWarrantyRequest(Guid LegalEntityId, string WarrantyType, Guid? ProviderPartyId, Guid? CustomerPartyId, Guid SubjectId, DateOnly StartDate, DateOnly EndDate, string? ScopeJson = null);
 public sealed record WarrantyView(Guid Id, Guid LegalEntityId, string WarrantyType, Guid? ProviderPartyId, Guid? CustomerPartyId, Guid? SubjectId, DateOnly StartDate, DateOnly EndDate, string State, string ScopeJson);
-public sealed record EntitlementRequest(Guid LegalEntityId, Guid? CustomerPartyId, Guid? InstalledBaseId, Guid? WorkOrderId, DateOnly AsOfDate);
+public sealed record EntitlementLineRequest(string ChargeCategory, decimal Amount, string CurrencyCode = "EGP", decimal Quantity = 1m, string? Description = null);
+public sealed record EntitlementRequest(Guid LegalEntityId, Guid? CustomerPartyId, Guid? InstalledBaseId, Guid? WorkOrderId, DateOnly AsOfDate, IReadOnlyList<EntitlementLineRequest>? Lines = null);
 public sealed record CoverageResult(string ChargeCategory, string CoverageSource, bool Covered, decimal CoveredAmount, decimal CustomerAmount, string Explanation);
 public sealed record EntitlementView(IReadOnlyList<CoverageResult> Lines, string SlaState, Guid? ContractId, Guid? WarrantyId);
 public sealed record CreateChargeRequest(string Category, string Description, decimal CostAmount, decimal CustomerAmount, string CurrencyCode = "EGP", string? SourceType = null, Guid? SourceId = null);
 public sealed record ServiceChargeView(Guid Id, Guid WorkOrderId, string Category, string Description, decimal CostAmount, decimal CoveredAmount, decimal CustomerAmount, string CurrencyCode, string State, Guid? InvoiceId);
 public sealed record InvoiceAllocationRequest(Guid InvoiceId, decimal AllocatedAmount);
-public sealed record PartActionRequest(decimal Quantity, string? InventoryReference = null);
-public sealed record CreatePartRequirementRequest(Guid ProductId, decimal Quantity, string UomCode, string? Description = null);
+public sealed record PartActionRequest(decimal Quantity, string? InventoryReference = null, string? IdempotencyKey = null,
+    Guid? LegalEntityId = null, Guid? WarehouseId = null, Guid? LocationId = null, Guid? UnitOfMeasureId = null,
+    Guid? InventoryReservationId = null, Guid? LotId = null, Guid? SerialId = null);
+public sealed record CreatePartRequirementRequest(Guid ProductId, decimal Quantity, string UomCode, string? Description = null,
+    Guid? LegalEntityId = null, Guid? WarehouseId = null, Guid? LocationId = null, Guid? UnitOfMeasureId = null,
+    Guid? LotId = null, Guid? SerialId = null);
 public sealed record PartRequirementView(Guid Id, Guid WorkOrderId, Guid ProductId, decimal Quantity, string UomCode, string State, decimal ReservedQuantity, decimal IssuedQuantity, decimal ConsumedQuantity, decimal ReturnedQuantity);
 public sealed record RecordLaborRequest(Guid VisitId, Guid? EmployeeId, DateTimeOffset StartedAt, DateTimeOffset EndedAt, string TimeCategory, decimal? CostRate, string CurrencyCode = "EGP", string? IdempotencyKey = null);
 public sealed record LaborView(Guid Id, Guid VisitId, Guid? EmployeeId, DateTimeOffset StartedAt, DateTimeOffset EndedAt, string TimeCategory, decimal DurationHours, decimal? CostAmount, string CurrencyCode, string State);
 public sealed record OfflineCommandRequest(Guid ClientCommandId, string CommandType, Guid? WorkOrderId, Guid? VisitId, long? ExpectedVersion, string PayloadJson = "{}");
 public sealed record OfflineCommandView(Guid Id, Guid ClientCommandId, string CommandType, string State, string? ConflictCode, string? ResultJson);
+public sealed record ContractUsageRequest(Guid WorkOrderId, string UsageType, decimal Quantity, string IdempotencyKey);
 public sealed record MobileDayView(IReadOnlyList<VisitView> Visits, IReadOnlyList<WorkOrderView> WorkOrders, DateOnly Date);
 public sealed record ServiceReportView(Guid Id, Guid WorkOrderId, int Version, string State, string ContentJson, DateTimeOffset CreatedAt);
 public sealed record CreateReportRequest(string ContentJson);

@@ -12,6 +12,12 @@ public sealed class ServiceRulesTests
     }
 
     [Fact]
+    public void CustomerFieldServiceRequiresInstalledBase()
+    {
+        Assert.Throws<ArgumentException>(() => ServiceRules.ValidateContext("CustomerFieldService", Guid.NewGuid(), null));
+    }
+
+    [Fact]
     public void PartMovementCannotConsumeMoreThanIssued()
     {
         Assert.Throws<InvalidOperationException>(() => ServiceRules.ApplyPartMovement("consume", 2m, 10m, 0m, 1m, 0m, 0m));

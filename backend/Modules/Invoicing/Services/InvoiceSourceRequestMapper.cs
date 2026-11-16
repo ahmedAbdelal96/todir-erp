@@ -15,13 +15,13 @@ public static class InvoiceSourceRequestMapper
     public static MappedInvoiceSourceRequest Map(InvoiceSourceDocumentContract request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.SourceModule is not ("sales" or "purchasing" or "pos" or "projects") || request.SourceDocumentId == Guid.Empty ||
+        if (request.SourceModule is not ("sales" or "purchasing" or "pos" or "projects" or "service") || request.SourceDocumentId == Guid.Empty ||
             string.IsNullOrWhiteSpace(request.Purpose) || request.Purpose.Length > 80 ||
             string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 200)
             throw new InvoiceException("invoicing.source_reference_invalid", "The source document reference or idempotency key is invalid.");
         var direction = request.Direction switch
         {
-            "Receivable" when request.SourceModule is "sales" or "pos" or "projects" => InvoiceDirection.Receivable,
+            "Receivable" when request.SourceModule is "sales" or "pos" or "projects" or "service" => InvoiceDirection.Receivable,
             "Payable" when request.SourceModule == "purchasing" => InvoiceDirection.Payable,
             _ => throw new InvoiceException("invoicing.source_direction_invalid", "Sales and POS sources create customer invoices; purchasing sources create supplier invoices.")
         };

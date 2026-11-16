@@ -7,6 +7,7 @@ public static class ServiceRules
         if (context is not ("InternalMaintenance" or "CustomerFieldService")) throw new ArgumentException("Unsupported service context.", nameof(context));
         if (context == "CustomerFieldService" && customerPartyId is null) throw new ArgumentException("Customer field service requires a customer.", nameof(customerPartyId));
         if (installedBaseId == Guid.Empty) throw new ArgumentException("An installed base or fixed asset subject is required.", nameof(installedBaseId));
+        if (context == "CustomerFieldService" && installedBaseId is null) throw new ArgumentException("Customer field service requires an installed base.", nameof(installedBaseId));
     }
 
     public static (decimal Reserved, decimal Issued, decimal Consumed, decimal Returned) ApplyPartMovement(string action, decimal quantity, decimal required, decimal reserved, decimal issued, decimal consumed, decimal returned)

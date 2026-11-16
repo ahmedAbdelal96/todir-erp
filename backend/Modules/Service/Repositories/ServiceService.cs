@@ -5,12 +5,24 @@ using Core.Transactions;
 using Npgsql;
 using Modules.Service.Domain;
 using Modules.Service.DTOs;
+using Shared.Contracts.Inventory;
+using Shared.Contracts.Invoicing;
+using Shared.Contracts.Projects;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Service.Services;
 
-public sealed class ServiceService(ITransactionCoordinator coordinator)
+public sealed class ServiceService(
+    ITransactionCoordinator coordinator,
+    IInventoryCapabilities? inventory = null,
+    IInvoicingSourceCapabilities? invoicing = null,
+    IServiceInvoiceReadCapability? invoiceReader = null,
+    IProjectSourceIntegrationCapabilities? projects = null)
 {
+    public Task<Guid?> GetWorkOrderLegalEntityAsync(TenantId tenant, Guid workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context, "select legal_entity_id from business_service.work_order where tenant_id=$1 and id=$2", token, tenant.Value, workOrderId), ct);
+    public Task<Guid?> GetVisitLegalEntityAsync(TenantId tenant, Guid visitId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context, "select w.legal_entity_id from business_service.service_visit v join business_service.work_order w on w.tenant_id=v.tenant_id and w.id=v.work_order_id where v.tenant_id=$1 and v.id=$2", token, tenant.Value, visitId), ct);
+    public Task<Guid?> GetPartLegalEntityAsync(TenantId tenant, Guid partId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context, "select coalesce(p.legal_entity_id,w.legal_entity_id) from business_service.work_part_requirement p join business_service.work_order w on w.tenant_id=p.tenant_id and w.id=p.work_order_id where p.tenant_id=$1 and p.id=$2", token, tenant.Value, partId), ct);
+    public Task<Guid?> GetChargeLegalEntityAsync(TenantId tenant, Guid chargeId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context, "select w.legal_entity_id from business_service.service_charge c join business_service.work_order w on w.tenant_id=c.tenant_id and w.id=c.work_order_id where c.tenant_id=$1 and c.id=$2", token, tenant.Value, chargeId), ct);
     public Task<ServiceRequestView> CreateRequestAsync(TenantId tenant, Guid actor, Guid correlationId, CreateServiceRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         ValidateContext(request.Context, request.CustomerPartyId, request.InstalledBaseId);
@@ -193,35 +205,96 @@ public sealed class ServiceService(ITransactionCoordinator coordinator)
         var plan = await ReadPlanAsync(context, tenant.Value, planId, token) ?? throw new ServiceException("service.maintenance_plan_not_found"); var key = $"{plan.Id:D}:{dueDate:yyyyMMdd}"; var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.maintenance_due(tenant_id,id,plan_id,subject_id,due_date,state,generated_key,reason) values($1,$2,$3,$4,$5,'Due',$6,'scheduled') on conflict(tenant_id,generated_key) do nothing", token, tenant.Value, id, planId, plan.SubjectId, dueDate, key); var result = await ReadDueByKeyAsync(context, tenant.Value, key, token); return result ?? throw new ServiceException("service.maintenance_due_not_found");
     }, ct);
 
+    public Task<DueGenerationView> GenerateDueAsync(TenantId tenant, Guid actor, GenerateDueRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        if (request.ToDate < request.FromDate || request.Limit is < 1 or > 5000) throw new ServiceException("service.maintenance_horizon_invalid");
+        var plans = new List<(Guid Id, Guid SubjectId, string Trigger, DateOnly? Start, int? Interval, decimal? MeterThreshold, string? MeterCode)>();
+        await using (var command = Command(context, "select id,subject_id,trigger_type,start_date,interval_days,meter_threshold,meter_code from business_service.maintenance_plan where tenant_id=$1 and state='Active' order by id", tenant.Value))
+        await using (var reader = await command.ExecuteReaderAsync(token)) while (await reader.ReadAsync(token)) plans.Add((reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetFieldValue<DateOnly>(3), reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetString(6)));
+        var created = 0;
+        foreach (var plan in plans)
+        {
+            if (created >= request.Limit) break;
+            var dates = new List<DateOnly>();
+            if (plan.Trigger == "Meter")
+            {
+                var value = await ScalarAsync<decimal?>(context, "select value from business_service.meter_reading where tenant_id=$1 and subject_id=$2 and meter_code=$3 and reading_at::date <= $4 order by reading_at desc limit 1", token, tenant.Value, plan.SubjectId, plan.MeterCode!, request.ToDate);
+                if (value >= plan.MeterThreshold) dates.Add(request.FromDate);
+            }
+            else if (plan.Start is { } start && plan.Interval is { } interval)
+            {
+                var due = start; while (due < request.FromDate) due = due.AddDays(interval);
+                while (due <= request.ToDate && dates.Count + created < request.Limit) { dates.Add(due); due = due.AddDays(interval); }
+            }
+            foreach (var dueDate in dates)
+            {
+                var key = $"{plan.Id:D}:{dueDate:yyyyMMdd}"; var inserted = await ExecuteAsync(context, "insert into business_service.maintenance_due(tenant_id,id,plan_id,subject_id,due_date,state,generated_key,reason) values($1,$2,$3,$4,$5,'Due',$6,'engine') on conflict(tenant_id,generated_key) do nothing", token, tenant.Value, Guid.CreateVersion7(), plan.Id, plan.SubjectId, dueDate, key); if (inserted > 0) created++;
+                if (created >= request.Limit) break;
+            }
+        }
+        return new DueGenerationView(plans.Count, created);
+    }, ct);
+
+    public Task<MaintenanceDueView> UpdateDueAsync(TenantId tenant, Guid actor, Guid dueId, MaintenanceDueUpdateRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        if (request.State is not ("Due" or "Postponed" or "Skipped")) throw new ServiceException("service.maintenance_due_state_invalid");
+        var current = await ReadDueAsync(context, tenant.Value, dueId, token) ?? throw new ServiceException("service.maintenance_due_not_found");
+        if (current.Version != request.ExpectedVersion) throw new ServiceException("service.concurrent_change");
+        await ExecuteAsync(context, "update business_service.maintenance_due set state=$3,reason=$4,row_version=row_version+1 where tenant_id=$1 and id=$2 and row_version=$5", token, tenant.Value, dueId, request.State, Db(request.Reason), request.ExpectedVersion);
+        await AuditAsync(context, tenant, "MaintenanceDue", dueId, actor, $"due_{request.State.ToLowerInvariant()}", new { current.State }, new { request.State, request.Reason }, token);
+        return await ReadDueAsync(context, tenant.Value, dueId, token) ?? throw new ServiceException("service.maintenance_due_not_found");
+    }, ct);
+
     public Task<PagedResult<MaintenanceDueView>> ListDueAsync(TenantId tenant, string? state, DateOnly? from, DateOnly? to, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         (page, pageSize) = Page(page, pageSize); var offset = (page - 1) * pageSize;
         var total = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.maintenance_due where tenant_id=$1 and ($2::text is null or state=$2) and ($3::date is null or due_date >= $3) and ($4::date is null or due_date <= $4)", token, tenant.Value, Db(state), Db(from), Db(to)), CultureInfo.InvariantCulture);
-        var rows = new List<MaintenanceDueView>(); await using var command = Command(context, "select id,plan_id,subject_id,due_date,state,work_order_id,reason from business_service.maintenance_due where tenant_id=$1 and ($2::text is null or state=$2) and ($3::date is null or due_date >= $3) and ($4::date is null or due_date <= $4) order by due_date,id limit $5 offset $6", tenant.Value, Db(state), Db(from), Db(to), pageSize + 1, offset); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) rows.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), reader.IsDBNull(6) ? null : reader.GetString(6))); var hasNext = rows.Count > pageSize; if (hasNext) rows.RemoveAt(rows.Count - 1); return new PagedResult<MaintenanceDueView>(rows, page, pageSize, hasNext, total);
+        var rows = new List<MaintenanceDueView>(); await using var command = Command(context, "select id,plan_id,subject_id,due_date,state,work_order_id,reason,row_version from business_service.maintenance_due where tenant_id=$1 and ($2::text is null or state=$2) and ($3::date is null or due_date >= $3) and ($4::date is null or due_date <= $4) order by due_date,id limit $5 offset $6", tenant.Value, Db(state), Db(from), Db(to), pageSize + 1, offset); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) rows.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetInt64(7))); var hasNext = rows.Count > pageSize; if (hasNext) rows.RemoveAt(rows.Count - 1); return new PagedResult<MaintenanceDueView>(rows, page, pageSize, hasNext, total);
     }, ct);
 
     public Task<MaintenanceConversionView> ConvertDueAsync(TenantId tenant, Guid actor, Guid dueId, ConvertDueRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var due = await ScalarAsync<Guid?>(context, "select id from business_service.maintenance_due where tenant_id=$1 and id=$2 and state in ('Due','Forecast','Postponed')", token, tenant.Value, dueId) ?? throw new ServiceException("service.maintenance_due_not_found");
-        ValidateContext(request.Context, request.CustomerPartyId, null); if (request.BillingOwner == "Projects" && request.ProjectId is null) throw new ServiceException("service.project_billing_owner_required");
-        var orderId = Guid.CreateVersion7(); var number = Number("WO", orderId); await ExecuteAsync(context, "insert into business_service.work_order(tenant_id,id,legal_entity_id,work_order_number,context,title,description,customer_party_id,installed_base_id,project_id,billing_owner,work_type,priority,state,created_by) select $1,$2,$3,$4,$5,$6,$7,$8,subject_id,$9,$10,$11,$12,'Draft',$13 from business_service.maintenance_due where tenant_id=$1 and id=$14", token, tenant.Value, orderId, request.LegalEntityId, number, request.Context, request.Title.Trim(), Db(request.Description), Db(request.CustomerPartyId), Db(request.ProjectId), request.BillingOwner, request.WorkType, request.Priority, actor, dueId);
-        await ExecuteAsync(context, "update business_service.maintenance_due set state='Converted',work_order_id=$3 where tenant_id=$1 and id=$2", token, tenant.Value, dueId, orderId);
+        var subject = await ScalarAsync<Guid?>(context, "select subject_id from business_service.maintenance_due where tenant_id=$1 and id=$2", token, tenant.Value, dueId); ValidateContext(request.Context, request.CustomerPartyId, subject); if (request.BillingOwner == "Projects" && request.ProjectId is null) throw new ServiceException("service.project_billing_owner_required");
+        var orderId = Guid.CreateVersion7(); var number = Number("WO", orderId); await ExecuteAsync(context, "insert into business_service.work_order(tenant_id,id,legal_entity_id,work_order_number,context,title,description,customer_party_id,installed_base_id,project_id,maintenance_due_id,billing_owner,work_type,priority,state,created_by) select $1,$2,$3,$4,$5,$6,$7,$8,subject_id,$9,$10,$11,$12,$13,'Draft',$14 from business_service.maintenance_due where tenant_id=$1 and id=$15", token, tenant.Value, orderId, request.LegalEntityId, number, request.Context, request.Title.Trim(), Db(request.Description), Db(request.CustomerPartyId), Db(request.ProjectId), dueId, request.BillingOwner, request.WorkType, request.Priority, actor, dueId);
+        await ExecuteAsync(context, "update business_service.maintenance_due set state='Converted',work_order_id=$3,row_version=row_version+1 where tenant_id=$1 and id=$2 and state in ('Due','Forecast','Postponed')", token, tenant.Value, dueId, orderId);
         var work = await ReadWorkOrderAsync(context, tenant.Value, orderId, token) ?? throw new ServiceException("service.work_order_not_found"); var updated = await ReadDueAsync(context, tenant.Value, dueId, token) ?? throw new ServiceException("service.maintenance_due_not_found"); return new MaintenanceConversionView(updated, work);
     }, ct);
 
     public Task<SlaProfileView> CreateSlaProfileAsync(TenantId tenant, Guid actor, CreateSlaProfileRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
-        if (request.ResponseMinutes <= 0 || request.ResolutionMinutes <= 0 || request.ArrivalMinutes is <= 0) throw new ServiceException("service.sla_profile_invalid"); var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.sla_profile(tenant_id,id,legal_entity_id,code,response_minutes,arrival_minutes,resolution_minutes) values($1,$2,$3,$4,$5,$6,$7)", token, tenant.Value, id, request.LegalEntityId, request.Code.Trim(), request.ResponseMinutes, Db(request.ArrivalMinutes), request.ResolutionMinutes); return await ReadSlaProfileAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.sla_profile_not_found");
+        if (request.ResponseMinutes <= 0 || request.ResolutionMinutes <= 0 || request.ArrivalMinutes is <= 0 || request.WorkingWeekdays is < 1 or > 127 || TimeOnly.TryParse(request.WorkingStart, out var start) == false || TimeOnly.TryParse(request.WorkingEnd, out var end) == false || end <= start) throw new ServiceException("service.sla_profile_invalid"); var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.sla_profile(tenant_id,id,legal_entity_id,code,response_minutes,arrival_minutes,resolution_minutes,working_weekdays,working_start,working_end,time_zone_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", token, tenant.Value, id, request.LegalEntityId, request.Code.Trim(), request.ResponseMinutes, Db(request.ArrivalMinutes), request.ResolutionMinutes, request.WorkingWeekdays, start, end, request.TimeZoneId); return await ReadSlaProfileAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.sla_profile_not_found");
     }, ct);
 
     public Task<SlaClockView> StartSlaClockAsync(TenantId tenant, Guid actor, StartSlaClockRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
-        var profile = await ReadSlaProfileAsync(context, tenant.Value, request.ProfileId, token) ?? throw new ServiceException("service.sla_profile_not_found"); var minutes = request.ClockType switch { "Response" => profile.ResponseMinutes, "Arrival" when profile.ArrivalMinutes is not null => profile.ArrivalMinutes.Value, "Resolution" => profile.ResolutionMinutes, _ => throw new ServiceException("service.sla_clock_invalid") }; var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.sla_clock(tenant_id,id,work_order_id,clock_type,started_at,due_at) values($1,$2,$3,$4,$5,$5 + make_interval(mins => $6)) on conflict(tenant_id,work_order_id,clock_type) do update set started_at=excluded.started_at,due_at=excluded.due_at,state='Running'", token, tenant.Value, id, request.WorkOrderId, request.ClockType, request.StartedAt, minutes); return await ReadSlaClockAsync(context, tenant.Value, request.WorkOrderId, request.ClockType, token) ?? throw new ServiceException("service.sla_clock_not_found");
+        var profile = await ReadSlaProfileAsync(context, tenant.Value, request.ProfileId, token) ?? throw new ServiceException("service.sla_profile_not_found"); var minutes = request.ClockType switch { "Response" => profile.ResponseMinutes, "Arrival" when profile.ArrivalMinutes is not null => profile.ArrivalMinutes.Value, "Resolution" => profile.ResolutionMinutes, _ => throw new ServiceException("service.sla_clock_invalid") }; var dueAt = BusinessDue(request.StartedAt, minutes, profile); var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.sla_clock(tenant_id,id,work_order_id,clock_type,started_at,due_at) values($1,$2,$3,$4,$5,$6) on conflict(tenant_id,work_order_id,clock_type) do update set started_at=excluded.started_at,due_at=excluded.due_at,state='Running',paused_minutes=0", token, tenant.Value, id, request.WorkOrderId, request.ClockType, request.StartedAt, dueAt); return await ReadSlaClockAsync(context, tenant.Value, request.WorkOrderId, request.ClockType, token) ?? throw new ServiceException("service.sla_clock_not_found");
+    }, ct);
+
+    public Task<SlaClockView> PauseSlaClockAsync(TenantId tenant, Guid actor, Guid workOrderId, string clockType, SlaClockActionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var clock = await ReadSlaClockAsync(context, tenant.Value, workOrderId, clockType, token) ?? throw new ServiceException("service.sla_clock_not_found");
+        if (clock.State != "Running") throw new ServiceException("service.sla_clock_state_invalid");
+        var at = request.OccurredAt ?? DateTimeOffset.UtcNow; await ExecuteAsync(context, "update business_service.sla_clock set state='Paused' where tenant_id=$1 and id=$2 and state='Running'", token, tenant.Value, clock.Id); await ExecuteAsync(context, "insert into business_service.sla_clock_event(tenant_id,id,clock_id,event_type,occurred_at,reason,actor_id) values($1,$2,$3,'Paused',$4,$5,$6)", token, tenant.Value, Guid.CreateVersion7(), clock.Id, at, Db(request.Reason), actor); return await ReadSlaClockAsync(context, tenant.Value, workOrderId, clockType, token) ?? throw new ServiceException("service.sla_clock_not_found");
+    }, ct);
+
+    public Task<SlaClockView> ResumeSlaClockAsync(TenantId tenant, Guid actor, Guid workOrderId, string clockType, SlaClockActionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var clock = await ReadSlaClockAsync(context, tenant.Value, workOrderId, clockType, token) ?? throw new ServiceException("service.sla_clock_not_found");
+        if (clock.State != "Paused") throw new ServiceException("service.sla_clock_state_invalid");
+        var at = request.OccurredAt ?? DateTimeOffset.UtcNow; var pausedAt = await ScalarAsync<DateTimeOffset?>(context, "select occurred_at from business_service.sla_clock_event where tenant_id=$1 and clock_id=$2 and event_type='Paused' order by occurred_at desc limit 1", token, tenant.Value, clock.Id) ?? at; var minutes = Math.Max(0, (int)(at - pausedAt).TotalMinutes); await ExecuteAsync(context, "update business_service.sla_clock set state='Running',paused_minutes=paused_minutes+$3,due_at=due_at+$3 * interval '1 minute' where tenant_id=$1 and id=$2", token, tenant.Value, clock.Id, minutes); await ExecuteAsync(context, "insert into business_service.sla_clock_event(tenant_id,id,clock_id,event_type,occurred_at,reason,actor_id) values($1,$2,$3,'Resumed',$4,$5,$6)", token, tenant.Value, Guid.CreateVersion7(), clock.Id, at, Db(request.Reason), actor); return await ReadSlaClockAsync(context, tenant.Value, workOrderId, clockType, token) ?? throw new ServiceException("service.sla_clock_not_found");
+    }, ct);
+
+    public Task<SlaMonitorView> MonitorSlaAsync(TenantId tenant, Guid actor, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var ids = new List<Guid>(); await using (var command = Command(context, "select id from business_service.sla_clock where tenant_id=$1 and state in ('Running','Paused') and due_at < now()", tenant.Value)) await using (var reader = await command.ExecuteReaderAsync(token)) while (await reader.ReadAsync(token)) ids.Add(reader.GetGuid(0));
+        foreach (var id in ids) { await ExecuteAsync(context, "update business_service.sla_clock set state='Breached' where tenant_id=$1 and id=$2 and state in ('Running','Paused')", token, tenant.Value, id); await ExecuteAsync(context, "insert into business_service.sla_clock_event(tenant_id,id,clock_id,event_type,occurred_at,actor_id) values($1,$2,$3,'Breached',now(),$4)", token, tenant.Value, Guid.CreateVersion7(), id, actor); }
+        return new SlaMonitorView(ids.Count);
     }, ct);
 
     public Task<MeterReadingView> RecordMeterAsync(TenantId tenant, Guid actor, RecordMeterReadingRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
-        var definitionId = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.meter_definition(tenant_id,id,subject_id,meter_code,uom) values($1,$2,$3,$4,$5) on conflict(tenant_id,subject_id,meter_code) do update set uom=excluded.uom", token, tenant.Value, definitionId, request.SubjectId, request.MeterCode.Trim(), request.Uom); var actualDefinition = await ScalarAsync<Guid>(context, "select id from business_service.meter_definition where tenant_id=$1 and subject_id=$2 and meter_code=$3", token, tenant.Value, request.SubjectId, request.MeterCode.Trim()); var prior = await ScalarAsync<decimal?>(context, "select value from business_service.meter_reading where tenant_id=$1 and subject_id=$2 and meter_code=$3 order by reading_at desc limit 1", token, tenant.Value, request.SubjectId, request.MeterCode.Trim()); if (prior is { } old && request.Value < old && !request.IsReset) throw new ServiceException("service.meter_decreased_unexpectedly"); var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.meter_reading(tenant_id,id,subject_id,meter_definition_id,meter_code,value,uom,reading_at,source,is_reset) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", token, tenant.Value, id, request.SubjectId, actualDefinition, request.MeterCode.Trim(), request.Value, request.Uom, request.ReadingAt, request.Source, request.IsReset); return await ReadMeterAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.meter_reading_invalid");
+        var definitionId = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.meter_definition(tenant_id,id,subject_id,meter_code,uom) values($1,$2,$3,$4,$5) on conflict(tenant_id,subject_id,meter_code) do update set uom=excluded.uom", token, tenant.Value, definitionId, request.SubjectId, request.MeterCode.Trim(), request.Uom); var actualDefinition = await ScalarAsync<Guid>(context, "select id from business_service.meter_definition where tenant_id=$1 and subject_id=$2 and meter_code=$3", token, tenant.Value, request.SubjectId, request.MeterCode.Trim()); var duplicate = await ScalarAsync<Guid?>(context, "select id from business_service.meter_reading where tenant_id=$1 and subject_id=$2 and meter_code=$3 and reading_at=$4", token, tenant.Value, request.SubjectId, request.MeterCode.Trim(), request.ReadingAt); if (duplicate is { } existing) return await ReadMeterAsync(context, tenant.Value, existing, token) ?? throw new ServiceException("service.meter_reading_invalid"); var prior = await ScalarAsync<decimal?>(context, "select value from business_service.meter_reading where tenant_id=$1 and subject_id=$2 and meter_code=$3 and reading_at <= $4 order by reading_at desc limit 1", token, tenant.Value, request.SubjectId, request.MeterCode.Trim(), request.ReadingAt); var rollover = await ScalarAsync<decimal?>(context, "select rollover_value from business_service.meter_definition where tenant_id=$1 and id=$2", token, tenant.Value, actualDefinition); if (prior is { } old && request.Value < old && !request.IsReset && (rollover is null || old - request.Value > rollover)) throw new ServiceException("service.meter_decreased_unexpectedly"); var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.meter_reading(tenant_id,id,subject_id,meter_definition_id,meter_code,value,uom,reading_at,source,is_reset) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", token, tenant.Value, id, request.SubjectId, actualDefinition, request.MeterCode.Trim(), request.Value, request.Uom, request.ReadingAt, request.Source, request.IsReset); return await ReadMeterAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.meter_reading_invalid");
     }, ct);
 
     public Task<ServiceContractView> CreateContractAsync(TenantId tenant, Guid actor, CreateContractRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
@@ -231,31 +304,127 @@ public sealed class ServiceService(ITransactionCoordinator coordinator)
 
     public Task<ServiceContractView> ActivateContractAsync(TenantId tenant, Guid actor, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => { await ExecuteAsync(context, "update business_service.service_contract set state='Active' where tenant_id=$1 and id=$2 and state in ('Draft','Suspended')", token, tenant.Value, id); return await ReadContractAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.contract_not_found"); }, ct);
 
-    public Task<EntitlementView> ResolveEntitlementAsync(TenantId tenant, Guid actor, EntitlementRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public Task<ServiceContractView> RecordContractUsageAsync(TenantId tenant, Guid actor, Guid contractId, ContractUsageRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
-        Guid? contract = null; if (request.CustomerPartyId is { } customer) contract = await ScalarAsync<Guid?>(context, "select id from business_service.service_contract where tenant_id=$1 and contract_holder_party_id=$2 and state='Active' and $3 between start_date and end_date order by end_date desc limit 1", token, tenant.Value, customer, request.AsOfDate);
-        Guid? warranty = request.InstalledBaseId is { } subject ? await ScalarAsync<Guid?>(context, "select id from business_service.warranty where tenant_id=$1 and subject_id=$2 and state='Active' and $3 between start_date and end_date order by end_date desc limit 1", token, tenant.Value, subject, request.AsOfDate) : null;
-        var lines = new[] { new CoverageResult("Labor", contract is not null ? "ServiceContract" : warranty is not null ? "CustomerWarranty" : "Paid", contract is not null || warranty is not null, 0m, contract is not null || warranty is not null ? 0m : 0m, contract is not null ? "Covered by active service contract" : warranty is not null ? "Covered by active warranty" : "No active coverage") };
-        return new EntitlementView(lines, contract is null ? "NoContract" : "Active", contract, warranty);
+        if (request.Quantity <= 0 || string.IsNullOrWhiteSpace(request.UsageType) || string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ServiceException("service.contract_usage_invalid");
+        var contract = await ReadContractAsync(context, tenant.Value, contractId, token) ?? throw new ServiceException("service.contract_not_found");
+        if (contract.State != "Active" || request.WorkOrderId == Guid.Empty) throw new ServiceException("service.contract_state_invalid");
+        var prior = await ScalarAsync<Guid?>(context, "select id from business_service.service_contract_usage where tenant_id=$1 and idempotency_key=$2", token, tenant.Value, request.IdempotencyKey.Trim()); if (prior is not null) return contract;
+        var current = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(sum(quantity),0) from business_service.service_contract_usage where tenant_id=$1 and contract_id=$2 and usage_type=$3 for update", token, tenant.Value, contractId, request.UsageType), CultureInfo.InvariantCulture);
+        var limit = ScopeLimit(contract.ScopeJson, request.UsageType, decimal.MaxValue); if (limit < decimal.MaxValue && current + request.Quantity > limit) throw new ServiceException("service.contract_usage_limit_exceeded");
+        await ExecuteAsync(context, "insert into business_service.service_contract_usage(tenant_id,id,contract_id,work_order_id,usage_type,quantity,idempotency_key) values($1,$2,$3,$4,$5,$6,$7)", token, tenant.Value, Guid.CreateVersion7(), contractId, request.WorkOrderId, request.UsageType.Trim(), request.Quantity, request.IdempotencyKey.Trim());
+        return contract;
     }, ct);
 
-    public Task<ServiceChargeView> CreateChargeAsync(TenantId tenant, Guid actor, Guid workOrderId, CreateChargeRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public Task<EntitlementView> ResolveEntitlementAsync(TenantId tenant, Guid actor, EntitlementRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
-        if (!await ExistsAsync(context, "business_service.work_order", tenant.Value, workOrderId, token)) throw new ServiceException("service.work_order_not_found"); var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.service_charge(tenant_id,id,work_order_id,category,description,cost_amount,covered_amount,customer_amount,currency_code,source_type,source_id,state) values($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10,'Reviewed') on conflict(tenant_id,work_order_id,category,source_type,source_id) do update set customer_amount=excluded.customer_amount", token, tenant.Value, id, workOrderId, request.Category, request.Description, request.CostAmount, request.CustomerAmount, request.CurrencyCode, Db(request.SourceType), Db(request.SourceId)); return await ReadChargeAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.charge_not_found");
+        Guid? contract = null; string? contractScope = null;
+        if (request.CustomerPartyId is { } customer)
+        {
+            contract = await ScalarAsync<Guid?>(context, "select id from business_service.service_contract where tenant_id=$1 and legal_entity_id=$2 and contract_holder_party_id=$3 and state='Active' and $4 between start_date and end_date order by end_date desc limit 1", token, tenant.Value, request.LegalEntityId, customer, request.AsOfDate);
+            if (contract is { } contractId) contractScope = await ScalarAsync<string?>(context, "select scope::text from business_service.service_contract where tenant_id=$1 and id=$2", token, tenant.Value, contractId);
+        }
+        Guid? warranty = null; string? warrantyScope = null;
+        if (request.InstalledBaseId is { } subject)
+        {
+            warranty = await ScalarAsync<Guid?>(context, "select id from business_service.warranty where tenant_id=$1 and legal_entity_id=$2 and subject_id=$3 and (customer_party_id=$4 or warranty_type='Supplier') and state='Active' and $5 between start_date and end_date order by end_date desc limit 1", token, tenant.Value, request.LegalEntityId, subject, Db(request.CustomerPartyId), request.AsOfDate);
+            if (warranty is { } warrantyId) warrantyScope = await ScalarAsync<string?>(context, "select scope::text from business_service.warranty where tenant_id=$1 and id=$2", token, tenant.Value, warrantyId);
+        }
+        var requested = request.Lines is { Count: > 0 } ? request.Lines : [new EntitlementLineRequest("Labor", 0m)];
+        var resolved = new List<CoverageResult>(requested.Count);
+        foreach (var line in requested)
+        {
+            var category = line.ChargeCategory.Trim(); var amount = Math.Max(0m, line.Amount); var source = "Paid"; var covered = 0m; var explanation = "No active coverage";
+            var warrantyCovers = warranty is not null && ScopeCovers(warrantyScope, category);
+            var contractCovers = contract is not null && ScopeCovers(contractScope, category);
+            if (warrantyCovers) { source = "CustomerWarranty"; covered = amount; explanation = "Covered by active customer warranty"; }
+            else if (contractCovers)
+            {
+                source = "ServiceContract"; covered = Math.Min(amount, ScopeLimit(contractScope, category, amount));
+                explanation = covered < amount ? "Service contract limit applied" : "Covered by active service contract";
+            }
+            var result = new CoverageResult(category, source, covered > 0m || amount == 0m && source != "Paid", covered, amount - covered, explanation); resolved.Add(result);
+            if (request.WorkOrderId is { } workOrder)
+                await ExecuteAsync(context, "insert into business_service.coverage_decision(tenant_id,id,work_order_id,charge_category,source_type,source_id,covered,covered_amount,customer_amount,explanation,decided_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict(tenant_id,work_order_id,charge_category) do update set source_type=excluded.source_type,source_id=excluded.source_id,covered=excluded.covered,covered_amount=excluded.covered_amount,customer_amount=excluded.customer_amount,explanation=excluded.explanation,decided_at=now(),decided_by=excluded.decided_by", token, tenant.Value, Guid.CreateVersion7(), workOrder, category, source, Db(source == "ServiceContract" ? contract : warranty), result.Covered, result.CoveredAmount, result.CustomerAmount, result.Explanation, actor);
+        }
+        return new EntitlementView(resolved, contract is null ? "NoContract" : "Active", contract, warranty);
     }, ct);
+
+    public async Task<ServiceChargeView> CreateChargeAsync(TenantId tenant, Guid actor, Guid workOrderId, CreateChargeRequest request, CancellationToken ct)
+    {
+        var charge = await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var order = await ReadWorkOrderAsync(context, tenant.Value, workOrderId, token) ?? throw new ServiceException("service.work_order_not_found");
+            var id = Guid.CreateVersion7();
+            await ExecuteAsync(context, "insert into business_service.service_charge(tenant_id,id,work_order_id,category,description,cost_amount,covered_amount,customer_amount,currency_code,source_type,source_id,state,invoice_integration_state) values($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10,'Reviewed','NotRequested') on conflict(tenant_id,work_order_id,category,source_type,source_id) do update set customer_amount=excluded.customer_amount,cost_amount=excluded.cost_amount", token, tenant.Value, id, workOrderId, request.Category, request.Description, request.CostAmount, request.CustomerAmount, request.CurrencyCode, Db(request.SourceType), Db(request.SourceId));
+            var persisted = await ReadChargeAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.charge_not_found");
+            return (Order: order, Charge: persisted);
+        }, ct);
+        if (charge.Order.BillingOwner == "Projects")
+        {
+            if (charge.Order.ProjectId is null || projects is null) throw new ServiceException("service.project_integration_unavailable");
+            try
+            {
+                var fact = await projects.RecordCostAsync(new ProjectCostFactIngress(tenant, actor, charge.Order.ProjectId.Value, null,
+                    "service", "ServiceCharge", charge.Charge.Id.ToString("D"), null, request.Category, request.CurrencyCode,
+                    request.CostAmount, request.CurrencyCode, request.CostAmount, 1m, DateOnly.FromDateTime(DateTime.UtcNow),
+                    $"service-charge:{charge.Charge.Id:D}", LegalEntityId: charge.Order.LegalEntityId), Guid.CreateVersion7(), ct);
+                await coordinator.ExecuteAsync(tenant, async (context, token) =>
+                {
+                    await ExecuteAsync(context, "update business_service.service_charge set project_cost_fact_id=$3 where tenant_id=$1 and id=$2", token, tenant.Value, charge.Charge.Id, fact.FactId);
+                    return 0;
+                }, ct);
+            }
+            catch (Exception ex) when (ex is not ServiceException)
+            {
+                throw new ServiceException("service.project_cost_integration_retryable");
+            }
+        }
+        return charge.Charge;
+    }
 
     public Task<PagedResult<ServiceChargeView>> ListChargesAsync(TenantId tenant, Guid workOrderId, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => { (page, pageSize) = Page(page, pageSize); var offset = (page - 1) * pageSize; var total = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.service_charge where tenant_id=$1 and work_order_id=$2", token, tenant.Value, workOrderId), CultureInfo.InvariantCulture); var rows = new List<ServiceChargeView>(); await using var command = Command(context, "select id,work_order_id,category,description,cost_amount,covered_amount,customer_amount,currency_code,state,invoice_id from business_service.service_charge where tenant_id=$1 and work_order_id=$2 order by id limit $3 offset $4", tenant.Value, workOrderId, pageSize + 1, offset); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) rows.Add(ReadCharge(reader)); var hasNext = rows.Count > pageSize; if (hasNext) rows.RemoveAt(rows.Count - 1); return new PagedResult<ServiceChargeView>(rows, page, pageSize, hasNext, total); }, ct);
 
-    public Task<PartRequirementView> AddPartAsync(TenantId tenant, Guid actor, Guid workOrderId, CreatePartRequirementRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => { if (request.Quantity <= 0) throw new ServiceException("service.part_quantity_invalid"); var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.work_part_requirement(tenant_id,id,work_order_id,product_id,quantity,uom_code,description) values($1,$2,$3,$4,$5,$6,$7)", token, tenant.Value, id, workOrderId, request.ProductId, request.Quantity, request.UomCode, Db(request.Description)); return await ReadPartAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.part_requirement_not_found"); }, ct);
+    public Task<PartRequirementView> AddPartAsync(TenantId tenant, Guid actor, Guid workOrderId, CreatePartRequirementRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => { if (request.Quantity <= 0) throw new ServiceException("service.part_quantity_invalid"); var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.work_part_requirement(tenant_id,id,work_order_id,product_id,quantity,uom_code,description,legal_entity_id,warehouse_id,location_id,unit_of_measure_id,lot_id,serial_id) select $1,$2,$3,$4,$5,$6,$7,coalesce($8,wo.legal_entity_id),$9,$10,$11,$12,$13 from business_service.work_order wo where wo.tenant_id=$1 and wo.id=$3", token, tenant.Value, id, workOrderId, request.ProductId, request.Quantity, request.UomCode, Db(request.Description), Db(request.LegalEntityId), Db(request.WarehouseId), Db(request.LocationId), Db(request.UnitOfMeasureId), Db(request.LotId), Db(request.SerialId)); return await ReadPartAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.part_requirement_not_found"); }, ct);
 
     public Task<LaborView> RecordLaborAsync(TenantId tenant, Guid actor, RecordLaborRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => { if (request.EndedAt <= request.StartedAt) throw new ServiceException("service.labor_time_invalid"); var key = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? $"labor:{request.VisitId:D}:{request.StartedAt:O}" : request.IdempotencyKey.Trim(); var prior = await ScalarAsync<Guid?>(context, "select id from business_service.service_labor_entry where tenant_id=$1 and idempotency_key=$2", token, tenant.Value, key); if (prior is { } existing) return await ReadLaborAsync(context, tenant.Value, existing, token) ?? throw new ServiceException("service.labor_not_found"); var id = Guid.CreateVersion7(); var hours = (decimal)(request.EndedAt - request.StartedAt).TotalHours; var amount = request.CostRate is null ? null : request.CostRate * hours; await ExecuteAsync(context, "insert into business_service.service_labor_entry(tenant_id,id,visit_id,employee_id,started_at,ended_at,time_category,cost_rate,currency_code,cost_amount,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", token, tenant.Value, id, request.VisitId, Db(request.EmployeeId), request.StartedAt, request.EndedAt, request.TimeCategory, Db(request.CostRate), request.CurrencyCode, Db(amount), key); return await ReadLaborAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.labor_not_found"); }, ct);
 
-    public Task<OfflineCommandView> SubmitOfflineAsync(TenantId tenant, Guid actor, Guid correlationId, OfflineCommandRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public async Task<OfflineCommandView> SubmitOfflineAsync(TenantId tenant, Guid actor, Guid correlationId, OfflineCommandRequest request, CancellationToken ct)
     {
-        var prior = await ReadOfflineAsync(context, tenant.Value, request.ClientCommandId, token); if (prior is not null) return prior;
-        if (request.WorkOrderId is { } work && request.ExpectedVersion is { } version) { var current = await ScalarAsync<long?>(context, "select row_version from business_service.work_order where tenant_id=$1 and id=$2", token, tenant.Value, work); if (current is null) throw new ServiceException("service.work_order_not_found"); if (current != version) { var conflictId = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.offline_command(tenant_id,id,client_command_id,command_type,work_order_id,visit_id,expected_version,payload,state,conflict_code) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'Conflict','service.concurrent_change')", token, tenant.Value, conflictId, request.ClientCommandId, request.CommandType, Db(request.WorkOrderId), Db(request.VisitId), Db(request.ExpectedVersion), request.PayloadJson); return await ReadOfflineAsync(context, tenant.Value, request.ClientCommandId, token) ?? throw new ServiceException("service.idempotency_conflict"); } }
-        var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.offline_command(tenant_id,id,client_command_id,command_type,work_order_id,visit_id,expected_version,payload,state,processed_at,result) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'Processed',now(),$9::jsonb)", token, tenant.Value, id, request.ClientCommandId, request.CommandType, Db(request.WorkOrderId), Db(request.VisitId), Db(request.ExpectedVersion), request.PayloadJson, "{\"accepted\":true}"); context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ServiceOfflineCommandProcessedV1", JsonSerializer.Serialize(new { commandId = request.ClientCommandId, request.CommandType }), tenant, DateTimeOffset.UtcNow, correlationId, id, "service")); return await ReadOfflineAsync(context, tenant.Value, request.ClientCommandId, token) ?? throw new ServiceException("service.offline_command_not_found");
-    }, ct);
+        var pending = await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var prior = await ReadOfflineAsync(context, tenant.Value, request.ClientCommandId, token); if (prior is not null) return (View: prior, New: false);
+            if (request.WorkOrderId is { } work && request.ExpectedVersion is { } version)
+            {
+                var current = await ScalarAsync<long?>(context, "select row_version from business_service.work_order where tenant_id=$1 and id=$2", token, tenant.Value, work); if (current is null) throw new ServiceException("service.work_order_not_found");
+                if (current != version) { var conflictId = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.offline_command(tenant_id,id,client_command_id,command_type,work_order_id,visit_id,expected_version,payload,state,conflict_code,processed_at) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'Conflict','service.concurrent_change',now())", token, tenant.Value, conflictId, request.ClientCommandId, request.CommandType, Db(request.WorkOrderId), Db(request.VisitId), Db(request.ExpectedVersion), request.PayloadJson); return (View: await ReadOfflineAsync(context, tenant.Value, request.ClientCommandId, token) ?? throw new ServiceException("service.offline_command_not_found"), New: false); }
+            }
+            var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.offline_command(tenant_id,id,client_command_id,command_type,work_order_id,visit_id,expected_version,payload,state) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'Pending')", token, tenant.Value, id, request.ClientCommandId, request.CommandType, Db(request.WorkOrderId), Db(request.VisitId), Db(request.ExpectedVersion), request.PayloadJson);
+            return (View: await ReadOfflineAsync(context, tenant.Value, request.ClientCommandId, token) ?? throw new ServiceException("service.offline_command_not_found"), New: true);
+        }, ct);
+        if (!pending.New) return pending.View;
+        try
+        {
+            object? result = request.CommandType switch
+            {
+                "visit.arrive" or "visit.start" or "visit.complete" or "visit.no-access" => await TransitionVisitAsync(tenant, actor, request.VisitId ?? throw new ServiceException("service.visit_required"), request.CommandType[6..], new TransitionRequest(request.ExpectedVersion ?? 0), ct),
+                "work.start" or "work.technical-complete" => await TransitionWorkOrderAsync(tenant, actor, request.WorkOrderId ?? throw new ServiceException("service.work_order_required"), request.CommandType[5..], new TransitionRequest(request.ExpectedVersion ?? 0), ct),
+                "checklist.answer" => JsonSerializer.Deserialize<ChecklistAnswerRequest>(request.PayloadJson) is { } answer ? await SaveChecklistAnswerAsync(tenant, actor, answer, ct) : throw new ServiceException("service.offline_payload_invalid"),
+                "meter.record" => JsonSerializer.Deserialize<RecordMeterReadingRequest>(request.PayloadJson) is { } meter ? await RecordMeterAsync(tenant, actor, meter, ct) : throw new ServiceException("service.offline_payload_invalid"),
+                "part.consume" => JsonSerializer.Deserialize<OfflinePartCommand>(request.PayloadJson) is { } part ? await ApplyPartActionAsync(tenant, actor, part.PartId, "consume", part.Request, ct) : throw new ServiceException("service.offline_payload_invalid"),
+                _ => throw new ServiceException("service.offline_command_type_invalid")
+            };
+            return await MarkOfflineAsync(tenant, request.ClientCommandId, "Processed", null, JsonSerializer.Serialize(result), ct);
+        }
+        catch (ServiceException ex)
+        {
+            var state = ex.Code.Contains("concurrent", StringComparison.Ordinal) || ex.Code.Contains("conflict", StringComparison.Ordinal) ? "Conflict" : ex.Code.Contains("retryable", StringComparison.Ordinal) || ex.Code.Contains("in_progress", StringComparison.Ordinal) ? "Retryable" : "Rejected";
+            return await MarkOfflineAsync(tenant, request.ClientCommandId, state, ex.Code, null, ct);
+        }
+    }
+
+    private async Task<OfflineCommandView> MarkOfflineAsync(TenantId tenant, Guid clientCommandId, string state, string? code, string? result, CancellationToken ct) => await coordinator.ExecuteAsync(tenant, async (context, token) => { await ExecuteAsync(context, "update business_service.offline_command set state=$3,conflict_code=$4,result=$5::jsonb,processed_at=now() where tenant_id=$1 and client_command_id=$2", token, tenant.Value, clientCommandId, state, Db(code), Db(result ?? "null")); return await ReadOfflineAsync(context, tenant.Value, clientCommandId, token) ?? throw new ServiceException("service.offline_command_not_found"); }, ct);
+    private sealed record OfflinePartCommand(Guid PartId, PartActionRequest Request);
 
     public Task<MobileDayView> GetMobileDayAsync(TenantId tenant, Guid? userId, Guid? employeeId, DateOnly date, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => { var visits = new List<VisitView>(); await using var command = Command(context, "select v.id,v.work_order_id,v.planned_start,v.planned_end,v.location_type,v.state,v.site_instructions,v.actual_start,v.actual_end,v.row_version from business_service.service_visit v join business_service.work_assignment a on a.tenant_id=v.tenant_id and a.visit_id=v.id and a.state='Assigned' where v.tenant_id=$1 and v.planned_start::date=$2 and ($3::uuid is null or a.user_id=$3) and ($4::uuid is null or a.employee_id=$4) order by v.planned_start,v.id limit 200", tenant.Value, date, Db(userId), Db(employeeId)); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) visits.Add(ReadVisit(reader)); var orders = new List<WorkOrderView>(); foreach (var visit in visits) { var row = await ReadWorkOrderAsync(context, tenant.Value, visit.WorkOrderId, token); if (row is not null) orders.Add(row); } return new MobileDayView(visits, orders, date); }, ct);
 
@@ -299,16 +468,73 @@ public sealed class ServiceService(ITransactionCoordinator coordinator)
         return await ReadWarrantyAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.warranty_not_found");
     }, ct);
 
-    public Task<PartRequirementView> ApplyPartActionAsync(TenantId tenant, Guid actor, Guid partId, string action, PartActionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public async Task<PartRequirementView> ApplyPartActionAsync(TenantId tenant, Guid actor, Guid partId, string action, PartActionRequest request, CancellationToken ct)
     {
         if (request.Quantity <= 0 || action is not ("reserve" or "issue" or "consume" or "return")) throw new ServiceException("service.part_action_invalid");
-        var part = await ReadPartAsync(context, tenant.Value, partId, token) ?? throw new ServiceException("service.part_requirement_not_found");
-        var column = action switch { "reserve" => "reserved_quantity", "issue" => "issued_quantity", "consume" => "consumed_quantity", _ => "returned_quantity" };
-        var state = action switch { "reserve" => "Reserved", "issue" => "Issued", "consume" => "Consumed", _ => "Returned" };
-        try { ServiceRules.ApplyPartMovement(action, request.Quantity, part.Quantity, part.ReservedQuantity, part.IssuedQuantity, part.ConsumedQuantity, part.ReturnedQuantity); } catch (ArgumentOutOfRangeException) { throw new ServiceException("service.part_quantity_invalid"); } catch (InvalidOperationException) { throw new ServiceException(action is "consume" or "return" ? "service.part_quantity_exceeds_issue" : "service.part_quantity_exceeds_required"); }
-        await ExecuteAsync(context, $"update business_service.work_part_requirement set {column}={column}+$3,state=$4,inventory_reference=coalesce($5,inventory_reference) where tenant_id=$1 and id=$2", token, tenant.Value, partId, request.Quantity, state, Db(request.InventoryReference));
-        return await ReadPartAsync(context, tenant.Value, partId, token) ?? throw new ServiceException("service.part_requirement_not_found");
-    }, ct);
+        var execution = await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var part = await ReadPartAsync(context, tenant.Value, partId, token) ?? throw new ServiceException("service.part_requirement_not_found");
+            var details = await ReadPartIntegrationAsync(context, tenant.Value, partId, token) ?? throw new ServiceException("service.inventory_context_required");
+            var key = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? $"service-part:{partId:D}:{action}:{request.Quantity:0.######}:{request.WarehouseId:D}" : request.IdempotencyKey.Trim();
+            var prior = await ReadPartMovementAsync(context, tenant.Value, key, token);
+            if (prior is { State: "Processed" }) return (Part: part, Details: details, Key: key, Movement: prior, Existing: true);
+            if (prior is { State: "Pending" }) throw new ServiceException("service.inventory_operation_in_progress");
+            try { ServiceRules.ApplyPartMovement(action, request.Quantity, part.Quantity, part.ReservedQuantity, part.IssuedQuantity, part.ConsumedQuantity, part.ReturnedQuantity); }
+            catch (ArgumentOutOfRangeException) { throw new ServiceException("service.part_quantity_invalid"); }
+            catch (InvalidOperationException) { throw new ServiceException(action is "consume" or "return" ? "service.part_quantity_exceeds_issue" : "service.part_quantity_exceeds_required"); }
+            var movementId = Guid.CreateVersion7();
+            await ExecuteAsync(context, "insert into business_service.work_part_movement(tenant_id,id,part_requirement_id,action,quantity,idempotency_key,actor_id) values($1,$2,$3,$4,$5,$6,$7)", token, tenant.Value, movementId, partId, action, request.Quantity, key, actor);
+            return (Part: part, Details: details, Key: key, Movement: new PartMovement(movementId, action, request.Quantity, "Pending", null, null), Existing: false);
+        }, ct);
+        if (execution.Existing) return execution.Part;
+        if (inventory is null) throw new ServiceException("service.inventory_integration_unavailable");
+        Guid? reservationId = request.InventoryReservationId;
+        Guid? operationId = null;
+        try
+        {
+            if (action == "reserve")
+            {
+                reservationId = await inventory.ReserveAsync(tenant.Value, actor, new InventoryReservationRequest(execution.Part.ProductId,
+                    execution.Details.LegalEntityId, execution.Details.WarehouseId, execution.Details.LocationId, request.Quantity,
+                    "service", execution.Part.WorkOrderId, partId, execution.Key, null, request.LotId ?? execution.Details.LotId, request.SerialId ?? execution.Details.SerialId), ct);
+            }
+            else if (action == "issue")
+            {
+                reservationId ??= await coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context,
+                    "select inventory_reservation_id from business_service.work_part_movement where tenant_id=$1 and part_requirement_id=$2 and action='reserve' and state='Processed' order by created_at desc limit 1", token, tenant.Value, partId), ct);
+                if (reservationId is null) throw new ServiceException("service.inventory_reservation_required");
+                operationId = await inventory.ConsumeReservationAsync(tenant.Value, actor, reservationId.Value, new InventoryMovementRequest(execution.Part.ProductId,
+                    execution.Details.LegalEntityId, execution.Details.WarehouseId, execution.Details.LocationId, request.Quantity,
+                    execution.Details.UnitOfMeasureId, 1m, "service", execution.Part.WorkOrderId, execution.Key, DateOnly.FromDateTime(DateTime.UtcNow),
+                    DateOnly.FromDateTime(DateTime.UtcNow), "ServicePart", request.LotId ?? execution.Details.LotId, request.SerialId ?? execution.Details.SerialId), ct);
+            }
+            else if (action == "return")
+            {
+                operationId = await inventory.ReceiveReturnAsync(tenant.Value, actor, new InventoryReturnRequest(execution.Part.ProductId,
+                    execution.Details.LegalEntityId, execution.Details.WarehouseId, execution.Details.LocationId, execution.Details.UnitOfMeasureId,
+                    request.Quantity, "service", execution.Part.WorkOrderId, partId, execution.Key, DateOnly.FromDateTime(DateTime.UtcNow),
+                    DateOnly.FromDateTime(DateTime.UtcNow), "Available", request.LotId ?? execution.Details.LotId, request.SerialId ?? execution.Details.SerialId), CancellationToken.None);
+            }
+            else
+            {
+                operationId = await coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context,
+                    "select inventory_operation_id from business_service.work_part_movement where tenant_id=$1 and part_requirement_id=$2 and action='issue' and state='Processed' order by created_at desc limit 1", token, tenant.Value, partId), ct);
+            }
+        }
+        catch (ServiceException) { await MarkPartMovementAsync(tenant, execution.Movement.Id, "Retryable", null, null, ct); throw; }
+        catch (Exception) { await MarkPartMovementAsync(tenant, execution.Movement.Id, "Retryable", null, "service.inventory_operation_retryable", ct); throw new ServiceException("service.inventory_operation_retryable"); }
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var current = await ReadPartAsync(context, tenant.Value, partId, token) ?? throw new ServiceException("service.part_requirement_not_found");
+            var column = action switch { "reserve" => "reserved_quantity", "issue" => "issued_quantity", "consume" => "consumed_quantity", _ => "returned_quantity" };
+            var state = action switch { "reserve" => "Reserved", "issue" => "Issued", "consume" => "Consumed", _ => "Returned" };
+            await ExecuteAsync(context, $"update business_service.work_part_requirement set {column}={column}+$3,state=$4,inventory_reference=coalesce($5,inventory_reference) where tenant_id=$1 and id=$2", token, tenant.Value, partId, request.Quantity, state, Db(request.InventoryReference ?? operationId?.ToString("D")));
+            await ExecuteAsync(context, "update business_service.work_part_movement set state='Processed',inventory_reservation_id=$3,inventory_operation_id=$4,inventory_reference=$5,processed_at=now() where tenant_id=$1 and id=$2", token, tenant.Value, execution.Movement.Id, Db(reservationId), Db(operationId), Db(request.InventoryReference ?? operationId?.ToString("D")));
+            return await ReadPartAsync(context, tenant.Value, partId, token) ?? throw new ServiceException("service.part_requirement_not_found");
+        }, ct);
+    }
+
+    private async Task MarkPartMovementAsync(TenantId tenant, Guid movementId, string state, Guid? operationId, string? error, CancellationToken ct) => await coordinator.ExecuteAsync(tenant, async (context, token) => { await ExecuteAsync(context, "update business_service.work_part_movement set state=$3,inventory_operation_id=$4,error_code=$5 where tenant_id=$1 and id=$2", token, tenant.Value, movementId, state, Db(operationId), Db(error)); return 0; }, ct);
 
     public Task<DowntimeView> StartDowntimeAsync(TenantId tenant, Guid actor, DowntimeRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
@@ -349,29 +575,110 @@ public sealed class ServiceService(ITransactionCoordinator coordinator)
         Convert.ToDecimal(await ScalarAsync(context, "select coalesce(sum(customer_amount),0) from business_service.service_charge where tenant_id=$1 and state not in ('Invoiced','WrittenOff','Cancelled')", token, tenant.Value), CultureInfo.InvariantCulture),
         Convert.ToDecimal(await ScalarAsync(context, "select coalesce(sum(extract(epoch from (coalesce(ended_at,now())-started_at))/3600),0) from business_service.asset_downtime where tenant_id=$1", token, tenant.Value), CultureInfo.InvariantCulture)), ct);
 
-    public Task<ServiceChargeView> RequestInvoiceAsync(TenantId tenant, Guid actor, Guid chargeId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public async Task<ServiceChargeView> RequestInvoiceAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId, Guid chargeId, CancellationToken ct)
     {
-        var charge = await ReadChargeAsync(context, tenant.Value, chargeId, token) ?? throw new ServiceException("service.charge_not_found");
-        if (charge.State is "Invoiced" or "WrittenOff" or "Cancelled") throw new ServiceException("service.charge_state_invalid");
-        await ExecuteAsync(context, "update business_service.service_charge set state='Requested' where tenant_id=$1 and id=$2", token, tenant.Value, chargeId);
-        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ServiceInvoiceRequestedV1", JsonSerializer.Serialize(new { chargeId, workOrderId = charge.WorkOrderId, amount = charge.CustomerAmount }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), chargeId, "service"));
-        return await ReadChargeAsync(context, tenant.Value, chargeId, token) ?? throw new ServiceException("service.charge_not_found");
-    }, ct);
+        var pending = await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var charge = await ReadChargeAsync(context, tenant.Value, chargeId, token) ?? throw new ServiceException("service.charge_not_found");
+            var order = await ReadWorkOrderAsync(context, tenant.Value, charge.WorkOrderId, token) ?? throw new ServiceException("service.work_order_not_found");
+            if (order.BillingOwner == "Projects") throw new ServiceException("service.project_billing_owned_by_projects");
+            if (order.CustomerPartyId is null) throw new ServiceException("service.invoice_customer_required");
+            if (charge.CustomerAmount <= 0) throw new ServiceException("service.invoice_amount_invalid");
+            if (charge.State is "Invoiced" or "WrittenOff" or "Cancelled") throw new ServiceException("service.charge_state_invalid");
+            var key = $"service-charge-invoice:{chargeId:D}";
+            await ExecuteAsync(context, "update business_service.service_charge set state='Requested',invoice_integration_state='Pending',invoice_request_key=$3,integration_error=null where tenant_id=$1 and id=$2", token, tenant.Value, chargeId, key);
+            return (Charge: charge, Order: order, Key: key);
+        }, ct);
+        if (invoicing is null) throw new ServiceException("service.invoicing_integration_unavailable");
+        Guid invoiceId;
+        try
+        {
+            invoiceId = await invoicing.CreateDraftFromSourceAsync(tenant, actor, membership,
+                new InvoiceSourceDocumentContract("service", pending.Order.Id, "ServiceWorkOrder", pending.Key, "Receivable", pending.Order.LegalEntityId,
+                    null, pending.Order.CustomerPartyId!.Value, null, DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow),
+                    DateOnly.FromDateTime(DateTime.UtcNow), null, "EGP", "Exclusive", null, null, null,
+                    [new InvoiceSourceLineContract(null, null, "EA", pending.Charge.Description, "1", pending.Charge.CustomerAmount.ToString(CultureInfo.InvariantCulture),
+                        "Agreed service charge", pending.Charge.Category, pending.Charge.Id.ToString("D"))]), correlationId, ct);
+            if (invoiceReader is null) throw new ServiceException("service.invoice_reader_unavailable");
+            var state = await invoiceReader.GetServiceInvoiceStateAsync(tenant, pending.Order.LegalEntityId, invoiceId, ct);
+            if (state is null || state.SourceModule != "service" || state.SourceDocumentId != pending.Order.Id || state.PartyId != pending.Order.CustomerPartyId || state.Direction != "Receivable") throw new ServiceException("service.invoice_source_mismatch");
+        }
+        catch (ServiceException)
+        {
+            await coordinator.ExecuteAsync(tenant, async (context, token) => { await ExecuteAsync(context, "update business_service.service_charge set invoice_integration_state='Retryable',integration_error=$3 where tenant_id=$1 and id=$2", token, tenant.Value, chargeId, "service.invoice_source_mismatch"); return 0; }, ct);
+            throw;
+        }
+        catch (Exception)
+        {
+            await coordinator.ExecuteAsync(tenant, async (context, token) => { await ExecuteAsync(context, "update business_service.service_charge set invoice_integration_state='Retryable',integration_error=$3 where tenant_id=$1 and id=$2", token, tenant.Value, chargeId, "service.invoicing_request_retryable"); return 0; }, ct);
+            throw new ServiceException("service.invoicing_request_retryable");
+        }
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await ExecuteAsync(context, "update business_service.service_charge set invoice_id=$3,invoice_integration_state='DraftCreated' where tenant_id=$1 and id=$2", token, tenant.Value, chargeId, invoiceId);
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ServiceInvoiceRequestedV1", JsonSerializer.Serialize(new { chargeId, workOrderId = pending.Order.Id, invoiceId, amount = pending.Charge.CustomerAmount }), tenant, DateTimeOffset.UtcNow, correlationId, chargeId, "service"));
+            return await ReadChargeAsync(context, tenant.Value, chargeId, token) ?? throw new ServiceException("service.charge_not_found");
+        }, ct);
+    }
 
-    public Task<ServiceChargeView> AllocateInvoiceAsync(TenantId tenant, Guid actor, Guid chargeId, InvoiceAllocationRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public async Task<ServiceChargeView> AllocateInvoiceAsync(TenantId tenant, Guid actor, Guid chargeId, InvoiceAllocationRequest request, CancellationToken ct)
     {
         if (request.AllocatedAmount <= 0) throw new ServiceException("service.invoice_allocation_invalid");
-        var charge = await ReadChargeAsync(context, tenant.Value, chargeId, token) ?? throw new ServiceException("service.charge_not_found");
-        if (request.AllocatedAmount > charge.CustomerAmount) throw new ServiceException("service.invoice_allocation_exceeds_charge");
-        await ExecuteAsync(context, "insert into business_service.service_invoice_allocation(tenant_id,id,charge_id,invoice_id,allocated_amount) values($1,$2,$3,$4,$5) on conflict(tenant_id,charge_id,invoice_id) do update set allocated_amount=excluded.allocated_amount", token, tenant.Value, Guid.CreateVersion7(), chargeId, request.InvoiceId, request.AllocatedAmount);
-        await ExecuteAsync(context, "update business_service.service_charge set state='Invoiced',invoice_id=$3 where tenant_id=$1 and id=$2", token, tenant.Value, chargeId, request.InvoiceId);
-        return await ReadChargeAsync(context, tenant.Value, chargeId, token) ?? throw new ServiceException("service.charge_not_found");
-    }, ct);
+        var current = await coordinator.ExecuteAsync(tenant, async (context, token) => (Charge: await ReadChargeAsync(context, tenant.Value, chargeId, token) ?? throw new ServiceException("service.charge_not_found"), Order: await ReadWorkOrderAsync(context, tenant.Value, (await ReadChargeAsync(context, tenant.Value, chargeId, token))!.WorkOrderId, token) ?? throw new ServiceException("service.work_order_not_found")), ct);
+        if (invoiceReader is null) throw new ServiceException("service.invoice_reader_unavailable");
+        var invoice = await invoiceReader.GetServiceInvoiceStateAsync(tenant, current.Order.LegalEntityId, request.InvoiceId, ct);
+        if (invoice is null || invoice.SourceModule != "service" || invoice.SourceDocumentId != current.Order.Id || invoice.PartyId != current.Order.CustomerPartyId || invoice.CurrencyCode != current.Charge.CurrencyCode || invoice.Direction != "Receivable") throw new ServiceException("service.invoice_source_mismatch");
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var already = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(sum(allocated_amount),0) from business_service.service_invoice_allocation where tenant_id=$1 and charge_id=$2 and invoice_id<>$3", token, tenant.Value, chargeId, request.InvoiceId), CultureInfo.InvariantCulture);
+            if (already + request.AllocatedAmount > current.Charge.CustomerAmount) throw new ServiceException("service.invoice_allocation_exceeds_charge");
+            await ExecuteAsync(context, "insert into business_service.service_invoice_allocation(tenant_id,id,charge_id,invoice_id,allocated_amount) values($1,$2,$3,$4,$5) on conflict(tenant_id,charge_id,invoice_id) do update set allocated_amount=excluded.allocated_amount", token, tenant.Value, Guid.CreateVersion7(), chargeId, request.InvoiceId, request.AllocatedAmount);
+            var total = already + request.AllocatedAmount;
+            await ExecuteAsync(context, "update business_service.service_charge set state=case when $3>=customer_amount then 'Invoiced' else 'Requested' end,invoice_id=$4,invoice_integration_state='Allocated' where tenant_id=$1 and id=$2", token, tenant.Value, chargeId, total, request.InvoiceId);
+            return await ReadChargeAsync(context, tenant.Value, chargeId, token) ?? throw new ServiceException("service.charge_not_found");
+        }, ct);
+    }
 
     private static void ValidateContext(string context, Guid? customer, Guid? installedBase) { try { ServiceRules.ValidateContext(context, customer, installedBase); } catch (ArgumentException ex) { throw new ServiceException(ex.ParamName == "customerPartyId" ? "service.customer_required" : ex.ParamName == "installedBaseId" ? "service.subject_invalid" : "service.context_invalid"); } }
     private static string Number(string prefix, Guid id) => $"{prefix}-{id.ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant()}";
     private static (int Page, int Size) Page(int page, int size) => (Math.Max(1, page), Math.Clamp(size, 1, 200));
     private static object Db(object? value) => value ?? DBNull.Value;
+    private static bool ScopeCovers(string? scopeJson, string category)
+    {
+        if (string.IsNullOrWhiteSpace(scopeJson)) return true;
+        try
+        {
+            using var document = JsonDocument.Parse(scopeJson);
+            if (!document.RootElement.TryGetProperty("coveredCategories", out var categories) || categories.ValueKind != JsonValueKind.Array) return true;
+            return categories.EnumerateArray().Any(item => string.Equals(item.GetString(), category, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (JsonException) { return false; }
+    }
+    private static decimal ScopeLimit(string? scopeJson, string category, decimal amount)
+    {
+        if (string.IsNullOrWhiteSpace(scopeJson)) return amount;
+        try
+        {
+            using var document = JsonDocument.Parse(scopeJson);
+            var property = category.Contains("Visit", StringComparison.OrdinalIgnoreCase) ? "includedVisits" : category.Equals("Parts", StringComparison.OrdinalIgnoreCase) ? "partsCap" : category.Equals("Labor", StringComparison.OrdinalIgnoreCase) ? "includedLaborAmount" : "includedAmount";
+            return document.RootElement.TryGetProperty(property, out var value) && value.TryGetDecimal(out var limit) ? Math.Max(0m, Math.Min(amount, limit)) : amount;
+        }
+        catch (JsonException) { return 0m; }
+    }
+    private static DateTimeOffset BusinessDue(DateTimeOffset start, int minutes, SlaProfileView profile)
+    {
+        var cursor = start; var remaining = minutes; var open = TimeOnly.Parse(profile.WorkingStart, CultureInfo.InvariantCulture); var close = TimeOnly.Parse(profile.WorkingEnd, CultureInfo.InvariantCulture);
+        while (remaining > 0)
+        {
+            var local = TimeZoneInfo.ConvertTime(cursor, TimeZoneInfo.FindSystemTimeZoneById(profile.TimeZoneId));
+            var dayBit = 1 << (int)local.DayOfWeek;
+            if ((profile.WorkingWeekdays & dayBit) == 0 || local.TimeOfDay >= close.ToTimeSpan()) { cursor = local.Date.AddDays(1).Add(open.ToTimeSpan()).ToUniversalTime(); continue; }
+            if (local.TimeOfDay < open.ToTimeSpan()) cursor = local.Date.Add(open.ToTimeSpan()).ToUniversalTime();
+            var available = (int)(close.ToTimeSpan() - TimeZoneInfo.ConvertTime(cursor, TimeZoneInfo.FindSystemTimeZoneById(profile.TimeZoneId)).TimeOfDay).TotalMinutes;
+            var take = Math.Min(remaining, Math.Max(1, available)); cursor = cursor.AddMinutes(take); remaining -= take;
+        }
+        return cursor;
+    }
     private static NpgsqlCommand Command(ITransactionContext context, string sql, params object?[] values) { var command = new NpgsqlCommand(sql, context.Connection, context.Transaction); foreach (var value in values) command.Parameters.AddWithValue(value ?? DBNull.Value); return command; }
     private static async Task<int> ExecuteAsync(ITransactionContext context, string sql, CancellationToken ct, params object?[] values) { await using var command = Command(context, sql, values); return await command.ExecuteNonQueryAsync(ct); }
     private static async Task<object?> ScalarAsync(ITransactionContext context, string sql, CancellationToken ct, params object?[] values) { await using var command = Command(context, sql, values); var value = await command.ExecuteScalarAsync(ct); return value is DBNull ? null : value; }
@@ -395,15 +702,19 @@ public sealed class ServiceService(ITransactionCoordinator coordinator)
     private static async Task<TemplateView?> ReadTemplateAsync(ITransactionContext c, Guid t, Guid templateId, int version, CancellationToken ct) { await using var cmd = Command(c, "select t.id,t.legal_entity_id,t.code,t.name,v.version_no,v.expected_duration_hours,v.definition::text,t.state from business_service.service_work_template t join business_service.service_work_template_version v on v.tenant_id=t.tenant_id and v.template_id=t.id where t.tenant_id=$1 and t.id=$2 and v.version_no=$3", t, templateId, version); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetInt32(4), r.IsDBNull(5) ? null : r.GetDecimal(5), r.GetString(6), r.GetString(7)) : null; }
     private static MaintenancePlanView ReadPlan(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetGuid(4), r.GetString(5), r.IsDBNull(6) ? null : r.GetFieldValue<DateOnly>(6), r.IsDBNull(7) ? null : r.GetInt32(7), r.IsDBNull(8) ? null : r.GetDecimal(8), r.IsDBNull(9) ? null : r.GetString(9), r.GetString(10));
     private static async Task<MaintenancePlanView?> ReadPlanAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,legal_entity_id,name,subject_type,subject_id,trigger_type,start_date,interval_days,meter_threshold,meter_code,state from business_service.maintenance_plan where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? ReadPlan(r) : null; }
-    private static async Task<MaintenanceDueView?> ReadDueByKeyAsync(ITransactionContext c, Guid t, string key, CancellationToken ct) { await using var cmd = Command(c, "select id,plan_id,subject_id,due_date,state,work_order_id,reason from business_service.maintenance_due where tenant_id=$1 and generated_key=$2", t, key); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetFieldValue<DateOnly>(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetGuid(5), r.IsDBNull(6) ? null : r.GetString(6)) : null; }
-    private static async Task<MaintenanceDueView?> ReadDueAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,plan_id,subject_id,due_date,state,work_order_id,reason from business_service.maintenance_due where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetFieldValue<DateOnly>(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetGuid(5), r.IsDBNull(6) ? null : r.GetString(6)) : null; }
-    private static async Task<SlaProfileView?> ReadSlaProfileAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,legal_entity_id,code,response_minutes,arrival_minutes,resolution_minutes,state from business_service.sla_profile where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetInt32(3), r.IsDBNull(4) ? null : r.GetInt32(4), r.GetInt32(5), r.GetString(6)) : null; }
+    private static async Task<MaintenanceDueView?> ReadDueByKeyAsync(ITransactionContext c, Guid t, string key, CancellationToken ct) { await using var cmd = Command(c, "select id,plan_id,subject_id,due_date,state,work_order_id,reason,row_version from business_service.maintenance_due where tenant_id=$1 and generated_key=$2", t, key); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetFieldValue<DateOnly>(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetGuid(5), r.IsDBNull(6) ? null : r.GetString(6), r.GetInt64(7)) : null; }
+    private static async Task<MaintenanceDueView?> ReadDueAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,plan_id,subject_id,due_date,state,work_order_id,reason,row_version from business_service.maintenance_due where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetFieldValue<DateOnly>(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetGuid(5), r.IsDBNull(6) ? null : r.GetString(6), r.GetInt64(7)) : null; }
+    private static async Task<SlaProfileView?> ReadSlaProfileAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,legal_entity_id,code,response_minutes,arrival_minutes,resolution_minutes,state,working_weekdays,working_start::text,working_end::text,time_zone_id from business_service.sla_profile where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetInt32(3), r.IsDBNull(4) ? null : r.GetInt32(4), r.GetInt32(5), r.GetString(6), r.GetInt16(7), r.GetString(8), r.GetString(9), r.GetString(10)) : null; }
     private static async Task<SlaClockView?> ReadSlaClockAsync(ITransactionContext c, Guid t, Guid workOrderId, string clockType, CancellationToken ct) { await using var cmd = Command(c, "select id,work_order_id,clock_type,started_at,due_at,state,paused_minutes from business_service.sla_clock where tenant_id=$1 and work_order_id=$2 and clock_type=$3", t, workOrderId, clockType); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetFieldValue<DateTimeOffset>(3), r.GetFieldValue<DateTimeOffset>(4), r.GetString(5), r.GetInt32(6)) : null; }
     private static async Task<MeterReadingView?> ReadMeterAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,subject_id,meter_code,value,uom,reading_at,source,is_reset from business_service.meter_reading where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetDecimal(3), r.GetString(4), r.GetFieldValue<DateTimeOffset>(5), r.GetString(6), r.GetBoolean(7)) : null; }
     private static async Task<ServiceContractView?> ReadContractAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,legal_entity_id,contract_holder_party_id,bill_to_party_id,start_date,end_date,contract_type,currency_code,value,state,scope::text from business_service.service_contract where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetGuid(3), r.GetFieldValue<DateOnly>(4), r.GetFieldValue<DateOnly>(5), r.GetString(6), r.GetString(7), r.IsDBNull(8) ? null : r.GetDecimal(8), r.GetString(9), r.IsDBNull(10) ? null : r.GetString(10)) : null; }
     private static async Task<ServiceChargeView?> ReadChargeAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,work_order_id,category,description,cost_amount,covered_amount,customer_amount,currency_code,state,invoice_id from business_service.service_charge where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? ReadCharge(r) : null; }
     private static ServiceChargeView ReadCharge(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6), r.GetString(7), r.GetString(8), r.IsDBNull(9) ? null : r.GetGuid(9));
     private static async Task<PartRequirementView?> ReadPartAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,work_order_id,product_id,quantity,uom_code,state,reserved_quantity,issued_quantity,consumed_quantity,returned_quantity from business_service.work_part_requirement where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetDecimal(3), r.GetString(4), r.GetString(5), r.GetDecimal(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9)) : null; }
+    private static async Task<PartIntegration?> ReadPartIntegrationAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select legal_entity_id,warehouse_id,location_id,unit_of_measure_id,lot_id,serial_id from business_service.work_part_requirement where tenant_id=$1 and id=$2 and legal_entity_id is not null and warehouse_id is not null and location_id is not null and unit_of_measure_id is not null", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetGuid(3), r.IsDBNull(4) ? null : r.GetGuid(4), r.IsDBNull(5) ? null : r.GetGuid(5)) : null; }
+    private static async Task<PartMovement?> ReadPartMovementAsync(ITransactionContext c, Guid t, string key, CancellationToken ct) { await using var cmd = Command(c, "select id,action,quantity,state,inventory_reservation_id,inventory_operation_id from business_service.work_part_movement where tenant_id=$1 and idempotency_key=$2", t, key); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetString(1), r.GetDecimal(2), r.GetString(3), r.IsDBNull(4) ? null : r.GetGuid(4), r.IsDBNull(5) ? null : r.GetGuid(5)) : null; }
+    private sealed record PartIntegration(Guid LegalEntityId, Guid WarehouseId, Guid LocationId, Guid UnitOfMeasureId, Guid? LotId, Guid? SerialId);
+    private sealed record PartMovement(Guid Id, string Action, decimal Quantity, string State, Guid? ReservationId, Guid? OperationId);
     private static async Task<WarrantyView?> ReadWarrantyAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,legal_entity_id,warranty_type,provider_party_id,customer_party_id,subject_id,start_date,end_date,state,scope::text from business_service.warranty where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetGuid(3), r.IsDBNull(4) ? null : r.GetGuid(4), r.IsDBNull(5) ? null : r.GetGuid(5), r.GetFieldValue<DateOnly>(6), r.GetFieldValue<DateOnly>(7), r.GetString(8), r.GetString(9)) : null; }
     private static async Task<LaborView?> ReadLaborAsync(ITransactionContext c, Guid t, Guid id, CancellationToken ct) { await using var cmd = Command(c, "select id,visit_id,employee_id,started_at,ended_at,time_category,extract(epoch from (ended_at-started_at))/3600,cost_amount,currency_code,state from business_service.service_labor_entry where tenant_id=$1 and id=$2", t, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.IsDBNull(2) ? null : r.GetGuid(2), r.GetFieldValue<DateTimeOffset>(3), r.GetFieldValue<DateTimeOffset>(4), r.GetString(5), r.GetDecimal(6), r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetString(8), r.GetString(9)) : null; }
     private static async Task<OfflineCommandView?> ReadOfflineAsync(ITransactionContext c, Guid t, Guid clientId, CancellationToken ct) { await using var cmd = Command(c, "select id,client_command_id,command_type,state,conflict_code,result::text from business_service.offline_command where tenant_id=$1 and client_command_id=$2", t, clientId); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5)) : null; }

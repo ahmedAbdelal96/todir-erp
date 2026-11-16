@@ -21,6 +21,15 @@ public interface IInvoicingSourceCapabilities
         Guid correlationId, CancellationToken cancellationToken = default);
 }
 
+public sealed record ServiceInvoiceState(Guid InvoiceId, Guid LegalEntityId, Guid PartyId, string CurrencyCode,
+    string Direction, string Lifecycle, Guid? SourceDocumentId, string? SourceModule);
+
+public interface IServiceInvoiceReadCapability
+{
+    Task<ServiceInvoiceState?> GetServiceInvoiceStateAsync(TenantId tenantId, Guid legalEntityId, Guid invoiceId,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed record PosInvoiceResult(Guid InvoiceId, string DocumentNumber, Guid JournalEntryId);
 
 public interface IPosInvoicingCapabilities
