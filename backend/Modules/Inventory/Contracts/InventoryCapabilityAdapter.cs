@@ -12,4 +12,15 @@ public sealed class InventoryCapabilityAdapter(InventoryService service) : Share
 
     public Task<Guid> ReceiveReturnAsync(Guid tenantId, Guid actorId, Shared.Contracts.Inventory.InventoryReturnRequest request, CancellationToken cancellationToken = default) =>
         service.ReceiveReturnAsync(tenantId, actorId, new Todir.Inventory.Contracts.InventoryReturnRequest(request.ProductVariantId, request.LegalEntityId, request.WarehouseId, request.LocationId, request.EnteredUomId, request.Quantity, request.SourceModule, request.SourceDocumentId, request.SourceLineId, request.IdempotencyKey, request.OperationalDate, request.PostingDate, request.StockStatus, request.LotId, request.SerialId, request.UnitCost, request.CurrencyCode), cancellationToken);
+
+    public async Task<IReadOnlyList<Shared.Contracts.Inventory.InventoryMovementHistoryItem>> GetMovementHistoryAsync(Guid tenantId,
+        Shared.Contracts.Inventory.InventoryMovementHistoryRequest request, CancellationToken cancellationToken = default)
+    {
+        var rows = await service.GetMovementHistoryAsync(tenantId,
+            new Todir.Inventory.Contracts.InventoryMovementHistoryQuery(request.ProductVariantId, request.LegalEntityId,
+                request.WarehouseId, request.LocationId, null, null, null, null, null, request.PageSize), cancellationToken);
+        return rows.Select(row => new Shared.Contracts.Inventory.InventoryMovementHistoryItem(row.Id, row.OperationId,
+            row.ProductVariantId, row.WarehouseId, row.LocationId, row.SignedBaseQuantity, row.EffectiveAt, row.Sequence,
+            row.MovementType, row.SourceModule, row.SourceDocumentId)).ToArray();
+    }
 }

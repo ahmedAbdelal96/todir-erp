@@ -37,7 +37,7 @@ public static class InventorySeed
         await EnsureProfileAsync(context, tenant, entity, actor, 17, simpleWarehouse, "NonStocked", "Quantity", "NonValuated", null, "Disallow", "Disabled", now, ct);
 
         var product = SeedIds.Variant(tenant, 1, "default");
-        var uom = SeedIds.Uom(tenant, "KG");
+        var uom = SeedIds.Uom(tenant, "PACK");
         var openingOperation = Id(tenant, "inventory-opening-main");
         var adjustmentOperation = Id(tenant, "inventory-count-adjustment");
         var openingMovement = Id(tenant, "inventory-opening-main-movement");

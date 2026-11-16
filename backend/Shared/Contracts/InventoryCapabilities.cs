@@ -10,10 +10,17 @@ public sealed record InventoryReturnRequest(Guid ProductVariantId, Guid LegalEnt
     Guid EnteredUomId, decimal Quantity, string SourceModule, Guid SourceDocumentId, Guid SourceLineId, string IdempotencyKey,
     DateOnly OperationalDate, DateOnly PostingDate, string StockStatus = "Available", Guid? LotId = null, Guid? SerialId = null,
     decimal? UnitCost = null, string? CurrencyCode = null);
+public sealed record InventoryMovementHistoryRequest(Guid ProductVariantId, Guid LegalEntityId, Guid? WarehouseId = null,
+    Guid? LocationId = null, Guid? SourceDocumentId = null, int PageSize = 100);
+public sealed record InventoryMovementHistoryItem(Guid Id, Guid OperationId, Guid ProductVariantId, Guid WarehouseId,
+    Guid LocationId, decimal SignedBaseQuantity, DateTimeOffset EffectiveAt, long Sequence, string MovementType,
+    string SourceModule, Guid? SourceDocumentId);
 
 public interface IInventoryCapabilities
 {
     Task<Guid> ReserveAsync(Guid tenantId, Guid actorId, InventoryReservationRequest request, CancellationToken cancellationToken = default);
     Task<Guid> ConsumeReservationAsync(Guid tenantId, Guid actorId, Guid reservationId, InventoryMovementRequest issue, CancellationToken cancellationToken = default);
     Task<Guid> ReceiveReturnAsync(Guid tenantId, Guid actorId, InventoryReturnRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<InventoryMovementHistoryItem>> GetMovementHistoryAsync(Guid tenantId, InventoryMovementHistoryRequest request,
+        CancellationToken cancellationToken = default);
 }

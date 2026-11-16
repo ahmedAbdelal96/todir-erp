@@ -19,6 +19,7 @@ public sealed class ServiceService(
     IServiceInvoiceReadCapability? invoiceReader = null,
     IProjectSourceIntegrationCapabilities? projects = null)
 {
+    private static readonly JsonSerializerOptions OfflineJsonOptions = new(JsonSerializerDefaults.Web);
     public Task<Guid?> GetWorkOrderLegalEntityAsync(TenantId tenant, Guid workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context, "select legal_entity_id from business_service.work_order where tenant_id=$1 and id=$2", token, tenant.Value, workOrderId), ct);
     public Task<Guid?> GetVisitLegalEntityAsync(TenantId tenant, Guid visitId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context, "select w.legal_entity_id from business_service.service_visit v join business_service.work_order w on w.tenant_id=v.tenant_id and w.id=v.work_order_id where v.tenant_id=$1 and v.id=$2", token, tenant.Value, visitId), ct);
     public Task<Guid?> GetPartLegalEntityAsync(TenantId tenant, Guid partId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context, "select coalesce(p.legal_entity_id,w.legal_entity_id) from business_service.work_part_requirement p join business_service.work_order w on w.tenant_id=p.tenant_id and w.id=p.work_order_id where p.tenant_id=$1 and p.id=$2", token, tenant.Value, partId), ct);
@@ -409,9 +410,9 @@ public sealed class ServiceService(
             {
                 "visit.arrive" or "visit.start" or "visit.complete" or "visit.no-access" => await TransitionVisitAsync(tenant, actor, request.VisitId ?? throw new ServiceException("service.visit_required"), request.CommandType[6..], new TransitionRequest(request.ExpectedVersion ?? 0), ct),
                 "work.start" or "work.technical-complete" => await TransitionWorkOrderAsync(tenant, actor, request.WorkOrderId ?? throw new ServiceException("service.work_order_required"), request.CommandType[5..], new TransitionRequest(request.ExpectedVersion ?? 0), ct),
-                "checklist.answer" => JsonSerializer.Deserialize<ChecklistAnswerRequest>(request.PayloadJson) is { } answer ? await SaveChecklistAnswerAsync(tenant, actor, answer, ct) : throw new ServiceException("service.offline_payload_invalid"),
-                "meter.record" => JsonSerializer.Deserialize<RecordMeterReadingRequest>(request.PayloadJson) is { } meter ? await RecordMeterAsync(tenant, actor, meter, ct) : throw new ServiceException("service.offline_payload_invalid"),
-                "part.consume" => JsonSerializer.Deserialize<OfflinePartCommand>(request.PayloadJson) is { } part ? await ApplyPartActionAsync(tenant, actor, part.PartId, "consume", part.Request, ct) : throw new ServiceException("service.offline_payload_invalid"),
+                "checklist.answer" => JsonSerializer.Deserialize<ChecklistAnswerRequest>(request.PayloadJson, OfflineJsonOptions) is { } answer ? await SaveChecklistAnswerAsync(tenant, actor, answer, ct) : throw new ServiceException("service.offline_payload_invalid"),
+                "meter.record" => JsonSerializer.Deserialize<RecordMeterReadingRequest>(request.PayloadJson, OfflineJsonOptions) is { } meter ? await RecordMeterAsync(tenant, actor, meter, ct) : throw new ServiceException("service.offline_payload_invalid"),
+                "part.consume" => JsonSerializer.Deserialize<OfflinePartCommand>(request.PayloadJson, OfflineJsonOptions) is { } part ? await ApplyPartActionAsync(tenant, actor, part.PartId, "consume", part.Request, ct) : throw new ServiceException("service.offline_payload_invalid"),
                 _ => throw new ServiceException("service.offline_command_type_invalid")
             };
             return await MarkOfflineAsync(tenant, request.ClientCommandId, "Processed", null, JsonSerializer.Serialize(result), ct);
@@ -519,6 +520,14 @@ public sealed class ServiceService(
             {
                 operationId = await coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context,
                     "select inventory_operation_id from business_service.work_part_movement where tenant_id=$1 and part_requirement_id=$2 and action='issue' and state='Processed' order by created_at desc limit 1", token, tenant.Value, partId), ct);
+                if (operationId is null) throw new ServiceException("service.inventory_issue_required");
+                var evidence = await inventory.GetMovementHistoryAsync(tenant.Value,
+                    new InventoryMovementHistoryRequest(execution.Part.ProductId, execution.Details.LegalEntityId,
+                        execution.Details.WarehouseId, execution.Details.LocationId, execution.Part.WorkOrderId, 100), ct);
+                if (!evidence.Any(item => item.OperationId == operationId.Value &&
+                    item.SourceModule == "service" && item.SourceDocumentId == execution.Part.WorkOrderId &&
+                    item.SignedBaseQuantity < 0m))
+                    throw new ServiceException("service.inventory_consumption_evidence_required");
             }
         }
         catch (ServiceException) { await MarkPartMovementAsync(tenant, execution.Movement.Id, "Retryable", null, null, ct); throw; }
