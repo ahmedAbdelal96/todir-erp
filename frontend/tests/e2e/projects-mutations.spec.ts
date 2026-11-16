@@ -44,7 +44,11 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
     const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173';
     const apiContext = await request.newContext({ baseURL });
     try {
-      const probeRes = await apiContext.get('/api/v1/projects/target');
+      const probeRes = await apiContext.get('/api/v1/projects/target', {
+        headers: {
+          'X-Todir-Test-Secret': requireTestDevPassword(),
+        },
+      });
       if (!probeRes.ok()) {
         throw new Error(
           `FAIL CLOSED: Failed to verify target database from ${baseURL}/api/v1/projects/target (HTTP ${probeRes.status()}). Mutation suite refuses execution.`

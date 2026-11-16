@@ -1,9 +1,12 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using Core.Authorization;
 using Core.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Modules.Projects.DTOs;
 using Modules.Projects.Entities;
 using Modules.Projects.Repositories;
@@ -32,13 +35,49 @@ public static class ProjectsModuleExtensions
     public static WebApplication MapProjectsModule(this WebApplication app)
     {
         var group = app.MapGroup("/api/v1/projects").WithTags("Projects").RequireAuthorization().RequireRateLimiting("api");
-        group.MapGet("/target", async (NpgsqlDataSource dataSource, CancellationToken ct) =>
+
+        var isTestProbeEnabled = app.Environment.IsDevelopment() &&
+            (app.Configuration.GetValue<bool>("TODIR_ENABLE_TEST_PROBE") ||
+             string.Equals(app.Configuration["TODIR_MUTATION_TEST_TARGET"], "isolated", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(Environment.GetEnvironmentVariable("TODIR_MUTATION_TEST_TARGET"), "isolated", StringComparison.OrdinalIgnoreCase));
+
+        if (isTestProbeEnabled)
         {
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            await using var cmd = new NpgsqlCommand("select current_database()", conn);
-            var db = (string?)await cmd.ExecuteScalarAsync(ct);
-            return Results.Ok(new { database = db });
-        }).AllowAnonymous().DisableRateLimiting();
+            group.MapGet("/target", async (HttpContext http, NpgsqlDataSource dataSource, IConfiguration config, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            {
+                var expectedSecret = config["TODIR_TEST_PROBE_SECRET"]
+                    ?? config["Seed:DefaultPassword"]
+                    ?? Environment.GetEnvironmentVariable("ERP_DEV_PASSWORD")
+                    ?? "TodirDev2026!";
+
+                var authHeader = http.Request.Headers.Authorization.ToString();
+                var bearerToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    ? authHeader["Bearer ".Length..].Trim()
+                    : null;
+                var headerSecret = http.Request.Headers["X-Todir-Test-Secret"].FirstOrDefault();
+                var providedSecret = headerSecret ?? bearerToken;
+
+                var isSecretValid = !string.IsNullOrWhiteSpace(providedSecret) &&
+                    providedSecret.Length == expectedSecret.Length &&
+                    CryptographicOperations.FixedTimeEquals(
+                        System.Text.Encoding.UTF8.GetBytes(providedSecret),
+                        System.Text.Encoding.UTF8.GetBytes(expectedSecret));
+
+                if (!isSecretValid)
+                {
+                    var access = await AccessAsync(http, subjects, authorizer, "projects.read", null, ct);
+                    if (access is null || !access.Allowed)
+                    {
+                        return Results.Unauthorized();
+                    }
+                }
+
+                await using var conn = await dataSource.OpenConnectionAsync(ct);
+                await using var cmd = new NpgsqlCommand("select current_database()", conn);
+                var db = (string?)await cmd.ExecuteScalarAsync(ct);
+                return Results.Ok(new { database = db });
+            }).AllowAnonymous().ExcludeFromDescription();
+        }
         group.MapGet("/legal-entities/{legalEntityId:guid}", async (Guid legalEntityId, string? search, string? state, string? projectType, int? page, int? pageSize, HttpContext http, ProjectService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "projects.read", legalEntityId, ct), () => service.ListAsync(Tenant(http), legalEntityId, search, state, projectType, page ?? 1, pageSize ?? 50, ct)));
         group.MapPost("/legal-entities/{legalEntityId:guid}", async (Guid legalEntityId, CreateProjectRequest request, HttpContext http, ProjectService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => request.LegalEntityId != legalEntityId ? Results.BadRequest(new { code = "projects.entity_scope_invalid" }) : await Execute(http, await AccessAsync(http, subjects, authorizer, "projects.create", legalEntityId, ct), () => service.CreateAsync(Tenant(http), Actor(http), Membership(http), request, Correlation(http), ct), StatusCodes.Status201Created));
         group.MapPost("/from-sales-source", async (CreateProjectFromSalesSourceRequest request, HttpContext http, ProjectService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "projects.create", request.LegalEntityId, ct), () => service.CreateFromSalesSourceAsync(Tenant(http), Actor(http), Membership(http), request, Correlation(http), ct), StatusCodes.Status201Created));
