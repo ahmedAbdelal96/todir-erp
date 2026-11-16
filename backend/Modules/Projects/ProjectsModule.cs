@@ -11,7 +11,6 @@ using Modules.Projects.DTOs;
 using Modules.Projects.Entities;
 using Modules.Projects.Repositories;
 using Modules.Projects.Services;
-using Npgsql;
 using Shared.Contracts.Projects;
 using Shared.Primitives.Identifiers;
 
@@ -43,7 +42,7 @@ public static class ProjectsModuleExtensions
 
         if (isTestProbeEnabled)
         {
-            group.MapGet("/target", async (HttpContext http, NpgsqlDataSource dataSource, IConfiguration config, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            group.MapGet("/target", async (HttpContext http, ProjectService service, IConfiguration config, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             {
                 var expectedSecret = config["TODIR_TEST_PROBE_SECRET"]
                     ?? config["Seed:DefaultPassword"]
@@ -72,9 +71,7 @@ public static class ProjectsModuleExtensions
                     }
                 }
 
-                await using var conn = await dataSource.OpenConnectionAsync(ct);
-                await using var cmd = new NpgsqlCommand("select current_database()", conn);
-                var db = (string?)await cmd.ExecuteScalarAsync(ct);
+                var db = await service.GetDatabaseNameAsync(Tenant(http), ct);
                 return Results.Ok(new { database = db });
             }).AllowAnonymous().ExcludeFromDescription();
         }

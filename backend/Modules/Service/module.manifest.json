@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../docs/platform/module-manifest-schema.json",
+  "id": "service",
+  "version": "1.0.0",
+  "contractsVersion": 1,
+  "layer": "L4",
+  "type": "business-module",
+  "purchasable": true,
+  "scope": "tenant",
+  "dependencies": {
+    "hard": ["platform-kernel"],
+    "optionalCapabilities": ["directory.party", "catalog.product", "inventory.history", "purchasing.commitments", "expenses.claims", "fixed-assets.registry", "projects.billing", "invoicing.source-draft", "platform.files", "platform.outbox"]
+  },
+  "owns": {
+    "schema": "business_service",
+    "entities": ["service_request", "work_order", "service_visit", "work_assignment", "installed_base_item", "service_work_template", "work_checklist_answer", "work_diagnosis", "maintenance_plan", "maintenance_due", "meter_definition", "meter_reading", "asset_downtime", "work_part_requirement", "service_labor_entry", "service_cost_fact", "warranty", "service_contract", "coverage_decision", "sla_profile", "sla_clock", "service_charge", "service_invoice_allocation", "service_report", "service_report_version", "service_external_reference", "offline_command", "service_audit_event", "service_crew", "service_skill", "service_territory"]
+  },
+  "permissions": [
+    "service.request.read", "service.request.create", "service.request.triage", "service.request.resolve",
+    "service.work.read", "service.work.create", "service.work.plan", "service.work.schedule", "service.work.execute", "service.work.complete", "service.work.close", "service.work.reopen",
+    "service.dispatch.read", "service.dispatch.manage", "service.installed_base.read", "service.installed_base.manage", "service.template.read", "service.template.manage",
+    "service.maintenance_plan.read", "service.maintenance_plan.manage", "service.meter.read", "service.meter.record", "service.parts.read", "service.parts.request", "service.parts.consume",
+    "service.warranty.read", "service.warranty.manage", "service.contract.read", "service.contract.manage", "service.entitlement.override", "service.sla.read", "service.sla.manage",
+    "service.cost.read", "service.cost_rate.read", "service.billing.read", "service.billing.manage", "service.billing.writeoff", "service.billing.request_invoice", "service.documents.read", "service.documents.manage", "service.audit.read", "service.export", "service.settings.manage"
+  ],
+  "capabilities": {
+    "provides": ["service.execution", "service.installed-base", "service.entitlement", "service.billing", "service.maintenance", "service.offline-sync"],
+    "consumes": ["directory.party", "catalog.product", "inventory.history", "purchasing.commitments", "expenses.claims", "fixed-assets.registry", "projects.billing", "invoicing.source-draft", "platform.files", "platform.outbox"]
+  },
+  "messaging": {
+    "publishes": ["ServiceRequestCreatedV1", "WorkOrderCreatedV1", "VisitCompletedV1", "ServiceCostFactRecordedV1", "ServiceInvoiceRequestedV1", "MaintenanceDueCreatedV1", "ServiceSyncConflictV1"],
+    "consumes": ["StockIssuedV1", "StockConsumedV1", "StockReturnedV1", "InvoiceFinalizedV1", "PaymentCompletedV1", "ProjectCostFactRecordedV1"]
+  },
+  "lifecycle": { "supportsGoLive": true, "deactivationPolicy": "blocked_if_dependents" }
+}

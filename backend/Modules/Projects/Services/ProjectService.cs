@@ -12,6 +12,8 @@ namespace Modules.Projects.Services;
 
 public sealed class ProjectService(ProjectsRepository repository, IInvoicingSourceCapabilities invoicing, ISalesQuotationCapabilities sales, ISubledgerCapabilities? subledger = null) : IProjectCapitalizationCapability, IProjectCostFactReader, IProjectCostFactWriter, IProjectSourceIntegrationCapabilities
 {
+    public Task<string> GetDatabaseNameAsync(TenantId tenant, CancellationToken ct) => repository.GetDatabaseNameAsync(tenant, ct);
+
     public Task<ProjectDetail> CreateAsync(TenantId tenant, Guid actor, Guid membership, CreateProjectRequest request, Guid correlationId, CancellationToken ct) => repository.CreateAsync(tenant, actor, membership, request, correlationId, ct);
     public async Task<ProjectDetail> CreateFromSalesSourceAsync(TenantId tenant, Guid actor, Guid membership, CreateProjectFromSalesSourceRequest request, Guid correlationId, CancellationToken ct)
     {

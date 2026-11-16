@@ -29,5 +29,6 @@
     <ProjectReference Include="../Modules/POS/POS.csproj" />
     <ProjectReference Include="../Modules/FixedAssets/FixedAssets.csproj" />
     <ProjectReference Include="../Modules/Projects/Projects.csproj" />
+    <ProjectReference Include="../Modules/Service/Service.csproj" />
   </ItemGroup>
 </Project>

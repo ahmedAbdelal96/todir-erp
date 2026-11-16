@@ -15,6 +15,8 @@ namespace Modules.Projects.Repositories;
 
 public sealed class ProjectsRepository(ITransactionCoordinator coordinator, ITransactionalSequenceAllocator sequences)
 {
+    public Task<string> GetDatabaseNameAsync(TenantId tenant, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => (string)(await ScalarAsync(context, "select current_database()", token) ?? string.Empty), ct);
+
     public Task<bool> CanAccessProjectAsync(TenantId tenant, Guid projectId, Guid actor, Guid membership, string permission, CancellationToken ct) => coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
     {
         const string sql = "select exists(select 1 from business_projects.project p where p.tenant_id=$1 and p.id=$2 and (exists(select 1 from business_projects.project_team_member tm where tm.tenant_id=p.tenant_id and tm.project_id=p.id and tm.user_id=$3 and tm.active_from <= current_date and (tm.active_to is null or tm.active_to >= current_date)) or exists(select 1 from platform.membership_role_assignment a join platform.role_permission rp on rp.tenant_id=a.tenant_id and rp.role_id=a.role_id where a.tenant_id=p.tenant_id and a.membership_id=$4 and a.scope_type='Tenant' and rp.permission_code=$5) or exists(select 1 from platform.membership_role_assignment a join platform.role_permission rp on rp.tenant_id=a.tenant_id and rp.role_id=a.role_id where a.tenant_id=p.tenant_id and a.membership_id=$4 and a.scope_type='LegalEntity' and a.scope_id=p.legal_entity_id and rp.permission_code=$5)))";

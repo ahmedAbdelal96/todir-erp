@@ -21,6 +21,7 @@ using Modules.Expenses;
 using Modules.POS;
 using Modules.Projects;
 using Modules.FixedAssets;
+using Modules.Service;
 using Modules.FixedAssets.Controllers;
 using Quartz;
 
@@ -68,6 +69,7 @@ builder.Services.AddExpensesModule();
 builder.Services.AddPosModule();
 builder.Services.AddProjectsModule();
 builder.Services.AddFixedAssetsModule();
+builder.Services.AddServiceModule();
 builder.Services.AddScheduling(builder.Configuration, options =>
 {
     options.AddJob<HrExpiryReminderJob>(job => job
