@@ -356,8 +356,7 @@ public sealed class ProjectAcceptanceScenarioTests
         Assert.False(string.IsNullOrWhiteSpace(value), "TODIR_PROJECTS_TEST_CONNECTION is required for PostgreSQL-backed Projects acceptance tests. Fallback to populated development database is prohibited.");
 
         var builder = new NpgsqlConnectionStringBuilder(value);
-        if (string.Equals(builder.Database, "todir", StringComparison.OrdinalIgnoreCase) &&
-            Environment.GetEnvironmentVariable("TODIR_PROJECTS_ALLOW_DEV_DB") != "1")
+        if (string.Equals(builder.Database, "todir", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 $"TODIR_PROJECTS_TEST_CONNECTION must target an explicitly isolated test database (e.g. todir_test_projects), not the populated development database '{builder.Database}'.");

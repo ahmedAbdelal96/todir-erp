@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, request } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -28,7 +28,7 @@ test.describe.configure({ mode: 'serial' });
 test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation Acceptance Suite', () => {
   test.setTimeout(240_000);
 
-  test.beforeAll(() => {
+  test.beforeAll(async () => {
     const isExplicitlyIsolated =
       process.env.TODIR_MUTATION_TEST_TARGET === 'isolated' ||
       process.env.TODIR_DISPOSABLE_TEST_ENV === 'true' ||
@@ -39,6 +39,35 @@ test.describe('TODIR Projects & Operations (Module 23) — Real-Stack Mutation A
         'FAIL CLOSED: projects-mutations.spec.ts creates live financial records and mutations and is prohibited from executing against the populated development database (todir). ' +
         'To run this mutation suite, you must explicitly target a dedicated disposable local test database/API environment and set TODIR_MUTATION_TEST_TARGET=isolated (or TODIR_DISPOSABLE_TEST_ENV=true).'
       );
+    }
+
+    const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173';
+    const apiContext = await request.newContext({ baseURL });
+    try {
+      const probeRes = await apiContext.get('/api/v1/projects/target');
+      if (!probeRes.ok()) {
+        throw new Error(
+          `FAIL CLOSED: Failed to verify target database from ${baseURL}/api/v1/projects/target (HTTP ${probeRes.status()}). Mutation suite refuses execution.`
+        );
+      }
+      const data = (await probeRes.json()) as { database?: string };
+      const databaseName = data.database?.trim().toLowerCase();
+
+      if (databaseName === 'todir') {
+        throw new Error(
+          'FAIL CLOSED: The target API is connected to the normal development database ("todir"). ' +
+          'Projects mutation acceptance tests are strictly prohibited from modifying "todir". ' +
+          'Target must be the isolated disposable test database ("todir_test_projects") on an isolated API instance.'
+        );
+      }
+
+      if (databaseName !== 'todir_test_projects') {
+        throw new Error(
+          `FAIL CLOSED: Unexpected database target "${data.database}". Mutation tests require the isolated "todir_test_projects" database.`
+        );
+      }
+    } finally {
+      await apiContext.dispose();
     }
 
     [LOCAL_ARTIFACTS_DIR, AGENT_BRAIN_DIR].forEach((dir) => {

@@ -8,6 +8,7 @@ using Modules.Projects.DTOs;
 using Modules.Projects.Entities;
 using Modules.Projects.Repositories;
 using Modules.Projects.Services;
+using Npgsql;
 using Shared.Contracts.Projects;
 using Shared.Primitives.Identifiers;
 
@@ -31,6 +32,13 @@ public static class ProjectsModuleExtensions
     public static WebApplication MapProjectsModule(this WebApplication app)
     {
         var group = app.MapGroup("/api/v1/projects").WithTags("Projects").RequireAuthorization().RequireRateLimiting("api");
+        group.MapGet("/target", async (NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            await using var cmd = new NpgsqlCommand("select current_database()", conn);
+            var db = (string?)await cmd.ExecuteScalarAsync(ct);
+            return Results.Ok(new { database = db });
+        }).AllowAnonymous().DisableRateLimiting();
         group.MapGet("/legal-entities/{legalEntityId:guid}", async (Guid legalEntityId, string? search, string? state, string? projectType, int? page, int? pageSize, HttpContext http, ProjectService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "projects.read", legalEntityId, ct), () => service.ListAsync(Tenant(http), legalEntityId, search, state, projectType, page ?? 1, pageSize ?? 50, ct)));
         group.MapPost("/legal-entities/{legalEntityId:guid}", async (Guid legalEntityId, CreateProjectRequest request, HttpContext http, ProjectService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => request.LegalEntityId != legalEntityId ? Results.BadRequest(new { code = "projects.entity_scope_invalid" }) : await Execute(http, await AccessAsync(http, subjects, authorizer, "projects.create", legalEntityId, ct), () => service.CreateAsync(Tenant(http), Actor(http), Membership(http), request, Correlation(http), ct), StatusCodes.Status201Created));
         group.MapPost("/from-sales-source", async (CreateProjectFromSalesSourceRequest request, HttpContext http, ProjectService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "projects.create", request.LegalEntityId, ct), () => service.CreateFromSalesSourceAsync(Tenant(http), Actor(http), Membership(http), request, Correlation(http), ct), StatusCodes.Status201Created));

@@ -11,22 +11,29 @@ export default defineConfig({
   // assertions deterministic when four workers cold-start different routes.
   expect: { timeout: 10_000 },
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: process.env['PLAYWRIGHT_BASE_URL'] || 'http://127.0.0.1:5173',
     trace: 'on-first-retry',
   },
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          args: ['--no-sandbox', '--disable-gpu'],
+        },
+      },
     },
   ],
-  webServer: {
-    command: 'pnpm exec vite --host 127.0.0.1 --port 5173',
-    url: 'http://127.0.0.1:5173/',
-    reuseExistingServer: !process.env['CI'],
-    timeout: 120 * 1000,
-    env: {
-      NODE_OPTIONS: '--max-old-space-size=4096',
-    },
-  },
+  webServer: process.env['PLAYWRIGHT_BASE_URL']
+    ? undefined
+    : {
+        command: 'pnpm exec vite --host 127.0.0.1 --port 5173',
+        url: 'http://127.0.0.1:5173/',
+        reuseExistingServer: !process.env['CI'],
+        timeout: 120 * 1000,
+        env: {
+          NODE_OPTIONS: '--max-old-space-size=4096',
+        },
+      },
 });
