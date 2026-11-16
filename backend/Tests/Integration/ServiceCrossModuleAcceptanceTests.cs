@@ -45,16 +45,19 @@ public sealed class ServiceCrossModuleAcceptanceTests
             new CreateWorkOrderRequest(entity, "CustomerFieldService", "SV50 customer repair", "Acceptance repair",
                 customer, installedBase, null, null, null, BillingOwner: "Service"), CancellationToken.None);
         var part = await service.AddPartAsync(AtlasTenant, actor.ActorId, work.Id,
-            new CreatePartRequirementRequest(product, 1m, "PACK", "Acceptance part", entity, warehouse, location, uom), CancellationToken.None);
+            new CreatePartRequirementRequest(product, 2m, "PACK", "Acceptance part", entity, warehouse, location, uom), CancellationToken.None);
 
-        var reserved = await service.ApplyPartActionAsync(AtlasTenant, actor.ActorId, part.Id, "reserve",
-            new PartActionRequest(1m, IdempotencyKey: $"sv50-reserve:{work.Id:D}"), CancellationToken.None);
+        await service.ApplyPartActionAsync(AtlasTenant, actor.ActorId, part.Id, "reserve",
+            new PartActionRequest(2m, IdempotencyKey: $"sv50-reserve:{work.Id:D}"), CancellationToken.None);
         await service.ApplyPartActionAsync(AtlasTenant, actor.ActorId, part.Id, "issue",
-            new PartActionRequest(1m, IdempotencyKey: $"sv50-issue:{work.Id:D}"), CancellationToken.None);
+            new PartActionRequest(2m, IdempotencyKey: $"sv50-issue:{work.Id:D}"), CancellationToken.None);
         var consumed = await service.ApplyPartActionAsync(AtlasTenant, actor.ActorId, part.Id, "consume",
             new PartActionRequest(1m, IdempotencyKey: $"sv50-consume:{work.Id:D}"), CancellationToken.None);
         Assert.Equal(1m, consumed.ConsumedQuantity);
-        Assert.Equal(3L, await ScalarAsync<long>(connectionString, AtlasTenant,
+        var returned = await service.ApplyPartActionAsync(AtlasTenant, actor.ActorId, part.Id, "return",
+            new PartActionRequest(1m, IdempotencyKey: $"sv50-return:{work.Id:D}"), CancellationToken.None);
+        Assert.Equal(1m, returned.ReturnedQuantity);
+        Assert.Equal(4L, await ScalarAsync<long>(connectionString, AtlasTenant,
             "select count(*) from business_service.work_part_movement where tenant_id=$1 and part_requirement_id=$2 and state='Processed'", part.Id));
         Assert.True(await ScalarAsync<long>(connectionString, AtlasTenant,
             "select count(*) from business_inventory.inventory_operation where tenant_id=$1 and source_module='service' and source_document_id=$2 and status='Confirmed'", work.Id) >= 1);
