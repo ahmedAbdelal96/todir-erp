@@ -844,6 +844,161 @@ public sealed class ServiceService(
         return await ReadReportAsync(context, tenant.Value, reportId, version, token) ?? throw new ServiceException("service.report_not_found");
     }, ct);
 
+    public Task<ServiceRequestView?> GetRequestAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadRequestAsync(context, tenant.Value, id, token), ct);
+    public Task<InstalledBaseView?> GetInstalledBaseItemAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadInstalledBaseAsync(context, tenant.Value, id, token), ct);
+    public Task<IReadOnlyList<ComponentEventView>> ListComponentEventsAsync(TenantId tenant, Guid itemId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<ComponentEventView>();
+        await using var cmd = Command(context, "select id,item_id,component_item_id,event_type,occurred_at,replaced_component_id,work_order_id,notes from business_service.installed_base_component_event where tenant_id=$1 and item_id=$2 order by occurred_at desc", tenant.Value, itemId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetString(3), r.GetFieldValue<DateTimeOffset>(4), r.IsDBNull(5) ? null : r.GetGuid(5), r.IsDBNull(6) ? null : r.GetGuid(6), r.IsDBNull(7) ? null : r.GetString(7)));
+        return (IReadOnlyList<ComponentEventView>)result;
+    }, ct);
+    public Task<TemplateView?> GetTemplateAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var cmd = Command(context, "select t.id,t.legal_entity_id,t.code,t.name,coalesce(v.version_no,1),v.expected_duration_hours,coalesce(v.definition::text,'{}'),t.state from business_service.service_work_template t left join lateral (select version_no,expected_duration_hours,definition from business_service.service_work_template_version where tenant_id=t.tenant_id and template_id=t.id order by version_no desc limit 1) v on true where t.tenant_id=$1 and t.id=$2", tenant.Value, id);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        return await r.ReadAsync(token) ? ReadTemplate(r) : null;
+    }, ct);
+    public Task<IReadOnlyList<ChecklistAnswerView>> ListChecklistAnswersAsync(TenantId tenant, Guid workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<ChecklistAnswerView>();
+        await using var cmd = Command(context, "select id,work_order_id,question_key,question_type,answer_json::text,required,answered_at from business_service.work_checklist_answer where tenant_id=$1 and work_order_id=$2 order by question_key", tenant.Value, workOrderId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.IsDBNull(4) ? null : r.GetString(4), r.GetBoolean(5), r.IsDBNull(6) ? null : r.GetFieldValue<DateTimeOffset>(6)));
+        return (IReadOnlyList<ChecklistAnswerView>)result;
+    }, ct);
+    public Task<IReadOnlyList<DiagnosisView>> ListDiagnosesAsync(TenantId tenant, Guid workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<DiagnosisView>();
+        await using var cmd = Command(context, "select id,work_order_id,reported_symptom,diagnosis,failure_mode_code,root_cause_code,resolution_code,notes,recorded_by,recorded_at from business_service.work_diagnosis where tenant_id=$1 and work_order_id=$2 order by recorded_at desc", tenant.Value, workOrderId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7), r.GetGuid(8), r.GetFieldValue<DateTimeOffset>(9)));
+        return (IReadOnlyList<DiagnosisView>)result;
+    }, ct);
+    public Task<IReadOnlyList<PartRequirementView>> ListPartsAsync(TenantId tenant, Guid workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<PartRequirementView>();
+        await using var cmd = Command(context, "select id,work_order_id,product_id,quantity,uom_code,state,reserved_quantity,issued_quantity,consumed_quantity,returned_quantity from business_service.work_part_requirement where tenant_id=$1 and work_order_id=$2 order by id", tenant.Value, workOrderId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetDecimal(3), r.GetString(4), r.GetString(5), r.GetDecimal(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9)));
+        return (IReadOnlyList<PartRequirementView>)result;
+    }, ct);
+    public Task<IReadOnlyList<LaborView>> ListLaborAsync(TenantId tenant, Guid? workOrderId, Guid? visitId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<LaborView>();
+        await using var cmd = Command(context, "select l.id,l.visit_id,l.employee_id,l.started_at,l.ended_at,l.time_category,extract(epoch from (l.ended_at-l.started_at))/3600,l.cost_amount,l.currency_code,l.state from business_service.service_labor_entry l join business_service.service_visit v on v.tenant_id=l.tenant_id and v.id=l.visit_id where l.tenant_id=$1 and ($2::uuid is null or v.work_order_id=$2) and ($3::uuid is null or l.visit_id=$3) order by l.started_at desc", tenant.Value, Db(workOrderId), Db(visitId));
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.IsDBNull(2) ? null : r.GetGuid(2), r.GetFieldValue<DateTimeOffset>(3), r.GetFieldValue<DateTimeOffset>(4), r.GetString(5), r.GetDecimal(6), r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetString(8), r.GetString(9)));
+        return (IReadOnlyList<LaborView>)result;
+    }, ct);
+    public Task<IReadOnlyList<ServiceReportView>> ListReportsAsync(TenantId tenant, Guid workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<ServiceReportView>();
+        await using var cmd = Command(context, "select r.id,r.work_order_id,v.version_no,r.state,v.content::text,v.created_at,v.signed_file_id from business_service.service_report r join business_service.service_report_version v on v.tenant_id=r.tenant_id and v.report_id=r.id where r.tenant_id=$1 and r.work_order_id=$2 order by v.version_no desc", tenant.Value, workOrderId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetInt32(2), r.GetString(3), r.GetString(4), r.GetFieldValue<DateTimeOffset>(5), r.IsDBNull(6) ? null : r.GetGuid(6)));
+        return (IReadOnlyList<ServiceReportView>)result;
+    }, ct);
+    public Task<IReadOnlyList<SlaClockView>> ListSlaClocksAsync(TenantId tenant, Guid workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<SlaClockView>();
+        await using var cmd = Command(context, "select id,work_order_id,clock_type,started_at,due_at,state,paused_minutes from business_service.sla_clock where tenant_id=$1 and work_order_id=$2 order by started_at", tenant.Value, workOrderId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetFieldValue<DateTimeOffset>(3), r.GetFieldValue<DateTimeOffset>(4), r.GetString(5), r.GetInt32(6)));
+        return (IReadOnlyList<SlaClockView>)result;
+    }, ct);
+    public Task<IReadOnlyList<SupplierRecoveryView>> ListSupplierRecoveriesAsync(TenantId tenant, Guid? workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<SupplierRecoveryView>();
+        await using var cmd = Command(context, "select id,work_order_id,supplier_party_id,source_reference,amount,currency_code,state,reason from business_service.service_supplier_recovery where tenant_id=$1 and ($2::uuid is null or work_order_id=$2) order by id desc", tenant.Value, Db(workOrderId));
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetString(3), r.GetDecimal(4), r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7)));
+        return (IReadOnlyList<SupplierRecoveryView>)result;
+    }, ct);
+    public Task<IReadOnlyList<DowntimeView>> ListDowntimeAsync(TenantId tenant, Guid? subjectId, Guid? workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<DowntimeView>();
+        await using var cmd = Command(context, "select id,subject_id,work_order_id,downtime_type,started_at,ended_at,reason from business_service.asset_downtime where tenant_id=$1 and ($2::uuid is null or subject_id=$2) and ($3::uuid is null or work_order_id=$3) order by started_at desc", tenant.Value, Db(subjectId), Db(workOrderId));
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.IsDBNull(2) ? null : r.GetGuid(2), r.GetString(3), r.GetFieldValue<DateTimeOffset>(4), r.IsDBNull(5) ? null : r.GetFieldValue<DateTimeOffset>(5), r.IsDBNull(6) ? null : r.GetString(6)));
+        return (IReadOnlyList<DowntimeView>)result;
+    }, ct);
+    public Task<VisitView?> GetVisitAsync(TenantId tenant, Guid visitId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadVisitAsync(context, tenant.Value, visitId, token), ct);
+    public Task<IReadOnlyList<AssignmentView>> ListAssignmentsAsync(TenantId tenant, Guid visitId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<AssignmentView>();
+        await using var cmd = Command(context, "select id,visit_id,employee_id,user_id,resource_type,display_name,state from business_service.work_assignment where tenant_id=$1 and visit_id=$2 order by assigned_at", tenant.Value, visitId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.IsDBNull(2) ? null : r.GetGuid(2), r.IsDBNull(3) ? null : r.GetGuid(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5), r.GetString(6)));
+        return (IReadOnlyList<AssignmentView>)result;
+    }, ct);
+    public Task<MaintenancePlanView?> GetPlanAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadPlanAsync(context, tenant.Value, id, token), ct);
+    public Task<MaintenanceDueView?> GetDueAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadDueAsync(context, tenant.Value, id, token), ct);
+    public Task<PagedResult<MaintenanceRoundView>> ListRoundsAsync(TenantId tenant, Guid? legalEntityId, string? state, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        (page, pageSize) = Page(page, pageSize); var offset = (page - 1) * pageSize;
+        var total = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.maintenance_round where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) and ($3::text is null or state=$3)", token, tenant.Value, Db(legalEntityId), Db(state)), CultureInfo.InvariantCulture);
+        var rows = new List<MaintenanceRoundView>();
+        await using var cmd = Command(context, "select r.id,r.legal_entity_id,r.code,r.name,r.scheduled_date,r.state,r.row_version,(select count(*) from business_service.maintenance_round_subject s where s.tenant_id=r.tenant_id and s.round_id=r.id) from business_service.maintenance_round r where r.tenant_id=$1 and ($2::uuid is null or r.legal_entity_id=$2) and ($3::text is null or r.state=$3) order by r.scheduled_date desc,r.id desc limit $4 offset $5", tenant.Value, Db(legalEntityId), Db(state), pageSize + 1, offset);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) rows.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetFieldValue<DateOnly>(4), r.GetString(5), r.GetInt64(6), r.GetInt32(7)));
+        var hasNext = rows.Count > pageSize; if (hasNext) rows.RemoveAt(rows.Count - 1);
+        return new PagedResult<MaintenanceRoundView>(rows, page, pageSize, hasNext, total);
+    }, ct);
+    public Task<MaintenanceRoundView?> GetRoundAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadRoundAsync(context, tenant.Value, id, token), ct);
+    public Task<IReadOnlyList<RoundSubjectView>> ListRoundSubjectsAsync(TenantId tenant, Guid roundId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<RoundSubjectView>();
+        await using var cmd = Command(context, "select id,round_id,subject_type,subject_id,sequence_no,state,result,measurements::text,exceptions,follow_up from business_service.maintenance_round_subject where tenant_id=$1 and round_id=$2 order by sequence_no,id", tenant.Value, roundId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetGuid(3), r.GetInt32(4), r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6), r.GetString(7), r.IsDBNull(8) ? null : r.GetString(8), r.IsDBNull(9) ? null : r.GetString(9)));
+        return (IReadOnlyList<RoundSubjectView>)result;
+    }, ct);
+    public Task<PagedResult<ServiceContractView>> ListContractsAsync(TenantId tenant, Guid? legalEntityId, string? state, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        (page, pageSize) = Page(page, pageSize); var offset = (page - 1) * pageSize;
+        var total = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.service_contract where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) and ($3::text is null or state=$3)", token, tenant.Value, Db(legalEntityId), Db(state)), CultureInfo.InvariantCulture);
+        var rows = new List<ServiceContractView>();
+        await using var cmd = Command(context, "select id,legal_entity_id,contract_holder_party_id,bill_to_party_id,start_date,end_date,contract_type,currency_code,value,state,scope::text from business_service.service_contract where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) and ($3::text is null or state=$3) order by start_date desc,id desc limit $4 offset $5", tenant.Value, Db(legalEntityId), Db(state), pageSize + 1, offset);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) rows.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetGuid(3), r.GetFieldValue<DateOnly>(4), r.GetFieldValue<DateOnly>(5), r.GetString(6), r.GetString(7), r.IsDBNull(8) ? null : r.GetDecimal(8), r.GetString(9), r.IsDBNull(10) ? null : r.GetString(10)));
+        var hasNext = rows.Count > pageSize; if (hasNext) rows.RemoveAt(rows.Count - 1);
+        return new PagedResult<ServiceContractView>(rows, page, pageSize, hasNext, total);
+    }, ct);
+    public Task<ServiceContractView?> GetContractAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadContractAsync(context, tenant.Value, id, token), ct);
+    public Task<PagedResult<WarrantyView>> ListWarrantiesAsync(TenantId tenant, Guid? legalEntityId, Guid? subjectId, string? state, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        (page, pageSize) = Page(page, pageSize); var offset = (page - 1) * pageSize;
+        var total = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.warranty where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) and ($3::uuid is null or subject_id=$3) and ($4::text is null or state=$4)", token, tenant.Value, Db(legalEntityId), Db(subjectId), Db(state)), CultureInfo.InvariantCulture);
+        var rows = new List<WarrantyView>();
+        await using var cmd = Command(context, "select id,legal_entity_id,warranty_type,provider_party_id,customer_party_id,subject_id,start_date,end_date,state,scope::text from business_service.warranty where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) and ($3::uuid is null or subject_id=$3) and ($4::text is null or state=$4) order by start_date desc,id desc limit $5 offset $6", tenant.Value, Db(legalEntityId), Db(subjectId), Db(state), pageSize + 1, offset);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) rows.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetGuid(3), r.IsDBNull(4) ? null : r.GetGuid(4), r.IsDBNull(5) ? null : r.GetGuid(5), r.GetFieldValue<DateOnly>(6), r.GetFieldValue<DateOnly>(7), r.GetString(8), r.GetString(9)));
+        var hasNext = rows.Count > pageSize; if (hasNext) rows.RemoveAt(rows.Count - 1);
+        return new PagedResult<WarrantyView>(rows, page, pageSize, hasNext, total);
+    }, ct);
+    public Task<WarrantyView?> GetWarrantyAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadWarrantyAsync(context, tenant.Value, id, token), ct);
+    public Task<PagedResult<SlaProfileView>> ListSlaProfilesAsync(TenantId tenant, Guid? legalEntityId, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        (page, pageSize) = Page(page, pageSize); var offset = (page - 1) * pageSize;
+        var total = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.sla_profile where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2)", token, tenant.Value, Db(legalEntityId)), CultureInfo.InvariantCulture);
+        var rows = new List<SlaProfileView>();
+        await using var cmd = Command(context, "select id,legal_entity_id,code,response_minutes,arrival_minutes,resolution_minutes,state,working_weekdays,working_start::text,working_end::text,time_zone_id from business_service.sla_profile where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) order by code limit $3 offset $4", tenant.Value, Db(legalEntityId), pageSize + 1, offset);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) rows.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetInt32(3), r.IsDBNull(4) ? null : r.GetInt32(4), r.GetInt32(5), r.GetString(6), r.GetInt16(7), r.GetString(8), r.GetString(9), r.GetString(10)));
+        var hasNext = rows.Count > pageSize; if (hasNext) rows.RemoveAt(rows.Count - 1);
+        return new PagedResult<SlaProfileView>(rows, page, pageSize, hasNext, total);
+    }, ct);
+    public Task<IReadOnlyList<MeterReadingView>> ListMeterReadingsAsync(TenantId tenant, Guid subjectId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var result = new List<MeterReadingView>();
+        await using var cmd = Command(context, "select id,subject_id,meter_code,value,uom,reading_at,source,is_reset from business_service.meter_reading where tenant_id=$1 and subject_id=$2 order by reading_at desc", tenant.Value, subjectId);
+        await using var r = await cmd.ExecuteReaderAsync(token);
+        while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetDecimal(3), r.GetString(4), r.GetFieldValue<DateTimeOffset>(5), r.GetString(6), r.GetBoolean(7)));
+        return (IReadOnlyList<MeterReadingView>)result;
+    }, ct);
+
     public Task<ServiceKpiView> GetKpiAsync(TenantId tenant, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var openRequests = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.service_request where tenant_id=$1 and state not in ('Closed','Cancelled')", token, tenant.Value), CultureInfo.InvariantCulture);
