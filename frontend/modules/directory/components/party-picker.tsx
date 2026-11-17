@@ -50,12 +50,12 @@ export function PartyPicker({
   const [quickCreateName, setQuickCreateName] = useState("");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounce input: only fire query after 350 ms of user inactivity
+  // Fast responsive debounce: fires query after 120 ms
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       setDebouncedSearch(inputValue);
-    }, 350);
+    }, 120);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -112,6 +112,8 @@ export function PartyPicker({
           }
         }}
         options={options}
+        isLoading={isLoading}
+        onClear={() => onChange?.("", undefined)}
         placeholder={isLoading ? t("partyPicker.searching") : partyPlaceholder}
         noResultsMessage={t("partyPicker.noResults")}
         isRequired={isRequired}

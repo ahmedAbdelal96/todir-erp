@@ -53,7 +53,7 @@ export function ProductPicker({
   const [resolveError, setResolveError] = useState<string | null>(null);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    const timer = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 120);
     return () => window.clearTimeout(timer);
   }, [searchTerm]);
 
@@ -136,6 +136,7 @@ export function ProductPicker({
           onSelectionChange={handleSelectKey}
           onInputChange={setSearchTerm}
           options={options}
+          isLoading={isDropdownLoading}
           placeholder={isDropdownLoading ? t("productPicker.loading") : (placeholder ?? t("productPicker.placeholder"))}
           noResultsMessage={t("productList.noResults")}
           isDisabled={isDisabled}

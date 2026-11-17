@@ -55,7 +55,8 @@ export const ar = {
     accountingPosted: "مرحّل محاسبياً", accountingUnposted: "غير مرحّل", approvalApproved: "معتمد إدارياً",
     approvalRejected: "مرفوض", approvalPending: "بانتظار الاعتماد", complianceValid: "مطابق ضريبياً",
     settlementPaid: "مسدد بالكامل", settlementPartial: "مسدد جزئياً", settlementUnpaid: "غير مسدد", documentLocked: "مستند مقفل",
-    createNewOption: "إنشاء {{name}} جديد...", noOptionsFound: "لا توجد نتائج مطابقة"
+    createNewOption: "إنشاء {{name}} جديد...", noOptionsFound: "لا توجد نتائج مطابقة",
+    searchResultsFor: "نتائج البحث عن:", searchPrompt: "اكتب للبحث المباشر...", clearSelection: "مسح التحديد"
   }
   ,grid: {
     selectAll: "تحديد الكل", searchOoo: "بحث...", blanks: "فارغ", noMatches: "لا توجد خيارات مطابقة",

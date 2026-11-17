@@ -55,7 +55,8 @@ export const en = {
     accountingPosted: "Posted", accountingUnposted: "Not posted", approvalApproved: "Approved",
     approvalRejected: "Rejected", approvalPending: "Pending approval", complianceValid: "Compliant",
     settlementPaid: "Paid in full", settlementPartial: "Partially paid", settlementUnpaid: "Unpaid", documentLocked: "Document is locked",
-    createNewOption: "Create new {{name}}...", noOptionsFound: "No matching results"
+    createNewOption: "Create new {{name}}...", noOptionsFound: "No matching results",
+    searchResultsFor: "Search results for:", searchPrompt: "Type to search...", clearSelection: "Clear selection"
   }
   ,grid: {
     selectAll: "Select all", searchOoo: "Search...", blanks: "Blanks", noMatches: "No matching options",
