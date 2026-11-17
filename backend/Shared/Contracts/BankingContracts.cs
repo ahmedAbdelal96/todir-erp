@@ -20,3 +20,13 @@ public interface IBankingTreasuryAccountCapability
 public sealed record TreasuryAccountCreateRequest(Guid LegalEntityId, Guid? BranchId, string Code, string Name,
     TreasuryAccountType Type, TreasuryCurrencyPolicy CurrencyPolicy, string? CurrencyCode, string Purpose,
     string LiquidityClass, IReadOnlyList<string> AllowedUses, string? MaskedIdentifier, string? SecretRef);
+
+public sealed record InternalTransferCapabilityRequest(Guid LegalEntityId, Guid SourceTreasuryAccountId, Guid DestinationTreasuryAccountId,
+    decimal Amount, string CurrencyCode, DateOnly PaymentDate, DateOnly PostingDate, DateOnly? ValueDate, string? Reference, string IdempotencyKey);
+public sealed record InternalTransferCapabilityResult(Guid TransferId, string State, decimal SourceAmount, string SourceCurrencyCode,
+    decimal DestinationAmount, string DestinationCurrencyCode, DateTimeOffset CompletedAt);
+public interface IInternalTransferCapability
+{
+    Task<InternalTransferCapabilityResult> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid correlationId,
+        InternalTransferCapabilityRequest request, CancellationToken cancellationToken = default);
+}

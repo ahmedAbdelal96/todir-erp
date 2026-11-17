@@ -10,6 +10,7 @@ using Modules.Payments.Entities;
 using Modules.Payments.Repositories;
 using Modules.Payments.Services;
 using Shared.Contracts.Payments;
+using Shared.Contracts.Banking;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Payments;
@@ -22,6 +23,7 @@ public static class PaymentsModuleExtensions
         services.AddSingleton<PaymentsRepository>();
         services.AddSingleton<PaymentsService>();
         services.AddSingleton<IPosPaymentCapabilities>(provider => provider.GetRequiredService<PaymentsService>());
+        services.AddSingleton<IInternalTransferCapability>(provider => provider.GetRequiredService<PaymentsService>());
         services.AddSingleton<IPayrollPaymentCapability, PayrollPaymentCapability>();
         services.AddSingleton<IExpensePaymentCapability, ExpensePaymentCapability>();
         services.AddSingleton<IEmployeeRepaymentPaymentCapability, EmployeeRepaymentPaymentCapability>();

@@ -96,6 +96,13 @@ public static class BankingSeed
         await context.ExecuteAsync("insert into finance_banking.cash_forecast_version(tenant_id,legal_entity_id,id,as_of_date,horizon_days,status,created_by,created_at) values($1,$2,$3,'2026-10-01',30,'Published',$4,$5) on conflict(tenant_id,id) do nothing", cancellationToken, tenant, context.EntityId, forecastId, context.AdministratorId, now);
         await context.ExecuteAsync("insert into finance_banking.cash_forecast_item(tenant_id,legal_entity_id,id,forecast_version_id,treasury_account_id,due_date,direction,amount,currency_code,source_type,source_reference,description,confidence) values($1,$2,$3,$4,$5,'2026-10-15','Inflow',10000,'EGP','DevelopmentSeed','{}'::jsonb,'Seeded customer collection','Expected') on conflict(tenant_id,id) do nothing", cancellationToken, tenant, context.EntityId, forecastItemId, forecastId, cashAccount);
 
+        var mappingId = SeedIds.Child(tenant, "banking-transaction-code-mapping", 1);
+        await context.ExecuteAsync("insert into finance_banking.statement_transaction_code_mapping(tenant_id,legal_entity_id,id,transaction_code,classification,effective_from,created_at,created_by) values($1,$2,$3,'SEED','Receipt','2026-01-01',$4,$5) on conflict(tenant_id,id) do nothing", cancellationToken, tenant, context.EntityId, mappingId, now, context.AdministratorId);
+        var ruleSetId = SeedIds.Child(tenant, "banking-reconciliation-rule-set", 1);
+        var ruleVersionId = SeedIds.Child(tenant, "banking-reconciliation-rule-version", 1);
+        await context.ExecuteAsync("insert into finance_banking.reconciliation_rule_set(tenant_id,legal_entity_id,id,name,status,created_at,updated_at) values($1,$2,$3,'Development matching rules','Active',$4,$4) on conflict(tenant_id,id) do nothing", cancellationToken, tenant, context.EntityId, ruleSetId, now);
+        await context.ExecuteAsync("insert into finance_banking.reconciliation_rule_version(tenant_id,legal_entity_id,id,rule_set_id,rule_version,priority,definition,created_at,created_by) values($1,$2,$3,$4,1,1,'{\"transactionCode\":\"SEED\",\"classification\":\"Receipt\"}'::jsonb,$5,$6) on conflict(tenant_id,id) do nothing", cancellationToken, tenant, context.EntityId, ruleVersionId, ruleSetId, now, context.AdministratorId);
+
         return new(statementCount, 1, 1, 1);
     }
 }

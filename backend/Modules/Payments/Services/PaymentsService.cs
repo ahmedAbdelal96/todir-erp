@@ -10,14 +10,24 @@ using Shared.Contracts.FinanceBase;
 using Shared.Contracts.Platform;
 using Shared.Contracts.Subledger;
 using Shared.Contracts.Payments;
+using Shared.Contracts.Banking;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Payments.Services;
 
 public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCapabilities directory,
     IFinanceBaseCapabilities financeBase, IPlatformOrganizationCapabilities organization, ISubledgerCapabilities subledger,
-    IDirectoryPartyRoleCapabilities partyRoles, IReferencePaymentProvider referenceProvider, IProviderSecretResolver providerSecrets) : IPosPaymentCapabilities
+    IDirectoryPartyRoleCapabilities partyRoles, IReferencePaymentProvider referenceProvider, IProviderSecretResolver providerSecrets) : IPosPaymentCapabilities, IInternalTransferCapability
 {
+    public async Task<InternalTransferCapabilityResult> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid correlationId, InternalTransferCapabilityRequest request, CancellationToken cancellationToken = default)
+    {
+        var result = await CreateInternalTransferAsync(tenantId, actorId, membershipId, correlationId,
+            new CreateInternalTransferRequest(request.LegalEntityId, request.SourceTreasuryAccountId, request.DestinationTreasuryAccountId,
+                request.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), request.CurrencyCode, request.PaymentDate,
+                request.PostingDate, request.ValueDate, request.Reference), request.IdempotencyKey, cancellationToken);
+        return new(result.Id, "Completed", result.SourceAmount, result.SourceCurrencyCode, result.DestinationAmount, result.DestinationCurrencyCode, result.CompletedAt);
+    }
+
     public async Task<PosPaymentResult> CaptureCashAsync(Guid tenantId, Guid actorId, Guid membershipId,
         PosCashPaymentRequest request, Guid correlationId, CancellationToken cancellationToken = default)
     {
