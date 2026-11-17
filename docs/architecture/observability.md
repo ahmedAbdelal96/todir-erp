@@ -19,8 +19,8 @@ P04 remains responsible for runtime roles, schema ownership, grants, application
 API and Worker use the shared Serilog configuration from `Shared.BuildingBlocks.Observability`. File output is structured JSON Lines and is written under:
 
 ```text
-artifacts/logs/{service}/{yyyy-MM-dd}/application-*.jsonl
-artifacts/logs/{service}/{yyyy-MM-dd}/errors-*.jsonl
+backend/logs/{service}/{yyyy-MM-dd}/application-*.jsonl
+backend/logs/{service}/{yyyy-MM-dd}/errors-*.jsonl
 ```
 
 Interactive console output uses the same structured event data with level colors for operational readability: information is cyan, warnings are yellow, errors are red, and fatal events are bold red. ANSI color codes are omitted when output is redirected, so redirected console output remains valid JSON Lines.

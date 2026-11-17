@@ -24,7 +24,7 @@ internal sealed record DailyFileLoggingOptions(
     {
         var root = configuration["TODIR_LOG_DIRECTORY"];
         var rootDirectory = string.IsNullOrWhiteSpace(root)
-            ? Path.Combine(FindRepositoryRoot() ?? Directory.GetCurrentDirectory(), "artifacts", "logs")
+            ? Path.Combine(FindRepositoryRoot() ?? Directory.GetCurrentDirectory(), "backend", "logs")
             : Path.GetFullPath(root);
 
         return new(

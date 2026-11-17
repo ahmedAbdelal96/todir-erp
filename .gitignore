@@ -25,6 +25,7 @@ backend/appsettings.Development.json
 
 # Test, coverage, logs, and generated local workspace output
 artifacts/
+backend/logs/
 TestResults/
 test-results/
 playwright-report/
