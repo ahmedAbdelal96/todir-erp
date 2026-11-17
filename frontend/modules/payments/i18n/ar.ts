@@ -249,6 +249,7 @@ export const ar = {
     suspendAction: "إيقاف مؤقت",
     activateAction: "تنشيط",
     selectPlaceholder: "اختر الحساب المالي...",
+    noResults: "لا توجد حسابات مطابقة للبحث.",
     loading: "جارٍ تحميل قائمة الحسابات التشغيلية...",
     errorTitle: "تعذر تحميل الحسابات",
     errorMessage: "حدث خطأ أثناء جلب قائمة الحسابات البنكية والخزائن.",

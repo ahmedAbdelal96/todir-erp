@@ -110,6 +110,22 @@ export function ComboBox<T extends object = ComboBoxOption>({
     onClear?.();
   };
 
+  const handleSelectionChange = (key: React.Key | null) => {
+    const selectedOption = key == null
+      ? undefined
+      : options?.find((item) => (item as unknown as ComboBoxOption).id === String(key));
+
+    // React Aria does not always mirror a selected option into a controlled input.
+    // Keep the chosen business label visible while preserving the parent's search state.
+    if (selectedOption) {
+      const label = (selectedOption as unknown as ComboBoxOption).label;
+      setInternalInput(label);
+      props.onInputChange?.(label);
+    }
+
+    onSelectionChange?.(key == null ? null : String(key));
+  };
+
   const searchPlaceholder = placeholder ?? t("components.searchPlaceholder");
   const isEffectiveDisabled = isDisabled || isLocked;
 
@@ -148,7 +164,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
       {...(isReadOnly !== undefined ? { isReadOnly } : {})}
       {...(selectedKey !== undefined ? { selectedKey } : {})}
       {...(defaultSelectedKey !== undefined ? { defaultSelectedKey } : {})}
-      {...(onSelectionChange !== undefined ? { onSelectionChange } : {})}
+      {...(onSelectionChange !== undefined ? { onSelectionChange: handleSelectionChange } : {})}
       isInvalid={Boolean(errorMessage)}
       className={clsx("ui-combobox", `ui-combobox--${size}`, className)}
       style={{

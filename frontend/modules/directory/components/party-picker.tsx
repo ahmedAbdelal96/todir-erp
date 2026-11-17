@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { Party, PartyRoleCode } from "../types.ts";
-import { usePartyList } from "../hooks/party-queries.ts";
+import { usePartyList, usePartyRecord } from "../hooks/party-queries.ts";
 import { ComboBox, type ComboBoxOption } from "../../../components/primitives/combobox.tsx";
 import { QuickCreatePartyDialog } from "../features/quick-create-party-dialog.tsx";
+import { useOptionalLegalEntityContext, useOptionalTenantContext } from "../../../core/runtime/runtime-provider.tsx";
 
 export interface PartyPickerProps {
   readonly label?: string | undefined;
@@ -48,7 +49,15 @@ export function PartyPicker({
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
   const [quickCreateName, setQuickCreateName] = useState("");
+  const [selectedParty, setSelectedParty] = useState<Party | undefined>(undefined);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const tenant = useOptionalTenantContext();
+  const legalEntity = useOptionalLegalEntityContext();
+  const scope = {
+    tenantId: tenant?.tenantId,
+    entityId: legalEntity?.legalEntityId
+  };
 
   // Fast responsive debounce: fires query after 120 ms
   useEffect(() => {
@@ -65,7 +74,24 @@ export function PartyPicker({
     search: debouncedSearch || undefined,
     role: roleFilter,
     pageSize: 20,
-  });
+  }, scope);
+
+  // Keep an existing selection visible even when the current search page no longer contains it.
+  const { data: selectedPartyFromServer } = usePartyRecord(value ?? "", scope);
+
+  useEffect(() => {
+    if (!value) {
+      setSelectedParty(undefined);
+      setInputValue("");
+      return;
+    }
+
+    const resolved = selectedPartyFromServer ?? selectedParty;
+    if (resolved?.id === value) {
+      setSelectedParty(resolved);
+      setInputValue((current) => current || resolved.displayName);
+    }
+  }, [selectedParty, selectedPartyFromServer, value]);
 
   const parties: readonly Party[] = data?.items ?? [];
 
@@ -87,7 +113,11 @@ export function PartyPicker({
     ].filter(Boolean).join(" · ");
   };
 
-  const options: ComboBoxOption[] = parties.map((p) => ({
+  const visibleParties = selectedParty && !parties.some((party) => party.id === selectedParty.id)
+    ? [selectedParty, ...parties]
+    : parties;
+
+  const options: ComboBoxOption[] = visibleParties.map((p) => ({
     id: p.id,
     label: p.displayName,
     description: businessContext(p),
@@ -103,17 +133,29 @@ export function PartyPicker({
         errorMessage={errorMessage}
         selectedKey={value ?? null}
         inputValue={inputValue}
-        onInputChange={setInputValue}
+        onInputChange={(term) => {
+          setInputValue(term);
+          const isKnownOptionLabel = visibleParties.some((party) => party.displayName === term);
+          if (value && selectedParty && term !== selectedParty.displayName && !isKnownOptionLabel) {
+            setSelectedParty(undefined);
+            onChange?.("", undefined);
+          }
+        }}
         onSelectionChange={(selected) => {
           const id = String(selected ?? "");
-          const matched = parties.find((p) => p.id === id);
+          const matched = visibleParties.find((p) => p.id === id);
+          setSelectedParty(matched);
+          setInputValue(matched?.displayName ?? "");
           if (onChange) {
             onChange(id, matched);
           }
         }}
         options={options}
         isLoading={isLoading}
-        onClear={() => onChange?.("", undefined)}
+        onClear={() => {
+          setSelectedParty(undefined);
+          onChange?.("", undefined);
+        }}
         placeholder={isLoading ? t("partyPicker.searching") : partyPlaceholder}
         noResultsMessage={t("partyPicker.noResults")}
         isRequired={isRequired}

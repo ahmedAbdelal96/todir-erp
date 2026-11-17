@@ -8,6 +8,7 @@ export interface PaymentCurrencyPickerProps {
   readonly onChange: (currencyCode: string) => void;
   readonly label: string;
   readonly isRequired?: boolean | undefined;
+  readonly isDisabled?: boolean | undefined;
 }
 
 /** Selects an entity-enabled payment currency; typed text is only a search filter. */
@@ -16,7 +17,8 @@ export function PaymentCurrencyPicker({
   value,
   onChange,
   label,
-  isRequired = false
+  isRequired = false,
+  isDisabled = false
 }: PaymentCurrencyPickerProps): React.JSX.Element {
   const currenciesQuery = useEntityCurrencies(legalEntityId);
   const currencies = (currenciesQuery.data ?? []).filter((currency) => currency.enabled && currency.allowPayment);
@@ -31,7 +33,7 @@ export function PaymentCurrencyPicker({
         label: currency.currencyCode
       }))}
       isRequired={isRequired}
-      isDisabled={currenciesQuery.isError}
+      isDisabled={isDisabled || currenciesQuery.isError}
     />
   );
 }

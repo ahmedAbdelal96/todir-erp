@@ -249,6 +249,7 @@ export const en = {
     suspendAction: "Suspend",
     activateAction: "Activate",
     selectPlaceholder: "Select account...",
+    noResults: "No accounts match your search.",
     loading: "Loading operational payment accounts...",
     errorTitle: "Unable to load accounts",
     errorMessage: "An error occurred while fetching bank accounts and cashboxes.",

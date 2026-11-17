@@ -5,6 +5,7 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
 import { AccountPicker } from "../components/account-picker.tsx";
+import { PaymentCurrencyPicker } from "../components/payment-currency-picker.tsx";
 import { useCreateInternalTransfer } from "../hooks/payment-queries.ts";
 import type { PaymentAccount, CreateInternalTransferRequest } from "../types.ts";
 
@@ -180,12 +181,13 @@ export function InternalTransferDialog({
             isRequired
             type="number"
           />
-          <TextField
+          <PaymentCurrencyPicker
+            legalEntityId={legalEntityId}
             label={t("transfer.currencyLabel")}
             value={sourceAccount?.currencyCode || currencyCode}
             onChange={setCurrencyCode}
-            isDisabled={Boolean(sourceAccount?.currencyCode)}
             isRequired
+            isDisabled={Boolean(sourceAccount?.currencyCode)}
           />
         </div>
 
