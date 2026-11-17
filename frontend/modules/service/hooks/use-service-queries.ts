@@ -1489,6 +1489,7 @@ export const useRegisterInstalledBaseMutation = (_legalEntityId?: string) => {
         name: args.name || args.itemName || args.itemCode || "Equipment",
         serialNumber: args.serialNumber || undefined,
         modelNumber: args.modelNumber || args.itemCode || undefined,
+        productId: args.productId || undefined,
         customerPartyId,
         siteName: args.siteLocation || args.siteName || undefined,
         installedDate: args.installedDate || undefined

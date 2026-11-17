@@ -563,7 +563,10 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
               label={isCustomer ? t("draft.customerParty") : t("draft.supplierParty")}
               value={partyId || undefined}
               onChange={(id) => setPartyId(id)}
+              roleFilter={isCustomer ? "Customer" : "Supplier"}
               placeholder={isCustomer ? t("draft.selectCustomer") : t("draft.selectSupplier")}
+              enableQuickCreate={false}
+              isRequired
             />
           </div>
 

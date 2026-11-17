@@ -6,6 +6,7 @@ import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
 import { MoneyField } from "../../../components/fields/money-field.tsx";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
+import { PartyPicker } from "../../directory/public.ts";
 import { useSubmitPayment } from "../hooks/payment-queries.ts";
 import type { PaymentCommand, PaymentMethod, PaymentResult } from "../types.ts";
 import type { CurrencyCode } from "../../../components/contracts/domain-values.ts";
@@ -21,11 +22,13 @@ export interface PaymentEntryDialogProps {
 export function PaymentEntryDialog({
   isOpen,
   onOpenChange,
-  defaultPartyId = "party-001",
-  defaultPartyName = "شركة الأفق للتجارة والمقاولات",
+  defaultPartyId,
+  defaultPartyName,
   onPaymentComplete
 }: PaymentEntryDialogProps): React.JSX.Element {
   const { t } = useTranslation("payments");
+  const [selectedPartyId, setSelectedPartyId] = useState(defaultPartyId ?? "");
+  const [selectedPartyName, setSelectedPartyName] = useState(defaultPartyName ?? "");
   const [amountValue, setAmountValue] = useState<{ amount: string; currency: CurrencyCode }>({
     amount: "5000.00",
     currency: "SAR"
@@ -46,6 +49,10 @@ export function PaymentEntryDialog({
   const handleOpenConfirmation = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    if (!selectedPartyId) {
+      setErrorMessage(t("errors.party_required"));
+      return;
+    }
     if (!amountValue.amount || amountValue.amount === "0") {
       setErrorMessage(t("entry.invalidAmount"));
       return;
@@ -56,8 +63,8 @@ export function PaymentEntryDialog({
   const handleExecutePayment = async () => {
     setErrorMessage(null);
     const command: PaymentCommand = {
-      partyId: defaultPartyId,
-      partyName: defaultPartyName,
+      partyId: selectedPartyId,
+      partyName: selectedPartyName,
       amount: amountValue.amount,
       currency: amountValue.currency,
       paymentMethod,
@@ -117,7 +124,7 @@ export function PaymentEntryDialog({
       description={
         step === "confirming"
           ? t("entry.confirmDescription")
-          : t("entry.description", { name: defaultPartyName })
+          : t("entry.description", { name: selectedPartyName })
       }
       size="medium"
     >
@@ -139,6 +146,17 @@ export function PaymentEntryDialog({
 
       {step === "form" && (
         <form onSubmit={handleOpenConfirmation} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <PartyPicker
+            label={t("entry.payee")}
+            value={selectedPartyId || undefined}
+            onChange={(partyId, party) => {
+              setSelectedPartyId(partyId);
+              setSelectedPartyName(party?.displayName ?? "");
+            }}
+            enableQuickCreate={false}
+            isRequired
+          />
+
           <MoneyField
             label={t("entry.amount")}
             value={amountValue}
@@ -210,7 +228,7 @@ export function PaymentEntryDialog({
           >
             <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--color-border-default)", paddingBottom: "0.5rem" }}>
               <span style={{ color: "var(--color-content-muted)" }}>{t("entry.payee")}</span>
-              <span style={{ fontWeight: 600 }}>{defaultPartyName}</span>
+              <span style={{ fontWeight: 600 }}>{selectedPartyName || "—"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--color-border-default)", paddingBottom: "0.5rem" }}>
               <span style={{ color: "var(--color-content-muted)" }}>{t("entry.totalAmount")}</span>

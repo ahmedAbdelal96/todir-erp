@@ -27,7 +27,7 @@ export function ValuationTab({
   const today = new Date().toISOString().slice(0, 10);
 
   const [asOfDate, setAsOfDate] = useState<string>(today);
-  const [productVariantId, setProductVariantId] = useState<string>("a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  const [productVariantId, setProductVariantId] = useState<string>("");
 
   // Cost queries are ONLY enabled if canReadCost is TRUE!
   const { data: valuation } = useValuation(

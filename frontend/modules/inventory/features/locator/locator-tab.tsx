@@ -23,7 +23,7 @@ export interface LocatorTabProps {
 export function LocatorTab({ legalEntityId }: LocatorTabProps): React.JSX.Element {
   const { t } = useTranslation("inventory");
 
-  const [activeProductId, setActiveProductId] = useState("a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  const [activeProductId, setActiveProductId] = useState("");
 
   const { data: locations = [], isLoading } = useProductLocator(legalEntityId, activeProductId);
   const { data: putaway } = usePutawaySuggestion(legalEntityId, activeProductId);

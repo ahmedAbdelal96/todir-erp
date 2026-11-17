@@ -38,7 +38,8 @@ export function PartyPicker({
   isLocked,
   lockedReason,
   placeholder,
-  enableQuickCreate = true
+  // Transactional forms must select mastered parties; creation belongs to Directory.
+  enableQuickCreate = false
 }: PartyPickerProps): React.JSX.Element {
   const { t } = useTranslation("directory");
   const partyLabel = label ?? t("partyPicker.label");
@@ -112,6 +113,7 @@ export function PartyPicker({
         }}
         options={options}
         placeholder={isLoading ? t("partyPicker.searching") : partyPlaceholder}
+        noResultsMessage={t("partyPicker.noResults")}
         isRequired={isRequired}
         isReadOnly={isReadOnly}
         isLocked={isLocked}

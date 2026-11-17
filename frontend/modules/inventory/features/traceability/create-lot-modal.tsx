@@ -27,7 +27,7 @@ export function CreateLotModal({
   const today = new Date().toISOString().slice(0, 10);
   const nextYear = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
 
-  const [productId, setProductId] = useState(initialProductVariantId ?? "a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  const [productId, setProductId] = useState(initialProductVariantId ?? "");
   const [lotNumber, setLotNumber] = useState(`LOT-${Date.now().toString().slice(-4)}`);
   const [mfgDate, setMfgDate] = useState(today);
   const [expDate, setExpDate] = useState(nextYear);

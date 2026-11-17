@@ -6,7 +6,6 @@ import { LocalDateField } from "../../../../components/fields/local-date-field.t
 import { MoneyDisplay } from "../../../../components/fields/money-display.tsx";
 import { PurchasingSupplierPicker } from "../../components/purchasing-supplier-picker.tsx";
 import { PurchasingProductPicker } from "../../components/purchasing-product-picker.tsx";
-import { resolvePurchasingProduct } from "../../components/purchasing-product-resolver.ts";
 import { toMoneyVal, generateIdempotencyKey, addDaysToIsoDate, resolveConfiguredLeadTimeDays } from "../../utils.ts";
 import { mapPurchasingError } from "../../services/purchasing-error-map.ts";
 import {
@@ -45,8 +44,6 @@ export function NewPurchaseOrderModal({
 }: NewPurchaseOrderModalProps): React.JSX.Element {
   const { t } = useTranslation("purchasing");
   const today = new Date().toISOString().split("T")[0] || "2026-10-29";
-  const isAr = document.documentElement.lang !== "en" && document.documentElement.dir !== "ltr";
-  const defaultProduct = resolvePurchasingProduct("a6315416-cffe-bf52-bcf0-d5e590d3bf94", isAr);
 
   const [supplierPartyId, setSupplierPartyId] = useState<string>("");
   const [orderDate, setOrderDate] = useState<string>(today);
@@ -91,12 +88,12 @@ export function NewPurchaseOrderModal({
   const [lines, setLines] = useState<DraftLine[]>([
     {
       id: "line-1",
-      productVariantId: defaultProduct.variantId,
-      description: defaultProduct.name,
-      quantity: 10,
-      unitCode: defaultProduct.uom,
-      unitPrice: 120.0,
-      isStocked: defaultProduct.isStocked
+      productVariantId: null,
+      description: "",
+      quantity: 1,
+      unitCode: "EA",
+      unitPrice: 0,
+      isStocked: false
     }
   ]);
 
@@ -333,7 +330,7 @@ export function NewPurchaseOrderModal({
                           productVariantId: variantId,
                           description: product.name,
                           unitCode: product.uom,
-                          unitPrice: product.defaultBuyPrice,
+                          unitPrice: product.defaultBuyPrice > 0 ? product.defaultBuyPrice : line.unitPrice,
                           isStocked: product.isStocked
                         });
                       }}

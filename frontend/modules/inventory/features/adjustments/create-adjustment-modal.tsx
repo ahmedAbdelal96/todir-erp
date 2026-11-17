@@ -39,7 +39,7 @@ export function CreateAdjustmentModal({
   const { t } = useTranslation("inventory");
   const today = new Date().toISOString().slice(0, 10);
 
-  const [productId, setProductId] = useState(initialProductVariantId ?? "a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  const [productId, setProductId] = useState(initialProductVariantId ?? "");
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [locationId, setLocationId] = useState("");
   const [direction, setDirection] = useState<AdjustmentDirection>("Increase");

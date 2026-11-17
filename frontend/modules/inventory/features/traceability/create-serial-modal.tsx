@@ -24,7 +24,7 @@ export function CreateSerialModal({
 }: CreateSerialModalProps): React.JSX.Element | null {
   const { t } = useTranslation("inventory");
 
-  const [productId, setProductId] = useState(initialProductVariantId ?? "a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  const [productId, setProductId] = useState(initialProductVariantId ?? "");
   const [serialNumber, setSerialNumber] = useState(`SN-${Date.now().toString().slice(-5)}`);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 

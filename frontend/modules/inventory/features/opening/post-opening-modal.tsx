@@ -29,7 +29,7 @@ export function PostOpeningModal({
   const { t } = useTranslation("inventory");
   const today = new Date().toISOString().slice(0, 10);
 
-  const [productId, setProductId] = useState("a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  const [productId, setProductId] = useState("");
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [quantity, setQuantity] = useState("100");
   const [uomId, setUomId] = useState("2b12a81b-ea82-a151-af7f-4c60a017f44d");

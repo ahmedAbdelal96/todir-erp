@@ -25,7 +25,7 @@ export const ar = {
   }
   ,partyPicker: {
     label: "الطرف التجاري", placeholder: "ابحث عن الطرف بالاسم أو الرمز أو الرقم الضريبي...", searching: "جارٍ البحث...",
-    customer: "عميل", supplier: "مورد", genericParty: "طرف تجاري عام", legalName: "الاسم القانوني: {{name}}",
+    customer: "عميل", supplier: "مورد", genericParty: "طرف تجاري عام", noResults: "لا توجد نتائج مطابقة. اكتب للبحث داخل السجلات المعتمدة.", legalName: "الاسم القانوني: {{name}}",
     officialNumber: "السجل أو الرقم الضريبي: {{number}}", noOfficialNumber: "بدون رقم رسمي", location: "الموقع: {{location}}", quickCreate: "إضافة طرف جديد سريع",
     createWithName: '+ إضافة طرف جديد باسم "{{name}}"...', createNewParty: "+ إضافة طرف تجاري جديد..."
   },

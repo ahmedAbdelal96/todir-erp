@@ -5,7 +5,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { ServiceSelect as Select } from "../../components/service-select.tsx";
 import { TextArea } from "../../../../components/primitives/text-area.tsx";
-import { useCreateMaintenancePlanMutation } from "../../hooks/use-service-queries.ts";
+import { useCreateMaintenancePlanMutation, useInstalledBaseQuery } from "../../hooks/use-service-queries.ts";
 
 export interface NewMaintenancePlanModalProps {
   readonly isOpen: boolean;
@@ -20,6 +20,8 @@ export function NewMaintenancePlanModal({
 }: NewMaintenancePlanModalProps): React.JSX.Element {
   const { t } = useTranslation("service");
   const createPlanMutation = useCreateMaintenancePlanMutation(legalEntityId);
+  const installedBaseQuery = useInstalledBaseQuery(legalEntityId, { pageSize: 100 });
+  const installedBaseItems = installedBaseQuery.data?.items ?? [];
 
   const [planCode, setPlanCode] = useState(`PM-${Date.now().toString().slice(-5)}`);
   const [name, setName] = useState("");
@@ -136,19 +138,20 @@ export function NewMaintenancePlanModal({
             />
           </div>
 
-          <div>
-            <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("installedBase.title")} / {t("workOrders.fixedAssetId")}
-            </label>
-            <TextField
-              value={installedBaseItemId || fixedAssetId}
-              onChange={(val) => {
-                setInstalledBaseItemId(val);
-                setFixedAssetId(val);
-              }}
-              placeholder={t("preventive.installedBasePlaceholder", "مثال: SN-GEN-88301")}
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.375rem", fontSize: "0.8125rem", fontWeight: 600 }}>
+            {t("installedBase.title")}
+            <Select
+              value={installedBaseItemId}
+              onChange={setInstalledBaseItemId}
+              options={[
+                { value: "", label: "—" },
+                ...installedBaseItems.map((item) => ({
+                  value: item.id,
+                  label: `${item.name} · ${item.serialNumber ?? "—"}`
+                }))
+              ]}
             />
-          </div>
+          </label>
         </div>
 
         <div>

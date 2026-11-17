@@ -7,6 +7,7 @@ import { Select } from "../../../components/primitives/select.tsx";
 import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
 import { PartyPicker } from "../../directory/public.ts";
 import { AccountPicker } from "../components/account-picker.tsx";
+import { PaymentCurrencyPicker } from "../components/payment-currency-picker.tsx";
 import {
   useCreateIncomingPayment,
   useCompleteManualPayment,
@@ -42,7 +43,7 @@ export function ReceivePaymentDialog({
   const [partyId, setPartyId] = useState<string>("");
   const [isAdvance, setIsAdvance] = useState<boolean>(false);
   const [amount, setAmount] = useState<string>("");
-  const [currencyCode, setCurrencyCode] = useState<string>("EGP");
+  const [currencyCode, setCurrencyCode] = useState<string>("");
   const [method, setMethod] = useState<PaymentMethod>("BankTransfer");
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().slice(0, 10));
@@ -61,7 +62,7 @@ export function ReceivePaymentDialog({
     setPartyId("");
     setIsAdvance(false);
     setAmount("");
-    setCurrencyCode("EGP");
+    setCurrencyCode("");
     setMethod("BankTransfer");
     setSelectedAccountId("");
     setPaymentDate(new Date().toISOString().slice(0, 10));
@@ -173,17 +174,14 @@ export function ReceivePaymentDialog({
         )}
 
         {/* Customer Selection */}
-        <div>
-          <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 600 }}>
-            {t("receive.customerLabel")} <span style={{ color: "#ef4444" }}>*</span>
-          </label>
-          <PartyPicker
-            label={t("receive.customerLabel")}
-            value={partyId || undefined}
-            onChange={(id) => setPartyId(id)}
-            roleFilter="Customer"
-          />
-        </div>
+        <PartyPicker
+          label={t("receive.customerLabel")}
+          value={partyId || undefined}
+          onChange={(id) => setPartyId(id)}
+          roleFilter="Customer"
+          enableQuickCreate={false}
+          isRequired
+        />
 
         {/* Advance Checkbox */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -209,7 +207,8 @@ export function ReceivePaymentDialog({
             isRequired
             type="number"
           />
-          <TextField
+          <PaymentCurrencyPicker
+            legalEntityId={legalEntityId}
             label={t("receive.currencyLabel")}
             value={currencyCode}
             onChange={setCurrencyCode}
@@ -237,6 +236,7 @@ export function ReceivePaymentDialog({
                 if (acc.currencyCode) setCurrencyCode(acc.currencyCode);
               } else {
                 setSelectedAccountId("");
+                setCurrencyCode("");
               }
             }}
             filterType={method === "Cash" ? "Cashbox" : undefined}

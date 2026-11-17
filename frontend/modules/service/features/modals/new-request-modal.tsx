@@ -5,6 +5,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { ServiceSelect as Select } from "../../components/service-select.tsx";
 import { TextArea } from "../../../../components/primitives/text-area.tsx";
+import { PartyPicker } from "../../../directory/public.ts";
 import {
   useCreateServiceRequestMutation,
   useInstalledBaseQuery
@@ -144,16 +145,14 @@ export function NewRequestModal({
 
         {context === "CustomerFieldService" ? (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-                {t("requests.customerPartyId", "معرف العميل (CustomerPartyId)")}
-              </label>
-              <TextField
-                value={customerPartyId}
-                onChange={(val) => setCustomerPartyId(val)}
-                placeholder={t("requests.customerPlaceholder")}
-              />
-            </div>
+            <PartyPicker
+              label={t("requests.customerName")}
+              value={customerPartyId || undefined}
+              onChange={(partyId) => setCustomerPartyId(partyId)}
+              roleFilter="Customer"
+              enableQuickCreate={false}
+              placeholder={t("requests.customerPlaceholder")}
+            />
 
             <div>
               <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>

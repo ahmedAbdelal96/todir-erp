@@ -71,6 +71,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
   onCreateNew,
   createActionLabel,
   noResultsMessage,
+  menuTrigger = "focus",
   children,
   className,
   isDisabled,
@@ -96,6 +97,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
   return (
     <AriaComboBox
       {...props}
+      menuTrigger={menuTrigger}
       onInputChange={handleInputChange}
       {...(isEffectiveDisabled !== undefined ? { isDisabled: isEffectiveDisabled } : {})}
       {...(isRequired !== undefined ? { isRequired } : {})}

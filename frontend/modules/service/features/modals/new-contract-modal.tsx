@@ -4,6 +4,7 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { TextArea } from "../../../../components/primitives/text-area.tsx";
+import { PartyPicker } from "../../../directory/public.ts";
 import { ServiceSelect as Select } from "../../components/service-select.tsx";
 import { useCreateContractMutation } from "../../hooks/use-service-queries.ts";
 import type { ServiceContractType } from "../../types.ts";
@@ -28,7 +29,6 @@ export function NewContractModal({
 
   const [contractType, setContractType] = useState<ServiceContractType>("Annual");
   const [contractHolderPartyId, setContractHolderPartyId] = useState("");
-  const [customerName, setCustomerName] = useState("");
   const [startDate, setStartDate] = useState(defaultStart);
   const [endDate, setEndDate] = useState(defaultEnd);
   const [coverageTerms, setCoverageTerms] = useState("تغطية شاملة لقطع الغيار والعمالة على مدار الساعة");
@@ -42,32 +42,28 @@ export function NewContractModal({
       setErrorMsg(t("validation.startDateAndEndDateRequired", "تاريخ البداية والنهاية مطلوبان"));
       return;
     }
+    if (!contractHolderPartyId) {
+      setErrorMsg(t("validation.customerRequired"));
+      return;
+    }
 
     try {
       setErrorMsg(null);
-      // Valid Guid or generated holder ID if customerPartyId not selected
-      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const holderId = isGuid.test(contractHolderPartyId) 
-        ? contractHolderPartyId 
-        : legalEntityId; // fallback to legalEntity or valid GUID
-
       await createMutation.mutateAsync({
         legalEntityId,
-        contractHolderPartyId: holderId,
-        billToPartyId: holderId,
+        contractHolderPartyId,
+        billToPartyId: contractHolderPartyId,
         startDate,
         endDate,
         contractType,
         currencyCode: currency.trim() || "SAR",
         value: Number(price) || 0,
         scopeJson: JSON.stringify({
-          customerName: customerName.trim() || undefined,
           coverageTerms: coverageTerms.trim() || undefined
         })
       });
       onClose();
       // Reset form
-      setCustomerName("");
       setContractHolderPartyId("");
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : t("common.genericError"));
@@ -114,17 +110,15 @@ export function NewContractModal({
             />
           </div>
 
-          <div>
-            <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("requests.customerName")} *
-            </label>
-            <TextField
-              value={customerName}
-              onChange={(val) => setCustomerName(val)}
-              placeholder={t("requests.customerPlaceholder")}
-              isRequired
-            />
-          </div>
+          <PartyPicker
+            label={t("requests.customerName")}
+            value={contractHolderPartyId || undefined}
+            onChange={(partyId) => setContractHolderPartyId(partyId)}
+            roleFilter="Customer"
+            isRequired
+            enableQuickCreate={false}
+            placeholder={t("requests.customerPlaceholder")}
+          />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>

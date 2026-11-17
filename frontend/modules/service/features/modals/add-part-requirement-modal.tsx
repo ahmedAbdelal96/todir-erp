@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { ProductPicker } from "../../../catalog/public.ts";
 import { useAddPartRequirementMutation } from "../../hooks/use-service-queries.ts";
 
 export interface AddPartRequirementModalProps {
@@ -93,14 +94,16 @@ export function AddPartRequirementModal({
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <div>
-            <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("parts.itemId", "معرف الصنف (ProductId)")} *
-            </label>
-            <TextField
-              value={productId}
-              onChange={(val) => setProductId(val)}
-              placeholder={t("parts.itemCodePlaceholder", "مثال: ITEM-BEARING-01")}
+            <ProductPicker
+              label={t("parts.itemId")}
+              value={productId || undefined}
+              onChange={(selection) => {
+                setProductId(selection.variantId);
+                setDescription(selection.displayName);
+                if (selection.baseUomCode) setUomCode(selection.baseUomCode);
+              }}
               isRequired
+              enableQuickCreate={false}
             />
           </div>
 

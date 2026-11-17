@@ -5,6 +5,7 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
 import { PartyPicker } from "../../directory/public.ts";
+import { PaymentCurrencyPicker } from "../components/payment-currency-picker.tsx";
 import { useCreatePaymentRequest, useCreatePaymentLink } from "../hooks/payment-queries.ts";
 import type {
   CreatePaymentIntentRequest,
@@ -33,7 +34,7 @@ export function CreatePaymentRequestDialog({
 
   const [partyId, setPartyId] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
-  const [currencyCode, setCurrencyCode] = useState<string>("EGP");
+  const [currencyCode, setCurrencyCode] = useState<string>("");
   const [generateLink, setGenerateLink] = useState<boolean>(true);
   const [amountPolicy, setAmountPolicy] = useState<PaymentLinkAmountPolicy>("Fixed");
   const [expiryDays, setExpiryDays] = useState<string>("7");
@@ -48,7 +49,7 @@ export function CreatePaymentRequestDialog({
   const handleClose = () => {
     setPartyId("");
     setAmount("");
-    setCurrencyCode("EGP");
+    setCurrencyCode("");
     setGenerateLink(true);
     setAmountPolicy("Fixed");
     setExpiryDays("7");
@@ -204,17 +205,13 @@ export function CreatePaymentRequestDialog({
           )}
 
           {/* Party Selection (Optional) */}
-          <div>
-            <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 600 }}>
-              {t("requestCreate.customerLabel")}
-            </label>
-            <PartyPicker
-              label={t("requestCreate.customerLabel")}
-              value={partyId || undefined}
-              onChange={(id) => setPartyId(id)}
-              roleFilter="Customer"
-            />
-          </div>
+          <PartyPicker
+            label={t("requestCreate.customerLabel")}
+            value={partyId || undefined}
+            onChange={(id) => setPartyId(id)}
+            roleFilter="Customer"
+            enableQuickCreate={false}
+          />
 
           {/* Amount & Currency */}
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem" }}>
@@ -226,7 +223,8 @@ export function CreatePaymentRequestDialog({
               isRequired
               type="number"
             />
-            <TextField
+            <PaymentCurrencyPicker
+              legalEntityId={legalEntityId}
               label={t("requestCreate.currencyLabel")}
               value={currencyCode}
               onChange={setCurrencyCode}

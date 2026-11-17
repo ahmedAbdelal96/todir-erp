@@ -6,6 +6,7 @@ import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
 import { Radio, RadioGroup } from "../../../components/primitives/radio.tsx";
 import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
+import { ProductPicker, type ProductPickerSelection } from "../../catalog/public.ts";
 import { useSaveProductProfileMutation } from "../hooks/tax-queries.ts";
 import { extractTaxError } from "../services/tax-error-map.ts";
 import type { TaxCategoryItem, TaxProfileDto } from "../types.ts";
@@ -46,7 +47,7 @@ export function ProductProfileModal({
   const productCategories = categories.filter((c) => c.scope === "Product");
 
   const handleSave = async () => {
-    if (!productTemplateId) return;
+    if (!productTemplateId || (scope === "Variant" && !productVariantId)) return;
     setErrorMessage(null);
     try {
       await mutation.mutateAsync({
@@ -120,21 +121,22 @@ export function ProductProfileModal({
             : t("productProfiles.variantGuidance")}
         </p>
 
-        <TextField
-          label={t("productProfiles.templateReference")}
-          value={productTemplateId}
-          onChange={setProductTemplateId}
-          isRequired
-          isDisabled={isEditing}
-        />
-
-        {scope === "Variant" && (
+        {isEditing ? (
           <TextField
-            label={t("productProfiles.variantReference")}
-            value={productVariantId}
-            onChange={setProductVariantId}
+            label={scope === "Variant" ? t("productProfiles.variantReference") : t("productProfiles.templateReference")}
+            value={scope === "Variant" ? productVariantId : productTemplateId}
+            isReadOnly
+          />
+        ) : (
+          <ProductPicker
+            label={scope === "Variant" ? t("productProfiles.variantReference") : t("productProfiles.templateReference")}
+            value={productVariantId || undefined}
+            onChange={(selection: ProductPickerSelection) => {
+              setProductTemplateId(selection.templateId);
+              setProductVariantId(selection.variantId);
+            }}
             isRequired
-            isDisabled={isEditing}
+            enableQuickCreate={false}
           />
         )}
 

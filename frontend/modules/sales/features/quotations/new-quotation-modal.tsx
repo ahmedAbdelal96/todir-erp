@@ -66,10 +66,10 @@ export function NewQuotationModal({
   const [lines, setLines] = useState<readonly EditableLine[]>([
     {
       key: "line-1",
-      productVariantId: "a6315416-cffe-bf52-bcf0-d5e590d3bf94",
+      productVariantId: null,
       description: "",
-      quantity: 10,
-      unitPrice: 120,
+      quantity: 1,
+      unitPrice: 0,
       discountAmount: 0,
       uomCode: "EA"
     }

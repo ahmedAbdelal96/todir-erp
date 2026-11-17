@@ -25,7 +25,7 @@ export const en = {
   }
   ,partyPicker: {
     label: "Party", placeholder: "Search by name, code, or tax number...", searching: "Searching...",
-    customer: "Customer", supplier: "Supplier", genericParty: "General party", legalName: "Legal name: {{name}}",
+    customer: "Customer", supplier: "Supplier", genericParty: "General party", noResults: "No matching records. Type to search approved master data.", legalName: "Legal name: {{name}}",
     officialNumber: "Registration or tax number: {{number}}", noOfficialNumber: "No official number", location: "Location: {{location}}", quickCreate: "Quickly add a new party",
     createWithName: '+ Add new party named "{{name}}"...', createNewParty: "+ Add new business party..."
   },

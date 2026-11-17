@@ -27,7 +27,7 @@ export function ReserveModal({
 }: ReserveModalProps): React.JSX.Element | null {
   const { t } = useTranslation("inventory");
 
-  const [productId, setProductId] = useState(initialProductVariantId ?? "a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  const [productId, setProductId] = useState(initialProductVariantId ?? "");
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [quantity, setQuantity] = useState("2");
   const [sourceDoc, setSourceDoc] = useState("SO-2026-SEED-01");

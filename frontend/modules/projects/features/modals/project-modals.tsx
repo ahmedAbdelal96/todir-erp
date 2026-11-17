@@ -209,7 +209,7 @@ export function NewProjectModal({ isOpen, onClose, legalEntityId }: NewProjectMo
               }}
               roleFilter="Customer"
               isRequired
-              enableQuickCreate={true}
+              enableQuickCreate={false}
             />
           </div>
         )}

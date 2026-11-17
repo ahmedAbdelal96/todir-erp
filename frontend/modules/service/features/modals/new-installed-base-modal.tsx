@@ -4,6 +4,8 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { ServiceSelect as Select } from "../../components/service-select.tsx";
+import { PartyPicker } from "../../../directory/public.ts";
+import { ProductPicker, type ProductPickerSelection } from "../../../catalog/public.ts";
 import { useRegisterInstalledBaseMutation } from "../../hooks/use-service-queries.ts";
 
 export interface NewInstalledBaseModalProps {
@@ -22,8 +24,9 @@ export function NewInstalledBaseModal({
 
   const [serialNumber, setSerialNumber] = useState("");
   const [itemCode, setItemCode] = useState("");
+  const [productId, setProductId] = useState("");
   const [itemName, setItemName] = useState("");
-  const [customerName, setCustomerName] = useState("");
+  const [customerPartyId, setCustomerPartyId] = useState("");
   const [siteLocation, setSiteLocation] = useState("");
   const [fixedAssetId, setFixedAssetId] = useState("");
   const [warrantyEnd, setWarrantyEnd] = useState("");
@@ -32,7 +35,7 @@ export function NewInstalledBaseModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!serialNumber.trim() || !itemCode.trim()) {
+    if (!serialNumber.trim() || !productId) {
       setErrorMsg(t("validation.serialAndItemRequired"));
       return;
     }
@@ -46,7 +49,8 @@ export function NewInstalledBaseModal({
         modelNumber: itemCode.trim(),
         itemCode: itemCode.trim(),
         itemName: itemName.trim() || undefined,
-        customerName: customerName.trim() || undefined,
+        productId,
+        customerPartyId: customerPartyId || undefined,
         siteLocation: siteLocation.trim() || undefined,
         installedDate: new Date().toISOString().slice(0, 10),
         status: status.trim() || "operational"
@@ -55,8 +59,9 @@ export function NewInstalledBaseModal({
       // Reset form
       setSerialNumber("");
       setItemCode("");
+      setProductId("");
       setItemName("");
-      setCustomerName("");
+      setCustomerPartyId("");
       setSiteLocation("");
       setFixedAssetId("");
       setWarrantyEnd("");
@@ -101,17 +106,18 @@ export function NewInstalledBaseModal({
             />
           </div>
 
-          <div>
-            <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("parts.itemId")} *
-            </label>
-            <TextField
-              value={itemCode}
-              onChange={(val) => setItemCode(val)}
-              placeholder={t("installedBase.modelPlaceholder", "مثال: CAT-C18")}
-              isRequired
-            />
-          </div>
+          <ProductPicker
+            label={t("parts.itemId")}
+            value={productId || undefined}
+            onChange={(selection: ProductPickerSelection) => {
+              setProductId(selection.variantId);
+              setItemCode(selection.sku ?? selection.displayName);
+              setItemName(selection.displayName);
+            }}
+            isRequired
+            enableQuickCreate={false}
+            placeholder={t("installedBase.modelPlaceholder", "ابحث واختر الصنف")}
+          />
         </div>
 
         <div>
@@ -121,21 +127,19 @@ export function NewInstalledBaseModal({
           <TextField
             value={itemName}
             onChange={(val) => setItemName(val)}
-            placeholder={t("installedBase.assetNamePlaceholder", "مثال: مولد ديزل كاتر بيلر")}
+            isReadOnly
           />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-          <div>
-            <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("requests.customerName")}
-            </label>
-            <TextField
-              value={customerName}
-              onChange={(val) => setCustomerName(val)}
-              placeholder={t("requests.customerPlaceholder")}
-            />
-          </div>
+          <PartyPicker
+            label={t("requests.customerName")}
+            value={customerPartyId || undefined}
+            onChange={(partyId) => setCustomerPartyId(partyId)}
+            roleFilter="Customer"
+            enableQuickCreate={false}
+            placeholder={t("requests.customerPlaceholder")}
+          />
 
           <div>
             <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>

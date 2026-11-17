@@ -4,6 +4,8 @@ import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { Table } from "../../../../components/primitives/table.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { PartyPicker } from "../../../directory/public.ts";
+import { ServiceSelect as Select } from "../../components/service-select.tsx";
 import { ServiceLifecycleBadge } from "../../components/service-lifecycle-badge.tsx";
 import {
   ShieldCheckIcon,
@@ -14,7 +16,8 @@ import {
   useContractsQuery,
   useWarrantiesQuery,
   useSlaProfilesQuery,
-  useResolveEntitlementMutation
+  useResolveEntitlementMutation,
+  useInstalledBaseQuery
 } from "../../hooks/use-service-queries.ts";
 import { NewContractModal } from "../modals/new-contract-modal.tsx";
 import { formatDate } from "../../../../components/formatting/date-formatter.ts";
@@ -39,6 +42,8 @@ export function ContractsWarrantyTab({ legalEntityId }: ContractsWarrantyTabProp
   const warrantiesQuery = useWarrantiesQuery(legalEntityId, { pageSize: 50 });
   const slaProfilesQuery = useSlaProfilesQuery(legalEntityId);
   const resolveMutation = useResolveEntitlementMutation();
+  const installedBaseQuery = useInstalledBaseQuery(legalEntityId, { pageSize: 100 });
+  const installedBaseItems = installedBaseQuery.data?.items ?? [];
 
   const contracts = contractsQuery.data?.items ?? [];
   const warranties = warrantiesQuery.data?.items ?? [];
@@ -221,26 +226,30 @@ export function ContractsWarrantyTab({ legalEntityId }: ContractsWarrantyTabProp
             )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-                  {t("contracts.customerPartyId", "معرف العميل (CustomerPartyId)")}
-                </label>
-                <TextField
-                  value={checkerCustomerPartyId}
-                  onChange={(val) => setCheckerCustomerPartyId(val)}
-                  placeholder={t("contracts.customerPartyPlaceholder", "UUID أو كود العميل")}
-                />
-              </div>
+              <PartyPicker
+                label={t("requests.customerName")}
+                value={checkerCustomerPartyId || undefined}
+                onChange={(partyId) => setCheckerCustomerPartyId(partyId)}
+                roleFilter="Customer"
+                enableQuickCreate={false}
+                placeholder={t("requests.customerPlaceholder")}
+              />
 
               <div>
-                <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-                  {t("contracts.installedBaseId", "معرف المعدة (InstalledBaseId)")}
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.375rem", fontSize: "0.8125rem", fontWeight: 600 }}>
+                  {t("installedBase.title")}
+                  <Select
+                    value={checkerInstalledBaseId}
+                    onChange={setCheckerInstalledBaseId}
+                    options={[
+                      { value: "", label: "—" },
+                      ...installedBaseItems.map((item) => ({
+                        value: item.id,
+                        label: `${item.name} · ${item.serialNumber ?? "—"}`
+                      }))
+                    ]}
+                  />
                 </label>
-                <TextField
-                  value={checkerInstalledBaseId}
-                  onChange={(val) => setCheckerInstalledBaseId(val)}
-                  placeholder={t("contracts.installedBasePlaceholder", "UUID المعدة")}
-                />
               </div>
             </div>
 

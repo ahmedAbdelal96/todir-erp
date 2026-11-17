@@ -18,6 +18,7 @@ export interface ProductPickerSelection {
   readonly displayName: string;
   readonly sku?: string | null | undefined;
   readonly baseUomCode?: string | null | undefined;
+  readonly isStocked?: boolean | undefined;
 }
 
 export interface ProductPickerProps {
@@ -37,10 +38,12 @@ export function ProductPicker({
   placeholder,
   isDisabled = false,
   isRequired = false,
-  enableQuickCreate = true
+  // Transactional forms must select mastered products; creation belongs to Catalog.
+  enableQuickCreate = false
 }: ProductPickerProps): React.JSX.Element {
   const { t } = useTranslation("catalog");
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
   const [quickCreateName, setQuickCreateName] = useState("");
@@ -49,9 +52,14 @@ export function ProductPicker({
   const [scannerInput, setScannerInput] = useState("");
   const [resolveError, setResolveError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
+
   // Fast dropdown search
   const { data: dropdownData, isLoading: isDropdownLoading } = useProductList({
-    search: searchTerm || undefined,
+    search: debouncedSearchTerm || undefined,
     status: "Active",
     pageSize: 20
   });
@@ -80,7 +88,8 @@ export function ProductPicker({
         templateId: selected.id,
         displayName: selected.displayName,
         sku: selected.sku,
-        baseUomCode: selected.baseUomCode
+        baseUomCode: selected.baseUomCode,
+        isStocked: selected.nature !== "Service"
       });
     }
   };
@@ -91,7 +100,8 @@ export function ProductPicker({
       templateId: summary.id,
       displayName: summary.displayName,
       sku: summary.sku,
-      baseUomCode: summary.baseUomCode
+      baseUomCode: summary.baseUomCode,
+      isStocked: summary.nature !== "Service"
     });
     setIsDialogOpen(false);
   };
@@ -107,7 +117,8 @@ export function ProductPicker({
         templateId: resolved.templateId,
         displayName: resolved.displayName,
         sku: resolved.sku,
-        baseUomCode: resolved.resolvedUomCode || undefined
+        baseUomCode: resolved.resolvedUomCode || undefined,
+        isStocked: true
       });
       setScannerInput("");
       setIsDialogOpen(false);
@@ -126,6 +137,7 @@ export function ProductPicker({
           onInputChange={setSearchTerm}
           options={options}
           placeholder={isDropdownLoading ? t("productPicker.loading") : (placeholder ?? t("productPicker.placeholder"))}
+          noResultsMessage={t("productList.noResults")}
           isDisabled={isDisabled}
           isRequired={isRequired}
           onCreateNew={enableQuickCreate && !isDisabled ? (term) => {
@@ -263,7 +275,8 @@ export function ProductPicker({
               templateId: created.id,
               displayName: created.displayName,
               sku: created.sku,
-              baseUomCode: created.baseUomCode
+              baseUomCode: created.baseUomCode,
+              isStocked: created.nature !== "Service"
             });
           }}
         />

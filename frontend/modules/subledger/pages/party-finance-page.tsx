@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../../components/pages/page-header.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
-import { Button } from "../../../components/primitives/button.tsx";
+import { PartyPicker } from "../../directory/public.ts";
 import { SubledgerBalanceCard } from "../components/subledger-balance-card.tsx";
 import { ApplicationWorkspace } from "../features/application-workspace.tsx";
 import { AgingReportView } from "../features/aging-report-view.tsx";
@@ -27,7 +27,6 @@ export function PartyFinancePage(): React.JSX.Element {
     (searchParams.get("direction") as SubledgerDirection) || "Receivable";
 
   const [partyId, setPartyId] = useState<string>(initialParty);
-  const [partyInput, setPartyInput] = useState<string>(initialParty);
   const [direction, setDirection] = useState<SubledgerDirection>(initialDirection);
   const [activeTab, setActiveTab] = useState<"cockpit" | "application" | "aging" | "statement">("cockpit");
 
@@ -50,7 +49,6 @@ export function PartyFinancePage(): React.JSX.Element {
 
   const handleApplyParty = (newPartyId: string) => {
     setPartyId(newPartyId);
-    setPartyInput(newPartyId);
     setSearchParams({ partyId: newPartyId, direction });
   };
 
@@ -64,27 +62,14 @@ export function PartyFinancePage(): React.JSX.Element {
       {/* Party Switcher Bar */}
       <Surface variant="card" padding="normal" className="bg-white border border-slate-200 rounded-lg shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <label htmlFor="party-id-input" className="text-xs font-semibold text-slate-700">
-              {t("partyPage.businessParty")}
-            </label>
-            <input
-              id="party-id-input"
-              type="text"
+          <div style={{ minWidth: "18rem", maxWidth: "30rem", flex: 1 }}>
+            <PartyPicker
+              label={t("partyPage.businessParty")}
+              value={partyId || undefined}
+              onChange={handleApplyParty}
+              enableQuickCreate={false}
               placeholder={t("openItems.selectParty")}
-              value={partyInput}
-              onChange={(e) => setPartyInput(e.target.value)}
-              className="w-64 px-3 py-1.5 text-xs font-mono font-medium border border-slate-300 rounded bg-white text-slate-900 shadow-sm focus:border-slate-800 focus:outline-none"
             />
-            <Button
-              variant="primary"
-              size="compact"
-              onClick={() => handleApplyParty(partyInput.trim())}
-              isDisabled={!partyInput.trim()}
-              className="bg-slate-900 hover:bg-slate-800 text-white"
-            >
-              {t("partyPage.loadParty")}
-            </Button>
           </div>
 
           {/* Direction toggle */}

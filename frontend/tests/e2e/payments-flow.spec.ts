@@ -7,11 +7,13 @@ const TEST_SUPPLIER_ID = 'party-supplier-beta-01';
 // Global error tracking for Runtime Health
 let consoleErrors: string[] = [];
 let pageErrors: string[] = [];
+let partyRequestUrls: string[] = [];
 
 test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () => {
   test.beforeEach(async ({ page }) => {
     consoleErrors = [];
     pageErrors = [];
+    partyRequestUrls = [];
 
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
@@ -112,6 +114,7 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
 
     // 4. Directory Parties
     await page.route(/(?:\/api\/v1\/directory\/parties|\/api\/v1\/parties)/, async (route) => {
+      partyRequestUrls.push(route.request().url());
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -713,8 +716,18 @@ test.describe('TODIR Payments — Comprehensive Financial Acceptance Suite', () 
     const invoiceInputs = dialog.locator('input[name*="invoice"], select[name*="invoice"]');
     await expect(invoiceInputs).toHaveCount(0);
 
+    // The customer field is a server-backed ComboBox: it opens with a bounded
+    // first page and sends the typed term back to Directory instead of loading
+    // the tenant's complete customer population into the browser.
+    const customerInput = dialog.getByRole('combobox').first();
+    await customerInput.focus();
+    await expect(page.getByRole('option', { name: /شركة النور للمقاولات العامة/ })).toBeVisible();
+    await customerInput.fill('النور');
+    await expect.poll(() => partyRequestUrls.some((url) => new URL(url).searchParams.get('search') === 'النور')).toBeTruthy();
+    await customerInput.press('Escape');
+
     // Close Dialog cleanly
-    await dialog.getByRole('button', { name: 'إلغاء' }).click();
+    await dialog.locator('button').filter({ hasText: 'إلغاء' }).click();
     await expect(dialog).not.toBeVisible();
 
     // Navigate to created unapplied payment

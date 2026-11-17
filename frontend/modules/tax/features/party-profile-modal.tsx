@@ -6,6 +6,7 @@ import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
 import { Checkbox } from "../../../components/primitives/checkbox.tsx";
 import { LocalDateField } from "../../../components/fields/local-date-field.tsx";
+import { PartyPicker } from "../../directory/public.ts";
 import { useSavePartyProfileMutation } from "../hooks/tax-queries.ts";
 import { extractTaxError } from "../services/tax-error-map.ts";
 import type { TaxCategoryItem, TaxProfileDto } from "../types.ts";
@@ -122,12 +123,13 @@ export function PartyProfileModal({
           {t("partyProfiles.directoryNotice")}
         </p>
 
-        <TextField
+        <PartyPicker
           label={t("partyProfiles.partyReference")}
-          value={partyId}
-          onChange={setPartyId}
+          value={partyId || undefined}
+          onChange={(selectedPartyId) => setPartyId(selectedPartyId)}
           isRequired
-          isDisabled={isEditing}
+          isReadOnly={isEditing}
+          enableQuickCreate={false}
         />
 
         <TextField

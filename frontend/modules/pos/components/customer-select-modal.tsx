@@ -1,10 +1,9 @@
-import React, { useState } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
-import { TextField } from "../../../components/primitives/text-field.tsx";
 import { UserWalkInIcon } from "./pos-icons.tsx";
-import { BidiText } from "../../../components/primitives/bidi-text.tsx";
+import { PartyPicker } from "../../directory/public.ts";
 
 export interface CustomerSelectModalProps {
   readonly isOpen: boolean;
@@ -14,65 +13,17 @@ export interface CustomerSelectModalProps {
   readonly currentPartyName?: string | null | undefined;
 }
 
-interface RetailCustomer {
-  readonly id: string;
-  readonly nameAr: string;
-  readonly nameEn: string;
-  readonly code: string;
-}
-
-const RETAIL_CUSTOMERS: readonly RetailCustomer[] = [
-  {
-    id: "023b6cc2-2c8a-8756-b1e8-7664444e37e9",
-    nameAr: "شركة التميز للتوريدات",
-    nameEn: "Al Tamayoz Supplies Co.",
-    code: "CUST-001",
-  },
-  {
-    id: "077927da-ca87-3454-9c1b-9d03182fe4e6",
-    nameAr: "شركة الوفاء للتوريدات",
-    nameEn: "Al Wafa Supplies Co.",
-    code: "CUST-002",
-  },
-  {
-    id: "02fff4cf-6a7b-295d-bb0a-1a2143e133a0",
-    nameAr: "منى شريف عبدالحميد",
-    nameEn: "Mona Sherif Abdelhamid",
-    code: "CUST-003",
-  },
-  {
-    id: "09f8cc1f-a29c-135a-bdb2-794201268bd0",
-    nameAr: "المتحدة للمعدات الكهربائية",
-    nameEn: "United Electrical Equipment",
-    code: "CUST-004",
-  },
-];
-
+/** POS customers come from Directory; anonymous walk-in remains the explicit POS exception. */
 export function CustomerSelectModal({
   isOpen,
   onClose,
   onSelect,
-  currentPartyId,
+  currentPartyId
 }: CustomerSelectModalProps): React.JSX.Element | null {
-  const { t, i18n } = useTranslation("pos");
-  const isAr = i18n.language !== "en";
-  const [searchTerm, setSearchTerm] = useState("");
-
-  const filteredCustomers = searchTerm.trim()
-    ? RETAIL_CUSTOMERS.filter((c) =>
-        c.nameAr.includes(searchTerm.trim()) ||
-        c.nameEn.toLowerCase().includes(searchTerm.toLowerCase().trim()) ||
-        c.code.toLowerCase().includes(searchTerm.toLowerCase().trim())
-      )
-    : RETAIL_CUSTOMERS;
+  const { t } = useTranslation("pos");
 
   const handleSelectWalkIn = () => {
     onSelect(null, null);
-    onClose();
-  };
-
-  const handleSelectCustomer = (party: { id: string; name: string }) => {
-    onSelect(party.id, party.name);
     onClose();
   };
 
@@ -85,78 +36,26 @@ export function CustomerSelectModal({
       size="medium"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <Button
-            variant={currentPartyId ? "secondary" : "primary"}
-            onClick={handleSelectWalkIn}
-            style={{ width: "100%", justifyContent: "center", display: "flex", alignItems: "center", gap: "0.5rem" }}
-          >
-            <UserWalkInIcon size={18} />
-            <span>{t("customerModal.anonymousCustomer")}</span>
-          </Button>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-          <TextField
-            label={t("customerModal.searchLabel")}
-            placeholder={t("customerModal.searchPlaceholder")}
-            value={searchTerm}
-            onChange={(val) => setSearchTerm(val)}
-            autoFocus
-          />
-        </div>
-
-        <div
-          style={{
-            maxHeight: "18rem",
-            overflowY: "auto",
-            border: "1px solid var(--color-border-default)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--color-surface-card)",
-          }}
+        <Button
+          variant={currentPartyId ? "secondary" : "primary"}
+          onClick={handleSelectWalkIn}
+          style={{ width: "100%", justifyContent: "center", display: "flex", alignItems: "center", gap: "0.5rem" }}
         >
-          {filteredCustomers.length > 0 ? (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {filteredCustomers.map((party) => {
-                const isSelected = party.id === currentPartyId;
-                const name = isAr ? party.nameAr : party.nameEn;
-                return (
-                  <li
-                    key={party.id}
-                    style={{
-                      borderBottom: "1px solid var(--color-border-subtle)",
-                      padding: "0.75rem 1rem",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      backgroundColor: isSelected ? "var(--color-surface-hover)" : "transparent",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, color: "var(--color-content-default)" }}>
-                        <BidiText>{name}</BidiText>
-                      </div>
-                      <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-                        <BidiText>{party.code}</BidiText>
-                      </div>
-                    </div>
-                    <Button
-                      variant={isSelected ? "secondary" : "primary"}
-                      size="compact"
-                      onClick={() => handleSelectCustomer({ id: party.id, name })}
-                    >
-                      {isSelected ? t("customerModal.selected") : t("customerModal.select")}
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-content-muted)" }}>
-              {searchTerm ? t("customerModal.noResults") : t("customerModal.emptyPrompt")}
-            </div>
-          )}
-        </div>
+          <UserWalkInIcon size={18} />
+          <span>{t("customerModal.anonymousCustomer")}</span>
+        </Button>
+
+        <PartyPicker
+          label={t("customerModal.searchLabel")}
+          value={currentPartyId ?? undefined}
+          onChange={(partyId, party) => {
+            onSelect(partyId, party?.displayName ?? null);
+            onClose();
+          }}
+          roleFilter="Customer"
+          enableQuickCreate={false}
+          placeholder={t("customerModal.searchPlaceholder")}
+        />
       </div>
     </Dialog>
   );

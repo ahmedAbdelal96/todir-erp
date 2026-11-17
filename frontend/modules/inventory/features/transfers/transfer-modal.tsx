@@ -27,7 +27,7 @@ export function TransferModal({
   const { t } = useTranslation("inventory");
   const today = new Date().toISOString().slice(0, 10);
 
-  const [productId, setProductId] = useState(initialProductVariantId ?? "a6315416-cffe-bf52-bcf0-d5e590d3bf94");
+  const [productId, setProductId] = useState(initialProductVariantId ?? "");
   const [sourceWarehouseId, setSourceWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [sourceLocationId, setSourceLocationId] = useState("");
   const [destWarehouseId, setDestWarehouseId] = useState(warehouses[1]?.id ?? (warehouses[0]?.id ?? ""));
