@@ -353,6 +353,12 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
         var items = new List<ForecastItemDto>(); await using var reader = await itemsCommand.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(new(reader.GetGuid(0), DateOnly.FromDateTime(reader.GetDateTime(1)), reader.GetString(2), reader.GetDecimal(3), reader.GetString(4).Trim(), reader.GetString(5), reader.GetString(6), reader.GetString(7), GuidValue(reader, 8))); return new ForecastPage(id, date, horizon, status, items);
     }
 
+    public async Task<ForecastPage?> GetForecastVersionAsync(TenantId tenant, Guid legalEntityId, Guid versionId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct);
+        await using var command = new NpgsqlCommand("select as_of_date,horizon_days from finance_banking.cash_forecast_version where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection); Add(command, tenant.Value, legalEntityId, versionId); await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) return null; var asOf = DateOnly.FromDateTime(reader.GetDateTime(0)); var horizon = reader.GetInt32(1); await reader.CloseAsync(); return await GetForecastAsync(tenant, legalEntityId, asOf, horizon, ct);
+    }
+
     public async Task<AccountChangeRequestDto> CreateAccountChangeRequestAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid accountId, CreateAccountChangeRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Payload.ValueKind != JsonValueKind.Object) throw new BankingException("banking.account_change_invalid", "A change reason and structured change details are required.");
