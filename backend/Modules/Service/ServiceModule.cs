@@ -127,40 +127,27 @@ public static class ServiceModuleExtensions
         group.MapGet("/reports/kpi", async (Guid? legalEntityId, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "service.export", legalEntityId, ct), () => service.GetKpiAsync(Tenant(http), legalEntityId, ct)));
 
         var isTestProbeEnabled = app.Environment.IsDevelopment() &&
-            (app.Configuration.GetValue<bool>("TODIR_ENABLE_TEST_PROBE") ||
-             string.Equals(app.Configuration["TODIR_MUTATION_TEST_TARGET"], "isolated", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(Environment.GetEnvironmentVariable("TODIR_MUTATION_TEST_TARGET"), "isolated", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(Environment.GetEnvironmentVariable("TODIR_DISPOSABLE_TEST_ENV"), "true", StringComparison.OrdinalIgnoreCase));
+            app.Configuration.GetValue<bool>("TODIR_ENABLE_TEST_PROBE") &&
+            !string.IsNullOrWhiteSpace(app.Configuration["TODIR_TEST_PROBE_SECRET"]);
 
         if (isTestProbeEnabled)
         {
-            group.MapGet("/target", async (HttpContext http, ServiceService service, IConfiguration config, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            group.MapGet("/target", async (HttpContext http, ServiceService service, IConfiguration config, CancellationToken ct) =>
             {
-                var expectedSecret = config["TODIR_TEST_PROBE_SECRET"]
-                    ?? config["Seed:DefaultPassword"]
-                    ?? Environment.GetEnvironmentVariable("ERP_DEV_PASSWORD")
-                    ?? "DevSeed2026Apmjuoj1oZjHEDcxSsOc27HKY8yOv0B7";
-
-                var authHeader = http.Request.Headers.Authorization.ToString();
-                var bearerToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-                    ? authHeader["Bearer ".Length..].Trim()
-                    : null;
-                var headerSecret = http.Request.Headers["X-Todir-Test-Secret"].FirstOrDefault();
-                var providedSecret = headerSecret ?? bearerToken;
-
-                var isSecretValid = !string.IsNullOrWhiteSpace(providedSecret) &&
-                    providedSecret.Length == expectedSecret.Length &&
-                    CryptographicOperations.FixedTimeEquals(
-                        System.Text.Encoding.UTF8.GetBytes(providedSecret),
-                        System.Text.Encoding.UTF8.GetBytes(expectedSecret));
-
-                if (!isSecretValid)
+                var expectedSecret = config["TODIR_TEST_PROBE_SECRET"];
+                if (string.IsNullOrWhiteSpace(expectedSecret))
                 {
-                    var access = await AccessAsync(http, subjects, authorizer, "service.work.read", ct);
-                    if (access is null || !access.Allowed)
-                    {
-                        return Results.Unauthorized();
-                    }
+                    return Results.Unauthorized();
+                }
+
+                var headerSecret = http.Request.Headers["X-Todir-Test-Secret"].FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(headerSecret) ||
+                    headerSecret.Length != expectedSecret.Length ||
+                    !CryptographicOperations.FixedTimeEquals(
+                        System.Text.Encoding.UTF8.GetBytes(headerSecret),
+                        System.Text.Encoding.UTF8.GetBytes(expectedSecret)))
+                {
+                    return Results.Unauthorized();
                 }
 
                 var tenant = Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tid) ? new TenantId(tid) : (TenantId?)null;

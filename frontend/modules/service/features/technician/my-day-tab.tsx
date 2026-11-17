@@ -21,6 +21,7 @@ import { AnswerChecklistModal } from "../modals/answer-checklist-modal.tsx";
 import { RecordDiagnosisModal } from "../modals/record-diagnosis-modal.tsx";
 import { CreateReportModal } from "../modals/create-report-modal.tsx";
 import { useIsMobile } from "../../hooks/use-is-mobile.ts";
+import { useOptionalUserContext, useOptionalTenantContext } from "../../../../core/runtime/index.ts";
 import type { VisitView, WorkOrderView } from "../../types.ts";
 import {
   loadOfflineQueue,
@@ -28,6 +29,9 @@ import {
   replayOfflineQueue,
   clearSyncedCommands,
   dismissOfflineCommand,
+  retryOfflineCommand,
+  resolveConflict,
+  type QueueScope,
   type StoredOfflineCommand
 } from "../../utils/offline-queue.ts";
 
@@ -39,10 +43,18 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
   const { t } = useTranslation("service");
   const isMobile = useIsMobile(768);
 
+  const user = useOptionalUserContext();
+  const tenant = useOptionalTenantContext();
+  const queueScope = React.useMemo<QueueScope>(() => ({
+    tenantId: tenant?.tenantId || "c9fea3c8-249d-f150-a53a-84f5a891c82b",
+    userId: user?.userId || "default",
+    legalEntityId
+  }), [tenant?.tenantId, user?.userId, legalEntityId]);
+
   const todayStr = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== "undefined" ? navigator.onLine : true);
-  const [offlineQueue, setOfflineQueue] = useState<StoredOfflineCommand[]>(() => loadOfflineQueue(legalEntityId));
+  const [offlineQueue, setOfflineQueue] = useState<StoredOfflineCommand[]>(() => loadOfflineQueue(queueScope));
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const [selectedVisitForChecklist, setSelectedVisitForChecklist] = useState<VisitView | null>(null);
@@ -50,20 +62,20 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
   const [selectedVisitForReport, setSelectedVisitForReport] = useState<VisitView | null>(null);
 
   const refreshQueue = React.useCallback(() => {
-    setOfflineQueue(loadOfflineQueue(legalEntityId));
-  }, [legalEntityId]);
+    setOfflineQueue(loadOfflineQueue(queueScope));
+  }, [queueScope]);
 
   const handleSyncQueue = React.useCallback(async () => {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      await replayOfflineQueue(legalEntityId, (req) => submitOfflineMutation.mutateAsync(req));
+      await replayOfflineQueue(queueScope, (req) => submitOfflineMutation.mutateAsync(req));
       refreshQueue();
       myDayQuery.refetch();
     } finally {
       setIsSyncing(false);
     }
-  }, [legalEntityId, isSyncing]);
+  }, [queueScope, isSyncing]);
 
   // Connectivity listener
   useEffect(() => {
@@ -95,7 +107,7 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
   ) => {
     if (!isOnline) {
       // Store in durable offline queue in localStorage
-      enqueueOfflineCommand(legalEntityId, {
+      enqueueOfflineCommand(queueScope, {
         commandType: `visit.${action}`,
         visitId: visit.id,
         workOrderId: visit.workOrderId,
@@ -197,7 +209,7 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                 variant="ghost"
                 size="compact"
                 onClick={() => {
-                  clearSyncedCommands(legalEntityId);
+                  clearSyncedCommands(queueScope);
                   refreshQueue();
                 }}
               >
@@ -217,8 +229,8 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                   alignItems: "center",
                   padding: "0.75rem 1rem",
                   borderRadius: "0.375rem",
-                  backgroundColor: cmd.status === "conflict" ? "#fef2f2" : cmd.status === "synced" ? "#f0fdf4" : "#f8fafc",
-                  border: `1px solid ${cmd.status === "conflict" ? "#fecaca" : cmd.status === "synced" ? "#bbf7d0" : "#e2e8f0"}`
+                  backgroundColor: cmd.status === "conflict" ? "#fef2f2" : cmd.status === "synced" ? "#f0fdf4" : cmd.status === "rejected" ? "#fff1f2" : "#f8fafc",
+                  border: `1px solid ${cmd.status === "conflict" ? "#fecaca" : cmd.status === "synced" ? "#bbf7d0" : cmd.status === "rejected" ? "#fecdd3" : "#e2e8f0"}`
                 }}
               >
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
@@ -230,14 +242,16 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                         borderRadius: "0.25rem",
                         fontSize: "0.75rem",
                         fontWeight: 600,
-                        backgroundColor: cmd.status === "synced" ? "#dcfce7" : cmd.status === "conflict" ? "#fee2e2" : "#e0e7ff",
-                        color: cmd.status === "synced" ? "#166534" : cmd.status === "conflict" ? "#991b1b" : "#3730a3"
+                        backgroundColor: cmd.status === "synced" ? "#dcfce7" : cmd.status === "conflict" ? "#fee2e2" : cmd.status === "rejected" ? "#ffe4e6" : "#e0e7ff",
+                        color: cmd.status === "synced" ? "#166534" : cmd.status === "conflict" ? "#991b1b" : cmd.status === "rejected" ? "#9f1239" : "#3730a3"
                       }}
                     >
                       {cmd.status === "synced"
                         ? t("technician.statusSynced")
                         : cmd.status === "conflict"
                         ? t("technician.statusConflict")
+                        : cmd.status === "rejected"
+                        ? t("technician.statusRejected")
                         : cmd.status === "syncing"
                         ? t("technician.statusSyncing")
                         : t("technician.statusQueued")}
@@ -247,21 +261,47 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                     <span style={{ fontSize: "0.75rem", color: "#dc2626" }}>{cmd.errorMessage}</span>
                   )}
                   <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
-                    {new Date(cmd.queuedAt).toLocaleTimeString()}
+                    {new Date(cmd.queuedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
-                {(cmd.status === "conflict" || cmd.status === "failed") && (
-                  <Button
-                    variant="ghost"
-                    size="compact"
-                    onClick={() => {
-                      dismissOfflineCommand(legalEntityId, cmd.clientCommandId);
-                      refreshQueue();
-                    }}
-                  >
-                    {t("common.delete")}
-                  </Button>
-                )}
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  {cmd.status === "failed" && (
+                    <Button
+                      variant="secondary"
+                      size="compact"
+                      onClick={() => {
+                        retryOfflineCommand(queueScope, cmd.clientCommandId);
+                        refreshQueue();
+                      }}
+                    >
+                      {t("technician.retry")}
+                    </Button>
+                  )}
+                  {cmd.status === "conflict" && (
+                    <Button
+                      variant="secondary"
+                      size="compact"
+                      onClick={() => {
+                        resolveConflict(queueScope, cmd.clientCommandId, "discard");
+                        refreshQueue();
+                      }}
+                    >
+                      {t("technician.resolveConflictDiscard")}
+                    </Button>
+                  )}
+                  {(cmd.status === "conflict" || cmd.status === "failed" || cmd.status === "rejected") && (
+                    <Button
+                      variant="ghost"
+                      size="compact"
+                      onClick={() => {
+                        dismissOfflineCommand(queueScope, cmd.clientCommandId);
+                        refreshQueue();
+                      }}
+                    >
+                      {t("common.delete")}
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -314,22 +354,9 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                           {wo?.workOrderNumber || visit.id.slice(0, 8)}
                         </strong>
                         <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
-                          ({visit.locationType})
+                          ({(t as any)(`dispatch.types.${(visit.locationType || "onsite").toLowerCase()}`)})
                         </span>
-                        {wo && (
-                          <span
-                            style={{
-                              padding: "0.15rem 0.4rem",
-                              borderRadius: "4px",
-                              fontSize: "0.75rem",
-                              fontWeight: 600,
-                              backgroundColor: wo.priority === "High" || wo.priority === "Critical" ? "#fef2f2" : "#f1f5f9",
-                              color: wo.priority === "High" || wo.priority === "Critical" ? "#b91c1c" : "#475569"
-                            }}
-                          >
-                            {wo.priority}
-                          </span>
-                        )}
+                        {wo && <ServiceLifecycleBadge status={wo.priority} size="compact" />}
                       </div>
                       {wo && (
                         <div style={{ marginTop: "0.25rem", fontSize: "0.875rem", fontWeight: 600, color: "#1e293b" }}>

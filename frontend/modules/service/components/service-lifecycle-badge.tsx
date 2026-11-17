@@ -17,25 +17,59 @@ export function ServiceLifecycleBadge({ state, status, size = "normal" }: Servic
   let label = effectiveState;
 
   switch (effectiveState.toLowerCase()) {
+    // Priorities
+    case "low":
+      tone = "neutral";
+      label = t("priorities.low");
+      break;
+    case "medium":
+      tone = "warning";
+      label = t("priorities.medium");
+      break;
+    case "normal":
+      tone = "neutral";
+      label = t("priorities.normal");
+      break;
+    case "high":
+      tone = "warning";
+      label = t("priorities.high");
+      break;
+    case "urgent":
+      tone = "danger";
+      label = t("priorities.urgent");
+      break;
+    case "critical":
+      tone = "danger";
+      label = t("priorities.critical");
+      break;
+
+    // States: Draft / New
     case "draft":
     case "new":
       tone = "neutral";
-      label = t("states.draft", "مسودة");
+      label = t("states.draft");
       break;
+
+    // States: Scheduled / Planned / Ready
     case "triaged":
     case "ready":
     case "scheduled":
     case "planned":
+    case "assigned":
       tone = "primary";
       label =
         effectiveState.toLowerCase() === "triaged"
-          ? t("states.triaged", "تم الفرز")
+          ? t("states.triaged")
           : effectiveState.toLowerCase() === "ready"
-          ? t("states.ready", "جاهز للجدولة")
+          ? t("states.ready")
           : effectiveState.toLowerCase() === "scheduled"
-          ? t("states.scheduled", "مجدول")
-          : t("states.planned", "مخطط");
+          ? t("states.scheduled")
+          : effectiveState.toLowerCase() === "assigned"
+          ? t("states.assigned")
+          : t("states.planned");
       break;
+
+    // States: In Execution
     case "inprogress":
     case "dispatched":
     case "traveling":
@@ -44,24 +78,43 @@ export function ServiceLifecycleBadge({ state, status, size = "normal" }: Servic
       tone = "primary";
       label =
         effectiveState.toLowerCase() === "traveling"
-          ? t("states.traveling", "في الطريق")
+          ? t("states.traveling")
           : effectiveState.toLowerCase() === "arrived"
-          ? t("states.arrived", "في الموقع")
-          : t("states.inProgress", "قيد التنفيذ");
+          ? t("states.arrived")
+          : effectiveState.toLowerCase() === "dispatched"
+          ? t("states.dispatched")
+          : effectiveState.toLowerCase() === "running"
+          ? t("states.running")
+          : t("states.inProgress");
       break;
+
+    // States: Waiting / Due / Review
     case "waiting":
     case "paused":
     case "postponed":
     case "due":
     case "forecast":
+    case "requested":
       tone = "warning";
       label =
         effectiveState.toLowerCase() === "waiting"
-          ? t("states.waiting", "معلق")
+          ? t("states.waiting")
           : effectiveState.toLowerCase() === "due"
-          ? t("states.due", "مستحق")
-          : t("states.paused", "موقوف مؤقتاً");
+          ? t("states.due")
+          : effectiveState.toLowerCase() === "requested"
+          ? t("states.requested")
+          : effectiveState.toLowerCase() === "forecast"
+          ? t("states.forecast")
+          : t("states.paused");
       break;
+
+    // States: Reviewed
+    case "reviewed":
+      tone = "primary";
+      label = t("states.reviewed");
+      break;
+
+    // States: Completed / Resolved / Active / Invoiced
     case "technicalcompleted":
     case "completed":
     case "accepted":
@@ -69,39 +122,56 @@ export function ServiceLifecycleBadge({ state, status, size = "normal" }: Servic
     case "closed":
     case "active":
     case "converted":
+    case "invoiced":
       tone = "success";
       label =
         effectiveState.toLowerCase() === "technicalcompleted"
-          ? t("states.technicalCompleted", "منجز فنياً")
+          ? t("states.technicalCompleted")
           : effectiveState.toLowerCase() === "accepted"
-          ? t("states.accepted", "معتمد من العميل")
+          ? t("states.accepted")
           : effectiveState.toLowerCase() === "resolved"
-          ? t("states.resolved", "تم الحل")
+          ? t("states.resolved")
           : effectiveState.toLowerCase() === "closed"
-          ? t("states.closed", "مغلق")
+          ? t("states.closed")
           : effectiveState.toLowerCase() === "active"
-          ? t("states.active", "نشط")
-          : t("states.completed", "مكتمل");
+          ? t("states.active")
+          : effectiveState.toLowerCase() === "invoiced"
+          ? t("states.invoiced")
+          : t("states.completed");
       break;
+
+    // States: Danger / Breached / Cancelled / WrittenOff
     case "cancelled":
+    case "canceled":
     case "noaccess":
     case "retired":
     case "expired":
     case "breached":
     case "failed":
+    case "writtenoff":
       tone = "danger";
       label =
         effectiveState.toLowerCase() === "breached"
-          ? t("states.breached", "تجاوز SLA")
+          ? t("states.breached")
           : effectiveState.toLowerCase() === "noaccess"
-          ? t("states.noAccess", "تعذر الوصول")
-          : effectiveState.toLowerCase() === "cancelled"
-          ? t("states.cancelled", "ملغى")
-          : t("states.retired", "خارج الخدمة");
+          ? t("states.noAccess")
+          : effectiveState.toLowerCase() === "writtenoff"
+          ? t("states.writtenOff")
+          : effectiveState.toLowerCase() === "failed"
+          ? t("states.failed")
+          : effectiveState.toLowerCase().startsWith("cancel")
+          ? t("states.cancelled")
+          : t("states.retired");
       break;
+
     default:
       tone = "neutral";
       label = effectiveState;
+  }
+
+  // Guard against missing-translation fallback text
+  if (label === "النص غير متاح" || label === "Text unavailable" || !label) {
+    label = effectiveState;
   }
 
   const toneStyles: Record<BadgeTone, { bg: string; text: string; border: string }> = {

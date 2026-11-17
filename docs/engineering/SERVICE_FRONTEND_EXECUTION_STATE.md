@@ -6,7 +6,7 @@
 **Backend Verified Baseline:** `2ccbe91b34d4af7c5e8cb8e70c5b5ea829d61ac8`  
 **Frontend Verified Commit:** `dev`  
 **Governing Manuals:** Root `AGENTS.md`, `frontend/AGENTS.md`, and Skill `erp-frontend-architect`  
-**Canonical Specification:** `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_AND_FIELD_SERVICE_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
+**Canonical Specification:** `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_FIELD_SERVICE_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
 **Delivery Status:** `FRONTEND COMPLETE` (Ready for Human Product Owner Acceptance)
 
 ---

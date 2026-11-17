@@ -17,6 +17,7 @@ import {
   useResolveEntitlementMutation
 } from "../../hooks/use-service-queries.ts";
 import { NewContractModal } from "../modals/new-contract-modal.tsx";
+import { formatDate } from "../../../../components/formatting/date-formatter.ts";
 
 export interface ContractsWarrantyTabProps {
   readonly legalEntityId: string;
@@ -185,8 +186,8 @@ export function ContractsWarrantyTab({ legalEntityId }: ContractsWarrantyTabProp
                       <td><strong>{w.serialNumber || w.subjectId || w.id.slice(0, 8)}</strong></td>
                       <td>{w.customerName || w.customerPartyId || "—"}</td>
                       <td>{w.warrantyType}</td>
-                      <td>{new Date(w.startDateUtc || w.startDate).toLocaleDateString()}</td>
-                      <td>{new Date(w.endDateUtc || w.endDate).toLocaleDateString()}</td>
+                      <td>{formatDate(w.startDateUtc || w.startDate, { locale: "ar-EG" })}</td>
+                      <td>{formatDate(w.endDateUtc || w.endDate, { locale: "ar-EG" })}</td>
                       <td><ServiceLifecycleBadge state={w.state || w.status} /></td>
                     </tr>
                   ))}
@@ -291,18 +292,7 @@ export function ContractsWarrantyTab({ legalEntityId }: ContractsWarrantyTabProp
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                     <strong>{t("contracts.slaState", "حالة اتفاقية SLA:")}</strong>
-                    <span
-                      style={{
-                        padding: "0.2rem 0.5rem",
-                        borderRadius: "9999px",
-                        fontSize: "0.75rem",
-                        fontWeight: 600,
-                        backgroundColor: entitlementResult.slaState === "Active" ? "#ecfdf5" : "#fef3c7",
-                        color: entitlementResult.slaState === "Active" ? "#065f46" : "#92400e"
-                      }}
-                    >
-                      {entitlementResult.slaState}
-                    </span>
+                    <ServiceLifecycleBadge status={entitlementResult.slaState} size="compact" />
                   </div>
 
                   <div style={{ fontSize: "0.8125rem", color: "#64748b" }}>
@@ -331,25 +321,45 @@ export function ContractsWarrantyTab({ legalEntityId }: ContractsWarrantyTabProp
                     </tr>
                   </thead>
                   <tbody>
-                    {entitlementResult.lines.map((line, idx) => (
-                      <tr key={idx}>
-                        <td><strong>{line.chargeCategory}</strong></td>
-                        <td>{line.coverageSource}</td>
-                        <td>
-                          <span
-                            style={{
-                              color: line.covered ? "#059669" : "#dc2626",
-                              fontWeight: 600
-                            }}
-                          >
-                            {line.covered ? t("contracts.covered", "مغطى") : t("contracts.notCovered", "غير مغطى")}
-                          </span>
-                        </td>
-                        <td>{line.coveredAmount.toLocaleString()}</td>
-                        <td><strong>{line.customerAmount.toLocaleString()}</strong></td>
-                        <td style={{ fontSize: "0.8125rem", color: "#475569" }}>{line.explanation}</td>
-                      </tr>
-                    ))}
+                    {entitlementResult.lines.map((line, idx) => {
+                      const categoryLabel =
+                        line.chargeCategory === "Labor" ? t("billing.types.labor", "ساعات عمل فني") :
+                        line.chargeCategory === "Parts" ? t("billing.types.parts", "قطع غيار ومواد مستهلكة") :
+                        line.chargeCategory === "Travel" ? t("billing.types.travel", "بدل انتقال ومسافة") :
+                        line.chargeCategory;
+
+                      const sourceLabel =
+                        line.coverageSource === "Contract" ? t("contracts.sources.contract", "عقد صيانة") :
+                        line.coverageSource === "Warranty" ? t("contracts.sources.warranty", "ضمان معتمد") :
+                        line.coverageSource === "None" ? t("contracts.sources.none", "بدون تغطية") :
+                        line.coverageSource;
+
+                      const explanationLabel =
+                        line.explanation === "included_in_contract" ? t("contracts.explanations.includedInContract", "مشمول ضمن بنود العقد الساري") :
+                        line.explanation === "warranty_active" ? t("contracts.explanations.warrantyActive", "مشمول ضمن فترة الضمان") :
+                        line.explanation === "out_of_scope" ? t("contracts.explanations.outOfScope", "خارج نطاق التغطية التعاقدية") :
+                        line.explanation;
+
+                      return (
+                        <tr key={idx}>
+                          <td><strong>{categoryLabel}</strong></td>
+                          <td>{sourceLabel}</td>
+                          <td>
+                            <span
+                              style={{
+                                color: line.covered ? "#059669" : "#dc2626",
+                                fontWeight: 600
+                              }}
+                            >
+                              {line.covered ? t("contracts.covered", "مغطى") : t("contracts.notCovered", "غير مغطى")}
+                            </span>
+                          </td>
+                          <td>{line.coveredAmount.toLocaleString()}</td>
+                          <td><strong>{line.customerAmount.toLocaleString()}</strong></td>
+                          <td style={{ fontSize: "0.8125rem", color: "#475569" }}>{explanationLabel}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </Table>
               </div>

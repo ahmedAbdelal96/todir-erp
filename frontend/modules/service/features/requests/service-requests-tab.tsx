@@ -16,6 +16,7 @@ import { useServiceRequestsQuery } from "../../hooks/use-service-queries.ts";
 import { NewRequestModal } from "../modals/new-request-modal.tsx";
 import { RequestDetailDrawer } from "./request-detail-drawer.tsx";
 import { useIsMobile } from "../../hooks/use-is-mobile.ts";
+import { formatDate } from "../../../../components/formatting/date-formatter.ts";
 import type { ServiceContext, ServiceRequestStatus } from "../../types.ts";
 
 export interface ServiceRequestsTabProps {
@@ -172,7 +173,7 @@ export function ServiceRequestsTab({
                     <td>
                       <ServiceLifecycleBadge status={req.state || req.status} />
                     </td>
-                    <td>{req.requestedAt || req.createdAtUtc ? new Date(req.requestedAt || req.createdAtUtc!).toLocaleDateString() : "—"}</td>
+                    <td>{formatDate(req.requestedAt || req.createdAtUtc, { locale: "ar-EG" })}</td>
                     <td style={{ textAlign: "center" }}>
                       <Button
                         variant="ghost"

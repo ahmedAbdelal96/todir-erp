@@ -1188,12 +1188,30 @@ export const useMeterReadingsQuery = (arg1: string, maybeSubjectId?: string) =>
   useSubjectMeterReadingsQuery(maybeSubjectId ?? arg1);
 
 // Lifecycle convenience mutations
+export const useReadyWorkOrderMutation = (legalEntityId?: string) => {
+  const t = useTransitionWorkOrderMutation();
+  return {
+    ...t,
+    mutateAsync: (args: { legalEntityId?: string; workOrderId: string; version?: number }) =>
+      t.mutateAsync({ workOrderId: args.workOrderId, action: "ready", request: { version: args.version ?? 0 } })
+  };
+};
+
+export const useScheduleWorkOrderMutation = (legalEntityId?: string) => {
+  const t = useTransitionWorkOrderMutation();
+  return {
+    ...t,
+    mutateAsync: (args: { legalEntityId?: string; workOrderId: string; version?: number }) =>
+      t.mutateAsync({ workOrderId: args.workOrderId, action: "schedule", request: { version: args.version ?? 0 } })
+  };
+};
+
 export const useStartWorkOrderMutation = (legalEntityId?: string) => {
   const t = useTransitionWorkOrderMutation();
   return {
     ...t,
-    mutateAsync: (args: { legalEntityId?: string; workOrderId: string }) =>
-      (t.mutateAsync as any)({ workOrderId: args.workOrderId, action: "start", request: { version: 1 } })
+    mutateAsync: (args: { legalEntityId?: string; workOrderId: string; version?: number }) =>
+      t.mutateAsync({ workOrderId: args.workOrderId, action: "start", request: { version: args.version ?? 0 } })
   };
 };
 
@@ -1201,8 +1219,8 @@ export const useCompleteWorkOrderMutation = (legalEntityId?: string) => {
   const t = useTransitionWorkOrderMutation();
   return {
     ...t,
-    mutateAsync: (args: { legalEntityId?: string; workOrderId: string }) =>
-      (t.mutateAsync as any)({ workOrderId: args.workOrderId, action: "technical-complete", request: { version: 1 } })
+    mutateAsync: (args: { legalEntityId?: string; workOrderId: string; version?: number }) =>
+      t.mutateAsync({ workOrderId: args.workOrderId, action: "technical-complete", request: { version: args.version ?? 0 } })
   };
 };
 
@@ -1210,8 +1228,8 @@ export const useCloseWorkOrderMutation = (legalEntityId?: string) => {
   const t = useTransitionWorkOrderMutation();
   return {
     ...t,
-    mutateAsync: (args: { legalEntityId?: string; workOrderId: string }) =>
-      (t.mutateAsync as any)({ workOrderId: args.workOrderId, action: "close", request: { version: 1 } })
+    mutateAsync: (args: { legalEntityId?: string; workOrderId: string; version?: number }) =>
+      t.mutateAsync({ workOrderId: args.workOrderId, action: "close", request: { version: args.version ?? 0 } })
   };
 };
 
@@ -1219,8 +1237,8 @@ export const useCancelWorkOrderMutation = (legalEntityId?: string) => {
   const t = useTransitionWorkOrderMutation();
   return {
     ...t,
-    mutateAsync: (args: { legalEntityId?: string; workOrderId: string; reason?: string }) =>
-      (t.mutateAsync as any)({ workOrderId: args.workOrderId, action: "cancel", request: { version: 1, reason: args.reason } })
+    mutateAsync: (args: { legalEntityId?: string; workOrderId: string; version?: number; reason?: string }) =>
+      t.mutateAsync({ workOrderId: args.workOrderId, action: "cancel", request: { version: args.version ?? 0, reason: args.reason } })
   };
 };
 
@@ -1285,11 +1303,13 @@ export const useAssignTechnicianMutation = (_legalEntityId?: string) => {
       const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       const empId = args.employeeId ?? args.technicianId;
       const employeeId = empId && isGuid.test(empId) ? empId : undefined;
-      const displayName = args.displayName || (!employeeId && empId ? String(empId) : "فني خدمة معتمد");
+      const userId = args.userId && isGuid.test(args.userId) ? args.userId : (empId && isGuid.test(empId) ? empId : undefined);
+      const displayName = args.displayName || (!employeeId && !userId && empId ? String(empId) : "فني خدمة معتمد");
       return a.mutateAsync({
         visitId: args.visitId,
         request: {
           employeeId,
+          userId,
           displayName,
           resourceType: args.resourceType || "Technician"
         }

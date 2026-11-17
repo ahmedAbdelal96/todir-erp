@@ -15,6 +15,8 @@ import {
   useWorkOrderSlaClocksQuery,
   useWorkOrderSupplierRecoveriesQuery,
   useVisitsQuery,
+  useReadyWorkOrderMutation,
+  useScheduleWorkOrderMutation,
   useStartWorkOrderMutation,
   useCompleteWorkOrderMutation,
   useCloseWorkOrderMutation,
@@ -80,6 +82,8 @@ export function WorkOrderDetailDrawer({
   const visitsQuery = useVisitsQuery(legalEntityId, { ...(workOrderId ? { workOrderId } : {}), pageSize: 50 });
 
   // Lifecycle mutations
+  const readyMutation = useReadyWorkOrderMutation(legalEntityId);
+  const scheduleMutation = useScheduleWorkOrderMutation(legalEntityId);
   const startMutation = useStartWorkOrderMutation(legalEntityId);
   const completeMutation = useCompleteWorkOrderMutation(legalEntityId);
   const closeMutation = useCloseWorkOrderMutation(legalEntityId);
@@ -97,21 +101,33 @@ export function WorkOrderDetailDrawer({
     );
   }
 
+  const handleReady = async () => {
+    try {
+      await readyMutation.mutateAsync({ legalEntityId, workOrderId: wo.id, version: wo.version });
+    } catch {}
+  };
+
+  const handleSchedule = async () => {
+    try {
+      await scheduleMutation.mutateAsync({ legalEntityId, workOrderId: wo.id, version: wo.version });
+    } catch {}
+  };
+
   const handleStart = async () => {
     try {
-      await startMutation.mutateAsync({ legalEntityId, workOrderId: wo.id });
+      await startMutation.mutateAsync({ legalEntityId, workOrderId: wo.id, version: wo.version });
     } catch {}
   };
 
   const handleComplete = async () => {
     try {
-      await completeMutation.mutateAsync({ legalEntityId, workOrderId: wo.id });
+      await completeMutation.mutateAsync({ legalEntityId, workOrderId: wo.id, version: wo.version });
     } catch {}
   };
 
   const handleClose = async () => {
     try {
-      await closeMutation.mutateAsync({ legalEntityId, workOrderId: wo.id });
+      await closeMutation.mutateAsync({ legalEntityId, workOrderId: wo.id, version: wo.version });
     } catch {}
   };
 
@@ -120,6 +136,7 @@ export function WorkOrderDetailDrawer({
       await cancelMutation.mutateAsync({
         legalEntityId,
         workOrderId: wo.id,
+        version: wo.version,
         reason: "Canceled by user"
       });
     } catch {}
@@ -166,7 +183,7 @@ export function WorkOrderDetailDrawer({
               <div>
                 <span style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("common.status")}:</span>
                 <div style={{ marginTop: "0.125rem" }}>
-                  <ServiceLifecycleBadge status={wo.status} />
+                  <ServiceLifecycleBadge status={wo.state || wo.status} />
                 </div>
               </div>
               <div>
@@ -175,51 +192,82 @@ export function WorkOrderDetailDrawer({
                   <ServiceLifecycleBadge status={wo.priority} />
                 </div>
               </div>
+              <div>
+                <span style={{ fontSize: "0.75rem", color: "#64748b" }}>{t("common.version", "النسخة")}:</span>
+                <div style={{ marginTop: "0.125rem", fontSize: "0.875rem", fontWeight: 700, color: "#1e293b" }} data-testid="wo-version-badge">
+                  {wo.version ?? 1}
+                </div>
+              </div>
             </div>
 
             {/* Lifecycle Transition Buttons */}
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              {(wo.status === "draft" || wo.status === "scheduled") && (
-                <Button
-                  variant="primary"
-                  size="compact"
-                  onClick={handleStart}
-                  isLoading={startMutation.isPending}
-                >
-                  {t("workOrders.actions.start")}
-                </Button>
-              )}
-              {wo.status === "in_progress" && (
-                <Button
-                  variant="primary"
-                  size="compact"
-                  onClick={handleComplete}
-                  isLoading={completeMutation.isPending}
-                >
-                  {t("workOrders.actions.complete")}
-                </Button>
-              )}
-              {wo.status === "completed" && (
-                <Button
-                  variant="primary"
-                  size="compact"
-                  onClick={handleClose}
-                  isLoading={closeMutation.isPending}
-                >
-                  {t("workOrders.actions.close")}
-                </Button>
-              )}
-              {wo.status !== "closed" && wo.status !== "canceled" && (
-                <Button
-                  variant="danger"
-                  size="compact"
-                  onClick={handleCancel}
-                  isLoading={cancelMutation.isPending}
-                >
-                  {t("workOrders.actions.cancel")}
-                </Button>
-              )}
-            </div>
+            {(() => {
+              const currentState = (wo.state || wo.status || "").toLowerCase();
+              return (
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  {currentState === "draft" && (
+                    <Button
+                      variant="primary"
+                      size="compact"
+                      onClick={handleReady}
+                      isLoading={readyMutation.isPending}
+                    >
+                      {t("states.ready", "جاهز للجدولة")}
+                    </Button>
+                  )}
+                  {currentState === "ready" && (
+                    <Button
+                      variant="primary"
+                      size="compact"
+                      onClick={handleSchedule}
+                      isLoading={scheduleMutation.isPending}
+                    >
+                      {t("states.scheduled", "جدولة أمر العمل")}
+                    </Button>
+                  )}
+                  {currentState === "scheduled" && (
+                    <Button
+                      variant="primary"
+                      size="compact"
+                      onClick={handleStart}
+                      isLoading={startMutation.isPending}
+                    >
+                      {t("workOrders.actions.start")}
+                    </Button>
+                  )}
+                  {currentState === "inprogress" && (
+                    <Button
+                      variant="primary"
+                      size="compact"
+                      onClick={handleComplete}
+                      isLoading={completeMutation.isPending}
+                    >
+                      {t("workOrders.actions.complete")}
+                    </Button>
+                  )}
+                  {currentState === "technicalcompleted" && (
+                    <Button
+                      variant="primary"
+                      size="compact"
+                      onClick={handleClose}
+                      isLoading={closeMutation.isPending}
+                    >
+                      {t("workOrders.actions.close")}
+                    </Button>
+                  )}
+                  {currentState !== "closed" && !currentState.startsWith("cancel") && (
+                    <Button
+                      variant="danger"
+                      size="compact"
+                      onClick={handleCancel}
+                      isLoading={cancelMutation.isPending}
+                    >
+                      {t("workOrders.actions.cancel")}
+                    </Button>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Subtabs Navigation */}

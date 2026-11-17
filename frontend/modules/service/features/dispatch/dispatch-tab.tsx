@@ -19,6 +19,7 @@ import {
 } from "../../hooks/use-service-queries.ts";
 import { NewVisitModal } from "../modals/new-visit-modal.tsx";
 import { AssignTechnicianModal } from "../modals/assign-technician-modal.tsx";
+import { formatDateTime } from "../../../../components/formatting/date-formatter.ts";
 import type { VisitDto, WorkOrderDto } from "../../types.ts";
 
 export interface DispatchTabProps {
@@ -144,8 +145,8 @@ export function DispatchTab({ legalEntityId }: DispatchTabProps): React.JSX.Elem
                     <tr key={v.id}>
                       <td><strong>{v.visitNumber || v.id.slice(0, 8)}</strong></td>
                       <td>{(t as any)(`dispatch.types.${(v.visitType || v.locationType || "onsite").toLowerCase()}`)}</td>
-                      <td>{v.scheduledStartUtc || v.plannedStart ? new Date(v.scheduledStartUtc || v.plannedStart).toLocaleString() : "-"}</td>
-                      <td>{v.scheduledEndUtc || v.plannedEnd ? new Date(v.scheduledEndUtc || v.plannedEnd).toLocaleString() : "-"}</td>
+                      <td>{formatDateTime(v.scheduledStartUtc || v.plannedStart, { locale: "ar-EG" })}</td>
+                      <td>{formatDateTime(v.scheduledEndUtc || v.plannedEnd, { locale: "ar-EG" })}</td>
                       <td><ServiceLifecycleBadge state={v.state || v.status} /></td>
                       <td style={{ textAlign: "center" }}>
                         <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>

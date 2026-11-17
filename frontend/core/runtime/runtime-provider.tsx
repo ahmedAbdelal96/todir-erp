@@ -163,6 +163,11 @@ export function useTenantContext(): TenantContext {
   return useRuntimeContext().tenant;
 }
 
+/** Returns the active tenant context when a screen is rendered outside the shell provider. */
+export function useOptionalTenantContext(): TenantContext | undefined {
+  return useContext(RuntimeContextState)?.context.tenant;
+}
+
 export function useLegalEntityContext(): LegalEntityContext {
   return useRuntimeContext().legalEntity;
 }

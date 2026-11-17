@@ -11,6 +11,7 @@ import { PlusIcon } from "../../components/service-icons.tsx";
 import { useWorkOrdersQuery } from "../../hooks/use-service-queries.ts";
 import { NewWorkOrderModal } from "../modals/new-work-order-modal.tsx";
 import { WorkOrderDetailDrawer } from "./work-order-detail-drawer.tsx";
+import { formatDate } from "../../../../components/formatting/date-formatter.ts";
 import type { ServiceContext, WorkOrderStatus, WorkOrderType } from "../../types.ts";
 
 export interface WorkOrdersTabProps {
@@ -206,7 +207,7 @@ export function WorkOrdersTab({ legalEntityId }: WorkOrdersTabProps): React.JSX.
                       <td>
                         <ServiceLifecycleBadge state={wo.status || wo.state} />
                       </td>
-                      <td>{new Date(wo.createdAtUtc || wo.plannedStart || Date.now()).toLocaleDateString()}</td>
+                      <td>{formatDate(wo.createdAtUtc || wo.plannedStart, { locale: "ar-EG" })}</td>
                     <td style={{ textAlign: "center" }}>
                       <Button
                         variant="ghost"

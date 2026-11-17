@@ -67,6 +67,44 @@ export const serviceEn = {
     urgent: "Urgent",
     critical: "Critical"
   },
+  states: {
+    draft: "Draft",
+    new: "New",
+    triaged: "Triaged",
+    ready: "Ready",
+    scheduled: "Scheduled",
+    planned: "Planned",
+    dispatched: "Dispatched",
+    traveling: "Traveling",
+    arrived: "Arrived",
+    inProgress: "In Progress",
+    running: "Running",
+    waiting: "Waiting",
+    paused: "Paused",
+    postponed: "Postponed",
+    due: "Due",
+    forecast: "Forecast",
+    technicalCompleted: "Technical Completed",
+    completed: "Completed",
+    accepted: "Accepted",
+    resolved: "Resolved",
+    closed: "Closed",
+    active: "Active",
+    converted: "Converted",
+    cancelled: "Cancelled",
+    canceled: "Cancelled",
+    noAccess: "No Access",
+    retired: "Retired",
+    expired: "Expired",
+    breached: "Breached",
+    failed: "Failed",
+    reviewed: "Reviewed",
+    requested: "Requested",
+    invoiced: "Invoiced",
+    writtenOff: "Written Off",
+    assigned: "Assigned",
+    unassigned: "Unassigned"
+  },
   overview: {
     kpi: {
       activeWorkOrders: "Active Work Orders",
@@ -252,6 +290,9 @@ export const serviceEn = {
     statusConflict: "Version Conflict",
     statusSyncing: "Syncing with server...",
     statusQueued: "Queued for Sync",
+    statusRejected: "Permanently Rejected",
+    retry: "Retry",
+    resolveConflictDiscard: "Discard Conflict",
     noVisitsScheduledToday: "No Visits Scheduled Today",
     enjoyYourDay: "You have no pending assignments on your agenda.",
     actions: {
@@ -361,7 +402,17 @@ export const serviceEn = {
     noSlaClocks: "No active SLA clocks recorded.",
     clockType: "Clock Category",
     slaTargetHours: "Target Hours",
-    slaDeadline: "Commitment Deadline"
+    slaDeadline: "Commitment Deadline",
+    sources: {
+      contract: "Service Contract",
+      warranty: "Warranty",
+      none: "None"
+    },
+    explanations: {
+      includedInContract: "Included in active service contract",
+      warrantyActive: "Covered by active warranty",
+      outOfScope: "Out of contract coverage scope"
+    }
   },
   billing: {
     billingOwner: "Billing Owner",

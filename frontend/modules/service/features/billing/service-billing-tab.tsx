@@ -172,11 +172,18 @@ export function ServiceBillingTab({ legalEntityId }: ServiceBillingTabProps): Re
                   const wo = workOrderMap.get(charge.workOrderId);
                   const isProjectOwned = wo?.billingOwner === "Projects";
                   const canRequestInvoice = (charge.state === "Reviewed" || charge.state === "Draft") && !isProjectOwned && Number(charge.customerAmount) > 0;
+                  const categoryLabel =
+                    charge.category === "Labor" ? t("billing.types.labor", "ساعات عمل فني") :
+                    charge.category === "Parts" ? t("billing.types.parts", "قطع غيار ومواد مستهلكة") :
+                    charge.category === "Travel" ? t("billing.types.travel", "بدل انتقال ومسافة") :
+                    charge.category === "Fee" ? t("billing.types.fixedFee", "أتعاب فحص مقطوعة") :
+                    charge.category === "ExternalService" ? t("billing.types.externalService", "خدمات خارجية") :
+                    charge.category;
 
                   return (
                     <tr key={charge.id}>
                       <td><strong>{wo?.workOrderNumber || charge.workOrderId.slice(0, 8)}</strong></td>
-                      <td>{charge.category}</td>
+                      <td>{categoryLabel}</td>
                       <td>{charge.description || "—"}</td>
                       <td>
                         <strong>{Number(charge.customerAmount).toLocaleString()} {charge.currencyCode}</strong>

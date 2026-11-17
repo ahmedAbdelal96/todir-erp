@@ -67,6 +67,44 @@ export const serviceAr = {
     urgent: "عاجلة وسريعة",
     critical: "حرجة للغاية"
   },
+  states: {
+    draft: "مسودة",
+    new: "جديد",
+    triaged: "تم الفرز",
+    ready: "جاهز للجدولة",
+    scheduled: "مجدول",
+    planned: "مخطط",
+    dispatched: "تم التوجيه",
+    traveling: "في الطريق",
+    arrived: "في الموقع",
+    inProgress: "قيد التنفيذ",
+    running: "يعمل",
+    waiting: "معلق",
+    paused: "موقوف مؤقتاً",
+    postponed: "مؤجل",
+    due: "مستحق",
+    forecast: "توقعي",
+    technicalCompleted: "منجز فنياً",
+    completed: "مكتمل",
+    accepted: "معتمد من العميل",
+    resolved: "تم الحل",
+    closed: "مغلق",
+    active: "نشط",
+    converted: "محول لأمر عمل",
+    cancelled: "ملغى",
+    canceled: "ملغى",
+    noAccess: "تعذر الوصول",
+    retired: "خارج الخدمة",
+    expired: "منتهي الصلاحية",
+    breached: "تجاوز SLA",
+    failed: "فشل",
+    reviewed: "تمت المراجعة",
+    requested: "تم طلب الفاتورة",
+    invoiced: "مفوتر",
+    writtenOff: "مشطوب",
+    assigned: "تم التعيين",
+    unassigned: "غير معين"
+  },
   overview: {
     kpi: {
       activeWorkOrders: "أوامر العمل الجارية",
@@ -252,6 +290,9 @@ export const serviceAr = {
     statusConflict: "تعارض في نسخة البيانات",
     statusSyncing: "جاري المزامنة مع الخادم...",
     statusQueued: "قيد الانتظار للمزامنة",
+    statusRejected: "مرفوض نهائياً",
+    retry: "إعادة المحاولة",
+    resolveConflictDiscard: "تجاهل التعارض",
     noVisitsScheduledToday: "لا توجد زيارات مجدولة لك اليوم",
     enjoyYourDay: "ليس لديك تكليفات ميدانية معلقة في جدولك اليوم.",
     actions: {
@@ -361,7 +402,17 @@ export const serviceAr = {
     noSlaClocks: "لا توجد ساعات SLA نشطة مسجلة.",
     clockType: "تصنيف ساعة الالتزام",
     slaTargetHours: "الساعات المحددة",
-    slaDeadline: "الموعد الأقصى للالتزام"
+    slaDeadline: "الموعد الأقصى للالتزام",
+    sources: {
+      contract: "عقد صيانة",
+      warranty: "ضمان معتمد",
+      none: "بدون تغطية"
+    },
+    explanations: {
+      includedInContract: "مشمول ضمن بنود العقد الساري",
+      warrantyActive: "مشمول ضمن فترة الضمان",
+      outOfScope: "خارج نطاق التغطية التعاقدية"
+    }
   },
   billing: {
     billingOwner: "جهة الفوترة",

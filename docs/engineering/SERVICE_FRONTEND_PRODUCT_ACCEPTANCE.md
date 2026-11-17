@@ -3,7 +3,7 @@
 **Module:** Module 24 — Service, Maintenance & Field Service (`الخدمة والصيانة والعمليات الميدانية`)  
 **Repository Branch:** `dev`  
 **Git Remote:** `origin/dev`  
-**Canonical Specification:** `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_AND_FIELD_SERVICE_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
+**Canonical Specification:** `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_FIELD_SERVICE_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
 **Delivery Gate Status:** `FRONTEND COMPLETE` (Ready for Human Product Owner Acceptance)
 
 ---

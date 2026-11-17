@@ -10,6 +10,7 @@ import {
   useCancelServiceRequestMutation
 } from "../../hooks/use-service-queries.ts";
 import { TriageRequestModal } from "../modals/triage-request-modal.tsx";
+import { formatDate } from "../../../../components/formatting/date-formatter.ts";
 import {
   AlertCircleIcon,
   CheckCircleIcon,
@@ -112,7 +113,7 @@ export function RequestDetailDrawer({
                 {t("common.status")}:
               </span>
               <div style={{ marginTop: "0.25rem" }}>
-                <ServiceLifecycleBadge status={request.status} />
+                <ServiceLifecycleBadge status={request.state || request.status} />
               </div>
             </div>
 
@@ -130,7 +131,7 @@ export function RequestDetailDrawer({
                 {t("requests.reportedAt")}:
               </span>
               <div style={{ marginTop: "0.25rem", fontSize: "0.8125rem", fontWeight: 600 }}>
-                {request.createdAtUtc ? new Date(request.createdAtUtc).toLocaleDateString() : "—"}
+                {formatDate(request.requestedAt || request.createdAtUtc, { locale: "ar-EG" })}
               </div>
             </div>
           </div>
@@ -192,49 +193,54 @@ export function RequestDetailDrawer({
           </div>
 
           {/* Action Toolbar */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginTop: "0.5rem" }}>
-            {request.status === "new" && (
-              <Button
-                variant="primary"
-                onClick={() => setIsTriageOpen(true)}
-                startIcon={<AlertCircleIcon size={16} />}
-              >
-                {t("requests.triageTitle")}
-              </Button>
-            )}
+          {(() => {
+            const currentState = (request.state || request.status || "").toLowerCase();
+            return (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginTop: "0.5rem" }}>
+                {(currentState === "new" || currentState === "draft") && (
+                  <Button
+                    variant="primary"
+                    onClick={() => setIsTriageOpen(true)}
+                    startIcon={<AlertCircleIcon size={16} />}
+                  >
+                    {t("requests.triageTitle")}
+                  </Button>
+                )}
 
-            {request.status !== "resolved" && request.status !== "closed" && request.status !== "canceled" && (
-              <Button
-                variant="secondary"
-                onClick={handleResolve}
-                isLoading={resolveMutation.isPending}
-                startIcon={<CheckCircleIcon size={16} />}
-              >
-                {t("requests.resolve")}
-              </Button>
-            )}
+                {currentState !== "resolved" && currentState !== "closed" && !currentState.startsWith("cancel") && (
+                  <Button
+                    variant="secondary"
+                    onClick={handleResolve}
+                    isLoading={resolveMutation.isPending}
+                    startIcon={<CheckCircleIcon size={16} />}
+                  >
+                    {t("requests.resolve")}
+                  </Button>
+                )}
 
-            {request.status === "resolved" && (
-              <Button
-                variant="primary"
-                onClick={handleClose}
-                isLoading={closeMutation.isPending}
-                startIcon={<CheckCircleIcon size={16} />}
-              >
-                {t("requests.close")}
-              </Button>
-            )}
+                {currentState === "resolved" && (
+                  <Button
+                    variant="primary"
+                    onClick={handleClose}
+                    isLoading={closeMutation.isPending}
+                    startIcon={<CheckCircleIcon size={16} />}
+                  >
+                    {t("requests.close")}
+                  </Button>
+                )}
 
-            {request.status !== "closed" && request.status !== "canceled" && (
-              <Button
-                variant="danger"
-                onClick={handleCancel}
-                isLoading={cancelMutation.isPending}
-              >
-                {t("requests.cancel")}
-              </Button>
-            )}
-          </div>
+                {currentState !== "closed" && !currentState.startsWith("cancel") && (
+                  <Button
+                    variant="danger"
+                    onClick={handleCancel}
+                    isLoading={cancelMutation.isPending}
+                  >
+                    {t("requests.cancel")}
+                  </Button>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </QuickPeekDrawer>
 
