@@ -24,9 +24,11 @@ using Modules.FixedAssets;
 using Modules.Service;
 using Modules.FixedAssets.Controllers;
 using Quartz;
+using Shared.BuildingBlocks.Observability;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
+builder.Services.AddObservability(builder.Environment.ApplicationName, builder.Environment.EnvironmentName);
 var connectionString = builder.Configuration.GetRuntimeConnectionString();
 if (!string.IsNullOrWhiteSpace(connectionString))
     await DatabaseReadiness.WaitForPlatformSchemaAsync(connectionString, CancellationToken.None);

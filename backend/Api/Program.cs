@@ -122,6 +122,7 @@ app.UseHttpsRedirection();
 app.UseCors("web");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRequestContextLogging();
 app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
