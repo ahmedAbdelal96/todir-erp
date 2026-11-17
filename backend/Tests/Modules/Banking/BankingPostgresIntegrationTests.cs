@@ -56,6 +56,7 @@ public sealed class BankingPostgresIntegrationTests
         var version = await repository.CreateForecastVersionAsync(tenant, actor, new(entity, forecastDate, 13, "Draft"), default);
         var item = await repository.CreateForecastItemAsync(tenant, actor, new(entity, version.Id, account.Id, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), "Inflow", 125m, "EGP", "Manual", "Acceptance forecast", null), default);
         Assert.Equal(version.Id, (await repository.GetForecastAsync(tenant, entity, version.AsOfDate, version.HorizonDays, default))!.Id);
+        Assert.Equal(version.Id, (await repository.GetForecastVersionAsync(tenant, entity, version.Id, default))!.Id);
         Assert.Equal("Estimated", item.Confidence);
 
         using var payload = JsonDocument.Parse("{\"maskedIdentifier\":\"****1234\"}");
