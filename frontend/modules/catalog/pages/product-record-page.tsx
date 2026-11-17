@@ -108,6 +108,7 @@ export function ProductRecordPage({
   const isService = product.nature === "Service";
   const readiness = readinessQuery.data;
   const alternateUoms = (uomsQuery.data ?? []).filter((u) => !u.isBase);
+  const baseUom = (uomsQuery.data ?? []).find((u) => u.isBase);
   const templateAttributes = attributesQuery.data ?? [];
   const references = referencesQuery.data?.items ?? [];
 
@@ -261,9 +262,7 @@ export function ProductRecordPage({
                 {/* Centralized Commercial Selling Price (Pricing Module Integration) */}
                 <ProductSellingPriceCard
                   variantId={product.defaultVariantId ?? product.id}
-                  uomId="2b12a81b-ea82-a151-af7f-4c60a017f44d"
-                  defaultCurrencyCode="EGP"
-                  pricingDate="2026-01-05"
+                  uomId={baseUom?.uomId}
                 />
 
                 {/* Readiness Breakdown */}

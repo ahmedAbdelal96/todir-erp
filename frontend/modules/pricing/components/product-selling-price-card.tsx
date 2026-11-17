@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { usePricingScope, useResolvePriceQuery, usePriceLists, usePriceVersions, useLookupUoms, useAddPriceEntryMutation, useCreatePriceVersionMutation, usePricingManagePermission } from "../hooks/pricing-queries.ts";
+import { usePricingScope, useResolvePriceQuery, usePriceLists, usePriceVersions, useAddPriceEntryMutation, useCreatePriceVersionMutation, usePricingManagePermission } from "../hooks/pricing-queries.ts";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
@@ -21,17 +21,16 @@ export interface ProductSellingPriceCardProps {
 export function ProductSellingPriceCard({
   variantId,
   uomId,
-  defaultCurrencyCode = "EGP",
+  defaultCurrencyCode,
   legalEntityId: explicitEntityId,
   pricingDate: explicitPricingDate
 }: ProductSellingPriceCardProps): React.JSX.Element {
   const { t } = useTranslation("pricing");
-  const { legalEntityId } = usePricingScope({ legalEntityId: explicitEntityId });
+  const { legalEntityId, baseCurrencyCode } = usePricingScope({ legalEntityId: explicitEntityId });
   const canManagePricing = usePricingManagePermission();
 
-  const { data: uoms } = useLookupUoms();
-  const defaultUomId = uoms?.find((uom) => uom.code === "EA")?.id ?? "";
-  const effectiveUomId = uomId && uomId.length > 20 ? uomId : defaultUomId;
+  const effectiveUomId = uomId ?? "";
+  const effectiveCurrencyCode = defaultCurrencyCode ?? baseCurrencyCode;
   const today = new Date();
   const effectivePricingDate = explicitPricingDate || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
@@ -39,7 +38,7 @@ export function ProductSellingPriceCard({
     legalEntityId,
     direction: "Selling",
     pricingDate: effectivePricingDate,
-    transactionCurrencyCode: defaultCurrencyCode,
+    transactionCurrencyCode: effectiveCurrencyCode,
     productVariantId: variantId,
     unitOfMeasureId: effectiveUomId,
     quantity: 1
@@ -151,7 +150,7 @@ export function ProductSellingPriceCard({
                 <MoneyDisplay
                   value={{
                     amount: unitPrice || "0",
-                    currency: resolution.snapshot?.transactionCurrencyCode || defaultCurrencyCode
+                    currency: resolution.snapshot?.transactionCurrencyCode || effectiveCurrencyCode
                   }}
                   displayCurrencyCode
                   size="large"
@@ -201,7 +200,7 @@ export function ProductSellingPriceCard({
 
             <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-content-muted)" }}>
               <span>{t("productWidget.currencyLabel")}: </span>
-              <strong dir="ltr">{defaultCurrencyCode}</strong>
+              <strong dir="ltr">{effectiveCurrencyCode}</strong>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>

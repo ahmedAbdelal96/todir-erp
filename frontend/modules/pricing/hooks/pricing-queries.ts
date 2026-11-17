@@ -30,6 +30,7 @@ export interface PricingContextScope {
 export function usePricingScope(explicit?: PricingContextScope): {
   tenantId: string;
   legalEntityId: string;
+  baseCurrencyCode: string;
 } {
   const sessionQuery = useQuery({
     queryKey: ["session", "context"],
@@ -39,11 +40,13 @@ export function usePricingScope(explicit?: PricingContextScope): {
 
   let runtimeEntityId = "";
   let runtimeTenantId = "";
+  let runtimeBaseCurrency = "";
 
   try {
     const runtime = useRuntimeContext();
     runtimeEntityId = (runtime as unknown as { legalEntity?: { legalEntityId?: string } }).legalEntity?.legalEntityId || "";
     runtimeTenantId = (runtime as unknown as { tenant?: { tenantId?: string } }).tenant?.tenantId || "";
+    runtimeBaseCurrency = (runtime as unknown as { legalEntity?: { baseCurrencyCode?: string } }).legalEntity?.baseCurrencyCode || "";
   } catch {
     // Graceful fallback outside RuntimeProvider
   }
@@ -67,7 +70,15 @@ export function usePricingScope(explicit?: PricingContextScope): {
     }
   }
 
-  return { tenantId, legalEntityId };
+  const selectedEntity = sessionQuery.data?.context?.legalEntities?.find((entity) => entity.id === legalEntityId) as
+    | { baseCurrencyCode?: string }
+    | undefined;
+
+  return {
+    tenantId,
+    legalEntityId,
+    baseCurrencyCode: runtimeBaseCurrency || selectedEntity?.baseCurrencyCode || "EGP"
+  };
 }
 
 export const pricingQueryKeys = {
