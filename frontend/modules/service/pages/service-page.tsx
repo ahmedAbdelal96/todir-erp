@@ -332,7 +332,13 @@ export function ServicePage(): React.JSX.Element {
         {activeTab === "requests" && <ServiceRequestsTab legalEntityId={effectiveEntityId} />}
         {activeTab === "work-orders" && <WorkOrdersTab legalEntityId={effectiveEntityId} />}
         {activeTab === "dispatch" && <DispatchTab legalEntityId={effectiveEntityId} />}
-        {activeTab === "my-day" && <MyDayTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "my-day" && (
+          <MyDayTab
+            legalEntityId={effectiveEntityId}
+            tenantId={outletCtx?.tenantId}
+            userId={outletCtx?.userId}
+          />
+        )}
         {activeTab === "installed-base" && <InstalledBaseTab legalEntityId={effectiveEntityId} />}
         {activeTab === "preventive" && <PreventiveTab legalEntityId={effectiveEntityId} />}
         {activeTab === "contracts-warranty" && <ContractsWarrantyTab legalEntityId={effectiveEntityId} />}

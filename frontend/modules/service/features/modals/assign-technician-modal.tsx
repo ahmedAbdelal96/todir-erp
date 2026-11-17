@@ -39,11 +39,13 @@ export function AssignTechnicianModal({
 
     try {
       setErrorMsg(null);
+      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const techVal = technicianId.trim();
       await assignMutation.mutateAsync({
         legalEntityId,
         visitId,
-        technicianId: technicianId.trim() || undefined,
-        displayName: technicianId.trim() || crewId.trim() || "فني معتمد",
+        technicianId: techVal || undefined,
+        displayName: techVal && !isGuid.test(techVal) ? techVal : (crewId.trim() || "أحمد فني الخدمة الميدانية"),
         crewId: crewId.trim() || undefined,
         role: role.trim() || undefined,
         plannedHours: plannedHours ? Number(plannedHours) : undefined,

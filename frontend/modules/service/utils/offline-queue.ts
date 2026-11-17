@@ -3,9 +3,19 @@ import type { OfflineCommandRequest, OfflineCommandView } from "../types.ts";
 export type StoredCommandStatus = "queued" | "syncing" | "synced" | "conflict" | "rejected" | "failed";
 
 export interface QueueScope {
-  readonly tenantId?: string | undefined;
-  readonly userId?: string | undefined;
+  readonly tenantId: string;
+  readonly userId: string;
   readonly legalEntityId: string;
+}
+
+export function isQueueScopeValid(scope: unknown): scope is QueueScope {
+  if (!scope || typeof scope !== "object") return false;
+  const s = scope as Partial<QueueScope>;
+  return Boolean(
+    typeof s.tenantId === "string" && s.tenantId.trim() !== "" && s.tenantId !== "default" &&
+    typeof s.userId === "string" && s.userId.trim() !== "" && s.userId !== "default" &&
+    typeof s.legalEntityId === "string" && s.legalEntityId.trim() !== "" && s.legalEntityId !== "default"
+  );
 }
 
 export interface StoredOfflineCommand {
@@ -22,19 +32,19 @@ export interface StoredOfflineCommand {
   attempts: number;
 }
 
-export function getStorageKey(scope: QueueScope | string): string {
-  if (typeof scope === "string") {
-    return `todir_service_offline_queue_default_default_${scope.trim()}`;
+export function getStorageKey(scope: QueueScope): string {
+  if (!isQueueScopeValid(scope)) {
+    throw new Error(
+      "SECURITY VIOLATION: Incomplete or unverified identity scope. Offline commands cannot be stored or replayed without verified tenant, user, and legal entity identities."
+    );
   }
-  const t = scope.tenantId?.trim() || "default";
-  const u = scope.userId?.trim() || "default";
-  const e = scope.legalEntityId?.trim() || "default";
-  return `todir_service_offline_queue_${t}_${u}_${e}`;
+  return `todir_service_offline_queue_${scope.tenantId.trim()}_${scope.userId.trim()}_${scope.legalEntityId.trim()}`;
 }
 
 const activeReplayLocks = new Set<string>();
 
-export function loadOfflineQueue(scope: QueueScope | string): StoredOfflineCommand[] {
+export function loadOfflineQueue(scope: QueueScope | null | undefined): StoredOfflineCommand[] {
+  if (!isQueueScopeValid(scope)) return [];
   if (typeof window === "undefined" || !window.localStorage) return [];
   try {
     const raw = window.localStorage.getItem(getStorageKey(scope));
@@ -45,7 +55,12 @@ export function loadOfflineQueue(scope: QueueScope | string): StoredOfflineComma
   }
 }
 
-export function saveOfflineQueue(scope: QueueScope | string, queue: readonly StoredOfflineCommand[]): void {
+export function saveOfflineQueue(scope: QueueScope, queue: readonly StoredOfflineCommand[]): void {
+  if (!isQueueScopeValid(scope)) {
+    throw new Error(
+      "SECURITY VIOLATION: Refusing to persist offline commands with missing or unverified identity scope."
+    );
+  }
   if (typeof window === "undefined" || !window.localStorage) {
     throw new Error("Local storage is unavailable in current runtime environment.");
   }
@@ -59,7 +74,7 @@ export function saveOfflineQueue(scope: QueueScope | string, queue: readonly Sto
 }
 
 export function enqueueOfflineCommand(
-  scope: QueueScope | string,
+  scope: QueueScope,
   command: {
     readonly clientCommandId?: string | undefined;
     readonly commandType: string;
@@ -69,8 +84,17 @@ export function enqueueOfflineCommand(
     readonly payloadJson?: string | undefined;
   }
 ): StoredOfflineCommand {
+  if (!isQueueScopeValid(scope)) {
+    throw new Error(
+      "SECURITY VIOLATION: Cannot enqueue offline command: user session, tenant, or legal entity is not authenticated."
+    );
+  }
+
   const current = loadOfflineQueue(scope);
-  const stableId = command.clientCommandId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+  const stableId = command.clientCommandId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined);
+  if (!stableId) {
+    throw new Error("ClientCommandId must be a valid UUIDv4.");
+  }
 
   const newEntry: StoredOfflineCommand = {
     clientCommandId: stableId,
@@ -90,10 +114,14 @@ export function enqueueOfflineCommand(
 }
 
 export async function replayOfflineQueue(
-  scope: QueueScope | string,
+  scope: QueueScope,
   submitFn: (req: OfflineCommandRequest) => Promise<OfflineCommandView>,
   options: { readonly maxAttempts?: number } = {}
 ): Promise<{ successCount: number; failureCount: number; conflictCount: number; locked?: boolean }> {
+  if (!isQueueScopeValid(scope)) {
+    return { successCount: 0, failureCount: 0, conflictCount: 0, locked: false };
+  }
+
   const key = getStorageKey(scope);
   if (activeReplayLocks.has(key)) {
     return { successCount: 0, failureCount: 0, conflictCount: 0, locked: true };
@@ -114,7 +142,7 @@ export async function replayOfflineQueue(
     const updatedQueue: StoredOfflineCommand[] = [];
 
     for (const cmd of queue) {
-      // Never auto-retry conflicts or permanently rejected commands
+      // Never auto-retry synced, conflicts, or permanently rejected commands
       if (cmd.status === "synced" || cmd.status === "conflict" || cmd.status === "rejected") {
         updatedQueue.push(cmd);
         continue;
@@ -147,11 +175,15 @@ export async function replayOfflineQueue(
           cmd.conflictCode = result.conflictCode || "VersionConflict";
           cmd.errorMessage = `Conflict detected: ${result.conflictCode || "VersionConflict"}`;
           conflictCount += 1;
-        } else if (result.state === "Accepted" || result.state === "Processed") {
+        } else if (result.state === "Accepted" || result.state === "Processed" || result.state === "Pending") {
           cmd.status = "synced";
           cmd.errorMessage = undefined;
           cmd.conflictCode = undefined;
           successCount += 1;
+        } else if (result.state === "Rejected") {
+          cmd.status = "rejected";
+          cmd.errorMessage = result.conflictCode || "Rejected by domain policy";
+          failureCount += 1;
         } else {
           cmd.status = "failed";
           cmd.errorMessage = `Unexpected server state: ${result.state}`;
@@ -164,7 +196,13 @@ export async function replayOfflineQueue(
           cmd.conflictCode = "VersionConflict";
           cmd.errorMessage = errMsg;
           conflictCount += 1;
-        } else if (errMsg.includes("400") || errMsg.includes("422") || errMsg.includes("validation")) {
+        } else if (
+          errMsg.includes("400") ||
+          errMsg.includes("422") ||
+          errMsg.includes("validation") ||
+          errMsg.includes("offline_assignment_required") ||
+          errMsg.includes("offline_command_type_invalid")
+        ) {
           // Permanently rejected domain error - never auto-retry
           cmd.status = "rejected";
           cmd.errorMessage = errMsg;
@@ -186,10 +224,23 @@ export async function replayOfflineQueue(
   }
 }
 
-export function retryOfflineCommand(scope: QueueScope | string, clientCommandId: string): boolean {
+export function retryOfflineCommand(scope: QueueScope, clientCommandId: string): boolean {
+  if (!isQueueScopeValid(scope)) return false;
   const queue = loadOfflineQueue(scope);
   const target = queue.find((c) => c.clientCommandId === clientCommandId);
   if (!target || target.status === "synced") return false;
+
+  if (target.status === "rejected") {
+    throw new Error(
+      "UNSAFE RETRY: Permanently rejected business commands cannot be retried without fixing domain validation or permissions."
+    );
+  }
+
+  if (target.status === "conflict") {
+    throw new Error(
+      "UNSAFE RETRY: Version conflict commands must be explicitly resolved or discarded, not blindly retried."
+    );
+  }
 
   target.status = "queued";
   target.attempts = 0;
@@ -199,11 +250,12 @@ export function retryOfflineCommand(scope: QueueScope | string, clientCommandId:
 }
 
 export function resolveConflict(
-  scope: QueueScope | string,
+  scope: QueueScope,
   clientCommandId: string,
   resolution: "discard" | "overrideVersion",
   newVersion?: number
 ): void {
+  if (!isQueueScopeValid(scope)) return;
   const queue = loadOfflineQueue(scope);
   if (resolution === "discard") {
     const remaining = queue.filter((c) => c.clientCommandId !== clientCommandId);
@@ -224,13 +276,15 @@ export function resolveConflict(
   }
 }
 
-export function clearSyncedCommands(scope: QueueScope | string): void {
+export function clearSyncedCommands(scope: QueueScope): void {
+  if (!isQueueScopeValid(scope)) return;
   const queue = loadOfflineQueue(scope);
   const remaining = queue.filter((c) => c.status !== "synced");
   saveOfflineQueue(scope, remaining);
 }
 
-export function dismissOfflineCommand(scope: QueueScope | string, clientCommandId: string): void {
+export function dismissOfflineCommand(scope: QueueScope, clientCommandId: string): void {
+  if (!isQueueScopeValid(scope)) return;
   const queue = loadOfflineQueue(scope);
   const remaining = queue.filter((c) => c.clientCommandId !== clientCommandId);
   saveOfflineQueue(scope, remaining);

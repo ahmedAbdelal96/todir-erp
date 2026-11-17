@@ -21,4 +21,6 @@ export type WorkspaceOutletContext = Readonly<{
   legalEntityId?: string | undefined;
   branchId?: string | undefined;
   permissions?: PermissionSet | undefined;
+  tenantId?: string | undefined;
+  userId?: string | undefined;
 }>;

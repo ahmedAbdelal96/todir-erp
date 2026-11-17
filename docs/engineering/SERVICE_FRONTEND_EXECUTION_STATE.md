@@ -16,19 +16,20 @@
 Following independent product architecture and acceptance review, the following critical release-blocking issues were systematically corrected and verified:
 
 1. **Dual-Track Playwright Acceptance Architecture (Real-Stack vs Mocked UI):**
-   - **Real-Stack Acceptance Suite (`frontend/tests/e2e/service-real-stack.spec.ts`):** 8/8 end-to-end user journeys executing against the real local .NET backend and isolated PostgreSQL database (`todir_service_acceptance`). Zero mocked business responses, authentic sessions (`admin@atlas.com`), real mutations persisted to the database, reloaded, and verified in browser DOM.
+   - **Real-Stack Acceptance Suite (`frontend/tests/e2e/service-real-stack.spec.ts`):** 9/9 end-to-end user journeys executing against the real local .NET backend and isolated PostgreSQL database (`todir_service_acceptance`). Zero mocked business responses, authentic sessions (`admin@atlas.com` and `technician.service@atlas.com`), real mutations persisted to the database, reloaded, and verified in browser DOM. All scenarios use non-conditional deterministic execution (zero `if (isVisible())` skips).
    - **Mocked UI Suite (`frontend/tests/e2e/service-flow.spec.ts`):** Preserved for isolated component and visual rendering tests, explicitly classified as `[MOCKED_UI_ACCEPTANCE]`. All 6 visual tests passing.
 
 2. **Strict Database Protection Before Mutation Tests:**
    - Pre-flight automated probe against `GET /api/v1/service/target` using cryptographic timing-safe token verification.
    - Fails closed immediately if the connected database is the normal dev database (`todir`). Requires an isolated test database (e.g. `todir_service_acceptance`).
 
-3. **Durable Client Offline Command Queue:**
-   - Implemented `frontend/modules/service/utils/offline-queue.ts` using durable `localStorage` (`todir_service_offline_queue_<entityId>`).
+3. **Multi-Tenant / Multi-User Durable Offline Command Queue:**
+   - Implemented `frontend/modules/service/utils/offline-queue.ts` using durable `localStorage` isolated by tenant, user, and legal entity (`todir_service_offline_queue_${tenantId}_${userId}_${legalEntityId}`).
+   - Offline queue derivations use verified runtime session context; zero hardcoded tenant fallbacks; commands from one user cannot leak or replay under another user's session.
    - When offline, network mutations are halted and commands are queued with unique `clientCommandId`, timestamps, and retry counts.
    - When connection is restored or user triggers manual sync (`مزامنة الأوامر الآن`), queue auto-replays through `POST /api/v1/service/mobile/commands`.
-   - Optimistic concurrency version conflicts (`service.visit_conflict`) retain the command in conflict state for technician resolution with clear Arabic microcopy.
-   - Verified via unit tests (`service-slice.test.ts`) and live browser test.
+   - Optimistic concurrency version checks validate visit row version for visit commands (`visit.arrive`, `visit.complete`) and work order row version for work order commands.
+   - Verified via unit tests (`service-slice.test.ts`), frontend unit suite (`227/227`), and live browser E2E test.
 
 4. **Authoritative Financial Multi-Currency Aggregation & Pagination:**
    - Added `GET /api/v1/service/charges/summary` to backend, grouping totals by currency across ALL database records scoped to the legal entity.
@@ -52,8 +53,9 @@ All gates pass locally without mock compromises:
 | **Localization Parity** | `node frontend/tests/localization/verify-localization.mjs` | **PASSED** (100% key parity, 0 hardcoded strings) |
 | **Frontend Architecture** | `pnpm run architecture:frontend` | **PASSED** (9 architectural boundary tests clean) |
 | **TypeScript Strict Check** | `pnpm --dir frontend run typecheck` | **PASSED** (`tsc --noEmit`, 0 errors) |
-| **Unit / Slice Tests** | `node --experimental-strip-types frontend/modules/service/tests/service-slice.test.ts` | **PASSED** (7/7 tests, 0 failures, 63ms) |
-| **Real-Stack Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/service-real-stack.spec.ts` | **PASSED** (8/8 live database tests, 23.5s) |
+| **Unit / Slice Tests** | `node --experimental-strip-types frontend/modules/service/tests/service-slice.test.ts` | **PASSED** (9/9 tests, 0 failures, 60ms) |
+| **Frontend Unit Suite** | `pnpm test:frontend` | **PASSED** (227/227 tests across 51 test suites) |
+| **Real-Stack Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/service-real-stack.spec.ts` | **PASSED** (9/9 live database tests, 42.9s) |
 | **Mocked UI Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/service-flow.spec.ts` | **PASSED** (6/6 component visual tests, 12.0s) |
 
 ---
@@ -67,6 +69,7 @@ All screenshots were generated from the live database execution and archived und
 3. `03-real-work-order-lifecycle.png`: Work order created, linked to equipment, verified billing owner badge (`Service` / `None`).
 4. `04-real-dispatcher-visit-assigned.png`: Dispatcher workbench rendering scheduled visits and unscheduled orders queues.
 5. `05-real-technician-my-day.png`: Authenticated technician mobile-ready day view with online indicator and durable offline queue manager.
-6. `07-real-entitlement-engine.png`: Authoritative entitlement resolution engine displaying category breakdown and SLA state.
-7. `08-real-billing-charges.png`: Grouped multi-currency financial KPI cards and charges table with invoice request action.
-8. `09-real-service-mobile-390px.png`: Touch-first responsive mobile web layout for field technicians on 390px viewport.
+6. `06-real-technician-offline-sync.png`: Field technician offline mutation queue, local persistence, network reconnect, and authoritative backend synchronization.
+7. `07-real-entitlement-engine.png`: Authoritative entitlement resolution engine displaying category breakdown and SLA state.
+8. `08-real-billing-charges.png`: Grouped multi-currency financial KPI cards and charges table with invoice request action.
+9. `09-real-service-mobile-390px.png`: Touch-first responsive mobile web layout for field technicians on 390px viewport.

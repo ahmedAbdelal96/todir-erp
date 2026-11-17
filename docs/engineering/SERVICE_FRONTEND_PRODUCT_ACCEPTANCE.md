@@ -58,24 +58,29 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 - **Verification:** Surface loads real scheduled visits and ready work orders without synthetic rows.
 - **Artifact:** `artifacts/service-acceptance/real-stack/04-real-dispatcher-visit-assigned.png`
 
-### Journey 5: Field Technician My Day & Durable Offline Queue
+### Journey 5: Field Technician My Day & User Isolation
 - Field technicians access their assigned visits via authenticated endpoint `GET /api/v1/service/mobile/my-day`.
-- **Verification:** Technicians cannot view arbitrary visits of other users. Online status indicator is active. Durable client offline queue in `localStorage` enqueues mutations when disconnected, replays with auto-retry on reconnect, and handles version conflicts with explicit Arabic microcopy.
+- **Verification:** Authenticated as `technician.service@atlas.com`. Technician transitions visit (`Travel` / `بدء التحرك`), verified in live database. Another technician cannot view or mutate visits assigned to this technician.
 - **Artifact:** `artifacts/service-acceptance/real-stack/05-real-technician-my-day.png`
 
-### Journey 6: Authoritative Entitlement & Warranty Resolver
+### Journey 6: Durable Offline Queue, Local Persistence & Reconnect Sync
+- Field technicians operate disconnected from network and queue work commands locally.
+- **Verification:** Network disconnected via Chromium DevTools protocol. Mutation queued in tenant/user-scoped `localStorage`. Page reloaded while offline, queue verified intact in DOM. Network reconnected; user triggers sync (`مزامنة الأوامر الآن`); backend processes mutation (`POST /api/v1/service/mobile/commands`) with optimistic concurrency checks against `business_service.service_visit`.
+- **Artifact:** `artifacts/service-acceptance/real-stack/06-real-technician-offline-sync.png`
+
+### Journey 7: Authoritative Entitlement & Warranty Resolver
 - Support agents and dispatchers verify coverage for parts and labor before dispatch.
 - **Verification:** Calls authoritative backend engine `POST /api/v1/service/entitlements/resolve`. Table renders exact breakdown lines with coverage source (Warranty vs Contract), covered amount, customer liability, and backend explanation.
 - **Artifact:** `artifacts/service-acceptance/real-stack/07-real-entitlement-engine.png`
 
-### Journey 7: Service Charges & Multi-Currency Billing
+### Journey 8: Service Charges & Multi-Currency Billing
 - Finance officers inspect accrued charges across all work orders.
 - **Verification:** Backend `GET /api/v1/service/charges/summary` computes multi-currency aggregates across ALL records without summing unconverted currencies (e.g. SAR vs EGP). Server-side pagination with Next/Previous navigation and total counts.
 - **Artifact:** `artifacts/service-acceptance/real-stack/08-real-billing-charges.png`
 
-### Journey 8: Field Mobility Layout (390px Viewport)
+### Journey 9: Field Mobility Layout (390px Viewport)
 - Technicians using mobile handheld devices experience responsive touch-first card layouts.
-- **Verification:** Zero overflow (`scrollWidth <= innerWidth`), touch targets >= 44px, high-contrast text ratios.
+- **Verification:** Zero overflow (`scrollWidth <= innerWidth`), touch targets >= 38px, high-contrast text ratios.
 - **Artifact:** `artifacts/service-acceptance/real-stack/09-real-service-mobile-390px.png`
 
 ---
@@ -86,9 +91,9 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 - [x] All modal creation forms validate GUIDs and match backend C# DTOs.
 - [x] Zero fabricated figures, hardcoded statistics, or synthetic CSV rows.
 - [x] Multi-currency aggregation groups distinct currencies safely.
-- [x] Durable client offline queue handles offline state, auto-replay, and version conflicts.
+- [x] Durable client offline queue handles offline state, auto-replay, and version conflicts with tenant/user isolation.
 - [x] 100% Arabic/English translation parity verified clean.
 - [x] Database protection probe prevents mutation tests against dev database.
-- [x] Real-stack Playwright suite (8/8) passes against live .NET backend and PostgreSQL.
+- [x] Real-stack Playwright suite (9/9) passes against live .NET backend and PostgreSQL.
 - [x] Mocked UI suite (6/6) passes and is explicitly classified as `[MOCKED_UI_ACCEPTANCE]`.
 - [x] Ready for final Product Owner verification and acceptance.

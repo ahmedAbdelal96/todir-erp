@@ -180,14 +180,14 @@ public sealed class ServiceService(
     {
         (page, pageSize) = Page(page, pageSize); var offset = (page - 1) * pageSize;
         var total = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.service_visit where tenant_id=$1 and ($2::uuid is null or work_order_id=$2) and ($3::text is null or state=$3)", token, tenant.Value, Db(workOrderId), Db(state)), CultureInfo.InvariantCulture);
-        var rows = new List<VisitView>(); await using var command = Command(context, "select id,work_order_id,planned_start,planned_end,location_type,state,site_instructions,actual_start,actual_end,row_version from business_service.service_visit where tenant_id=$1 and ($2::uuid is null or work_order_id=$2) and ($3::text is null or state=$3) order by planned_start,id limit $4 offset $5", tenant.Value, Db(workOrderId), Db(state), pageSize + 1, offset);
+        var rows = new List<VisitView>(); await using var command = Command(context, "select id,work_order_id,planned_start,planned_end,location_type,state,site_instructions,actual_start,actual_end,row_version from business_service.service_visit where tenant_id=$1 and ($2::uuid is null or work_order_id=$2) and ($3::text is null or state=$3) order by planned_start desc,id limit $4 offset $5", tenant.Value, Db(workOrderId), Db(state), pageSize + 1, offset);
         await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) rows.Add(ReadVisit(reader)); var hasNext = rows.Count > pageSize; if (hasNext) rows.RemoveAt(rows.Count - 1); return new PagedResult<VisitView>(rows, page, pageSize, hasNext, total);
     }, ct);
 
     public Task<VisitView> TransitionVisitAsync(TenantId tenant, Guid actor, Guid id, string action, TransitionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var current = await ReadVisitAsync(context, tenant.Value, id, token) ?? throw new ServiceException("service.visit_not_found"); if (current.Version != request.Version) throw new ServiceException("service.concurrent_change");
-        var next = action switch { "dispatch" when current.State == "Planned" => "Dispatched", "travel" when current.State == "Dispatched" => "Traveling", "arrive" when current.State == "Traveling" => "Arrived", "start" when current.State is "Arrived" or "Dispatched" => "InProgress", "complete" when current.State is "InProgress" or "Arrived" => "Completed", "no-access" when current.State is "Traveling" or "Arrived" => "NoAccess", "cancel" when current.State is not "Completed" => "Cancelled", _ => throw new ServiceException("service.visit_transition_invalid") };
+        var next = action switch { "dispatch" when current.State == "Planned" => "Dispatched", "travel" when current.State is "Dispatched" or "Planned" => "Traveling", "arrive" when current.State == "Traveling" => "Arrived", "start" when current.State is "Arrived" or "Dispatched" => "InProgress", "complete" when current.State is "InProgress" or "Arrived" => "Completed", "no-access" when current.State is "Traveling" or "Arrived" => "NoAccess", "cancel" when current.State is not "Completed" => "Cancelled", _ => throw new ServiceException("service.visit_transition_invalid") };
         var actual = next == "InProgress" ? ",actual_start=coalesce(actual_start,now())" : next is "Completed" or "NoAccess" ? ",actual_end=coalesce(actual_end,now())" : string.Empty;
         await ExecuteAsync(context, $"update business_service.service_visit set state=$3,row_version=row_version+1{actual} where tenant_id=$1 and id=$2 and row_version=$4", token, tenant.Value, id, next, current.Version);
         await AuditAsync(context, tenant, "ServiceVisit", id, actor, $"visit_{action}", new { current.State }, new { next }, token);
@@ -550,7 +550,13 @@ public sealed class ServiceService(
         var pending = await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var prior = await ReadOfflineAsync(context, tenant.Value, request.ClientCommandId, token); if (prior is not null) return (View: prior, New: false);
-            if (request.WorkOrderId is { } work && request.ExpectedVersion is { } version)
+            if (request.CommandType.StartsWith("visit.", StringComparison.Ordinal) && request.VisitId is { } visit && request.ExpectedVersion is { } visitVersion)
+            {
+                var current = await ScalarAsync<long?>(context, "select row_version from business_service.service_visit where tenant_id=$1 and id=$2", token, tenant.Value, visit);
+                if (current is null) throw new ServiceException("service.visit_not_found");
+                if (current != visitVersion) { var conflictId = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.offline_command(tenant_id,id,client_command_id,command_type,work_order_id,visit_id,expected_version,payload,state,conflict_code,processed_at) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'Conflict','service.concurrent_change',now())", token, tenant.Value, conflictId, request.ClientCommandId, request.CommandType, Db(request.WorkOrderId), Db(request.VisitId), Db(request.ExpectedVersion), request.PayloadJson); return (View: await ReadOfflineAsync(context, tenant.Value, request.ClientCommandId, token) ?? throw new ServiceException("service.offline_command_not_found"), New: false); }
+            }
+            else if (request.WorkOrderId is { } work && request.ExpectedVersion is { } version)
             {
                 var current = await ScalarAsync<long?>(context, "select row_version from business_service.work_order where tenant_id=$1 and id=$2", token, tenant.Value, work); if (current is null) throw new ServiceException("service.work_order_not_found");
                 if (current != version) { var conflictId = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_service.offline_command(tenant_id,id,client_command_id,command_type,work_order_id,visit_id,expected_version,payload,state,conflict_code,processed_at) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'Conflict','service.concurrent_change',now())", token, tenant.Value, conflictId, request.ClientCommandId, request.CommandType, Db(request.WorkOrderId), Db(request.VisitId), Db(request.ExpectedVersion), request.PayloadJson); return (View: await ReadOfflineAsync(context, tenant.Value, request.ClientCommandId, token) ?? throw new ServiceException("service.offline_command_not_found"), New: false); }
@@ -584,7 +590,22 @@ public sealed class ServiceService(
     private async Task<OfflineCommandView> MarkOfflineAsync(TenantId tenant, Guid clientCommandId, string state, string? code, string? result, CancellationToken ct) => await coordinator.ExecuteAsync(tenant, async (context, token) => { await ExecuteAsync(context, "update business_service.offline_command set state=$3,conflict_code=$4,result=$5::jsonb,processed_at=now() where tenant_id=$1 and client_command_id=$2", token, tenant.Value, clientCommandId, state, Db(code), Db(result ?? "null")); return await ReadOfflineAsync(context, tenant.Value, clientCommandId, token) ?? throw new ServiceException("service.offline_command_not_found"); }, ct);
     private sealed record OfflinePartCommand(Guid PartId, PartActionRequest Request);
 
-    public Task<MobileDayView> GetMobileDayAsync(TenantId tenant, Guid? userId, Guid? employeeId, DateOnly date, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => { var visits = new List<VisitView>(); await using var command = Command(context, "select v.id,v.work_order_id,v.planned_start,v.planned_end,v.location_type,v.state,v.site_instructions,v.actual_start,v.actual_end,v.row_version from business_service.service_visit v join business_service.work_assignment a on a.tenant_id=v.tenant_id and a.visit_id=v.id and a.state='Assigned' where v.tenant_id=$1 and v.planned_start::date=$2 and ($3::uuid is null or a.user_id=$3) order by v.planned_start,v.id limit 200", tenant.Value, date, Db(userId)); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) visits.Add(ReadVisit(reader)); var orders = new List<WorkOrderView>(); foreach (var visit in visits) { var row = await ReadWorkOrderAsync(context, tenant.Value, visit.WorkOrderId, token); if (row is not null) orders.Add(row); } return new MobileDayView(visits, orders, date); }, ct);
+    public Task<MobileDayView> GetMobileDayAsync(TenantId tenant, Guid? userId, Guid? employeeId, DateOnly date, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var visits = new List<VisitView>();
+        await using (var command = Command(context, "select v.id,v.work_order_id,v.planned_start,v.planned_end,v.location_type,v.state,v.site_instructions,v.actual_start,v.actual_end,v.row_version from business_service.service_visit v join business_service.work_assignment a on a.tenant_id=v.tenant_id and a.visit_id=v.id and a.state='Assigned' where v.tenant_id=$1 and v.planned_start::date=$2 and ($3::uuid is null or a.user_id=$3) order by v.planned_start,v.id limit 200", tenant.Value, date, Db(userId)))
+        {
+            await using var reader = await command.ExecuteReaderAsync(token);
+            while (await reader.ReadAsync(token)) visits.Add(ReadVisit(reader));
+        }
+        var orders = new List<WorkOrderView>();
+        foreach (var visit in visits)
+        {
+            var row = await ReadWorkOrderAsync(context, tenant.Value, visit.WorkOrderId, token);
+            if (row is not null) orders.Add(row);
+        }
+        return new MobileDayView(visits, orders, date);
+    }, ct);
 
     public Task<PagedResult<TemplateView>> ListTemplatesAsync(TenantId tenant, Guid? legalEntityId, int page, int pageSize, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {

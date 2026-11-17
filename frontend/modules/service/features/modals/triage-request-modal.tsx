@@ -45,13 +45,15 @@ export function TriageRequestModal({
       if (generateWorkOrder) {
         await (createWorkOrderMutation.mutateAsync as any)({
           legalEntityId,
-          workOrderNumber: `WO-${Date.now().toString().slice(-6)}`,
           serviceRequestId: request.id,
           context: request.context as any,
-          workOrderType: "Corrective",
+          workType: "Corrective",
           priority,
           title: request.subject || request.title,
           description: request.description ?? undefined,
+          customerPartyId: request.customerPartyId ?? undefined,
+          installedBaseId: request.installedBaseId ?? undefined,
+          fixedAssetId: request.fixedAssetId ?? undefined,
           customerName: request.customerName ?? undefined,
           siteLocation: request.siteLocation ?? undefined
         });

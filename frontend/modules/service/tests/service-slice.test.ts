@@ -125,10 +125,28 @@ describe("TODIR Module 24 (Service & Maintenance) — Comprehensive Frontend Uni
   });
 
   test("Durable Offline Queue: Enqueue, Replay, Sync and Conflict handling", async () => {
-    const entityId = "aad8a34b-344c-9e5b-8d58-57f182fc6528";
+    const validScope = {
+      tenantId: "c9fea3c8-249d-f150-a53a-84f5a891c82b",
+      userId: "2e2d6cd8-df8f-7a58-9298-f9a363cc1685",
+      legalEntityId: "aad8a34b-344c-9e5b-8d58-57f182fc6528"
+    };
+
+    // 0. Security Guard: Enqueue without full authenticated scope MUST fail immediately
+    assert.throws(
+      () => enqueueOfflineCommand(null as any, { commandType: "visit.arrive", visitId: "v1", expectedVersion: 1 }),
+      /SECURITY VIOLATION/
+    );
+    assert.throws(
+      () => enqueueOfflineCommand({ tenantId: "default", userId: "u1", legalEntityId: "e1" } as any, { commandType: "visit.arrive", visitId: "v1", expectedVersion: 1 }),
+      /SECURITY VIOLATION/
+    );
+    assert.throws(
+      () => enqueueOfflineCommand({ tenantId: "t1", userId: "", legalEntityId: "e1" } as any, { commandType: "visit.arrive", visitId: "v1", expectedVersion: 1 }),
+      /SECURITY VIOLATION/
+    );
 
     // 1. Enqueue offline command
-    const cmd1 = enqueueOfflineCommand(entityId, {
+    const cmd1 = enqueueOfflineCommand(validScope, {
       commandType: "visit.travel",
       visitId: "01933df5-0000-7000-8000-000000000001",
       workOrderId: "01933df5-0000-7000-8000-000000000002",
@@ -140,12 +158,12 @@ describe("TODIR Module 24 (Service & Maintenance) — Comprehensive Frontend Uni
     assert.equal(cmd1.attempts, 0);
 
     // Verify persisted in localStorage
-    const stored = loadOfflineQueue(entityId);
+    const stored = loadOfflineQueue(validScope);
     assert.equal(stored.length, 1);
     assert.equal(stored[0]?.clientCommandId, cmd1.clientCommandId);
 
     // 2. Replay with successful server acceptance
-    const replay1 = await replayOfflineQueue(entityId, async (req) => {
+    const replay1 = await replayOfflineQueue(validScope, async (req) => {
       assert.equal(req.clientCommandId, cmd1.clientCommandId);
       return {
         id: "01933df5-0000-7000-8000-000000000099",
@@ -161,21 +179,21 @@ describe("TODIR Module 24 (Service & Maintenance) — Comprehensive Frontend Uni
     assert.equal(replay1.conflictCount, 0);
     assert.equal(replay1.failureCount, 0);
 
-    const afterSync = loadOfflineQueue(entityId);
+    const afterSync = loadOfflineQueue(validScope);
     assert.equal(afterSync[0]?.status, "synced");
 
     // 3. Clear synced commands
-    clearSyncedCommands(entityId);
-    assert.equal(loadOfflineQueue(entityId).length, 0);
+    clearSyncedCommands(validScope);
+    assert.equal(loadOfflineQueue(validScope).length, 0);
 
     // 4. Enqueue command that results in Version Conflict
-    const cmd2 = enqueueOfflineCommand(entityId, {
+    const cmd2 = enqueueOfflineCommand(validScope, {
       commandType: "visit.complete",
       visitId: "01933df5-0000-7000-8000-000000000001",
       expectedVersion: 1
     });
 
-    const replay2 = await replayOfflineQueue(entityId, async () => {
+    const replay2 = await replayOfflineQueue(validScope, async () => {
       return {
         id: "01933df5-0000-7000-8000-000000000098",
         clientCommandId: cmd2.clientCommandId,
@@ -187,14 +205,14 @@ describe("TODIR Module 24 (Service & Maintenance) — Comprehensive Frontend Uni
     });
 
     assert.equal(replay2.conflictCount, 1);
-    const afterConflict = loadOfflineQueue(entityId);
+    const afterConflict = loadOfflineQueue(validScope);
     assert.equal(afterConflict.length, 1);
     assert.equal(afterConflict[0]?.status, "conflict");
     assert.equal(afterConflict[0]?.conflictCode, "service.visit_conflict");
 
     // 5. Dismiss command explicitly
-    dismissOfflineCommand(entityId, cmd2.clientCommandId);
-    assert.equal(loadOfflineQueue(entityId).length, 0);
+    dismissOfflineCommand(validScope, cmd2.clientCommandId);
+    assert.equal(loadOfflineQueue(validScope).length, 0);
   });
 
   test("Multi-Currency Financial Aggregation Presentation Integrity", () => {
@@ -316,9 +334,32 @@ describe("TODIR Module 24 (Service & Maintenance) — Comprehensive Frontend Uni
     assert.equal(replayAgain.successCount, 0);
     assert.equal(replayAgain.failureCount, 0);
 
-    // 3. Manual retry can reactivate a failed command
-    retryOfflineCommand(scopeUserA, cmdA.clientCommandId);
-    assert.equal(loadOfflineQueue(scopeUserA)[0]?.status, "queued");
+    // 3. Manual retry on rejected command MUST be rejected with clear error
+    assert.throws(
+      () => retryOfflineCommand(scopeUserA, cmdA.clientCommandId),
+      /UNSAFE RETRY/
+    );
+
+    // 4. Transient network error marks command as "failed" and CAN be retried
+    const cmdTransient = enqueueOfflineCommand(scopeUserA, {
+      commandType: "visit.arrive",
+      visitId: "01933df5-0000-7000-8000-000000000002",
+      expectedVersion: 1
+    });
+
+    await replayOfflineQueue(scopeUserA, async () => {
+      throw new TypeError("Failed to fetch: Network unreachable");
+    });
+
+    const queueAfterTransient = loadOfflineQueue(scopeUserA);
+    const transientItem = queueAfterTransient.find((c) => c.clientCommandId === cmdTransient.clientCommandId);
+    assert.equal(transientItem?.status, "failed");
+
+    // Retrying the transient failure re-enqueues it for the next sync
+    retryOfflineCommand(scopeUserA, cmdTransient.clientCommandId);
+    const queueAfterRetry = loadOfflineQueue(scopeUserA);
+    const retriedItem = queueAfterRetry.find((c) => c.clientCommandId === cmdTransient.clientCommandId);
+    assert.equal(retriedItem?.status, "queued");
   });
 });
 

@@ -1300,11 +1300,11 @@ export const useAssignTechnicianMutation = (_legalEntityId?: string) => {
   return {
     ...a,
     mutateAsync: (args: any) => {
-      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       const empId = args.employeeId ?? args.technicianId;
       const employeeId = empId && isGuid.test(empId) ? empId : undefined;
       const userId = args.userId && isGuid.test(args.userId) ? args.userId : (empId && isGuid.test(empId) ? empId : undefined);
-      const displayName = args.displayName || (!employeeId && !userId && empId ? String(empId) : "فني خدمة معتمد");
+      const displayName = args.displayName && !isGuid.test(args.displayName) ? args.displayName : "فني خدمة معتمد";
       return a.mutateAsync({
         visitId: args.visitId,
         request: {
@@ -1481,7 +1481,7 @@ export const useRegisterInstalledBaseMutation = (_legalEntityId?: string) => {
   return {
     ...c,
     mutateAsync: (args: any) => {
-      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       const custId = args.customerPartyId ?? (isGuid.test(args.customerName) ? args.customerName : undefined);
       const customerPartyId = custId && isGuid.test(custId) ? custId : undefined;
       return c.mutateAsync({

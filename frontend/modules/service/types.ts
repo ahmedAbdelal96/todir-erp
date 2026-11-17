@@ -829,7 +829,7 @@ export type OfflineCommandView = Readonly<{
   id: string;
   clientCommandId: string;
   commandType: string;
-  state: "Accepted" | "Processed" | "Rejected" | "Retryable" | "Conflict";
+  state: "Pending" | "Accepted" | "Processed" | "Rejected" | "Retryable" | "Conflict";
   conflictCode?: string | null | undefined;
   resultJson?: string | null | undefined;
 }>;

@@ -711,7 +711,7 @@ export function AppShell() {
         <main className="content" aria-live="polite">
           {contextError ? <div className="error" role="alert">{contextError}</div> : null}
           <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>{labels.loading}</div>}>
-            <Outlet context={{ density, legalEntityId: legalEntity, branchId: branch, permissions } satisfies WorkspaceOutletContext} />
+            <Outlet context={{ density, legalEntityId: legalEntity, branchId: branch, permissions, tenantId: activeTenantId, userId: activeIdentityId } satisfies WorkspaceOutletContext} />
           </Suspense>
         </main>
       </div>

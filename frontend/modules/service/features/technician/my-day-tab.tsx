@@ -23,6 +23,8 @@ import { CreateReportModal } from "../modals/create-report-modal.tsx";
 import { useIsMobile } from "../../hooks/use-is-mobile.ts";
 import { useOptionalUserContext, useOptionalTenantContext } from "../../../../core/runtime/index.ts";
 import type { VisitView, WorkOrderView } from "../../types.ts";
+import { useOutletContext } from "react-router-dom";
+import type { WorkspaceOutletContext } from "../../../../app/router/route-contract.ts";
 import {
   loadOfflineQueue,
   enqueueOfflineCommand,
@@ -37,19 +39,31 @@ import {
 
 export interface MyDayTabProps {
   readonly legalEntityId: string;
+  readonly tenantId?: string | undefined;
+  readonly userId?: string | undefined;
 }
 
-export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
+export function MyDayTab({ legalEntityId, tenantId: propTenantId, userId: propUserId }: MyDayTabProps): React.JSX.Element {
   const { t } = useTranslation("service");
   const isMobile = useIsMobile(768);
 
+  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const user = useOptionalUserContext();
   const tenant = useOptionalTenantContext();
-  const queueScope = React.useMemo<QueueScope>(() => ({
-    tenantId: tenant?.tenantId || "c9fea3c8-249d-f150-a53a-84f5a891c82b",
-    userId: user?.userId || "default",
-    legalEntityId
-  }), [tenant?.tenantId, user?.userId, legalEntityId]);
+
+  const effectiveTenantId = propTenantId || outletCtx?.tenantId || tenant?.tenantId;
+  const effectiveUserId = propUserId || outletCtx?.userId || user?.userId;
+
+  const queueScope = React.useMemo<QueueScope | null>(() => {
+    if (!effectiveTenantId || !effectiveUserId || !legalEntityId) {
+      return null;
+    }
+    return {
+      tenantId: effectiveTenantId,
+      userId: effectiveUserId,
+      legalEntityId
+    };
+  }, [effectiveTenantId, effectiveUserId, legalEntityId]);
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
@@ -61,12 +75,17 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
   const [selectedVisitForDiagnosis, setSelectedVisitForDiagnosis] = useState<VisitView | null>(null);
   const [selectedVisitForReport, setSelectedVisitForReport] = useState<VisitView | null>(null);
 
+  // Authoritative authenticated user My Day query & mutations
+  const myDayQuery = useMyDayQuery(selectedDate);
+  const transitionMutation = useTransitionVisitMutation();
+  const submitOfflineMutation = useSubmitOfflineCommandMutation();
+
   const refreshQueue = React.useCallback(() => {
     setOfflineQueue(loadOfflineQueue(queueScope));
   }, [queueScope]);
 
   const handleSyncQueue = React.useCallback(async () => {
-    if (isSyncing) return;
+    if (isSyncing || !queueScope) return;
     setIsSyncing(true);
     try {
       await replayOfflineQueue(queueScope, (req) => submitOfflineMutation.mutateAsync(req));
@@ -75,7 +94,7 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
     } finally {
       setIsSyncing(false);
     }
-  }, [queueScope, isSyncing]);
+  }, [queueScope, isSyncing, myDayQuery, submitOfflineMutation, refreshQueue]);
 
   // Connectivity listener
   useEffect(() => {
@@ -92,11 +111,6 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
     };
   }, [handleSyncQueue]);
 
-  // Authoritative authenticated user My Day query
-  const myDayQuery = useMyDayQuery(selectedDate);
-  const transitionMutation = useTransitionVisitMutation();
-  const submitOfflineMutation = useSubmitOfflineCommandMutation();
-
   const visits = myDayQuery.data?.visits ?? [];
   const workOrders = myDayQuery.data?.workOrders ?? [];
   const workOrderMap = new Map<string, WorkOrderView>(workOrders.map((wo) => [wo.id, wo]));
@@ -106,6 +120,9 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
     action: "dispatch" | "travel" | "arrive" | "start" | "complete" | "no-access" | "cancel"
   ) => {
     if (!isOnline) {
+      if (!queueScope) {
+        return;
+      }
       // Store in durable offline queue in localStorage
       enqueueOfflineCommand(queueScope, {
         commandType: `visit.${action}`,
@@ -209,8 +226,10 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                 variant="ghost"
                 size="compact"
                 onClick={() => {
-                  clearSyncedCommands(queueScope);
-                  refreshQueue();
+                  if (queueScope) {
+                    clearSyncedCommands(queueScope);
+                    refreshQueue();
+                  }
                 }}
               >
                 {t("technician.clearSynced")}
@@ -270,8 +289,12 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                       variant="secondary"
                       size="compact"
                       onClick={() => {
-                        retryOfflineCommand(queueScope, cmd.clientCommandId);
-                        refreshQueue();
+                        if (queueScope) {
+                          try {
+                            retryOfflineCommand(queueScope, cmd.clientCommandId);
+                            refreshQueue();
+                          } catch {}
+                        }
                       }}
                     >
                       {t("technician.retry")}
@@ -282,8 +305,10 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                       variant="secondary"
                       size="compact"
                       onClick={() => {
-                        resolveConflict(queueScope, cmd.clientCommandId, "discard");
-                        refreshQueue();
+                        if (queueScope) {
+                          resolveConflict(queueScope, cmd.clientCommandId, "discard");
+                          refreshQueue();
+                        }
                       }}
                     >
                       {t("technician.resolveConflictDiscard")}
@@ -294,8 +319,10 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                       variant="ghost"
                       size="compact"
                       onClick={() => {
-                        dismissOfflineCommand(queueScope, cmd.clientCommandId);
-                        refreshQueue();
+                        if (queueScope) {
+                          dismissOfflineCommand(queueScope, cmd.clientCommandId);
+                          refreshQueue();
+                        }
                       }}
                     >
                       {t("common.delete")}
