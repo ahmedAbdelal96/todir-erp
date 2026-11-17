@@ -10,20 +10,21 @@ using Shared.Contracts.FinanceBase;
 using Shared.Contracts.Ledger;
 using Shared.Contracts.Subledger;
 using Shared.Contracts.Payments;
+using Shared.Contracts.Banking;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Payments.Repositories;
 
 public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITransactionalSequenceAllocator sequences, NpgsqlDataSource dataSource, TimeProvider clock,
     ITransactionalSubledgerOpenItemCapability subledger, ITransactionalPaymentLedgerPostingCapability ledger,
-    ITransactionalInvoiceLedgerPostingCapability ledgerConfiguration, ISubledgerCapabilities subledgerRead)
+    ITransactionalInvoiceLedgerPostingCapability ledgerConfiguration, ISubledgerCapabilities subledgerRead,
+    IBankingTreasuryAccountCapability banking)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public Task<PaymentAccount> CreateAccountAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId, CreatePaymentAccountCommand request, CancellationToken ct) =>
         transactions.ExecuteAsync(tenant, async (context, token) =>
         {
-            var id = Guid.CreateVersion7(); var now = clock.GetUtcNow();
             var currencyPolicy = request.CurrencyPolicy.Trim();
             var currency = currencyPolicy == "SingleCurrency" ? PaymentRules.NormalizeCurrency(request.CurrencyCode) : null;
             if (currencyPolicy is not ("SingleCurrency" or "MultiCurrency")) throw new PaymentException("payments.currency_policy_invalid", "Select a supported currency policy.");
@@ -32,6 +33,15 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             if (request.MaskedIdentifier is { } identifier && identifier.Count(char.IsAsciiDigit) > 4) throw new PaymentException("payments.bank_identifier_must_be_masked", "Store only the final four digits of a bank identifier.");
             if (request.SecretRef is { } secretRef && !secretRef.StartsWith("secret://", StringComparison.Ordinal) && !secretRef.StartsWith("vault://", StringComparison.Ordinal))
                 throw new PaymentException("payments.secret_reference_invalid", "Sensitive values must be stored in an approved secret manager and referenced here.");
+            TreasuryAccountReference? canonical = null;
+            if (request.Type != PaymentAccountType.InternalClearing)
+            {
+                canonical = await banking.CreateAsync(tenant, actor, membership, new(request.LegalEntityId, request.BranchId, request.Code, request.Name,
+                    request.Type switch { PaymentAccountType.Bank => TreasuryAccountType.Bank, PaymentAccountType.Cashbox => TreasuryAccountType.Cash, PaymentAccountType.Wallet => TreasuryAccountType.DigitalWallet, _ => TreasuryAccountType.ProviderSettlement },
+                    currencyPolicy == "MultiCurrency" ? TreasuryCurrencyPolicy.MultiCurrency : TreasuryCurrencyPolicy.SingleCurrency, currency, request.Name, "Operational", [], Clean(request.MaskedIdentifier), Clean(request.SecretRef)), correlationId, ct);
+                await banking.ChangeStatusAsync(tenant, actor, membership, correlationId, request.LegalEntityId, canonical.Id, TreasuryAccountStatus.Active, canonical.Status == TreasuryAccountStatus.Draft ? 1 : null, ct);
+            }
+            var id = canonical?.Id ?? Guid.CreateVersion7(); var now = clock.GetUtcNow();
             await using var command = new NpgsqlCommand("""
                 insert into finance_payments.payment_account
                 (tenant_id,legal_entity_id,id,branch_id,code,name,account_type,currency_policy,currency_code,status,bank_name,account_holder,masked_identifier,secret_ref,version,created_at,updated_at)
@@ -166,8 +176,12 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
         return result;
     }
 
-    public Task UpdateAccountStatusAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId, Guid legalEntityId, Guid accountId,
-        Guid? branchId, PaymentAccountStatus status, CancellationToken ct) => transactions.ExecuteAsync<bool>(tenant, async (context, token) =>
+    public async Task UpdateAccountStatusAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId, Guid legalEntityId, Guid accountId,
+        Guid? branchId, PaymentAccountStatus status, CancellationToken ct)
+    {
+        var target = status == PaymentAccountStatus.Archived ? TreasuryAccountStatus.Closed : status == PaymentAccountStatus.Suspended ? TreasuryAccountStatus.Suspended : TreasuryAccountStatus.Active;
+        await banking.ChangeStatusAsync(tenant, actor, membership, correlationId, legalEntityId, accountId, target, null, ct);
+        await transactions.ExecuteAsync<bool>(tenant, async (context, token) =>
     {
         var now = clock.GetUtcNow();
         var branchClause = branchId is null ? string.Empty : " and branch_id=$6";
@@ -185,7 +199,8 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             "payments", "payment_account.status_changed", "payment_account", accountId, null,
             JsonSerializer.Serialize(new { status = status.ToString() }, JsonOptions), null, "api", correlationId, null, now, null), token);
         return true;
-    }, ct);
+        }, ct);
+    }
 
     public Task<PaymentRecord> CreateDraftAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId, CreatePaymentCommand request, CancellationToken ct) =>
         transactions.ExecuteAsync(tenant, async (context, token) =>

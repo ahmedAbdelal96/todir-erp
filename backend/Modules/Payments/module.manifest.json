@@ -8,7 +8,7 @@
   "purchasable": false,
   "scope": "tenant",
   "dependencies": {
-    "hard": ["platform-kernel", "directory", "finbase", "ledger", "subledger"],
+    "hard": ["platform-kernel", "directory", "finbase", "ledger", "subledger", "expenses"],
     "optionalCapabilities": ["platform.files"]
   },
   "owns": {

@@ -18,6 +18,7 @@
     <ProjectReference Include="../Modules/Subledger/Subledger.csproj" />
     <ProjectReference Include="../Modules/Invoicing/Invoicing.csproj" />
     <ProjectReference Include="../Modules/Payments/Payments.csproj" />
+    <ProjectReference Include="../Modules/Banking/Banking.csproj" />
     <ProjectReference Include="../Modules/Inventory/Inventory.csproj" />
     <ProjectReference Include="../Modules/Sales/Sales.csproj" />
     <ProjectReference Include="../Modules/Purchasing/Purchasing.csproj" />
