@@ -23,6 +23,8 @@ artifacts/logs/{service}/{yyyy-MM-dd}/application-*.jsonl
 artifacts/logs/{service}/{yyyy-MM-dd}/errors-*.jsonl
 ```
 
+Interactive console output uses the same structured event data with level colors for operational readability: information is cyan, warnings are yellow, errors are red, and fatal events are bold red. ANSI color codes are omitted when output is redirected, so redirected console output remains valid JSON Lines.
+
 The default retention is 30 days, the default per-file limit is 50 MiB, and size rollover creates additional files without interrupting requests. The directory, retention, size limit, file count limit, minimum level, and file enablement are configurable with `TODIR_LOG_DIRECTORY`, `TODIR_LOG_RETENTION_DAYS`, `TODIR_LOG_FILE_SIZE_BYTES`, `TODIR_LOG_FILE_COUNT_LIMIT`, `TODIR_LOG_MINIMUM_LEVEL`, and `TODIR_FILE_LOGGING_ENABLED`.
 
 Each request completion contains the correlation, trace, span, service, environment, module, operation, status, and duration context. Authenticated requests additionally push tenant, legal-entity, user, and membership context. Request bodies, authorization headers, cookies, passwords, tokens, and sensitive business payloads are never logged by the pipeline. Application logs are operational diagnostics; immutable business audit history remains owned by the relevant module and is never reconstructed from log files.

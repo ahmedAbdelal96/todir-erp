@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using Serilog.Formatting;
 using Serilog.Context;
 
 namespace Shared.BuildingBlocks.Observability;
@@ -120,7 +121,7 @@ internal static class DailyFileLoggerConfiguration
             .Enrich.WithProperty("service", options.Service)
             .Enrich.WithProperty("environment", options.Environment)
             .Enrich.With<DailyLogDateEnricher>()
-            .WriteTo.Console(new RenderedCompactJsonFormatter());
+            .WriteTo.Console(new ColoredCompactJsonFormatter());
 
         if (!options.Enabled) return;
 
@@ -161,6 +162,39 @@ internal static class DailyFileLoggerConfiguration
             },
             sinkMapCountLimit: 3);
     }
+}
+
+internal sealed class ColoredCompactJsonFormatter : ITextFormatter
+{
+    private const string Reset = "\u001b[0m";
+    private static readonly RenderedCompactJsonFormatter JsonFormatter = new();
+
+    public void Format(LogEvent logEvent, TextWriter output)
+    {
+        using var buffer = new StringWriter(CultureInfo.InvariantCulture);
+        JsonFormatter.Format(logEvent, buffer);
+        var content = buffer.ToString();
+
+        if (Console.IsOutputRedirected)
+        {
+            output.Write(content);
+            return;
+        }
+
+        output.Write(LevelColor(logEvent.Level));
+        output.Write(content);
+        output.Write(Reset);
+    }
+
+    private static string LevelColor(LogEventLevel level) => level switch
+    {
+        LogEventLevel.Verbose or LogEventLevel.Debug => "\u001b[90m",
+        LogEventLevel.Information => "\u001b[36m",
+        LogEventLevel.Warning => "\u001b[33m",
+        LogEventLevel.Error => "\u001b[31m",
+        LogEventLevel.Fatal => "\u001b[1;31m",
+        _ => "\u001b[37m"
+    };
 }
 
 internal static class LogContextScope
