@@ -161,18 +161,18 @@ export function ServiceRequestsTab({
                     <td>
                       <strong style={{ color: "#0f172a" }}>{req.requestNumber}</strong>
                     </td>
-                    <td>{req.subject}</td>
+                    <td>{req.title || req.subject}</td>
                     <td>
-                      {req.context === "customer" ? t("contexts.customer") : t("contexts.internal")}
+                      {req.context === "CustomerFieldService" || req.context === "customer" ? t("contexts.customer") : t("contexts.internal")}
                     </td>
                     <td>{req.customerName || req.assetReference || "—"}</td>
                     <td>
                       <ServiceLifecycleBadge status={req.priority} />
                     </td>
                     <td>
-                      <ServiceLifecycleBadge status={req.status} />
+                      <ServiceLifecycleBadge status={req.state || req.status} />
                     </td>
-                    <td>{req.createdAtUtc ? new Date(req.createdAtUtc).toLocaleDateString() : "—"}</td>
+                    <td>{req.requestedAt || req.createdAtUtc ? new Date(req.requestedAt || req.createdAtUtc!).toLocaleDateString() : "—"}</td>
                     <td style={{ textAlign: "center" }}>
                       <Button
                         variant="ghost"

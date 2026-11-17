@@ -50,6 +50,8 @@ import type {
   ServiceReportView,
   CreateReportRequest,
   ServiceChargeView,
+  ChargesSummaryView,
+  ChargesSummaryItem,
   CreateChargeRequest,
   DowntimeView,
   DowntimeRequest,
@@ -76,7 +78,11 @@ function toQueryString(params: Record<string, string | number | boolean | null |
 
 export const serviceApi = {
   // KPI
-  getKpi: (): Promise<ServiceKpiView> => httpClient<ServiceKpiView>(`${BASE}/reports/kpi`),
+  getKpi: (legalEntityId?: string | undefined): Promise<ServiceKpiView> =>
+    httpClient<ServiceKpiView>(`${BASE}/reports/kpi${toQueryString({ legalEntityId })}`),
+
+  getChargesSummary: (legalEntityId?: string | undefined): Promise<ChargesSummaryView> =>
+    httpClient<ChargesSummaryView>(`${BASE}/charges/summary${toQueryString({ legalEntityId })}`),
 
   // Service Requests
   listRequests: (params: {

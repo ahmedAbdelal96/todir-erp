@@ -22,6 +22,14 @@ import { RecordDiagnosisModal } from "../modals/record-diagnosis-modal.tsx";
 import { CreateReportModal } from "../modals/create-report-modal.tsx";
 import { useIsMobile } from "../../hooks/use-is-mobile.ts";
 import type { VisitView, WorkOrderView } from "../../types.ts";
+import {
+  loadOfflineQueue,
+  enqueueOfflineCommand,
+  replayOfflineQueue,
+  clearSyncedCommands,
+  dismissOfflineCommand,
+  type StoredOfflineCommand
+} from "../../utils/offline-queue.ts";
 
 export interface MyDayTabProps {
   readonly legalEntityId: string;
@@ -34,14 +42,35 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
   const todayStr = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [offlineQueue, setOfflineQueue] = useState<StoredOfflineCommand[]>(() => loadOfflineQueue(legalEntityId));
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const [selectedVisitForChecklist, setSelectedVisitForChecklist] = useState<VisitView | null>(null);
   const [selectedVisitForDiagnosis, setSelectedVisitForDiagnosis] = useState<VisitView | null>(null);
   const [selectedVisitForReport, setSelectedVisitForReport] = useState<VisitView | null>(null);
 
+  const refreshQueue = React.useCallback(() => {
+    setOfflineQueue(loadOfflineQueue(legalEntityId));
+  }, [legalEntityId]);
+
+  const handleSyncQueue = React.useCallback(async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      await replayOfflineQueue(legalEntityId, (req) => submitOfflineMutation.mutateAsync(req));
+      refreshQueue();
+      myDayQuery.refetch();
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [legalEntityId, isSyncing]);
+
   // Connectivity listener
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
+    const handleOnline = () => {
+      setIsOnline(true);
+      handleSyncQueue();
+    };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
@@ -49,7 +78,7 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, []);
+  }, [handleSyncQueue]);
 
   // Authoritative authenticated user My Day query
   const myDayQuery = useMyDayQuery(selectedDate);
@@ -65,15 +94,15 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
     action: "dispatch" | "travel" | "arrive" | "start" | "complete" | "no-access" | "cancel"
   ) => {
     if (!isOnline) {
-      // Submit offline command
-      await submitOfflineMutation.mutateAsync({
-        clientCommandId: crypto.randomUUID(),
+      // Store in durable offline queue in localStorage
+      enqueueOfflineCommand(legalEntityId, {
         commandType: `visit.${action}`,
         visitId: visit.id,
         workOrderId: visit.workOrderId,
         expectedVersion: visit.version,
-        payloadJson: "{}"
+        payloadJson: JSON.stringify({ action, occurredAt: new Date().toISOString() })
       });
+      refreshQueue();
       return;
     }
 
@@ -147,6 +176,97 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
           </div>
         </div>
       </Surface>
+
+      {/* Durable Offline Queue UI */}
+      {offlineQueue.length > 0 && (
+        <Surface
+          title={t("technician.offlineQueueTitle")}
+          description={t("technician.offlineQueueDesc")}
+          headerActions={
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <Button
+                variant="primary"
+                size="compact"
+                isDisabled={!isOnline || isSyncing}
+                isLoading={isSyncing}
+                onClick={handleSyncQueue}
+              >
+                {t("technician.syncNow")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="compact"
+                onClick={() => {
+                  clearSyncedCommands(legalEntityId);
+                  refreshQueue();
+                }}
+              >
+                {t("technician.clearSynced")}
+              </Button>
+            </div>
+          }
+          variant="card"
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {offlineQueue.map((cmd) => (
+              <div
+                key={cmd.clientCommandId}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "0.75rem 1rem",
+                  borderRadius: "0.375rem",
+                  backgroundColor: cmd.status === "conflict" ? "#fef2f2" : cmd.status === "synced" ? "#f0fdf4" : "#f8fafc",
+                  border: `1px solid ${cmd.status === "conflict" ? "#fecaca" : cmd.status === "synced" ? "#bbf7d0" : "#e2e8f0"}`
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <strong style={{ fontSize: "0.875rem" }}>{cmd.commandType}</strong>
+                    <span
+                      style={{
+                        padding: "0.15rem 0.4rem",
+                        borderRadius: "0.25rem",
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        backgroundColor: cmd.status === "synced" ? "#dcfce7" : cmd.status === "conflict" ? "#fee2e2" : "#e0e7ff",
+                        color: cmd.status === "synced" ? "#166534" : cmd.status === "conflict" ? "#991b1b" : "#3730a3"
+                      }}
+                    >
+                      {cmd.status === "synced"
+                        ? t("technician.statusSynced")
+                        : cmd.status === "conflict"
+                        ? t("technician.statusConflict")
+                        : cmd.status === "syncing"
+                        ? t("technician.statusSyncing")
+                        : t("technician.statusQueued")}
+                    </span>
+                  </div>
+                  {cmd.errorMessage && (
+                    <span style={{ fontSize: "0.75rem", color: "#dc2626" }}>{cmd.errorMessage}</span>
+                  )}
+                  <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                    {new Date(cmd.queuedAt).toLocaleTimeString()}
+                  </span>
+                </div>
+                {(cmd.status === "conflict" || cmd.status === "failed") && (
+                  <Button
+                    variant="ghost"
+                    size="compact"
+                    onClick={() => {
+                      dismissOfflineCommand(legalEntityId, cmd.clientCommandId);
+                      refreshQueue();
+                    }}
+                  >
+                    {t("common.delete")}
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Surface>
+      )}
 
       {/* Assigned Visits Cards */}
       {myDayQuery.isLoading ? (

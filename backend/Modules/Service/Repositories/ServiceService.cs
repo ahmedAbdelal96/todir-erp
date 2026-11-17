@@ -1013,20 +1013,44 @@ public sealed class ServiceService(
         return (IReadOnlyList<MeterReadingView>)result;
     }, ct);
 
-    public Task<ServiceKpiView> GetKpiAsync(TenantId tenant, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public Task<ServiceKpiView> GetKpiAsync(TenantId tenant, Guid? legalEntityId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
-        var openRequests = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.service_request where tenant_id=$1 and state not in ('Closed','Cancelled')", token, tenant.Value), CultureInfo.InvariantCulture);
-        var openWorkOrders = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.work_order where tenant_id=$1 and state not in ('Closed','Cancelled')", token, tenant.Value), CultureInfo.InvariantCulture);
-        var visitsToday = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.service_visit where tenant_id=$1 and planned_start::date=current_date and state not in ('Cancelled')", token, tenant.Value), CultureInfo.InvariantCulture);
-        var openCharges = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(sum(customer_amount),0) from business_service.service_charge where tenant_id=$1 and state not in ('Invoiced','WrittenOff','Cancelled')", token, tenant.Value), CultureInfo.InvariantCulture);
-        var downtimeHours = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(sum(extract(epoch from (coalesce(ended_at,now())-started_at))/3600),0) from business_service.asset_downtime where tenant_id=$1", token, tenant.Value), CultureInfo.InvariantCulture);
-        var failureCount = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.work_order where tenant_id=$1 and work_type='Corrective' and state <> 'Cancelled'", token, tenant.Value), CultureInfo.InvariantCulture);
-        var mttrHours = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(avg(extract(epoch from (l.ended_at-l.started_at))/3600),0) from business_service.service_labor_entry l join business_service.service_visit v on v.tenant_id=l.tenant_id and v.id=l.visit_id join business_service.work_order w on w.tenant_id=v.tenant_id and w.id=v.work_order_id where l.tenant_id=$1 and w.work_type='Corrective' and l.time_category in ('OnSiteWork','RemoteWork')", token, tenant.Value), CultureInfo.InvariantCulture);
-        var observedHours = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(extract(epoch from (current_timestamp-min(started_at)))/3600,0) from business_service.asset_downtime where tenant_id=$1", token, tenant.Value), CultureInfo.InvariantCulture);
+        var openRequests = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.service_request where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) and state not in ('Closed','Cancelled')", token, tenant.Value, Db(legalEntityId)), CultureInfo.InvariantCulture);
+        var openWorkOrders = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.work_order where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) and state not in ('Closed','Cancelled')", token, tenant.Value, Db(legalEntityId)), CultureInfo.InvariantCulture);
+        var visitsToday = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.service_visit v join business_service.work_order w on w.tenant_id=v.tenant_id and w.id=v.work_order_id where v.tenant_id=$1 and ($2::uuid is null or w.legal_entity_id=$2) and v.planned_start::date=current_date and v.state not in ('Cancelled')", token, tenant.Value, Db(legalEntityId)), CultureInfo.InvariantCulture);
+        var openCharges = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(sum(c.customer_amount),0) from business_service.service_charge c join business_service.work_order w on w.tenant_id=c.tenant_id and w.id=c.work_order_id where c.tenant_id=$1 and ($2::uuid is null or w.legal_entity_id=$2) and c.state not in ('Invoiced','WrittenOff','Cancelled')", token, tenant.Value, Db(legalEntityId)), CultureInfo.InvariantCulture);
+        var downtimeHours = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(sum(extract(epoch from (coalesce(d.ended_at,now())-d.started_at))/3600),0) from business_service.asset_downtime d left join business_service.work_order w on w.tenant_id=d.tenant_id and w.id=d.work_order_id left join business_service.installed_base_item i on i.tenant_id=d.tenant_id and i.id=d.subject_id where d.tenant_id=$1 and ($2::uuid is null or coalesce(w.legal_entity_id, i.legal_entity_id)=$2)", token, tenant.Value, Db(legalEntityId)), CultureInfo.InvariantCulture);
+        var failureCount = Convert.ToInt32(await ScalarAsync(context, "select count(*) from business_service.work_order where tenant_id=$1 and ($2::uuid is null or legal_entity_id=$2) and work_type='Corrective' and state <> 'Cancelled'", token, tenant.Value, Db(legalEntityId)), CultureInfo.InvariantCulture);
+        var mttrHours = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(avg(extract(epoch from (l.ended_at-l.started_at))/3600),0) from business_service.service_labor_entry l join business_service.service_visit v on v.tenant_id=l.tenant_id and v.id=l.visit_id join business_service.work_order w on w.tenant_id=v.tenant_id and w.id=v.work_order_id where l.tenant_id=$1 and ($2::uuid is null or w.legal_entity_id=$2) and w.work_type='Corrective' and l.time_category in ('OnSiteWork','RemoteWork')", token, tenant.Value, Db(legalEntityId)), CultureInfo.InvariantCulture);
+        var observedHours = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(extract(epoch from (current_timestamp-min(d.started_at)))/3600,0) from business_service.asset_downtime d left join business_service.work_order w on w.tenant_id=d.tenant_id and w.id=d.work_order_id left join business_service.installed_base_item i on i.tenant_id=d.tenant_id and i.id=d.subject_id where d.tenant_id=$1 and ($2::uuid is null or coalesce(w.legal_entity_id, i.legal_entity_id)=$2)", token, tenant.Value, Db(legalEntityId)), CultureInfo.InvariantCulture);
         var mtbfHours = failureCount == 0 ? 0m : Math.Max(0m, (observedHours - downtimeHours) / failureCount);
         var availability = observedHours <= 0m ? 100m : Math.Clamp((observedHours - downtimeHours) / observedHours * 100m, 0m, 100m);
         return new ServiceKpiView(openRequests, openWorkOrders, visitsToday, openCharges, downtimeHours, failureCount, mtbfHours, mttrHours, availability);
     }, ct);
+
+    public Task<ChargesSummaryView> GetChargesSummaryAsync(TenantId tenant, Guid? legalEntityId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var rows = new List<ChargesSummaryItem>();
+        await using var command = Command(context, "select c.currency_code, coalesce(sum(c.customer_amount), 0), coalesce(sum(c.covered_amount), 0), count(*), count(*) filter (where c.state in ('Reviewed','Requested')), count(*) filter (where c.covered_amount > 0) from business_service.service_charge c join business_service.work_order w on w.tenant_id=c.tenant_id and w.id=c.work_order_id where c.tenant_id=$1 and ($2::uuid is null or w.legal_entity_id=$2) and c.state not in ('WrittenOff','Cancelled') group by c.currency_code order by c.currency_code", tenant.Value, Db(legalEntityId));
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var totalCount = 0;
+        while (await reader.ReadAsync(token))
+        {
+            var count = Convert.ToInt32(reader.GetInt64(3));
+            totalCount += count;
+            rows.Add(new(
+                reader.GetString(0),
+                reader.GetDecimal(1),
+                reader.GetDecimal(2),
+                count,
+                Convert.ToInt32(reader.GetInt64(4)),
+                Convert.ToInt32(reader.GetInt64(5))
+            ));
+        }
+        return new ChargesSummaryView(rows, totalCount);
+    }, ct);
+
+    public Task<string> GetDatabaseNameAsync(TenantId? tenant, CancellationToken ct) => coordinator.ExecuteAsync(tenant ?? new TenantId(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b")), async (context, token) => (string)(await ScalarAsync(context, "select current_database()", token) ?? string.Empty), ct);
 
     public async Task<ServiceChargeView> RequestInvoiceAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId, Guid chargeId, CancellationToken ct)
     {

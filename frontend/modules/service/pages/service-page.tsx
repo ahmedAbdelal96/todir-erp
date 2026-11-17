@@ -49,7 +49,8 @@ export function ServicePage(): React.JSX.Element {
   const activeTab = (searchParams.get("tab") as ServiceTabId | null) ?? "overview";
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || null;
+  const queryEntityId = searchParams.get("legalEntityId");
+  const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || queryEntityId || null;
   const effectiveEntityId = legalEntityId || "00000000-0000-0000-0000-000000000001";
 
   const handleTabChange = (newTab: string) => {
@@ -288,6 +289,7 @@ export function ServicePage(): React.JSX.Element {
                 type="button"
                 role="tab"
                 aria-selected={isActive}
+                data-testid={`service-tab-${tab.id}`}
                 onClick={() => handleTabChange(tab.id)}
                 style={{
                   display: "flex",

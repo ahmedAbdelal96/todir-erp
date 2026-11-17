@@ -14,7 +14,7 @@ import {
 } from "../../components/service-icons.tsx";
 import {
   useAllChargesQuery,
-  useServiceKpiQuery,
+  useChargesSummaryQuery,
   useWorkOrdersQuery,
   useRequestChargeInvoiceMutation
 } from "../../hooks/use-service-queries.ts";
@@ -26,11 +26,14 @@ export interface ServiceBillingTabProps {
 export function ServiceBillingTab({ legalEntityId }: ServiceBillingTabProps): React.JSX.Element {
   const { t } = useTranslation("service");
   const [filterState, setFilterState] = useState<string>("all");
+  const [page, setPage] = useState<number>(1);
+  const pageSize = 50;
 
-  const kpiQuery = useServiceKpiQuery();
+  const summaryQuery = useChargesSummaryQuery(legalEntityId);
   const chargesQuery = useAllChargesQuery({
     legalEntityId,
-    pageSize: 100,
+    page,
+    pageSize,
     ...(filterState !== "all" ? { state: filterState } : {})
   });
   const workOrdersQuery = useWorkOrdersQuery(legalEntityId, { pageSize: 100 });
@@ -38,16 +41,25 @@ export function ServiceBillingTab({ legalEntityId }: ServiceBillingTabProps): Re
 
   const charges = chargesQuery.data?.items ?? [];
   const workOrders = workOrdersQuery.data?.items ?? [];
+  const summaryItems = summaryQuery.data?.items ?? [];
 
   // Map workOrderId to workOrder details for display
   const workOrderMap = new Map(workOrders.map((wo) => [wo.id, wo]));
 
-  // Authoritative financial calculations from real data
-  const totalCustomerBillable = charges.reduce((acc, c) => acc + (Number(c.customerAmount) || 0), 0);
-  const totalCovered = charges.reduce((acc, c) => acc + (Number(c.coveredAmount) || 0), 0);
-  const projectWorkOrdersCount = workOrders.filter((wo) => wo.billingOwner === "Projects").length;
+  // Authoritative financial calculations from backend grouped by currency
+  const totalCustomerBillableDisplay =
+    summaryItems.length > 0
+      ? summaryItems.map((s) => `${Number(s.customerAmount).toLocaleString()} ${s.currencyCode}`).join(" | ")
+      : "0.00";
 
-  const defaultCurrency = charges[0]?.currencyCode || "EGP";
+  const totalCoveredDisplay =
+    summaryItems.length > 0
+      ? summaryItems.map((s) => `${Number(s.coveredAmount).toLocaleString()} ${s.currencyCode}`).join(" | ")
+      : "0.00";
+
+  const totalReadyCount = summaryItems.reduce((acc, s) => acc + s.readyCount, 0);
+  const totalCoveredCount = summaryItems.reduce((acc, s) => acc + s.coveredCount, 0);
+  const projectWorkOrdersCount = workOrders.filter((wo) => wo.billingOwner === "Projects").length;
 
   const handleRequestInvoice = async (chargeId: string) => {
     try {
@@ -84,15 +96,15 @@ export function ServiceBillingTab({ legalEntityId }: ServiceBillingTabProps): Re
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
         <ServiceKpiCard
           label={t("billing.customerInvoicingReady")}
-          value={`${totalCustomerBillable.toLocaleString()} ${defaultCurrency}`}
+          value={totalCustomerBillableDisplay}
           icon={<CheckCircleIcon size={20} color="#059669" />}
-          badgeText={`${charges.filter((c) => c.state === "Reviewed" || c.state === "Requested").length} ${t("billing.chargesReady")}`}
+          badgeText={`${totalReadyCount} ${t("billing.chargesReady")}`}
         />
         <ServiceKpiCard
           label={t("billing.warrantyAbsorbedCost")}
-          value={`${totalCovered.toLocaleString()} ${defaultCurrency}`}
+          value={totalCoveredDisplay}
           icon={<ShieldCheckIcon size={20} color="#d97706" />}
-          badgeText={`${charges.filter((c) => Number(c.coveredAmount) > 0).length} ${t("billing.coveredItems")}`}
+          badgeText={`${totalCoveredCount} ${t("billing.coveredItems")}`}
         />
         <ServiceKpiCard
           label={t("billing.projectAllocatedWork")}
@@ -206,6 +218,43 @@ export function ServiceBillingTab({ legalEntityId }: ServiceBillingTabProps): Re
                 })}
               </tbody>
             </Table>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: "1rem",
+                padding: "0.5rem 0",
+                borderTop: "1px solid #e2e8f0"
+              }}
+            >
+              <span style={{ fontSize: "0.875rem", color: "#64748b" }}>
+                {chargesQuery.data?.totalCount !== undefined
+                  ? `${t("common.total")}: ${chargesQuery.data.totalCount}`
+                  : ""}
+              </span>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <Button
+                  variant="secondary"
+                  size="compact"
+                  isDisabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  {t("common.previous", "السابق")}
+                </Button>
+                <span style={{ padding: "0.25rem 0.5rem", fontSize: "0.875rem", fontWeight: 600 }}>
+                  {page}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="compact"
+                  isDisabled={!chargesQuery.data?.hasNext}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  {t("common.next", "التالي")}
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </Surface>

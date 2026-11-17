@@ -1,9 +1,12 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using Core.Authorization;
 using Core.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Modules.Service.DTOs;
 using Modules.Service.Repositories;
 using Modules.Service.Services;
@@ -105,6 +108,7 @@ public static class ServiceModuleExtensions
         group.MapPost("/sla/monitor", async (HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "service.sla.manage", ct), () => service.MonitorSlaAsync(Tenant(http), Actor(http), ct)));
         group.MapPost("/entitlements/resolve", async (EntitlementRequest request, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "service.contract.read", request.LegalEntityId, ct), () => service.ResolveEntitlementAsync(Tenant(http), Actor(http), request, ct)));
         group.MapGet("/charges", async (Guid? legalEntityId, string? state, int? page, int? pageSize, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "service.billing.read", legalEntityId, ct), () => service.ListAllChargesAsync(Tenant(http), legalEntityId, state, page ?? 1, pageSize ?? 50, ct)));
+        group.MapGet("/charges/summary", async (Guid? legalEntityId, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "service.billing.read", legalEntityId, ct), () => service.GetChargesSummaryAsync(Tenant(http), legalEntityId, ct)));
         group.MapGet("/work-orders/{workOrderId:guid}/charges", async (Guid workOrderId, int? page, int? pageSize, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ResourceAccessAsync(http, subjects, authorizer, "service.billing.read", () => service.GetWorkOrderLegalEntityAsync(Tenant(http), workOrderId, ct), ct), () => service.ListChargesAsync(Tenant(http), workOrderId, page ?? 1, pageSize ?? 50, ct)));
         group.MapPost("/work-orders/{workOrderId:guid}/charges", async (Guid workOrderId, CreateChargeRequest request, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ResourceAccessAsync(http, subjects, authorizer, "service.billing.manage", () => service.GetWorkOrderLegalEntityAsync(Tenant(http), workOrderId, ct), ct), () => service.CreateChargeAsync(Tenant(http), Actor(http), workOrderId, request, ct), StatusCodes.Status201Created));
         group.MapPost("/charges/{chargeId:guid}/request-invoice", async (Guid chargeId, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ResourceAccessAsync(http, subjects, authorizer, "service.billing.request_invoice", () => service.GetChargeLegalEntityAsync(Tenant(http), chargeId, ct), ct), () => service.RequestInvoiceAsync(Tenant(http), Actor(http), Membership(http), Correlation(http), chargeId, ct)));
@@ -120,7 +124,50 @@ public static class ServiceModuleExtensions
         group.MapPost("/mobile/commands", async (OfflineCommandRequest request, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await OfflineAccessAsync(http, service, subjects, authorizer, request, ct), () => service.SubmitOfflineAsync(Tenant(http), Actor(http), Correlation(http), request, ct), StatusCodes.Status202Accepted));
         group.MapGet("/dispatch/unscheduled", async (Guid? legalEntityId, int? page, int? pageSize, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "service.dispatch.read", legalEntityId, ct), () => service.ListWorkOrdersAsync(Tenant(http), legalEntityId, "Ready", null, page ?? 1, pageSize ?? 50, ct)));
         group.MapGet("/fixed-assets/{fixedAssetId:guid}/service-history", async (Guid fixedAssetId, int? page, int? pageSize, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await ResourceAccessAsync(http, subjects, authorizer, "service.work.read", () => service.GetFixedAssetHistoryLegalEntityAsync(Tenant(http), fixedAssetId, ct), ct), () => service.ListFixedAssetHistoryAsync(Tenant(http), fixedAssetId, page ?? 1, pageSize ?? 50, ct)));
-        group.MapGet("/reports/kpi", async (HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "service.export", ct), () => service.GetKpiAsync(Tenant(http), ct)));
+        group.MapGet("/reports/kpi", async (Guid? legalEntityId, HttpContext http, ServiceService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) => await Execute(http, await AccessAsync(http, subjects, authorizer, "service.export", legalEntityId, ct), () => service.GetKpiAsync(Tenant(http), legalEntityId, ct)));
+
+        var isTestProbeEnabled = app.Environment.IsDevelopment() &&
+            (app.Configuration.GetValue<bool>("TODIR_ENABLE_TEST_PROBE") ||
+             string.Equals(app.Configuration["TODIR_MUTATION_TEST_TARGET"], "isolated", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(Environment.GetEnvironmentVariable("TODIR_MUTATION_TEST_TARGET"), "isolated", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(Environment.GetEnvironmentVariable("TODIR_DISPOSABLE_TEST_ENV"), "true", StringComparison.OrdinalIgnoreCase));
+
+        if (isTestProbeEnabled)
+        {
+            group.MapGet("/target", async (HttpContext http, ServiceService service, IConfiguration config, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+            {
+                var expectedSecret = config["TODIR_TEST_PROBE_SECRET"]
+                    ?? config["Seed:DefaultPassword"]
+                    ?? Environment.GetEnvironmentVariable("ERP_DEV_PASSWORD")
+                    ?? "DevSeed2026Apmjuoj1oZjHEDcxSsOc27HKY8yOv0B7";
+
+                var authHeader = http.Request.Headers.Authorization.ToString();
+                var bearerToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    ? authHeader["Bearer ".Length..].Trim()
+                    : null;
+                var headerSecret = http.Request.Headers["X-Todir-Test-Secret"].FirstOrDefault();
+                var providedSecret = headerSecret ?? bearerToken;
+
+                var isSecretValid = !string.IsNullOrWhiteSpace(providedSecret) &&
+                    providedSecret.Length == expectedSecret.Length &&
+                    CryptographicOperations.FixedTimeEquals(
+                        System.Text.Encoding.UTF8.GetBytes(providedSecret),
+                        System.Text.Encoding.UTF8.GetBytes(expectedSecret));
+
+                if (!isSecretValid)
+                {
+                    var access = await AccessAsync(http, subjects, authorizer, "service.work.read", ct);
+                    if (access is null || !access.Allowed)
+                    {
+                        return Results.Unauthorized();
+                    }
+                }
+
+                var tenant = Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tid) ? new TenantId(tid) : (TenantId?)null;
+                var db = await service.GetDatabaseNameAsync(tenant, ct);
+                return Results.Ok(new { database = db });
+            }).AllowAnonymous().ExcludeFromDescription();
+        }
         return app;
     }
 

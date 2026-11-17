@@ -161,7 +161,14 @@ export function NewRequestModal({
               </label>
               <Select
                 value={installedBaseId}
-                onChange={(val) => setInstalledBaseId(val)}
+                data-testid="request-installed-base-select"
+                onChange={(val) => {
+                  setInstalledBaseId(val);
+                  const selected = installedItems.find((i) => i.id === val);
+                  if (selected?.customerPartyId && !customerPartyId) {
+                    setCustomerPartyId(selected.customerPartyId);
+                  }
+                }}
                 options={installedBaseOptions}
               />
             </div>

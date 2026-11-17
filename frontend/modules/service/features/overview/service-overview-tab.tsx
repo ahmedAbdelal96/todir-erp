@@ -43,7 +43,7 @@ export function ServiceOverviewTab({
   const [isNewWorkOrderOpen, setIsNewWorkOrderOpen] = useState(false);
   const [isNewInstalledBaseOpen, setIsNewInstalledBaseOpen] = useState(false);
 
-  const kpiQuery = useServiceKpiQuery();
+  const kpiQuery = useServiceKpiQuery(legalEntityId);
   const requestsQuery = useServiceRequestsQuery(legalEntityId, { page: 1, pageSize: 50 });
   const workOrdersQuery = useWorkOrdersQuery(legalEntityId, { page: 1, pageSize: 50 });
   const visitsQuery = useVisitsQuery(legalEntityId, { page: 1, pageSize: 50 });

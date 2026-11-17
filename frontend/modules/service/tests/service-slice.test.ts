@@ -1,4 +1,4 @@
-import { test, describe } from "node:test";
+import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { serviceAr } from "../i18n/ar.ts";
 import { serviceEn } from "../i18n/en.ts";
@@ -6,15 +6,32 @@ import type {
   ServiceRequestState,
   WorkOrderState,
   WorkOrderBillingOwner,
-  VisitLocationType,
-  ServiceContractType,
-  ServiceContractState,
-  MaintenancePlanState,
-  PartRequirementState,
-  ServiceChargeCategory
+  ChargesSummaryItem
 } from "../types.ts";
+import {
+  loadOfflineQueue,
+  saveOfflineQueue,
+  enqueueOfflineCommand,
+  replayOfflineQueue,
+  clearSyncedCommands,
+  dismissOfflineCommand,
+  type StoredOfflineCommand
+} from "../utils/offline-queue.ts";
 
-describe("TODIR Module 24 (Service & Maintenance) — Contracts & Domain Invariants", () => {
+describe("TODIR Module 24 (Service & Maintenance) — Comprehensive Frontend Unit & Slice Suite", () => {
+  // In-memory localStorage mock for node environment
+  const mockStorage = new Map<string, string>();
+  beforeEach(() => {
+    mockStorage.clear();
+    (globalThis as any).window = {
+      localStorage: {
+        getItem: (k: string) => mockStorage.get(k) ?? null,
+        setItem: (k: string, v: string) => mockStorage.set(k, v),
+        removeItem: (k: string) => mockStorage.delete(k)
+      }
+    };
+  });
+
   test("1:1 Arabic and English translation key parity for Service resources", () => {
     const getKeys = (obj: Record<string, any>, prefix = ""): string[] => {
       let keys: string[] = [];
@@ -104,49 +121,95 @@ describe("TODIR Module 24 (Service & Maintenance) — Contracts & Domain Invaria
     assert.equal(isValidTransition("Traveling", "Completed"), false);
   });
 
-  test("Financial Integrity: Customer Liability vs Covered Amount calculation", () => {
-    type ChargeLine = {
-      costAmount: number;
-      customerAmount: number;
-      coveredAmount: number;
-    };
+  test("Durable Offline Queue: Enqueue, Replay, Sync and Conflict handling", async () => {
+    const entityId = "aad8a34b-344c-9e5b-8d58-57f182fc6528";
 
-    const lines: ChargeLine[] = [
-      { costAmount: 150, customerAmount: 0, coveredAmount: 150 }, // 100% under warranty
-      { costAmount: 300, customerAmount: 100, coveredAmount: 200 }, // Deductible / partial coverage
-      { costAmount: 450, customerAmount: 450, coveredAmount: 0 } // Out of scope / billable
-    ];
+    // 1. Enqueue offline command
+    const cmd1 = enqueueOfflineCommand(entityId, {
+      commandType: "visit.travel",
+      visitId: "01933df5-0000-7000-8000-000000000001",
+      workOrderId: "01933df5-0000-7000-8000-000000000002",
+      expectedVersion: 1,
+      payloadJson: JSON.stringify({ action: "travel" })
+    });
 
-    const totalCustomer = lines.reduce((acc, curr) => acc + curr.customerAmount, 0);
-    const totalCovered = lines.reduce((acc, curr) => acc + curr.coveredAmount, 0);
-    const totalCost = lines.reduce((acc, curr) => acc + curr.costAmount, 0);
+    assert.equal(cmd1.status, "queued");
+    assert.equal(cmd1.attempts, 0);
 
-    assert.equal(totalCustomer, 550);
-    assert.equal(totalCovered, 350);
-    assert.equal(totalCustomer + totalCovered >= totalCost, true);
+    // Verify persisted in localStorage
+    const stored = loadOfflineQueue(entityId);
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0]?.clientCommandId, cmd1.clientCommandId);
+
+    // 2. Replay with successful server acceptance
+    const replay1 = await replayOfflineQueue(entityId, async (req) => {
+      assert.equal(req.clientCommandId, cmd1.clientCommandId);
+      return {
+        id: "01933df5-0000-7000-8000-000000000099",
+        clientCommandId: req.clientCommandId,
+        commandType: req.commandType,
+        state: "Accepted",
+        conflictCode: undefined,
+        resultJson: "{}"
+      };
+    });
+
+    assert.equal(replay1.successCount, 1);
+    assert.equal(replay1.conflictCount, 0);
+    assert.equal(replay1.failureCount, 0);
+
+    const afterSync = loadOfflineQueue(entityId);
+    assert.equal(afterSync[0]?.status, "synced");
+
+    // 3. Clear synced commands
+    clearSyncedCommands(entityId);
+    assert.equal(loadOfflineQueue(entityId).length, 0);
+
+    // 4. Enqueue command that results in Version Conflict
+    const cmd2 = enqueueOfflineCommand(entityId, {
+      commandType: "visit.complete",
+      visitId: "01933df5-0000-7000-8000-000000000001",
+      expectedVersion: 1
+    });
+
+    const replay2 = await replayOfflineQueue(entityId, async () => {
+      return {
+        id: "01933df5-0000-7000-8000-000000000098",
+        clientCommandId: cmd2.clientCommandId,
+        commandType: cmd2.commandType,
+        state: "Conflict",
+        conflictCode: "service.visit_conflict",
+        resultJson: null
+      };
+    });
+
+    assert.equal(replay2.conflictCount, 1);
+    const afterConflict = loadOfflineQueue(entityId);
+    assert.equal(afterConflict.length, 1);
+    assert.equal(afterConflict[0]?.status, "conflict");
+    assert.equal(afterConflict[0]?.conflictCode, "service.visit_conflict");
+
+    // 5. Dismiss command explicitly
+    dismissOfflineCommand(entityId, cmd2.clientCommandId);
+    assert.equal(loadOfflineQueue(entityId).length, 0);
   });
 
-  test("Entitlement Engine line-level contract verification", () => {
-    const resolveEntitlement = (hasContract: boolean, isWarrantyActive: boolean, category: ServiceChargeCategory) => {
-      if (isWarrantyActive && (category === "Labor" || category === "Parts")) {
-        return { covered: true, source: "Warranty", coveredPercent: 100 };
-      }
-      if (hasContract) {
-        return { covered: true, source: "ServiceContract", coveredPercent: 100 };
-      }
-      return { covered: false, source: "CustomerLiability", coveredPercent: 0 };
-    };
+  test("Multi-Currency Financial Aggregation Presentation Integrity", () => {
+    // Business Rule: Currencies must NEVER be summed together into an unconverted total
+    const summaryItems: ChargesSummaryItem[] = [
+      { currencyCode: "EGP", customerAmount: 15000, coveredAmount: 5000, chargeCount: 10, readyCount: 8, coveredCount: 3 },
+      { currencyCode: "SAR", customerAmount: 4500, coveredAmount: 1200, chargeCount: 4, readyCount: 3, coveredCount: 1 }
+    ];
 
-    const underWarranty = resolveEntitlement(false, true, "Parts");
-    assert.equal(underWarranty.covered, true);
-    assert.equal(underWarranty.source, "Warranty");
+    // Presentation formatting: distinct breakdown
+    const customerBillableDisplay = summaryItems.map((s) => `${s.customerAmount.toLocaleString()} ${s.currencyCode}`).join(" | ");
+    const coveredDisplay = summaryItems.map((s) => `${s.coveredAmount.toLocaleString()} ${s.currencyCode}`).join(" | ");
 
-    const underContract = resolveEntitlement(true, false, "Travel");
-    assert.equal(underContract.covered, true);
-    assert.equal(underContract.source, "ServiceContract");
+    assert.equal(customerBillableDisplay, "15,000 EGP | 4,500 SAR");
+    assert.equal(coveredDisplay, "5,000 EGP | 1,200 SAR");
 
-    const billable = resolveEntitlement(false, false, "Labor");
-    assert.equal(billable.covered, false);
-    assert.equal(billable.source, "CustomerLiability");
+    // Total counts can be safely aggregated across currencies
+    const totalReadyCount = summaryItems.reduce((acc, s) => acc + s.readyCount, 0);
+    assert.equal(totalReadyCount, 11);
   });
 });

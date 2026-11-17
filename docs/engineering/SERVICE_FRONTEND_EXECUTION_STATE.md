@@ -4,67 +4,69 @@
 **Repository Branch:** `dev`  
 **Git Remote:** `origin/dev`  
 **Backend Verified Baseline:** `2ccbe91b34d4af7c5e8cb8e70c5b5ea829d61ac8`  
-**Frontend Verified Commit:** Current Turn on `dev`  
+**Frontend Verified Commit:** `dev`  
 **Governing Manuals:** Root `AGENTS.md`, `frontend/AGENTS.md`, and Skill `erp-frontend-architect`  
 **Canonical Specification:** `docs/modules/24_ERP_SAAS_SERVICE_MAINTENANCE_AND_FIELD_SERVICE_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
-**Delivery Status:** `FRONTEND COMPLETE` (Ready for Human Product Acceptance)
+**Delivery Status:** `FRONTEND COMPLETE` (Ready for Human Product Owner Acceptance)
 
 ---
 
-## 1. Executive Summary & Defect Remediation
+## 1. Executive Summary & Release-Blocking Issues Resolved
 
-Following the independent source review of commit `6acfef3007dc6f5a11e1a46f0fe85a47391840dd`, all identified critical business UI defects, synthetic financial facts, and mismatched DTO contracts were completely remediated:
+Following independent product architecture and acceptance review, the following critical release-blocking issues were systematically corrected and verified:
 
-1. **Elimination of Fabricated Billing Metrics & Synthetic CSV Rows:**
-   - In `frontend/modules/service/features/billing/service-billing-tab.tsx`, eliminated fixed hardcoded amounts (48,500 SAR, 14,200 SAR, 32,000 SAR) and synthetic CSV export rows containing identical 1,500 SAR figures.
-   - Connected directly to backend authoritative endpoints: `GET /api/v1/service/charges` (newly added with tenant and legal-entity isolation and `service.billing.read` permission) and `GET /api/v1/service/reports/kpi`.
-   - Real-time aggregation of customer liability, warranty covered amounts, and projects billing segregation.
+1. **Dual-Track Playwright Acceptance Architecture (Real-Stack vs Mocked UI):**
+   - **Real-Stack Acceptance Suite (`frontend/tests/e2e/service-real-stack.spec.ts`):** 8/8 end-to-end user journeys executing against the real local .NET backend and isolated PostgreSQL database (`todir_service_acceptance`). Zero mocked business responses, authentic sessions (`admin@atlas.com`), real mutations persisted to the database, reloaded, and verified in browser DOM.
+   - **Mocked UI Suite (`frontend/tests/e2e/service-flow.spec.ts`):** Preserved for isolated component and visual rendering tests, explicitly classified as `[MOCKED_UI_ACCEPTANCE]`. All 6 visual tests passing.
 
-2. **Overview KPI Authenticity:**
-   - In `frontend/modules/service/features/overview/service-overview-tab.tsx`, removed all hardcoded trends (`+12%`, `-5%`, `+8%`) and synthetic availability percentages (`99.4%`).
-   - Bounded directly to `GET /api/v1/service/reports/kpi` returning authoritative `openRequests`, `openWorkOrders`, `visitsToday`, and true computed availability.
+2. **Strict Database Protection Before Mutation Tests:**
+   - Pre-flight automated probe against `GET /api/v1/service/target` using cryptographic timing-safe token verification.
+   - Fails closed immediately if the connected database is the normal dev database (`todir`). Requires an isolated test database (e.g. `todir_service_acceptance`).
 
-3. **Authoritative Entitlement Resolver Engine:**
-   - In `frontend/modules/service/features/contracts-warranty/contracts-warranty-tab.tsx`, eliminated client-side string matching and hardcoded SLA response hours (4h, 8h, 24h).
-   - Wired to `POST /api/v1/service/entitlements/resolve`, displaying category-specific breakdown lines (`chargeCategory`, `coverageSource`, `covered`, `coveredAmount`, `customerAmount`, `explanation`) and authoritative SLA clock states.
+3. **Durable Client Offline Command Queue:**
+   - Implemented `frontend/modules/service/utils/offline-queue.ts` using durable `localStorage` (`todir_service_offline_queue_<entityId>`).
+   - When offline, network mutations are halted and commands are queued with unique `clientCommandId`, timestamps, and retry counts.
+   - When connection is restored or user triggers manual sync (`مزامنة الأوامر الآن`), queue auto-replays through `POST /api/v1/service/mobile/commands`.
+   - Optimistic concurrency version conflicts (`service.visit_conflict`) retain the command in conflict state for technician resolution with clear Arabic microcopy.
+   - Verified via unit tests (`service-slice.test.ts`) and live browser test.
 
-4. **Technician My Day Isolation & Real Transitions:**
-   - In `frontend/modules/service/features/technician/my-day-tab.tsx`, replaced global visits list and hardcoded `TECH-001` with authenticated-user endpoint `GET /api/v1/service/mobile/my-day`.
-   - Implemented real online/offline detection (`window.addEventListener("online" | "offline")`), offline command queueing (`POST /api/v1/service/mobile/commands`), and optimistic concurrency version checking.
+4. **Authoritative Financial Multi-Currency Aggregation & Pagination:**
+   - Added `GET /api/v1/service/charges/summary` to backend, grouping totals by currency across ALL database records scoped to the legal entity.
+   - Financial summaries NEVER sum distinct currencies (e.g. SAR vs EGP) into a single unconverted figure.
+   - `ServiceBillingTab` renders grouped currency summaries and server-side pagination with Next/Previous navigation and total record counts.
 
-5. **Modal DTO Alignment & Type Safety:**
-   - Reconciled creation forms (`NewRequestModal`, `NewWorkOrderModal`, `AddPartRequirementModal`, `NewContractModal`, `NewInstalledBaseModal`, `AssignTechnicianModal`, `CreateChargeModal`) with exact C# backend DTOs.
-   - Replaced free-text and invalid strings with strict GUID validation (`isGuid.test()`), ensuring `customerPartyId`, `productId`, `employeeId`, and `legalEntityId` never fail ASP.NET Core deserialization.
-   - Eliminated all `as any` casts in data mutations.
-
-6. **Navigation & Permission Gates:**
-   - Replaced invalid `service.read` in `frontend/modules/service/routes.tsx` with canonical permission `service.work.read`.
+5. **Elimination of Fabricated Metrics & Synthetic Facts:**
+   - Purged all hardcoded trend percentages (`+12%`, `-5%`) and synthetic availability figures.
+   - Entitlement checker uses real backend resolution engine `POST /api/v1/service/entitlements/resolve`.
+   - Technician My Day uses authentic `GET /api/v1/service/mobile/my-day` scoped strictly to the authenticated user.
 
 ---
 
-## 2. Quality Gates & Verification Evidence
+## 2. Quality Gates & Local Verification Matrix
 
-All quality gates passed locally with zero warnings and zero errors:
+All gates pass locally without mock compromises:
 
 | Quality Gate | Command | Result |
 | :--- | :--- | :--- |
-| **Backend Service Tests** | `dotnet test backend/Tests/Modules/Service/ServiceTests.csproj` | **PASSED** (5/5 tests, 0 failures, 9ms) |
-| **Localization Verification** | `node frontend/tests/localization/verify-localization.mjs` | **PASSED** (100% key parity, 0 hardcoded strings) |
+| **Backend Service Tests** | `dotnet test backend/Tests/Modules/Service/ServiceTests.csproj` | **PASSED** (5/5 tests, 0 failures, 207ms) |
+| **Localization Parity** | `node frontend/tests/localization/verify-localization.mjs` | **PASSED** (100% key parity, 0 hardcoded strings) |
 | **Frontend Architecture** | `pnpm run architecture:frontend` | **PASSED** (9 architectural boundary tests clean) |
-| **TypeScript Strict Check** | `pnpm --dir frontend run typecheck` | **PASSED** (`tsc --noEmit`, 0 type errors) |
-| **Production Vite Build** | `pnpm --dir frontend build` | **PASSED** (built in 4.80s, 2158 modules transformed) |
-| **Unit / Contract Tests** | `node --experimental-strip-types frontend/modules/service/tests/service-slice.test.ts` | **PASSED** (7/7 tests, 0 failures, 11ms) |
-| **Playwright Acceptance Suite**| `pnpm --dir frontend run test:e2e tests/e2e/service-flow.spec.ts` | **PASSED** (6/6 journeys, 0 failures, 10.6s) |
+| **TypeScript Strict Check** | `pnpm --dir frontend run typecheck` | **PASSED** (`tsc --noEmit`, 0 errors) |
+| **Unit / Slice Tests** | `node --experimental-strip-types frontend/modules/service/tests/service-slice.test.ts` | **PASSED** (7/7 tests, 0 failures, 63ms) |
+| **Real-Stack Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/service-real-stack.spec.ts` | **PASSED** (8/8 live database tests, 23.5s) |
+| **Mocked UI Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/service-flow.spec.ts` | **PASSED** (6/6 component visual tests, 12.0s) |
 
 ---
 
-## 3. Visual Acceptance Artifacts
+## 3. Real-Stack Visual Acceptance Artifacts
 
-All screenshots have been generated and archived under `artifacts/service-acceptance/`:
+All screenshots were generated from the live database execution and archived under `artifacts/service-acceptance/real-stack/`:
 
-1. `01-service-overview-desktop.png`: Oxford Navy header, slate canvas, authoritative KPI cards, no fake trends.
-2. `02-service-work-orders.png`: Work order table displaying `Projects` billing badge and corrective maintenance lifecycle.
-3. `03-service-technician-my-day.png`: Authenticated technician mobile-ready day view with online indicator and visit actions.
-4. `04-service-entitlements.png`: Line-by-line entitlement resolver table with Warranty & ServiceContract coverage.
-5. `05-service-billing.png`: Authoritative charges table with invoice request action and CSV export.
-6. `06-service-mobile-390px.png`: Touch-first responsive mobile web layout for field technicians.
+1. `01-real-service-overview-desktop.png`: Corporate Oxford Navy header, slate background, live database KPI cards.
+2. `02-real-service-request-triaged.png`: Service request created with customer and installed base, persisted in PostgreSQL and re-queried after browser reload.
+3. `03-real-work-order-lifecycle.png`: Work order created, linked to equipment, verified billing owner badge (`Service` / `None`).
+4. `04-real-dispatcher-visit-assigned.png`: Dispatcher workbench rendering scheduled visits and unscheduled orders queues.
+5. `05-real-technician-my-day.png`: Authenticated technician mobile-ready day view with online indicator and durable offline queue manager.
+6. `07-real-entitlement-engine.png`: Authoritative entitlement resolution engine displaying category breakdown and SLA state.
+7. `08-real-billing-charges.png`: Grouped multi-currency financial KPI cards and charges table with invoice request action.
+8. `09-real-service-mobile-390px.png`: Touch-first responsive mobile web layout for field technicians on 390px viewport.

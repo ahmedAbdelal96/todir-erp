@@ -6,13 +6,13 @@ const LEGAL_ENTITY_ID = '00000000-0000-0000-0000-000000000001';
 const TEST_WO_ID = 'wo-00000000-0000-0000-0000-000000000001';
 const TEST_VISIT_ID = 'vis-00000000-0000-0000-0000-000000000001';
 
-const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/service-acceptance');
+const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/service-acceptance/mocked-ui');
 const ARTIFACTS_DIR = process.env.TEST_ARTIFACTS_DIR || LOCAL_ARTIFACTS_DIR;
 
 let consoleErrors: string[] = [];
 let pageErrors: string[] = [];
 
-test.describe('TODIR Module 24: Service, Maintenance & Field Service — Real-Stack & UI Acceptance Suite', () => {
+test.describe('TODIR Module 24: Service & Maintenance — [MOCKED_UI_ACCEPTANCE] Isolated UI & Component Layout Suite', () => {
   test.beforeAll(() => {
     if (!fs.existsSync(ARTIFACTS_DIR)) {
       fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });

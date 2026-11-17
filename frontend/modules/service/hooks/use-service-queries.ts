@@ -84,14 +84,23 @@ export const serviceKeys = {
   skills: () => [...serviceKeys.all, "skills"] as const,
   territories: () => [...serviceKeys.all, "territories"] as const,
   myDay: (date?: string, employeeId?: string) => [...serviceKeys.all, "myDay", date, employeeId] as const,
-  fixedAssetHistory: (assetId: string) => [...serviceKeys.all, "fixedAssetHistory", assetId] as const
+  fixedAssetHistory: (assetId: string) => [...serviceKeys.all, "fixedAssetHistory", assetId] as const,
+  chargesSummary: (legalEntityId?: string) => [...serviceKeys.all, "chargesSummary", legalEntityId] as const
 };
 
 // KPI
-export function useServiceKpiQuery() {
+export function useServiceKpiQuery(legalEntityId?: string) {
   return useQuery({
-    queryKey: serviceKeys.kpi(),
-    queryFn: () => serviceApi.getKpi()
+    queryKey: [...serviceKeys.kpi(), legalEntityId],
+    queryFn: () => serviceApi.getKpi(legalEntityId)
+  });
+}
+
+// Charges Summary
+export function useChargesSummaryQuery(legalEntityId?: string) {
+  return useQuery({
+    queryKey: serviceKeys.chargesSummary(legalEntityId),
+    queryFn: () => serviceApi.getChargesSummary(legalEntityId)
   });
 }
 

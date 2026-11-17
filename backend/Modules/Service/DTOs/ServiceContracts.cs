@@ -56,6 +56,8 @@ public sealed record CoverageResult(string ChargeCategory, string CoverageSource
 public sealed record EntitlementView(IReadOnlyList<CoverageResult> Lines, string SlaState, Guid? ContractId, Guid? WarrantyId);
 public sealed record CreateChargeRequest(string Category, string Description, decimal CostAmount, decimal CustomerAmount, string CurrencyCode = "EGP", string? SourceType = null, Guid? SourceId = null, Guid? CorrectionOfId = null);
 public sealed record ServiceChargeView(Guid Id, Guid WorkOrderId, string Category, string Description, decimal CostAmount, decimal CoveredAmount, decimal CustomerAmount, string CurrencyCode, string State, Guid? InvoiceId, Guid? CorrectionOfId = null);
+public sealed record ChargesSummaryItem(string CurrencyCode, decimal CustomerAmount, decimal CoveredAmount, int ChargeCount, int ReadyCount, int CoveredCount);
+public sealed record ChargesSummaryView(IReadOnlyList<ChargesSummaryItem> Items, int TotalChargesCount);
 public sealed record InvoiceAllocationRequest(Guid InvoiceId, decimal AllocatedAmount, Guid? InvoiceLineId = null);
 public sealed record PartActionRequest(decimal Quantity, string? InventoryReference = null, string? IdempotencyKey = null,
     Guid? LegalEntityId = null, Guid? WarehouseId = null, Guid? LocationId = null, Guid? UnitOfMeasureId = null,

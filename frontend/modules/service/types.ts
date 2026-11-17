@@ -734,6 +734,20 @@ export type ServiceChargeView = Readonly<{
   correctionOfId?: string | null | undefined;
 }>;
 
+export type ChargesSummaryItem = Readonly<{
+  currencyCode: string;
+  customerAmount: number;
+  coveredAmount: number;
+  chargeCount: number;
+  readyCount: number;
+  coveredCount: number;
+}>;
+
+export type ChargesSummaryView = Readonly<{
+  items: readonly ChargesSummaryItem[];
+  totalChargesCount: number;
+}>;
+
 export type CreateChargeRequest = Readonly<{
   category: ServiceChargeCategory;
   description: string;

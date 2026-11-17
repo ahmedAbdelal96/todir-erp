@@ -25,56 +25,70 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 - `أمر عمل` for Work Order (never `طلب عمل` or literal transliteration).
 - `طلب خدمة` for Service Request (never `تذكرة دعم`).
 - `زيارة ميدانية` for Field Visit.
-- `توزيع وجدولة` for Dispatch & Scheduling.
+- `الجدولة والتوزيع` for Dispatch & Scheduling.
 - `يومي الميداني` for Technician My Day.
 - `قاعدة المعدات المركبة` for Installed Base.
-- `صيانة وقائية دورية` for Preventive Maintenance.
-- `عقود الصيانة والضمانات` for Service Contracts & Warranties.
-- `فحص الاستحقاق` for Entitlement Resolution.
-- `رسوم الخدمة والفوترة` for Service Charges & Billing.
-- `جهة الفوترة: المشاريع (Projects)` vs `الخدمة (Service)`.
+- `الصيانة الوقائية` for Preventive Maintenance.
+- `العقود والضمانات و SLA` for Service Contracts, Warranties & SLA.
+- `التحقق من الاستحقاق` for Entitlement Resolution.
+- `الرسوم والمطالبات المالية` for Service Charges & Billing.
+- `جهة الفوترة: المشاريع (Projects)` vs `الخدمة (Service)` vs `بدون فوترة`.
 
 ---
 
 ## 2. Real-Stack User Journeys & Acceptance Evidence
 
-### Journey 1: Service Operations Overview & KPIs
-- Authenticated user views aggregated metrics (`openWorkOrders`, `openRequests`, `visitsToday`, and calculated `availabilityPercent`).
-- **Verification:** Hardcoded metrics, trends (`+12%`, `-5%`), and fake percentages (`99.4%`) were completely purged. Real metrics bind to `GET /api/v1/service/reports/kpi`.
-- **Evidence:** `artifacts/service-acceptance/01-service-overview-desktop.png`
+### Journey 1: Service Operations Overview & Authoritative KPIs
+- Authenticated user (`admin@atlas.com`) views live aggregated metrics from PostgreSQL.
+- **Verification:** Hardcoded metrics, trends (`+12%`, `-5%`), and fake percentages (`99.4%`) were completely purged. Real metrics bind to `GET /api/v1/service/reports/kpi` with legal-entity scoping.
+- **Artifact:** `artifacts/service-acceptance/real-stack/01-real-service-overview-desktop.png`
 
-### Journey 2: Work Orders & Billing Boundary Enforcement
-- Dispatchers and managers review Work Orders across Customer Field Service and Internal Maintenance contexts.
-- **Verification:** Projects billing boundary is respected. Work orders with `BillingOwner == "Projects"` display clear badges and cannot request service invoices directly.
-- **Evidence:** `artifacts/service-acceptance/02-service-work-orders.png`
+### Journey 2: Service Request Lifecycle & Database Commitment
+- Users register customer field service or internal asset maintenance requests.
+- **Verification:** Form selects installed base item (`ضاغط تبريد العميل`), auto-fills customer party ID (`cdcdd524-629a-7f56-a9ae-19b80fc05a48`), and commits record to `business_service.service_request`. Browser is reloaded and confirms persisted record in table.
+- **Artifact:** `artifacts/service-acceptance/real-stack/02-real-service-request-triaged.png`
 
-### Journey 3: Field Technician My Day & Offline Capability
+### Journey 3: Work Orders & Billing Boundary Enforcement
+- Dispatchers and managers create and review Work Orders across Customer Field Service and Internal Maintenance contexts.
+- **Verification:** Projects billing boundary is respected. Work orders with `BillingOwner == "Projects"` display clear blue badges; `Service` displays green; `None` displays neutral slate. Persisted to live database.
+- **Artifact:** `artifacts/service-acceptance/real-stack/03-real-work-order-lifecycle.png`
+
+### Journey 4: Dispatcher Workbench & Unscheduled Orders Queue
+- Dispatchers review scheduled field visits and the unscheduled work orders queue.
+- **Verification:** Surface loads real scheduled visits and ready work orders without synthetic rows.
+- **Artifact:** `artifacts/service-acceptance/real-stack/04-real-dispatcher-visit-assigned.png`
+
+### Journey 5: Field Technician My Day & Durable Offline Queue
 - Field technicians access their assigned visits via authenticated endpoint `GET /api/v1/service/mobile/my-day`.
-- **Verification:** Technicians cannot view arbitrary visits of other users. State transitions (`travel` -> `arrive` -> `start` -> `complete`) pass optimistic row versioning. Offline state queues commands to `POST /api/v1/service/mobile/commands`.
-- **Evidence:** `artifacts/service-acceptance/03-service-technician-my-day.png`
+- **Verification:** Technicians cannot view arbitrary visits of other users. Online status indicator is active. Durable client offline queue in `localStorage` enqueues mutations when disconnected, replays with auto-retry on reconnect, and handles version conflicts with explicit Arabic microcopy.
+- **Artifact:** `artifacts/service-acceptance/real-stack/05-real-technician-my-day.png`
 
-### Journey 4: Entitlement Engine & SLA Breakdown
-- Support agents verify coverage for parts and labor before dispatch.
-- **Verification:** Calls authoritative `POST /api/v1/service/entitlements/resolve`. Table renders exact lines with coverage source (Warranty vs Contract), covered amount, customer liability, and backend explanation.
-- **Evidence:** `artifacts/service-acceptance/04-service-entitlements.png`
+### Journey 6: Authoritative Entitlement & Warranty Resolver
+- Support agents and dispatchers verify coverage for parts and labor before dispatch.
+- **Verification:** Calls authoritative backend engine `POST /api/v1/service/entitlements/resolve`. Table renders exact breakdown lines with coverage source (Warranty vs Contract), covered amount, customer liability, and backend explanation.
+- **Artifact:** `artifacts/service-acceptance/real-stack/07-real-entitlement-engine.png`
 
-### Journey 5: Service Billing & Invoice Request
+### Journey 7: Service Charges & Multi-Currency Billing
 - Finance officers inspect accrued charges across all work orders.
-- **Verification:** Bound to `GET /api/v1/service/charges`. Generates real CSV exports with accurate amounts. Triggering `Request Invoice` transitions charges to `Requested` state.
-- **Evidence:** `artifacts/service-acceptance/05-service-billing.png`
+- **Verification:** Backend `GET /api/v1/service/charges/summary` computes multi-currency aggregates across ALL records without summing unconverted currencies (e.g. SAR vs EGP). Server-side pagination with Next/Previous navigation and total counts.
+- **Artifact:** `artifacts/service-acceptance/real-stack/08-real-billing-charges.png`
 
-### Journey 6: Field Mobility (390px Viewport)
-- Technicians using handheld devices experience responsive card layouts without horizontal scrolling.
+### Journey 8: Field Mobility Layout (390px Viewport)
+- Technicians using mobile handheld devices experience responsive touch-first card layouts.
 - **Verification:** Zero overflow (`scrollWidth <= innerWidth`), touch targets >= 44px, high-contrast text ratios.
-- **Evidence:** `artifacts/service-acceptance/06-service-mobile-390px.png`
+- **Artifact:** `artifacts/service-acceptance/real-stack/09-real-service-mobile-390px.png`
 
 ---
 
 ## 3. Human Product Owner Sign-off Checklist
 
-- [x] All 9 tabs functional and integrated.
-- [x] All modal creation forms validate GUIDs and match C# DTOs.
-- [x] Zero fabricated figures or hardcoded statistics.
-- [x] 100% Arabic/English translation parity.
-- [x] All Playwright end-to-end tests passing locally.
-- [x] Ready for final Product Owner verification and review.
+- [x] All 9 workspace tabs functional and integrated.
+- [x] All modal creation forms validate GUIDs and match backend C# DTOs.
+- [x] Zero fabricated figures, hardcoded statistics, or synthetic CSV rows.
+- [x] Multi-currency aggregation groups distinct currencies safely.
+- [x] Durable client offline queue handles offline state, auto-replay, and version conflicts.
+- [x] 100% Arabic/English translation parity verified clean.
+- [x] Database protection probe prevents mutation tests against dev database.
+- [x] Real-stack Playwright suite (8/8) passes against live .NET backend and PostgreSQL.
+- [x] Mocked UI suite (6/6) passes and is explicitly classified as `[MOCKED_UI_ACCEPTANCE]`.
+- [x] Ready for final Product Owner verification and acceptance.
