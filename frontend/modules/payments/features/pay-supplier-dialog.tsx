@@ -172,6 +172,7 @@ export function PaySupplierDialog({
         {/* Supplier Selection */}
         <PartyPicker
           label={t("pay.supplierLabel")}
+          description={t("pay.supplierSearchHint")}
           value={partyId || undefined}
           onChange={(id) => setPartyId(id)}
           roleFilter="Supplier"

@@ -176,6 +176,7 @@ export function ReceivePaymentDialog({
         {/* Customer Selection */}
         <PartyPicker
           label={t("receive.customerLabel")}
+          description={t("receive.customerSearchHint")}
           value={partyId || undefined}
           onChange={(id) => setPartyId(id)}
           roleFilter="Customer"

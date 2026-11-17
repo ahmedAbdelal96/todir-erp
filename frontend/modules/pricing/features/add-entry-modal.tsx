@@ -1,11 +1,12 @@
 import React, { useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useAddPriceEntryMutation, useLookupProducts, useLookupUoms, useLookupParties } from "../hooks/pricing-queries.ts";
+import { useAddPriceEntryMutation, useLookupProducts, useLookupUoms } from "../hooks/pricing-queries.ts";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
 import { ComboBox } from "../../../components/primitives/combobox.tsx";
+import { PartyPicker } from "../../directory/public.ts";
 import { Alert } from "../../../components/primitives/alert.tsx";
 import { normalizeDecimalInput } from "../../../components/formatting/decimal-parser.ts";
 import type { PricingPartyScope } from "../types.ts";
@@ -49,7 +50,6 @@ export function AddEntryModal({
   const [productSearch, setProductSearch] = useState("");
   const productsQuery = useLookupProducts(legalEntityId, productSearch);
   const uomsQuery = useLookupUoms();
-  const partiesQuery = useLookupParties(legalEntityId);
 
   const [variantId, setVariantId] = useState("");
   const [uomId, setUomId] = useState("");
@@ -63,7 +63,6 @@ export function AddEntryModal({
   const [priority, setPriority] = useState("0");
   const [errorMsg, setErrorMsg] = useState<string>();
   const selectedProductLabel = useRef("");
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(undefined);
@@ -117,8 +116,6 @@ export function AddEntryModal({
       id: product.defaultVariantId as string,
       label: product.sku ? `${product.displayName || product.name} (${product.sku})` : (product.displayName || product.name || "")
     }));
-  const parties = lookupItems(partiesQuery.data)
-    .map((party) => ({ id: party.id, label: party.displayName || party.name || "" }));
   const units = lookupItems(uomsQuery.data)
     .map((uom) => ({ id: uom.id, label: `${uom.nameAr || uom.nameEn || uom.code || ""} (${uom.code || ""})` }));
 
@@ -180,11 +177,12 @@ export function AddEntryModal({
           />
 
           {partyScope === "SpecificParty" && (
-            <Select
-              label={t("entryModal.partyLabel") + " *"}
-              selectedKey={partyId}
-              onSelectionChange={(key) => setPartyId(key as string)}
-              options={parties}
+            <PartyPicker
+              label={t("entryModal.partyLabel")}
+              value={partyId || undefined}
+              onChange={(selectedId) => setPartyId(selectedId)}
+              placeholder={t("entryModal.partyPlaceholder")}
+              isRequired
             />
           )}
 
