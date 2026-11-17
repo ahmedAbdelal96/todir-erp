@@ -162,29 +162,64 @@ describe("TODIR Module 24 (Service & Maintenance) — Comprehensive Frontend Uni
     assert.equal(stored.length, 1);
     assert.equal(stored[0]?.clientCommandId, cmd1.clientCommandId);
 
-    // 2. Replay with successful server acceptance
-    const replay1 = await replayOfflineQueue(validScope, async (req) => {
+    // 2. Replay with server Pending response (execution queued asynchronously)
+    const replayPending = await replayOfflineQueue(validScope, async (req) => {
       assert.equal(req.clientCommandId, cmd1.clientCommandId);
       return {
         id: "01933df5-0000-7000-8000-000000000099",
         clientCommandId: req.clientCommandId,
         commandType: req.commandType,
-        state: "Accepted",
+        state: "Pending",
         conflictCode: undefined,
         resultJson: "{}"
       };
     });
 
-    assert.equal(replay1.successCount, 1);
-    assert.equal(replay1.conflictCount, 0);
-    assert.equal(replay1.failureCount, 0);
+    assert.equal(replayPending.successCount, 0); // Not counted as synced yet
+    assert.equal(replayPending.conflictCount, 0);
+    assert.equal(replayPending.failureCount, 0);
 
+    const afterPending = loadOfflineQueue(validScope);
+    assert.equal(afterPending[0]?.status, "pending");
+
+    // 2b. Replay when command completes on server (Processed) -> marks synced
+    const replayProcessed = await replayOfflineQueue(validScope, async (req) => {
+      assert.equal(req.clientCommandId, cmd1.clientCommandId);
+      return {
+        id: "01933df5-0000-7000-8000-000000000099",
+        clientCommandId: req.clientCommandId,
+        commandType: req.commandType,
+        state: "Processed",
+        conflictCode: undefined,
+        resultJson: "{}"
+      };
+    });
+
+    assert.equal(replayProcessed.successCount, 1);
     const afterSync = loadOfflineQueue(validScope);
     assert.equal(afterSync[0]?.status, "synced");
 
     // 3. Clear synced commands
     clearSyncedCommands(validScope);
     assert.equal(loadOfflineQueue(validScope).length, 0);
+
+    // 3b. Test author security check: command authored by another user is rejected on replay
+    const foreignCmd = enqueueOfflineCommand(validScope, {
+      commandType: "visit.travel",
+      visitId: "01933df5-0000-7000-8000-000000000001"
+    });
+    // Manually alter author userId to simulate cross-user command contamination
+    (foreignCmd as any).userId = "01933df5-9999-7000-8000-000000000999";
+    saveOfflineQueue(validScope, [foreignCmd]);
+
+    const replayForeign = await replayOfflineQueue(validScope, async () => {
+      throw new Error("Should never be called for unauthorized author");
+    });
+    assert.equal(replayForeign.failureCount, 1);
+    const afterForeign = loadOfflineQueue(validScope);
+    assert.equal(afterForeign[0]?.status, "rejected");
+    assert.ok(afterForeign[0]?.errorMessage?.includes("SECURITY VIOLATION"));
+    dismissOfflineCommand(validScope, foreignCmd.clientCommandId);
 
     // 4. Enqueue command that results in Version Conflict
     const cmd2 = enqueueOfflineCommand(validScope, {

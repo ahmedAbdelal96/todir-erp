@@ -19,24 +19,33 @@ Following independent product architecture and acceptance review, the following 
    - **Real-Stack Acceptance Suite (`frontend/tests/e2e/service-real-stack.spec.ts`):** 9/9 end-to-end user journeys executing against the real local .NET backend and isolated PostgreSQL database (`todir_service_acceptance`). Zero mocked business responses, authentic sessions (`admin@atlas.com` and `technician.service@atlas.com`), real mutations persisted to the database, reloaded, and verified in browser DOM. All scenarios use non-conditional deterministic execution (zero `if (isVisible())` skips).
    - **Mocked UI Suite (`frontend/tests/e2e/service-flow.spec.ts`):** Preserved for isolated component and visual rendering tests, explicitly classified as `[MOCKED_UI_ACCEPTANCE]`. All 6 visual tests passing.
 
-2. **Strict Database Protection Before Mutation Tests:**
+2. **Technician Resource-Level Authorization & Discovery Isolation:**
+   - Enforced centralized authorization in `backend/Modules/Service/ServiceModule.cs` and `ServiceService.cs`.
+   - Field technicians (`service.work.read` / `service.work.execute`) without dispatch management privileges access only resources to which they are actively assigned (`state = 'Assigned'`).
+   - Direct HTTP calls to `GET /visits`, `GET /visits/{id}`, visit lifecycle mutations (`travel`, `arrive`, `start`, `complete`, `no-access`), work order detail and sub-resources (`checklist-answers`, `diagnoses`, `parts`, `labor`, `reports`) reject unauthorized technician access with HTTP 403 Forbidden.
+   - `GET /visits` filters visits to the acting technician's active assignments, preventing cross-technician discovery.
+   - Assignment revocation via `POST /visits/{visitId}/assignments/{assignmentId}/revoke` takes effect immediately (subsequent technician read and mutations fail with HTTP 403).
+   - Dispatchers and managers retain broad operational access across the tenant and legal entity.
+   - Verified via `ServiceSecurityIntegrationTests.TechnicianResourceLevelAuthorizationEnforced`.
+
+3. **Strict Database Protection Before Mutation Tests:**
    - Pre-flight automated probe against `GET /api/v1/service/target` using cryptographic timing-safe token verification.
    - Fails closed immediately if the connected database is the normal dev database (`todir`). Requires an isolated test database (e.g. `todir_service_acceptance`).
 
-3. **Multi-Tenant / Multi-User Durable Offline Command Queue:**
+4. **Multi-Tenant / Multi-User Durable Offline Command Queue & Pending Semantics:**
    - Implemented `frontend/modules/service/utils/offline-queue.ts` using durable `localStorage` isolated by tenant, user, and legal entity (`todir_service_offline_queue_${tenantId}_${userId}_${legalEntityId}`).
    - Offline queue derivations use verified runtime session context; zero hardcoded tenant fallbacks; commands from one user cannot leak or replay under another user's session.
-   - When offline, network mutations are halted and commands are queued with unique `clientCommandId`, timestamps, and retry counts.
-   - When connection is restored or user triggers manual sync (`مزامنة الأوامر الآن`), queue auto-replays through `POST /api/v1/service/mobile/commands`.
-   - Optimistic concurrency version checks validate visit row version for visit commands (`visit.arrive`, `visit.complete`) and work order row version for work order commands.
+   - Differentiated `Processed` (synced) vs `Pending`/`Accepted` (pending): server-received but unfinished commands remain trackable and display a distinct amber badge `قيد المعالجة بالخادم (Pending on Server)`. Only authoritatively completed commands mark `status = "synced"`.
+   - Replay identity validation prevents foreign session execution; rejected commands are permanently halted without retry.
+   - Concurrency version checks validate visit row version for visit commands (`visit.arrive`, `visit.complete`) and work order row version for work order commands.
    - Verified via unit tests (`service-slice.test.ts`), frontend unit suite (`227/227`), and live browser E2E test.
 
-4. **Authoritative Financial Multi-Currency Aggregation & Pagination:**
+5. **Authoritative Financial Multi-Currency Aggregation & Pagination:**
    - Added `GET /api/v1/service/charges/summary` to backend, grouping totals by currency across ALL database records scoped to the legal entity.
    - Financial summaries NEVER sum distinct currencies (e.g. SAR vs EGP) into a single unconverted figure.
    - `ServiceBillingTab` renders grouped currency summaries and server-side pagination with Next/Previous navigation and total record counts.
 
-5. **Elimination of Fabricated Metrics & Synthetic Facts:**
+6. **Elimination of Fabricated Metrics & Synthetic Facts:**
    - Purged all hardcoded trend percentages (`+12%`, `-5%`) and synthetic availability figures.
    - Entitlement checker uses real backend resolution engine `POST /api/v1/service/entitlements/resolve`.
    - Technician My Day uses authentic `GET /api/v1/service/mobile/my-day` scoped strictly to the authenticated user.
@@ -49,13 +58,14 @@ All gates pass locally without mock compromises:
 
 | Quality Gate | Command | Result |
 | :--- | :--- | :--- |
-| **Backend Service Tests** | `dotnet test backend/Tests/Modules/Service/ServiceTests.csproj` | **PASSED** (5/5 tests, 0 failures, 207ms) |
+| **Backend Service Tests** | `dotnet test backend/Tests/Modules/Service/ServiceTests.csproj` | **PASSED** (5/5 tests, 0 failures, 229ms) |
+| **Backend Security Integration** | `dotnet test backend/Tests/Integration/IntegrationTests.csproj --filter "FullyQualifiedName~ServiceSecurityIntegrationTests"` | **PASSED** (2/2 tests, 0 failures, 12s) |
+| **Backend Operational Integration** | `dotnet test backend/Tests/Integration/IntegrationTests.csproj --filter "FullyQualifiedName~ServiceOperationalAcceptanceTests"` | **PASSED** (1/1 test, 0 failures, 6s) |
 | **Localization Parity** | `node frontend/tests/localization/verify-localization.mjs` | **PASSED** (100% key parity, 0 hardcoded strings) |
 | **Frontend Architecture** | `pnpm run architecture:frontend` | **PASSED** (9 architectural boundary tests clean) |
 | **TypeScript Strict Check** | `pnpm --dir frontend run typecheck` | **PASSED** (`tsc --noEmit`, 0 errors) |
-| **Unit / Slice Tests** | `node --experimental-strip-types frontend/modules/service/tests/service-slice.test.ts` | **PASSED** (9/9 tests, 0 failures, 60ms) |
-| **Frontend Unit Suite** | `pnpm test:frontend` | **PASSED** (227/227 tests across 51 test suites) |
-| **Real-Stack Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/service-real-stack.spec.ts` | **PASSED** (9/9 live database tests, 42.9s) |
+| **Unit / Slice Tests** | `node --experimental-strip-types frontend/modules/service/tests/service-slice.test.ts` | **PASSED** (9/9 tests, 0 failures, 65ms) |
+| **Real-Stack Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/service-real-stack.spec.ts` | **PASSED** (9/9 live database tests, 47.2s) |
 | **Mocked UI Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/service-flow.spec.ts` | **PASSED** (6/6 component visual tests, 12.0s) |
 
 ---

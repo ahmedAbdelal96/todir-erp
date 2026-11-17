@@ -248,8 +248,8 @@ export function MyDayTab({ legalEntityId, tenantId: propTenantId, userId: propUs
                   alignItems: "center",
                   padding: "0.75rem 1rem",
                   borderRadius: "0.375rem",
-                  backgroundColor: cmd.status === "conflict" ? "#fef2f2" : cmd.status === "synced" ? "#f0fdf4" : cmd.status === "rejected" ? "#fff1f2" : "#f8fafc",
-                  border: `1px solid ${cmd.status === "conflict" ? "#fecaca" : cmd.status === "synced" ? "#bbf7d0" : cmd.status === "rejected" ? "#fecdd3" : "#e2e8f0"}`
+                  backgroundColor: cmd.status === "conflict" ? "#fef2f2" : cmd.status === "synced" ? "#f0fdf4" : cmd.status === "rejected" ? "#fff1f2" : cmd.status === "pending" ? "#fffbeb" : "#f8fafc",
+                  border: `1px solid ${cmd.status === "conflict" ? "#fecaca" : cmd.status === "synced" ? "#bbf7d0" : cmd.status === "rejected" ? "#fecdd3" : cmd.status === "pending" ? "#fde68a" : "#e2e8f0"}`
                 }}
               >
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
@@ -261,8 +261,8 @@ export function MyDayTab({ legalEntityId, tenantId: propTenantId, userId: propUs
                         borderRadius: "0.25rem",
                         fontSize: "0.75rem",
                         fontWeight: 600,
-                        backgroundColor: cmd.status === "synced" ? "#dcfce7" : cmd.status === "conflict" ? "#fee2e2" : cmd.status === "rejected" ? "#ffe4e6" : "#e0e7ff",
-                        color: cmd.status === "synced" ? "#166534" : cmd.status === "conflict" ? "#991b1b" : cmd.status === "rejected" ? "#9f1239" : "#3730a3"
+                        backgroundColor: cmd.status === "synced" ? "#dcfce7" : cmd.status === "conflict" ? "#fee2e2" : cmd.status === "rejected" ? "#ffe4e6" : cmd.status === "pending" ? "#fef3c7" : "#e0e7ff",
+                        color: cmd.status === "synced" ? "#166534" : cmd.status === "conflict" ? "#991b1b" : cmd.status === "rejected" ? "#9f1239" : cmd.status === "pending" ? "#92400e" : "#3730a3"
                       }}
                     >
                       {cmd.status === "synced"
@@ -271,6 +271,8 @@ export function MyDayTab({ legalEntityId, tenantId: propTenantId, userId: propUs
                         ? t("technician.statusConflict")
                         : cmd.status === "rejected"
                         ? t("technician.statusRejected")
+                        : cmd.status === "pending"
+                        ? t("technician.statusPending")
                         : cmd.status === "syncing"
                         ? t("technician.statusSyncing")
                         : t("technician.statusQueued")}

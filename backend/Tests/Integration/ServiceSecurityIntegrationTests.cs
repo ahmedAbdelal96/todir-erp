@@ -18,6 +18,9 @@ public sealed class ServiceSecurityIntegrationTests
 {
     private static readonly TenantId Atlas = new(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
     private static readonly TenantId Delta = new(Guid.Parse("3f93b180-d6a9-3e50-9c92-6be0607e96eb"));
+    private static readonly string[] TechPermissions = ["platform.organization.read", "service.work.read", "service.work.execute"];
+    private static readonly string[] DispatcherPermissions = ["platform.organization.read", "service.work.read", "service.work.execute", "service.dispatch.manage"];
+    private static readonly string[] DefaultTestPermissions = ["platform.organization.read", "service.work.read", "service.work.execute", "service.documents.manage"];
 
     [Fact(DisplayName = "Service HTTP resource scope, files, costs and offline assignment are enforced")]
     public async Task AuthenticatedHttpSecurityIsResourceScoped()
@@ -87,7 +90,123 @@ public sealed class ServiceSecurityIntegrationTests
         }
     }
 
-    private static async Task CreateRoleAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid tenantId, string code)
+    [Fact(DisplayName = "Technician resource-level authorization: access strictly scoped to assigned visits, discovery restricted, revocation immediate")]
+    public async Task TechnicianResourceLevelAuthorizationEnforced()
+    {
+        var connectionString = ServiceAcceptanceDatabaseGuard.RequireConfiguredConnection();
+        await ServiceAcceptanceDatabaseGuard.VerifyAsync(connectionString);
+        var suffix = Guid.CreateVersion7().ToString("N");
+        var password = $"Tech-Security-{suffix[..8]}1!";
+        var techAEmail = $"tech-a-{suffix}@atlas.com";
+        var techBEmail = $"tech-b-{suffix}@atlas.com";
+        var dispatcherEmail = $"dispatcher-{suffix}@atlas.com";
+
+        var atlasEntity = await ScalarAsync<Guid>(connectionString, "select id from platform.legal_entity where tenant_id=$1 and code='MAIN' and status='Active'", Atlas.Value);
+        var techRoleCode = $"tech_role_{suffix}";
+        var dispatcherRoleCode = $"dispatcher_role_{suffix}";
+
+        Guid techAId;
+        Guid techBId;
+        Guid dispatcherId;
+
+        await using (var connection = new NpgsqlConnection(connectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await CreateRoleAsync(connection, transaction, Atlas.Value, techRoleCode, TechPermissions);
+            await CreateRoleAsync(connection, transaction, Atlas.Value, dispatcherRoleCode, DispatcherPermissions);
+
+            techAId = await CreateAccountAsync(connection, transaction, Atlas.Value, atlasEntity, techAEmail, password, techRoleCode);
+            techBId = await CreateAccountAsync(connection, transaction, Atlas.Value, atlasEntity, techBEmail, password, techRoleCode);
+            dispatcherId = await CreateAccountAsync(connection, transaction, Atlas.Value, atlasEntity, dispatcherEmail, password, dispatcherRoleCode);
+            await transaction.CommitAsync();
+        }
+
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+            .UseEnvironment("Development")
+            .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
+            .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+        var service = factory.Services.GetRequiredService<ServiceService>();
+
+        // 1. Create a Work Order and Visit
+        var workOrder = await service.CreateWorkOrderAsync(Atlas, dispatcherId, Guid.CreateVersion7(),
+            new CreateWorkOrderRequest(atlasEntity, "InternalMaintenance", "Technician authorization test work order", null, null, null, null, null, null), CancellationToken.None);
+
+        var visit = await service.CreateVisitAsync(Atlas, dispatcherId, workOrder.Id,
+            new CreateVisitRequest(DateTimeOffset.UtcNow.AddMinutes(10), DateTimeOffset.UtcNow.AddHours(2)), CancellationToken.None);
+
+        // 2. Assign visit to Technician A
+        var assignment = await service.AssignAsync(Atlas, dispatcherId, visit.Id,
+            new CreateAssignmentRequest(null, techAId, DisplayName: "Technician Alpha"), CancellationToken.None);
+
+        // 3. Authenticate Technician A
+        using var clientTechA = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(clientTechA, techAEmail, password, Atlas.Value);
+
+        // Tech A CAN read assigned Visit (200 OK)
+        var readByTechA = await clientTechA.GetAsync($"/api/v1/service/visits/{visit.Id:D}");
+        Assert.Equal(HttpStatusCode.OK, readByTechA.StatusCode);
+
+        // Tech A CAN mutate assigned Visit (travel transition)
+        var travelByTechA = await PostWithCsrfAsync(clientTechA, $"/api/v1/service/visits/{visit.Id:D}/travel", new { version = visit.Version });
+        Assert.Equal(HttpStatusCode.OK, travelByTechA.StatusCode);
+
+        // Tech A CAN discover assigned visit in list
+        var listByTechA = await clientTechA.GetAsync("/api/v1/service/visits");
+        Assert.Equal(HttpStatusCode.OK, listByTechA.StatusCode);
+        var visitsTechA = await listByTechA.Content.ReadFromJsonAsync<JsonElement>();
+        var itemsTechA = visitsTechA.TryGetProperty("items", out var itA) ? itA : visitsTechA;
+        var visitIdsTechA = itemsTechA.EnumerateArray().Select(v => v.GetProperty("id").GetGuid()).ToList();
+        Assert.Contains(visit.Id, visitIdsTechA);
+
+        // 4. Authenticate Technician B (NOT assigned to visit)
+        using var clientTechB = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(clientTechB, techBEmail, password, Atlas.Value);
+
+        // Tech B CANNOT directly read Tech A's visit (403 Forbidden)
+        var readByTechB = await clientTechB.GetAsync($"/api/v1/service/visits/{visit.Id:D}");
+        Assert.Equal(HttpStatusCode.Forbidden, readByTechB.StatusCode);
+
+        // Tech B CANNOT mutate Tech A's visit (403 Forbidden)
+        var arriveByTechB = await PostWithCsrfAsync(clientTechB, $"/api/v1/service/visits/{visit.Id:D}/arrive", new { version = visit.Version + 1L });
+        Assert.Equal(HttpStatusCode.Forbidden, arriveByTechB.StatusCode);
+
+        // Tech B CANNOT discover Tech A's visit in list (discovery isolation)
+        var listByTechB = await clientTechB.GetAsync("/api/v1/service/visits");
+        Assert.Equal(HttpStatusCode.OK, listByTechB.StatusCode);
+        var visitsTechB = await listByTechB.Content.ReadFromJsonAsync<JsonElement>();
+        var itemsTechB = visitsTechB.TryGetProperty("items", out var itB) ? itB : visitsTechB;
+        var visitIdsTechB = itemsTechB.EnumerateArray().Select(v => v.GetProperty("id").GetGuid()).ToList();
+        Assert.DoesNotContain(visit.Id, visitIdsTechB);
+
+        // 5. Revocation takes effect immediately: Dispatcher revokes Tech A's assignment
+        using var clientDispatcher = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+        await LoginAsync(clientDispatcher, dispatcherEmail, password, Atlas.Value);
+
+        var revokeResp = await PostWithCsrfAsync(clientDispatcher, $"/api/v1/service/visits/{visit.Id:D}/assignments/{assignment.Id:D}/revoke");
+        Assert.Equal(HttpStatusCode.OK, revokeResp.StatusCode);
+
+        // Tech A immediate check: direct read now returns 403 Forbidden!
+        var readRevokedTechA = await clientTechA.GetAsync($"/api/v1/service/visits/{visit.Id:D}");
+        Assert.Equal(HttpStatusCode.Forbidden, readRevokedTechA.StatusCode);
+
+        // Tech A immediate check: mutation now returns 403 Forbidden!
+        var arriveRevokedTechA = await PostWithCsrfAsync(clientTechA, $"/api/v1/service/visits/{visit.Id:D}/arrive", new { version = visit.Version + 1L });
+        Assert.Equal(HttpStatusCode.Forbidden, arriveRevokedTechA.StatusCode);
+
+        // 6. Dispatcher retains broad access to the visit and list
+        var readByDispatcher = await clientDispatcher.GetAsync($"/api/v1/service/visits/{visit.Id:D}");
+        Assert.Equal(HttpStatusCode.OK, readByDispatcher.StatusCode);
+
+        var listByDispatcher = await clientDispatcher.GetAsync("/api/v1/service/visits");
+        Assert.Equal(HttpStatusCode.OK, listByDispatcher.StatusCode);
+        var visitsDispatcher = await listByDispatcher.Content.ReadFromJsonAsync<JsonElement>();
+        var itemsDispatcher = visitsDispatcher.TryGetProperty("items", out var itD) ? itD : visitsDispatcher;
+        var visitIdsDispatcher = itemsDispatcher.EnumerateArray().Select(v => v.GetProperty("id").GetGuid()).ToList();
+        Assert.Contains(visit.Id, visitIdsDispatcher);
+    }
+
+    private static async Task CreateRoleAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid tenantId, string code, string[]? permissions = null)
     {
         await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction))
         {
@@ -98,7 +217,8 @@ public sealed class ServiceSecurityIntegrationTests
         {
             role.Parameters.AddWithValue(roleId); role.Parameters.AddWithValue(tenantId); role.Parameters.AddWithValue(code); await role.ExecuteNonQueryAsync();
         }
-        foreach (var permission in new[] { "platform.organization.read", "service.work.read", "service.work.execute", "service.documents.manage" })
+        var perms = permissions ?? DefaultTestPermissions;
+        foreach (var permission in perms)
         {
             await using var entry = new NpgsqlCommand("insert into platform.role_permission(tenant_id,role_id,permission_code) values($1,$2,$3)", connection, transaction);
             entry.Parameters.AddWithValue(tenantId); entry.Parameters.AddWithValue(roleId); entry.Parameters.AddWithValue(permission); await entry.ExecuteNonQueryAsync();
@@ -132,10 +252,10 @@ public sealed class ServiceSecurityIntegrationTests
         command.Parameters.AddWithValue(fileId); command.Parameters.AddWithValue(tenantId); command.Parameters.AddWithValue(workOrderId); command.Parameters.AddWithValue($"tenant/{tenantId:D}/service/work_order/{workOrderId:D}/{fileId:D}"); command.Parameters.AddWithValue(new string('b', 64)); command.Parameters.AddWithValue(classification); command.Parameters.AddWithValue(actor); await command.ExecuteNonQueryAsync(); return fileId;
     }
 
-    private static async Task<HttpResponseMessage> PostWithCsrfAsync(HttpClient client, string path, object body)
+    private static async Task<HttpResponseMessage> PostWithCsrfAsync(HttpClient client, string path, object? body = null)
     {
         using var csrfResponse = await client.GetAsync("/api/v1/auth/csrf"); var csrf = await csrfResponse.Content.ReadFromJsonAsync<JsonElement>();
-        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) }; request.Headers.Add("X-CSRF-TOKEN", csrf.GetProperty("token").GetString()); return await client.SendAsync(request);
+        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = body != null ? JsonContent.Create(body) : JsonContent.Create(new { }) }; request.Headers.Add("X-CSRF-TOKEN", csrf.GetProperty("token").GetString()); return await client.SendAsync(request);
     }
 
     private static async Task LoginAsync(HttpClient client, string email, string password, Guid tenantId)

@@ -58,14 +58,15 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 - **Verification:** Surface loads real scheduled visits and ready work orders without synthetic rows.
 - **Artifact:** `artifacts/service-acceptance/real-stack/04-real-dispatcher-visit-assigned.png`
 
-### Journey 5: Field Technician My Day & User Isolation
-- Field technicians access their assigned visits via authenticated endpoint `GET /api/v1/service/mobile/my-day`.
-- **Verification:** Authenticated as `technician.service@atlas.com`. Technician transitions visit (`Travel` / `بدء التحرك`), verified in live database. Another technician cannot view or mutate visits assigned to this technician.
+### Journey 5: Field Technician My Day, Resource-Level Authorization & Discovery Isolation
+- Field technicians access only their assigned visits via authenticated endpoint `GET /api/v1/service/mobile/my-day` and `GET /api/v1/service/visits`.
+- **Verification:** Authenticated as `technician.service@atlas.com`. Technician transitions visit (`Travel` / `بدء التحرك`), verified in live database. Another technician cannot view or mutate visits assigned to this technician. Direct API requests to visits or work order sub-resources outside assignment return HTTP 403 Forbidden. List APIs filter visits to assigned items only, preventing unauthorized discovery. Immediate assignment revocation halts subsequent mutations instantly.
+- **Backend Verification:** `IntegrationTests.ServiceSecurityIntegrationTests.TechnicianResourceLevelAuthorizationEnforced` passed.
 - **Artifact:** `artifacts/service-acceptance/real-stack/05-real-technician-my-day.png`
 
-### Journey 6: Durable Offline Queue, Local Persistence & Reconnect Sync
+### Journey 6: Durable Offline Queue, Local Persistence, Pending Semantics & Reconnect Sync
 - Field technicians operate disconnected from network and queue work commands locally.
-- **Verification:** Network disconnected via Chromium DevTools protocol. Mutation queued in tenant/user-scoped `localStorage`. Page reloaded while offline, queue verified intact in DOM. Network reconnected; user triggers sync (`مزامنة الأوامر الآن`); backend processes mutation (`POST /api/v1/service/mobile/commands`) with optimistic concurrency checks against `business_service.service_visit`.
+- **Verification:** Network disconnected via Chromium DevTools protocol. Mutation queued in tenant/user-scoped `localStorage`. Page reloaded while offline, queue verified intact in DOM. Server-received commands with incomplete processing display distinct amber badge `قيد المعالجة بالخادم (Pending on Server)` and are not conflated with authoritative completion (`synced`). Replay requires authenticated session user to match author identity. Network reconnected; user triggers sync (`مزامنة الأوامر الآن`); backend processes mutation (`POST /api/v1/service/mobile/commands`) with optimistic concurrency checks against `business_service.service_visit`.
 - **Artifact:** `artifacts/service-acceptance/real-stack/06-real-technician-offline-sync.png`
 
 ### Journey 7: Authoritative Entitlement & Warranty Resolver
@@ -91,9 +92,11 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 - [x] All modal creation forms validate GUIDs and match backend C# DTOs.
 - [x] Zero fabricated figures, hardcoded statistics, or synthetic CSV rows.
 - [x] Multi-currency aggregation groups distinct currencies safely.
-- [x] Durable client offline queue handles offline state, auto-replay, and version conflicts with tenant/user isolation.
+- [x] Durable client offline queue handles offline state, auto-replay, version conflicts with tenant/user isolation, and distinct Pending/Accepted vs Processed semantics.
+- [x] Field technician resource-level authorization and discovery isolation strictly enforced at the backend and proven by direct HTTP tests.
 - [x] 100% Arabic/English translation parity verified clean.
 - [x] Database protection probe prevents mutation tests against dev database.
 - [x] Real-stack Playwright suite (9/9) passes against live .NET backend and PostgreSQL.
+- [x] Backend integration test suite passes (including `ServiceSecurityIntegrationTests` 2/2 and `ServiceOperationalAcceptanceTests` 1/1).
 - [x] Mocked UI suite (6/6) passes and is explicitly classified as `[MOCKED_UI_ACCEPTANCE]`.
 - [x] Ready for final Product Owner verification and acceptance.

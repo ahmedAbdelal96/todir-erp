@@ -29,6 +29,7 @@ export const serviceEn = {
   validation: {
     subjectRequired: "Subject is required.",
     datesRequired: "Both start and end dates are required.",
+    customerRequired: "Select the customer from the customer list.",
     technicianOrCrewRequired: "Either Technician ID or Crew ID must be specified.",
     symptomOrFailureCodeRequired: "Please enter a symptom or failure code.",
     itemCodeRequired: "Item code is required.",
@@ -289,6 +290,7 @@ export const serviceEn = {
     syncNow: "Sync Now",
     clearSynced: "Clear Completed",
     statusSynced: "Synced Successfully",
+    statusPending: "Pending on Server",
     statusConflict: "Version Conflict",
     statusSyncing: "Syncing with server...",
     statusQueued: "Queued for Sync",

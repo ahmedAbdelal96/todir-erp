@@ -1,6 +1,6 @@
 import type { OfflineCommandRequest, OfflineCommandView } from "../types.ts";
 
-export type StoredCommandStatus = "queued" | "syncing" | "synced" | "conflict" | "rejected" | "failed";
+export type StoredCommandStatus = "queued" | "syncing" | "pending" | "synced" | "conflict" | "rejected" | "failed";
 
 export interface QueueScope {
   readonly tenantId: string;
@@ -30,6 +30,9 @@ export interface StoredOfflineCommand {
   errorMessage?: string | undefined;
   conflictCode?: string | undefined;
   attempts: number;
+  readonly tenantId?: string;
+  readonly userId?: string;
+  readonly legalEntityId?: string;
 }
 
 export function getStorageKey(scope: QueueScope): string {
@@ -105,7 +108,10 @@ export function enqueueOfflineCommand(
     payloadJson: command.payloadJson ?? "{}",
     queuedAt: new Date().toISOString(),
     status: "queued",
-    attempts: 0
+    attempts: 0,
+    tenantId: scope.tenantId,
+    userId: scope.userId,
+    legalEntityId: scope.legalEntityId
   };
 
   const updated = [...current, newEntry];
@@ -142,6 +148,15 @@ export async function replayOfflineQueue(
     const updatedQueue: StoredOfflineCommand[] = [];
 
     for (const cmd of queue) {
+      // Security check: ensure command author matches current scope
+      if (cmd.userId && cmd.userId !== scope.userId) {
+        cmd.status = "rejected";
+        cmd.errorMessage = "SECURITY VIOLATION: Command was created by a different user session and cannot be replayed.";
+        failureCount += 1;
+        updatedQueue.push(cmd);
+        continue;
+      }
+
       // Never auto-retry synced, conflicts, or permanently rejected commands
       if (cmd.status === "synced" || cmd.status === "conflict" || cmd.status === "rejected") {
         updatedQueue.push(cmd);
@@ -175,11 +190,15 @@ export async function replayOfflineQueue(
           cmd.conflictCode = result.conflictCode || "VersionConflict";
           cmd.errorMessage = `Conflict detected: ${result.conflictCode || "VersionConflict"}`;
           conflictCount += 1;
-        } else if (result.state === "Accepted" || result.state === "Processed" || result.state === "Pending") {
+        } else if (result.state === "Processed") {
           cmd.status = "synced";
           cmd.errorMessage = undefined;
           cmd.conflictCode = undefined;
           successCount += 1;
+        } else if (result.state === "Accepted" || result.state === "Pending") {
+          cmd.status = "pending";
+          cmd.errorMessage = "Command accepted by server and pending execution completion.";
+          cmd.conflictCode = undefined;
         } else if (result.state === "Rejected") {
           cmd.status = "rejected";
           cmd.errorMessage = result.conflictCode || "Rejected by domain policy";

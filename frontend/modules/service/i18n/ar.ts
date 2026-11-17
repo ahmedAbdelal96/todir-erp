@@ -29,6 +29,7 @@ export const serviceAr = {
   validation: {
     subjectRequired: "موضوع الطلب إلزامي.",
     datesRequired: "تاريخ البداية والنهاية إلزاميان.",
+    customerRequired: "يجب اختيار العميل من قائمة العملاء.",
     technicianOrCrewRequired: "يجب تحديد الفني أو طاقم العمل.",
     symptomOrFailureCodeRequired: "يرجى إدخال وصف العَرَض أو كود العطل.",
     itemCodeRequired: "كود عنصر الفحص إلزامي.",
@@ -289,6 +290,7 @@ export const serviceAr = {
     syncNow: "مزامنة الأوامر الآن",
     clearSynced: "مسح العمليات المكتملة",
     statusSynced: "تمت المزامنة بنجاح",
+    statusPending: "قيد المعالجة بالخادم",
     statusConflict: "تعارض في نسخة البيانات",
     statusSyncing: "جاري المزامنة مع الخادم...",
     statusQueued: "قيد الانتظار للمزامنة",
