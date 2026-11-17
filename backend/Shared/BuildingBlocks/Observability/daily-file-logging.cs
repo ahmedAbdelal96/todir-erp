@@ -121,7 +121,7 @@ internal static class DailyFileLoggerConfiguration
             .Enrich.WithProperty("service", options.Service)
             .Enrich.WithProperty("environment", options.Environment)
             .Enrich.With<DailyLogDateEnricher>()
-            .WriteTo.Console(new ColoredCompactJsonFormatter());
+            .WriteTo.Console(new ReadableConsoleLogFormatter());
 
         if (!options.Enabled) return;
 
@@ -164,36 +164,117 @@ internal static class DailyFileLoggerConfiguration
     }
 }
 
-internal sealed class ColoredCompactJsonFormatter : ITextFormatter
+internal sealed class ReadableConsoleLogFormatter : ITextFormatter
 {
     private const string Reset = "\u001b[0m";
-    private static readonly RenderedCompactJsonFormatter JsonFormatter = new();
+    private const string Dim = "\u001b[90m";
+    private const string White = "\u001b[37m";
+    private const string Cyan = "\u001b[36m";
+    private const string Blue = "\u001b[34m";
+    private const string Magenta = "\u001b[35m";
+    private const string Green = "\u001b[32m";
+    private const string Yellow = "\u001b[33m";
+    private const string Red = "\u001b[31m";
+    private const string BoldRed = "\u001b[1;31m";
 
     public void Format(LogEvent logEvent, TextWriter output)
     {
-        using var buffer = new StringWriter(CultureInfo.InvariantCulture);
-        JsonFormatter.Format(logEvent, buffer);
-        var content = buffer.ToString();
+        var color = !Console.IsOutputRedirected;
+        Write(output, $"[{logEvent.Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz}]", Dim, color);
+        output.Write(' ');
+        Write(output, LevelLabel(logEvent.Level), LevelColor(logEvent.Level), color);
+        output.Write(' ');
+        Write(output, Property(logEvent, "service") ?? "backend", Magenta, color);
+        output.Write(' ');
+        Write(output, Property(logEvent, "module") ?? "platform", Cyan, color);
+        output.Write(' ');
 
-        if (Console.IsOutputRedirected)
+        var method = Property(logEvent, "HttpMethod") ?? Property(logEvent, "Method");
+        var path = Property(logEvent, "HttpPath") ?? Property(logEvent, "Path") ?? Property(logEvent, "RequestPath");
+        if (!string.IsNullOrWhiteSpace(method) && !string.IsNullOrWhiteSpace(path))
         {
-            output.Write(content);
-            return;
+            Write(output, method, Blue, color);
+            output.Write(' ');
+            Write(output, path, White, color);
+            var status = IntegerProperty(logEvent, "StatusCode");
+            if (status.HasValue)
+            {
+                output.Write(" -> ");
+                Write(output, status.Value.ToString(CultureInfo.InvariantCulture), StatusColor(status.Value), color);
+            }
+
+            var duration = NumberProperty(logEvent, "DurationMs") ?? NumberProperty(logEvent, "ElapsedMilliseconds");
+            if (duration.HasValue)
+            {
+                output.Write(" ");
+                Write(output, $"{duration.Value.ToString("0.##", CultureInfo.InvariantCulture)}ms", Dim, color);
+            }
+
+            output.Write(" | ");
         }
 
-        output.Write(LevelColor(logEvent.Level));
-        output.Write(content);
-        output.Write(Reset);
+        Write(output, logEvent.RenderMessage(CultureInfo.InvariantCulture), MessageColor(logEvent.Level), color);
+        var correlation = Property(logEvent, "correlation_id");
+        if (!string.IsNullOrWhiteSpace(correlation))
+        {
+            output.Write(" | ");
+            Write(output, $"corr={correlation}", Dim, color);
+        }
+
+        if (logEvent.Exception is not null)
+        {
+            output.Write(" | ");
+            Write(output, $"{logEvent.Exception.GetType().Name}: {logEvent.Exception.Message}", MessageColor(logEvent.Level), color);
+        }
+
+        output.WriteLine();
     }
+
+    private static void Write(TextWriter output, string value, string color, bool useColor)
+    {
+        if (useColor) output.Write(color);
+        output.Write(value);
+        if (useColor) output.Write(Reset);
+    }
+
+    private static string? Property(LogEvent logEvent, string name) =>
+        logEvent.Properties.TryGetValue(name, out var value) && value is ScalarValue { Value: string text } ? text : null;
+
+    private static int? IntegerProperty(LogEvent logEvent, string name) =>
+        logEvent.Properties.TryGetValue(name, out var value) && value is ScalarValue { Value: int number } ? number : null;
+
+    private static double? NumberProperty(LogEvent logEvent, string name) =>
+        logEvent.Properties.TryGetValue(name, out var value) && value is ScalarValue { Value: double number } ? number : null;
+
+    private static string LevelLabel(LogEventLevel level) => level switch
+    {
+        LogEventLevel.Verbose => "VRB",
+        LogEventLevel.Debug => "DBG",
+        LogEventLevel.Information => "INF",
+        LogEventLevel.Warning => "WRN",
+        LogEventLevel.Error => "ERR",
+        LogEventLevel.Fatal => "FTL",
+        _ => "LOG"
+    };
 
     private static string LevelColor(LogEventLevel level) => level switch
     {
-        LogEventLevel.Verbose or LogEventLevel.Debug => "\u001b[90m",
-        LogEventLevel.Information => "\u001b[36m",
-        LogEventLevel.Warning => "\u001b[33m",
-        LogEventLevel.Error => "\u001b[31m",
-        LogEventLevel.Fatal => "\u001b[1;31m",
-        _ => "\u001b[37m"
+        LogEventLevel.Verbose or LogEventLevel.Debug => Dim,
+        LogEventLevel.Information => Green,
+        LogEventLevel.Warning => Yellow,
+        LogEventLevel.Error => Red,
+        LogEventLevel.Fatal => BoldRed,
+        _ => White
+    };
+
+    private static string MessageColor(LogEventLevel level) => level >= LogEventLevel.Error ? Red : White;
+
+    private static string StatusColor(int statusCode) => statusCode switch
+    {
+        >= 500 => Red,
+        >= 400 => Yellow,
+        >= 300 => Cyan,
+        _ => Green
     };
 }
 
