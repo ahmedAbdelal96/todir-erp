@@ -13,6 +13,12 @@ import {
 import { extractTaxError } from "../services/tax-error-map.ts";
 import type { TaxRegistrationDto } from "../types.ts";
 
+function normalizeRegistrationStatus(status: string | undefined): string {
+  if (status === "Pending") return "PendingRegistration";
+  if (status === "Suspended") return "RegistrationException";
+  return status || "PendingRegistration";
+}
+
 export interface RegistrationModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
@@ -38,7 +44,7 @@ export function RegistrationModal({
   const [schemeCode, setSchemeCode] = useState(registration?.schemeCode || "DEVELOPMENT");
   const [registrationNumber, setRegistrationNumber] = useState(registration?.registrationNumber || "");
   const [status, setStatus] = useState(
-    mode === "deregister" ? "Deregistered" : registration?.status || "Registered"
+    mode === "deregister" ? "Deregistered" : normalizeRegistrationStatus(registration?.status)
   );
   const [effectiveFrom, setEffectiveFrom] = useState(defaultEffectiveDate);
   const [authority, setAuthority] = useState(registration?.authority || "");
@@ -54,6 +60,10 @@ export function RegistrationModal({
 
   const handleSave = async () => {
     setErrorMessage(null);
+    if (status === "Registered" && !registrationNumber.trim()) {
+      setErrorMessage(t("errors.registrationNumberRequired"));
+      return;
+    }
     try {
       if (mode === "create") {
         await createMutation.mutateAsync({
@@ -175,6 +185,7 @@ export function RegistrationModal({
             label={t("registrations.registrationNumber")}
             value={registrationNumber}
             onChange={setRegistrationNumber}
+              isRequired={status === "Registered"}
           />
         )}
 
@@ -185,8 +196,8 @@ export function RegistrationModal({
             onSelectionChange={(key) => setStatus(key as string)}
             options={[
               { id: "Registered", label: t("registrationStatus.registered") },
-              { id: "Pending", label: t("registrationStatus.pending") },
-              { id: "Suspended", label: t("registrationStatus.suspended") }
+              { id: "PendingRegistration", label: t("registrationStatus.pending") },
+              { id: "RegistrationException", label: t("registrationStatus.exception") }
             ]}
           />
         )}

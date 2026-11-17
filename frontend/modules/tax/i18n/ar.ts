@@ -124,7 +124,8 @@ export const ar = {
   registrationStatus: {
     registered: "مسجل رسمياً",
     pending: "قيد التسجيل",
-    suspended: "معلق مؤقتاً",
+    exception: "استثناء يتطلب مراجعة",
+    suspended: "استثناء يتطلب مراجعة",
     deregistered: "ملغى التسجيل"
   },
   productProfiles: {
@@ -441,6 +442,7 @@ export const ar = {
     registrationMissing: "لم يتم تكوين التسجيل الضريبي لهذا الكيان القانوني.",
     registrationNotFound: "لم يتم العثور على التسجيل الضريبي المطلوب.",
     registrationNumberInvalid: "رقم التسجيل الضريبي غير صالح.",
+    registrationNumberRequired: "الرقم الضريبي مطلوب عند اختيار حالة مسجل رسمياً.",
     productClassificationMissing: "يتطلب المنتج تصنيفاً ضريبياً صالحاً.",
     partyProfileMissing: "الملف الضريبي للطرف التجاري مفقود أو غير مكتمل.",
     ruleMissing: "لا توجد قاعدة ضريبية مطابقة لمعاملات هذا السياق.",

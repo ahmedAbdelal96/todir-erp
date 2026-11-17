@@ -26,6 +26,7 @@ export function deriveOverallReadiness(coverage: TaxCoverageResult | null | unde
     !coverage.registrationEffective ||
     coverage.registrationStatus === "Missing" ||
     coverage.registrationStatus === "Suspended" ||
+    coverage.registrationStatus === "RegistrationException" ||
     coverage.registrationStatus === "Deregistered"
   ) {
     return "Blocked";

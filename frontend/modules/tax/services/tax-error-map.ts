@@ -24,6 +24,11 @@ const TAX_ERROR_DEFINITIONS: Record<string, { messageKey: string; fallbackEn: st
     fallbackEn: "Tax registration number is invalid.",
     fallbackAr: "رقم التسجيل الضريبي غير صالح."
   },
+  "tax.registration_number_required": {
+    messageKey: "errors.registrationNumberRequired",
+    fallbackEn: "A tax registration number is required when the status is Registered.",
+    fallbackAr: "الرقم الضريبي مطلوب عند اختيار حالة مسجل رسمياً."
+  },
   "tax.product_classification_missing": {
     messageKey: "errors.productClassificationMissing",
     fallbackEn: "A product requires a valid tax classification.",

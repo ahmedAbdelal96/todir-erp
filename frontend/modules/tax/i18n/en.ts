@@ -124,7 +124,8 @@ export const en = {
   registrationStatus: {
     registered: "Registered",
     pending: "Pending",
-    suspended: "Suspended",
+    exception: "Registration exception",
+    suspended: "Registration exception",
     deregistered: "Deregistered"
   },
   productProfiles: {
@@ -441,6 +442,7 @@ export const en = {
     registrationMissing: "Tax registration has not been configured for this legal entity.",
     registrationNotFound: "The requested tax registration was not found.",
     registrationNumberInvalid: "Tax registration number is invalid.",
+    registrationNumberRequired: "A tax registration number is required when the status is Registered.",
     productClassificationMissing: "A product requires a valid tax classification.",
     partyProfileMissing: "A party tax profile is missing or incomplete.",
     ruleMissing: "No applicable tax rule matches this transaction context.",

@@ -118,7 +118,7 @@ if (!app.Environment.IsDevelopment()) app.UseHsts();
 app.UseCorrelation();
 app.UseExceptionHandling();
 app.UseSecurityHeaders();
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment()) app.UseHttpsRedirection();
 app.UseCors("web");
 app.UseAuthentication();
 app.UseAuthorization();

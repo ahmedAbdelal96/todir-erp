@@ -43,7 +43,7 @@ export function PartyProfileModal({
     profile?.registrationCountryCode || "EG"
   );
   const [registrationStatus, setRegistrationStatus] = useState(
-    profile?.registrationStatus || "Registered"
+    profile?.registrationStatus || "PendingRegistration"
   );
   const [evidenceReference, setEvidenceReference] = useState(profile?.evidenceReference || "");
   const [effectiveFrom, setEffectiveFrom] = useState(defaultEffectiveDate);
@@ -185,8 +185,8 @@ export function PartyProfileModal({
           onSelectionChange={(key) => setRegistrationStatus(key as string)}
           options={[
             { id: "Registered", label: t("registrationStatus.registered") },
-            { id: "Pending", label: t("registrationStatus.pending") },
-            { id: "Suspended", label: t("registrationStatus.suspended") }
+            { id: "PendingRegistration", label: t("registrationStatus.pending") },
+            { id: "RegistrationException", label: t("registrationStatus.exception") }
           ]}
         />
 

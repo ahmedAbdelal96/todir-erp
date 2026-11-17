@@ -42,7 +42,7 @@ export interface TaxRegistrationDto {
   readonly countryCode: string;
   readonly schemeCode: string;
   readonly registrationNumber?: string | null;
-  readonly status: "Registered" | "Pending" | "Suspended" | "Deregistered" | string;
+  readonly status: "Registered" | "PendingRegistration" | "RegistrationException" | "Deregistered" | string;
   readonly effectiveFrom: string;
   readonly effectiveTo?: string | null;
   readonly authority?: string | null;

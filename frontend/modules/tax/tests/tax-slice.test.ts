@@ -203,6 +203,10 @@ describe("Tax Administration Slice Contracts & Domain Invariants", () => {
     assert.equal(errReg.messageKey, "errors.registrationMissing");
     assert.ok(errReg.fallbackEn.includes("registration has not been configured"));
 
+    const errRegistrationNumber = mapTaxErrorCode("tax.registration_number_required");
+    assert.equal(errRegistrationNumber.messageKey, "errors.registrationNumberRequired");
+    assert.ok(errRegistrationNumber.fallbackEn.includes("registration number is required"));
+
     const errProd = mapTaxErrorCode("tax.product_classification_missing");
     assert.equal(errProd.messageKey, "errors.productClassificationMissing");
     assert.ok(errProd.fallbackEn.includes("product requires a valid tax classification"));
@@ -331,6 +335,14 @@ describe("Tax Administration Slice Contracts & Domain Invariants", () => {
     assert.deepEqual(getTaxStatusPresentation("Registered", "registration"), {
       intent: "success",
       labelKey: "registrationStatus.registered"
+    });
+    assert.deepEqual(getTaxStatusPresentation("PendingRegistration", "registration"), {
+      intent: "warning",
+      labelKey: "registrationStatus.pending"
+    });
+    assert.deepEqual(getTaxStatusPresentation("RegistrationException", "registration"), {
+      intent: "danger",
+      labelKey: "registrationStatus.exception"
     });
     assert.deepEqual(getTaxStatusPresentation("Available", "countryPack"), {
       intent: "success",

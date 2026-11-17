@@ -98,12 +98,12 @@ export function getTaxStatusPresentation(
       if (status === "Registered") {
         intent = "success";
         labelKey = "registrationStatus.registered";
-      } else if (status === "Pending") {
+      } else if (status === "Pending" || status === "PendingRegistration") {
         intent = "warning";
         labelKey = "registrationStatus.pending";
-      } else if (status === "Suspended") {
+      } else if (status === "Suspended" || status === "RegistrationException") {
         intent = "danger";
-        labelKey = "registrationStatus.suspended";
+        labelKey = "registrationStatus.exception";
       } else if (status === "Deregistered") {
         labelKey = "registrationStatus.deregistered";
       }
