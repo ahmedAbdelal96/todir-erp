@@ -213,7 +213,7 @@ export const en = {
     priceListLabel: "Designated Price List (Optional)",
     priceListAuto: "Auto-detect via assignment and default",
     partyLabel: "Customer or Supplier (Optional)",
-    partyPlaceholder: "Select party to test custom contracts...",
+    partyPlaceholder: "Search and select a customer or supplier...", partyHint: "Type to search approved master data (the first 20 results are shown).",
     productLabel: "Product / Variant *",
     productPlaceholder: "Search by product name or SKU",
     uomLabel: "Unit of Measure *",

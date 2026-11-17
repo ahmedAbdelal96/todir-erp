@@ -5,14 +5,14 @@ import {
   useSimulatePriceMutation,
   usePriceLists,
   useLookupProducts,
-  useLookupUoms,
-  useLookupParties
+  useLookupUoms
 } from "../hooks/pricing-queries.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
 import { ComboBox } from "../../../components/primitives/combobox.tsx";
+import { PartyPicker } from "../../directory/public.ts";
 import { MoneyDisplay } from "../../../components/fields/money-display.tsx";
 import { StatusBadge } from "../../../components/fields/status-badge.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
@@ -33,7 +33,6 @@ export function PricingSimulatorWidget({
   const [productSearch, setProductSearch] = useState("");
   const productsQuery = useLookupProducts(legalEntityId, productSearch);
   const uomsQuery = useLookupUoms();
-  const partiesQuery = useLookupParties(legalEntityId);
   const simulateMutation = useSimulatePriceMutation();
 
   const [direction, setDirection] = useState<PricingDirection>("Selling");
@@ -44,6 +43,7 @@ export function PricingSimulatorWidget({
   });
   const [priceListId, setPriceListId] = useState<string>("");
   const [partyId, setPartyId] = useState<string>("");
+  const [selectedPartyName, setSelectedPartyName] = useState<string>("");
   const [variantId, setVariantId] = useState<string>("");
   const [uomId, setUomId] = useState<string>("");
   const [quantity, setQuantity] = useState("1");
@@ -80,24 +80,6 @@ export function PricingSimulatorWidget({
     return [];
   }, [uomsQuery.data, t]);
 
-  // Extract Party options with human business names
-  const partyOptions = useMemo(() => {
-    type PartyLookupItem = { id: string; name: string; displayName?: string };
-    const raw = partiesQuery.data as { items?: readonly PartyLookupItem[] } | readonly PartyLookupItem[] | undefined;
-    const items: readonly PartyLookupItem[] | undefined = Array.isArray(raw) ? raw : (raw as { items?: readonly PartyLookupItem[] } | undefined)?.items;
-    const base = [{ id: "", label: t("simulator.noCustomer") }];
-    if (items && items.length > 0) {
-      return [
-        ...base,
-        ...items.map((p: PartyLookupItem) => ({
-          id: p.id,
-          label: p.displayName || p.name
-        }))
-      ];
-    }
-    return base;
-  }, [partiesQuery.data, t]);
-
   const handleSimulate = async (e: React.FormEvent) => {
     e.preventDefault();
     setResult(undefined);
@@ -131,6 +113,14 @@ export function PricingSimulatorWidget({
     ...(priceLists?.map((l) => ({ id: l.id, label: `${l.name} (${l.code})` })) || [])
   ];
 
+  const handleDirectionChange = (nextDirection: PricingDirection) => {
+    setDirection(nextDirection);
+    // A selling price is scoped to a customer, while a buying price is scoped
+    // to a supplier. Never carry an invalid party selection across directions.
+    setPartyId("");
+    setSelectedPartyName("");
+  };
+
   const isResolved = result?.status === "Resolved" && result.snapshot;
   const isMissing = result?.status === "PriceMissing" || (result && !result.snapshot);
   const unitPrice = result?.snapshot?.finalUnitPrice;
@@ -139,7 +129,6 @@ export function PricingSimulatorWidget({
   // Matched business labels for presentation (NO raw GUIDs)
   const selectedProduct = productOptions.find((p) => p.id === variantId);
   const selectedUom = uomOptions.find((u) => u.id === uomId);
-  const selectedParty = partyOptions.find((p) => p.id === partyId);
   const matchedPriceList = priceLists?.find((l) => l.id === result?.snapshot?.priceListId);
 
   // Business Explanation Builder
@@ -154,7 +143,7 @@ export function PricingSimulatorWidget({
   const resolutionReason = result?.explanation ?? "";
   const reasonSummary = summarizePricingReason(resolutionReason);
   const minimumQuantity = reasonSummary.minimumQuantity ?? 0;
-  const isCustomerSpecific = reasonSummary.kind === PricingReasonKind.Customer && Boolean(selectedParty && partyId);
+  const isCustomerSpecific = reasonSummary.kind === PricingReasonKind.Customer && Boolean(selectedPartyName && partyId);
   const isPriceGroupSpecific = reasonSummary.kind === PricingReasonKind.PriceGroup;
   const isQuantityTier = reasonSummary.kind === PricingReasonKind.QuantityTier;
   const isUomSpecific = reasonSummary.kind === PricingReasonKind.ExactUnit &&
@@ -173,7 +162,7 @@ export function PricingSimulatorWidget({
     resultBadgeLabel = t("activeCurrencyPolicyBadge");
     resultBadgeIntent = "info";
   } else if (isCustomerSpecific) {
-    businessExplanation = t("simulator.customerSpecificApplied", { customer: selectedParty?.label });
+    businessExplanation = t("simulator.customerSpecificApplied", { customer: selectedPartyName });
     resultBadgeLabel = t("simulator.customerBadge");
     resultBadgeIntent = "success";
   } else if (isQuantityTier) {
@@ -205,7 +194,7 @@ export function PricingSimulatorWidget({
             <Select
               label={t("simulator.directionLabel")}
               selectedKey={direction}
-              onSelectionChange={(k) => setDirection(k as PricingDirection)}
+              onSelectionChange={(k) => handleDirectionChange(k as PricingDirection)}
               options={directionOptions}
             />
 
@@ -234,11 +223,17 @@ export function PricingSimulatorWidget({
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--space-3)" }}>
-            <Select
+            <PartyPicker
               label={t("simulator.partyLabel")}
-              selectedKey={partyId}
-              onSelectionChange={(k) => setPartyId(k as string)}
-              options={partyOptions}
+              value={partyId || undefined}
+              onChange={(selectedId, party) => {
+                setPartyId(selectedId);
+                setSelectedPartyName(party?.displayName ?? "");
+              }}
+              roleFilter={direction === "Selling" ? "Customer" : "Supplier"}
+              description={t("simulator.partyHint")}
+              placeholder={t("simulator.partyPlaceholder")}
+              enableQuickCreate={false}
             />
 
             <ComboBox
@@ -392,7 +387,7 @@ export function PricingSimulatorWidget({
                   <div>
                     <span>{t("simulator.partyLabel")}: </span>
                     <strong style={{ color: "var(--color-content-primary)" }}>
-                      {isCustomerSpecific && selectedParty && partyId ? selectedParty.label : t("simulator.generalCustomers")}
+                      {isCustomerSpecific && selectedPartyName && partyId ? selectedPartyName : t("simulator.generalCustomers")}
                     </strong>
                   </div>
                   <div>

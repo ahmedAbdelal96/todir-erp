@@ -213,7 +213,7 @@ export const ar = {
     priceListLabel: "قائمة الأسعار المحددة (اختياري)",
     priceListAuto: "تحديد تلقائي وفق النطاق والافتراضي",
     partyLabel: "العميل أو المورد (اختياري)",
-    partyPlaceholder: "اختر الشريك لفحص العقود الخاصة...",
+    partyPlaceholder: "ابحث واختر العميل أو المورد...", partyHint: "اكتب للبحث داخل السجلات المعتمدة (يعرض النظام أول 20 نتيجة فقط).",
     productLabel: "المنتج / النموذج *",
     productPlaceholder: "ابحث باسم المنتج أو رمز SKU",
     uomLabel: "وحدة القياس *",
