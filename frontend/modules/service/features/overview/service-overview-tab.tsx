@@ -16,6 +16,7 @@ import {
   PlusIcon
 } from "../../components/service-icons.tsx";
 import {
+  useServiceKpiQuery,
   useServiceRequestsQuery,
   useWorkOrdersQuery,
   useVisitsQuery,
@@ -42,22 +43,22 @@ export function ServiceOverviewTab({
   const [isNewWorkOrderOpen, setIsNewWorkOrderOpen] = useState(false);
   const [isNewInstalledBaseOpen, setIsNewInstalledBaseOpen] = useState(false);
 
+  const kpiQuery = useServiceKpiQuery();
   const requestsQuery = useServiceRequestsQuery(legalEntityId, { page: 1, pageSize: 50 });
   const workOrdersQuery = useWorkOrdersQuery(legalEntityId, { page: 1, pageSize: 50 });
   const visitsQuery = useVisitsQuery(legalEntityId, { page: 1, pageSize: 50 });
   const installedBaseQuery = useInstalledBaseQuery(legalEntityId, { page: 1, pageSize: 50 });
 
-  const totalRequests = requestsQuery.data?.totalCount ?? 0;
-  const totalWorkOrders = workOrdersQuery.data?.totalCount ?? 0;
-  const totalVisits = visitsQuery.data?.totalCount ?? 0;
+  const kpi = kpiQuery.data;
+  const totalRequests = kpi ? kpi.openRequests : (requestsQuery.data?.totalCount ?? 0);
+  const openWorkOrdersCount = kpi ? kpi.openWorkOrders : (workOrdersQuery.data?.totalCount ?? 0);
+  const visitsCount = kpi ? kpi.visitsToday : (visitsQuery.data?.totalCount ?? 0);
   const totalEquipment = installedBaseQuery.data?.totalCount ?? 0;
+  const availabilityDisplay = kpi ? `${kpi.availabilityPercent.toFixed(1)}%` : undefined;
 
-  const openWorkOrders = workOrdersQuery.data?.items?.filter(
-    (wo) => wo.status !== "closed" && wo.status !== "canceled"
-  ) ?? [];
-
-  const urgentOrders = openWorkOrders.filter(
-    (wo) => wo.priority === "urgent" || wo.priority === "high"
+  const workOrders = workOrdersQuery.data?.items ?? [];
+  const urgentOrders = workOrders.filter(
+    (wo) => wo.priority === "urgent" || wo.priority === "high" || wo.priority === "Critical" || wo.priority === "High"
   );
 
   return (
@@ -72,30 +73,24 @@ export function ServiceOverviewTab({
       >
         <ServiceKpiCard
           label={t("overview.kpi.activeWorkOrders")}
-          value={openWorkOrders.length}
-          trend="+12%"
-          trendDirection="neutral"
+          value={openWorkOrdersCount}
           icon={<WrenchIcon size={20} color="#2563eb" />}
-          badgeText={`${totalWorkOrders} ${t("overview.kpi.total")}`}
+          badgeText={`${workOrdersQuery.data?.totalCount ?? openWorkOrdersCount} ${t("overview.kpi.total")}`}
         />
         <ServiceKpiCard
           label={t("overview.kpi.openRequests")}
           value={totalRequests}
-          trend="-5%"
-          trendDirection="positive"
           icon={<AlertCircleIcon size={20} color="#d97706" />}
         />
         <ServiceKpiCard
           label={t("overview.kpi.scheduledVisits")}
-          value={totalVisits}
-          trend="+8%"
-          trendDirection="positive"
+          value={visitsCount}
           icon={<CalendarIcon size={20} color="#059669" />}
         />
         <ServiceKpiCard
           label={t("overview.kpi.registeredAssets")}
           value={totalEquipment}
-          trend="99.4%"
+          trend={availabilityDisplay}
           trendDirection="positive"
           icon={<ShieldCheckIcon size={20} color="#7c3aed" />}
           badgeText={t("overview.kpi.operationalAvailability")}

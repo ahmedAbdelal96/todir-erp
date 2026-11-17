@@ -337,6 +337,14 @@ export const serviceApi = {
     }),
 
   // Charges & Billing
+  listAllCharges: (params: {
+    legalEntityId?: string | undefined;
+    state?: string | undefined;
+    page?: number | undefined;
+    pageSize?: number | undefined;
+  }): Promise<PagedResult<ServiceChargeView>> =>
+    httpClient<PagedResult<ServiceChargeView>>(`${BASE}/charges${toQueryString(params)}`),
+
   listCharges: (
     workOrderId: string,
     params?: { page?: number | undefined; pageSize?: number | undefined }

@@ -51,6 +51,8 @@ export const serviceKeys = {
     [...serviceKeys.all, "labor", scope] as const,
   reports: (workOrderId: string) => [...serviceKeys.all, "reports", workOrderId] as const,
   slaClocks: (workOrderId: string) => [...serviceKeys.all, "slaClocks", workOrderId] as const,
+  allCharges: (filters?: Record<string, unknown>) =>
+    [...serviceKeys.all, "allCharges", filters] as const,
   charges: (workOrderId: string, filters?: Record<string, unknown>) =>
     [...serviceKeys.all, "charges", workOrderId, filters] as const,
   supplierRecoveries: (workOrderId?: string) =>
@@ -552,6 +554,17 @@ export function useWorkOrderChargesQuery(
     queryKey: serviceKeys.charges(workOrderId ?? "", params),
     queryFn: () => serviceApi.listCharges(workOrderId!, params),
     enabled: Boolean(workOrderId)
+  });
+}
+
+export function useAllChargesQuery(
+  arg1?: string | { legalEntityId?: string; state?: string; page?: number; pageSize?: number },
+  arg2?: { state?: string; page?: number; pageSize?: number }
+) {
+  const filters = typeof arg1 === "string" ? { legalEntityId: arg1, ...arg2 } : (arg1 ?? {});
+  return useQuery({
+    queryKey: serviceKeys.allCharges(filters),
+    queryFn: () => serviceApi.listAllCharges(filters)
   });
 }
 
@@ -1255,19 +1268,24 @@ export const useScheduleVisitMutation = (legalEntityId?: string) => {
   };
 };
 
-export const useAssignTechnicianMutation = (legalEntityId?: string) => {
+export const useAssignTechnicianMutation = (_legalEntityId?: string) => {
   const a = useAssignVisitMutation();
   return {
     ...a,
-    mutateAsync: (args: any) =>
-      (a.mutateAsync as any)({
+    mutateAsync: (args: any) => {
+      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const empId = args.employeeId ?? args.technicianId;
+      const employeeId = empId && isGuid.test(empId) ? empId : undefined;
+      const displayName = args.displayName || (!employeeId && empId ? String(empId) : "فني خدمة معتمد");
+      return a.mutateAsync({
         visitId: args.visitId,
         request: {
-          employeeId: args.technicianId || args.crewId || "TECH-001",
-          displayName: args.displayName || "Field Technician",
-          resourceType: "Technician"
+          employeeId,
+          displayName,
+          resourceType: args.resourceType || "Technician"
         }
-      })
+      });
+    }
   };
 };
 
@@ -1350,7 +1368,11 @@ export const useReservePartMutation = (legalEntityId?: string) => {
       (p.mutateAsync as any)({
         partId: args.partId,
         action: "reserve",
-        request: { quantity: args.quantity, warehouseId: args.warehouseLocation }
+        request: {
+          quantity: Number(args.quantity) || 1,
+          inventoryReference: args.warehouseLocation || args.inventoryReference,
+          legalEntityId: args.legalEntityId
+        }
       })
   };
 };
@@ -1363,7 +1385,11 @@ export const useIssuePartMutation = (legalEntityId?: string) => {
       (p.mutateAsync as any)({
         partId: args.partId,
         action: "issue",
-        request: { quantity: args.quantity, warehouseId: args.warehouseLocation }
+        request: {
+          quantity: Number(args.quantity) || 1,
+          inventoryReference: args.warehouseLocation || args.inventoryReference,
+          legalEntityId: args.legalEntityId
+        }
       })
   };
 };
@@ -1376,7 +1402,11 @@ export const useConsumePartMutation = (legalEntityId?: string) => {
       (p.mutateAsync as any)({
         partId: args.partId,
         action: "consume",
-        request: { quantity: args.quantity }
+        request: {
+          quantity: Number(args.quantity) || 1,
+          inventoryReference: args.inventoryReference,
+          legalEntityId: args.legalEntityId
+        }
       })
   };
 };
@@ -1389,7 +1419,11 @@ export const useReturnPartMutation = (legalEntityId?: string) => {
       (p.mutateAsync as any)({
         partId: args.partId,
         action: "return",
-        request: { quantity: args.quantity, warehouseId: args.warehouseLocation }
+        request: {
+          quantity: Number(args.quantity) || 1,
+          inventoryReference: args.warehouseLocation || args.inventoryReference,
+          legalEntityId: args.legalEntityId
+        }
       })
   };
 };
@@ -1413,19 +1447,24 @@ export const useCreateReportMutation = (legalEntityId?: string) => {
   };
 };
 
-export const useRegisterInstalledBaseMutation = (legalEntityId?: string) => {
+export const useRegisterInstalledBaseMutation = (_legalEntityId?: string) => {
   const c = useCreateInstalledBaseMutation();
   return {
     ...c,
-    mutateAsync: (args: any) =>
-      (c.mutateAsync as any)({
+    mutateAsync: (args: any) => {
+      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const custId = args.customerPartyId ?? (isGuid.test(args.customerName) ? args.customerName : undefined);
+      const customerPartyId = custId && isGuid.test(custId) ? custId : undefined;
+      return c.mutateAsync({
         legalEntityId: args.legalEntityId,
-        name: args.itemName || args.itemCode || "Equipment",
-        serialNumber: args.serialNumber,
-        modelNumber: args.modelNumber,
-        customerPartyId: args.customerName,
-        siteName: args.siteLocation
-      })
+        name: args.name || args.itemName || args.itemCode || "Equipment",
+        serialNumber: args.serialNumber || undefined,
+        modelNumber: args.modelNumber || args.itemCode || undefined,
+        customerPartyId,
+        siteName: args.siteLocation || args.siteName || undefined,
+        installedDate: args.installedDate || undefined
+      });
+    }
   };
 };
 

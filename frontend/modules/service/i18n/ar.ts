@@ -334,6 +334,12 @@ export const serviceAr = {
     slaDeadline: "الموعد الأقصى للالتزام"
   },
   billing: {
+    billingOwner: "جهة الفوترة",
+    owners: {
+      projects: "المشاريع (Projects)",
+      service: "الخدمة (Service)",
+      none: "بدون فوترة"
+    },
     serviceChargesTitle: "رسوم الخدمة ومنصة الفوترة",
     serviceChargesDesc: "تسوية ساعات عمل الفنيين وقطع الغيار المستهلكة ومقارنتها بتغطية الضمان ومشاريع العمل",
     newChargeTitle: "إضافة رسم خدمة",
@@ -353,6 +359,23 @@ export const serviceAr = {
     estimatedRevenue: "المبلغ",
     invoiceReady: "جاهز لإصدار الفاتورة",
     pendingCompletion: "بانتظار الإتمام الفني",
+    chargesReady: "رسوم جاهزة للفوترة",
+    coveredItems: "بنود مغطاة بالضمان",
+    projectOwnedOrders: "أوامر مملوكة لمشاريع",
+    chargeCategory: "تصنيف الرسم",
+    customerAmount: "المبلغ المستحق على العميل",
+    coveredAmount: "المبلغ المغطى",
+    projectOwnedNotice: "مملوك لمشروع — لا تصدر فاتورة خدمة مستقلة",
+    requestInvoiceAction: "طلب إصدار فاتورة",
+    invoicedBadge: "تم إصدار الفاتورة",
+    states: {
+      draft: "مسودة",
+      reviewed: "تمت المراجعة",
+      requested: "تم طلب الفاتورة",
+      invoiced: "مفوتر",
+      writtenOff: "مشطوب",
+      cancelled: "ملغى"
+    },
     types: {
       labor: "ساعات عمل فني",
       parts: "قطع غيار ومواد مستهلكة",

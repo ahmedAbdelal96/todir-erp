@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
@@ -13,17 +13,15 @@ import {
   AlertCircleIcon
 } from "../../components/service-icons.tsx";
 import {
-  useVisitsQuery,
-  useStartVisitTravelMutation,
-  useArriveVisitMutation,
-  useStartVisitMutation,
-  useCompleteVisitMutation
+  useMyDayQuery,
+  useTransitionVisitMutation,
+  useSubmitOfflineCommandMutation
 } from "../../hooks/use-service-queries.ts";
 import { AnswerChecklistModal } from "../modals/answer-checklist-modal.tsx";
 import { RecordDiagnosisModal } from "../modals/record-diagnosis-modal.tsx";
 import { CreateReportModal } from "../modals/create-report-modal.tsx";
 import { useIsMobile } from "../../hooks/use-is-mobile.ts";
-import type { VisitDto } from "../../types.ts";
+import type { VisitView, WorkOrderView } from "../../types.ts";
 
 export interface MyDayTabProps {
   readonly legalEntityId: string;
@@ -33,24 +31,58 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
   const { t } = useTranslation("service");
   const isMobile = useIsMobile(768);
 
-  const [technicianFilter, setTechnicianFilter] = useState("TECH-001");
-  const [selectedVisitForChecklist, setSelectedVisitForChecklist] = useState<VisitDto | null>(null);
-  const [selectedVisitForDiagnosis, setSelectedVisitForDiagnosis] = useState<VisitDto | null>(null);
-  const [selectedVisitForReport, setSelectedVisitForReport] = useState<VisitDto | null>(null);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== "undefined" ? navigator.onLine : true);
 
-  // Queries & Mutations
-  const visitsQuery = useVisitsQuery(legalEntityId, { pageSize: 50 });
-  const startTravelMutation = useStartVisitTravelMutation(legalEntityId);
-  const arriveMutation = useArriveVisitMutation(legalEntityId);
-  const startWorkMutation = useStartVisitMutation(legalEntityId);
-  const completeMutation = useCompleteVisitMutation(legalEntityId);
+  const [selectedVisitForChecklist, setSelectedVisitForChecklist] = useState<VisitView | null>(null);
+  const [selectedVisitForDiagnosis, setSelectedVisitForDiagnosis] = useState<VisitView | null>(null);
+  const [selectedVisitForReport, setSelectedVisitForReport] = useState<VisitView | null>(null);
 
-  const visits = visitsQuery.data?.items ?? [];
+  // Connectivity listener
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
-  // Active / upcoming visits
-  const activeVisits = visits.filter(
-    (v) => v.status !== "completed" && v.status !== "canceled"
-  );
+  // Authoritative authenticated user My Day query
+  const myDayQuery = useMyDayQuery(selectedDate);
+  const transitionMutation = useTransitionVisitMutation();
+  const submitOfflineMutation = useSubmitOfflineCommandMutation();
+
+  const visits = myDayQuery.data?.visits ?? [];
+  const workOrders = myDayQuery.data?.workOrders ?? [];
+  const workOrderMap = new Map<string, WorkOrderView>(workOrders.map((wo) => [wo.id, wo]));
+
+  const handleVisitAction = async (
+    visit: VisitView,
+    action: "dispatch" | "travel" | "arrive" | "start" | "complete" | "no-access" | "cancel"
+  ) => {
+    if (!isOnline) {
+      // Submit offline command
+      await submitOfflineMutation.mutateAsync({
+        clientCommandId: crypto.randomUUID(),
+        commandType: `visit.${action}`,
+        visitId: visit.id,
+        workOrderId: visit.workOrderId,
+        expectedVersion: visit.version,
+        payloadJson: "{}"
+      });
+      return;
+    }
+
+    await transitionMutation.mutateAsync({
+      visitId: visit.id,
+      action,
+      request: { version: visit.version }
+    });
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -71,16 +103,24 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>{t("dispatch.technicianId")}:</span>
+            <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>{t("technician.scheduleDate", "تاريخ العمل الميداني")}:</span>
             <div style={{ width: "160px" }}>
               <TextField
-                value={technicianFilter}
-                onChange={(val) => setTechnicianFilter(val)}
-                placeholder={t("fields.technicianPlaceholder", "TECH-001")}
+                value={selectedDate}
+                onChange={(val) => setSelectedDate(val)}
+                placeholder={t("technician.datePlaceholder", "YYYY-MM-DD")}
               />
             </div>
+            <Button
+              variant="secondary"
+              size="compact"
+              onClick={() => setSelectedDate(todayStr)}
+            >
+              {t("common.today", "اليوم")}
+            </Button>
           </div>
 
+          {/* Genuine Connectivity Badge */}
           <div
             style={{
               display: "flex",
@@ -88,25 +128,32 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
               gap: "0.5rem",
               padding: "0.375rem 0.75rem",
               borderRadius: "9999px",
-              backgroundColor: "#ecfdf5",
-              border: "1px solid #a7f3d0",
+              backgroundColor: isOnline ? "#ecfdf5" : "#fef2f2",
+              border: `1px solid ${isOnline ? "#a7f3d0" : "#fecaca"}`,
               fontSize: "0.75rem",
               fontWeight: 600,
-              color: "#065f46"
+              color: isOnline ? "#065f46" : "#b91c1c"
             }}
           >
-            <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#059669" }} />
-            {t("technician.onlineReady")}
+            <span
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: isOnline ? "#059669" : "#dc2626"
+              }}
+            />
+            {isOnline ? t("technician.onlineReady") : t("technician.offlineActive", "غير متصل (يعمل محلياً)")}
           </div>
         </div>
       </Surface>
 
       {/* Assigned Visits Cards */}
-      {visitsQuery.isLoading ? (
+      {myDayQuery.isLoading ? (
         <div style={{ padding: "2rem", textAlign: "center", color: "#64748b" }}>
           {t("common.loading")}
         </div>
-      ) : activeVisits.length === 0 ? (
+      ) : visits.length === 0 ? (
         <Surface variant="card">
           <div style={{ padding: "3rem 1rem", textAlign: "center", color: "#64748b" }}>
             <p style={{ margin: "0 0 0.5rem", fontSize: "1rem", fontWeight: 600 }}>
@@ -119,11 +166,14 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
         </Surface>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {activeVisits.map((visit) => {
-            const isTraveling = visit.status === "traveling";
-            const isArrived = visit.status === "arrived";
-            const isInProgress = visit.status === "in_progress";
-            const isScheduled = visit.status === "scheduled";
+          {visits.map((visit) => {
+            const wo = workOrderMap.get(visit.workOrderId);
+            const state = visit.state;
+            const isPlanned = state === "Planned";
+            const isDispatched = state === "Dispatched";
+            const isTraveling = state === "Traveling";
+            const isArrived = state === "Arrived";
+            const isInProgress = state === "InProgress";
 
             return (
               <Surface key={visit.id} variant="card" padding="normal">
@@ -141,23 +191,42 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                         <strong style={{ fontSize: "1rem", color: "#0f172a" }}>
-                          {visit.visitNumber || visit.id.slice(0, 8)}
+                          {wo?.workOrderNumber || visit.id.slice(0, 8)}
                         </strong>
                         <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
-                          ({(t as any)(`dispatch.types.${(visit.visitType || visit.locationType || "onsite").toLowerCase()}`)})
+                          ({visit.locationType})
                         </span>
+                        {wo && (
+                          <span
+                            style={{
+                              padding: "0.15rem 0.4rem",
+                              borderRadius: "4px",
+                              fontSize: "0.75rem",
+                              fontWeight: 600,
+                              backgroundColor: wo.priority === "High" || wo.priority === "Critical" ? "#fef2f2" : "#f1f5f9",
+                              color: wo.priority === "High" || wo.priority === "Critical" ? "#b91c1c" : "#475569"
+                            }}
+                          >
+                            {wo.priority}
+                          </span>
+                        )}
                       </div>
+                      {wo && (
+                        <div style={{ marginTop: "0.25rem", fontSize: "0.875rem", fontWeight: 600, color: "#1e293b" }}>
+                          {wo.title}
+                        </div>
+                      )}
                       <div style={{ marginTop: "0.25rem", fontSize: "0.8125rem", color: "#64748b" }}>
-                        {visit.scheduledStartUtc || visit.plannedStart ? new Date(visit.scheduledStartUtc || visit.plannedStart).toLocaleTimeString() : "—"} —{" "}
-                        {visit.scheduledEndUtc || visit.plannedEnd ? new Date(visit.scheduledEndUtc || visit.plannedEnd).toLocaleTimeString() : "—"}
+                        {new Date(visit.plannedStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} —{" "}
+                        {new Date(visit.plannedEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </div>
 
-                    <ServiceLifecycleBadge state={visit.state || visit.status} />
+                    <ServiceLifecycleBadge state={visit.state} />
                   </div>
 
                   {/* Operational Notes */}
-                  {(visit.notes || visit.siteInstructions) && (
+                  {visit.siteInstructions && (
                     <div
                       style={{
                         padding: "0.75rem",
@@ -168,7 +237,7 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                         color: "#334155"
                       }}
                     >
-                      {visit.notes || visit.siteInstructions}
+                      {visit.siteInstructions}
                     </div>
                   )}
 
@@ -182,11 +251,11 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                       borderTop: "1px solid #f1f5f9"
                     }}
                   >
-                    {isScheduled && (
+                    {(isPlanned || isDispatched) && (
                       <Button
                         variant="primary"
-                        onClick={() => startTravelMutation.mutate({ legalEntityId, visitId: visit.id })}
-                        isLoading={startTravelMutation.isPending}
+                        onClick={() => handleVisitAction(visit, "travel")}
+                        isLoading={transitionMutation.isPending}
                         startIcon={<TruckIcon size={16} />}
                       >
                         {t("technician.actions.startTravel")}
@@ -196,8 +265,8 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                     {isTraveling && (
                       <Button
                         variant="primary"
-                        onClick={() => arriveMutation.mutate({ legalEntityId, visitId: visit.id })}
-                        isLoading={arriveMutation.isPending}
+                        onClick={() => handleVisitAction(visit, "arrive")}
+                        isLoading={transitionMutation.isPending}
                         startIcon={<CheckCircleIcon size={16} />}
                       >
                         {t("technician.actions.arriveOnSite")}
@@ -207,8 +276,8 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                     {isArrived && (
                       <Button
                         variant="primary"
-                        onClick={() => startWorkMutation.mutate({ legalEntityId, visitId: visit.id })}
-                        isLoading={startWorkMutation.isPending}
+                        onClick={() => handleVisitAction(visit, "start")}
+                        isLoading={transitionMutation.isPending}
                         startIcon={<WrenchIcon size={16} />}
                       >
                         {t("technician.actions.startWork")}
@@ -218,11 +287,21 @@ export function MyDayTab({ legalEntityId }: MyDayTabProps): React.JSX.Element {
                     {isInProgress && (
                       <Button
                         variant="primary"
-                        onClick={() => completeMutation.mutate({ legalEntityId, visitId: visit.id })}
-                        isLoading={completeMutation.isPending}
+                        onClick={() => handleVisitAction(visit, "complete")}
+                        isLoading={transitionMutation.isPending}
                         startIcon={<CheckCircleIcon size={16} />}
                       >
                         {t("technician.actions.completeVisit")}
+                      </Button>
+                    )}
+
+                    {(isArrived || isTraveling) && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleVisitAction(visit, "no-access")}
+                        isLoading={transitionMutation.isPending}
+                      >
+                        {t("technician.actions.noAccess", "تعذر الوصول للموقع")}
                       </Button>
                     )}
 

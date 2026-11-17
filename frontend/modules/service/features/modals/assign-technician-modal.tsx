@@ -43,6 +43,7 @@ export function AssignTechnicianModal({
         legalEntityId,
         visitId,
         technicianId: technicianId.trim() || undefined,
+        displayName: technicianId.trim() || crewId.trim() || "فني معتمد",
         crewId: crewId.trim() || undefined,
         role: role.trim() || undefined,
         plannedHours: plannedHours ? Number(plannedHours) : undefined,

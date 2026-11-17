@@ -50,6 +50,7 @@ export function ServicePage(): React.JSX.Element {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || null;
+  const effectiveEntityId = legalEntityId || "00000000-0000-0000-0000-000000000001";
 
   const handleTabChange = (newTab: string) => {
     setSearchParams((prev) => {
@@ -324,16 +325,16 @@ export function ServicePage(): React.JSX.Element {
         }}
       >
         {activeTab === "overview" && (
-          <ServiceOverviewTab legalEntityId={legalEntityId} onNavigateTab={handleTabChange} />
+          <ServiceOverviewTab legalEntityId={effectiveEntityId} onNavigateTab={handleTabChange} />
         )}
-        {activeTab === "requests" && <ServiceRequestsTab legalEntityId={legalEntityId} />}
-        {activeTab === "work-orders" && <WorkOrdersTab legalEntityId={legalEntityId} />}
-        {activeTab === "dispatch" && <DispatchTab legalEntityId={legalEntityId} />}
-        {activeTab === "my-day" && <MyDayTab legalEntityId={legalEntityId} />}
-        {activeTab === "installed-base" && <InstalledBaseTab legalEntityId={legalEntityId} />}
-        {activeTab === "preventive" && <PreventiveTab legalEntityId={legalEntityId} />}
-        {activeTab === "contracts-warranty" && <ContractsWarrantyTab legalEntityId={legalEntityId} />}
-        {activeTab === "billing" && <ServiceBillingTab legalEntityId={legalEntityId} />}
+        {activeTab === "requests" && <ServiceRequestsTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "work-orders" && <WorkOrdersTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "dispatch" && <DispatchTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "my-day" && <MyDayTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "installed-base" && <InstalledBaseTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "preventive" && <PreventiveTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "contracts-warranty" && <ContractsWarrantyTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "billing" && <ServiceBillingTab legalEntityId={effectiveEntityId} />}
       </main>
 
       {/* Contextual Guidance Drawer */}

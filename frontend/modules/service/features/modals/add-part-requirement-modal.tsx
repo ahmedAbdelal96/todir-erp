@@ -21,40 +21,48 @@ export function AddPartRequirementModal({
   const { t } = useTranslation("service");
   const addPartMutation = useAddPartRequirementMutation(legalEntityId);
 
-  const [itemId, setItemId] = useState("");
+  const [productId, setProductId] = useState("");
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [uom, setUom] = useState("PCS");
-  const [estimatedUnitCost, setEstimatedUnitCost] = useState("0");
-  const [currency, setCurrency] = useState("SAR");
+  const [uomCode, setUomCode] = useState("PCS");
+  const [warehouseId, setWarehouseId] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!itemId.trim()) {
-      setErrorMsg(t("validation.itemIdRequired"));
+    if (!productId.trim()) {
+      setErrorMsg(t("validation.itemIdRequired", "يرجى تحديد كود أو معرف الصنف"));
       return;
     }
 
     const qty = Number(quantity);
     if (isNaN(qty) || qty <= 0) {
-      setErrorMsg(t("validation.invalidQuantity"));
+      setErrorMsg(t("validation.invalidQuantity", "يرجى إدخال كمية صحيحة أكبر من صفر"));
       return;
     }
 
     try {
       setErrorMsg(null);
       await addPartMutation.mutateAsync({
-        legalEntityId,
         workOrderId,
-        itemId: itemId.trim(),
-        description: description.trim() || undefined,
-        requiredQuantity: qty,
-        uom: uom.trim() || "PCS",
-        estimatedUnitCost: Number(estimatedUnitCost) || 0,
-        currency: currency.trim() || "SAR"
+        request: {
+          productId: productId.trim(),
+          quantity: qty,
+          uomCode: uomCode.trim() || "PCS",
+          description: description.trim() || undefined,
+          legalEntityId,
+          warehouseId: warehouseId.trim() || undefined,
+          locationId: locationId.trim() || undefined
+        }
       });
       onClose();
+      setProductId("");
+      setDescription("");
+      setQuantity("1");
+      setUomCode("PCS");
+      setWarehouseId("");
+      setLocationId("");
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : t("common.genericError"));
     }
@@ -86,11 +94,11 @@ export function AddPartRequirementModal({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <div>
             <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("parts.itemId")} *
+              {t("parts.itemId", "معرف الصنف (ProductId)")} *
             </label>
             <TextField
-              value={itemId}
-              onChange={(val) => setItemId(val)}
+              value={productId}
+              onChange={(val) => setProductId(val)}
               placeholder={t("parts.itemCodePlaceholder", "مثال: ITEM-BEARING-01")}
               isRequired
             />
@@ -126,8 +134,8 @@ export function AddPartRequirementModal({
               {t("workOrders.uom")} *
             </label>
             <TextField
-              value={uom}
-              onChange={(val) => setUom(val)}
+              value={uomCode}
+              onChange={(val) => setUomCode(val)}
               placeholder={t("parts.uomPlaceholder", "PCS, SET, KG, M")}
               isRequired
             />
@@ -137,23 +145,23 @@ export function AddPartRequirementModal({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <div>
             <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("parts.estimatedUnitCost")}
+              {t("parts.warehouseLocation", "معرف المستودع (WarehouseId)")}
             </label>
             <TextField
-              value={estimatedUnitCost}
-              onChange={(val) => setEstimatedUnitCost(val)}
-              placeholder="0.00"
+              value={warehouseId}
+              onChange={(val) => setWarehouseId(val)}
+              placeholder={t("parts.warehousePlaceholder", "WH-MAIN-01")}
             />
           </div>
 
           <div>
             <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("billing.currency")}
+              {t("parts.locationId", "معرف الموقع الداخلي (LocationId)")}
             </label>
             <TextField
-              value={currency}
-              onChange={(val) => setCurrency(val)}
-              placeholder="SAR"
+              value={locationId}
+              onChange={(val) => setLocationId(val)}
+              placeholder={t("parts.locationPlaceholder", "LOC-BIN-A")}
             />
           </div>
         </div>

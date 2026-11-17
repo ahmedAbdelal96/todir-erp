@@ -156,6 +156,7 @@ export function WorkOrdersTab({ legalEntityId }: WorkOrdersTabProps): React.JSX.
                   <th>{t("requests.subject")}</th>
                   <th>{t("requests.context")}</th>
                   <th>{t("workOrders.workOrderType")}</th>
+                  <th>{t("billing.billingOwner", "جهة الفوترة")}</th>
                   <th>{t("requests.customerOrAsset")}</th>
                   <th>{t("common.priority")}</th>
                   <th>{t("common.status")}</th>
@@ -164,28 +165,48 @@ export function WorkOrdersTab({ legalEntityId }: WorkOrdersTabProps): React.JSX.
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.map((wo) => (
-                  <tr
-                    key={wo.id}
-                    onClick={() => setSelectedWorkOrderId(wo.id)}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <td>
-                      <strong style={{ color: "#0f172a" }}>{wo.workOrderNumber}</strong>
-                    </td>
-                    <td>{wo.subject || wo.title}</td>
-                    <td>
-                      {wo.context === "customer" || wo.context === "CustomerFieldService" ? t("contexts.customer") : t("contexts.internal")}
-                    </td>
-                    <td>{(t as any)(`workOrders.types.${wo.workOrderType || wo.workType}`)}</td>
-                    <td>{wo.customerName || wo.fixedAssetId || "—"}</td>
-                    <td>
-                      <ServiceLifecycleBadge state={wo.priority} />
-                    </td>
-                    <td>
-                      <ServiceLifecycleBadge state={wo.status || wo.state} />
-                    </td>
-                    <td>{new Date(wo.createdAtUtc || wo.plannedStart || Date.now()).toLocaleDateString()}</td>
+                {filteredItems.map((wo) => {
+                  const typeKey = String(wo.workOrderType || wo.workType || "").toLowerCase();
+                  return (
+                    <tr
+                      key={wo.id}
+                      onClick={() => setSelectedWorkOrderId(wo.id)}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <td>
+                        <strong style={{ color: "#0f172a" }}>{wo.workOrderNumber}</strong>
+                      </td>
+                      <td>{wo.subject || wo.title}</td>
+                      <td>
+                        {wo.context === "customer" || wo.context === "CustomerFieldService" ? t("contexts.customer") : t("contexts.internal")}
+                      </td>
+                      <td>{typeKey ? t(`workOrders.types.${typeKey}` as any, wo.workOrderType || wo.workType) : "—"}</td>
+                      <td>
+                        <span
+                          style={{
+                            padding: "0.2rem 0.5rem",
+                            borderRadius: "0.25rem",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            backgroundColor: wo.billingOwner === "Projects" ? "#e0f2fe" : wo.billingOwner === "Service" ? "#dcfce7" : "#f1f5f9",
+                            color: wo.billingOwner === "Projects" ? "#0369a1" : wo.billingOwner === "Service" ? "#15803d" : "#475569"
+                          }}
+                        >
+                          {wo.billingOwner === "Projects"
+                            ? t("billing.owners.projects")
+                            : wo.billingOwner === "Service"
+                            ? t("billing.owners.service")
+                            : t("billing.owners.none")}
+                        </span>
+                      </td>
+                      <td>{wo.customerName || wo.fixedAssetId || "—"}</td>
+                      <td>
+                        <ServiceLifecycleBadge state={wo.priority} />
+                      </td>
+                      <td>
+                        <ServiceLifecycleBadge state={wo.status || wo.state} />
+                      </td>
+                      <td>{new Date(wo.createdAtUtc || wo.plannedStart || Date.now()).toLocaleDateString()}</td>
                     <td style={{ textAlign: "center" }}>
                       <Button
                         variant="ghost"
@@ -199,8 +220,9 @@ export function WorkOrdersTab({ legalEntityId }: WorkOrdersTabProps): React.JSX.
                       </Button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
+                );
+              })}
+            </tbody>
             </Table>
           </div>
         )}

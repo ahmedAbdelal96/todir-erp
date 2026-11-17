@@ -8,7 +8,7 @@ export const serviceRoutes: ModuleRouteRegistration = {
     moduleIds: ["service"],
     path: "/service",
     navigationKey: "service",
-    permission: "service.read",
+    permission: "service.work.read",
     icon: "service"
   },
   routes: [

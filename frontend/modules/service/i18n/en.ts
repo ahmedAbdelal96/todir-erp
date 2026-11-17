@@ -334,6 +334,12 @@ export const serviceEn = {
     slaDeadline: "Commitment Deadline"
   },
   billing: {
+    billingOwner: "Billing Owner",
+    owners: {
+      projects: "Projects",
+      service: "Service",
+      none: "None"
+    },
     serviceChargesTitle: "Service Charges & Billing Workbench",
     serviceChargesDesc: "Reconcile billable technician time and spare parts vs warranty coverage and project contracts",
     newChargeTitle: "Add Service Charge",
@@ -353,6 +359,23 @@ export const serviceEn = {
     estimatedRevenue: "Amount",
     invoiceReady: "Ready for Invoicing",
     pendingCompletion: "Pending Technical Completion",
+    chargesReady: "Charges Ready",
+    coveredItems: "Covered Items",
+    projectOwnedOrders: "Project-Owned Orders",
+    chargeCategory: "Category",
+    customerAmount: "Customer Amount",
+    coveredAmount: "Covered Amount",
+    projectOwnedNotice: "Project-owned — billing managed via Projects",
+    requestInvoiceAction: "Request Invoice",
+    invoicedBadge: "Invoiced",
+    states: {
+      draft: "Draft",
+      reviewed: "Reviewed",
+      requested: "Invoice Requested",
+      invoiced: "Invoiced",
+      writtenOff: "Written Off",
+      cancelled: "Cancelled"
+    },
     types: {
       labor: "Technician Labor",
       parts: "Spare Parts / Consumables",

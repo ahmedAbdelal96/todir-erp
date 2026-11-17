@@ -13,7 +13,8 @@ import {
 import {
   useContractsQuery,
   useWarrantiesQuery,
-  useSlaProfilesQuery
+  useSlaProfilesQuery,
+  useResolveEntitlementMutation
 } from "../../hooks/use-service-queries.ts";
 import { NewContractModal } from "../modals/new-contract-modal.tsx";
 
@@ -27,60 +28,45 @@ export function ContractsWarrantyTab({ legalEntityId }: ContractsWarrantyTabProp
   const [isNewContractOpen, setIsNewContractOpen] = useState(false);
 
   // Entitlement checker state
-  const [checkerCustomer, setCheckerCustomer] = useState("");
-  const [checkerSerial, setCheckerSerial] = useState("");
-  const [entitlementResult, setEntitlementResult] = useState<{
-    covered: boolean;
-    coverageType: string;
-    slaResponseHours: number;
-  } | null>(null);
+  const [checkerCustomerPartyId, setCheckerCustomerPartyId] = useState("");
+  const [checkerInstalledBaseId, setCheckerInstalledBaseId] = useState("");
+  const [checkerLaborAmount, setCheckerLaborAmount] = useState("300");
+  const [checkerPartsAmount, setCheckerPartsAmount] = useState("500");
+  const [entitlementError, setEntitlementError] = useState<string | null>(null);
 
   const contractsQuery = useContractsQuery(legalEntityId, { pageSize: 50 });
   const warrantiesQuery = useWarrantiesQuery(legalEntityId, { pageSize: 50 });
   const slaProfilesQuery = useSlaProfilesQuery(legalEntityId);
+  const resolveMutation = useResolveEntitlementMutation();
 
   const contracts = contractsQuery.data?.items ?? [];
   const warranties = warrantiesQuery.data?.items ?? [];
 
-  const handleCheckEntitlement = (e: React.FormEvent) => {
+  const handleCheckEntitlement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!checkerCustomer.trim() && !checkerSerial.trim()) return;
+    if (!checkerCustomerPartyId.trim() && !checkerInstalledBaseId.trim()) {
+      setEntitlementError(t("contracts.insufficientCriteria", "يجب تحديد معرف العميل أو معرف المعدة للتحقق من التغطية."));
+      return;
+    }
 
-    // Entitlement verification rule logic
-    const matchedContract = contracts.find(
-      (c) =>
-        checkerCustomer &&
-        (c.customerName || c.contractHolderPartyId || "").toLowerCase().includes(checkerCustomer.toLowerCase()) &&
-        (c.state === "Active" || c.status === "active")
-    );
-
-    const matchedWarranty = warranties.find(
-      (w) =>
-        checkerSerial &&
-        (w.serialNumber || w.subjectId || "").toLowerCase() === checkerSerial.toLowerCase() &&
-        (w.state === "Active" || w.status === "active")
-    );
-
-    if (matchedContract) {
-      setEntitlementResult({
-        covered: true,
-        coverageType: `Contract: ${matchedContract.contractNumber || matchedContract.id.slice(0, 8)} (${matchedContract.coverageTerms || "Full Support"})`,
-        slaResponseHours: 4
+    try {
+      setEntitlementError(null);
+      await resolveMutation.mutateAsync({
+        legalEntityId,
+        customerPartyId: checkerCustomerPartyId.trim() || undefined,
+        installedBaseId: checkerInstalledBaseId.trim() || undefined,
+        asOfDate: new Date().toISOString().slice(0, 10),
+        lines: [
+          { chargeCategory: "Labor", amount: Number(checkerLaborAmount) || 0, currencyCode: "EGP", quantity: 1 },
+          { chargeCategory: "Parts", amount: Number(checkerPartsAmount) || 0, currencyCode: "EGP", quantity: 1 }
+        ]
       });
-    } else if (matchedWarranty) {
-      setEntitlementResult({
-        covered: true,
-        coverageType: `Standard Manufacturer Warranty: ${matchedWarranty.warrantyType}`,
-        slaResponseHours: 8
-      });
-    } else {
-      setEntitlementResult({
-        covered: false,
-        coverageType: "No active contract or warranty found. Standard billable rates apply.",
-        slaResponseHours: 24
-      });
+    } catch (err: unknown) {
+      setEntitlementError(err instanceof Error ? err.message : t("common.genericError"));
     }
   };
+
+  const entitlementResult = resolveMutation.data;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -217,33 +203,77 @@ export function ContractsWarrantyTab({ legalEntityId }: ContractsWarrantyTabProp
           description={t("contracts.entitlementCheckDesc")}
           variant="card"
         >
-          <form onSubmit={handleCheckEntitlement} style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "600px" }}>
+          <form onSubmit={handleCheckEntitlement} style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "800px" }}>
+            {entitlementError && (
+              <div
+                style={{
+                  padding: "0.75rem 1rem",
+                  borderRadius: "var(--radius-sm, 0.375rem)",
+                  backgroundColor: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  color: "#b91c1c",
+                  fontSize: "0.875rem"
+                }}
+              >
+                {entitlementError}
+              </div>
+            )}
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
               <div>
                 <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-                  {t("requests.customerName")}
+                  {t("contracts.customerPartyId", "معرف العميل (CustomerPartyId)")}
                 </label>
                 <TextField
-                  value={checkerCustomer}
-                  onChange={(val) => setCheckerCustomer(val)}
-                  placeholder={t("contracts.customerPlaceholder", "مثال: مجموعة الفطيم")}
+                  value={checkerCustomerPartyId}
+                  onChange={(val) => setCheckerCustomerPartyId(val)}
+                  placeholder={t("contracts.customerPartyPlaceholder", "UUID أو كود العميل")}
                 />
               </div>
 
               <div>
                 <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-                  {t("installedBase.serialNumber")}
+                  {t("contracts.installedBaseId", "معرف المعدة (InstalledBaseId)")}
                 </label>
                 <TextField
-                  value={checkerSerial}
-                  onChange={(val) => setCheckerSerial(val)}
-                  placeholder={t("contracts.serialPlaceholder", "مثال: SN-GEN-88301")}
+                  value={checkerInstalledBaseId}
+                  onChange={(val) => setCheckerInstalledBaseId(val)}
+                  placeholder={t("contracts.installedBasePlaceholder", "UUID المعدة")}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
+                  {t("contracts.testLaborAmount", "قيمة العمل الفني التقديرية")}
+                </label>
+                <TextField
+                  value={checkerLaborAmount}
+                  onChange={(val) => setCheckerLaborAmount(val)}
+                  placeholder="300"
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
+                  {t("contracts.testPartsAmount", "قيمة قطع الغيار التقديرية")}
+                </label>
+                <TextField
+                  value={checkerPartsAmount}
+                  onChange={(val) => setCheckerPartsAmount(val)}
+                  placeholder="500"
                 />
               </div>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-start" }}>
-              <Button variant="primary" type="submit" startIcon={<CheckCircleIcon size={16} />}>
+              <Button
+                variant="primary"
+                type="submit"
+                isLoading={resolveMutation.isPending}
+                startIcon={<CheckCircleIcon size={16} />}
+              >
                 {t("contracts.verifyEntitlement")}
               </Button>
             </div>
@@ -254,21 +284,74 @@ export function ContractsWarrantyTab({ legalEntityId }: ContractsWarrantyTabProp
                   marginTop: "1rem",
                   padding: "1rem",
                   borderRadius: "var(--radius-md, 0.5rem)",
-                  backgroundColor: entitlementResult.covered ? "#ecfdf5" : "#fffbeb",
-                  border: `1px solid ${entitlementResult.covered ? "#a7f3d0" : "#fde68a"}`
+                  backgroundColor: "#ffffff",
+                  border: "1px solid var(--color-border-default, #cbd5e1)"
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                  <strong style={{ color: entitlementResult.covered ? "#065f46" : "#92400e" }}>
-                    {entitlementResult.covered ? t("contracts.activeCoverageConfirmed", "✓ تغطية نشطة مؤكدة") : t("contracts.nonCoveredBillable", "⚠ غير مغطى / خاضع للفوترة")}
-                  </strong>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <strong>{t("contracts.slaState", "حالة اتفاقية SLA:")}</strong>
+                    <span
+                      style={{
+                        padding: "0.2rem 0.5rem",
+                        borderRadius: "9999px",
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        backgroundColor: entitlementResult.slaState === "Active" ? "#ecfdf5" : "#fef3c7",
+                        color: entitlementResult.slaState === "Active" ? "#065f46" : "#92400e"
+                      }}
+                    >
+                      {entitlementResult.slaState}
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: "0.8125rem", color: "#64748b" }}>
+                    {entitlementResult.contractId && (
+                      <span style={{ marginRight: "0.75rem" }}>
+                        {t("contracts.contractId", "العقد:")} {entitlementResult.contractId.slice(0, 8)}
+                      </span>
+                    )}
+                    {entitlementResult.warrantyId && (
+                      <span>
+                        {t("contracts.warrantyId", "الضمان:")} {entitlementResult.warrantyId.slice(0, 8)}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <p style={{ margin: "0.25rem 0", fontSize: "0.875rem", color: "#334155" }}>
-                  {entitlementResult.coverageType}
-                </p>
-                <div style={{ marginTop: "0.5rem", fontSize: "0.8125rem", color: "#64748b" }}>
-                  {t("contracts.targetSlaResponse", "زمن الاستجابة المستهدف:")} <strong>{entitlementResult.slaResponseHours} {t("contracts.hours", "ساعات")}</strong>
-                </div>
+
+                <Table isBordered isStriped>
+                  <thead>
+                    <tr>
+                      <th>{t("billing.chargeCategory")}</th>
+                      <th>{t("contracts.coverageSource", "المصدر")}</th>
+                      <th>{t("contracts.coveredStatus", "التغطية")}</th>
+                      <th>{t("billing.coveredAmount")}</th>
+                      <th>{t("billing.customerAmount")}</th>
+                      <th>{t("contracts.explanation", "التفسير المالي")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entitlementResult.lines.map((line, idx) => (
+                      <tr key={idx}>
+                        <td><strong>{line.chargeCategory}</strong></td>
+                        <td>{line.coverageSource}</td>
+                        <td>
+                          <span
+                            style={{
+                              color: line.covered ? "#059669" : "#dc2626",
+                              fontWeight: 600
+                            }}
+                          >
+                            {line.covered ? t("contracts.covered", "مغطى") : t("contracts.notCovered", "غير مغطى")}
+                          </span>
+                        </td>
+                        <td>{line.coveredAmount.toLocaleString()}</td>
+                        <td><strong>{line.customerAmount.toLocaleString()}</strong></td>
+                        <td style={{ fontSize: "0.8125rem", color: "#475569" }}>{line.explanation}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
               </div>
             )}
           </form>

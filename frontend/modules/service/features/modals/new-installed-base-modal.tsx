@@ -41,13 +41,14 @@ export function NewInstalledBaseModal({
       setErrorMsg(null);
       await registerMutation.mutateAsync({
         legalEntityId,
+        name: (itemName.trim() || itemCode.trim() || serialNumber.trim()),
         serialNumber: serialNumber.trim(),
+        modelNumber: itemCode.trim(),
         itemCode: itemCode.trim(),
         itemName: itemName.trim() || undefined,
         customerName: customerName.trim() || undefined,
         siteLocation: siteLocation.trim() || undefined,
-        fixedAssetId: fixedAssetId.trim() || undefined,
-        warrantyEndDate: warrantyEnd ? new Date(warrantyEnd).toISOString() : undefined,
+        installedDate: new Date().toISOString().slice(0, 10),
         status: status.trim() || "operational"
       });
       onClose();

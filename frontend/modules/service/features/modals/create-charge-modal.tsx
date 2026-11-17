@@ -47,16 +47,23 @@ export function CreateChargeModal({
 
     try {
       setErrorMsg(null);
+      const category = chargeType === "fee" 
+        ? "Fee" 
+        : chargeType === "parts" 
+        ? "Parts" 
+        : chargeType === "travel" 
+        ? "Travel" 
+        : "Labor";
+      const total = qty * price;
+
       await createChargeMutation.mutateAsync({
         legalEntityId,
         workOrderId,
-        chargeType,
+        category,
         description: description.trim(),
-        quantity: qty,
-        unitPrice: price,
-        totalAmount: qty * price,
-        currency: currency.trim() || "SAR",
-        isBillable
+        costAmount: total,
+        customerAmount: isBillable ? total : 0,
+        currencyCode: currency.trim() || "SAR"
       });
       onClose();
     } catch (err: unknown) {
@@ -98,7 +105,7 @@ export function CreateChargeModal({
               { value: "labor", label: t("billing.types.labor") },
               { value: "parts", label: t("billing.types.parts") },
               { value: "travel", label: t("billing.types.travel") },
-              { value: "fixed_fee", label: t("billing.types.fixedFee") }
+              { value: "fee", label: t("billing.types.fixedFee") }
             ]}
           />
         </div>

@@ -5,8 +5,11 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { ServiceSelect as Select } from "../../components/service-select.tsx";
 import { TextArea } from "../../../../components/primitives/text-area.tsx";
-import { useCreateServiceRequestMutation } from "../../hooks/use-service-queries.ts";
-import type { ServiceContext, ServicePriority } from "../../types.ts";
+import {
+  useCreateServiceRequestMutation,
+  useInstalledBaseQuery
+} from "../../hooks/use-service-queries.ts";
+import type { ServiceRequestContext, ServicePriority } from "../../types.ts";
 
 export interface NewRequestModalProps {
   readonly isOpen: boolean;
@@ -21,21 +24,22 @@ export function NewRequestModal({
 }: NewRequestModalProps): React.JSX.Element {
   const { t } = useTranslation("service");
   const createMutation = useCreateServiceRequestMutation(legalEntityId);
+  const installedBaseQuery = useInstalledBaseQuery(legalEntityId, { pageSize: 100 });
+  const installedItems = installedBaseQuery.data?.items ?? [];
 
-  const [requestNumber, setRequestNumber] = useState(`SR-${Date.now().toString().slice(-6)}`);
-  const [context, setContext] = useState<ServiceContext>("customer");
-  const [priority, setPriority] = useState<ServicePriority>("medium");
-  const [subject, setSubject] = useState("");
+  const [context, setContext] = useState<ServiceRequestContext>("CustomerFieldService");
+  const [priority, setPriority] = useState<ServicePriority>("Normal");
+  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [siteLocation, setSiteLocation] = useState("");
-  const [assetReference, setAssetReference] = useState("");
+  const [customerPartyId, setCustomerPartyId] = useState("");
+  const [installedBaseId, setInstalledBaseId] = useState("");
+  const [fixedAssetId, setFixedAssetId] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subject.trim()) {
-      setErrorMsg(t("validation.subjectRequired"));
+    if (!title.trim()) {
+      setErrorMsg(t("validation.subjectRequired", "يرجى إدخال عنوان أو موضوع البلاغ"));
       return;
     }
 
@@ -43,26 +47,33 @@ export function NewRequestModal({
       setErrorMsg(null);
       await createMutation.mutateAsync({
         legalEntityId,
-        requestNumber: requestNumber.trim(),
         context,
-        priority,
-        subject: subject.trim(),
+        title: title.trim(),
         description: description.trim() || undefined,
-        customerName: context === "customer" ? customerName.trim() || undefined : undefined,
-        siteLocation: context === "customer" ? siteLocation.trim() || undefined : undefined,
-        assetReference: context === "internal" ? assetReference.trim() || undefined : undefined
+        customerPartyId: context === "CustomerFieldService" && customerPartyId.trim() ? customerPartyId.trim() : undefined,
+        installedBaseId: installedBaseId.trim() || undefined,
+        fixedAssetId: context === "InternalMaintenance" && fixedAssetId.trim() ? fixedAssetId.trim() : undefined,
+        priority,
+        requestedAt: new Date().toISOString()
       });
       onClose();
-      // Reset form
-      setSubject("");
+      setTitle("");
       setDescription("");
-      setCustomerName("");
-      setSiteLocation("");
-      setAssetReference("");
+      setCustomerPartyId("");
+      setInstalledBaseId("");
+      setFixedAssetId("");
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : t("common.genericError"));
     }
   };
+
+  const installedBaseOptions = [
+    { value: "", label: t("installedBase.selectAsset", "اختر المعدة أو الأصل...") },
+    ...installedItems.map((item) => ({
+      value: item.id,
+      label: `${item.name} (${item.serialNumber || item.modelNumber || item.id.slice(0, 8)})`
+    }))
+  ];
 
   return (
     <Dialog
@@ -90,31 +101,18 @@ export function NewRequestModal({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <div>
             <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("requests.requestNumber")} *
-            </label>
-            <TextField
-              value={requestNumber}
-              onChange={(val) => setRequestNumber(val)}
-              isRequired
-            />
-          </div>
-
-          <div>
-            <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
               {t("requests.context")} *
             </label>
             <Select
               value={context}
-              onChange={(val) => setContext(val as ServiceContext)}
+              onChange={(val) => setContext(val as ServiceRequestContext)}
               options={[
-                { value: "customer", label: t("contexts.customer") },
-                { value: "internal", label: t("contexts.internal") }
+                { value: "CustomerFieldService", label: t("contexts.customer", "خدمة عملاء ميدانية") },
+                { value: "InternalMaintenance", label: t("contexts.internal", "صيانة مرافق وأصول داخلية") }
               ]}
             />
           </div>
-        </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <div>
             <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
               {t("common.priority")} *
@@ -123,63 +121,76 @@ export function NewRequestModal({
               value={priority}
               onChange={(val) => setPriority(val as ServicePriority)}
               options={[
-                { value: "low", label: t("priorities.low") },
-                { value: "medium", label: t("priorities.medium") },
-                { value: "high", label: t("priorities.high") },
-                { value: "urgent", label: t("priorities.urgent") }
+                { value: "Low", label: t("priorities.low") },
+                { value: "Normal", label: t("priorities.medium") },
+                { value: "High", label: t("priorities.high") },
+                { value: "Critical", label: t("priorities.urgent") }
               ]}
             />
           </div>
-
-          {context === "customer" ? (
-            <div>
-              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-                {t("requests.customerName")}
-              </label>
-              <TextField
-                value={customerName}
-                onChange={(val) => setCustomerName(val)}
-                placeholder={t("requests.customerPlaceholder")}
-              />
-            </div>
-          ) : (
-            <div>
-              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-                {t("requests.assetReference")}
-              </label>
-              <TextField
-                value={assetReference}
-                onChange={(val) => setAssetReference(val)}
-                placeholder={t("requests.assetPlaceholder")}
-              />
-            </div>
-          )}
         </div>
-
-        {context === "customer" && (
-          <div>
-            <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
-              {t("requests.siteLocation")}
-            </label>
-            <TextField
-              value={siteLocation}
-              onChange={(val) => setSiteLocation(val)}
-              placeholder={t("requests.sitePlaceholder")}
-            />
-          </div>
-        )}
 
         <div>
           <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
             {t("requests.subject")} *
           </label>
           <TextField
-            value={subject}
-            onChange={(val) => setSubject(val)}
+            value={title}
+            onChange={(val) => setTitle(val)}
             placeholder={t("requests.subjectPlaceholder")}
             isRequired
           />
         </div>
+
+        {context === "CustomerFieldService" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
+                {t("requests.customerPartyId", "معرف العميل (CustomerPartyId)")}
+              </label>
+              <TextField
+                value={customerPartyId}
+                onChange={(val) => setCustomerPartyId(val)}
+                placeholder={t("requests.customerPlaceholder")}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
+                {t("installedBase.title")}
+              </label>
+              <Select
+                value={installedBaseId}
+                onChange={(val) => setInstalledBaseId(val)}
+                options={installedBaseOptions}
+              />
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
+                {t("workOrders.fixedAssetId")}
+              </label>
+              <TextField
+                value={fixedAssetId}
+                onChange={(val) => setFixedAssetId(val)}
+                placeholder={t("installedBase.fixedAssetPlaceholder", "FA-00192")}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
+                {t("installedBase.title")}
+              </label>
+              <Select
+                value={installedBaseId}
+                onChange={(val) => setInstalledBaseId(val)}
+                options={installedBaseOptions}
+              />
+            </div>
+          </div>
+        )}
 
         <div>
           <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.375rem" }}>
