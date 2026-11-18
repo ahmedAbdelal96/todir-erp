@@ -59,7 +59,7 @@ export function IssueStockModal({
   );
   const availabilitySummary = summarizeStockBalances(availabilityBalances);
   const currentAvailable = availabilitySummary.availableBaseQuantity;
-  const isInsufficient = Boolean(productId) && compareQuantities(quantity, currentAvailable) > 0;
+  const isInsufficient = Boolean(productId) && !isBalanceLoading && compareQuantities(quantity, currentAvailable) > 0;
 
   // Picking suggestions
   const { data: pickingSuggestions = [] } = usePickingSuggestions(

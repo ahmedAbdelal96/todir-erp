@@ -61,7 +61,7 @@ export function TransferModal({
     (!hasSourceLocs || !sourceLocationId || b.locationId === sourceLocationId) && b.stockStatus === "Available"
   );
   const sourceAvailability = summarizeStockBalances(sourceAvailabilityBalances);
-  const isTransferQuantityInsufficient = Boolean(productId) && compareQuantities(quantity, sourceAvailability.availableBaseQuantity) > 0;
+  const isTransferQuantityInsufficient = Boolean(productId) && !isSourceBalanceLoading && compareQuantities(quantity, sourceAvailability.availableBaseQuantity) > 0;
 
   const { createTransfer } = useInventoryMutations(legalEntityId);
 
