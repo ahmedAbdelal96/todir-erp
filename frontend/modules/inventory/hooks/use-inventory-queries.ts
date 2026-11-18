@@ -122,11 +122,13 @@ export function useNegativeStockConditions(legalEntityId: string) {
 
 export function useStockBalances(
   legalEntityId: string,
-  params?: { productVariantId?: string; warehouseId?: string; limit?: number }
+  params?: { productVariantId?: string; warehouseId?: string; limit?: number },
+  enabled = true
 ) {
   return useQuery({
     queryKey: ["inventory", legalEntityId, "balances", params?.productVariantId, params?.warehouseId, params?.limit],
     queryFn: () => inventoryApi.getBalances(legalEntityId, params),
+    enabled,
     staleTime: 10_000
   });
 }

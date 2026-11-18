@@ -11,7 +11,7 @@ import type {
   PhysicalCountLine,
   InventoryValuationSnapshot
 } from "../public.ts";
-import { toQty, toMoneyVal } from "../utils.ts";
+import { compareQuantities, summarizeStockBalances, toQty, toMoneyVal } from "../utils.ts";
 import { mapInventoryError } from "../services/inventory-error-map.ts";
 
 describe("Inventory Domain Invariants & Frontend Slice Contracts", () => {
@@ -22,6 +22,41 @@ describe("Inventory Domain Invariants & Frontend Slice Contracts", () => {
     assert.deepEqual(toMoneyVal(150.75), { amount: "150.75", currency: "SAR" });
     assert.deepEqual(toMoneyVal("1200", "USD"), { amount: "1200.00", currency: "USD" });
     assert.deepEqual(toMoneyVal(undefined), { amount: "0.00", currency: "SAR" });
+  });
+
+  it("summarizes available stock with exact decimal quantities for operational dialogs", () => {
+    const balances: StockBalance[] = [
+      {
+        productVariantId: "prod-sku-001",
+        warehouseId: "wh-01",
+        locationId: "loc-01",
+        stockStatus: "Available",
+        onHandBaseQuantity: 1.1,
+        reservedBaseQuantity: 0.1,
+        availableBaseQuantity: 1,
+        version: 1,
+        lastMovementSequence: 10
+      },
+      {
+        productVariantId: "prod-sku-001",
+        warehouseId: "wh-01",
+        locationId: "loc-02",
+        stockStatus: "Available",
+        onHandBaseQuantity: 2.2,
+        reservedBaseQuantity: 0.2,
+        availableBaseQuantity: 2,
+        version: 1,
+        lastMovementSequence: 11
+      }
+    ];
+
+    assert.deepEqual(summarizeStockBalances(balances), {
+      onHandBaseQuantity: "3.3",
+      reservedBaseQuantity: "0.3",
+      availableBaseQuantity: "3"
+    });
+    assert.equal(compareQuantities("3.01", "3"), 1);
+    assert.equal(compareQuantities("3.0", "3"), 0);
   });
 
   it("maps RFC-7807 inventory domain errors to expected localization keys", () => {

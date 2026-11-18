@@ -5,8 +5,10 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
 import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
-import { useInventoryMutations, useLocations } from "../../hooks/use-inventory-queries.ts";
+import { InventoryAvailabilityPanel } from "../../components/inventory-availability-panel.tsx";
+import { useInventoryMutations, useLocations, useStockBalances } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
+import { compareQuantities, summarizeStockBalances } from "../../utils.ts";
 import type { TransferMode, Warehouse } from "../../types.ts";
 
 export interface TransferModalProps {
@@ -46,6 +48,20 @@ export function TransferModal({
   const destWh = warehouses.find(w => w.id === destWarehouseId);
   const hasDestLocs = destWh && destWh.locationMode !== "WarehouseOnly";
   const { data: destLocs = [] } = useLocations(legalEntityId, hasDestLocs ? destWarehouseId : undefined);
+
+  const sourceBalanceParams = productId && sourceWarehouseId
+    ? { productVariantId: productId, warehouseId: sourceWarehouseId }
+    : undefined;
+  const { data: sourceBalances = [], isLoading: isSourceBalanceLoading } = useStockBalances(
+    legalEntityId,
+    sourceBalanceParams,
+    Boolean(sourceBalanceParams)
+  );
+  const sourceAvailabilityBalances = sourceBalances.filter(b =>
+    (!hasSourceLocs || !sourceLocationId || b.locationId === sourceLocationId) && b.stockStatus === "Available"
+  );
+  const sourceAvailability = summarizeStockBalances(sourceAvailabilityBalances);
+  const isTransferQuantityInsufficient = Boolean(productId) && compareQuantities(quantity, sourceAvailability.availableBaseQuantity) > 0;
 
   const { createTransfer } = useInventoryMutations(legalEntityId);
 
@@ -146,6 +162,14 @@ export function TransferModal({
             </select>
           </div>
         </div>
+
+        <InventoryAvailabilityPanel
+          title={t("transfers.sourceAvailabilityTitle")}
+          summary={sourceAvailability}
+          hasSelection={Boolean(productId && sourceWarehouseId)}
+          isLoading={isSourceBalanceLoading}
+          isInsufficient={isTransferQuantityInsufficient}
+        />
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <TextField

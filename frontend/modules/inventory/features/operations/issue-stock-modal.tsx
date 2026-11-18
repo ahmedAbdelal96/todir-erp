@@ -4,11 +4,11 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
-import { QuantityDisplay } from "../../../../components/fields/quantity-display.tsx";
 import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
+import { InventoryAvailabilityPanel } from "../../components/inventory-availability-panel.tsx";
 import { useInventoryMutations, useLocations, useStockBalances, usePickingSuggestions } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
-import { toQty } from "../../utils.ts";
+import { compareQuantities, summarizeStockBalances } from "../../utils.ts";
 import type { Warehouse } from "../../types.ts";
 
 export interface IssueStockModalProps {
@@ -50,13 +50,16 @@ export function IssueStockModal({
   const { data: locations = [] } = useLocations(legalEntityId, hasLocations ? warehouseId : undefined);
 
   // Balances to show available
-  const { data: balances = [] } = useStockBalances(legalEntityId, {
+  const { data: balances = [], isLoading: isBalanceLoading } = useStockBalances(legalEntityId, {
     ...(productId ? { productVariantId: productId } : {}),
     ...(warehouseId ? { warehouseId } : {})
-  });
-  const currentAvailable = balances
-    .filter(b => (!hasLocations || !locationId || b.locationId === locationId) && b.stockStatus === "Available")
-    .reduce((sum, b) => sum + b.availableBaseQuantity, 0);
+  }, Boolean(productId && warehouseId));
+  const availabilityBalances = balances.filter(b =>
+    (!hasLocations || !locationId || b.locationId === locationId) && b.stockStatus === "Available"
+  );
+  const availabilitySummary = summarizeStockBalances(availabilityBalances);
+  const currentAvailable = availabilitySummary.availableBaseQuantity;
+  const isInsufficient = Boolean(productId) && compareQuantities(quantity, currentAvailable) > 0;
 
   // Picking suggestions
   const { data: pickingSuggestions = [] } = usePickingSuggestions(
@@ -78,7 +81,7 @@ export function IssueStockModal({
       return;
     }
 
-    if (numQty > currentAvailable && !allowNegativeOverride) {
+    if (isInsufficient && !allowNegativeOverride) {
       setErrorMessage(t("operations.insufficientWarning"));
       return;
     }
@@ -171,13 +174,13 @@ export function IssueStockModal({
           </div>
         )}
 
-        {/* Available quantity display */}
-        <div style={{ padding: "0.625rem 0.875rem", backgroundColor: "var(--color-surface-subtle, #f8fafc)", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-sm)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>{t("operations.availableBeforeIssue")}:</span>
-          <span style={{ fontSize: "1rem", fontWeight: 700, color: currentAvailable > 0 ? "var(--color-status-success)" : "var(--color-status-danger)" }}>
-            <QuantityDisplay value={toQty(currentAvailable)} />
-          </span>
-        </div>
+        <InventoryAvailabilityPanel
+          title={t("operations.availableBeforeIssue")}
+          summary={availabilitySummary}
+          hasSelection={Boolean(productId && warehouseId)}
+          isLoading={isBalanceLoading}
+          isInsufficient={isInsufficient}
+        />
 
         {/* Picking suggestions banner if available */}
         {pickingSuggestions.length > 0 && (
