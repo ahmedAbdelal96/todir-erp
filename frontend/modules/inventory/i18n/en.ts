@@ -18,6 +18,25 @@ export const en = {
     scrollPrev: "Scroll previous",
     scrollNext: "Scroll next"
   },
+  workspaceNavLabel: "Inventory workspaces",
+  workspaces: {
+    stock: {
+      label: "Stock",
+      description: "Balances, metrics, and item location"
+    },
+    operations: {
+      label: "Warehouse Operations",
+      description: "Receive, issue, transfer, and reserve stock"
+    },
+    control: {
+      label: "Counts & Traceability",
+      description: "Counts, adjustments, lots, and serials"
+    },
+    records: {
+      label: "Records & Setup",
+      description: "Warehouses, opening balances, and reporting"
+    }
+  },
   kpis: {
     activeStockItems: "Active Stock Items",
     itemsWithReservations: "Items with Reservations",

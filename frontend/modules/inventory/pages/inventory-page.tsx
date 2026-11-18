@@ -3,6 +3,11 @@ import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { InventoryTabNav } from "../components/inventory-tab-nav.tsx";
+import {
+  InventoryWorkspaceNav,
+  type InventoryWorkspaceItem
+} from "../components/inventory-workspace-nav.tsx";
+import type { InventoryTabItem } from "../components/inventory-tab-nav.tsx";
 import { OverviewTab } from "../features/overview/overview-tab.tsx";
 import { StockTab } from "../features/stock/stock-tab.tsx";
 import { LocatorTab } from "../features/locator/locator-tab.tsx";
@@ -54,20 +59,58 @@ export function InventoryPage(): React.JSX.Element {
 
   const isApprovalRequired = policy?.adjustmentApprovalMode === "ApprovalRequired";
 
-  const tabs = [
-    { id: "overview", label: t("tabs.overview") },
-    { id: "stock", label: t("tabs.stock") },
-    { id: "locator", label: t("tabs.locator") },
-    { id: "warehouses", label: t("tabs.warehouses") },
-    { id: "transfers", label: t("tabs.transfers") },
-    { id: "reservations", label: t("tabs.reservations") },
-    { id: "traceability", label: t("tabs.traceability") },
-    { id: "counts", label: t("tabs.counts") },
-    { id: "adjustments", label: t("tabs.adjustments") },
-    { id: "opening", label: t("tabs.opening") },
-    { id: "history", label: t("tabs.history") },
-    { id: "valuation", label: t("tabs.valuation") }
+  const workspaceGroups: readonly (InventoryWorkspaceItem & { readonly tabs: readonly InventoryTabItem[] })[] = [
+    {
+      id: "stock",
+      label: t("workspaces.stock.label"),
+      description: t("workspaces.stock.description"),
+      tabs: [
+        { id: "overview", label: t("tabs.overview") },
+        { id: "stock", label: t("tabs.stock") },
+        { id: "locator", label: t("tabs.locator") }
+      ]
+    },
+    {
+      id: "operations",
+      label: t("workspaces.operations.label"),
+      description: t("workspaces.operations.description"),
+      tabs: [
+        { id: "transfers", label: t("tabs.transfers") },
+        { id: "reservations", label: t("tabs.reservations") }
+      ]
+    },
+    {
+      id: "control",
+      label: t("workspaces.control.label"),
+      description: t("workspaces.control.description"),
+      tabs: [
+        { id: "traceability", label: t("tabs.traceability") },
+        { id: "counts", label: t("tabs.counts") },
+        { id: "adjustments", label: t("tabs.adjustments") }
+      ]
+    },
+    {
+      id: "records",
+      label: t("workspaces.records.label"),
+      description: t("workspaces.records.description"),
+      tabs: [
+        { id: "warehouses", label: t("tabs.warehouses") },
+        { id: "opening", label: t("tabs.opening") },
+        { id: "history", label: t("tabs.history") },
+        { id: "valuation", label: t("tabs.valuation") }
+      ]
+    }
   ];
+
+  const activeWorkspace = workspaceGroups.find((workspace) =>
+    workspace.tabs.some((tab) => tab.id === activeTab)
+  ) ?? workspaceGroups[0];
+
+  const handleWorkspaceSelect = (workspaceId: string) => {
+    const workspace = workspaceGroups.find((item) => item.id === workspaceId);
+    const firstTab = workspace?.tabs[0];
+    if (firstTab) setActiveTab(firstTab.id);
+  };
 
   return (
     <div style={{ padding: "1.25rem 1.5rem", width: "100%", maxWidth: "1600px", margin: "0 auto", boxSizing: "border-box", minWidth: 0 }}>
@@ -113,9 +156,17 @@ export function InventoryPage(): React.JSX.Element {
         </div>
       </header>
 
-      {/* Tabs Navigation */}
+      {/* Workspace Navigation: four task-oriented areas keep all existing features accessible. */}
+      <InventoryWorkspaceNav
+        ariaLabel={t("workspaceNavLabel")}
+        workspaces={workspaceGroups}
+        activeWorkspace={activeWorkspace?.id ?? "stock"}
+        onSelectWorkspace={handleWorkspaceSelect}
+      />
+
+      {/* Sub-navigation for the selected workspace. */}
       <InventoryTabNav
-        tabs={tabs}
+        tabs={activeWorkspace?.tabs ?? []}
         activeTab={activeTab}
         onSelectTab={setActiveTab}
       />

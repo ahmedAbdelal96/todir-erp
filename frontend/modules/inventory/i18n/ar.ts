@@ -18,6 +18,25 @@ export const ar = {
     scrollPrev: "التمرير للخلف",
     scrollNext: "التمرير للأمام"
   },
+  workspaceNavLabel: "مساحات عمل المخزون",
+  workspaces: {
+    stock: {
+      label: "المخزون",
+      description: "الأرصدة، المؤشرات، ومكان الصنف"
+    },
+    operations: {
+      label: "العمليات المخزنية",
+      description: "استلام وصرف وتحويل وحجز المخزون"
+    },
+    control: {
+      label: "الجرد والتتبع",
+      description: "الجرد، التسويات، والتشغيلات"
+    },
+    records: {
+      label: "السجل والتهيئة",
+      description: "المستودعات، الأرصدة الافتتاحية، والتقارير"
+    }
+  },
   kpis: {
     activeStockItems: "أصناف برصيد فعلي",
     itemsWithReservations: "أصناف بها حجوزات",
