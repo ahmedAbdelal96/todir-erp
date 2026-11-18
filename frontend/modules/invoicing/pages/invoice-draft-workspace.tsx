@@ -556,9 +556,6 @@ export function InvoiceDraftWorkspace({ direction }: InvoiceDraftWorkspaceProps)
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
           {/* Party Selection */}
           <div>
-            <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: "#334155", marginBottom: "0.25rem" }}>
-              {isCustomer ? t("draft.customerParty") : t("draft.supplierParty")} <span style={{ color: "#ef4444" }}>*</span>
-            </label>
             <PartyPicker
               label={isCustomer ? t("draft.customerParty") : t("draft.supplierParty")}
               value={partyId || undefined}

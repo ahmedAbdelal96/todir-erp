@@ -14,6 +14,8 @@ import {
 } from "react-aria-components";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
+import { normalizeSearchQuery } from "./search-normalizer.ts";
+export { normalizeSearchQuery };
 
 export type ComboBoxKey = string | number;
 
@@ -23,9 +25,6 @@ export interface ComboBoxOption {
   readonly description?: string | undefined;
   readonly isDisabled?: boolean | undefined;
 }
-
-import { normalizeSearchQuery } from "./search-normalizer.ts";
-export { normalizeSearchQuery };
 
 export interface ComboBoxProps<T extends object = ComboBoxOption>
   extends Omit<
@@ -96,6 +95,37 @@ export function ComboBox<T extends object = ComboBoxOption>({
   const { t } = useTranslation("common");
   const [internalInput, setInternalInput] = React.useState(props.inputValue ?? "");
   const [isFocused, setIsFocused] = React.useState(false);
+  const triggerRef = React.useRef<HTMLDivElement>(null);
+  const [triggerWidth, setTriggerWidth] = React.useState<number | undefined>(undefined);
+
+  // Sync internalInput with props.inputValue when provided
+  React.useEffect(() => {
+    if (props.inputValue !== undefined) {
+      setInternalInput(props.inputValue);
+    }
+  }, [props.inputValue]);
+
+  // Measure trigger container to ensure the popover strictly matches trigger width
+  React.useLayoutEffect(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0) {
+        setTriggerWidth(Math.round(rect.width));
+      }
+    };
+
+    measure();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => measure());
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+  }, []);
+
   const currentSearchTerm = props.inputValue !== undefined ? props.inputValue : internalInput;
 
   const handleInputChange = (val: string) => {
@@ -108,22 +138,6 @@ export function ComboBox<T extends object = ComboBoxOption>({
     props.onInputChange?.("");
     onSelectionChange?.(null);
     onClear?.();
-  };
-
-  const handleSelectionChange = (key: React.Key | null) => {
-    const selectedOption = key == null
-      ? undefined
-      : options?.find((item) => (item as unknown as ComboBoxOption).id === String(key));
-
-    // React Aria does not always mirror a selected option into a controlled input.
-    // Keep the chosen business label visible while preserving the parent's search state.
-    if (selectedOption) {
-      const label = (selectedOption as unknown as ComboBoxOption).label;
-      setInternalInput(label);
-      props.onInputChange?.(label);
-    }
-
-    onSelectionChange?.(key == null ? null : String(key));
   };
 
   const searchPlaceholder = placeholder ?? t("components.searchPlaceholder");
@@ -164,7 +178,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
       {...(isReadOnly !== undefined ? { isReadOnly } : {})}
       {...(selectedKey !== undefined ? { selectedKey } : {})}
       {...(defaultSelectedKey !== undefined ? { defaultSelectedKey } : {})}
-      {...(onSelectionChange !== undefined ? { onSelectionChange: handleSelectionChange } : {})}
+      {...(onSelectionChange !== undefined ? { onSelectionChange } : {})}
       isInvalid={Boolean(errorMessage)}
       className={clsx("ui-combobox", `ui-combobox--${size}`, className)}
       style={{
@@ -195,8 +209,9 @@ export function ComboBox<T extends object = ComboBoxOption>({
         </div>
       )}
 
-      {/* Trigger & Search Field */}
+      {/* Trigger & Search Field Container */}
       <div
+        ref={triggerRef}
         style={{
           display: "flex",
           alignItems: "center",
@@ -218,6 +233,8 @@ export function ComboBox<T extends object = ComboBoxOption>({
             ? "0 0 0 2px rgba(2, 132, 199, 0.15)"
             : "none",
           gap: "0.375rem",
+          width: "100%",
+          boxSizing: "border-box",
           transition: "border-color 150ms ease, box-shadow 150ms ease"
         }}
       >
@@ -238,12 +255,11 @@ export function ComboBox<T extends object = ComboBoxOption>({
           </svg>
         </span>
 
-        {/* Search & Selection Input */}
+        {/* Input Field */}
         <AriaInput
           placeholder={searchPlaceholder}
           onFocus={(e) => {
             setIsFocused(true);
-            // Auto-select text on focus so typing immediately searches fresh
             e.target.select();
           }}
           onBlur={() => setIsFocused(false)}
@@ -368,67 +384,128 @@ export function ComboBox<T extends object = ComboBoxOption>({
         </AriaFieldError>
       )}
 
-      {/* Dropdown Popover */}
+      {/* Dropdown Popover: Strictly aligned width and controlled height */}
       <AriaPopover
+        offset={4}
+        placement="bottom start"
         style={{
+          width: triggerWidth ? `${triggerWidth}px` : "var(--trigger-width, 100%)",
+          minWidth: triggerWidth ? `${triggerWidth}px` : "var(--trigger-width, 100%)",
+          maxWidth: triggerWidth ? `${triggerWidth}px` : "100vw",
+          boxSizing: "border-box",
           backgroundColor: "var(--color-surface-card, #ffffff)",
           border: "1px solid var(--color-border-default, #cbd5e1)",
           borderRadius: "var(--radius-md, 0.375rem)",
-          boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-          minWidth: "var(--trigger-width)",
-          maxHeight: "18rem",
-          overflowY: "auto",
+          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+          maxHeight: "15rem",
+          minHeight: "4rem",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
           zIndex: 2500
         }}
       >
-        {/* Dedicated Search Status Header ("مكان وتفاصيل البحث") */}
+        {/* Dedicated Interactive Search Box Inside Popover */}
         {showSearchHeader && (
           <div
             style={{
-              padding: "0.375rem 0.625rem",
+              padding: "0.5rem 0.625rem",
               borderBottom: "1px solid var(--color-border-subtle, #f1f5f9)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              fontSize: "0.75rem",
-              color: "var(--color-content-muted, #64748b)",
               backgroundColor: "var(--color-surface-subtle, #f8fafc)",
-              borderTopLeftRadius: "var(--radius-md, 0.375rem)",
-              borderTopRightRadius: "var(--radius-md, 0.375rem)",
-              userSelect: "none"
+              flexShrink: 0
             }}
           >
-            <span style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              {currentSearchTerm && !isSelectedValueActive ? (
-                <span>
-                  {t("components.searchResultsFor", "نتائج البحث عن:")} <strong style={{ color: "var(--color-content-primary, #0f172a)" }}>{currentSearchTerm}</strong>
-                </span>
-              ) : (
-                <span>{t("components.searchPrompt", "اكتب للبحث المباشر...")}</span>
-              )}
-            </span>
-            {displayOptions && (
+            <div
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                backgroundColor: "var(--color-surface-card, #ffffff)",
+                border: "1px solid var(--color-border-default, #cbd5e1)",
+                borderRadius: "var(--radius-sm, 0.25rem)",
+                height: "2.125rem",
+                paddingInlineStart: "0.5rem",
+                paddingInlineEnd: "0.375rem",
+                gap: "0.375rem",
+                boxShadow: "inset 0 1px 2px rgba(0, 0, 0, 0.04)"
+              }}
+            >
               <span
+                aria-hidden="true"
                 style={{
-                  fontWeight: 600,
-                  fontSize: "0.6875rem",
-                  backgroundColor: "var(--color-border-subtle, #e2e8f0)",
-                  color: "var(--color-content-primary, #1e293b)",
-                  padding: "0.0625rem 0.375rem",
-                  borderRadius: "9999px"
+                  color: "var(--color-action-primary, #0284c7)",
+                  display: "flex",
+                  alignItems: "center",
+                  flexShrink: 0
                 }}
               >
-                {displayOptions.length}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
               </span>
-            )}
+
+              <input
+                type="text"
+                value={currentSearchTerm}
+                onChange={(e) => handleInputChange(e.target.value)}
+                placeholder={t("components.searchPlaceholder", "ابحث هنا...")}
+                style={{
+                  flex: 1,
+                  border: "none",
+                  outline: "none",
+                  backgroundColor: "transparent",
+                  fontSize: "0.8125rem",
+                  color: "var(--color-content-primary, #0f172a)",
+                  fontFamily: "inherit",
+                  minWidth: 0
+                }}
+              />
+
+              {currentSearchTerm && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  title={t("components.clearSearch", "مسح البحث")}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--color-content-muted, #94a3b8)",
+                    cursor: "pointer",
+                    padding: "0.125rem",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
+
+              {displayOptions && (
+                <span
+                  style={{
+                    fontSize: "0.6875rem",
+                    fontWeight: 600,
+                    backgroundColor: "var(--color-border-subtle, #e2e8f0)",
+                    color: "var(--color-content-primary, #334155)",
+                    padding: "0.0625rem 0.375rem",
+                    borderRadius: "9999px",
+                    flexShrink: 0
+                  }}
+                >
+                  {displayOptions.length}
+                </span>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Options List */}
+        {/* Scrollable Options List */}
         <AriaListBox
           {...(displayOptions !== undefined ? { items: displayOptions } : {})}
           style={{
@@ -436,7 +513,10 @@ export function ComboBox<T extends object = ComboBoxOption>({
             outline: "none",
             display: "flex",
             flexDirection: "column",
-            gap: "0.125rem"
+            gap: "0.125rem",
+            flex: 1,
+            overflowY: "auto",
+            maxHeight: "11rem"
           }}
         >
           {children ? (
@@ -451,7 +531,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
                   {...(opt.isDisabled !== undefined ? { isDisabled: opt.isDisabled } : {})}
                 >
                   <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
-                    <span style={{ fontWeight: 500 }}>{opt.label}</span>
+                    <span style={{ fontWeight: 500, fontSize: "0.8125rem" }}>{opt.label}</span>
                     {opt.description && (
                       <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)", marginTop: "0.125rem" }}>
                         {opt.description}
@@ -510,7 +590,8 @@ export function ComboBox<T extends object = ComboBoxOption>({
             style={{
               padding: "0.375rem 0.5rem",
               borderTop: "1px solid var(--color-border-subtle, #e2e8f0)",
-              backgroundColor: "var(--color-surface-subtle, #f8fafc)"
+              backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+              flexShrink: 0
             }}
           >
             <button
@@ -570,9 +651,9 @@ export function ComboBoxItem({ className, children, ...props }: ComboBoxItemProp
       {...props}
       className={clsx("ui-combobox-item", className)}
       style={({ isFocused, isSelected, isDisabled }) => ({
-        padding: "0.5rem 0.75rem",
+        padding: "0.375rem 0.625rem",
         borderRadius: "var(--radius-sm, 0.25rem)",
-        fontSize: "0.875rem",
+        fontSize: "0.8125rem",
         cursor: isDisabled ? "not-allowed" : "pointer",
         opacity: isDisabled ? 0.5 : 1,
         backgroundColor: isSelected
