@@ -158,6 +158,7 @@ export const ar = {
     converter: {
       title: "حاسبة ومعاينة التحويل المالي",
       description: "معاينة فورية معتمدة على محرك النظام الخلفي للتحقق من أسعار الصرف والسجلات المعتمدة.",
+      openButton: "فتح حاسبة التحويل",
       amountLabel: "المبلغ",
       amountPlaceholder: "100.00",
       fromCurrencyLabel: "من",
@@ -289,6 +290,7 @@ export const ar = {
     scheduleCalculator: {
       title: "حاسبة جدول السداد والأقساط المعتمدة",
       description: "اختبر كيفية توزيع المبالغ وامتصاص كسور التقريب في السطر الأخير بدقة متناهية عبر المحرك المالي.",
+      openButton: "فتح حاسبة جدول السداد",
       amountLabel: "إجمالي الفاتورة / المستند",
       amountPlaceholder: "100.00",
       basisDateLabel: "تاريخ الأساس (الفاتورة)",

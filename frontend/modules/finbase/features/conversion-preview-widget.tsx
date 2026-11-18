@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../components/pages/surface.tsx";
+import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
@@ -40,6 +41,7 @@ export function ConversionPreviewWidget({
   const [purpose, setPurpose] = useState<ExchangeRatePurpose>("Accounting");
   const [result, setResult] = useState<ConvertedMoneyDto>();
   const [errorCode, setErrorCode] = useState<string>();
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleConvert = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,17 +81,33 @@ export function ConversionPreviewWidget({
   }));
 
   return (
-    <Surface>
-      <div style={{ marginBottom: "var(--space-4)" }}>
-        <h3 style={{ fontSize: "var(--font-size-base)", fontWeight: 600, margin: 0 }}>
-          {t("rates.converter.title")}
-        </h3>
-        <p style={{ color: "var(--color-content-secondary)", fontSize: "var(--font-size-sm)", margin: "var(--space-1) 0 0 0" }}>
-          {t("rates.converter.description")}
-        </p>
-      </div>
+    <>
+      <Surface>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-4)", flexWrap: "wrap" }}>
+          <div>
+            <h3 style={{ fontSize: "var(--font-size-base)", fontWeight: 600, margin: 0 }}>
+              {t("rates.converter.title")}
+            </h3>
+            <p style={{ color: "var(--color-content-secondary)", fontSize: "var(--font-size-sm)", margin: "var(--space-1) 0 0 0" }}>
+              {t("rates.converter.description")}
+            </p>
+          </div>
+          <Button variant="primary" type="button" onPress={() => setIsOpen(true)}>
+            {t("rates.converter.openButton")}
+          </Button>
+        </div>
+      </Surface>
 
-      <form onSubmit={handleConvert} style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+      <Dialog
+        isOpen={isOpen}
+        onOpenChange={(open) => {
+          if (!open) setIsOpen(false);
+        }}
+        title={t("rates.converter.title")}
+        description={t("rates.converter.description")}
+        size="large"
+      >
+        <form onSubmit={handleConvert} style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "var(--space-3)" }}>
           <TextField
             label={t("rates.converter.amountLabel")}
@@ -139,9 +157,9 @@ export function ConversionPreviewWidget({
               : t("rates.converter.convertButton")}
           </Button>
         </div>
-      </form>
+        </form>
 
-      {errorCode ? (
+        {errorCode ? (
         <div style={{ marginTop: "var(--space-4)" }}>
           <Alert variant="danger" title={t("rates.converter.errorTitle")}>
             {errorCode === "finbase.rate_missing"
@@ -151,9 +169,9 @@ export function ConversionPreviewWidget({
               : t("rates.converter.genericError")}
           </Alert>
         </div>
-      ) : null}
+        ) : null}
 
-      {result ? (
+        {result ? (
         <div
           data-testid="conversion-result"
           style={{
@@ -209,7 +227,8 @@ export function ConversionPreviewWidget({
             ) : null}
           </div>
         </div>
-      ) : null}
-    </Surface>
+        ) : null}
+      </Dialog>
+    </>
   );
 }

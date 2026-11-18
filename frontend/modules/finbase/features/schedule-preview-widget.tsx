@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../components/pages/surface.tsx";
+import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
@@ -113,6 +114,7 @@ export function SchedulePreviewWidget({
   );
   const [schedule, setSchedule] = useState<readonly PaymentScheduleLineDto[]>([]);
   const [errorMessage, setErrorMessage] = useState<string>();
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleCalculate = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -141,17 +143,33 @@ export function SchedulePreviewWidget({
   }));
 
   return (
-    <Surface>
-      <div style={{ marginBottom: "var(--space-4)" }}>
-        <h3 style={{ fontSize: "var(--font-size-base)", fontWeight: 600, margin: 0 }}>
-          {t("paymentTerms.scheduleCalculator.title")}
-        </h3>
-        <p style={{ color: "var(--color-content-secondary)", fontSize: "var(--font-size-sm)", margin: "var(--space-1) 0 0 0" }}>
-          {t("paymentTerms.scheduleCalculator.description")}
-        </p>
-      </div>
+    <>
+      <Surface>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-4)", flexWrap: "wrap" }}>
+          <div>
+            <h3 style={{ fontSize: "var(--font-size-base)", fontWeight: 600, margin: 0 }}>
+              {t("paymentTerms.scheduleCalculator.title")}
+            </h3>
+            <p style={{ color: "var(--color-content-secondary)", fontSize: "var(--font-size-sm)", margin: "var(--space-1) 0 0 0" }}>
+              {t("paymentTerms.scheduleCalculator.description")}
+            </p>
+          </div>
+          <Button variant="primary" type="button" onPress={() => setIsOpen(true)}>
+            {t("paymentTerms.scheduleCalculator.openButton")}
+          </Button>
+        </div>
+      </Surface>
 
-      <form onSubmit={handleCalculate} style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+      <Dialog
+        isOpen={isOpen}
+        onOpenChange={(open) => {
+          if (!open) setIsOpen(false);
+        }}
+        title={t("paymentTerms.scheduleCalculator.title")}
+        description={t("paymentTerms.scheduleCalculator.description")}
+        size="large"
+      >
+        <form onSubmit={handleCalculate} style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "var(--space-3)" }}>
           <TextField
             label={t("paymentTerms.scheduleCalculator.amountLabel")}
@@ -187,17 +205,17 @@ export function SchedulePreviewWidget({
               : t("paymentTerms.scheduleCalculator.calculateButton")}
           </Button>
         </div>
-      </form>
+        </form>
 
-      {errorMessage ? (
+        {errorMessage ? (
         <div style={{ marginTop: "var(--space-4)" }}>
           <Alert variant="danger" title={t("paymentTerms.scheduleCalculator.errorTitle")}>
             {errorMessage}
           </Alert>
         </div>
-      ) : null}
+        ) : null}
 
-      {schedule.length > 0 ? (
+        {schedule.length > 0 ? (
         <div data-testid="schedule-result" style={{ marginTop: "var(--space-4)" }}>
           <Table>
             <TableHeader>
@@ -251,7 +269,8 @@ export function SchedulePreviewWidget({
             </div>
           ) : null}
         </div>
-      ) : null}
-    </Surface>
+        ) : null}
+      </Dialog>
+    </>
   );
 }

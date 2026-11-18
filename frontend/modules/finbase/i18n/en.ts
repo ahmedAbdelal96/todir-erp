@@ -158,6 +158,7 @@ export const en = {
     converter: {
       title: "Financial Currency Conversion Preview",
       description: "Real-time backend conversion calculator to verify approved exchange rates and snapshot data.",
+      openButton: "Open conversion calculator",
       amountLabel: "Amount",
       amountPlaceholder: "100.00",
       fromCurrencyLabel: "From",
@@ -289,6 +290,7 @@ export const en = {
     scheduleCalculator: {
       title: "Authoritative Payment Schedule Calculator",
       description: "Test how installment amounts and residual remainder allocation are calculated with exact decimal precision by the backend financial engine.",
+      openButton: "Open schedule calculator",
       amountLabel: "Document Total Amount",
       amountPlaceholder: "100.00",
       basisDateLabel: "Basis Date (Invoice Date)",
