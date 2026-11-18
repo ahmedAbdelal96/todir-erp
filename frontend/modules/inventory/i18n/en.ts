@@ -331,6 +331,8 @@ export const en = {
   adjustments: {
     title: "Inventory Adjustments",
     newAdjustment: "New Adjustment",
+    configureProductForInventory: "Configure product for inventory",
+    profileConfiguredNotice: "The product is configured for inventory. Review the adjustment, then confirm it again.",
     adjustmentNumber: "Adjustment Reference",
     product: "Product",
     warehouse: "Warehouse",

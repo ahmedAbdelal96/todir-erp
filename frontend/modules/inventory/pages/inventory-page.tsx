@@ -246,6 +246,7 @@ export function InventoryPage(): React.JSX.Element {
             warehouses={warehouses}
             canApprove={permissions.canApproveAdjustment}
             canPost={permissions.canPostAdjustment}
+            canManageProfile={permissions.canManageProfiles}
           />
         )}
 
@@ -330,6 +331,7 @@ export function InventoryPage(): React.JSX.Element {
           legalEntityId={legalEntityId}
           warehouses={warehouses}
           isApprovalRequired={isApprovalRequired}
+          canManageProfile={permissions.canManageProfiles}
         />
       )}
     </div>

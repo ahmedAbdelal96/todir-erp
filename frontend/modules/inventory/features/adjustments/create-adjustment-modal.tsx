@@ -8,12 +8,14 @@ import { InventoryProductPicker } from "../../components/inventory-product-picke
 import { useInventoryMutations, useLocations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
 import type { AdjustmentDirection, AdjustmentReason, Warehouse } from "../../types.ts";
+import { InventoryProfileSetupModal } from "../operations/inventory-profile-setup-modal.tsx";
 
 export interface CreateAdjustmentModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly warehouses: readonly Warehouse[];
+  readonly canManageProfile?: boolean;
   readonly isApprovalRequired?: boolean;
   readonly initialProductVariantId?: string;
   readonly onAdjustmentCreated?: (adj: {
@@ -32,6 +34,7 @@ export function CreateAdjustmentModal({
   onClose,
   legalEntityId,
   warehouses,
+  canManageProfile = false,
   isApprovalRequired = false,
   initialProductVariantId,
   onAdjustmentCreated
@@ -49,6 +52,9 @@ export function CreateAdjustmentModal({
   const [opDate, setOpDate] = useState(today);
   const [postDate, setPostDate] = useState(today);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successInfo, setSuccessInfo] = useState<string | null>(null);
+  const [requiresProfileSetup, setRequiresProfileSetup] = useState(false);
+  const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
 
   const selectedWarehouse = warehouses.find(w => w.id === warehouseId);
   const hasLocations = selectedWarehouse && selectedWarehouse.locationMode !== "WarehouseOnly";
@@ -59,6 +65,8 @@ export function CreateAdjustmentModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setSuccessInfo(null);
+    setRequiresProfileSetup(false);
 
     const numQty = parseFloat(quantity);
     if (isNaN(numQty) || numQty <= 0) {
@@ -125,6 +133,9 @@ export function CreateAdjustmentModal({
     } catch (err) {
       const mapped = mapInventoryError(err);
       setErrorMessage(t(mapped.messageKey as any, { defaultValue: mapped.fallbackAr }));
+      if (mapped.code === "inventory.profile_not_found" && canManageProfile) {
+        setRequiresProfileSetup(true);
+      }
     }
   };
 
@@ -148,8 +159,18 @@ export function CreateAdjustmentModal({
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {errorMessage && (
-          <div role="alert" style={{ padding: "0.75rem", backgroundColor: "#fee2e2", border: "1px solid #ef4444", borderRadius: "var(--radius-sm)", color: "#b91c1c", fontSize: "0.875rem" }}>
-            {errorMessage}
+          <div role="alert" style={{ padding: "0.75rem", backgroundColor: "#fee2e2", border: "1px solid #ef4444", borderRadius: "var(--radius-sm)", color: "#b91c1c", fontSize: "0.875rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <span>{errorMessage}</span>
+            {requiresProfileSetup ? (
+              <Button variant="secondary" type="button" onPress={() => setIsProfileSetupOpen(true)}>
+                {t("adjustments.configureProductForInventory")}
+              </Button>
+            ) : null}
+          </div>
+        )}
+        {successInfo && (
+          <div role="status" style={{ padding: "0.75rem", backgroundColor: "#dcfce7", border: "1px solid #22c55e", borderRadius: "var(--radius-sm)", color: "#15803d", fontSize: "0.875rem" }}>
+            {successInfo}
           </div>
         )}
 
@@ -248,6 +269,19 @@ export function CreateAdjustmentModal({
           </Button>
         </div>
       </form>
+      <InventoryProfileSetupModal
+        isOpen={isProfileSetupOpen}
+        onClose={() => setIsProfileSetupOpen(false)}
+        onSaved={() => {
+          setRequiresProfileSetup(false);
+          setErrorMessage(null);
+          setSuccessInfo(t("adjustments.profileConfiguredNotice"));
+        }}
+        legalEntityId={legalEntityId}
+        productVariantId={productId}
+        warehouses={warehouses}
+        initialWarehouseId={warehouseId}
+      />
     </Dialog>
   );
 }

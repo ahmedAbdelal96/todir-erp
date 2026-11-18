@@ -331,6 +331,8 @@ export const ar = {
   adjustments: {
     title: "التسويات المخزنية",
     newAdjustment: "إجراء تسوية جديدة",
+    configureProductForInventory: "تجهيز الصنف للمخزون",
+    profileConfiguredNotice: "تم تجهيز الصنف للمخزون. راجع التسوية ثم أعد تأكيدها.",
     adjustmentNumber: "رقم التسوية",
     product: "الصنف",
     warehouse: "المستودع",

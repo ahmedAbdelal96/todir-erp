@@ -7,6 +7,7 @@ import { QuantityDisplay } from "../../../../components/fields/quantity-display.
 import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
 import { InventoryProductDisplay } from "../../components/inventory-product-display.tsx";
 import { CreateAdjustmentModal } from "./create-adjustment-modal.tsx";
+import { InventoryProfileSetupModal } from "../operations/inventory-profile-setup-modal.tsx";
 import { useInventoryPolicy, useInventoryMutations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
 import { toQty } from "../../utils.ts";
@@ -29,13 +30,15 @@ export interface AdjustmentsTabProps {
   readonly warehouses: readonly Warehouse[];
   readonly canApprove?: boolean;
   readonly canPost?: boolean;
+  readonly canManageProfile?: boolean;
 }
 
 export function AdjustmentsTab({
   legalEntityId,
   warehouses,
   canApprove = true,
-  canPost = true
+  canPost = true,
+  canManageProfile = false
 }: AdjustmentsTabProps): React.JSX.Element {
   const { t } = useTranslation("inventory");
 
@@ -44,6 +47,7 @@ export function AdjustmentsTab({
 
   const [isNewAdjustmentOpen, setIsNewAdjustmentOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [profileSetupContext, setProfileSetupContext] = useState<{ productVariantId: string; warehouseId: string } | null>(null);
 
   // Seeded / active adjustments representing the full approval lifecycle
   const [adjustmentsList, setAdjustmentsList] = useState<readonly AdjustmentItemView[]>([
@@ -95,6 +99,15 @@ export function AdjustmentsTab({
 
   const { approveAdjustmentRequest, postAdjustmentRequest } = useInventoryMutations(legalEntityId);
 
+  const openProfileSetupFor = (id: string) => {
+    const adjustment = adjustmentsList.find(item => item.id === id);
+    if (!adjustment) return;
+    const warehouse = warehouses.find(item =>
+      adjustment.warehouseName.includes(item.code) || adjustment.warehouseName.includes(item.name)
+    );
+    if (warehouse) setProfileSetupContext({ productVariantId: adjustment.productVariantId, warehouseId: warehouse.id });
+  };
+
   const handleSubmitForApproval = (id: string) => {
     setAdjustmentsList(prev => prev.map(a => a.id === id ? { ...a, status: "PendingApproval" } : a));
   };
@@ -107,6 +120,9 @@ export function AdjustmentsTab({
     } catch (err) {
       const mapped = mapInventoryError(err);
       setErrorMessage(t(mapped.messageKey as any, { defaultValue: mapped.fallbackAr }));
+      if (mapped.code === "inventory.profile_not_found" && canManageProfile) {
+        openProfileSetupFor(id);
+      }
     }
   };
 
@@ -118,6 +134,9 @@ export function AdjustmentsTab({
     } catch (err) {
       const mapped = mapInventoryError(err);
       setErrorMessage(t(mapped.messageKey as any, { defaultValue: mapped.fallbackAr }));
+      if (mapped.code === "inventory.profile_not_found" && canManageProfile) {
+        openProfileSetupFor(id);
+      }
     }
   };
 
@@ -317,9 +336,25 @@ export function AdjustmentsTab({
           legalEntityId={legalEntityId}
           warehouses={warehouses}
           isApprovalRequired={isApprovalRequired}
+          canManageProfile={canManageProfile}
           onAdjustmentCreated={handleCreated}
         />
       )}
+
+      {profileSetupContext ? (
+        <InventoryProfileSetupModal
+          isOpen
+          onClose={() => setProfileSetupContext(null)}
+          onSaved={() => {
+            setProfileSetupContext(null);
+            setErrorMessage(t("adjustments.profileConfiguredNotice"));
+          }}
+          legalEntityId={legalEntityId}
+          productVariantId={profileSetupContext.productVariantId}
+          warehouses={warehouses}
+          initialWarehouseId={profileSetupContext.warehouseId}
+        />
+      ) : null}
     </div>
   );
 }
