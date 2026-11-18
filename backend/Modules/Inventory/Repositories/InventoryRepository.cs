@@ -859,15 +859,64 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
         }, ct);
     }
 
-    public async Task<IReadOnlyList<PhysicalCountLineView>> GetPhysicalCountLinesAsync(TenantId tenant, Guid entity, Guid countId, int limit, CancellationToken ct)
+    public async Task<PhysicalCountLinesPage> GetPhysicalCountLinesAsync(TenantId tenant, Guid entity, Guid countId, string? search, int page, int pageSize, CancellationToken ct)
     {
-        if (limit is < 1 or > 1000) throw new InventoryException("inventory.page_size_invalid");
+        page = Math.Clamp(page, 1, 100000);
+        pageSize = Math.Clamp(pageSize, 1, 100);
         await using var connection = await OpenTenantAsync(tenant, ct);
-        await using var command = new NpgsqlCommand("select id,product_variant_id,warehouse_id,location_id,stock_status,lot_id,serial_id,expected_quantity,counted_quantity,difference_quantity,entered_by,entered_at from business_inventory.count_line where tenant_id=$1 and legal_entity_id=$2 and count_id=$3 order by id limit $4", connection);
-        Add(command, tenant.Value, entity, countId, limit); var result = new List<PhysicalCountLineView>(); await using var reader = await command.ExecuteReaderAsync(ct);
+        Guid[]? matchingVariants = null;
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var matches = await catalog.SearchAsync(tenant, search.Trim(), null, entity, 1, 100, ct);
+            matchingVariants = matches.Items.Select(item => item.ProductVariantId).Distinct().ToArray();
+            if (matchingVariants.Length == 0) return new PhysicalCountLinesPage([], 0, page, pageSize);
+        }
+
+        var variantFilter = matchingVariants is null ? string.Empty : " and product_variant_id = any($4)";
+        var countSql = $"select count(*) from business_inventory.count_line where tenant_id=$1 and legal_entity_id=$2 and count_id=$3{variantFilter}";
+        await using var count = new NpgsqlCommand(countSql, connection);
+        Add(count, tenant.Value, entity, countId);
+        if (matchingVariants is not null) count.Parameters.AddWithValue(matchingVariants);
+        var totalCount = Convert.ToInt32(await count.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+
+        var limitParameter = matchingVariants is null ? 4 : 5;
+        var offsetParameter = matchingVariants is null ? 5 : 6;
+        var pageSql = $"select id,product_variant_id,warehouse_id,location_id,stock_status,lot_id,serial_id,expected_quantity,counted_quantity,difference_quantity,entered_by,entered_at from business_inventory.count_line where tenant_id=$1 and legal_entity_id=$2 and count_id=$3{variantFilter} order by id limit ${limitParameter} offset ${offsetParameter}";
+        await using var command = new NpgsqlCommand(pageSql, connection);
+        Add(command, tenant.Value, entity, countId);
+        if (matchingVariants is not null) command.Parameters.AddWithValue(matchingVariants);
+        command.Parameters.AddWithValue(pageSize);
+        command.Parameters.AddWithValue((page - 1) * pageSize);
+        var result = new List<PhysicalCountLineView>(pageSize);
+        await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetString(4), NullGuid(reader, 5), NullGuid(reader, 6), reader.GetDecimal(7), reader.IsDBNull(8) ? null : reader.GetDecimal(8), reader.IsDBNull(9) ? null : reader.GetDecimal(9), NullGuid(reader, 10), reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11)));
-        return result;
+        await reader.DisposeAsync();
+
+        var variantIds = result.Select(line => line.ProductVariantId).Distinct().ToArray();
+        var identities = variantIds.Length == 0
+            ? new Dictionary<Guid, CatalogVariantIdentity>()
+            : await catalog.FindVariantsBatchAsync(tenant, variantIds, entity, ct);
+        var uomMap = variantIds.Length == 0
+            ? new Dictionary<Guid, IReadOnlyList<CatalogAllowedUom>>()
+            : await catalog.GetAllowedUomsBatchAsync(tenant, variantIds, clock.GetUtcNow(), entity, ct);
+        var enriched = result.Select(line =>
+        {
+            identities.TryGetValue(line.ProductVariantId, out var identity);
+            uomMap.TryGetValue(line.ProductVariantId, out var units);
+            var baseUnit = units?.FirstOrDefault(unit => unit.IsBase)?.UnitCode;
+            return line with
+            {
+                ProductDisplayName = identity?.DisplayName,
+                ProductSku = identity?.Sku,
+                BaseUomCode = baseUnit
+            };
+        }).ToList();
+        return new PhysicalCountLinesPage(enriched, totalCount, page, pageSize);
     }
+
+    // Keep the repository's test and internal caller compatibility while the HTTP contract moves to a paged result.
+    public async Task<IReadOnlyList<PhysicalCountLineView>> GetPhysicalCountLinesAsync(TenantId tenant, Guid entity, Guid countId, int limit, CancellationToken ct)
+        => (await GetPhysicalCountLinesAsync(tenant, entity, countId, null, 1, limit, ct)).Items;
 
     public async Task<PhysicalCountView> PostPhysicalCountAsync(TenantId tenant, Guid actor, Guid entity, Guid countId,
         string idempotencyKey, Guid correlationId, string? traceParent, CancellationToken ct)

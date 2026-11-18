@@ -4,14 +4,14 @@ import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { useInventoryMutations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
-import type { PhysicalCountMode, Warehouse } from "../../types.ts";
+import type { PhysicalCount, PhysicalCountMode, Warehouse } from "../../types.ts";
 
 export interface CreateCountModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly legalEntityId: string;
   readonly warehouses: readonly Warehouse[];
-  readonly onCountCreated?: (count: { id: string; number: string; warehouseId: string; mode: string }) => void;
+  readonly onCountCreated?: (count: PhysicalCount & { warehouseId: string; mode: string }) => void;
 }
 
 export function CreateCountModal({
@@ -44,7 +44,11 @@ export function CreateCountModal({
           id: result.id,
           number: result.number,
           warehouseId,
-          mode
+          mode,
+          status: result.status,
+          lines: result.lines,
+          countedLines: result.countedLines,
+          varianceQuantity: result.varianceQuantity
         });
       }
       onClose();

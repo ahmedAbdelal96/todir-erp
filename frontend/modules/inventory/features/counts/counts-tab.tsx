@@ -8,7 +8,7 @@ import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
 import { CreateCountModal } from "./create-count-modal.tsx";
 import { CountDetailModal } from "./count-detail-modal.tsx";
 import { toQty } from "../../utils.ts";
-import type { Warehouse } from "../../types.ts";
+import type { PhysicalCount, Warehouse } from "../../types.ts";
 
 export interface PhysicalCountItem {
   readonly id: string;
@@ -48,7 +48,7 @@ export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.
     }
   ]);
 
-  const handleCountCreated = (newCount: { id: string; number: string; warehouseId: string; mode: string }) => {
+  const handleCountCreated = (newCount: PhysicalCount & { warehouseId: string; mode: string }) => {
     const wh = warehouses.find(w => w.id === newCount.warehouseId);
     setCountsList(prev => [
       {
@@ -57,10 +57,10 @@ export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.
         warehouseId: newCount.warehouseId,
         warehouseName: wh?.name ?? "المخزن الرئيسي",
         mode: newCount.mode,
-        status: "InProgress",
-        lines: 1,
-        countedLines: 0,
-        varianceQuantity: 0
+        status: newCount.status,
+        lines: newCount.lines,
+        countedLines: newCount.countedLines,
+        varianceQuantity: newCount.varianceQuantity
       },
       ...prev
     ]);
@@ -158,6 +158,8 @@ export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.
           countNumber={selectedCount.number}
           countMode={selectedCount.mode}
           countStatus={selectedCount.status}
+          totalLines={selectedCount.lines}
+          countedLines={selectedCount.countedLines}
           onCountPosted={() => {
             setCountsList(prev => prev.map(c => c.id === selectedCount.id ? { ...c, status: "Posted" } : c));
           }}

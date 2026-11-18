@@ -262,8 +262,8 @@ const MOCK_RECONCILIATION = {
   diagnostics: []
 };
 
-const MOCK_COUNT_LINES = [
-  {
+const MOCK_COUNT_LINES = {
+  items: [{
     id: 'line-1',
     productVariantId: SAMPLE_PRODUCT_ID,
     warehouseId: 'wh-01',
@@ -274,9 +274,15 @@ const MOCK_COUNT_LINES = [
     counted: 99,
     difference: -1,
     enteredBy: 'أمين المستودع',
-    enteredAt: '2026-10-28T09:00:00Z'
-  }
-];
+    enteredAt: '2026-10-28T09:00:00Z',
+    productDisplayName: 'سائل تنظيف أرضيات 5 لتر',
+    productSku: 'SKU-CLEAN-005',
+    baseUomCode: 'EA'
+  }],
+  totalCount: 1,
+  page: 1,
+  pageSize: 25
+};
 
 test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Suite', () => {
   test.beforeEach(async ({ page }) => {
@@ -628,7 +634,7 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
 
     // Open count detail modal
     await page.getByRole('button', { name: 'إدخال نتائج العد' }).first().click();
-    await expect(page.getByRole('dialog').getByRole('heading', { name: 'جلسات الجرد الفعلي للمستودع' })).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('heading', { name: 'إدخال نتائج الجرد' })).toBeVisible();
     await expect(page.getByRole('dialog').getByText('سائل تنظيف أرضيات 5 لتر')).toBeVisible();
     await expect(page.getByRole('dialog').getByText('SKU-CLEAN-005')).toBeVisible();
 

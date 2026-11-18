@@ -29,6 +29,7 @@ import type {
   NegativeStockCondition,
   PhysicalCount,
   PhysicalCountLine,
+  PhysicalCountLinesPage,
   ProductLocatorItem,
   ReceiveTransferRequest,
   ReservationResult,
@@ -334,11 +335,17 @@ export const inventoryApi = {
       body: JSON.stringify(request)
     }),
 
-  getPhysicalCountLines: (entityId: string, countId: string, limit?: number): Promise<readonly PhysicalCountLine[]> => {
+  getPhysicalCountLines: async (entityId: string, countId: string, params?: { page?: number; pageSize?: number; search?: string }): Promise<PhysicalCountLinesPage> => {
     const q = new URLSearchParams();
-    if (limit) q.set("limit", String(limit));
+    if (params?.search?.trim()) q.set("search", params.search.trim());
+    if (params?.page) q.set("page", String(params.page));
+    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
     const suffix = q.toString() ? `?${q.toString()}` : "";
-    return httpClient<readonly PhysicalCountLine[]>(entityPath(entityId, `/counts/${encodeURIComponent(countId)}/lines${suffix}`));
+    const response = await httpClient<PhysicalCountLinesPage | readonly PhysicalCountLine[]>(entityPath(entityId, `/counts/${encodeURIComponent(countId)}/lines${suffix}`));
+    if (Array.isArray(response)) {
+      return { items: response as readonly PhysicalCountLine[], totalCount: response.length, page: params?.page ?? 1, pageSize: params?.pageSize ?? response.length };
+    }
+    return response as PhysicalCountLinesPage;
   },
 
   addPhysicalCountLine: (entityId: string, countId: string, request: AddCountLineRequest): Promise<PhysicalCountLine> =>

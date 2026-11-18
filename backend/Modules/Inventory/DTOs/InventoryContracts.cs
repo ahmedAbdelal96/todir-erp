@@ -59,7 +59,9 @@ public sealed record CreatePhysicalCountRequest(Guid WarehouseId, string Mode = 
 public sealed record EnterCountLineRequest(decimal CountedBaseQuantity, decimal? CountedUnitCost = null);
 public sealed record AddCountLineRequest(Guid ProductVariantId, Guid LocationId, string StockStatus = "Available", Guid? LotId = null, Guid? SerialId = null);
 public sealed record PhysicalCountLineView(Guid Id, Guid ProductVariantId, Guid WarehouseId, Guid LocationId, string StockStatus,
-    Guid? LotId, Guid? SerialId, decimal Expected, decimal? Counted, decimal? Difference, Guid? EnteredBy, DateTimeOffset? EnteredAt);
+    Guid? LotId, Guid? SerialId, decimal Expected, decimal? Counted, decimal? Difference, Guid? EnteredBy, DateTimeOffset? EnteredAt,
+    string? ProductDisplayName = null, string? ProductSku = null, string? BaseUomCode = null);
+public sealed record PhysicalCountLinesPage(IReadOnlyList<PhysicalCountLineView> Items, int TotalCount, int Page, int PageSize);
 public sealed record PhysicalCountView(Guid Id, string Number, string Status, int Lines, int CountedLines, decimal VarianceQuantity);
 public sealed record CreateLotRequest(Guid ProductVariantId, string LotNumber, DateOnly? ManufacturedOn, DateOnly? ExpiresOn, string? SupplierReference);
 public sealed record CreateSerialRequest(Guid ProductVariantId, string SerialNumber);

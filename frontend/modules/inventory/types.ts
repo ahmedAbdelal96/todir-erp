@@ -197,6 +197,16 @@ export interface PhysicalCountLine {
   readonly difference?: number | null;
   readonly enteredBy?: string | null;
   readonly enteredAt?: string | null;
+  readonly productDisplayName?: string | null;
+  readonly productSku?: string | null;
+  readonly baseUomCode?: string | null;
+}
+
+export interface PhysicalCountLinesPage {
+  readonly items: readonly PhysicalCountLine[];
+  readonly totalCount: number;
+  readonly page: number;
+  readonly pageSize: number;
 }
 
 export interface TraceabilityRecord {

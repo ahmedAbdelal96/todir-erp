@@ -196,10 +196,10 @@ export function usePickingSuggestions(legalEntityId: string, productVariantId?: 
   });
 }
 
-export function usePhysicalCountLines(legalEntityId: string, countId?: string) {
+export function usePhysicalCountLines(legalEntityId: string, countId?: string, params?: { page?: number; pageSize?: number; search?: string }) {
   return useQuery({
-    queryKey: ["inventory", legalEntityId, "counts", countId, "lines"],
-    queryFn: () => countId ? inventoryApi.getPhysicalCountLines(legalEntityId, countId) : Promise.resolve([]),
+    queryKey: ["inventory", legalEntityId, "counts", countId, "lines", params],
+    queryFn: () => countId ? inventoryApi.getPhysicalCountLines(legalEntityId, countId, params) : Promise.resolve({ items: [], totalCount: 0, page: params?.page ?? 1, pageSize: params?.pageSize ?? 50 }),
     enabled: Boolean(countId),
     staleTime: 10_000
   });

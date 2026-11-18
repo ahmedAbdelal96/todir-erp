@@ -100,10 +100,11 @@ export function InventoryProductDisplay({
 }: InventoryProductDisplayProps): React.JSX.Element {
   const isAr = document.documentElement.lang !== "en" && document.documentElement.dir !== "ltr";
   const resolved = resolveInventoryProduct(productVariantId, isAr);
+  const safeSku = sku?.trim() && !looksLikeInternalIdentifier(sku.trim()) ? sku.trim() : resolved.sku;
   const product = {
     ...resolved,
     name: displayName?.trim() || resolved.name,
-    sku: sku?.trim() || resolved.sku
+    sku: safeSku
   };
 
   if (showSkuOnly) {
@@ -136,4 +137,8 @@ export function InventoryProductDisplay({
       </span>
     </div>
   );
+}
+
+function looksLikeInternalIdentifier(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(value) || /^[0-9a-f]{32}$/i.test(value);
 }
