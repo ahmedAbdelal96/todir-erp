@@ -24,6 +24,7 @@ import { expensesRoutes } from "@modules/expenses/public.ts";
 import { fixedAssetsRoutes } from "@modules/fixed-assets/public.ts";
 import { projectsRoutes } from "@modules/projects/public.ts";
 import { serviceRoutes } from "@modules/service/public.ts";
+import { bankingRoutes } from "@modules/banking/public.ts";
 import { useTranslation } from "react-i18next";
 
 function SettingsRoute(): React.JSX.Element {
@@ -91,6 +92,7 @@ const workspaceRoutes: RouteObject = {
     ...fixedAssetsRoutes.routes,
     ...projectsRoutes.routes,
     ...serviceRoutes.routes,
+    ...bankingRoutes.routes,
     { path: "preview", element: <PreviewPage /> },
     { path: "settings", element: <SettingsRoute /> },
     { path: "*", element: <NotFoundRoute /> }
