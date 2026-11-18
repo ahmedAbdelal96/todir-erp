@@ -207,85 +207,94 @@ export function AdjustmentsTab({
       {adjustmentsList.length === 0 ? (
         <EmptyState title={t("adjustments.title")} description={t("common.empty")} />
       ) : (
-        <InventoryDataTable minWidth="1180px" ariaLabel={t("adjustments.title")}>
+        <InventoryDataTable minWidth="100%" tableLayout="fixed" ariaLabel={t("adjustments.title")}>
+          <colgroup>
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "13%" }} />
+          </colgroup>
           <thead>
             <tr style={{ backgroundColor: "var(--color-surface-subtle, #f8fafc)", borderBottom: "1px solid var(--color-border-default)" }}>
               <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.adjustmentNumber")}</th>
-              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem" }}>{t("adjustments.product")}</th>
-              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem" }}>{t("adjustments.warehouse")}</th>
-              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.direction")}</th>
-              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.reason")}</th>
-              <th style={{ padding: "0.75rem 0.75rem", textAlign: "end", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.quantity")}</th>
-              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.creator")}</th>
-              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.approver")}</th>
-              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem" }}>{t("adjustments.stockEffect")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.product")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.warehouse")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "start", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.change")}</th>
+              <th style={{ padding: "0.75rem 0.75rem", textAlign: "end", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.quantityEffect")}</th>
               <th style={{ padding: "0.75rem 0.75rem", textAlign: "center", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("adjustments.status")}</th>
               <th style={{ padding: "0.75rem 0.75rem", textAlign: "center", fontSize: "0.875rem", whiteSpace: "nowrap" }}>{t("stock.actions")}</th>
             </tr>
           </thead>
           <tbody>
             {adjustmentsList.map((adj) => (
-              <tr key={adj.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)" }}>
-                <td style={{ padding: "0.75rem 0.75rem", fontWeight: 700, color: "var(--color-brand-primary)", whiteSpace: "nowrap" }}>
-                  {adj.id}
+              <tr key={adj.id} style={{ borderBottom: "1px solid var(--color-border-subtle, #e2e8f0)", height: "4rem" }}>
+                <td
+                  style={{ padding: "0.5rem 0.625rem", fontWeight: 700, color: "var(--color-brand-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  title={`${t("adjustments.creator")}: ${adj.creator ?? "—"} | ${t("adjustments.approver")}: ${adj.approver ?? "—"}`}
+                >
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{adj.id}</div>
+                  <div style={{ display: "flex", gap: "0.25rem", minWidth: 0, overflow: "hidden", color: "var(--color-content-muted)", fontSize: "0.6875rem", fontWeight: 400 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{adj.creator ?? "—"}</span>
+                    <span aria-hidden="true">·</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{adj.approver ?? "—"}</span>
+                  </div>
                 </td>
-                <td style={{ padding: "0.75rem 0.75rem" }}>
-                  <InventoryProductDisplay productVariantId={adj.productVariantId} />
+                <td style={{ padding: "0.5rem 0.625rem", overflow: "hidden", verticalAlign: "middle" }}>
+                  <div style={{ minWidth: 0, overflow: "hidden" }} title={adj.productVariantId}>
+                    <InventoryProductDisplay productVariantId={adj.productVariantId} />
+                  </div>
                 </td>
-                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem" }}>{adj.warehouseName}</td>
-                <td style={{ padding: "0.75rem 0.75rem", whiteSpace: "nowrap" }}>
-                  <span style={{
-                    padding: "0.25rem 0.5rem",
-                    borderRadius: "var(--radius-sm)",
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    backgroundColor: adj.direction === "Increase" ? "#dcfce7" : "#fee2e2",
-                    color: adj.direction === "Increase" ? "#15803d" : "#b91c1c"
-                  }}>
-                    {t(`adjustments.directions.${adj.direction}` as any)}
-                  </span>
-                </td>
-                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem", whiteSpace: "nowrap" }}>
-                  {t(`adjustments.reasons.${adj.reason}` as any)}
-                </td>
-                <td style={{ padding: "0.75rem 0.75rem", textAlign: "end", fontWeight: 700, whiteSpace: "nowrap" }}>
-                  <QuantityDisplay value={toQty(adj.quantity)} />
-                </td>
-                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem", color: "var(--color-content-muted)", whiteSpace: "nowrap" }}>
-                  {adj.creator ?? "—"}
-                </td>
-                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem", color: "var(--color-content-muted)", whiteSpace: "nowrap" }}>
-                  {adj.approver ?? "—"}
-                </td>
-                <td style={{ padding: "0.75rem 0.75rem", fontSize: "0.875rem" }}>
-                  {adj.status === "Posted" ? (
-                    <span style={{ color: "var(--color-status-success)", fontWeight: 600 }}>
-                      <QuantityDisplay value={toQty(adj.direction === "Increase" ? adj.quantity : -adj.quantity)} /> {t("adjustments.stockEffectPosted")}
+                <td style={{ padding: "0.5rem 0.625rem", fontSize: "0.8125rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={adj.warehouseName}>{adj.warehouseName}</td>
+                <td style={{ padding: "0.5rem 0.625rem", overflow: "hidden", verticalAlign: "middle" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "0.125rem", minWidth: 0 }}>
+                    <span style={{
+                      maxWidth: "100%",
+                      padding: "0.2rem 0.4rem",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: "0.6875rem",
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      backgroundColor: adj.direction === "Increase" ? "#dcfce7" : "#fee2e2",
+                      color: adj.direction === "Increase" ? "#15803d" : "#b91c1c"
+                    }}>
+                      {t(`adjustments.directions.${adj.direction}` as any)}
                     </span>
-                  ) : (
-                    <span style={{ color: "var(--color-content-muted)", fontStyle: "italic" }}>
-                      {t("adjustments.stockEffectPending")}
+                    <span style={{ maxWidth: "100%", color: "var(--color-content-muted)", fontSize: "0.6875rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={t(`adjustments.reasons.${adj.reason}` as any)}>
+                      {t(`adjustments.reasons.${adj.reason}` as any)}
                     </span>
-                  )}
+                  </div>
                 </td>
-                <td style={{ padding: "0.75rem 0.75rem", textAlign: "center", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.5rem 0.625rem", textAlign: "end", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden" }} title={adj.status === "Posted" ? t("adjustments.stockEffectPosted") : t("adjustments.stockEffectPending")}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem", alignItems: "flex-end" }}>
+                    <span><QuantityDisplay value={toQty(adj.quantity)} /></span>
+                    <span style={{ color: adj.status === "Posted" ? "var(--color-status-success)" : "var(--color-content-muted)", fontSize: "0.6875rem", fontWeight: 600 }}>
+                      {adj.status === "Posted" ? <QuantityDisplay value={toQty(adj.direction === "Increase" ? adj.quantity : -adj.quantity)} /> : "—"}
+                    </span>
+                  </div>
+                </td>
+                <td style={{ padding: "0.5rem 0.625rem", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden" }}>
                   <InventoryStatusBadge status={adj.status} type="adjustment" />
                 </td>
-                <td style={{ padding: "0.75rem 0.75rem", textAlign: "center", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "0.5rem 0.625rem", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden" }}>
                   <div style={{ display: "flex", gap: "0.375rem", justifyContent: "center" }}>
                     {adj.status === "Draft" && (
-                      <Button variant="secondary" onPress={() => handleSubmitForApproval(adj.id)}>
-                        {t("adjustments.submitForApproval")}
+                      <Button variant="secondary" size="compact" aria-label={t("adjustments.submitForApproval")} onPress={() => handleSubmitForApproval(adj.id)}>
+                        {t("adjustments.submitAction")}
                       </Button>
                     )}
                     {adj.status === "PendingApproval" && canApprove && (
-                      <Button variant="primary" onPress={() => handleApprove(adj.id)}>
-                        {t("adjustments.approve")}
+                      <Button variant="primary" size="compact" aria-label={t("adjustments.approve")} onPress={() => handleApprove(adj.id)}>
+                        {t("adjustments.approveAction")}
                       </Button>
                     )}
                     {adj.status === "Approved" && canPost && (
-                      <Button variant="primary" onPress={() => handlePost(adj.id)}>
-                        {t("adjustments.post")}
+                      <Button variant="primary" size="compact" aria-label={t("adjustments.post")} onPress={() => handlePost(adj.id)}>
+                        {t("adjustments.postAction")}
                       </Button>
                     )}
                     {adj.status === "Posted" && (

@@ -336,7 +336,9 @@ export const en = {
     warehouse: "Warehouse",
     location: "Location",
     quantity: "Adjustment Quantity",
+    quantityEffect: "Quantity / Effect",
     direction: "Direction",
+    change: "Change",
     reason: "Reason",
     approvalMode: "Approval Policy",
     status: "Status",
@@ -346,9 +348,12 @@ export const en = {
     stockEffectPending: "Pending - No stock impact",
     stockEffectPosted: "Posted - Stock updated",
     submitForApproval: "Submit for Approval",
+    submitAction: "Submit",
     completed: "Completed",
     approve: "Approve Adjustment",
+    approveAction: "Approve",
     post: "Post Adjustment to Stock",
+    postAction: "Post",
     directions: {
       Increase: "Stock Increase (Found / Correction)",
       Decrease: "Stock Decrease (Damage / Loss / Shortage)"

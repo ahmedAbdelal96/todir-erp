@@ -3,12 +3,14 @@ import React from "react";
 export interface InventoryDataTableProps {
   readonly children: React.ReactNode;
   readonly minWidth?: string;
+  readonly tableLayout?: React.CSSProperties["tableLayout"];
   readonly ariaLabel?: string;
 }
 
 export function InventoryDataTable({
   children,
   minWidth = "100%",
+  tableLayout = "auto",
   ariaLabel
 }: InventoryDataTableProps): React.JSX.Element {
   return (
@@ -29,6 +31,7 @@ export function InventoryDataTable({
         style={{
           width: "100%",
           minWidth,
+          tableLayout,
           borderCollapse: "collapse",
           fontSize: "0.8125rem",
           textAlign: "start"

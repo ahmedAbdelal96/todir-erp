@@ -336,7 +336,9 @@ export const ar = {
     warehouse: "المستودع",
     location: "الموقع",
     quantity: "كمية التسوية",
+    quantityEffect: "الكمية / الأثر",
     direction: "اتجاه التسوية",
+    change: "التغيير",
     reason: "سبب التسوية",
     approvalMode: "نظام الاعتماد",
     status: "الحالة",
@@ -346,9 +348,12 @@ export const ar = {
     stockEffectPending: "معلق - لا أثر على الرصيد",
     stockEffectPosted: "مرحل - أثر على الرصيد الفعلي",
     submitForApproval: "إرسال للاعتماد",
+    submitAction: "إرسال",
     completed: "مكتمل",
     approve: "اعتماد التسوية",
+    approveAction: "اعتماد",
     post: "ترحيل وتأثير المخزون",
+    postAction: "ترحيل",
     directions: {
       Increase: "زيادة رصيد",
       Decrease: "تخفيض رصيد"
