@@ -11,6 +11,7 @@ export interface SettingsNavItem {
 export interface SettingsPageProps {
   readonly title: string;
   readonly subtitle?: string | undefined;
+  readonly maxWidth?: string | undefined;
   readonly breadcrumbs?: readonly BreadcrumbItem[] | undefined;
   readonly navItems?: readonly SettingsNavItem[] | undefined;
   readonly activeNavId?: string | undefined;
@@ -22,6 +23,7 @@ export interface SettingsPageProps {
 export function SettingsPage({
   title,
   subtitle,
+  maxWidth = "1200px",
   breadcrumbs,
   navItems,
   activeNavId,
@@ -37,7 +39,7 @@ export function SettingsPage({
         flexDirection: "column",
         gap: "1.25rem",
         padding: "1.5rem",
-        maxWidth: "1200px",
+        maxWidth,
         margin: "0 auto",
         width: "100%",
         boxSizing: "border-box"

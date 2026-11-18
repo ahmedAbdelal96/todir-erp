@@ -62,7 +62,7 @@ export function CompanySettingsPage(): React.JSX.Element {
   };
 
   return (
-    <SettingsPage title={t("title")} subtitle={t("subtitle")}>
+    <SettingsPage title={t("title")} subtitle={t("subtitle")} maxWidth="1600px">
       <Alert variant="info" title={t("scope.currentEntity")}>
         <span>{entityLabel}</span>
       </Alert>
