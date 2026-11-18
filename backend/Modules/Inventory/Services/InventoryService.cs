@@ -142,7 +142,24 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
     public Task<InventoryProfile> SaveProfileAsync(TenantId tenant, Guid actor, Guid entity, CreateInventoryProfileRequest request, Guid correlationId, CancellationToken ct) => repository.SaveProfileAsync(tenant, actor, entity, request, correlationId, ct);
     public Task<TraceabilityRecord> CreateLotAsync(TenantId tenant, Guid actor, Guid entity, CreateLotRequest request, Guid correlationId, CancellationToken ct) => repository.CreateLotAsync(tenant, actor, entity, request, correlationId, ct);
     public Task<TraceabilityRecord> CreateSerialAsync(TenantId tenant, Guid actor, Guid entity, CreateSerialRequest request, Guid correlationId, CancellationToken ct) => repository.CreateSerialAsync(tenant, actor, entity, request, correlationId, ct);
-    public Task<IReadOnlyList<InventoryBalanceView>> GetBalancesAsync(TenantId tenant, Guid entity, Guid? variantId, Guid? warehouseId, int limit, CancellationToken ct) => repository.GetBalancesAsync(tenant, entity, variantId, warehouseId, limit, ct);
+    public async Task<IReadOnlyList<InventoryBalanceView>> GetBalancesAsync(TenantId tenant, Guid entity, Guid? variantId, Guid? warehouseId, int limit, CancellationToken ct)
+    {
+        var balances = await repository.GetBalancesAsync(tenant, entity, variantId, warehouseId, limit, ct);
+        if (balances.Count == 0 || catalog is null) return balances;
+
+        var identities = await catalog.FindVariantsBatchAsync(tenant, balances.Select(balance => balance.ProductVariantId).Distinct().ToArray(), entity, ct);
+        var templateIds = identities.Values.Select(identity => identity.ProductTemplateId).Distinct().ToArray();
+        var templateReferences = templateIds.Length == 0
+            ? new Dictionary<Guid, CatalogProductTemplateReferences>()
+            : await catalog.GetProductTemplateReferencesBatchAsync(tenant, templateIds, entity, ct);
+        return balances.Select(balance => identities.TryGetValue(balance.ProductVariantId, out var identity)
+            ? balance with
+            {
+                ProductDisplayName = identity.DisplayName,
+                ProductSku = identity.Sku ?? (templateReferences.TryGetValue(identity.ProductTemplateId, out var template) ? template.ProductTemplateCode : null)
+            }
+            : balance).ToArray();
+    }
     public Task<InventoryMovementPage> GetMovementHistoryAsync(TenantId tenant, Guid entity, Guid? variantId, Guid? warehouseId, Guid? locationId, Guid? lotId, Guid? serialId, Guid? sourceDocumentId, DateTimeOffset? beforeEffectiveAt, long? beforeSequence, Guid? beforeId, int limit, CancellationToken ct) => repository.GetMovementHistoryAsync(tenant, entity, variantId, warehouseId, locationId, lotId, serialId, sourceDocumentId, beforeEffectiveAt, beforeSequence, beforeId, limit, ct);
     public Task<IReadOnlyList<NegativeStockConditionView>> GetNegativeStockConditionsAsync(TenantId tenant, Guid entity, string? status, DateTimeOffset? beforeOpenedAt, Guid? beforeId, int limit, CancellationToken ct) => repository.GetNegativeStockConditionsAsync(tenant, entity, status, beforeOpenedAt, beforeId, limit, ct);
     public Task<IReadOnlyList<InventoryAsOfView>> GetStockAsOfAsync(TenantId tenant, Guid entity, DateTimeOffset asOf, Guid? variantId, Guid? warehouseId, int limit, CancellationToken ct) => repository.GetStockAsOfAsync(tenant, entity, asOf, variantId, warehouseId, limit, ct);

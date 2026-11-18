@@ -92,6 +92,8 @@ export interface InventoryProfile {
 
 export interface StockBalance {
   readonly productVariantId: string;
+  readonly productDisplayName?: string | null;
+  readonly productSku?: string | null;
   readonly warehouseId: string;
   readonly locationId: string;
   readonly stockStatus: string;

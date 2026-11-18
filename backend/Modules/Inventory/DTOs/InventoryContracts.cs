@@ -41,7 +41,8 @@ public sealed record InventoryOperationResult(Guid OperationId, string Operation
     IReadOnlyList<Guid> MovementIds, bool IdempotentReplay);
 public sealed record InventoryBalanceView(Guid ProductVariantId, Guid WarehouseId, Guid LocationId,
     string StockStatus, Guid? LotId, Guid? SerialId, decimal OnHandBaseQuantity,
-    decimal ReservedBaseQuantity, decimal AvailableBaseQuantity, long Version, long LastMovementSequence);
+    decimal ReservedBaseQuantity, decimal AvailableBaseQuantity, long Version, long LastMovementSequence,
+    string? ProductDisplayName = null, string? ProductSku = null);
 public sealed record InventoryMovementView(Guid Id, Guid OperationId, long Sequence, Guid ProductVariantId, Guid WarehouseId,
     Guid LocationId, string StockStatus, Guid? LotId, Guid? SerialId, decimal EnteredQuantity, Guid EnteredUomId,
     decimal ConversionFactorSnapshot, decimal BaseQuantity, decimal SignedBaseQuantity, string MovementType,

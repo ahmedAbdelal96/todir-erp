@@ -43,7 +43,7 @@ export function StockTab({
     if (searchTerm) {
       const s = searchTerm.toLowerCase();
       const w = warehouses.find(wh => wh.id === b.warehouseId);
-      const matchProduct = b.productVariantId.toLowerCase().includes(s);
+      const matchProduct = [b.productDisplayName, b.productSku].some(value => value?.toLowerCase().includes(s));
       const matchWarehouse = w && (w.name.toLowerCase().includes(s) || w.code.toLowerCase().includes(s));
       if (!matchProduct && !matchWarehouse) return false;
     }
@@ -161,7 +161,11 @@ export function StockTab({
                       textAlign: "start"
                     }}
                   >
-                    <InventoryProductDisplay productVariantId={b.productVariantId} />
+                    <InventoryProductDisplay
+                      productVariantId={b.productVariantId}
+                      displayName={b.productDisplayName}
+                      sku={b.productSku}
+                    />
                   </button>
                 </td>
                 <td style={{ padding: "0.75rem 1rem" }}>{warehouseName(b.warehouseId)}</td>

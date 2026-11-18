@@ -67,12 +67,11 @@ export function resolveInventoryProduct(variantId?: string | null, isAr = true):
     };
   }
 
-  // Graceful fallback for any other UUID or variant code to prevent leaking raw technical UUIDs
+  // Unknown identifiers must not be turned into invented names or SKU values.
   if (variantId.includes("-") && variantId.length >= 32) {
-    // Generate a consistent business-readable display instead of raw UUID
     return {
-      name: isAr ? "صنف مخزني تجاري معتمد" : "Approved Commercial Stock Item",
-      sku: `SKU-PRD-${variantId.slice(0, 6).toUpperCase()}`,
+      name: isAr ? "بيانات الصنف غير متاحة" : "Product data unavailable",
+      sku: "—",
       uom: "EA"
     };
   }
@@ -86,22 +85,31 @@ export function resolveInventoryProduct(variantId?: string | null, isAr = true):
 
 export interface InventoryProductDisplayProps {
   readonly productVariantId?: string | null;
+  readonly displayName?: string | null;
+  readonly sku?: string | null;
   readonly showSkuOnly?: boolean;
   readonly inline?: boolean;
 }
 
 export function InventoryProductDisplay({
   productVariantId,
+  displayName,
+  sku,
   showSkuOnly = false,
   inline = false
 }: InventoryProductDisplayProps): React.JSX.Element {
   const isAr = document.documentElement.lang !== "en" && document.documentElement.dir !== "ltr";
   const resolved = resolveInventoryProduct(productVariantId, isAr);
+  const product = {
+    ...resolved,
+    name: displayName?.trim() || resolved.name,
+    sku: sku?.trim() || resolved.sku
+  };
 
   if (showSkuOnly) {
     return (
       <span style={{ fontFamily: "monospace", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
-        {resolved.sku}
+        {product.sku}
       </span>
     );
   }
@@ -109,10 +117,10 @@ export function InventoryProductDisplay({
   if (inline) {
     return (
       <span style={{ fontSize: "0.875rem" }}>
-        <strong>{resolved.name}</strong>
+        <strong>{product.name}</strong>
         {" "}
         <span style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-          ({resolved.sku})
+          ({product.sku})
         </span>
       </span>
     );
@@ -121,10 +129,10 @@ export function InventoryProductDisplay({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem" }}>
       <span style={{ fontWeight: 600, color: "var(--color-content-primary, #0f172a)", fontSize: "0.875rem" }}>
-        {resolved.name}
+        {product.name}
       </span>
       <span style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
-        {resolved.sku}
+        {product.sku}
       </span>
     </div>
   );

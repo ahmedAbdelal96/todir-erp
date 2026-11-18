@@ -218,7 +218,11 @@ export function OverviewTab({
                         textAlign: "start"
                       }}
                     >
-                      <InventoryProductDisplay productVariantId={b.productVariantId} />
+                      <InventoryProductDisplay
+                        productVariantId={b.productVariantId}
+                        displayName={b.productDisplayName}
+                        sku={b.productSku}
+                      />
                     </button>
                   </td>
                   <td style={{ padding: "0.75rem 1rem" }}>{warehouseName(b.warehouseId)}</td>

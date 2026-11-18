@@ -38,6 +38,7 @@ export function ProductStockCardModal({
   const { t } = useTranslation("inventory");
 
   const productBalances = balances.filter(b => b.productVariantId === productVariantId);
+  const productIdentity = productBalances[0];
   const totalOnHand = productBalances.reduce((sum, b) => sum + b.onHandBaseQuantity, 0);
   const totalReserved = productBalances.reduce((sum, b) => sum + b.reservedBaseQuantity, 0);
   const totalAvailable = productBalances.reduce((sum, b) => sum + b.availableBaseQuantity, 0);
@@ -67,7 +68,11 @@ export function ProductStockCardModal({
           }}
         >
           <div>
-            <InventoryProductDisplay productVariantId={productVariantId} />
+            <InventoryProductDisplay
+              productVariantId={productVariantId}
+              displayName={productName ?? productIdentity?.productDisplayName}
+              sku={sku ?? productIdentity?.productSku}
+            />
             <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", display: "block", marginTop: "0.25rem" }}>
               {t("stock.cardSubtitle")}
             </span>
